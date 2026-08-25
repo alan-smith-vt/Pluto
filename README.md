@@ -9,7 +9,7 @@ below the "Roadmap" section documents that viewer as it exists today.
 The viewer is being migrated into an **arm** of a larger program, *Pluto* —
 a FEMAP-style hub for finite-element data. The intended shape:
 
-```
+```text
   Solver A  ──import──┐                       ┌──export──▶  Solver A
   Solver B  ──import──┤                       ├──export──▶  Solver B
   Solver C  ──import──┼──▶  common model  ──▶ ┤
@@ -27,7 +27,7 @@ a FEMAP-style hub for finite-element data. The intended shape:
 
 ## Repo layout
 
-```
+```text
 viewer/            the viewer arm (open viewer/index.html)
   scripts/         viewer JS modules
   styles/          CSS

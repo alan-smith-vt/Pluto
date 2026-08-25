@@ -47,7 +47,7 @@ not match this viewer"). Wrong `version`/`headerSize` are warnings only.
   "displacementVector": [8, 9, 10],
   "strengths": { "offset": 60, "components": [ { "name": "Shear strength", "unit": "psi" } ] }
 }
-```
+```text
 
 - `loadCases[].type`: `"primary"` | `"envelope"`. List is padded (`"LC N"`) or trimmed to
   `nFieldLC`.
@@ -97,3 +97,5 @@ One LC plane is sliced at a time (`readLC`); one element's record can be sliced 
 ## v3 → v4 mapping
 
 See [[vault/format/v4-schema#9. Legacy shim (v ≤ 3)|v4-schema §9]].
+
+```

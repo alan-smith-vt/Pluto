@@ -85,7 +85,7 @@ domains by index. A shells-only file has one domain and is structurally v3.
   "constComponents": [ {"name": "...", "kind": "...", "unit": "..."} ],
   "displacementVector": [0, 1, 2]
 }
-```
+```text
 
 - `family`: `"shell"` | `"beam"` (future: `"solid"`, `"spring"`).
 - `maxSlots`: stride; ≥ the slots any element in the domain uses.
@@ -239,7 +239,7 @@ only ever sees the v4 model. v3 bugs get fixed by re-exporting, not by extending
     beamProps:   Float32Array | null
   }]
 }
-```
+```text
 
 `readLC(model, d, lc)` and `readElementRecord(model, d, lc, e)` are the v3 functions with
 a domain argument; `planeStride = nElem * maxSlots * nComp * 4`.
@@ -251,3 +251,5 @@ a domain argument; `planeStride = nElem * maxSlots * nComp * 4`.
 - 2026-08-25 — DSR de-prioritised; retained for shells, archived if it conflicts.
 - 2026-08-25 — Element IDs per domain.
 - 2026-08-25 — Features (predicates, section cuts, supports, …) live in a JSON sidecar, never in the binary → [[vault/format/features-sidecar|features-sidecar]].
+
+```

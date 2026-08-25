@@ -31,14 +31,14 @@ Types the writer **defines** (new in v4): `Component`, `BeamMember`, `SectionDef
 
 ## Two-phase contract (unchanged)
 
-```
+```csharp
 var w = new RawViewerWriter(path, nodes, elements, loadCaseNames, components);
 w.Write();                      // header, directory, geometry, META, NaN-filled fields
 w.AppendStresses(stresses);     // in-place seek + write through a memory map
 w.AppendDisplacements(disps);
 w.AppendDsr(dsrs);              // only if the layout has kind "dsr"
 w.AppendStr(strs);              // only if the layout has kind "str"
-```
+```csharp
 
 - `Write()` NaN-fills **every** field plane up front, so appends can arrive in any order
   and any subset; anything never written reads as no-data.
@@ -52,7 +52,7 @@ w.AppendStr(strs);              // only if the layout has kind "str"
 
 ## Beams (new)
 
-```
+```csharp
 var beams = new Dictionary<int, RawViewerWriter.BeamMember> {
   { 20001, new RawViewerWriter.BeamMember {
         Id = 20001, NodeA = 4021, NodeB = 4022, SectionIndex = 0,
@@ -92,7 +92,7 @@ w.AppendDisplacements(disps);             // ALSO fans node displacements onto b
 
 ## Layout emitted
 
-```
+```text
 header(32) | directory | NODE(f64) | NDID | ELEM d0 | ELID d0 | [FLDC d0]
 | [SECT | ELEM d1 | ELID d1 | BPRP d1] | META | FLDS d0 | [FLDS d1]
 ```
