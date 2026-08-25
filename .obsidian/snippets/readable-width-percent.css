@@ -1,4 +1,12 @@
-/* Make "Readable line length" 60% of the pane width instead of a fixed pixel value. */
-body {
-  --file-line-width: 60%;
+/* Readable line length = 60% of the pane width instead of a fixed pixel value.
+   Requires Settings > Editor > "Readable line length" ON. Targets the sizers
+   directly so it works whether or not the theme routes --file-line-width
+   through calc(). */
+body { --file-line-width: 60%; }
+
+.markdown-preview-view.is-readable-line-width .markdown-preview-sizer,
+.markdown-source-view.is-readable-line-width .cm-sizer {
+  max-width: 60% !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
 }
