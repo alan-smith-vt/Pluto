@@ -20,9 +20,10 @@ using System.Text;
 //      AppendDsr / AppendStr -- shell DSR run / LC-independent strengths.
 //      AppendBeamForces      -- beam end records into the beam FLDS.
 //
-// Domains: domain 0 = "shells" (always), domain 1 = "beams" (only when the
-// beam constructor is used). Element IDs are per domain. Nodes are shared
-// and written as float64.
+// Domains: "shells" (when elements are given) then "beams" (when beams are
+// given), in that order, so a beam-only export has beams as domain 0.
+// Element IDs are per domain. Nodes are shared and written as float64.
+// loadCaseNames may be empty/null -> no FLDS blocks (geometry-only).
 //
 // File layout (all blocks 8-byte aligned):
 //   header(32) | directory | NODE | NDID | [LABL nodes] | ELEM d0 | ELID d0 | [LABL d0]
@@ -222,6 +223,7 @@ public class RawViewerWriter
     private readonly ComponentLayout beamLayout;
     private readonly List<Component> beamComps;
     private readonly int nBeams, nBeamComps, strideBeamElem;
+    private readonly uint shellDomain, beamDomain;   // directory domain indices (GLOBAL_DOMAIN = absent)
     private readonly long strideBeamLC;
 
     // shared
@@ -269,9 +271,11 @@ public class RawViewerWriter
     {
         if (path == null) throw new Exception("RawViewerWriter: path is null.");
         if (nodes == null || nodes.Count == 0) throw new Exception("RawViewerWriter: no nodes.");
-        if (elements == null || elements.Count == 0) throw new Exception("RawViewerWriter: no elements.");
-        if (components == null || components.Count == 0) throw new Exception("RawViewerWriter: components list is empty.");
-        if (loadCaseNames == null || loadCaseNames.Count == 0) throw new Exception("RawViewerWriter: loadCaseNames is empty.");
+        bool hasShells = elements != null && elements.Count > 0;
+        bool hasBeams = beams != null && beams.Count > 0;
+        if (!hasShells && !hasBeams) throw new Exception("RawViewerWriter: no elements and no beams.");
+        if (hasShells && (components == null || components.Count == 0)) throw new Exception("RawViewerWriter: components list is empty.");
+        if (loadCaseNames == null) loadCaseNames = new Dictionary<int, string>();
 
         this.path = path;
         this.modelId = modelId;
@@ -280,15 +284,18 @@ public class RawViewerWriter
         // split shell list: "str" -> FLDC, rest -> FLDS layout
         cornerComps = new List<Component>();
         List<Component> strComps = new List<Component>();
-        foreach (Component comp in components)
+        if (hasShells)
         {
-            if (comp != null && comp.Kind == "str") strComps.Add(comp); else cornerComps.Add(comp);
+            foreach (Component comp in components)
+            {
+                if (comp != null && comp.Kind == "str") strComps.Add(comp); else cornerComps.Add(comp);
+            }
+            layout = new ComponentLayout(cornerComps);
+            cornerComponents = layout.CornerComponents;
         }
-        layout = new ComponentLayout(cornerComps);
-        cornerComponents = layout.CornerComponents;
 
         nodeOrder = nodes.OrderBy(kv => kv.Key).Select(kv => kv.Value).ToArray();
-        elemOrder = elements.OrderBy(kv => kv.Key).Select(kv => kv.Value).ToArray();
+        elemOrder = hasShells ? elements.OrderBy(kv => kv.Key).Select(kv => kv.Value).ToArray() : new Element[0];
         nNodes = nodeOrder.Length;
         nElements = elemOrder.Length;
         elemIdToIndex = BuildElemIndex(elemOrder);
@@ -317,8 +324,11 @@ public class RawViewerWriter
             }
         }
 
+        shellDomain = hasShells ? 0u : GLOBAL_DOMAIN;
+        beamDomain = hasShells ? 1u : 0u;
+
         // beams
-        if (beams != null && beams.Count > 0)
+        if (hasBeams)
         {
             if (beamComponents == null || beamComponents.Count == 0)
                 throw new Exception("RawViewerWriter: beams given but beamComponents is empty.");
@@ -360,26 +370,33 @@ public class RawViewerWriter
         blocks.Add(new Block { Tag = "NDID", Domain = GLOBAL_DOMAIN, Count = (uint)nNodes, Bytes = BuildNodeIdBytes() });
         if (nodeLabels != null)
             blocks.Add(new Block { Tag = "LABL", Domain = GLOBAL_DOMAIN, Count = (uint)nNodes, Bytes = BuildLabelBytes(nodeOrder.Select(n => n.id).ToArray(), nodeLabels) });
-        blocks.Add(new Block { Tag = "ELEM", Domain = 0, Count = (uint)nElements, Bytes = BuildShellElemBytes(nodeIdToIndex) });
-        blocks.Add(new Block { Tag = "ELID", Domain = 0, Count = (uint)nElements, Bytes = BuildShellElemIdBytes() });
-        if (shellLabels != null)
-            blocks.Add(new Block { Tag = "LABL", Domain = 0, Count = (uint)nElements, Bytes = BuildLabelBytes(elemOrder.Select(e => e.id).ToArray(), shellLabels) });
-        if (nStr > 0)
-            blocks.Add(new Block { Tag = "FLDC", Domain = 0, Count = 1, Length = (long)nElements * strideElemStr * FLOAT_SIZE });
+        if (elemOrder.Length > 0)
+        {
+            blocks.Add(new Block { Tag = "ELEM", Domain = shellDomain, Count = (uint)nElements, Bytes = BuildShellElemBytes(nodeIdToIndex) });
+            blocks.Add(new Block { Tag = "ELID", Domain = shellDomain, Count = (uint)nElements, Bytes = BuildShellElemIdBytes() });
+            if (shellLabels != null)
+                blocks.Add(new Block { Tag = "LABL", Domain = shellDomain, Count = (uint)nElements, Bytes = BuildLabelBytes(elemOrder.Select(e => e.id).ToArray(), shellLabels) });
+            if (nStr > 0)
+                blocks.Add(new Block { Tag = "FLDC", Domain = shellDomain, Count = 1, Length = (long)nElements * strideElemStr * FLOAT_SIZE });
+        }
         if (beamOrder != null)
         {
             blocks.Add(new Block { Tag = "SECT", Domain = GLOBAL_DOMAIN, Count = (uint)sections.Count, Bytes = BuildSectBytes() });
-            blocks.Add(new Block { Tag = "ELEM", Domain = 1, Count = (uint)nBeams, Bytes = BuildBeamElemBytes(nodeIdToIndex) });
-            blocks.Add(new Block { Tag = "ELID", Domain = 1, Count = (uint)nBeams, Bytes = BuildBeamElemIdBytes() });
-            blocks.Add(new Block { Tag = "BPRP", Domain = 1, Count = (uint)nBeams, Bytes = BuildBprpBytes() });
+            blocks.Add(new Block { Tag = "ELEM", Domain = beamDomain, Count = (uint)nBeams, Bytes = BuildBeamElemBytes(nodeIdToIndex) });
+            blocks.Add(new Block { Tag = "ELID", Domain = beamDomain, Count = (uint)nBeams, Bytes = BuildBeamElemIdBytes() });
+            blocks.Add(new Block { Tag = "BPRP", Domain = beamDomain, Count = (uint)nBeams, Bytes = BuildBprpBytes() });
             if (beamLabels != null)
-                blocks.Add(new Block { Tag = "LABL", Domain = 1, Count = (uint)nBeams, Bytes = BuildLabelBytes(beamOrder.Select(b => b.Id).ToArray(), beamLabels) });
+                blocks.Add(new Block { Tag = "LABL", Domain = beamDomain, Count = (uint)nBeams, Bytes = BuildLabelBytes(beamOrder.Select(b => b.Id).ToArray(), beamLabels) });
         }
         geometryHash = ComputeGeometryHash();
         blocks.Add(new Block { Tag = "META", Domain = GLOBAL_DOMAIN, Count = 0, Bytes = BuildMetadata() });
-        blocks.Add(new Block { Tag = "FLDS", Domain = 0, Count = (uint)nFieldLC, Length = (long)nFieldLC * strideLC * FLOAT_SIZE });
-        if (beamOrder != null)
-            blocks.Add(new Block { Tag = "FLDS", Domain = 1, Count = (uint)nFieldLC, Length = (long)nFieldLC * strideBeamLC * FLOAT_SIZE });
+        if (nFieldLC > 0)
+        {
+            if (elemOrder.Length > 0)
+                blocks.Add(new Block { Tag = "FLDS", Domain = shellDomain, Count = (uint)nFieldLC, Length = (long)nFieldLC * strideLC * FLOAT_SIZE });
+            if (beamOrder != null)
+                blocks.Add(new Block { Tag = "FLDS", Domain = beamDomain, Count = (uint)nFieldLC, Length = (long)nFieldLC * strideBeamLC * FLOAT_SIZE });
+        }
 
         dirOffset = HEADER_SIZE;
         long off = Align8(dirOffset + (long)blocks.Count * DIR_ENTRY_SIZE);
@@ -390,9 +407,9 @@ public class RawViewerWriter
             off = Align8(off + b.Length);
         }
         totalLength = off;
-        strengthOffset = FindOffset("FLDC", 0);
-        fieldOffsetShell = FindOffset("FLDS", 0);
-        fieldOffsetBeam = FindOffset("FLDS", 1);
+        strengthOffset = FindOffset("FLDC", shellDomain);
+        fieldOffsetShell = FindOffset("FLDS", shellDomain);
+        fieldOffsetBeam = FindOffset("FLDS", beamDomain);
     }
 
     private static long Align8(long n) { return (n + 7) & ~7L; }
@@ -655,6 +672,7 @@ public class RawViewerWriter
     public void AppendStresses(List<StressRecord> stresses)
     {
         if (stresses == null) return;
+        if (layout == null) throw new Exception("Append: writer was built without shell elements.");
         int start = layout.Start("stress");
         int count = layout.Count("stress");
         using (MemoryMappedFile mmf = OpenMap())
@@ -682,8 +700,9 @@ public class RawViewerWriter
     public void AppendDisplacements(List<Disp> disps)
     {
         if (disps == null) return;
-        int start = layout.Start("displacement");
-        int count = layout.Count("displacement");
+        bool shellDisp = layout != null && layout.HasKind("displacement");
+        int start = shellDisp ? layout.Start("displacement") : 0;
+        int count = shellDisp ? layout.Count("displacement") : 0;
         bool beamDisp = beamLayout != null && beamLayout.HasKind("displacement");
         int bStart = beamDisp ? beamLayout.Start("displacement") : 0;
         int bCount = beamDisp ? beamLayout.Count("displacement") : 0;
@@ -694,12 +713,12 @@ public class RawViewerWriter
             foreach (Disp d in disps)
             {
                 int plane = ResolveLcPlane(d.LC, "Displacements");
-                if (d.DR == null || d.DR.Length < count)
+                if (d.DR == null || d.DR.Length < Math.Max(count, bCount))
                     throw new Exception(string.Format("AppendDisplacements: record for node {0} has {1} values, expected {2}.",
-                        d.node, (d.DR == null ? 0 : d.DR.Length), count));
+                        d.node, (d.DR == null ? 0 : d.DR.Length), Math.Max(count, bCount)));
 
                 List<JointTarget> targets;
-                if (nodeToTargets.TryGetValue(d.node, out targets))
+                if (shellDisp && nodeToTargets.TryGetValue(d.node, out targets))
                     foreach (JointTarget jt in targets)
                         acc.WriteArray(fieldOffsetShell + (FieldPos(plane, jt.ElemIndex, jt.Slot) + start) * FLOAT_SIZE, d.DR, 0, count);
 
@@ -716,6 +735,7 @@ public class RawViewerWriter
     public void AppendDsr(List<DsrRecord> dsrs)
     {
         if (dsrs == null) return;
+        if (layout == null) throw new Exception("Append: writer was built without shell elements.");
         if (!layout.HasKind("dsr")) throw new Exception("AppendDsr: component layout has no 'dsr' fields.");
         int start = layout.Start("dsr");
         int count = layout.Count("dsr");
@@ -741,6 +761,7 @@ public class RawViewerWriter
     public void AppendStr(List<StrRecord> strs)
     {
         if (strs == null) return;
+        if (layout == null) throw new Exception("Append: writer was built without shell elements.");
         if (nStr == 0) throw new Exception("AppendStr: writer was built without design-strength components.");
         using (MemoryMappedFile mmf = OpenMap())
         using (MemoryMappedViewAccessor acc = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.ReadWrite))
@@ -767,6 +788,7 @@ public class RawViewerWriter
     {
         if (records == null) return;
         if (beamOrder == null) throw new Exception("AppendBeamForces: writer was built without beams.");
+        if (nFieldLC == 0) throw new Exception("AppendBeamForces: writer was built with no load cases (geometry-only).");
         int start = kind == null ? 0 : beamLayout.Start(kind);
         int count = kind == null ? nBeamComps : beamLayout.Count(kind);
         using (MemoryMappedFile mmf = OpenMap())
@@ -839,14 +861,18 @@ public class RawViewerWriter
         sb.Append("]");
 
         sb.Append(",\"domains\":[");
-        sb.Append("{\"name\":\"shells\",\"family\":\"shell\",\"maxSlots\":").Append(MAX_CORNERS);
-        sb.Append(",\"components\":"); AppendComponents(sb, cornerComps);
-        if (nStr > 0) { sb.Append(",\"constComponents\":"); AppendComponents(sb, strengthComponents, "str"); }
-        AppendDispVector(sb, layout);
-        sb.Append("}");
+        if (elemOrder.Length > 0)
+        {
+            sb.Append("{\"name\":\"shells\",\"family\":\"shell\",\"maxSlots\":").Append(MAX_CORNERS);
+            sb.Append(",\"components\":"); AppendComponents(sb, cornerComps);
+            if (nStr > 0) { sb.Append(",\"constComponents\":"); AppendComponents(sb, strengthComponents, "str"); }
+            AppendDispVector(sb, layout);
+            sb.Append("}");
+        }
         if (beamOrder != null)
         {
-            sb.Append(",{\"name\":\"beams\",\"family\":\"beam\",\"maxSlots\":").Append(BEAM_SLOTS);
+            if (elemOrder.Length > 0) sb.Append(",");
+            sb.Append("{\"name\":\"beams\",\"family\":\"beam\",\"maxSlots\":").Append(BEAM_SLOTS);
             sb.Append(",\"components\":"); AppendComponents(sb, beamComps);
             AppendDispVector(sb, beamLayout);
             sb.Append("}");

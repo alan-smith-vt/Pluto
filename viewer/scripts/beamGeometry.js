@@ -23,7 +23,10 @@
 
 var FEABeamGeometry = (function () {
 
-    var PIPE_SEGS = 24;
+    var PIPE_SEGS = 24;           // adaptive: see segsFor()
+
+    // Fewer facets for big models so 150k pipes stay renderable.
+    function segsFor(nElem) { return nElem > 60000 ? 6 : nElem > 20000 ? 8 : nElem > 5000 ? 12 : 24; }
 
     // Section outline as a CCW list of [y, z] points centred on the
     // section's bounding-box centre (centroid for symmetric shapes).
@@ -47,7 +50,7 @@ var FEABeamGeometry = (function () {
     function circle(r) {
         var pts = [];
         for (var i = 0; i < PIPE_SEGS; i++) {
-            var a = 2 * Math.PI * i / PIPE_SEGS;
+            var a = 2 * Math.PI * i / PIPE_SEGS;   // PIPE_SEGS set per build
             pts.push([r * Math.cos(a), r * Math.sin(a)]);
         }
         return pts;
@@ -99,6 +102,7 @@ var FEABeamGeometry = (function () {
         var props = view.beamProps;
         var sections = view.sections || [];
         var BP = FEAv4.BPRP_F32;
+        PIPE_SEGS = segsFor(nElem);
 
         // Pre-triangulate one outline per section index.
         var secCache = {};

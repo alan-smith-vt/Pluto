@@ -100,6 +100,19 @@ hover readout. Categories are sidecar groups, not labels ([[vault/format/v4-sche
 `?.`, `nameof`, expression bodies, `out var`, auto-property initializers, or `new(...)`.
 Verified by compiling with `<LangVersion>5</LangVersion>`.
 
+## Beam-only / geometry-only inputs
+
+`elements`, `components` and `loadCaseNames` may all be `null`/empty. With no shells the
+beam domain becomes domain 0; with no load cases no `FLDS` blocks are written (`Write()`
+and `Write(false)` are then equivalent). At least one of elements / beams is required.
+
+## Bridges (`viewer/exporters/`)
+
+- `PipeBeamsToPluto.cs` — `Voyager.PipeBeamsToPluto.Export(List<Voyager.Beam>, outBase, modelId, lengthUnit)`:
+  dedupes weld points into nodes, one `Pipe` section per distinct diameter (+ `UNSIZED`),
+  `PartOid` as beam label, sidecar groups for class / run / star-arms / unsized / src.
+  Writes `<outBase>.bin` + `<outBase>.features.json`. Verified C# 5 build and JS read.
+
 ## Profiles
 
 - `Write()` — results profile: all field planes present (NaN until appended).

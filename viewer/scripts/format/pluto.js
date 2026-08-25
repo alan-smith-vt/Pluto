@@ -183,9 +183,26 @@ var PlutoFormat = (function () {
         }
         return -1;
     }
+    // The shell pipeline is the viewer's spine, so a file with no shell
+    // domain gets an EMPTY synthetic one (0 elements, 0 components): every
+    // shell code path runs on nothing while the beam domain renders.
     function shellView(model) {
         var d = findDomain(model, 'shell');
-        return d >= 0 ? domainView(model, d) : null;
+        if (d >= 0) return domainView(model, d);
+        if (!model._emptyShell) {
+            model._emptyShell = {
+                index: -1, name: 'shells (none)', family: 'shell', maxSlots: 4,
+                components: [], constComponents: [], dispVector: null,
+                nElem: 0, elemRecordU32: 6, elems: new Uint32Array(0), elemIds: new Uint32Array(0),
+                fields: null, constFields: null, beamProps: null, labels: null, constData: null, synthetic: true
+            };
+        }
+        var saved = model.domains;
+        model.domains = saved.concat([model._emptyShell]);
+        var v = domainView(model, saved.length);
+        model.domains = saved;
+        v.synthetic = true;
+        return v;
     }
     function beamView(model) {
         var d = findDomain(model, 'beam');

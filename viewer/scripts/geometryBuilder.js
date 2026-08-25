@@ -89,8 +89,13 @@ var FEAGeometry = (function () {
         geo.setAttribute('dispVec',    new THREE.BufferAttribute(dispVecs, 3));
         geo.setAttribute('elemVis',    new THREE.BufferAttribute(elemVis, 1));
         geo.setAttribute('catIdx',     new THREE.BufferAttribute(catIdx, 1));
-        geo.computeBoundingBox();
-        geo.computeBoundingSphere();
+        if (totalVerts > 0) {
+            geo.computeBoundingBox();
+            geo.computeBoundingSphere();
+        } else {
+            geo.boundingBox = new THREE.Box3();          // empty
+            geo.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 0);
+        }
 
         // Element-perimeter edges (for the optional wireframe overlay).
         var edges = buildEdgePositions(nElem, elemNCount, elemCorners, nodes);

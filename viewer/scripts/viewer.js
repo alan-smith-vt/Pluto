@@ -400,8 +400,7 @@ async function loadModels(entriesIn) {
             var m;
             try {
                 var unified = await PlutoFormat.load(en.file, log);
-                m = PlutoFormat.shellView(unified);
-                if (!m) throw new Error('file has no shell domain (beam-only files are not displayable yet).');
+                m = PlutoFormat.shellView(unified);     // synthetic empty view when beam-only
             } catch (err) {
                 skipped.push(en.name + ': ' + err.message);
                 continue;
@@ -776,6 +775,16 @@ async function selectLC(lc) {
     currentEnvelope = null;
     dsrCategorical = false;
     setEnvActive(null);
+    if (!feaSet || feaSet.nLC === 0) {
+        // Geometry-only profile: nothing to slice; beams draw neutral.
+        feaLCData = null;
+        updateDeformAvailability();
+        if (window.FEABeams) FEABeams.sync();
+        if (window.FEAFeatures) FEAFeatures.sync();
+        updateViewCaption();
+        log('Geometry-only model: no load cases (features / groups still work).');
+        return;
+    }
     elLC.value = lc;
     log('Slicing LC ' + (lc + 1) + ' field block...');
     feaLCData = await feaSet.readLC(lc);   // drops previous LC
