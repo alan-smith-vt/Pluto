@@ -1,0 +1,94 @@
+/* ============================================================
+   sectionCut.css  --  section-cut flyout panel (left edge,
+   scissors tab). Matches viewer.css dark styling.
+   ============================================================ */
+
+/* Panel top, shared with the height budget below so the two can't
+   drift apart. 252px clears the view-cube canvas above it. */
+:root { --sc-top: 252px; }
+
+/* Too little height to sit under the cube: take its space instead. The
+   panel is opaque and stacks above the cube, so the overlap is only
+   visible while the panel is open. */
+@media (max-height: 720px) {
+    :root { --sc-top: 14px; }
+}
+
+#scPanel {
+    position: fixed;
+    right: 0;                  /* tab hangs off the right screen edge */
+    top: var(--sc-top);
+    z-index: 14;
+    display: flex;
+    flex-direction: row-reverse;   /* DOM: body, tab -- tab renders left */
+    align-items: flex-start;
+    max-height: calc(100vh - var(--sc-top) - 12px);
+}
+
+#scTab {
+    width: 30px;
+    height: 42px;
+    background: rgba(16, 16, 20, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    color: #6c8cff;
+    user-select: none;
+}
+#scTab:hover { background: rgba(40, 40, 50, 0.94); }
+
+#scBody {
+    width: 268px;
+    background: rgba(16, 16, 20, 0.94);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-right: none;
+    padding: 12px 14px;
+    /* Never run past the bottom of the window: scroll instead, so a
+       short viewport can't clip the plot or the totals off-screen. */
+    max-height: calc(100vh - var(--sc-top) - 12px);
+    overflow-y: auto;
+}
+#scPanel.collapsed #scBody { display: none; }
+
+#scPlot {
+    width: 240px;
+    height: 150px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 2px;
+    margin-top: 8px;
+}
+
+#scStats {
+    margin-top: 6px;
+    font-size: 10px;
+    color: #aaa;
+    font-family: 'Consolas', monospace;
+    line-height: 1.5;
+}
+
+/* axis toggles, active state tinted by axis color (matches triad) */
+#scAxisX.active { background: #5a2727; border-color: #ff5252; color: #fff; }
+#scAxisY.active { background: #234a23; border-color: #6ee06e; color: #fff; }
+#scAxisZ.active { background: #26335f; border-color: #5f8cff; color: #fff; }
+
+#scNew.active { background: #6b5a2d; border-color: #ffd479; color: #fff; }
+
+.fea-color {
+    flex: 0 0 30px;
+    height: 22px;
+    padding: 0;
+    background: #232328;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    cursor: pointer;
+}
+.fea-color:disabled { opacity: 0.4; cursor: default; }
+
+/* shares the Color row with the mode select and the swatch */
+.fea-input.scthick { flex: 0 0 38px; padding: 4px 2px; }

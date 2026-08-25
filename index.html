@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FEA Per-Corner Field Viewer</title>
+<link rel="stylesheet" href="viewer.css">
+<link rel="stylesheet" href="sectionCut.css">
+</head>
+<body>
+
+<!-- ============================================================
+     LEFT CONTROL PANEL
+     ============================================================ -->
+<div id="feaPanel">
+
+    <div class="fea-section">
+        <div class="fea-title">FEA Field Viewer</div>
+        <div class="fea-hint" style="margin-top:3px;">Per-corner stress &amp; displacement, true bilinear quads.</div>
+    </div>
+
+    <div class="fea-section">
+        <div class="fea-sub">Model</div>
+        <div class="fea-row">
+            <input type="file" id="feaFile" class="fea-file" multiple
+                   accept=".bin,.feabin,.dat,.rbnl,application/octet-stream"
+                   title="Select one or more model files (identical geometry, e.g. soil-spring variants) — Ctrl/Shift-click to multi-select">
+        </div>
+        <div class="fea-row">
+            <button id="btnDemo" class="fea-btn primary">Load Demo Model</button>
+            <button id="btnFit" class="fea-btn">Fit View</button>
+        </div>
+        <div class="fea-row">
+            <input type="checkbox" id="feaOrtho" class="fea-check">
+            <span class="fea-label" style="width:auto;">Orthographic projection</span>
+        </div>
+        <div class="fea-row">
+            <select id="findKind" class="fea-select" style="flex:0 0 74px;">
+                <option value="elem">Element</option>
+                <option value="node">Node</option>
+            </select>
+            <input type="text" id="findId" class="fea-input num" placeholder="ID" title="Find by real (sparse) ID: sets the orbit focus and flashes it">
+            <button id="btnFind" class="fea-btn" style="flex:0 0 44px;">Find</button>
+        </div>
+    </div>
+
+    <div class="fea-section">
+        <div class="fea-sub">Field</div>
+        <div class="fea-row" id="envComputeRow">
+            <button id="btnComputeEnv" class="fea-btn">Compute envelopes</button>
+        </div>
+        <div class="fea-row" id="envButtonsRow" style="display:none;">
+            <button id="btnEnvMin" class="fea-btn">Min</button>
+            <button id="btnEnvMax" class="fea-btn">Max</button>
+            <button id="btnEnvAbs" class="fea-btn">Abs(max)</button>
+        </div>
+        <div class="fea-row" id="envDsrRow" style="display:none;">
+            <button id="btnEnvDsr" class="fea-btn">Global DSR</button>
+            <button id="btnEnvCat" class="fea-btn" title="Color by controlling DSR check instead of by value">By check</button>
+        </div>
+        <div class="fea-row">
+            <span class="fea-label">Load case</span>
+            <button id="btnLCPrev" class="fea-btn fea-step" title="Previous load case (left arrow)">&#9664;</button>
+            <select id="feaLC" class="fea-select" disabled></select>
+            <button id="btnLCNext" class="fea-btn fea-step" title="Next load case (right arrow)">&#9654;</button>
+        </div>
+        <div class="fea-row">
+            <span class="fea-label">Type</span>
+            <select id="feaKind" class="fea-select" disabled title="Filter the component list by field type"></select>
+        </div>
+        <div class="fea-row">
+            <span class="fea-label">Component</span>
+            <select id="feaComp" class="fea-select" disabled></select>
+        </div>
+    </div>
+
+    <div class="fea-section">
+        <div class="fea-sub">Display</div>
+        <div class="fea-row">
+            <span class="fea-label">Colormap</span>
+            <select id="feaColormap" class="fea-select">
+                <option value="viridis">Viridis</option>
+                <option value="turbo" selected>Turbo</option>
+                <option value="coolwarm">Cool&ndash;Warm</option>
+                <option value="grayscale">Grayscale</option>
+            </select>
+        </div>
+        <div class="fea-row">
+            <span class="fea-label">Auto range</span>
+            <input type="checkbox" id="feaAuto" class="fea-check" checked>
+            <span style="flex:1;"></span>
+            <input type="checkbox" id="feaEdges" class="fea-check" checked>
+            <span class="fea-label" style="width:auto;">Edges</span>
+        </div>
+        <div class="fea-row">
+            <input type="checkbox" id="feaSmooth" class="fea-check" checked>
+            <span class="fea-label" style="width:auto;">Smooth (coincident-node averaging)</span>
+        </div>
+        <div class="fea-row">
+            <input type="checkbox" id="feaAbs" class="fea-check">
+            <span class="fea-label" style="width:auto;" title="Display |value| of the selected component (after interpolation, so interior zero crossings are exact). Lets the alarm flag catch large negative values.">Abs value&nbsp;|v|</span>
+        </div>
+        <div class="fea-row">
+            <input type="checkbox" id="feaAlarm" class="fea-check">
+            <span class="fea-label" style="width:auto;">Flag &ge;</span>
+            <input type="text" id="feaAlarmVal" class="fea-input num" value="1.0" style="max-width:56px;">
+            <button id="btnFlash" class="fea-btn" style="flex:0 0 52px;" title="Pulse all flagged regions on top of everything, x-ray style, to reveal obscured alarms" disabled>Flash</button>
+        </div>
+        <div class="fea-row">
+            <span class="fea-label">Min</span>
+            <input type="text" id="feaMin" class="fea-input num">
+            <span class="fea-label" style="width:auto;">Max</span>
+            <input type="text" id="feaMax" class="fea-input num">
+        </div>
+        <div id="legendTitle" class="fea-hint" style="margin:9px 0 3px;">&mdash;</div>
+        <div class="fea-row fea-legend-wrap">
+            <canvas id="feaLegend" width="20" height="132"></canvas>
+            <div class="fea-legend-labels" id="feaLegendLabels">
+                <span id="feaLegendMax">&mdash;</span>
+                <span id="feaLegendMid">&mdash;</span>
+                <span id="feaLegendMin">&mdash;</span>
+            </div>
+            <div class="fea-legend-cats" id="feaLegendCats" style="display:none;"></div>
+        </div>
+    </div>
+
+    <details class="fea-section fea-details" id="deformSection">
+        <summary class="fea-sub" style="margin-bottom:0;">Deformation</summary>
+        <div class="fea-details-body">
+            <div class="fea-row" style="margin-top:8px;">
+                <input type="checkbox" id="defEnable" class="fea-check">
+                <span class="fea-label" style="width:auto;">Show deformed shape</span>
+            </div>
+            <div class="fea-row">
+                <span class="fea-label">Scale &times;</span>
+                <input type="text" id="defScale" class="fea-input num" value="100" style="max-width:64px;">
+                <button id="btnDefAuto" class="fea-btn" style="flex:0 0 46px;" title="Set scale so the peak displacement reads as ~5% of the model size">Auto</button>
+            </div>
+            <div class="fea-row">
+                <input type="range" id="defSlider" min="0" max="300" step="1" value="100" style="flex:1;">
+            </div>
+            <div class="fea-row">
+                <input type="checkbox" id="defAnimate" class="fea-check">
+                <span class="fea-label" style="width:auto;">Animate</span>
+                <span style="flex:1;"></span>
+                <span class="fea-label" style="width:auto;">Speed (Hz)</span>
+                <input type="text" id="defSpeed" class="fea-input num" value="0.5" style="max-width:44px;">
+            </div>
+            <div class="fea-hint" id="defHint" style="margin-top:4px;">
+                Cycles +scale &rarr; &minus;scale. Hover/pin readout is disabled while
+                the deformed shape is shown.
+            </div>
+        </div>
+    </details>
+
+    <div class="fea-section">
+        <div class="fea-sub">Readout</div>
+        <div id="roMode" class="fea-hint" style="margin:-2px 0 8px;">hover = live &middot; click to pin &middot; ctrl+click = focus</div>
+        <div id="roValue" class="ro-value">&mdash;</div>
+        <div class="ro-row"><span class="ro-key">Component</span><span id="roComp" class="ro-val">&mdash;</span></div>
+        <div class="ro-row"><span class="ro-key">Element ID</span><span id="roElem" class="ro-val">&mdash;</span></div>
+        <div class="ro-row"><span class="ro-key">Nearest node</span><span id="roNode" class="ro-val">&mdash;</span></div>
+        <div class="ro-row"><span class="ro-key">Corner nodes</span><span id="roCorners" class="ro-val">&mdash;</span></div>
+        <div class="ro-row" id="roControllingRow" style="display:none;"><span class="ro-key">Controlling</span><span id="roControlling" class="ro-val">&mdash;</span></div>
+        <div class="ro-row"><span class="ro-key">Quad (u,v)</span><span id="roUV" class="ro-val">&mdash;</span></div>
+        <div class="ro-row"><span class="ro-key">World xyz</span><span id="roPos" class="ro-val">&mdash;</span></div>
+        <div id="calcCard" style="display:none;"></div>
+    </div>
+
+    <div class="fea-section" style="margin-top:auto;">
+        <div class="fea-sub">Status</div>
+        <div id="feaStatus">Ready.</div>
+        <div class="fea-hint" style="margin-top:8px;">
+            Force the discrete GPU for this browser for best WebGL performance.
+        </div>
+    </div>
+
+</div>
+
+<!-- ============================================================
+     SECTION-CUT FLYOUT  --  scissors tab on the right edge;
+     clicking the tab expands / collapses the panel.
+     ============================================================ -->
+<div id="scPanel" class="collapsed">
+    <div id="scBody">
+        <div class="fea-sub">Section Cut</div>
+        <div class="fea-row">
+            <button id="scNew" class="fea-btn">New section cut</button>
+        </div>
+        <div class="fea-hint" style="margin-bottom:7px;">
+            Arm, then Ctrl+left-click the model to place the center.
+        </div>
+        <div class="fea-row">
+            <span class="fea-label">Direction</span>
+            <button id="scAxisX" class="fea-btn active">X</button>
+            <button id="scAxisY" class="fea-btn">Y</button>
+            <button id="scAxisZ" class="fea-btn">Z</button>
+        </div>
+        <div class="fea-row">
+            <span class="fea-label">Length</span>
+            <input type="text" id="scLen" class="fea-input num"
+                   title="Total cut length in model units; extends L/2 each way from the center">
+        </div>
+        <div class="fea-row">
+            <span class="fea-label">Model units</span>
+            <select id="scUnits" class="fea-select"
+                    title="Geometry length unit. When the stress unit divides by a length (e.g. kip/ft), the area integral converts the cut length into that unit so it cancels (kip/ft · in &rarr; kip).">
+                <option value="">&mdash;</option>
+                <option value="in">inches</option>
+                <option value="ft">feet</option>
+            </select>
+        </div>
+        <div class="fea-row">
+            <span class="fea-label">Marker</span>
+            <select id="scMarker" class="fea-select"
+                    title="How the cut is drawn in the 3D view">
+                <option value="solid">Sphere + bar</option>
+                <option value="thin">Thin crosshair</option>
+                <option value="dotted">Dotted crosshair</option>
+                <option value="none">Hidden</option>
+            </select>
+        </div>
+        <div class="fea-row">
+            <span class="fea-label">Color</span>
+            <select id="scColorMode" class="fea-select">
+                <option value="axis">By axis</option>
+                <option value="#ffffff">White</option>
+                <option value="#000000">Black</option>
+                <option value="custom">Custom</option>
+            </select>
+            <input type="color" id="scColor" class="fea-color" value="#ff5252"
+                   title="Marker and plot color">
+            <input type="text" id="scThick" class="fea-input num scthick" value="1"
+                   title="Marker thickness multiplier">
+        </div>
+        <div class="fea-row">
+            <input type="checkbox" id="scIsolate" class="fea-check">
+            <span class="fea-label" style="width:auto;"
+                  title="Hide every element except the connected wall / slab the cut was placed on">Isolate this wall / slab</span>
+        </div>
+        <canvas id="scPlot" width="240" height="150"></canvas>
+        <div id="scStats">&mdash;</div>
+        <div class="fea-hint" style="margin-top:5px;">
+            Plots the displayed field along the cut. Gaps (openings /
+            past the extents) are excluded from area and effective length.
+        </div>
+    </div>
+    <div id="scTab" title="Section cuts">&#9986;</div>
+</div>
+
+<!-- Active-view caption, overlaid top-center on the canvas -->
+<div id="viewCaption">&mdash;</div>
+
+<!-- ============================================================
+     SCRIPTS  --  vendored Three.js r128 + viewer modules.
+     Classic scripts sharing global scope; no bundler, no server.
+     ============================================================ -->
+<script src="lib/three.min.js"></script>
+<script src="lib/OrbitControls.js"></script>
+<script src="viewCube.js"></script>
+<script src="shaders.js"></script>
+<script src="binaryReader.js"></script>
+<script src="modelSet.js"></script>
+<script src="geometryBuilder.js"></script>
+<script src="attributeUpdaters.js"></script>
+<script src="pointQuery.js"></script>
+<script src="sampleModel.js"></script>
+<script src="viewer.js"></script>
+<script src="sectionCut.js"></script>
+
+</body>
+</html>

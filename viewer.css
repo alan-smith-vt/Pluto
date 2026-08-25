@@ -1,0 +1,271 @@
+/* ============================================================
+   viewer.css  --  FEA field viewer shell (left control panel,
+   readout, colormap legend). Dark precision-tool styling.
+   Section-cut / predicate panels keep their own CSS files.
+   ============================================================ */
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body {
+    height: 100%;
+    background: #111114;
+    color: #ccc;
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+    overflow: hidden;
+}
+
+#feaCanvas {
+    position: fixed;
+    top: 0; left: 0;
+    z-index: 1;
+}
+
+/* === Left control panel === */
+#feaPanel {
+    position: fixed;
+    left: 0; top: 0; bottom: 0;
+    width: 272px;
+    background: rgba(16, 16, 20, 0.94);
+    backdrop-filter: blur(8px);
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    z-index: 15;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+}
+
+.fea-section {
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.fea-title {
+    font-size: 13px;
+    color: #6c8cff;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+}
+.fea-sub {
+    font-size: 9px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin-bottom: 7px;
+}
+
+/* === Rows / fields === */
+.fea-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 7px;
+}
+.fea-row:last-child { margin-bottom: 0; }
+.fea-label {
+    font-size: 10px;
+    color: #8888aa;
+    width: 62px;
+    flex-shrink: 0;
+}
+
+.fea-btn {
+    flex: 1;
+    background: #333;
+    color: #ccc;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    padding: 6px 0;
+    font-size: 11px;
+    cursor: pointer;
+}
+.fea-btn:hover { background: #444; }
+.fea-btn.primary { background: #2d3a6b; border-color: #6c8cff; color: #fff; }
+.fea-btn.primary:hover { background: #38479a; }
+.fea-btn.active  { background: #2d3a6b; border-color: #6c8cff; color: #fff; }
+.fea-btn:disabled { opacity: 0.35; cursor: default; }
+.fea-btn:disabled:hover { background: #333; }
+.fea-btn.fea-step { flex: 0 0 22px; padding: 6px 0; font-size: 8px; }
+
+.fea-select, .fea-input {
+    flex: 1;
+    min-width: 0;
+    background: #232328;
+    color: #ddd;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    padding: 4px 6px;
+    font-size: 11px;
+}
+.fea-select:disabled, .fea-input:disabled { opacity: 0.4; }
+.fea-input.num {
+    text-align: center;
+    font-family: 'Consolas', monospace;
+}
+.fea-check { accent-color: #6c8cff; cursor: pointer; }
+
+input[type=file].fea-file {
+    font-size: 10px;
+    color: #999;
+    width: 100%;
+}
+input[type=file].fea-file::file-selector-button {
+    background: #333; color: #ccc;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px; padding: 4px 8px;
+    font-size: 10px; cursor: pointer; margin-right: 8px;
+}
+
+/* === Colormap legend === */
+.fea-legend-wrap {
+    display: flex;
+    gap: 8px;
+    align-items: stretch;
+}
+#feaLegend {
+    width: 20px;
+    height: 132px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 2px;
+    flex-shrink: 0;
+}
+.fea-legend-labels {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    font-family: 'Consolas', monospace;
+    font-size: 10px;
+    color: #aaa;
+}
+
+/* === Readout === */
+.ro-row {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 5px;
+    font-size: 11px;
+}
+.ro-key {
+    color: #8888aa;
+    width: 78px;
+    flex-shrink: 0;
+}
+.ro-val {
+    color: #ccc;
+    font-family: 'Consolas', monospace;
+    word-break: break-word;
+    flex: 1;
+}
+.ro-value {
+    font-size: 18px;
+    font-family: 'Consolas', monospace;
+    color: #fff;
+    margin-bottom: 4px;
+}
+.ro-value.ro-nodata { color: #c87; font-size: 14px; }
+
+/* === Status line === */
+#feaStatus {
+    font-size: 10px;
+    color: #777;
+    font-family: 'Consolas', monospace;
+    line-height: 1.4;
+    word-break: break-word;
+}
+
+.fea-hint {
+    font-size: 9px;
+    color: #555;
+    line-height: 1.5;
+}
+
+/* === Collapsible sections (Deformation) === */
+.fea-details > summary {
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+}
+.fea-details > summary::before {
+    content: '\25B8';         /* ► */
+    display: inline-block;
+    margin-right: 5px;
+    color: #6c8cff;
+    transition: transform 0.12s;
+}
+.fea-details[open] > summary::before { transform: rotate(90deg); }
+.fea-details.fea-disabled > summary { opacity: 0.4; }
+.fea-details.fea-disabled .fea-details-body { opacity: 0.4; pointer-events: none; }
+
+input[type=range] { accent-color: #6c8cff; }
+
+/* === Active-view caption (canvas overlay) === */
+#viewCaption {
+    position: fixed;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-left: 136px;              /* visually center over the canvas, not the page */
+    z-index: 12;
+    pointer-events: none;
+    background: rgba(16, 16, 20, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 4px;
+    padding: 5px 12px;
+    font-size: 12px;
+    color: #ddd;
+    letter-spacing: 0.3px;
+    max-width: 60vw;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+#viewCaption .vc-dim { color: #8888aa; }
+
+/* === Categorical legend (controlling-check swatches) === */
+.fea-legend-cats {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 10px;
+    color: #bbb;
+    justify-content: center;
+}
+.fea-legend-cats .cat-row { display: flex; align-items: center; gap: 6px; }
+.fea-legend-cats .cat-swatch {
+    width: 12px; height: 12px;
+    border-radius: 2px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    flex-shrink: 0;
+}
+
+/* === Calc-review card (pinned DSR readout) === */
+#calcCard {
+    margin-top: 10px;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 8px;
+}
+#calcCard .cc-head {
+    font-size: 11px;
+    color: #ffd479;
+    margin-bottom: 6px;
+    line-height: 1.4;
+}
+#calcCard .cc-sub {
+    font-size: 9px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    margin: 8px 0 4px;
+}
+#calcCard table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 10px;
+    font-family: 'Consolas', monospace;
+}
+#calcCard td {
+    padding: 1px 4px 1px 0;
+    color: #ccc;
+    vertical-align: top;
+}
+#calcCard td:first-child { color: #8888aa; font-family: 'Segoe UI', Tahoma, sans-serif; }
+#calcCard td.cc-num { text-align: right; white-space: nowrap; }
+#calcCard tr.cc-win td { color: #ffd479; }
+#calcCard .cc-alarm { color: #ff64ff; }
