@@ -109,7 +109,8 @@
 <div id="results"></div>
 
 <!-- Reuse the viewer's reader + sample generator -- no duplicated format logic. -->
-<script src="scripts/binaryReader.js"></script>
+<script src="scripts/format/v3Reader.js"></script>
+<script>var FEABinary = FEAv3; /* inspector is a v3-only tool for now */</script>
 <script src="scripts/sampleModel.js"></script>
 <script src="scripts/inspector.js"></script>
 

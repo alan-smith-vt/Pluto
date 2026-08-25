@@ -101,11 +101,17 @@ Open `viewer/inspector.html` to inspect a `.bin` field by field — header
 fields with a raw hex dump, the range-checked block layout, metadata
 tables, paged node/element/ID tables, and per-load-case field data
 (per-component min/max/mean stats plus a per-element corner × component
-matrix). It reuses `binaryReader.js`, so it can never disagree with the
+matrix). It reuses the frozen `format/v3Reader.js`, so it can never disagree with the
 viewer about the file layout. Use **Download Sample .bin** to emit a
 test file from `sampleModel.js`, then open it back through the picker.
 
-## Binary format (v3)
+## Binary format
+
+The current target is **v4** (block directory + element domains); the spec lives in
+`vault/format/v4-schema.md`. v3 files still load through a legacy shim; the frozen v3
+spec is in `vault/format/v3-schema.md` and summarised below.
+
+### v3 (legacy)
 
 Header — 15 little-endian `uint32`, 60 bytes. The writer must produce
 exactly this layout; the reader fails loudly if a block falls outside
@@ -176,7 +182,9 @@ auto-padded (`"LC N"`) or trimmed to match.
 
 | File | Role |
 |------|------|
-| `binaryReader.js` | header parse, offset/stride math, `readRange`, ID tables, metadata |
+| `format/pluto.js` | format entry point: version dispatch, unified model, v3-shaped domain views, `FEABinary` compat |
+| `format/v4Reader.js` / `format/v4Writer.js` | v4 block-directory reader / in-browser writer |
+| `format/v3Reader.js` | frozen legacy v3 reader (adapted by `pluto.js`) |
 | `modelSet.js` | multi-model set: geometry validation, global LC index, per-file read routing |
 | `geometryBuilder.js` | duplicate-vertex mesh build, tri/quad triangulation |
 | `attributeUpdaters.js` | rewrite `cornerVals` on component/LC swap (only per-update path) |

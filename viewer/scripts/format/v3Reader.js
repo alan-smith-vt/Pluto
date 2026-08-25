@@ -1,8 +1,11 @@
 // ================================================================
-// binaryReader.js
+// v3Reader.js  (FROZEN legacy reader -- was binaryReader.js)
 // Reads the FEA field binary: header + geometry + ID tables +
 // metadata up front, individual load-case (LC) field blocks on
 // demand.
+//
+// FROZEN: v3 files are adapted to the v4 in-memory model by pluto.js.
+// Fix v3 bugs by re-exporting as v4, not by extending this file.
 //
 // CRITICAL: all offset/length arithmetic is plain JS Number
 // (IEEE-754 double, exact to 2^53). NEVER use bitwise ops on offsets
@@ -31,7 +34,7 @@
 //   56   cornerFieldOffset  -> float32[nFieldLC][nElements][maxCorners][cornerComponents]
 // ================================================================
 
-var FEABinary = (function () {
+var FEAv3 = (function () {
 
     var HEADER_FIELDS = [
         'magic', 'version', 'headerSize', 'nNodes', 'nElements', 'nFieldLC',

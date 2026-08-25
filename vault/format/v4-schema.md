@@ -54,7 +54,7 @@ Rules:
 | tag    | scope  | payload                                                                            |
 |--------|--------|------------------------------------------------------------------------------------|
 | `META` | global | UTF-8 JSON (§5). Exactly one.                                                      |
-| `NODE` | global | `f32[nNodes][3]` xyz. Exactly one — all domains share nodes.                       |
+| `NODE` | global | `f64[nNodes][3]` xyz. Exactly one — all domains share nodes. (f64: 50k nodes = 1.2 MB; precision for state-plane coords.) |
 | `NDID` | global | `u32[nNodes]` real (sparse) node IDs                                               |
 | `ELEM` | domain | `u32[nElem][elemRecordU32]` — record layout per family (§4.2)                     |
 | `ELID` | domain | `u32[nElem]` real element IDs                                                      |
@@ -93,6 +93,9 @@ domains by index. A shells-only file has one domain and is structurally v3.
 - `displacementVector`: optional indices into `components`; same name-matching fallback as v3.
 - `kind` semantics carry over unchanged: `"stress"`, `"displacement"`, `"dsr"`, `"str"`
   (const block), anything else = generic field with default display.
+- **DSR status:** `kind:"dsr"` and the Global-DSR machinery are retained for shells but
+  are **de-prioritised**. They must not constrain the domain model; if a conflict arises
+  the DSR feature is archived (kept loadable via the v3 shim) rather than the schema bent.
 
 ### 4.2 `ELEM` record layouts
 
@@ -104,6 +107,8 @@ NaN-pad without knowing the family.
 
 **beam** — `u32[6]`: `nStations, n0, n1, sectionIdx, reserved, reserved`.
 Slot k = station k, evenly spaced from n0 (t=0) to n1 (t=1). `nStations ≥ 2`.
+**First implementation: `nStations = 2`, `maxSlots = 2`** (end A, end B). The format
+allows more; the viewer interpolates linearly between whatever stations exist.
 
 ### 4.3 `BPRP` beam properties — `f32[nElem][8]`
 
@@ -121,6 +126,8 @@ Local x = n0→n1; local z = x × y; reader re-orthogonalises y against x.
 ```json
 {
   "generator": "RawViewerWriter 4.0",
+  "modelId": "ProjectX/Model7/rev3",
+  "geometryHash": "sha256:…",
   "units": { "length": "in", "force": "kip" },
   "loadCases": [ { "name": "D+L", "type": "primary" } ],
   "domains":   [ { "...": "see 4.1" } ],
@@ -133,6 +140,13 @@ Local x = n0→n1; local z = x × y; reader re-orthogonalises y against x.
   with generated labels, as in v3.
 - `sections` is a human-readable mirror of `SECT` (names live here); `SECT` is
   authoritative for geometry.
+- `modelId`: importer-assigned, free text, stable across re-runs of the same model.
+- `geometryHash`: SHA-256 over the raw bytes of `NODE NDID ELEM ELID SECT BPRP`, in that
+  order, each domain's blocks in domain order. Excludes `META` and all field blocks, so a
+  geometry-only export and the full-results export of the same run hash identical. This is
+  the key the [[features-sidecar]] binds to.
+- Element IDs are **per domain**: shell `101` and beam `101` may coexist. Find-by-ID
+  searches every domain and disambiguates when more than one hits.
 
 ## 6. Sections
 
@@ -166,6 +180,23 @@ Section origin = centroid unless `BPRP` offsets shift it.
 - Envelopes, global DSR, calc-review and find-by-ID operate **per domain**; the UI
   presents one element picker keyed `(domain, index)`.
 
+## 7a. File profiles
+
+Same format, same reader; a profile is just which blocks are present.
+
+| profile         | blocks                                                | viewer behaviour                                              |
+|-----------------|-------------------------------------------------------|---------------------------------------------------------------|
+| geometry-only   | `META NODE NDID ELEM ELID [SECT BPRP]`                 | mesh in neutral material, no component dropdown; predicates, section cuts, supports editable |
+| results         | geometry-only + `FLDS` (+ `FLDC`)                     | full field display                                            |
+| append-in-progress | results with `APPEND` flag and partial planes     | loads the complete planes, logs the count                     |
+
+Rules: `nLC = 0` is valid everywhere (reader, envelopes, UI). A geometry-only file is a
+byte-prefix of its results file when the writer emits geometry blocks first (it must, for
+append mode), so `strip` = "copy prefix, write new directory". Because `geometryHash`
+excludes field blocks, features authored on the light file bind to the heavy one.
+Attach-results-later: the multi-model loader accepts a results file whose hash matches an
+open geometry-only model and contributes its LCs to the global list.
+
 ## 8. Append-mode writers
 
 Write `NODE NDID ELEM ELID SECT BPRP META FLDC` plus a directory whose `FLDS` entries
@@ -177,7 +208,7 @@ domain its own `FLDS` region with an explicit count — don't interleave.
 
 ## 9. Legacy shim (v ≤ 3)
 
-`legacy/v3Reader.js` = today's `binaryReader.js`, frozen, wrapped by an adapter that
+`viewer/scripts/format/v3Reader.js` (the old `binaryReader.js`, frozen) wrapped by `PlutoFormat.fromV3` in `pluto.js`, an adapter that
 emits the v4 in-memory model:
 
 | v3                            | v4 model                                             |
@@ -213,9 +244,10 @@ only ever sees the v4 model. v3 bugs get fixed by re-exporting, not by extending
 `readLC(model, d, lc)` and `readElementRecord(model, d, lc, e)` are the v3 functions with
 a domain argument; `planeStride = nElem * maxSlots * nComp * 4`.
 
-## Open questions
+## Decisions log
 
-- [ ] Station count: fixed 2 for the first importer, or expose `nStations` now? (Format allows it; viewer can start with 2.)
-- [ ] `NODE` as `f64`? v3 is `f32`; state-plane coordinates lose precision. Cheap to decide now.
-- [ ] Beam DSR constituent checks via the `preDSR`-style `kind` mechanism — same as shells?
-- [ ] Should real element IDs be unique across domains (one picker namespace) or per domain?
+- 2026-08-25 — Stations: 2 for now; `nStations` field kept so more can come later.
+- 2026-08-25 — `NODE` is `f64` (v3 shim widens f32 → f64 on load).
+- 2026-08-25 — DSR de-prioritised; retained for shells, archived if it conflicts.
+- 2026-08-25 — Element IDs per domain.
+- 2026-08-25 — Features (predicates, section cuts, supports, …) live in a JSON sidecar, never in the binary → [[features-sidecar]].

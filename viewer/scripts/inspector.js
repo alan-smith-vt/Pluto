@@ -2,7 +2,8 @@
 // inspector.js
 // Standalone structured inspector for FEAV v3 stress-viewer binaries.
 //
-// Reuses binaryReader.js (FEABinary) for ALL format logic -- header
+// v3-ONLY for now (FEABinary is aliased to the frozen FEAv3 reader in
+// inspector.html). Reuses it for ALL format logic -- header
 // parse, offset/stride math, readRange, readLC -- so the inspector
 // can never disagree with the viewer about the file layout.
 //

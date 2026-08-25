@@ -399,7 +399,9 @@ async function loadModels(entriesIn) {
             log('Reading ' + en.name + '  (' + (i + 1) + '/' + entriesIn.length + ')...');
             var m;
             try {
-                m = await FEABinary.loadModel(en.file, log);
+                var unified = await PlutoFormat.load(en.file, log);
+                m = PlutoFormat.shellView(unified);
+                if (!m) throw new Error('file has no shell domain (beam-only files are not displayable yet).');
             } catch (err) {
                 skipped.push(en.name + ': ' + err.message);
                 continue;
@@ -1900,10 +1902,15 @@ elBtnDemo.addEventListener('click', function () {
 
 // Two variant models: identical geometry/strengths/LC names, different
 // field values -- exercises the multi-model path out of the box.
-function loadDemo() {
+async function loadDemo() {
+    // Two v4 files (plate shells + beam frame) with identical geometry
+    // and different field values -- exercises the multi-model path.
+    log('Generating demo models...');
+    var soft = await FEASample.buildSampleBlobV4(0);
+    var stiff = await FEASample.buildSampleBlobV4(1);
     loadModels([
-        { file: FEASample.buildSampleBlob(0), name: 'PlateDemo_Rev5_SoilSprings_Soft' },
-        { file: FEASample.buildSampleBlob(1), name: 'PlateDemo_Rev5_SoilSprings_Stiff' }
+        { file: soft,  name: 'PlateDemo_Rev5_SoilSprings_Soft' },
+        { file: stiff, name: 'PlateDemo_Rev5_SoilSprings_Stiff' }
     ]);
 }
 

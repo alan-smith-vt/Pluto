@@ -35,7 +35,7 @@ var FEAGeometry = (function () {
         var nodes = model.nodes;
         var elems = model.elems;
         var nElem = h.nElements;
-        var REC = FEABinary.ELEM_RECORD_U32;   // 5
+        var REC = model.elemRecordU32 || 6;   // u32 per element record (v4: 6)
 
         // First pass: count vertices/triangles, record per-element layout.
         var elemNCount = new Uint8Array(nElem);
