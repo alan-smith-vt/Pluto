@@ -792,7 +792,8 @@ async function selectLC(lc) {
     if (deform.enabled) refreshDispVecs();
     updateDeformAvailability();
     applyComponentAndRange();
-    log('Active: ' + lcFullName(lc) + ' / ' + activeComponent().name);
+    var ac = activeComponent();
+    log('Active: ' + lcFullName(lc) + ' / ' + (ac ? ac.name : 'no component'));
 }
 
 // Switch the display to an LC-independent design-strength component. Exits any
@@ -906,8 +907,8 @@ function selectEnvelope(kind, categorical) {
     setDeformEnabled(false);
     applyComponentAndRange();
     setEnvActive(kind);
-    log('Active: ' + envelopeLabel(kind) + ' / ' +
-        feaModel.meta.components[currentComp].name);
+    var ec = feaModel.meta.components[currentComp];
+    log('Active: ' + envelopeLabel(kind) + ' / ' + (ec ? ec.name : 'no component'));
 }
 
 function envelopeLabel(kind) {
@@ -1074,7 +1075,7 @@ function applyComponentAndRange() {
             : 'Global DSR (controlling check per corner)';
     } else {
         var c = activeComponent();
-        elRoComp.textContent = c.name + (c.unit ? ' [' + c.unit + ']' : '') + ' (' + c.kind + ')';
+        elRoComp.textContent = c ? c.name + (c.unit ? ' [' + c.unit + ']' : '') + ' (' + c.kind + ')' : '—';
     }
     if (window.FEABeams) FEABeams.sync();
     if (window.FEAFeatures) FEAFeatures.sync();
@@ -1104,6 +1105,7 @@ function viewSourceLabel() {
     if (!feaModel) return '—';
     if (currentEnvelope) return envelopeLabel(currentEnvelope);
     if (inStrMode()) return 'Design Strength';
+    if (feaSet && feaSet.nLC === 0) return 'geometry';
     return lcFullName(currentLC);
 }
 
@@ -1112,9 +1114,13 @@ function updateViewCaption() {
     var parts = [viewSourceLabel()];
     if (!inDsrMode()) {
         var c = activeComponent();
-        var cname = c.name + (c.unit ? ' [' + c.unit + ']' : '');
-        if (absValue) cname = '|' + cname + '|';
-        parts.push(cname);
+        if (!c) {
+            parts.push(feaSet && feaSet.nLC === 0 ? 'geometry only' : 'no component');
+        } else {
+            var cname = c.name + (c.unit ? ' [' + c.unit + ']' : '');
+            if (absValue) cname = '|' + cname + '|';
+            parts.push(cname);
+        }
     } else if (!inCatMode() && absValue) {
         // abs on the (already >= 0) DSR value is a no-op; don't advertise it
     }
@@ -2016,7 +2022,8 @@ elComp.addEventListener('change', function () {
     }
     if (wasCap) updateLCDim();
     applyComponentAndRange();
-    if (feaModel) log('Component: ' + feaModel.meta.components[currentComp].name);
+    var cc = feaModel && feaModel.meta.components[currentComp];
+    if (cc) log('Component: ' + cc.name);
 });
 
 
