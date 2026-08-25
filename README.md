@@ -25,9 +25,16 @@ a FEMAP-style hub for finite-element data. The intended shape:
   model, so every pipeline lands in the same visualization, inspection and
   envelope tooling.
 
-Repo scaffolding for that direction already exists: `memory/` holds design
-notes and decisions, `.claude/skills/` holds project-scoped agent skills.
-Both are placeholders for now.
+## Repo layout
+
+```
+viewer/            the viewer arm (open viewer/index.html)
+  scripts/         viewer JS modules
+  styles/          CSS
+  lib/             vendored Three.js r128 + OrbitControls
+vault/             Obsidian vault — ALL project documentation lives here
+.claude/skills/    project-scoped agent skills (placeholder)
+```
 
 ---
 
@@ -83,14 +90,14 @@ Viewer features on top of the raw field display:
 
 ## Run
 
-Just open `index.html` in a browser — no server needed. A synthetic
+Just open `viewer/index.html` in a browser — no server needed. A synthetic
 demo model loads automatically; use the file picker to open a real
 `.bin`. Binary files are read on demand through the file picker, so
 multi-GB files never get materialized whole.
 
 ## Inspector
 
-Open `inspector.html` to inspect a `.bin` field by field — header
+Open `viewer/inspector.html` to inspect a `.bin` field by field — header
 fields with a raw hex dump, the range-checked block layout, metadata
 tables, paged node/element/ID tables, and per-load-case field data
 (per-component min/max/mean stats plus a per-element corner × component
@@ -165,7 +172,7 @@ append, and write LC 1, etc. The header's `nFieldLC` field is treated
 as a hint; the file-size count wins. Meta load-case names are
 auto-padded (`"LC N"`) or trimmed to match.
 
-## Layout
+## Layout (`viewer/scripts/`)
 
 | File | Role |
 |------|------|
