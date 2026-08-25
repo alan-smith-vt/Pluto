@@ -232,7 +232,64 @@ var FEAShaders = (function () {
         return tex;
     }
 
+
+    // ---- beam (solid extruded section) shaders ---------------------
+    // Linear interpolation end A -> end B along beamT; same LUT / abs /
+    // alarm uniforms as the shell shader. uNeutral = 1 draws a flat
+    // steel-grey (envelope / strength / DSR views have no beam data yet).
+    // Mild lambert term on the flat normal so solids read as 3D.
+    var beamVertex = [
+        'attribute float beamT;',
+        'attribute vec2 endVals;',
+        'attribute vec3 dispVec;',
+        'attribute float elemVis;',
+        'uniform float dispScale;',
+        'varying float vT;',
+        'varying vec2 vEnds;',
+        'varying float vVis;',
+        'varying vec3 vNrm;',
+        'void main() {',
+        '  vT = beamT;',
+        '  vEnds = endVals;',
+        '  vVis = elemVis;',
+        '  vNrm = normalize(normalMatrix * normal);',
+        '  vec3 p = position + dispScale * dispVec;',
+        '  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);',
+        '}'
+    ].join('\n');
+
+    var beamFragment = [
+        'varying float vT;',
+        'varying vec2 vEnds;',
+        'varying float vVis;',
+        'varying vec3 vNrm;',
+        'uniform sampler2D colormap;',
+        'uniform float vMin;',
+        'uniform float vMax;',
+        'uniform float alarmThreshold;',
+        'uniform vec3  alarmColor;',
+        'uniform float uAbs;',
+        'uniform float uNeutral;',
+        'uniform vec3  neutralColor;',
+        'void main() {',
+        '  if (vVis < 0.5) discard;',
+        '  float shade = 0.72 + 0.28 * abs(vNrm.z);',
+        '  if (uNeutral > 0.5) { gl_FragColor = vec4(neutralColor * shade, 1.0); return; }',
+        '  float f = mix(vEnds.x, vEnds.y, vT);',
+        '  if (uAbs > 0.5) f = abs(f);',
+        '  if (!(f == f)) { gl_FragColor = vec4(vec3(0.16, 0.16, 0.18) * shade, 1.0); return; }',
+        '  if (alarmThreshold > 0.0 && f >= alarmThreshold) {',
+        '    gl_FragColor = vec4(alarmColor * shade, 1.0); return;',
+        '  }',
+        '  float denom = max(vMax - vMin, 1e-6);',
+        '  float t = clamp((f - vMin) / denom, 0.0, 1.0);',
+        '  gl_FragColor = vec4(texture2D(colormap, vec2(t, 0.5)).rgb * shade, 1.0);',
+        '}'
+    ].join('\n');
+
     return {
+        beamVertex: beamVertex,
+        beamFragment: beamFragment,
         vertex: vertex,
         fragment: fragment,
         flashFragment: flashFragment,

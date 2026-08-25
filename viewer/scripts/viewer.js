@@ -534,6 +534,8 @@ async function loadModels(entriesIn) {
         focusOrb.visible = false;
         scene.add(focusOrb);
 
+        if (window.FEABeams) FEABeams.onModelLoaded(model);
+
         populateLCSelect();
         populateKindSelect();
         populateComponentSelect();
@@ -596,6 +598,7 @@ function disposeCurrentModel() {
         focusOrb = null;
     }
     clearHighlight();
+    if (window.FEABeams) FEABeams.onModelCleared();
     if (window.FEASectionCut) FEASectionCut.onModelCleared();
     focusTween = null;
     focusOrbHideAt = 0;
@@ -771,6 +774,7 @@ async function selectLC(lc) {
     elLC.value = lc;
     log('Slicing LC ' + (lc + 1) + ' field block...');
     feaLCData = await feaSet.readLC(lc);   // drops previous LC
+    if (window.FEABeams) await FEABeams.onLCChanged(lc);
     if (deform.enabled) refreshDispVecs();
     updateDeformAvailability();
     applyComponentAndRange();
@@ -1058,6 +1062,7 @@ function applyComponentAndRange() {
         var c = activeComponent();
         elRoComp.textContent = c.name + (c.unit ? ' [' + c.unit + ']' : '') + ' (' + c.kind + ')';
     }
+    if (window.FEABeams) FEABeams.sync();
     if (window.FEASectionCut) FEASectionCut.refresh();
     needsRender = true;
 }
@@ -1117,7 +1122,9 @@ function updateViewCaption() {
 // ================================================================
 function modelSphere() {
     if (!mesh) return null;
-    return new THREE.Box3().setFromObject(mesh).getBoundingSphere(new THREE.Sphere());
+    var box = new THREE.Box3().setFromObject(mesh);
+    if (window.FEABeams && FEABeams.mesh()) box.union(new THREE.Box3().setFromObject(FEABeams.mesh()));
+    return box.getBoundingSphere(new THREE.Sphere());
 }
 
 function fitView() {
@@ -1427,12 +1434,16 @@ function feaPick(clientX, clientY) {
     );
     feaRaycaster.setFromCamera(ndc, camera);
     var hits = feaRaycaster.intersectObject(mesh);
+    var shellHit = null;
     for (var i = 0; i < hits.length; i++) {
         if (hits[i].faceIndex == null) continue;
         if (!faceIsVisible(hits[i].faceIndex)) continue;
-        return { faceIndex: hits[i].faceIndex, point: hits[i].point };
+        shellHit = { faceIndex: hits[i].faceIndex, point: hits[i].point, distance: hits[i].distance };
+        break;
     }
-    return null;
+    var beamHit = window.FEABeams ? FEABeams.pick(feaRaycaster) : null;
+    if (beamHit && (!shellHit || beamHit.distance < shellHit.distance)) return beamHit;
+    return shellHit;
 }
 
 function clearReadout() {
@@ -1457,6 +1468,7 @@ function showReadout(clientX, clientY) {
 
     var hit = feaPick(clientX, clientY);
     if (!hit) { clearReadout(); return null; }
+    if (hit.beam) { FEABeams.fillReadout(hit); return hit; }
     var q = FEAQuery.query({
         model: feaModel, buildResult: feaBuild,
         lcData: inStr ? feaModel.strData : feaLCData,
@@ -1785,6 +1797,7 @@ function refreshDispVecs() {
     var edgeAttr = feaEdges ? feaEdges.geometry.getAttribute('dispVec') : null;
     deformMaxDisp = FEAAttributes.updateDispVecs(
         feaBuild, feaModel, feaLCData, feaModel.meta.dispVector, edgeAttr);
+    if (window.FEABeams) deformMaxDisp = Math.max(deformMaxDisp, FEABeams.refreshDispVecs());
     deformLCLoaded = currentLC;
 }
 
@@ -1798,6 +1811,7 @@ function setDispUniforms(v) {
     if (feaMaterial) feaMaterial.uniforms.dispScale.value = v;
     if (feaEdgeMaterial) feaEdgeMaterial.uniforms.dispScale.value = v;
     if (flashMesh) flashMesh.material.uniforms.dispScale.value = v;
+    if (window.FEABeams) FEABeams.setDispScale(v);
 }
 
 function setDeformEnabled(on) {

@@ -422,7 +422,73 @@ var FEAAttributes = (function () {
         return Math.sqrt(maxLen2);
     }
 
+
+    // ---- beam domain ---------------------------------------------------
+    // Slot fields for beams are float32[nElem][maxSlots][nComp]; slot 0 =
+    // end A, slot 1 = end B (2 stations for now). endVals is written
+    // identically on every vertex of the element.
+    function updateBeamEndVals(beamBuild, view, lcData, compIndex) {
+        var cc = view.header.cornerComponents, ms = view.header.maxCorners;
+        var attr = beamBuild.geometry.getAttribute('endVals');
+        var ev = attr.array;
+        for (var e = 0; e < beamBuild.nElem; e++) {
+            var base = e * ms * cc + compIndex;
+            var a = lcData[base], b = ms > 1 ? lcData[base + cc] : a;
+            var s = beamBuild.vertStart[e], n = beamBuild.vertCount[e];
+            for (var v = s; v < s + n; v++) { ev[v * 2] = a; ev[v * 2 + 1] = b; }
+        }
+        attr.needsUpdate = true;
+    }
+
+    function computeBeamRange(view, lcData, compIndex) {
+        var cc = view.header.cornerComponents, ms = view.header.maxCorners;
+        var nE = view.header.nElements;
+        var lo = Infinity, hi = -Infinity;
+        for (var e = 0; e < nE; e++) {
+            for (var k = 0; k < ms; k++) {
+                var v = lcData[e * ms * cc + k * cc + compIndex];
+                if (v !== v) continue;
+                if (v < lo) lo = v;
+                if (v > hi) hi = v;
+            }
+        }
+        if (lo === Infinity) return { min: 0, max: 1 };
+        if (lo === hi) { lo -= 0.5; hi += 0.5; }
+        return { min: lo, max: hi };
+    }
+
+    // Per-vertex end displacement (end A for t<0.5 else end B).
+    // Returns the largest |disp| seen.
+    function updateBeamDispVecs(beamBuild, view, lcData, dispIdx) {
+        var cc = view.header.cornerComponents, ms = view.header.maxCorners;
+        var attr = beamBuild.geometry.getAttribute('dispVec');
+        var tAttr = beamBuild.geometry.getAttribute('beamT').array;
+        var dv = attr.array;
+        var ix = dispIdx[0], iy = dispIdx[1], iz = dispIdx[2];
+        var maxLen2 = 0;
+        for (var e = 0; e < beamBuild.nElem; e++) {
+            var bA = e * ms * cc, bB = bA + (ms > 1 ? cc : 0);
+            var dA = [lcData[bA + ix], lcData[bA + iy], lcData[bA + iz]];
+            var dB = [lcData[bB + ix], lcData[bB + iy], lcData[bB + iz]];
+            for (var q = 0; q < 3; q++) { if (dA[q] !== dA[q]) dA[q] = 0; if (dB[q] !== dB[q]) dB[q] = 0; }
+            var lA = dA[0] * dA[0] + dA[1] * dA[1] + dA[2] * dA[2];
+            var lB = dB[0] * dB[0] + dB[1] * dB[1] + dB[2] * dB[2];
+            if (lA > maxLen2) maxLen2 = lA;
+            if (lB > maxLen2) maxLen2 = lB;
+            var s = beamBuild.vertStart[e], n = beamBuild.vertCount[e];
+            for (var v = s; v < s + n; v++) {
+                var d = tAttr[v] < 0.5 ? dA : dB;
+                dv[v * 3] = d[0]; dv[v * 3 + 1] = d[1]; dv[v * 3 + 2] = d[2];
+            }
+        }
+        attr.needsUpdate = true;
+        return Math.sqrt(maxLen2);
+    }
+
     return {
+        updateBeamEndVals: updateBeamEndVals,
+        computeBeamRange: computeBeamRange,
+        updateBeamDispVecs: updateBeamDispVecs,
         updateCornerVals: updateCornerVals,
         updateCornerValsNodeAveraged: updateCornerValsNodeAveraged,
         updateCornerValsFromSlotArray: updateCornerValsFromSlotArray,

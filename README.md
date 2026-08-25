@@ -91,7 +91,8 @@ Viewer features on top of the raw field display:
 ## Run
 
 Just open `viewer/index.html` in a browser — no server needed. A synthetic
-demo model loads automatically; use the file picker to open a real
+demo (v4: curved plate of shells + a steel beam frame with I / pipe / rect
+sections) loads automatically; use the file picker to open a real
 `.bin`. Binary files are read on demand through the file picker, so
 multi-GB files never get materialized whole.
 
@@ -186,7 +187,9 @@ auto-padded (`"LC N"`) or trimmed to match.
 | `format/v4Reader.js` / `format/v4Writer.js` | v4 block-directory reader / in-browser writer |
 | `format/v3Reader.js` | frozen legacy v3 reader (adapted by `pluto.js`) |
 | `modelSet.js` | multi-model set: geometry validation, global LC index, per-file read routing |
-| `geometryBuilder.js` | duplicate-vertex mesh build, tri/quad triangulation |
+| `geometryBuilder.js` | duplicate-vertex shell mesh build, tri/quad triangulation |
+| `beamGeometry.js` | extruded cross-section beam mesh (parametric sections), axis param for picking |
+| `viewerBeams.js` | beam-domain display layered on viewer.js: own component/range, neutral in envelope views, pick readout |
 | `attributeUpdaters.js` | rewrite `cornerVals` on component/LC swap (only per-update path) |
 | `shaders.js` | bilinear vertex/fragment GLSL, colormap LUTs |
 | `pointQuery.js` | raycast → inverse-bilinear → exact field eval |

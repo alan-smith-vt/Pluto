@@ -192,6 +192,20 @@ var FEAModelSet = (function () {
                 var raw = await FEABinary.readLC(en.model, lcs[g].lc);
                 return en.remap ? remapBlock(raw, en.model, en.remap) : raw;
             },
+            // Read one LC plane of ANOTHER domain (e.g. beams) from the file
+            // that owns global LC g. No component remap: secondary files
+            // are assumed to share the primary's beam component layout.
+            readLCDomain: async function (g, family) {
+                var en = entries[lcs[g].file];
+                var u = en.model.unified;
+                if (!u) return null;
+                var d = PlutoFormat.findDomain(u, family);
+                if (d < 0) return null;
+                en.views = en.views || {};
+                var v = en.views[family] || (en.views[family] = PlutoFormat.domainView(u, d));
+                if (!v.domain.fields) return null;
+                return v.readLC(lcs[g].lc);
+            },
             readElementRecord: async function (g, elem) {
                 var en = entries[lcs[g].file];
                 var rec = await FEABinary.readElementRecord(en.model, lcs[g].lc, elem);

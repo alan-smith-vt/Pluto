@@ -124,6 +124,21 @@
         </div>
     </div>
 
+    <details class="fea-section fea-details" id="beamSection" style="display:none;" open>
+        <summary>Beams</summary>
+        <div class="fea-row">
+            <label class="fea-label" for="beamShow">Show</label>
+            <input type="checkbox" id="beamShow" class="fea-check" checked>
+            <span class="fea-hint" id="beamCount" style="margin-left:6px;"></span>
+        </div>
+        <div class="fea-row">
+            <label class="fea-label" for="beamComp">Component</label>
+            <select id="beamComp" class="fea-select" title="Beam-domain component (separate from the shell component)"></select>
+        </div>
+        <div class="fea-hint" id="beamRange" style="margin-top:4px;">&mdash;</div>
+        <div class="fea-hint" style="margin-top:2px;">Beams use their own auto range with the active colormap. Envelope / strength / DSR views draw beams neutral.</div>
+    </details>
+
     <details class="fea-section fea-details" id="deformSection">
         <summary class="fea-sub" style="margin-bottom:0;">Deformation</summary>
         <div class="fea-details-body">
@@ -265,10 +280,12 @@
 <script src="scripts/format/pluto.js"></script>
 <script src="scripts/modelSet.js"></script>
 <script src="scripts/geometryBuilder.js"></script>
+<script src="scripts/beamGeometry.js"></script>
 <script src="scripts/attributeUpdaters.js"></script>
 <script src="scripts/pointQuery.js"></script>
 <script src="scripts/sampleModel.js"></script>
 <script src="scripts/viewer.js"></script>
+<script src="scripts/viewerBeams.js"></script>
 <script src="scripts/sectionCut.js"></script>
 
 </body>
