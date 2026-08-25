@@ -8,7 +8,7 @@ created: 2026-08-25
 
 Everything a user **defines** in the viewer — predicates, section cuts, supports, springs,
 whatever comes next — lives in one JSON file beside the model, never in the binary
-([[v4-schema]]). The binary is results: large, write-once, solver-produced. Features are
+([[vault/format/v4-schema|v4-schema]]). The binary is results: large, write-once, solver-produced. Features are
 intent: small, hand-edited, iterated, consumed by other programs (the C# pre/post scripts).
 Opposite lifecycles → separate files.
 

@@ -2,7 +2,7 @@
 title: Binary format v4 (block directory + element domains)
 status: draft
 created: 2026-08-25
-supersedes: "[[v3-schema]]"
+supersedes: "[[vault/format/v3-schema|v3-schema]]"
 ---
 
 # Binary format v4
@@ -144,7 +144,7 @@ Local x = n0→n1; local z = x × y; reader re-orthogonalises y against x.
 - `geometryHash`: SHA-256 over the raw bytes of `NODE NDID ELEM ELID SECT BPRP`, in that
   order, each domain's blocks in domain order. Excludes `META` and all field blocks, so a
   geometry-only export and the full-results export of the same run hash identical. This is
-  the key the [[features-sidecar]] binds to.
+  the key the [[vault/format/features-sidecar|features-sidecar]] binds to.
 - Element IDs are **per domain**: shell `101` and beam `101` may coexist. Find-by-ID
   searches every domain and disambiguates when more than one hits.
 
@@ -250,4 +250,4 @@ a domain argument; `planeStride = nElem * maxSlots * nComp * 4`.
 - 2026-08-25 — `NODE` is `f64` (v3 shim widens f32 → f64 on load).
 - 2026-08-25 — DSR de-prioritised; retained for shells, archived if it conflicts.
 - 2026-08-25 — Element IDs per domain.
-- 2026-08-25 — Features (predicates, section cuts, supports, …) live in a JSON sidecar, never in the binary → [[features-sidecar]].
+- 2026-08-25 — Features (predicates, section cuts, supports, …) live in a JSON sidecar, never in the binary → [[vault/format/features-sidecar|features-sidecar]].

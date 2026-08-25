@@ -2,7 +2,7 @@
 title: Binary format v3 (legacy fixed header)
 status: frozen
 created: 2026-08-25
-superseded-by: "[[v4-schema]]"
+superseded-by: "[[vault/format/v4-schema|v4-schema]]"
 ---
 
 # Binary format v3 — frozen
@@ -96,4 +96,4 @@ One LC plane is sliced at a time (`readLC`); one element's record can be sliced 
 
 ## v3 → v4 mapping
 
-See [[v4-schema#9. Legacy shim (v ≤ 3)]].
+See [[vault/format/v4-schema#9. Legacy shim (v ≤ 3)|v4-schema §9]].
