@@ -11,7 +11,11 @@ using System.Linq;
 // Input  : List<Voyager.Beam> { P0, P1 (Vec3, METERS), Diameter (meters or NaN),
 //                               PartOid, PartClass, RunOid, RunName }
 // Output : <out>.bin            v4 binary, beam domain only, no load cases
-//          <out>.features.json  groups: class / run / chord-vs-star / unsized / src
+//          <out>.features.json  groups: ONE PER PIPE SIZE (colored, small -> large
+//                               on a fixed ramp) plus UNSIZED (red). Nothing else
+//                               is colored: class / run / star-vs-chord are kept as
+//                               TAGS on the size groups only where cheap, never as
+//                               groups, so "Color by groups" == color by size.
 //
 // Mapping (see SQL_Tutor vault "Beam Export - Viewer Review"):
 //   weld point   -> node, deduplicated by rounded coordinate (welds are shared
@@ -68,9 +72,7 @@ namespace Voyager
             // ---- beams ----
             var members = new Dictionary<int, RawViewerWriter.BeamMember>();
             var beamLabels = new Dictionary<int, string>();
-            var byClass = new Dictionary<int, List<uint>>();
-            var byRun = new Dictionary<string, List<uint>>();
-            var runNames = new Dictionary<string, string>();
+            var bySection = new Dictionary<int, List<uint>>();     // section index -> beam ids
             var unsized = new List<uint>();
             var chords = new List<uint>();
             var stars = new List<uint>();
@@ -125,10 +127,7 @@ namespace Voyager
                 members[m.Id] = m;
                 beamLabels[m.Id] = b.PartOid ?? "";
 
-                AddTo(byClass, b.PartClass, (uint)m.Id);
-                string run = string.IsNullOrEmpty(b.RunOid) ? "(no run)" : b.RunOid;
-                AddTo(byRun, run, (uint)m.Id);
-                if (!runNames.ContainsKey(run)) runNames[run] = string.IsNullOrEmpty(b.RunName) ? run : b.RunName;
+                AddTo(bySection, sec, (uint)m.Id);
                 if (beamsPerPart[b.PartOid] == 1) chords.Add((uint)m.Id); else stars.Add((uint)m.Id);
                 nextBeam++;
             }
@@ -149,13 +148,18 @@ namespace Voyager
             sc.ModelId = modelId;
             sc.GeometryHash = w.GeometryHash;
             sc.Units["length"] = lengthUnit;
-            sc.AddGroup("Pipes", "#3aa0e0", "beams", members.Keys.Select(k => (uint)k), new[] { "src", "pipe" }, "PIPES");
-            foreach (var kv in byClass.OrderBy(k => k.Key))
-                sc.AddGroup("Class " + kv.Key.ToString(CultureInfo.InvariantCulture), null, "beams", kv.Value, new[] { "class" });
-            foreach (var kv in byRun.OrderBy(k => k.Key))
-                sc.AddGroup("Run " + runNames[kv.Key], null, "beams", kv.Value, new[] { "run", kv.Key });
-            if (stars.Count > 0) sc.AddGroup("Star arms (tees/crosses)", "#e0913a", "beams", stars, new[] { "kind", "star" });
-            if (unsized.Count > 0) sc.AddGroup("UNSIZED", "#ff3b3b", "beams", unsized, new[] { "unsized" });
+            // One group per pipe size, ascending, colored on a fixed ramp so the
+            // legend reads small -> large. Unsized last, in red.
+            var sized = sectionIndexByOd.OrderBy(kv => kv.Key).Select(kv => kv.Value).ToList();
+            for (int i = 0; i < sized.Count; i++)
+            {
+                int si = sized[i];
+                List<uint> ids;
+                if (!bySection.TryGetValue(si, out ids)) continue;
+                sc.AddGroup(sections[si].Name, SizeColor(i, sized.Count), "beams", ids,
+                            new[] { "pipe", "size" }, StaadName(sections[si].Name));
+            }
+            if (unsized.Count > 0) sc.AddGroup("UNSIZED", "#ff3b3b", "beams", unsized, new[] { "pipe", "unsized" }, "PIPE_UNSIZED");
             string scPath = outBase + ".features.json";
             File.WriteAllText(scPath, sc.ToJson(), new System.Text.UTF8Encoding(false));
 
@@ -164,6 +168,22 @@ namespace Voyager
             r.Nodes = nodes.Count; r.Beams = members.Count; r.Sections = sections.Count;
             r.Unsized = unsized.Count; r.Chords = chords.Count; r.Stars = stars.Count;
             return r;
+        }
+
+        // 12-step ramp (blue -> green -> yellow -> orange -> red); wraps beyond 12.
+        static readonly string[] Ramp = {
+            "#3b4cc0", "#4f7fd8", "#6fa8e6", "#8fd0d8", "#a5dca0", "#c9e35a",
+            "#f2e34a", "#f6be2e", "#f39221", "#e8641c", "#d13a1f", "#b40426" };
+        static string SizeColor(int i, int n)
+        {
+            if (n <= 1) return Ramp[6];
+            int idx = (int)Math.Round((double)i * (Ramp.Length - 1) / Math.Max(n - 1, 1));
+            return Ramp[Math.Min(Math.Max(idx, 0), Ramp.Length - 1)];
+        }
+        static string StaadName(string sectionName)
+        {
+            var chars = sectionName.Select(c => char.IsLetterOrDigit(c) ? c : '_').ToArray();
+            return new string(chars).ToUpperInvariant();
         }
 
         static double LengthScale(string unit)

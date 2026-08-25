@@ -19,6 +19,7 @@
 function ViewCube(mainCamera, mainControls, onNeedsRender) {
     this._mainCamera = mainCamera;
     this._mainControls = mainControls;
+    this._upAxis = 'y';                       // 'y' | 'z' -- which face pair is the pole
     this._onNeedsRender = onNeedsRender || function () {};
     this._animating = false;
     this._hoveredFace = null;
@@ -170,7 +171,11 @@ ViewCube.prototype._snapToFace = function (faceIndex) {
     var toPos = face.dir.clone().multiplyScalar(dist).add(target);
     // Looking straight down the up-axis is gimbal-locked in
     // OrbitControls' spherical coords -- nudge off the pole.
-    if (Math.abs(face.dir.y) > 0.9) toPos.z += dist * 0.001;
+    if (this._upAxis === 'z') {
+        if (Math.abs(face.dir.z) > 0.9) toPos.x += dist * 0.001;
+    } else {
+        if (Math.abs(face.dir.y) > 0.9) toPos.z += dist * 0.001;
+    }
 
     var fromPos = cam.position.clone();
     var start = performance.now();
@@ -191,6 +196,12 @@ ViewCube.prototype._snapToFace = function (faceIndex) {
 
 // The viewer swaps between perspective and orthographic cameras.
 ViewCube.prototype.setMainCamera = function (cam) { this._mainCamera = cam; };
+// OrbitControls is rebuilt when the up axis changes (its spherical frame
+// is fixed at construction), so the cube must follow the new instance.
+ViewCube.prototype.setMainControls = function (controls, upAxis) {
+    this._mainControls = controls;
+    if (upAxis) this._upAxis = upAxis;
+};
 
 // Browser zoom changes devicePixelRatio; follow it or the cube blurs.
 ViewCube.prototype.updatePixelRatio = function () {

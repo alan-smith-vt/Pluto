@@ -92,6 +92,7 @@ var elFile      = document.getElementById('feaFile');
 var elBtnDemo   = document.getElementById('btnDemo');
 var elBtnFit    = document.getElementById('btnFit');
 var elOrtho     = document.getElementById('feaOrtho');
+var elZUp       = document.getElementById('feaZUp');
 var elFindKind  = document.getElementById('findKind');
 var elFindId    = document.getElementById('findId');
 var elBtnFind   = document.getElementById('btnFind');
@@ -222,14 +223,14 @@ function lcFullName(i) {
     renderer.domElement.id = 'feaCanvas';
     document.body.appendChild(renderer.domElement);
 
-    controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.12;
-    var orbitTimer = 0;
-    controls.addEventListener('start', function () { orbitTimer = setTimeout(function () { orbiting = true; }, 100); });
-    controls.addEventListener('end',   function () { clearTimeout(orbitTimer); orbiting = false; });
+    controls = makeControls(camera);
 
     viewCube = new ViewCube(camera, controls, requestRender);
+
+    // World up axis: Y (STAAD) or Z (plant / SP3D). Remembered per browser.
+    var savedUp = null;
+    try { savedUp = localStorage.getItem('pluto.zUp'); } catch (e) {}
+    if (savedUp === '1') setZUp(true, true);
 })();
 
 // Browser zoom changes window.devicePixelRatio; the renderer's pixel
@@ -238,6 +239,43 @@ function lcFullName(i) {
 // Zoom usually fires a resize event, but not on every path -- animate()
 // also watches the DPR each frame as a backstop.
 var lastDPR = window.devicePixelRatio || 1;
+
+// OrbitControls freezes its spherical frame from camera.up at
+// construction, so changing the up axis means rebuilding it.
+function makeControls(cam, keepTarget) {
+    var c = new THREE.OrbitControls(cam, renderer.domElement);
+    c.enableDamping = true;
+    c.dampingFactor = 0.12;
+    if (keepTarget) c.target.copy(keepTarget);
+    var orbitTimer = 0;
+    c.addEventListener('start', function () { orbitTimer = setTimeout(function () { orbiting = true; }, 100); });
+    c.addEventListener('end',   function () { clearTimeout(orbitTimer); orbiting = false; });
+    return c;
+}
+
+var zUp = false;
+function setZUp(on, silent) {
+    zUp = !!on;
+    var up = zUp ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
+    perspCam.up.copy(up);
+    if (orthoCam) orthoCam.up.copy(up);
+    var target = controls ? controls.target.clone() : new THREE.Vector3();
+    // Keep the camera from sitting exactly on the new pole (gimbal lock).
+    var dir = camera.position.clone().sub(target);
+    if (dir.lengthSq() > 0) {
+        var n = dir.clone().normalize();
+        if (Math.abs(n.dot(up)) > 0.999) { dir.x += dir.length() * 0.05; }
+        camera.position.copy(target).add(dir);
+    }
+    if (controls) controls.dispose();
+    controls = makeControls(camera, target);
+    controls.update();
+    if (viewCube) viewCube.setMainControls(controls, zUp ? 'z' : 'y');
+    if (elZUp) elZUp.checked = zUp;
+    try { localStorage.setItem('pluto.zUp', zUp ? '1' : '0'); } catch (e) {}
+    if (!silent) log('World up axis: ' + (zUp ? 'Z' : 'Y') + '.');
+    needsRender = true;
+}
 
 function handleResize() {
     var w = window.innerWidth, h = window.innerHeight;
@@ -1961,6 +1999,7 @@ async function loadDemo() {
 
 elBtnFit.addEventListener('click', fitView);
 elOrtho.addEventListener('change', function () { setProjection(this.checked); });
+if (elZUp) elZUp.addEventListener('change', function () { setZUp(this.checked); });
 
 elBtnFind.addEventListener('click', doFind);
 elFindId.addEventListener('keydown', function (e) {
