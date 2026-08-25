@@ -130,14 +130,16 @@ var FEAFeatures = (function () {
             var color = g.color ? hexToRgb(g.color) : autoColor(gi);
             rgb.push(color);
             var count = 0;
-            var members = Array.isArray(g.members) ? g.members : (g.members ? [g.members] : []);
-            members.forEach(function (m) {
+            // Work on a COPY: predicate members expand into explicit entries
+            // appended to the queue; the envelope itself is never mutated.
+            var members = (Array.isArray(g.members) ? g.members : (g.members ? [g.members] : [])).slice();
+            for (var mi = 0; mi < members.length; mi++) (function (m) {
                 if (m.predicateId) {
                     // Runtime members: resolved from the predicate tree once the
                     // predicate module is ported (hook: resolvePredicateMembers).
                     var ids = resolvePredicateMembers(m.predicateId);
                     if (!ids) { out.unresolvedPredicates = (out.unresolvedPredicates || 0) + 1; return; }
-                    ids.forEach(function (pm) { members.push(pm); });   // appended, processed in this loop
+                    ids.forEach(function (pm) { members.push(pm); });   // queued, visited by the for loop
                     return;
                 }
                 var fam = domainByName[m.domain] || m.domain || 'shell';
@@ -152,7 +154,7 @@ var FEAFeatures = (function () {
                     arr[idx] = gi;
                     count++;
                 });
-            });
+            })(members[mi]);
             groupList.push({ name: g.name || ('Group ' + (gi + 1)), color: g.color, rgb: color, count: count });
         });
         resolved = out;
