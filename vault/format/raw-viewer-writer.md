@@ -1,0 +1,111 @@
+---
+title: RawViewerWriter (C# v4 binary writer)
+status: current
+created: 2026-08-25
+---
+
+# RawViewerWriter — structure and usage
+
+`viewer/RawViewerWriter.cs` is the **production writer** for the Pluto v4 binary
+([[vault/format/v4-schema|v4-schema]]). It is called by the STAAD post-processing scripts
+that have not been ported into this repo yet; its public surface is kept identical to the
+v3 writer they were written against, plus an optional beam domain. (`viewer/scripts/format/v4Writer.js`
+is *not* a production path — it only exists so the browser demo can fabricate a sample file.)
+
+Compiled and round-trip tested 2026-08-25 (`dotnet 9`, external types stubbed): C# writes →
+JS reader parses, values land in the right slots, `geometryHash` recomputed from the blocks
+matches META, geometry-only export hashes identical to the full export.
+
+## External types (defined in the STAAD codebase, not here)
+
+| type | used as |
+|---|---|
+| `Node { int id; xyz{X,Y,Z} }` | node table (written as f64) |
+| `Element { int id; int nNodes; Node[] n }` | shell elements, 3 or 4 nodes |
+| `StressRecord { LC, elemID, node, Sf[]; StressViewForce(ForceUnit, LengthUnit) }` | per-corner stress |
+| `Disp { LC, node, DR[] }` | per-node displacement (tx,ty,tz,rx,ry,rz) |
+| `DsrRecord { LC, elemID, node, Values[] }` | per-corner DSR checks |
+| `StrRecord { elemID, node, Values[] }` | per-corner LC-independent design strengths |
+
+Types the writer **defines** (new in v4): `Component`, `BeamMember`, `SectionDef`, `BeamRecord`.
+
+## Two-phase contract (unchanged)
+
+```
+var w = new RawViewerWriter(path, nodes, elements, loadCaseNames, components);
+w.Write();                      // header, directory, geometry, META, NaN-filled fields
+w.AppendStresses(stresses);     // in-place seek + write through a memory map
+w.AppendDisplacements(disps);
+w.AppendDsr(dsrs);              // only if the layout has kind "dsr"
+w.AppendStr(strs);              // only if the layout has kind "str"
+```
+
+- `Write()` NaN-fills **every** field plane up front, so appends can arrive in any order
+  and any subset; anything never written reads as no-data.
+- `loadCaseNames` keys are STAAD LC ids; planes are ordered by ascending id and META
+  `loadCases[i]` is plane `i`. Every written case is `primary` (envelopes are viewer-side).
+- The single `components` list is split: `Kind == "str"` → `FLDC` (`constComponents`),
+  everything else → `FLDS` in list order. Each kind must be a contiguous run
+  (`ComponentLayout` throws otherwise) because `Append*` writes a run at `Start(kind)`.
+- Records whose `node` is not a corner of `elemID` (element-centre results mixed in) are
+  silently skipped, as before.
+
+## Beams (new)
+
+```
+var beams = new Dictionary<int, RawViewerWriter.BeamMember> {
+  { 20001, new RawViewerWriter.BeamMember {
+        Id = 20001, NodeA = 4021, NodeB = 4022, SectionIndex = 0,
+        LocalY = new[] { 0.0, 0.0, 1.0 },        // resolved local-y in WORLD coords
+        OffsetAz = -6, OffsetBz = -6 } } };
+var sections = new List<RawViewerWriter.SectionDef> {
+  RawViewerWriter.SectionDef.IShape("W12x26", 12.2f, 6.5f, 0.38f, 6.5f, 0.38f, 0.23f),
+  RawViewerWriter.SectionDef.Pipe("PIPE8", 8.6f, 0.5f) };
+var beamComps = new List<RawViewerWriter.Component> {
+  new("N", "force", "kip"), new("Vy", "force", "kip"), new("Vz", "force", "kip"),
+  new("T", "force", "kip-ft"), new("My", "force", "kip-ft"), new("Mz", "force", "kip-ft"),
+  new("Translation X", "displacement", "in"), new("Translation Y", "displacement", "in"),
+  new("Translation Z", "displacement", "in") };
+
+var w = new RawViewerWriter(path, nodes, elements, loadCaseNames, components,
+                            beams, sections, beamComps, modelId, units);
+w.Write();
+w.AppendBeamForces(beamRecords);          // BeamRecord { LC, elemID, End (0=A,1=B), Values[] }
+w.AppendDisplacements(disps);             // ALSO fans node displacements onto beam ends
+```
+
+- Beams become domain 1 (`"beams"`, `family:"beam"`, `maxSlots = 2`); shells stay domain 0.
+  Element IDs are per domain, so beam ids may overlap shell ids.
+- `AppendBeamForces(records, kind = "force")` writes the run of that kind; pass `kind: null`
+  to write the whole component list per end.
+- `LocalY` must be resolved by the caller (roll angle / K-node → world vector); the viewer
+  never sees solver conventions. Offsets are in section-local (y, z).
+- `SectionDef` factories: `Rect, IShape, Box, Pipe, Angle, Channel, Tee, Poly`. Codes per
+  schema §6.
+
+## Profiles
+
+- `Write()` — results profile: all field planes present (NaN until appended).
+- `Write(false)` — **geometry-only** profile: no `FLDS`/`FLDC` in the directory; same
+  `geometryHash`. Use this for the predicate-authoring file; the features sidecar authored
+  on it binds to the full export.
+
+## Layout emitted
+
+```
+header(32) | directory | NODE(f64) | NDID | ELEM d0 | ELID d0 | [FLDC d0]
+| [SECT | ELEM d1 | ELID d1 | BPRP d1] | META | FLDS d0 | [FLDS d1]
+```
+All blocks 8-byte aligned. Directory sits right after the header with final counts (no
+`APPEND` flag needed). `GeometryHash` property exposes the hash after construction — hand it
+to `FeaturesSidecar.GeometryHash` so the sidecar binds.
+
+## Placeholders still to fill (as in v3)
+
+`StressNames`, `DispNames`, `nameUnits()`, `BuildComponents()` are `TODO` catalogs that
+live with the STAAD enums; port them with the scripts.
+
+## Related
+
+- [[vault/format/features-sidecar|features-sidecar]] — `FeaturesSidecar.cs` writes the groups JSON.
+- [[vault/format/v3-schema|v3-schema]] — what the previous writer emitted.

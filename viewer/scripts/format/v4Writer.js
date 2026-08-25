@@ -1,9 +1,10 @@
 // ================================================================
-// v4Writer.js
-// Minimal in-browser v4 block writer (vault/format/v4-schema.md).
-// Used by the sample generator and by tests; the production writer is
-// the C# RawViewerWriter. Builds the whole file in memory -- fine for
-// demo sizes, not for multi-GB exports.
+// v4Writer.js  --  DEMO / TEST ONLY.
+// Minimal in-browser v4 block writer used by sampleModel.js to fabricate
+// the demo file and by the Node round-trip tests. Pluto never writes
+// production files from JS: the production writer is viewer/
+// RawViewerWriter.cs (see vault/format/raw-viewer-writer.md). Builds the
+// whole file in memory -- fine for demo sizes, not for real exports.
 //
 //   var w = FEAv4Writer.create();
 //   w.addBlock('NODE', FEAv4.GLOBAL_DOMAIN, float64Array.buffer);

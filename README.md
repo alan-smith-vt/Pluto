@@ -184,7 +184,9 @@ auto-padded (`"LC N"`) or trimmed to match.
 | File | Role |
 |------|------|
 | `format/pluto.js` | format entry point: version dispatch, unified model, v3-shaped domain views, `FEABinary` compat |
-| `format/v4Reader.js` / `format/v4Writer.js` | v4 block-directory reader / in-browser writer |
+| `format/v4Reader.js` | v4 block-directory reader |
+| `format/v4Writer.js` | demo/test-only in-browser v4 writer (sample generator); production files come from `RawViewerWriter.cs` |
+| `RawViewerWriter.cs` / `FeaturesSidecar.cs` | C# production writers: v4 binary (shells + beams, two-phase append) and features sidecar |
 | `format/v3Reader.js` | frozen legacy v3 reader (adapted by `pluto.js`) |
 | `modelSet.js` | multi-model set: geometry validation, global LC index, per-file read routing |
 | `geometryBuilder.js` | duplicate-vertex shell mesh build, tri/quad triangulation |
