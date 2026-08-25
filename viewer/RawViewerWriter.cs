@@ -195,7 +195,8 @@ public class RawViewerWriter
 
     private class Block
     {
-        public string Tag; public uint Domain; public long Offset; public long Length; public uint Count; public uint Flags;
+        public string Tag; public uint Domain; public long Offset; public long Length; public uint Count;
+        public uint Flags = 0;                 // reserved (APPEND not used: planes are NaN-prefilled)
         public byte[] Bytes;                   // resident payload, or null for NaN-filled field blocks
     }
 

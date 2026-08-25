@@ -58,8 +58,7 @@ namespace Voyager
             // ---- nodes: dedupe by rounded coordinate ----
             var nodeIdByKey = new Dictionary<string, int>();
             var nodes = new Dictionary<int, Node>();
-            var nodeLabels = new Dictionary<int, string>();
-            int nextNode = 1;
+            int nextNode = 1;   // (node labels would need WeldOid on Beam; not carried yet)
 
             // ---- sections: one per distinct diameter ----
             var sectionIndexByOd = new Dictionary<long, int>();    // od in micrometers -> index
@@ -190,7 +189,8 @@ namespace Voyager
             byKey[key] = id;
             var n = new Node();
             n.id = id;
-            n.xyz.X = p.X * scale; n.xyz.Y = p.Y * scale; n.xyz.Z = p.Z * scale;
+            // Node.xyz components are float in the STAAD codebase; cast explicitly.
+            n.xyz.X = (float)(p.X * scale); n.xyz.Y = (float)(p.Y * scale); n.xyz.Z = (float)(p.Z * scale);
             nodes[id] = n;
             return id;
         }
