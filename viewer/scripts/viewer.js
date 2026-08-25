@@ -451,7 +451,10 @@ async function loadModels(entriesIn) {
                     alarmColor[0] / 255, alarmColor[1] / 255, alarmColor[2] / 255) },
                 uAbs: { value: 0 },
                 uCategorical: { value: 0 },
-                dispScale: { value: 0 }
+                dispScale: { value: 0 },
+                uGroupMode: { value: 0 },
+                groupPalette: { value: FEAShaders.makePaletteTexture([[200, 200, 200]]) },
+                uGroupCount: { value: 1 }
             },
             vertexShader: FEAShaders.vertex,
             fragmentShader: FEAShaders.fragment,
@@ -535,6 +538,7 @@ async function loadModels(entriesIn) {
         scene.add(focusOrb);
 
         if (window.FEABeams) FEABeams.onModelLoaded(model);
+        if (window.FEAFeatures) FEAFeatures.onModelLoaded();
 
         populateLCSelect();
         populateKindSelect();
@@ -599,6 +603,7 @@ function disposeCurrentModel() {
     }
     clearHighlight();
     if (window.FEABeams) FEABeams.onModelCleared();
+    if (window.FEAFeatures) FEAFeatures.onModelCleared();
     if (window.FEASectionCut) FEASectionCut.onModelCleared();
     focusTween = null;
     focusOrbHideAt = 0;
@@ -1063,6 +1068,7 @@ function applyComponentAndRange() {
         elRoComp.textContent = c.name + (c.unit ? ' [' + c.unit + ']' : '') + ' (' + c.kind + ')';
     }
     if (window.FEABeams) FEABeams.sync();
+    if (window.FEAFeatures) FEAFeatures.sync();
     if (window.FEASectionCut) FEASectionCut.refresh();
     needsRender = true;
 }
@@ -1490,8 +1496,9 @@ function showReadout(clientX, clientY) {
     elRoValue.textContent = q.noData ? 'no data'
         : (absValue && !inDsr ? '|' + fmt(v, 6) + '|' : fmt(v, 6)) + (unit ? ' ' + unit : '');
     elRoValue.className = 'ro-value' + (q.noData ? ' ro-nodata' : '');
+    var grp = window.FEAFeatures ? FEAFeatures.groupOf('shell', q.element) : null;
     elRoElem.textContent = q.elementId + '  (idx ' + q.element + ', ' +
-        (q.ncount === 4 ? 'quad' : 'tri') + ')';
+        (q.ncount === 4 ? 'quad' : 'tri') + (grp ? ', group: ' + grp : '') + ')';
     elRoNode.textContent = q.nearestNodeId;
     elRoCorners.textContent = q.cornerNodeIds.join(', ');
     elRoUV.textContent = q.u.toFixed(4) + ', ' + q.v.toFixed(4);
@@ -1902,10 +1909,13 @@ function updateFlash(now) {
 // Panel controls
 // ================================================================
 elFile.addEventListener('change', function (e) {
-    var entries = Array.prototype.map.call(e.target.files, function (f) {
+    var files = Array.prototype.slice.call(e.target.files);
+    var jsons = files.filter(function (f) { return /\.json$/i.test(f.name); });
+    var entries = files.filter(function (f) { return !/\.json$/i.test(f.name); }).map(function (f) {
         return { file: f, name: trimExt(f.name) };
     });
-    if (entries.length) loadModels(entries);
+    var p = entries.length ? loadModels(entries) : Promise.resolve();
+    if (jsons.length && window.FEAFeatures) p.then(function () { FEAFeatures.loadFile(jsons[0]); });
     e.target.value = '';    // allow re-selecting the same files later
 });
 
@@ -1922,10 +1932,13 @@ async function loadDemo() {
     log('Generating demo models...');
     var soft = await FEASample.buildSampleBlobV4(0);
     var stiff = await FEASample.buildSampleBlobV4(1);
-    loadModels([
+    await loadModels([
         { file: soft,  name: 'PlateDemo_Rev5_SoilSprings_Soft' },
         { file: stiff, name: 'PlateDemo_Rev5_SoilSprings_Stiff' }
     ]);
+    if (feaModel && feaModel.unified && window.FEAFeatures) {
+        FEAFeatures.setEnvelope(FEASample.buildSampleFeatures(feaModel.unified), 'PlateDemo.features.json');
+    }
 }
 
 elBtnFit.addEventListener('click', fitView);

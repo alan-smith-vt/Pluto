@@ -133,6 +133,7 @@ var FEABeamGeometry = (function () {
         var endVals   = new Float32Array(totalVerts * 2);
         var dispVecs  = new Float32Array(totalVerts * 3);
         var elemVis   = new Float32Array(totalVerts); elemVis.fill(1);
+        var catIdx    = new Float32Array(totalVerts); catIdx.fill(-1);
         var triToElem = new Int32Array(totalTris);
         var axisA = new Float32Array(nElem * 3), axisB = new Float32Array(nElem * 3);
         var frames = new Float32Array(nElem * 9);   // X,Y,Z unit vectors per element
@@ -207,6 +208,7 @@ var FEABeamGeometry = (function () {
         geo.setAttribute('endVals',  new THREE.BufferAttribute(endVals, 2));
         geo.setAttribute('dispVec',  new THREE.BufferAttribute(dispVecs, 3));
         geo.setAttribute('elemVis',  new THREE.BufferAttribute(elemVis, 1));
+        geo.setAttribute('catIdx',   new THREE.BufferAttribute(catIdx, 1));
         geo.computeBoundingBox();
         geo.computeBoundingSphere();
 

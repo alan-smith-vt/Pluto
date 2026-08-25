@@ -30,6 +30,18 @@
             <button id="btnDemo" class="fea-btn primary">Load Demo Model</button>
             <button id="btnFit" class="fea-btn">Fit View</button>
         </div>
+        <div class="fea-row" style="margin-top:6px;">
+            <input type="file" id="featFile" class="fea-file" accept=".json,application/json"
+                   title="Features sidecar (*.features.json): groups, predicates, section cuts">
+        </div>
+        <div class="fea-row">
+            <label class="fea-label" for="featGroups">Color by groups</label>
+            <input type="checkbox" id="featGroups" class="fea-check" disabled
+                   title="Paint every element by its sidecar group instead of by field">
+            <span class="fea-hint" id="featName" style="margin-left:6px;">no features file</span>
+        </div>
+        <div class="fea-hint" id="featHint"></div>
+        <div class="fea-legend-cats" id="featLegend" style="display:none;margin-top:4px;"></div>
         <div class="fea-row">
             <input type="checkbox" id="feaOrtho" class="fea-check">
             <span class="fea-label" style="width:auto;">Orthographic projection</span>
@@ -286,6 +298,7 @@
 <script src="scripts/sampleModel.js"></script>
 <script src="scripts/viewer.js"></script>
 <script src="scripts/viewerBeams.js"></script>
+<script src="scripts/features.js"></script>
 <script src="scripts/sectionCut.js"></script>
 
 </body>

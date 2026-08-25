@@ -30,14 +30,17 @@ var FEAShaders = (function () {
         'attribute vec4 cornerVals;',
         'attribute vec3 dispVec;',
         'attribute float elemVis;',
+        'attribute float catIdx;',
         'uniform float dispScale;',
         'varying vec2 vUV;',
         'varying vec4 vVals;',
         'varying float vVis;',
+        'varying float vCat;',
         'void main() {',
         '  vUV = quadUV;',
         '  vVals = cornerVals;',
         '  vVis = elemVis;',
+        '  vCat = catIdx;',
         '  vec3 p = position + dispScale * dispVec;',
         '  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);',
         '}'
@@ -65,10 +68,25 @@ var FEAShaders = (function () {
         '}'
     ].join('\n');
 
+    // Group coloring (features sidecar): when uGroupMode is on, paint
+    // by the per-element category through groupPalette; ungrouped
+    // elements (catIdx < 0) get a neutral grey.
+    var groupGLSL = [
+        'uniform float uGroupMode;',
+        'uniform sampler2D groupPalette;',
+        'uniform float uGroupCount;',
+        'vec3 groupColor(float cat) {',
+        '  if (cat < 0.0) return vec3(0.39, 0.40, 0.42);',
+        '  return texture2D(groupPalette, vec2((cat + 0.5) / max(uGroupCount, 1.0), 0.5)).rgb;',
+        '}'
+    ].join('\n');
+
     var fragment = [
         'varying vec2 vUV;',
         'varying vec4 vVals;',
         'varying float vVis;',
+        'varying float vCat;',
+        groupGLSL,
         'uniform sampler2D colormap;',  // 256x1 LUT
         'uniform float vMin;',
         'uniform float vMax;',
@@ -79,6 +97,7 @@ var FEAShaders = (function () {
         fieldEvalGLSL,
         'void main() {',
         '  if (vVis < 0.5) discard;',
+        '  if (uGroupMode > 0.5) { gl_FragColor = vec4(groupColor(vCat), 1.0); return; }',
         '  float f = fieldValue(vUV, vVals, uCategorical, uAbs);',
         // NaN guard: any NaN corner -> f is NaN -> render no-data color.
         '  if (!(f == f)) { gl_FragColor = vec4(0.16, 0.16, 0.18, 1.0); return; }',
@@ -213,6 +232,24 @@ var FEAShaders = (function () {
     // Used with vMin=-0.5, vMax=n-0.5 so integer category k lands in the
     // center of texel k through the exact same mapping the fragment
     // shader already applies.
+    // Arbitrary RGB palette ([[r,g,b],...] 0-255) as an n x 1 nearest LUT.
+    function makePaletteTexture(colors) {
+        var n = Math.max(colors.length, 1);
+        var data = new Uint8Array(n * 4);
+        for (var i = 0; i < n; i++) {
+            var c = colors[i] || [200, 200, 200];
+            data[i * 4] = c[0]; data[i * 4 + 1] = c[1]; data[i * 4 + 2] = c[2]; data[i * 4 + 3] = 255;
+        }
+        var tex = new THREE.DataTexture(data, n, 1, THREE.RGBAFormat);
+        tex.minFilter = THREE.NearestFilter;
+        tex.magFilter = THREE.NearestFilter;
+        tex.generateMipmaps = false;
+        tex.wrapS = THREE.ClampToEdgeWrapping;
+        tex.wrapT = THREE.ClampToEdgeWrapping;
+        tex.needsUpdate = true;
+        return tex;
+    }
+
     function makeCategoricalTexture(n) {
         var data = new Uint8Array(n * 4);
         for (var i = 0; i < n; i++) {
@@ -243,13 +280,16 @@ var FEAShaders = (function () {
         'attribute vec2 endVals;',
         'attribute vec3 dispVec;',
         'attribute float elemVis;',
+        'attribute float catIdx;',
         'uniform float dispScale;',
         'varying float vT;',
         'varying vec2 vEnds;',
         'varying float vVis;',
         'varying vec3 vNrm;',
+        'varying float vCat;',
         'void main() {',
         '  vT = beamT;',
+        '  vCat = catIdx;',
         '  vEnds = endVals;',
         '  vVis = elemVis;',
         '  vNrm = normalize(normalMatrix * normal);',
@@ -263,6 +303,8 @@ var FEAShaders = (function () {
         'varying vec2 vEnds;',
         'varying float vVis;',
         'varying vec3 vNrm;',
+        'varying float vCat;',
+        groupGLSL,
         'uniform sampler2D colormap;',
         'uniform float vMin;',
         'uniform float vMax;',
@@ -274,6 +316,7 @@ var FEAShaders = (function () {
         'void main() {',
         '  if (vVis < 0.5) discard;',
         '  float shade = 0.72 + 0.28 * abs(vNrm.z);',
+        '  if (uGroupMode > 0.5) { gl_FragColor = vec4(groupColor(vCat) * shade, 1.0); return; }',
         '  if (uNeutral > 0.5) { gl_FragColor = vec4(neutralColor * shade, 1.0); return; }',
         '  float f = mix(vEnds.x, vEnds.y, vT);',
         '  if (uAbs > 0.5) f = abs(f);',
@@ -300,6 +343,14 @@ var FEAShaders = (function () {
         sampleAnchors: sampleAnchors,
         makeColormapTexture: makeColormapTexture,
         categoryColor: categoryColor,
-        makeCategoricalTexture: makeCategoricalTexture
+        makeCategoricalTexture: makeCategoricalTexture,
+        makePaletteTexture: makePaletteTexture,
+        groupUniforms: function () {
+            return {
+                uGroupMode: { value: 0 },
+                groupPalette: { value: makePaletteTexture([[200, 200, 200]]) },
+                uGroupCount: { value: 1 }
+            };
+        }
     };
 })();

@@ -59,6 +59,8 @@ var FEAGeometry = (function () {
         var dispVecs   = new Float32Array(totalVerts * 3);   // filled by updater
         var elemVis    = new Float32Array(totalVerts);       // 1 = drawn (see shaders)
         elemVis.fill(1);
+        var catIdx     = new Float32Array(totalVerts);       // group category, -1 = none
+        catIdx.fill(-1);
         var triToElem  = new Int32Array(totalTris);          // render triangle -> element
 
         var vptr = 0, tptr = 0;
@@ -86,6 +88,7 @@ var FEAGeometry = (function () {
         geo.setAttribute('cornerVals', new THREE.BufferAttribute(cornerVals, 4));
         geo.setAttribute('dispVec',    new THREE.BufferAttribute(dispVecs, 3));
         geo.setAttribute('elemVis',    new THREE.BufferAttribute(elemVis, 1));
+        geo.setAttribute('catIdx',     new THREE.BufferAttribute(catIdx, 1));
         geo.computeBoundingBox();
         geo.computeBoundingSphere();
 

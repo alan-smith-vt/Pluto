@@ -423,6 +423,31 @@ var FEAAttributes = (function () {
     }
 
 
+    // ---- group category (features sidecar) -----------------------------
+    // Write one category index per element onto all of its vertices.
+    // Shells: pass elemNCount (6 verts per quad, 3 per tri). Beams: pass
+    // the beam build (vertStart/vertCount). perElem may be null -> -1.
+    function updateCatIdx(geometry, elemNCount, beamBuild, perElem) {
+        var attr = geometry.getAttribute('catIdx');
+        if (!attr) return;
+        var a = attr.array;
+        if (beamBuild) {
+            for (var e = 0; e < beamBuild.nElem; e++) {
+                var v = perElem ? perElem[e] : -1;
+                var s = beamBuild.vertStart[e], n = beamBuild.vertCount[e];
+                for (var i = s; i < s + n; i++) a[i] = v;
+            }
+        } else {
+            var vptr = 0;
+            for (var e2 = 0; e2 < elemNCount.length; e2++) {
+                var v2 = perElem ? perElem[e2] : -1;
+                var nv = elemNCount[e2] === 4 ? 6 : 3;
+                for (var j = 0; j < nv; j++) a[vptr++] = v2;
+            }
+        }
+        attr.needsUpdate = true;
+    }
+
     // ---- beam domain ---------------------------------------------------
     // Slot fields for beams are float32[nElem][maxSlots][nComp]; slot 0 =
     // end A, slot 1 = end B (2 stations for now). endVals is written
@@ -486,6 +511,7 @@ var FEAAttributes = (function () {
     }
 
     return {
+        updateCatIdx: updateCatIdx,
         updateBeamEndVals: updateBeamEndVals,
         computeBeamRange: computeBeamRange,
         updateBeamDispVecs: updateBeamDispVecs,

@@ -52,7 +52,10 @@ var FEABeams = (function () {
                 uAbs: { value: 0 },
                 uNeutral: { value: 1 },
                 neutralColor: { value: new THREE.Vector3(0.62, 0.64, 0.68) },
-                dispScale: { value: 0 }
+                dispScale: { value: 0 },
+                uGroupMode: { value: 0 },
+                groupPalette: { value: FEAShaders.makePaletteTexture([[200, 200, 200]]) },
+                uGroupCount: { value: 1 }
             },
             vertexShader: FEAShaders.beamVertex,
             fragmentShader: FEAShaders.beamFragment,
@@ -174,8 +177,9 @@ var FEABeams = (function () {
         elRoValue.className = 'ro-value' + (v === v ? '' : ' ro-nodata');
         elRoComp.textContent = neutral ? 'beam (neutral view)' :
             c.name + (c.unit ? ' [' + c.unit + ']' : '') + ' (beam ' + c.kind + ')';
+        var grp = window.FEAFeatures ? FEAFeatures.groupOf('beam', e) : null;
         elRoElem.textContent = view.elemIds[e] + '  (beam idx ' + e + ', ' +
-            (sec ? sec.name + ' ' + sec.type : 'no section') + ')';
+            (sec ? sec.name + ' ' + sec.type : 'no section') + (grp ? ', group: ' + grp : '') + ')';
         elRoNode.textContent = t < 0.5 ? view.nodeIds[n0] : view.nodeIds[n1];
         elRoCorners.textContent = view.nodeIds[n0] + ' → ' + view.nodeIds[n1];
         elRoUV.textContent = 't = ' + t.toFixed(4);

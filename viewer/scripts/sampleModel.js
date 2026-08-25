@@ -419,6 +419,43 @@ var FEASample = (function () {
         return w.toBlobAsync();
     }
 
+    // Demo features sidecar for a loaded v4 sample: W shapes one color,
+    // pipes by size, the girder its own group, and a shell strip. Mirrors
+    // the steel-with-pipes use case (color by section family / size).
+    function buildSampleFeatures(u) {
+        var beams = null, shells = null;
+        u.domains.forEach(function (d) { if (d.family === 'beam') beams = d; if (d.family === 'shell') shells = d; });
+        var groups = [];
+        function push(name, color, domain, ids, tags) {
+            groups.push({ id: 'g-' + (groups.length + 1), name: name, color: color, tags: tags || [],
+                          members: [{ domain: domain, ids: ids }] });
+        }
+        if (beams) {
+            var REC = beams.elemRecordU32, bySec = {};
+            for (var e = 0; e < beams.nElem; e++) {
+                var si = beams.elems[e * REC + 3];
+                (bySec[si] = bySec[si] || []).push(beams.elemIds[e]);
+            }
+            u.sections.forEach(function (sec, si) {
+                if (!bySec[si]) return;
+                var color = sec.type === 'I' ? '#8c93a8' : sec.type === 'PIPE'
+                    ? (sec.params.od > 8 ? '#e0913a' : '#3aa0e0') : '#5cc26b';
+                push(sec.name + (sec.type === 'PIPE' ? ' (OD ' + sec.params.od + ')' : ''), color,
+                     beams.name, bySec[si], [sec.type.toLowerCase()]);
+            });
+        }
+        if (shells) {
+            var strip = [];
+            for (var s2 = 0; s2 < shells.nElem; s2++) if (s2 % 24 >= 10 && s2 % 24 < 14) strip.push(shells.elemIds[s2]);
+            push('Deck strip x=50..70', '#c85ad0', shells.name, strip, ['shell']);
+        }
+        return {
+            format: 'pluto-features', version: 1,
+            model: { modelId: u.modelId, geometryHash: u.geometryHash, units: u.units },
+            groups: { version: 1, items: groups }
+        };
+    }
+
     function downloadBlob(blob, filename) {
         var url = URL.createObjectURL(blob);
         var a = document.createElement('a');
@@ -446,6 +483,7 @@ var FEASample = (function () {
         buildPlate: buildPlate,
         buildSampleBlob: buildSampleBlob,
         buildSampleBlobV4: buildSampleBlobV4,
+        buildSampleFeatures: buildSampleFeatures,
         downloadSampleBin: downloadSampleBin,
         downloadSampleBinV4: downloadSampleBinV4
     };
