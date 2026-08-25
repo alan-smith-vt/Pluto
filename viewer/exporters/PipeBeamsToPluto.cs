@@ -4,11 +4,11 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 
-// PipeBeamsToPluto  --  bridge from the pipe CSV exporter's List<Voyager.Beam>
+// PipeBeamsToPluto  --  bridge from the pipe CSV exporter's List<Voyager.SQL_Beam>
 // to a Pluto v4 geometry-only binary + features sidecar.
 // C# 5 / Add-Type (PowerShell 5.1) compatible.
 //
-// Input  : List<Voyager.Beam> { P0, P1 (Vec3, METERS), Diameter (meters or NaN),
+// Input  : List<Voyager.SQL_Beam> { P0, P1 (Vec3, METERS), Diameter (meters or NaN),
 //                               PartOid, PartClass, RunOid, RunName }
 // Output : <out>.bin            v4 binary, beam domain only, no load cases
 //          <out>.features.json  groups: ONE PER PIPE SIZE (colored, small -> large
@@ -25,8 +25,8 @@ using System.Linq;
 //   categories   -> sidecar groups (never per-element strings in the binary)
 //
 // Usage from PowerShell 5.1:
-//   Add-Type -Path .\RawViewerWriter.cs, .\FeaturesSidecar.cs, .\BeamExporter.cs, .\PipeBeamsToPluto.cs
-//   $beams = (New-Object Voyager.BeamExporter).Build('pipe_v3_2_sized.csv')
+//   Add-Type -Path .\RawViewerWriter.cs, .\FeaturesSidecar.cs, .\SQL_BeamExporter.cs, .\PipeBeamsToPluto.cs
+//   $beams = (New-Object Voyager.SQL_BeamExporter).Build('pipe_v3_2_sized.csv')
 //   $r = [Voyager.PipeBeamsToPluto]::Export($beams, 'C:\out\pipes', 'ProjectX/pipes/rev1', 'in')
 //   $r.Summary()
 //
@@ -52,7 +52,7 @@ namespace Voyager
 
         // lengthUnit: "m" | "in" | "ft" -- the unit the FILE is written in.
         // Coordinates and diameters arrive in meters and are converted.
-        public static Result Export(List<Beam> beams, string outBase, string modelId, string lengthUnit)
+        public static Result Export(List<SQL_Beam> beams, string outBase, string modelId, string lengthUnit)
         {
             if (beams == null || beams.Count == 0) throw new Exception("PipeBeamsToPluto: no beams.");
             double scale = LengthScale(lengthUnit);
@@ -62,7 +62,7 @@ namespace Voyager
             // ---- nodes: dedupe by rounded coordinate ----
             var nodeIdByKey = new Dictionary<string, int>();
             var nodes = new Dictionary<int, Node>();
-            int nextNode = 1;   // (node labels would need WeldOid on Beam; not carried yet)
+            int nextNode = 1;   // (node labels would need WeldOid on SQL_Beam; not carried yet)
 
             // ---- sections: one per distinct diameter ----
             var sectionIndexByOd = new Dictionary<long, int>();    // od in micrometers -> index
@@ -79,7 +79,7 @@ namespace Voyager
 
             // chord vs star: a part with exactly one beam is a chord
             var beamsPerPart = new Dictionary<string, int>();
-            foreach (var b in beams)
+            foreach (SQL_Beam b in beams)
             {
                 int c;
                 beamsPerPart.TryGetValue(b.PartOid, out c);
@@ -87,7 +87,7 @@ namespace Voyager
             }
 
             int nextBeam = 1;
-            foreach (var b in beams)
+            foreach (SQL_Beam b in beams)
             {
                 int a = NodeFor(b.P0, scale, NodeRound, nodeIdByKey, nodes, ref nextNode);
                 int z = NodeFor(b.P1, scale, NodeRound, nodeIdByKey, nodes, ref nextNode);

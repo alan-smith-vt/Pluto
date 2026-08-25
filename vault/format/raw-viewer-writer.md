@@ -108,7 +108,7 @@ and `Write(false)` are then equivalent). At least one of elements / beams is req
 
 ## Bridges (`viewer/exporters/`)
 
-- `PipeBeamsToPluto.cs` — `Voyager.PipeBeamsToPluto.Export(List<Voyager.Beam>, outBase, modelId, lengthUnit)`:
+- `PipeBeamsToPluto.cs` — `Voyager.PipeBeamsToPluto.Export(List<Voyager.SQL_Beam>, outBase, modelId, lengthUnit)`:
   dedupes weld points into nodes, one `Pipe` section per distinct diameter (+ `UNSIZED`),
   `PartOid` as beam label, sidecar groups for class / run / star-arms / unsized / src.
   Writes `<outBase>.bin` + `<outBase>.features.json`. Verified C# 5 build and JS read.
