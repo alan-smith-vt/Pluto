@@ -49,6 +49,8 @@ w.AppendStr(strs);              // only if the layout has kind "str"
   (`ComponentLayout` throws otherwise) because `Append*` writes a run at `Start(kind)`.
 - Records whose `node` is not a corner of `elemID` (element-centre results mixed in) are
   silently skipped, as before.
+```
+```
 
 ## Beams (new)
 

@@ -32,7 +32,7 @@ type is a viewer tab that owns one section of the envelope.
   "supports":    { "version": 1, "items": [] },
   "springs":     { "version": 1, "items": [] }
 }
-```text
+```
 
 Rules:
 - Every section is `{ version, items[] }`, versioned independently so predicates can
@@ -122,7 +122,7 @@ the resolved membership with the hash it was resolved against.
   },
   "resolved": { "geometryHash": "sha256:…", "ids": [ … ] }   // optional cache
 }
-```text
+```
 
 `op` ∈ `and | or | not`. A leaf is a `plane` with `side` and optional `finite` extent
 (rectangle in the plane, centred on `point`, axes from `normal` + `up`). The C# side emits
@@ -142,7 +142,7 @@ the dedicated C# section-cut analysis uses exactly the geometry the user saw.
 { "id": "…", "name": "Pile 3", "nodeIds": [4021],
   "dof": { "tx": "fixed", "ty": "fixed", "tz": "spring", "rx": "free", "ry": "free", "rz": "free" },
   "stiffness": { "tz": 1500 } }
-```text
+```
 
 ## Naming / discovery
 
@@ -153,5 +153,3 @@ both; export writes back to the same name. Exfiltration: the JSON is plain text 
 
 - [ ] Predicate `finite` extent representation — rectangle vs. arbitrary polygon.
 - [ ] Should section cuts store the *result* slice too (for review without recompute)? Probably no — results belong in a binary.
-
-```
