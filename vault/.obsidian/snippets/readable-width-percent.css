@@ -1,0 +1,4 @@
+/* Make "Readable line length" 60% of the pane width instead of a fixed pixel value. */
+body {
+  --file-line-width: 60%;
+}
