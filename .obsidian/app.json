@@ -1,4 +1,5 @@
 {
   "defaultViewMode": "preview",
-  "readableLineLength": true
+  "readableLineLength": true,
+  "strictLineBreaks": true
 }
