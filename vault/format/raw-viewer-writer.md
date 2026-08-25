@@ -50,7 +50,7 @@ w.AppendStr(strs);              // only if the layout has kind "str"
 - Records whose `node` is not a corner of `elemID` (element-centre results mixed in) are
   silently skipped, as before.
 ```
-```
+
 
 ## Beams (new)
 
@@ -64,13 +64,16 @@ var sections = new List<RawViewerWriter.SectionDef> {
   RawViewerWriter.SectionDef.IShape("W12x26", 12.2f, 6.5f, 0.38f, 6.5f, 0.38f, 0.23f),
   RawViewerWriter.SectionDef.Pipe("PIPE8", 8.6f, 0.5f) };
 var beamComps = new List<RawViewerWriter.Component> {
-  new("N", "force", "kip"), new("Vy", "force", "kip"), new("Vz", "force", "kip"),
-  new("T", "force", "kip-ft"), new("My", "force", "kip-ft"), new("Mz", "force", "kip-ft"),
-  new("Translation X", "displacement", "in"), new("Translation Y", "displacement", "in"),
-  new("Translation Z", "displacement", "in") };
+  new RawViewerWriter.Component("N", "force", "kip"),
+  new RawViewerWriter.Component("My", "force", "kip-ft"),
+  new RawViewerWriter.Component("Translation X", "displacement", "in"),
+  new RawViewerWriter.Component("Translation Y", "displacement", "in"),
+  new RawViewerWriter.Component("Translation Z", "displacement", "in") };
 
 var w = new RawViewerWriter(path, nodes, elements, loadCaseNames, components,
                             beams, sections, beamComps, modelId, units);
+w.SetBeamLabels(partOidByBeamId);         // optional LABL: one identity string per beam
+w.SetNodeLabels(weldOidByNodeId);         // optional LABL: one per node
 w.Write();
 w.AppendBeamForces(beamRecords);          // BeamRecord { LC, elemID, End (0=A,1=B), Values[] }
 w.AppendDisplacements(disps);             // ALSO fans node displacements onto beam ends
@@ -85,6 +88,18 @@ w.AppendDisplacements(disps);             // ALSO fans node displacements onto b
 - `SectionDef` factories: `Rect, IShape, Box, Pipe, Angle, Channel, Tee, Poly`. Codes per
   schema §6.
 
+## Labels
+
+`SetNodeLabels / SetShellLabels / SetBeamLabels(Dictionary<int,string>)` (keyed by real id,
+call before `Write()`) emit `LABL` blocks — one identity string each, shown in the viewer's
+hover readout. Categories are sidecar groups, not labels ([[vault/format/v4-schema#3.1 Labels vs. groups|schema §3.1]]).
+
+## Compiler target
+
+**C# 5 / .NET Framework, loaded with `Add-Type` under PowerShell 5.1.** No interpolation,
+`?.`, `nameof`, expression bodies, `out var`, auto-property initializers, or `new(...)`.
+Verified by compiling with `<LangVersion>5</LangVersion>`.
+
 ## Profiles
 
 - `Write()` — results profile: all field planes present (NaN until appended).
@@ -95,8 +110,8 @@ w.AppendDisplacements(disps);             // ALSO fans node displacements onto b
 ## Layout emitted
 
 ```text
-header(32) | directory | NODE(f64) | NDID | ELEM d0 | ELID d0 | [FLDC d0]
-| [SECT | ELEM d1 | ELID d1 | BPRP d1] | META | FLDS d0 | [FLDS d1]
+header(32) | directory | NODE(f64) | NDID | [LABL nodes] | ELEM d0 | ELID d0 | [LABL d0]
+| [FLDC d0] | [SECT | ELEM d1 | ELID d1 | BPRP d1 | [LABL d1]] | META | FLDS d0 | [FLDS d1]
 ```
 All blocks 8-byte aligned. Directory sits right after the header with final counts (no
 `APPEND` flag needed). `GeometryHash` property exposes the hash after construction — hand it

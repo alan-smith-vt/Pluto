@@ -3,8 +3,8 @@
 // Programmatic writer/reader for the Pluto features sidecar
 // (*.features.json). Spec: vault/format/features-sidecar.md
 //
-// No package dependencies (hand-rolled JSON like RawViewerWriter) so it
-// drops into the existing C# side as-is. Round-trips unknown sections
+// C# 5 / Add-Type (PS 5.1) compatible, no package dependencies (hand-rolled
+// JSON like RawViewerWriter) so it drops into the existing C# side as-is. Round-trips unknown sections
 // verbatim so a file the viewer wrote keeps anything this code does not
 // model (predicates, sectionCuts, ...).
 //
@@ -41,13 +41,13 @@ public class FeaturesSidecar
     public const int EnvelopeVersion = 1;
     public const int GroupsVersion = 1;
 
-    public string ModelId { get; set; }
-    public string GeometryHash { get; set; }
-    public Dictionary<string, string> Units { get; } = new Dictionary<string, string>();
-    public List<Group> Groups { get; } = new List<Group>();
+    public string ModelId;
+    public string GeometryHash;
+    public readonly Dictionary<string, string> Units = new Dictionary<string, string>();
+    public readonly List<Group> Groups = new List<Group>();
 
     // Sections we don't model, kept as raw JSON text: name -> json value.
-    public Dictionary<string, string> PassThrough { get; } = new Dictionary<string, string>();
+    public readonly Dictionary<string, string> PassThrough = new Dictionary<string, string>();
 
     public class Member
     {

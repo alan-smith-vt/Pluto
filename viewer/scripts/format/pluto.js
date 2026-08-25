@@ -62,6 +62,7 @@ var PlutoFormat = (function () {
                 byteLength: h.nElements * h.maxCorners * constComps.length * 4
             } : null,
             beamProps: null,
+            labels: null,
             constData: null
         };
         var raw = m.meta.raw || {};
@@ -71,6 +72,7 @@ var PlutoFormat = (function () {
             nNodes: h.nNodes,
             nodes: nodes,
             nodeIds: m.nodeIds,
+            nodeLabels: null,
             loadCases: m.meta.loadCases,
             sections: [],
             meta: raw,
@@ -162,6 +164,8 @@ var PlutoFormat = (function () {
             lcByteStride: dom.fields ? dom.fields.planeStride : 0,
             sections: model.sections,
             beamProps: dom.beamProps,
+            labels: dom.labels,
+            nodeLabels: model.nodeLabels,
             strData: null
         };
         view.readLC = function (lc) { return readDomainLC(model, dom, lc); };

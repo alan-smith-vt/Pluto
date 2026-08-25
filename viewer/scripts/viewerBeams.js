@@ -178,9 +178,12 @@ var FEABeams = (function () {
         elRoComp.textContent = neutral ? 'beam (neutral view)' :
             c.name + (c.unit ? ' [' + c.unit + ']' : '') + ' (beam ' + c.kind + ')';
         var grp = window.FEAFeatures ? FEAFeatures.groupOf('beam', e) : null;
-        elRoElem.textContent = view.elemIds[e] + '  (beam idx ' + e + ', ' +
+        var lbl = view.labels ? view.labels.get(e) : '';
+        elRoElem.textContent = view.elemIds[e] + (lbl ? ' [' + lbl + ']' : '') + '  (beam idx ' + e + ', ' +
             (sec ? sec.name + ' ' + sec.type : 'no section') + (grp ? ', group: ' + grp : '') + ')';
-        elRoNode.textContent = t < 0.5 ? view.nodeIds[n0] : view.nodeIds[n1];
+        var nn = t < 0.5 ? n0 : n1;
+        var nlbl = view.nodeLabels ? view.nodeLabels.get(nn) : '';
+        elRoNode.textContent = view.nodeIds[nn] + (nlbl ? ' [' + nlbl + ']' : '');
         elRoCorners.textContent = view.nodeIds[n0] + ' → ' + view.nodeIds[n1];
         elRoUV.textContent = 't = ' + t.toFixed(4);
         elRoPos.textContent = hit.point.x.toFixed(2) + ', ' +

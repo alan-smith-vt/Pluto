@@ -8,6 +8,7 @@ using System.Text;
 
 // RawViewerWriter  --  Pluto v4 binary writer.
 // Spec: vault/format/v4-schema.md (block directory + element domains).
+// C# 5 / Add-Type (PowerShell 5.1) compatible -- keep it that way.
 //
 // Two-phase use, unchanged from the v3 writer the scripts already call:
 //   1. Write()               -- lays down header, directory, geometry, IDs,
@@ -24,8 +25,13 @@ using System.Text;
 // and written as float64.
 //
 // File layout (all blocks 8-byte aligned):
-//   header(32) | directory | NODE | NDID | ELEM d0 | ELID d0 | [FLDC d0]
-//   | [SECT | ELEM d1 | ELID d1 | BPRP d1] | META | FLDS d0 | [FLDS d1]
+//   header(32) | directory | NODE | NDID | [LABL nodes] | ELEM d0 | ELID d0 | [LABL d0]
+//   | [FLDC d0] | [SECT | ELEM d1 | ELID d1 | BPRP d1 | [LABL d1]] | META | FLDS d0 | [FLDS d1]
+//
+// Labels (optional): ONE identity string per node / per element (e.g. the
+// source system's oid), shown by the viewer in the hover readout only.
+// Set them with SetNodeLabels / SetShellLabels / SetBeamLabels BEFORE Write().
+// Categories (class, run, room, ...) are NOT labels -- they are sidecar groups.
 // The directory is fixed-size and written in Write() with final counts,
 // so no APPEND flag is needed: every plane exists (as NaN) from the start
 // and Append* writes in place. That is exactly the v3 strategy.
@@ -228,11 +234,12 @@ public class RawViewerWriter
     private readonly string modelId;
     private readonly Dictionary<string, string> units;
 
-    private readonly List<Block> blocks;
-    private readonly long dirOffset;
-    private readonly long fieldOffsetShell, fieldOffsetBeam, strengthOffset;
-    private readonly long totalLength;
-    private readonly string geometryHash;
+    private Dictionary<int, string> nodeLabels, shellLabels, beamLabels;   // optional, by real id
+    private List<Block> blocks;
+    private long dirOffset;
+    private long fieldOffsetShell, fieldOffsetBeam, strengthOffset;
+    private long totalLength;
+    private string geometryHash;
 
     // ---- construction ---------------------------------------------------
 
@@ -337,6 +344,13 @@ public class RawViewerWriter
             strideBeamLC = (long)nBeams * strideBeamElem;
         }
 
+        Layout();
+    }
+
+    // Builds every resident block and assigns offsets. Re-run when labels are
+    // attached after construction (labels never affect geometryHash).
+    private void Layout()
+    {
         // ---- resident blocks + layout ----
         Dictionary<int, int> nodeIdToIndex = new Dictionary<int, int>();
         for (int i = 0; i < nNodes; i++) nodeIdToIndex[nodeOrder[i].id] = i;
@@ -344,8 +358,12 @@ public class RawViewerWriter
         blocks = new List<Block>();
         blocks.Add(new Block { Tag = "NODE", Domain = GLOBAL_DOMAIN, Count = (uint)nNodes, Bytes = BuildNodeBytes() });
         blocks.Add(new Block { Tag = "NDID", Domain = GLOBAL_DOMAIN, Count = (uint)nNodes, Bytes = BuildNodeIdBytes() });
+        if (nodeLabels != null)
+            blocks.Add(new Block { Tag = "LABL", Domain = GLOBAL_DOMAIN, Count = (uint)nNodes, Bytes = BuildLabelBytes(nodeOrder.Select(n => n.id).ToArray(), nodeLabels) });
         blocks.Add(new Block { Tag = "ELEM", Domain = 0, Count = (uint)nElements, Bytes = BuildShellElemBytes(nodeIdToIndex) });
         blocks.Add(new Block { Tag = "ELID", Domain = 0, Count = (uint)nElements, Bytes = BuildShellElemIdBytes() });
+        if (shellLabels != null)
+            blocks.Add(new Block { Tag = "LABL", Domain = 0, Count = (uint)nElements, Bytes = BuildLabelBytes(elemOrder.Select(e => e.id).ToArray(), shellLabels) });
         if (nStr > 0)
             blocks.Add(new Block { Tag = "FLDC", Domain = 0, Count = 1, Length = (long)nElements * strideElemStr * FLOAT_SIZE });
         if (beamOrder != null)
@@ -354,6 +372,8 @@ public class RawViewerWriter
             blocks.Add(new Block { Tag = "ELEM", Domain = 1, Count = (uint)nBeams, Bytes = BuildBeamElemBytes(nodeIdToIndex) });
             blocks.Add(new Block { Tag = "ELID", Domain = 1, Count = (uint)nBeams, Bytes = BuildBeamElemIdBytes() });
             blocks.Add(new Block { Tag = "BPRP", Domain = 1, Count = (uint)nBeams, Bytes = BuildBprpBytes() });
+            if (beamLabels != null)
+                blocks.Add(new Block { Tag = "LABL", Domain = 1, Count = (uint)nBeams, Bytes = BuildLabelBytes(beamOrder.Select(b => b.Id).ToArray(), beamLabels) });
         }
         geometryHash = ComputeGeometryHash();
         blocks.Add(new Block { Tag = "META", Domain = GLOBAL_DOMAIN, Count = 0, Bytes = BuildMetadata() });
@@ -506,6 +526,43 @@ public class RawViewerWriter
             }
             return ms.ToArray();
         }
+    }
+
+    // ---- labels (optional identity strings, by REAL id) -------------------
+    public void SetNodeLabels(Dictionary<int, string> byNodeId)   { nodeLabels = byNodeId;  Layout(); }
+    public void SetShellLabels(Dictionary<int, string> byElemId)  { shellLabels = byElemId; Layout(); }
+    public void SetBeamLabels(Dictionary<int, string> byBeamId)
+    {
+        if (beamOrder == null) throw new Exception("SetBeamLabels: writer was built without beams.");
+        beamLabels = byBeamId; Layout();
+    }
+
+    // LABL payload (schema section 3): u32[n+1] byte offsets into a UTF-8 pool
+    // that follows. Missing ids get an empty string.
+    private static byte[] BuildLabelBytes(int[] idsInOrder, Dictionary<int, string> labels)
+    {
+        int n = idsInOrder.Length;
+        UTF8Encoding enc = new UTF8Encoding(false);
+        byte[][] strs = new byte[n][];
+        long pool = 0;
+        for (int i = 0; i < n; i++)
+        {
+            string s;
+            strs[i] = enc.GetBytes(labels.TryGetValue(idsInOrder[i], out s) && s != null ? s : "");
+            pool += strs[i].Length;
+        }
+        if (pool > uint.MaxValue) throw new Exception("BuildLabelBytes: label pool exceeds 4 GB.");
+        byte[] buf = new byte[(n + 1) * 4 + pool];
+        uint off = 0;
+        for (int i = 0; i < n; i++)
+        {
+            Buffer.BlockCopy(BitConverter.GetBytes(off), 0, buf, i * 4, 4);
+            off += (uint)strs[i].Length;
+        }
+        Buffer.BlockCopy(BitConverter.GetBytes(off), 0, buf, n * 4, 4);
+        int p = (n + 1) * 4;
+        for (int i = 0; i < n; i++) { Buffer.BlockCopy(strs[i], 0, buf, p, strs[i].Length); p += strs[i].Length; }
+        return buf;
     }
 
     // SHA-256 over NODE NDID ELEM(d asc) ELID(d asc) SECT BPRP(d asc) bytes.

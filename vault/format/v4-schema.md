@@ -62,11 +62,21 @@ Rules:
 | `FLDC` | domain | `f32[nElem][maxSlots][nCompConst]` LC-independent slot fields (was v3 `strengths`) |
 | `SECT` | global | section table (§6), binary                                                         |
 | `BPRP` | domain | beam properties (§4.3)                                                             |
+| `LABL` | both   | identity labels: `u32[n+1]` byte offsets + UTF-8 pool. Global = one label per node; domain d = one per element. Display-only (hover readout). Excluded from `geometryHash`. |
 
 Field blocks never store per-node data; everything is per element-**slot**. A slot is a
 corner for shells and a result station for beams. Unused slots are NaN-padded (tri in a
 4-slot shell domain → slot 4 NaN; 2-station beam in a 3-slot domain → slot 3 NaN). NaN
 renders as no-data, exactly as v3.
+
+### 3.1 Labels vs. groups
+
+`LABL` carries **identity** — one string per node / element (the source system's oid,
+a member mark). It is never rendered as 3D text; the viewer shows it in the readout. Every
+*categorical* attribute (class, run, room, chord/star, unsized, …) is a **group** in the
+[[vault/format/features-sidecar|features sidecar]]: ID lists are cheap, colorable and
+STAAD-exportable, and don't bloat the binary. Rule: identity in the binary, categories in
+the sidecar; a per-element key/value bag is neither and is not supported.
 
 ## 4. Domains
 
@@ -251,3 +261,5 @@ a domain argument; `planeStride = nElem * maxSlots * nComp * 4`.
 - 2026-08-25 — DSR de-prioritised; retained for shells, archived if it conflicts.
 - 2026-08-25 — Element IDs per domain.
 - 2026-08-25 — Features (predicates, section cuts, supports, …) live in a JSON sidecar, never in the binary → [[vault/format/features-sidecar|features-sidecar]].
+- 2026-08-25 — `LABL` block added (identity strings); categories stay in the sidecar.
+- 2026-08-25 — All C# (writers, exporters) must be C# 5 / Add-Type PS 5.1 compatible.

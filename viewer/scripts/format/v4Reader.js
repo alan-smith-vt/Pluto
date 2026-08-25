@@ -23,7 +23,7 @@ var FEAv4 = (function () {
     var GLOBAL_DOMAIN = 0xFFFFFFFF;
     var FLAG_APPEND = 1;
 
-    var TAGS = ['META', 'NODE', 'NDID', 'ELEM', 'ELID', 'FLDS', 'FLDC', 'SECT', 'BPRP'];
+    var TAGS = ['META', 'NODE', 'NDID', 'ELEM', 'ELID', 'FLDS', 'FLDC', 'SECT', 'BPRP', 'LABL'];
     var ELEM_RECORD_U32 = 6;           // both families, schema §4.2
     var BPRP_F32 = 8;
 
@@ -185,6 +185,22 @@ var FEAv4 = (function () {
         return out;
     }
 
+    // LABL: u32[n+1] offsets + UTF-8 pool -> lazy label accessor.
+    function makeLabels(buf, n) {
+        var offs = new Uint32Array(buf, 0, n + 1);
+        var pool = new Uint8Array(buf, (n + 1) * 4);
+        var dec = new TextDecoder('utf-8');
+        var cache = new Array(n);
+        return {
+            count: n,
+            get: function (i) {
+                if (i < 0 || i >= n) return '';
+                if (cache[i] === undefined) cache[i] = dec.decode(pool.subarray(offs[i], offs[i + 1]));
+                return cache[i];
+            }
+        };
+    }
+
     // ---- main --------------------------------------------------------
     async function loadModel(file, log) {
         log = log || function () {};
@@ -245,6 +261,10 @@ var FEAv4 = (function () {
             for (var i = 0; i < nNodes; i++) nodeIds[i] = i + 1;
         }
 
+        var nodeLabels = null;
+        var nlEn = opt('LABL', GLOBAL_DOMAIN);
+        if (nlEn) nodeLabels = makeLabels(await readRange(file, nlEn.offset, nlEn.length), nNodes);
+
         // Sections (global, optional).
         var sections = [];
         var sectEn = opt('SECT', GLOBAL_DOMAIN);
@@ -304,6 +324,10 @@ var FEAv4 = (function () {
                 constFields = { offset: fldcEn.offset, nComp: constComps.length, byteLength: cLen };
             }
 
+            var labels = null;
+            var lablEn = opt('LABL', d);
+            if (lablEn) labels = makeLabels(await readRange(file, lablEn.offset, lablEn.length), nElem);
+
             var beamProps = null;
             var bprpEn = opt('BPRP', d);
             if (bprpEn) {
@@ -325,6 +349,7 @@ var FEAv4 = (function () {
                 fields: fields,
                 constFields: constFields,
                 beamProps: beamProps,
+                labels: labels,                 // { count, get(i) } or null
                 constData: null                 // cache, filled by readConst
             });
         }
@@ -342,6 +367,7 @@ var FEAv4 = (function () {
             nNodes: nNodes,
             nodes: nodes,
             nodeIds: nodeIds,
+            nodeLabels: nodeLabels,
             loadCases: loadCases,
             sections: sections,
             meta: meta,

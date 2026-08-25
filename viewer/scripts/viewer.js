@@ -1497,9 +1497,12 @@ function showReadout(clientX, clientY) {
         : (absValue && !inDsr ? '|' + fmt(v, 6) + '|' : fmt(v, 6)) + (unit ? ' ' + unit : '');
     elRoValue.className = 'ro-value' + (q.noData ? ' ro-nodata' : '');
     var grp = window.FEAFeatures ? FEAFeatures.groupOf('shell', q.element) : null;
-    elRoElem.textContent = q.elementId + '  (idx ' + q.element + ', ' +
+    var lbl = feaModel.labels ? feaModel.labels.get(q.element) : '';
+    elRoElem.textContent = q.elementId + (lbl ? ' [' + lbl + ']' : '') + '  (idx ' + q.element + ', ' +
         (q.ncount === 4 ? 'quad' : 'tri') + (grp ? ', group: ' + grp : '') + ')';
-    elRoNode.textContent = q.nearestNodeId;
+    var nIdx = feaBuild.elemCorners[q.element * 4 + q.nearestCorner];
+    var nlbl = feaModel.nodeLabels ? feaModel.nodeLabels.get(nIdx) : '';
+    elRoNode.textContent = q.nearestNodeId + (nlbl ? ' [' + nlbl + ']' : '');
     elRoCorners.textContent = q.cornerNodeIds.join(', ');
     elRoUV.textContent = q.u.toFixed(4) + ', ' + q.v.toFixed(4);
     elRoPos.textContent = q.point.x.toFixed(2) + ', ' +
