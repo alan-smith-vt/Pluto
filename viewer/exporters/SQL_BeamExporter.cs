@@ -57,6 +57,29 @@ namespace Voyager
         public int RowsRead, RowsKept, PartsSeen, PartsSkipped, PartsUnsized, JointConflicts, RunConflicts;
         public string RoomFilter;
 
+        // ASCII progress bar on the console (not Write-Progress). Set $ex.Progress = $false to silence.
+        public bool Progress = true;
+        public int ProgressEveryRows = 5000;
+        long _fileLen, _pos;
+        DateTime _t0;
+        int _lastBarLen;
+
+        void ProgressTick(int rows, bool final)
+        {
+            if (!Progress) return;
+            if (!final && rows % ProgressEveryRows != 0) return;
+            double frac = _fileLen > 0 ? Math.Min(1.0, (double)_pos / _fileLen) : 0;
+            if (final) frac = 1.0;
+            const int width = 40;
+            int filled = (int)Math.Round(frac * width);
+            string bar = "[" + new string('#', filled) + new string('.', width - filled) + "] " +
+                         string.Format(CultureInfo.InvariantCulture, "{0,3:0}% {1,8:N0} rows {2,5:0}s",
+                                       frac * 100, rows, (DateTime.Now - _t0).TotalSeconds);
+            Console.Write("\r" + bar.PadRight(_lastBarLen));
+            _lastBarLen = bar.Length;
+            if (final) Console.WriteLine();
+        }
+
         public string Summary()
         {
             return string.Format(CultureInfo.InvariantCulture,
@@ -82,6 +105,7 @@ namespace Voyager
             foreach (var r in ReadCsv(csvPath))
             {
                 RowsRead++;
+                ProgressTick(RowsRead, false);
                 string rowRoom = Get(r, "Room");
                 if (filter && !string.Equals(rowRoom.Trim(), RoomFilter, StringComparison.OrdinalIgnoreCase)) continue;
                 RowsKept++;
@@ -115,6 +139,7 @@ namespace Voyager
                 }
                 else acc.Joints[jointOid] = p;
             }
+            ProgressTick(RowsRead, true);
 
             foreach (var kv in byPart)
             {
@@ -223,8 +248,10 @@ namespace Voyager
         static double D(string s) { return double.Parse(s, CultureInfo.InvariantCulture); }
 
         // Minimal RFC-4180-ish reader: quoted fields with "" escapes; no embedded newlines.
-        static IEnumerable<Dictionary<string, string>> ReadCsv(string path)
+        IEnumerable<Dictionary<string, string>> ReadCsv(string path)
         {
+            _fileLen = new FileInfo(path).Length;
+            _pos = 0; _t0 = DateTime.Now; _lastBarLen = 0;
             using (var rd = new StreamReader(path))
             {
                 string header = rd.ReadLine();
@@ -237,6 +264,7 @@ namespace Voyager
                     var f = SplitLine(line);
                     var d = new Dictionary<string, string>(cols.Count);
                     for (int i = 0; i < cols.Count; i++) d[cols[i]] = i < f.Count ? f[i] : "";
+                    _pos = rd.BaseStream.Position;   // buffered, so it steps in 4 KB-ish chunks -- fine for a bar
                     yield return d;
                 }
             }
