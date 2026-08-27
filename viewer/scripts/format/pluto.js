@@ -164,6 +164,7 @@ var PlutoFormat = (function () {
             lcByteStride: dom.fields ? dom.fields.planeStride : 0,
             sections: model.sections,
             beamProps: dom.beamProps,
+            beamTaper: dom.beamTaper || null,
             labels: dom.labels,
             nodeLabels: model.nodeLabels,
             strData: null

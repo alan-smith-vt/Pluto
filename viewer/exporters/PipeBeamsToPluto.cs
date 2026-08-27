@@ -41,12 +41,12 @@ namespace Voyager
         public class Result
         {
             public string BinPath, SidecarPath, GeometryHash;
-            public int Nodes, Beams, Sections, Unsized, Stars, Chords;
+            public int Nodes, Beams, Sections, Unsized, Stars, Chords, Tapered;
             public string Summary()
             {
                 return string.Format(CultureInfo.InvariantCulture,
-                    "nodes={0} beams={1} sections={2} unsized={3} chords={4} starArms={5}\n{6}\n{7}\n{8}",
-                    Nodes, Beams, Sections, Unsized, Chords, Stars, BinPath, SidecarPath, GeometryHash);
+                    "nodes={0} beams={1} sections={2} unsized={3} chords={4} starArms={5} tapered={9}\n{6}\n{7}\n{8}",
+                    Nodes, Beams, Sections, Unsized, Chords, Stars, BinPath, SidecarPath, GeometryHash, Tapered);
             }
         }
 
@@ -76,6 +76,7 @@ namespace Voyager
             var unsized = new List<uint>();
             var chords = new List<uint>();
             var stars = new List<uint>();
+            var tapered = new List<uint>();                        // beams with D0 != D1 (reducers, reducing-tee arms)
 
             // chord vs star: a part with exactly one beam is a chord
             var beamsPerPart = new Dictionary<string, int>();
@@ -124,6 +125,15 @@ namespace Voyager
                 m.NodeB = z;
                 m.SectionIndex = sec;
                 m.LocalY = new double[] { 0, 0, 1 };     // round section: any perpendicular is fine
+                // Taper (BTAP): the section is the beam's LARGER end (b.Diameter); scale each end down to its own size.
+                if (!double.IsNaN(b.Diameter) && b.Diameter > 0)
+                {
+                    double d0 = double.IsNaN(b.D0) || b.D0 <= 0 ? b.Diameter : b.D0;
+                    double d1 = double.IsNaN(b.D1) || b.D1 <= 0 ? b.Diameter : b.D1;
+                    m.ScaleA = (float)(d0 / b.Diameter);
+                    m.ScaleB = (float)(d1 / b.Diameter);
+                    if (Math.Abs(d0 - d1) > 1e-6) tapered.Add((uint)nextBeam);
+                }
                 members[m.Id] = m;
                 beamLabels[m.Id] = b.PartOid ?? "";
 
@@ -160,13 +170,14 @@ namespace Voyager
                             new[] { "pipe", "size" }, StaadName(sections[si].Name));
             }
             if (unsized.Count > 0) sc.AddGroup("UNSIZED", "#ff3b3b", "beams", unsized, new[] { "pipe", "unsized" }, "PIPE_UNSIZED");
+            if (tapered.Count > 0) sc.AddGroup("TAPERED", "#c04bd8", "beams", tapered, new[] { "pipe", "taper" }, "PIPE_TAPERED");
             string scPath = outBase + ".features.json";
             File.WriteAllText(scPath, sc.ToJson(), new System.Text.UTF8Encoding(false));
 
             var r = new Result();
             r.BinPath = binPath; r.SidecarPath = scPath; r.GeometryHash = w.GeometryHash;
             r.Nodes = nodes.Count; r.Beams = members.Count; r.Sections = sections.Count;
-            r.Unsized = unsized.Count; r.Chords = chords.Count; r.Stars = stars.Count;
+            r.Unsized = unsized.Count; r.Chords = chords.Count; r.Stars = stars.Count; r.Tapered = tapered.Count;
             return r;
         }
 
