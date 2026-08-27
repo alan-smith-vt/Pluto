@@ -35,6 +35,17 @@ $ex.Rooms('C:\Temp\pipe_v4.csv') | Sort-Object Value -Descending | Select-Object
 
 Returns room → row count (trimmed, case-insensitive). Blank key = parts whose run has no room UDF.
 
+## 3b. Load model sizes (v4.1, optional but preferred)
+
+Run the v4.1 size query (SQL_Tutor `Task - 3D Viewer Export` §2: pipes via `JDPipePort`, fittings via the route feature tables `NomDiam`/`OuterDiameter`) and export it:
+
+```powershell
+Invoke-Sql $qSizes | Export-Csv C:\Temp\pipe_sizes.csv -NoTypeInformation
+$ex.LoadSizes('C:\Temp\pipe_sizes.csv')      # once per session, before Build
+```
+
+Columns `PartOid, SrcClass, NPD, OD` (OD in meters). `Build` then uses the model OD for every part it finds there and the `RunName` regex only for the rest; `Summary()` reports `fromData / fromName / none`. A part with two different ODs (reducer, reducing tee) is counted under `span two ODs` and rendered at the larger one for now; `$ex.SizeSpanParts()` lists them (PartOid -> min, max).
+
 ## 4. Build beams — whole plant or one room
 
 ```powershell
@@ -51,7 +62,7 @@ While it runs an ASCII bar redraws in place:
 
 (`$ex.Progress = $false` silences it; `$ex.ProgressEveryRows = 20000` slows the redraw.)
 
-`Summary()` prints `room=<room> rows=<read> kept=<after filter> parts=<distinct PartOid> skipped=<parts with <2 joints> unsized=<no size in RunName> jointConflicts=0 runConflicts≈0`. Expect `skipped` to be a few percent (open ends); `jointConflicts` must be 0.
+`Summary()` prints `room=<room> rows=<read> kept=<after filter> parts=<distinct PartOid> skipped=<parts with <2 joints> unsized=<no size at all> jointConflicts=0 runConflicts≈0` and a second line `sizes: fromData=… fromName=… none=…`. Expect `skipped` to be a few percent (open ends); `jointConflicts` must be 0.
 
 What `Build` does per row: keeps it if `Room` matches (before anything else, so a part is in or out with all its joints); groups rows by `PartOid`; one point per `ConnOid` (v4 hub) — `WeldOid` is accepted for old v3 CSVs; size = `SizeInches` column if present, else the `<n>"`, `<a/b>"`, `<n a/b>"` token in `RunName` → meters, `NaN` if none; 2 joints → one chord beam, 3+ → star from each joint to the centroid, <2 → skipped and counted.
 

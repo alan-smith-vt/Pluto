@@ -47,6 +47,7 @@ namespace Voyager
         public string RunOid;
         public string RunName;
         public string Room;          // from the CSV Room column ("" if absent)
+        public string SizeSource;    // "data" (pipe_sizes.csv), "name" (RunName regex), "none"
     }
 
     public class SQL_BeamExporter
@@ -55,7 +56,41 @@ namespace Voyager
 
         // diagnostics, printed by the caller at the end
         public int RowsRead, RowsKept, PartsSeen, PartsSkipped, PartsUnsized, JointConflicts, RunConflicts;
+        public int SizedFromData, SizedFromName, SizedNone;
         public string RoomFilter;
+
+        // ---- sizes from the model (v4.1): pipe_sizes.csv = PartOid, SrcClass, NPD, OD (meters) ----
+        // Pipes give one row per port (2), fittings one per feature. A part whose rows disagree on OD
+        // (reducer / reducing tee) is counted in SizeSpans and gets the LARGEST OD for now (D0/D1 later).
+        Dictionary<string, double> _sizeMax = new Dictionary<string, double>();
+        Dictionary<string, double> _sizeMin = new Dictionary<string, double>();
+        public int SizeRows, SizeParts, SizeSpans;
+
+        public void LoadSizes(string csvPath)
+        {
+            _sizeMax.Clear(); _sizeMin.Clear(); SizeRows = SizeParts = SizeSpans = 0;
+            foreach (var r in ReadCsv(csvPath))
+            {
+                SizeRows++;
+                double od;
+                if (!double.TryParse(Get(r, "OD"), NumberStyles.Float, CultureInfo.InvariantCulture, out od) || od <= 0) continue;
+                string part = r["PartOid"];
+                double cur;
+                if (_sizeMax.TryGetValue(part, out cur)) { if (od > cur) _sizeMax[part] = od; if (od < _sizeMin[part]) _sizeMin[part] = od; }
+                else { _sizeMax[part] = od; _sizeMin[part] = od; }
+            }
+            ProgressTick(SizeRows, true);
+            SizeParts = _sizeMax.Count;
+            foreach (var kv in _sizeMax) { if (kv.Value - _sizeMin[kv.Key] > 1e-6) SizeSpans++; }
+        }
+
+        // Parts whose rows carry two different ODs (reducers, reducing tees): PartOid -> (min, max) meters.
+        public Dictionary<string, double[]> SizeSpanParts()
+        {
+            var d = new Dictionary<string, double[]>();
+            foreach (var kv in _sizeMax) { if (kv.Value - _sizeMin[kv.Key] > 1e-6) d[kv.Key] = new double[] { _sizeMin[kv.Key], kv.Value }; }
+            return d;
+        }
 
         // ASCII progress bar on the console (not Write-Progress). Set $ex.Progress = $false to silence.
         public bool Progress = true;
@@ -83,9 +118,11 @@ namespace Voyager
         public string Summary()
         {
             return string.Format(CultureInfo.InvariantCulture,
-                "room={0} rows={1} kept={2} parts={3} skipped={4} unsized={5} jointConflicts={6} runConflicts={7}",
+                "room={0} rows={1} kept={2} parts={3} skipped={4} unsized={5} jointConflicts={6} runConflicts={7}\n" +
+                "sizes: fromData={8} fromName={9} none={10}  (size table: {11} rows, {12} parts, {13} span two ODs)",
                 string.IsNullOrEmpty(RoomFilter) ? "(all)" : RoomFilter,
-                RowsRead, RowsKept, PartsSeen, PartsSkipped, PartsUnsized, JointConflicts, RunConflicts);
+                RowsRead, RowsKept, PartsSeen, PartsSkipped, PartsUnsized, JointConflicts, RunConflicts,
+                SizedFromData, SizedFromName, SizedNone, SizeRows, SizeParts, SizeSpans);
         }
 
         public List<SQL_Beam> Build(string csvPath)
@@ -122,6 +159,9 @@ namespace Voyager
                     // SizeInches (PowerShell pre-parse) if present, else parse the run name here.
                     acc.Diameter = r.ContainsKey("SizeInches") ? ParseSize(r["SizeInches"])
                                                               : SizeFromRunName(acc.RunName);
+                    acc.SizeSource = double.IsNaN(acc.Diameter) ? "none" : "name";
+                    double od;
+                    if (_sizeMax.TryGetValue(partOid, out od)) { acc.Diameter = od; acc.SizeSource = "data"; }   // model beats regex
                     byPart[partOid] = acc;
                 }
                 else if (acc.RunOid != Get(r, "RunOid") && !string.IsNullOrEmpty(Get(r, "RunOid")))
@@ -147,6 +187,7 @@ namespace Voyager
                 var acc = kv.Value;
                 var pts = acc.Joints.Values.ToList();
                 if (double.IsNaN(acc.Diameter)) PartsUnsized++;
+                if (acc.SizeSource == "data") SizedFromData++; else if (acc.SizeSource == "name") SizedFromName++; else SizedNone++;
 
                 if (pts.Count < 2) { PartsSkipped++; continue; }
 
@@ -180,6 +221,7 @@ namespace Voyager
             public int PartClass;
             public string RunOid, RunName, Room;
             public double Diameter;
+            public string SizeSource;
             public Dictionary<string, Vec3> Joints = new Dictionary<string, Vec3>();
         }
 
@@ -192,7 +234,7 @@ namespace Voyager
         static SQL_Beam Make(Vec3 a, Vec3 b, PartAcc acc, string partOid)
         {
             var bm = new SQL_Beam();
-            bm.P0 = a; bm.P1 = b; bm.Diameter = acc.Diameter;
+            bm.P0 = a; bm.P1 = b; bm.Diameter = acc.Diameter; bm.SizeSource = acc.SizeSource;
             bm.PartOid = partOid; bm.PartClass = acc.PartClass;
             bm.RunOid = acc.RunOid; bm.RunName = acc.RunName; bm.Room = acc.Room;
             return bm;
