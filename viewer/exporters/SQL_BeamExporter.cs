@@ -10,7 +10,8 @@ using System.Text;
 //
 // Input CSV columns (Export-Csv, every field quoted):
 //   ConnOid, PartOid, PartClass, X, Y, Z (meters), RunOid, RunName, Room, Udf3, Udf4,
-//   SizeInches (added by the PowerShell size parse; blank = unparsed)
+//   SizeInches (optional; if absent the size is parsed from RunName here -- the PowerShell
+//              size pass is no longer needed and hung on the 400k-row v4 file)
 //   Legacy v3.x CSVs carry WeldOid instead of ConnOid -- accepted (joint key falls back).
 //
 // One row per (joint, part). A part with 2 joints -> one beam (chord); 3+ -> a star
@@ -94,7 +95,9 @@ namespace Voyager
                     acc.RunOid = Get(r, "RunOid");
                     acc.RunName = Get(r, "RunName");
                     acc.Room = rowRoom;
-                    acc.Diameter = ParseSize(Get(r, "SizeInches"));
+                    // SizeInches (PowerShell pre-parse) if present, else parse the run name here.
+                    acc.Diameter = r.ContainsKey("SizeInches") ? ParseSize(r["SizeInches"])
+                                                              : SizeFromRunName(acc.RunName);
                     byPart[partOid] = acc;
                 }
                 else if (acc.RunOid != Get(r, "RunOid") && !string.IsNullOrEmpty(Get(r, "RunOid")))
@@ -188,6 +191,33 @@ namespace Voyager
             double v;
             return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out v)
                  ? v * InchToMeter : double.NaN;
+        }
+
+        // Size from the run name: the ONLY '"' in the name follows the size, e.g. -1 1/2"- ; -3/4"- ; -2"- .
+        // Same rule as the PowerShell Get-SizeInches (SQL_Tutor "Pipe Extraction v1"); NaN when absent.
+        static readonly System.Text.RegularExpressions.Regex SizeRx =
+            new System.Text.RegularExpressions.Regex("(\\d+ \\d+/\\d+|\\d+/\\d+|\\d+\\.?\\d*)\"",
+                                                     System.Text.RegularExpressions.RegexOptions.Compiled);
+        static double SizeFromRunName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return double.NaN;
+            var m = SizeRx.Match(name);
+            if (!m.Success) return double.NaN;
+            string t = m.Groups[1].Value;
+            double whole = 0, frac = 0;
+            if (t.Contains(" "))
+            {
+                var wf = t.Split(' ');
+                whole = double.Parse(wf[0], CultureInfo.InvariantCulture);
+                t = wf[1];
+            }
+            if (t.Contains("/"))
+            {
+                var ab = t.Split('/');
+                frac = double.Parse(ab[0], CultureInfo.InvariantCulture) / double.Parse(ab[1], CultureInfo.InvariantCulture);
+            }
+            else frac = double.Parse(t, CultureInfo.InvariantCulture);
+            return (whole + frac) * InchToMeter;
         }
 
         static double D(string s) { return double.Parse(s, CultureInfo.InvariantCulture); }
