@@ -62,7 +62,6 @@ Rules:
 | `FLDC` | domain | `f32[nElem][maxSlots][nCompConst]` LC-independent slot fields (was v3 `strengths`) |
 | `SECT` | global | section table (§6), binary                                                         |
 | `BPRP` | domain | beam properties (§4.3)                                                             |
-| `BTAP` | domain | optional beam taper: `f32[nElem][2]` = (scaleA, scaleB) (§4.4). Absent = prismatic. Excluded from `geometryHash`. |
 | `LABL` | both   | identity labels: `u32[n+1]` byte offsets + UTF-8 pool. Global = one label per node; domain d = one per element. Display-only (hover readout). Excluded from `geometryHash`. |
 
 Field blocks never store per-node data; everything is per element-**slot**. A slot is a
@@ -131,10 +130,6 @@ allows more; the viewer interpolates linearly between whatever stations exist.
 | 7   | release bitmask (u32 bit pattern stored in the f32 slot; 0 = none). Display hint only.           |
 
 Local x = n0→n1; local z = x × y; reader re-orthogonalises y against x.
-
-### 4.4 `BTAP` beam taper — `f32[nElem][2]` (optional)
-
-Per beam, in beam order: `scaleA, scaleB`. The section outline (§6) is multiplied by `scaleA` at end A (n0) and `scaleB` at end B (n1); the viewer linearly interpolates between the two rings, so a `PIPE` becomes a frustum. `1, 1` = prismatic. Writers omit the block when every beam is `1, 1`; readers treat an absent block as all ones. The section stays the identity of the beam (one section per catalog size; the taper is a display attribute of the member, not a new section type), so sidecar groups keyed on section index are unaffected, and the block is **excluded from `geometryHash`** — a change in taper alone does not invalidate a sidecar. First use: pipe reducers and reducing-tee branches (SP3D v4.1, sizes per end).
 
 ## 5. META JSON
 
@@ -268,4 +263,3 @@ a domain argument; `planeStride = nElem * maxSlots * nComp * 4`.
 - 2026-08-25 — Features (predicates, section cuts, supports, …) live in a JSON sidecar, never in the binary → [[vault/format/features-sidecar|features-sidecar]].
 - 2026-08-25 — `LABL` block added (identity strings); categories stay in the sidecar.
 - 2026-08-25 — All C# (writers, exporters) must be C# 5 / Add-Type PS 5.1 compatible.
-- 2026-08-27 — `BTAP` block added (per-beam end scales) for tapered pipe; optional, hash-neutral, section identity unchanged. A `TaperedPipe` section type was rejected: every (odA, odB) pair would become its own section and fragment the size groups.

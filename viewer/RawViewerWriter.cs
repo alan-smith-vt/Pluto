@@ -75,9 +75,6 @@ public class RawViewerWriter
         public double[] LocalY = { 0, 0, 1 };
         public double OffsetAy, OffsetAz, OffsetBy, OffsetBz;
         public uint ReleaseMask;
-        // Optional taper (schema 4.4, BTAP block): the section outline is scaled by ScaleA at
-        // end A and ScaleB at end B. 1/1 = prismatic (block omitted when every beam is 1/1).
-        public float ScaleA = 1f, ScaleB = 1f;
     }
 
     // Parametric cross-section (schema §6). Params in the section-local
@@ -389,8 +386,6 @@ public class RawViewerWriter
             blocks.Add(new Block { Tag = "ELEM", Domain = beamDomain, Count = (uint)nBeams, Bytes = BuildBeamElemBytes(nodeIdToIndex) });
             blocks.Add(new Block { Tag = "ELID", Domain = beamDomain, Count = (uint)nBeams, Bytes = BuildBeamElemIdBytes() });
             blocks.Add(new Block { Tag = "BPRP", Domain = beamDomain, Count = (uint)nBeams, Bytes = BuildBprpBytes() });
-            if (AnyTaper())
-                blocks.Add(new Block { Tag = "BTAP", Domain = beamDomain, Count = (uint)nBeams, Bytes = BuildBtapBytes() });
             if (beamLabels != null)
                 blocks.Add(new Block { Tag = "LABL", Domain = beamDomain, Count = (uint)nBeams, Bytes = BuildLabelBytes(beamOrder.Select(b => b.Id).ToArray(), beamLabels) });
         }
@@ -524,28 +519,6 @@ public class RawViewerWriter
             f[o + 3] = (float)bm.OffsetAy; f[o + 4] = (float)bm.OffsetAz;
             f[o + 5] = (float)bm.OffsetBy; f[o + 6] = (float)bm.OffsetBz;
             f[o + 7] = BitConverter.ToSingle(BitConverter.GetBytes(bm.ReleaseMask), 0);
-        }
-        byte[] buf = new byte[f.Length * 4];
-        Buffer.BlockCopy(f, 0, buf, 0, buf.Length);
-        return buf;
-    }
-    private bool AnyTaper()
-    {
-        for (int b = 0; b < nBeams; b++)
-        {
-            BeamMember bm = beamOrder[b];
-            if (Math.Abs(bm.ScaleA - 1f) > 1e-6f || Math.Abs(bm.ScaleB - 1f) > 1e-6f) return true;
-        }
-        return false;
-    }
-    // BTAP: f32[nBeams][2] = (scaleA, scaleB) per beam, beam order. Not part of geometryHash.
-    private byte[] BuildBtapBytes()
-    {
-        float[] f = new float[nBeams * 2];
-        for (int b = 0; b < nBeams; b++)
-        {
-            f[b * 2] = beamOrder[b].ScaleA;
-            f[b * 2 + 1] = beamOrder[b].ScaleB;
         }
         byte[] buf = new byte[f.Length * 4];
         Buffer.BlockCopy(f, 0, buf, 0, buf.Length);

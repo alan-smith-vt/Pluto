@@ -73,11 +73,11 @@ $r = [Voyager.PipeBeamsToPluto]::Export($beams, 'C:\Temp\pipes_<room>', '<plant>
 $r.Summary()
 ```
 
-Writes `C:\Temp\pipes_<room>.bin` (v4 binary, beams only, geometry only, `PartOid` as label; beams with two different end sizes carry a `BTAP` taper block) and `C:\Temp\pipes_<room>.features.json` (one group per pipe size on a blue→red ramp, `UNSIZED` red, `TAPERED` purple = reducers and reducing-tee arms). `$r.Summary()` ends with `tapered=<n>`. Third argument is the model id string; fourth is the file's length unit (`m`, `mm`, `in`, `ft`).
+Writes `C:\Temp\pipes_<room>.bin` (v4 binary, beams only, geometry only, `PartOid` as label) and `C:\Temp\pipes_<room>.features.json` (one group per pipe size on a blue→red ramp, `UNSIZED` red). Third argument is the model id string; fourth is the file's length unit (`m`, `mm`, `in`, `ft`).
 
 ## 6. View
 
-Drop the `.bin` and `.features.json` together on the viewer's file picker → tick **Color by groups** → tick **Z up**. Hover shows `PartOid`. Reducers render as frustums (section = the larger end, scaled down at the small end) once the viewer scripts include the 2026-08-27 `BTAP` support (`v4Reader.js`, `pluto.js`, `beamGeometry.js`); an older viewer skips the block and draws the larger size.
+Drop the `.bin` and `.features.json` together on the viewer's file picker → tick **Color by groups** → tick **Z up**. Hover shows `PartOid`.
 
 ## Troubleshooting
 

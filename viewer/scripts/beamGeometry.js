@@ -100,7 +100,6 @@ var FEABeamGeometry = (function () {
         var elems = view.elems;
         var nodes = view.nodes;
         var props = view.beamProps;
-        var taper = view.beamTaper || null;
         var sections = view.sections || [];
         var BP = FEAv4.BPRP_F32;
         PIPE_SEGS = segsFor(nElem);
@@ -189,13 +188,10 @@ var FEABeamGeometry = (function () {
 
             var sg = secGeom(sectionOf[e2]);
             var pts = sg.pts, m = pts.length;
-            // Taper (BTAP): scale the outline per end; 1/1 when the block is absent.
-            var sA = taper ? taper[e2 * 2] : 1, sB = taper ? taper[e2 * 2 + 1] : 1;
-            if (!(sA > 0)) sA = 1; if (!(sB > 0)) sB = 1;
             ringA.length = 0; ringB.length = 0;
             for (var i = 0; i < m; i++) {
-                ringA.push(cA.clone().addScaledVector(Y, pts[i][0] * sA).addScaledVector(Z, pts[i][1] * sA));
-                ringB.push(cB.clone().addScaledVector(Y, pts[i][0] * sB).addScaledVector(Z, pts[i][1] * sB));
+                ringA.push(cA.clone().addScaledVector(Y, pts[i][0]).addScaledVector(Z, pts[i][1]));
+                ringB.push(cB.clone().addScaledVector(Y, pts[i][0]).addScaledVector(Z, pts[i][1]));
             }
             for (var k = 0; k < m; k++) {
                 var k2 = (k + 1) % m;

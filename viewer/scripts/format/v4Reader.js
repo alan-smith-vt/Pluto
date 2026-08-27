@@ -23,7 +23,7 @@ var FEAv4 = (function () {
     var GLOBAL_DOMAIN = 0xFFFFFFFF;
     var FLAG_APPEND = 1;
 
-    var TAGS = ['META', 'NODE', 'NDID', 'ELEM', 'ELID', 'FLDS', 'FLDC', 'SECT', 'BPRP', 'BTAP', 'LABL'];
+    var TAGS = ['META', 'NODE', 'NDID', 'ELEM', 'ELID', 'FLDS', 'FLDC', 'SECT', 'BPRP', 'LABL'];
     var ELEM_RECORD_U32 = 6;           // both families, schema §4.2
     var BPRP_F32 = 8;
 
@@ -334,14 +334,6 @@ var FEAv4 = (function () {
                 beamProps = new Float32Array(await readRange(file, bprpEn.offset, nElem * BPRP_F32 * 4));
             }
 
-            // Optional per-beam taper: f32[nElem][2] = (scaleA, scaleB); absent = prismatic (schema 4.4).
-            var beamTaper = null;
-            var btapEn = opt('BTAP', d);
-            if (btapEn) {
-                requireWithin(file, 'BTAP (domain ' + d + ')', btapEn.offset, nElem * 2 * 4);
-                beamTaper = new Float32Array(await readRange(file, btapEn.offset, nElem * 2 * 4));
-            }
-
             domains.push({
                 index: d,
                 name: desc.name || (desc.family || 'domain') + ' ' + d,
@@ -357,7 +349,6 @@ var FEAv4 = (function () {
                 fields: fields,
                 constFields: constFields,
                 beamProps: beamProps,
-                beamTaper: beamTaper,           // Float32Array [nElem*2] or null
                 labels: labels,                 // { count, get(i) } or null
                 constData: null                 // cache, filled by readConst
             });
