@@ -47,7 +47,8 @@ namespace Voyager
         public string RunOid;
         public string RunName;
         public string Room;          // from the CSV Room column ("" if absent)
-        public string SizeSource;    // "data" (pipe_sizes.csv), "name" (RunName regex), "none"
+        public string SizeSource;    // "data" (OD column / pipe_sizes.csv), "name" (RunName regex), "none"
+        public double D0, D1;        // meters at P0 / P1 from the v4.1 EndOD column (reducers differ); NaN = unknown
     }
 
     public class SQL_BeamExporter
@@ -57,6 +58,7 @@ namespace Voyager
         // diagnostics, printed by the caller at the end
         public int RowsRead, RowsKept, PartsSeen, PartsSkipped, PartsUnsized, JointConflicts, RunConflicts;
         public int SizedFromData, SizedFromName, SizedNone;
+        public int TaperedBeams;     // beams whose two ends differ (reducers / reducing tees)
         public string RoomFilter;
 
         // ---- sizes from the model (v4.1): pipe_sizes.csv = PartOid, SrcClass, NPD, OD (meters) ----
@@ -119,10 +121,10 @@ namespace Voyager
         {
             return string.Format(CultureInfo.InvariantCulture,
                 "room={0} rows={1} kept={2} parts={3} skipped={4} unsized={5} jointConflicts={6} runConflicts={7}\n" +
-                "sizes: fromData={8} fromName={9} none={10}  (size table: {11} rows, {12} parts, {13} span two ODs)",
+                "sizes: fromData={8} fromName={9} none={10}  tapered beams={14}  (size table: {11} rows, {12} parts, {13} span two ODs)",
                 string.IsNullOrEmpty(RoomFilter) ? "(all)" : RoomFilter,
                 RowsRead, RowsKept, PartsSeen, PartsSkipped, PartsUnsized, JointConflicts, RunConflicts,
-                SizedFromData, SizedFromName, SizedNone, SizeRows, SizeParts, SizeSpans);
+                SizedFromData, SizedFromName, SizedNone, SizeRows, SizeParts, SizeSpans, TaperedBeams);
         }
 
         public List<SQL_Beam> Build(string csvPath)
@@ -180,6 +182,9 @@ namespace Voyager
                     if (Dist(existing, p) > 1e-6) JointConflicts++;   // should never happen
                 }
                 else acc.Joints[jointOid] = p;
+                // v4.1 EndOD = size at THIS end (the neighbour across the hub); absent -> the part's own OD
+                double eod;
+                if (double.TryParse(Get(r, "EndOD"), NumberStyles.Float, CultureInfo.InvariantCulture, out eod) && eod > 0) acc.EndOd[jointOid] = eod;
             }
             ProgressTick(RowsRead, true);
 
@@ -187,7 +192,8 @@ namespace Voyager
             {
                 PartsSeen++;
                 var acc = kv.Value;
-                var pts = acc.Joints.Values.ToList();
+                var hubs = acc.Joints.Keys.ToList();
+                var pts = hubs.Select(h => acc.Joints[h]).ToList();
                 if (double.IsNaN(acc.Diameter)) PartsUnsized++;
                 if (acc.SizeSource == "data") SizedFromData++; else if (acc.SizeSource == "name") SizedFromName++; else SizedNone++;
 
@@ -195,12 +201,12 @@ namespace Voyager
 
                 if (pts.Count == 2)
                 {
-                    beams.Add(Make(pts[0], pts[1], acc, kv.Key));
+                    beams.Add(Make(pts[0], pts[1], acc, kv.Key, acc.EndAt(hubs[0]), acc.EndAt(hubs[1])));
                     continue;
                 }
 
                 Vec3 c = Centroid(pts);
-                foreach (var w in pts) beams.Add(Make(w, c, acc, kv.Key));
+                for (int i = 0; i < pts.Count; i++) beams.Add(Make(pts[i], c, acc, kv.Key, acc.EndAt(hubs[i]), acc.Diameter));   // star arm: hub end -> centroid at the part's own size
             }
             return beams;
         }
@@ -225,6 +231,8 @@ namespace Voyager
             public double Diameter;
             public string SizeSource;
             public Dictionary<string, Vec3> Joints = new Dictionary<string, Vec3>();
+            public Dictionary<string, double> EndOd = new Dictionary<string, double>();   // hub -> OD at that end
+            public double EndAt(string hub) { double v; return EndOd.TryGetValue(hub, out v) ? v : Diameter; }
         }
 
         static string Get(Dictionary<string, string> r, string col)
@@ -233,10 +241,14 @@ namespace Voyager
             return r.TryGetValue(col, out v) ? v : "";
         }
 
-        static SQL_Beam Make(Vec3 a, Vec3 b, PartAcc acc, string partOid)
+        SQL_Beam Make(Vec3 a, Vec3 b, PartAcc acc, string partOid, double d0, double d1)
         {
             var bm = new SQL_Beam();
-            bm.P0 = a; bm.P1 = b; bm.Diameter = acc.Diameter; bm.SizeSource = acc.SizeSource;
+            bm.P0 = a; bm.P1 = b; bm.SizeSource = acc.SizeSource;
+            bm.D0 = d0; bm.D1 = d1;
+            // single-radius viewer for now: the larger end (NaN-safe)
+            bm.Diameter = double.IsNaN(d0) ? d1 : (double.IsNaN(d1) ? d0 : Math.Max(d0, d1));
+            if (!double.IsNaN(d0) && !double.IsNaN(d1) && Math.Abs(d0 - d1) > 1e-6) TaperedBeams++;
             bm.PartOid = partOid; bm.PartClass = acc.PartClass;
             bm.RunOid = acc.RunOid; bm.RunName = acc.RunName; bm.Room = acc.Room;
             return bm;
