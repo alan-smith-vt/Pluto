@@ -160,8 +160,10 @@ namespace Voyager
                     acc.Diameter = r.ContainsKey("SizeInches") ? ParseSize(r["SizeInches"])
                                                               : SizeFromRunName(acc.RunName);
                     acc.SizeSource = double.IsNaN(acc.Diameter) ? "none" : "name";
+                    // Model size beats the regex: v4.1 CSV carries OD (meters) per row; LoadSizes() table as an alternative.
                     double od;
-                    if (_sizeMax.TryGetValue(partOid, out od)) { acc.Diameter = od; acc.SizeSource = "data"; }   // model beats regex
+                    if (double.TryParse(Get(r, "OD"), NumberStyles.Float, CultureInfo.InvariantCulture, out od) && od > 0) { acc.Diameter = od; acc.SizeSource = "data"; }
+                    else if (_sizeMax.TryGetValue(partOid, out od)) { acc.Diameter = od; acc.SizeSource = "data"; }
                     byPart[partOid] = acc;
                 }
                 else if (acc.RunOid != Get(r, "RunOid") && !string.IsNullOrEmpty(Get(r, "RunOid")))

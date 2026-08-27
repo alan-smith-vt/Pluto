@@ -10,13 +10,13 @@ The SP3D piping arm end to end, as run in the production environment (everything
 
 ## 1. Get the CSV
 
-Run the **v4** query from SQL_Tutor `vault/40-join-paths/Pipe Extraction v1.md` and export it raw:
+Run the **v4.1** query from SQL_Tutor `vault/40-join-paths/Pipe Extraction v1.md` and export it raw:
 
 ```powershell
 Invoke-Sql $q | Export-Csv C:\Temp\pipe_v4.csv -NoTypeInformation
 ```
 
-Columns: `ConnOid, PartOid, PartClass, X, Y, Z, RunOid, RunName, Room, Udf3, Udf4` (meters). ~400k rows. **No sizing pass, no Excel filter** — both now happen inside `SQL_BeamExporter`.
+Columns: `ConnOid, PartOid, PartClass, X, Y, Z, RunOid, RunName, Room, Udf3, Udf4, NPD, OD` (meters; `OD` from the model per part). ~400k rows. **No sizing pass, no Excel filter** — `Build` reads `OD` directly and falls back to the `RunName` regex where it is blank.
 
 ## 2. Compile (fresh window)
 
@@ -35,7 +35,7 @@ $ex.Rooms('C:\Temp\pipe_v4.csv') | Sort-Object Value -Descending | Select-Object
 
 Returns room → row count (trimmed, case-insensitive). Blank key = parts whose run has no room UDF.
 
-## 3b. Load model sizes (v4.1, optional but preferred)
+## 3b. Separate size table (optional - only for CSVs without an `OD` column)
 
 Run the v4.1 size query (SQL_Tutor `Task - 3D Viewer Export` §2: pipes via `JDPipePort`, fittings via the route feature tables `NomDiam`/`OuterDiameter`) and export it:
 
