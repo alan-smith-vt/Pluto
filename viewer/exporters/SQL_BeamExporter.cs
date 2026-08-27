@@ -135,6 +135,7 @@ namespace Voyager
         public List<SQL_Beam> Build(string csvPath, string room)
         {
             RowsRead = RowsKept = PartsSeen = PartsSkipped = PartsUnsized = JointConflicts = RunConflicts = 0;
+            SizedFromData = SizedFromName = SizedNone = TaperedBeams = 0;
             RoomFilter = room == null ? null : room.Trim();
             bool filter = !string.IsNullOrEmpty(RoomFilter);
 
@@ -162,10 +163,9 @@ namespace Voyager
                     acc.Diameter = r.ContainsKey("SizeInches") ? ParseSize(r["SizeInches"])
                                                               : SizeFromRunName(acc.RunName);
                     acc.SizeSource = double.IsNaN(acc.Diameter) ? "none" : "name";
-                    // Model size beats the regex: v4.1 CSV carries OD (meters) per row; LoadSizes() table as an alternative.
+                    // LoadSizes() table (optional) beats the regex; the per-row OD (v4.1) beats both, see below.
                     double od;
-                    if (double.TryParse(Get(r, "OD"), NumberStyles.Float, CultureInfo.InvariantCulture, out od) && od > 0) { acc.Diameter = od; acc.SizeSource = "data"; }
-                    else if (_sizeMax.TryGetValue(partOid, out od)) { acc.Diameter = od; acc.SizeSource = "data"; }
+                    if (_sizeMax.TryGetValue(partOid, out od)) { acc.Diameter = od; acc.SizeSource = "data"; }
                     byPart[partOid] = acc;
                 }
                 else if (acc.RunOid != Get(r, "RunOid") && !string.IsNullOrEmpty(Get(r, "RunOid")))
@@ -182,9 +182,15 @@ namespace Voyager
                     if (Dist(existing, p) > 1e-6) JointConflicts++;   // should never happen
                 }
                 else acc.Joints[jointOid] = p;
-                // v4.1 EndOD = size at THIS end (the neighbour across the hub); absent -> the part's own OD
+                // v4.1: each row is one END of the part, and its OD column is the size AT THAT END (meters).
+                // (Older CSVs named it EndOD; accepted.) A reducer's two rows differ; every other part's agree.
                 double eod;
-                if (double.TryParse(Get(r, "EndOD"), NumberStyles.Float, CultureInfo.InvariantCulture, out eod) && eod > 0) acc.EndOd[jointOid] = eod;
+                string odText = r.ContainsKey("EndOD") ? r["EndOD"] : Get(r, "OD");
+                if (double.TryParse(odText, NumberStyles.Float, CultureInfo.InvariantCulture, out eod) && eod > 0)
+                {
+                    acc.EndOd[jointOid] = eod;
+                    acc.SizeSource = "data";
+                }
             }
             ProgressTick(RowsRead, true);
 
@@ -192,6 +198,7 @@ namespace Voyager
             {
                 PartsSeen++;
                 var acc = kv.Value;
+                if (acc.EndOd.Count > 0) acc.Diameter = acc.EndOd.Values.Max();   // part size = its larger end
                 var hubs = acc.Joints.Keys.ToList();
                 var pts = hubs.Select(h => acc.Joints[h]).ToList();
                 if (double.IsNaN(acc.Diameter)) PartsUnsized++;
