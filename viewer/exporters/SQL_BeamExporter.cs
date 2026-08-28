@@ -48,7 +48,7 @@ namespace Voyager
         public string RunName;
         public string Room;          // from the CSV Room column ("" if absent)
         public string SizeSource;    // "data" (OD column / pipe_sizes.csv), "name" (RunName regex), "none"
-        public double D0, D1;        // meters at P0 / P1 from the v4.1 EndOD column (reducers differ); NaN = unknown
+        public double D0, D1;        // meters at P0 / P1; OD column (v4.2) or EndOD (v4.1 taper experiment); NaN = unknown
     }
 
     public class SQL_BeamExporter
@@ -163,7 +163,7 @@ namespace Voyager
                     acc.Diameter = r.ContainsKey("SizeInches") ? ParseSize(r["SizeInches"])
                                                               : SizeFromRunName(acc.RunName);
                     acc.SizeSource = double.IsNaN(acc.Diameter) ? "none" : "name";
-                    // LoadSizes() table (optional) beats the regex; the per-row OD (v4.1) beats both, see below.
+                    // LoadSizes() table (optional) beats the regex; the per-row OD (v4.2) beats both, see below.
                     double od;
                     if (_sizeMax.TryGetValue(partOid, out od)) { acc.Diameter = od; acc.SizeSource = "data"; }
                     byPart[partOid] = acc;
@@ -182,8 +182,8 @@ namespace Voyager
                     if (Dist(existing, p) > 1e-6) JointConflicts++;   // should never happen
                 }
                 else acc.Joints[jointOid] = p;
-                // v4.1: each row is one END of the part, and its OD column is the size AT THAT END (meters).
-                // (Older CSVs named it EndOD; accepted.) A reducer's two rows differ; every other part's agree.
+                // v4.2: OD column = the part's own size (meters), same on both of its rows.
+                // v4.1 taper CSVs name it EndOD (size AT THAT END; a reducer's two rows differ) -- accepted.
                 double eod;
                 string odText = r.ContainsKey("EndOD") ? r["EndOD"] : Get(r, "OD");
                 if (double.TryParse(odText, NumberStyles.Float, CultureInfo.InvariantCulture, out eod) && eod > 0)
