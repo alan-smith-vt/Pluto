@@ -28,6 +28,9 @@ var FEABeams = (function () {
     var elSection = document.getElementById('beamSection');
     var elShow    = document.getElementById('beamShow');
     var elXray    = document.getElementById('beamXray');
+
+    try { xray = localStorage.getItem('pluto.beamXray') === '1'; } catch (e) {}
+    if (elXray) elXray.checked = xray;
     var elComp    = document.getElementById('beamComp');
     var elRange   = document.getElementById('beamRange');
     var elCount   = document.getElementById('beamCount');
@@ -216,6 +219,7 @@ var FEABeams = (function () {
     });
     if (elXray) elXray.addEventListener('change', function () {
         xray = this.checked;
+        try { localStorage.setItem('pluto.beamXray', xray ? '1' : '0'); } catch (e) {}
         applyXray();
     });
     if (elComp) elComp.addEventListener('change', function () {
