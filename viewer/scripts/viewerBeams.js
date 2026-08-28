@@ -206,8 +206,7 @@ var FEABeams = (function () {
         elRoNode.textContent = view.nodeIds[nn] + (nlbl ? ' [' + nlbl + ']' : '');
         elRoCorners.textContent = view.nodeIds[n0] + ' → ' + view.nodeIds[n1];
         elRoUV.textContent = 't = ' + t.toFixed(4);
-        elRoPos.textContent = hit.point.x.toFixed(2) + ', ' +
-            hit.point.y.toFixed(2) + ', ' + hit.point.z.toFixed(2);
+        elRoPos.textContent = roPosText(hit.point);
         if (elRoControllingRow) elRoControllingRow.style.display = 'none';
     }
 

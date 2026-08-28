@@ -1485,24 +1485,35 @@ function faceIsVisible(faceIndex) {
 }
 
 function feaPick(clientX, clientY) {
-    if (!mesh) return null;
+    var haveBeams = window.FEABeams && FEABeams.mesh();
+    if (!mesh && !haveBeams) return null;      // beam-only files have no shell mesh
     var rect = renderer.domElement.getBoundingClientRect();
     var ndc = new THREE.Vector2(
         ((clientX - rect.left) / rect.width) * 2 - 1,
         -((clientY - rect.top) / rect.height) * 2 + 1
     );
     feaRaycaster.setFromCamera(ndc, camera);
-    var hits = feaRaycaster.intersectObject(mesh);
     var shellHit = null;
-    for (var i = 0; i < hits.length; i++) {
-        if (hits[i].faceIndex == null) continue;
-        if (!faceIsVisible(hits[i].faceIndex)) continue;
-        shellHit = { faceIndex: hits[i].faceIndex, point: hits[i].point, distance: hits[i].distance };
-        break;
+    if (mesh) {
+        var hits = feaRaycaster.intersectObject(mesh);
+        for (var i = 0; i < hits.length; i++) {
+            if (hits[i].faceIndex == null) continue;
+            if (!faceIsVisible(hits[i].faceIndex)) continue;
+            shellHit = { faceIndex: hits[i].faceIndex, point: hits[i].point, distance: hits[i].distance };
+            break;
+        }
     }
     var beamHit = window.FEABeams ? FEABeams.pick(feaRaycaster) : null;
     if (beamHit && (!shellHit || beamHit.distance < shellHit.distance)) return beamHit;
     return shellHit;
+}
+
+// Picked point -> readout text, adding the exporter's recenter offset (sidecar
+// units.worldOffset) so the readout shows world/plant coordinates.
+function roPosText(p) {
+    var o = (window.FEAFeatures && FEAFeatures.worldOffset) ? FEAFeatures.worldOffset() : null;
+    var x = p.x + (o ? o[0] : 0), y = p.y + (o ? o[1] : 0), z = p.z + (o ? o[2] : 0);
+    return x.toFixed(2) + ', ' + y.toFixed(2) + ', ' + z.toFixed(2);
 }
 
 function clearReadout() {
@@ -1523,7 +1534,9 @@ function showReadout(clientX, clientY) {
     var inDsr = inDsrMode();
     var inStr = inStrMode();
     if (inStr && !feaModel.strData) return null;
-    if (!inDsr && !inStr && !feaLCData) return null;
+    // Geometry-only files have no LC data; still pickable (beams draw neutral).
+    var beamsOnly = window.FEABeams && FEABeams.view();
+    if (!inDsr && !inStr && !feaLCData && !beamsOnly) return null;
 
     var hit = feaPick(clientX, clientY);
     if (!hit) { clearReadout(); return null; }
@@ -1558,8 +1571,7 @@ function showReadout(clientX, clientY) {
     elRoNode.textContent = q.nearestNodeId + (nlbl ? ' [' + nlbl + ']' : '');
     elRoCorners.textContent = q.cornerNodeIds.join(', ');
     elRoUV.textContent = q.u.toFixed(4) + ', ' + q.v.toFixed(4);
-    elRoPos.textContent = q.point.x.toFixed(2) + ', ' +
-        q.point.y.toFixed(2) + ', ' + q.point.z.toFixed(2);
+    elRoPos.textContent = roPosText(q.point);
 
     if (q.isDsr && q.cornerSources && elRoControllingRow) {
         var comps = feaModel.meta.components;

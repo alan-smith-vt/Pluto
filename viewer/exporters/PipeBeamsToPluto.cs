@@ -56,6 +56,20 @@ namespace Voyager
         {
             if (beams == null || beams.Count == 0) throw new Exception("PipeBeamsToPluto: no beams.");
             double scale = LengthScale(lengthUnit);
+
+            // Recenter: plant coordinates run to ~1e4-1e6 in file units, and float32
+            // vertices that large wobble a few pixels as the camera moves (precision).
+            // Subtract the bbox center (rounded to whole meters), record it in the
+            // sidecar so the viewer can add it back in the hover readout.
+            double mnx = double.MaxValue, mny = double.MaxValue, mnz = double.MaxValue;
+            double mxx = double.MinValue, mxy = double.MinValue, mxz = double.MinValue;
+            foreach (SQL_Beam b0 in beams)
+            {
+                mnx = Math.Min(mnx, Math.Min(b0.P0.X, b0.P1.X)); mxx = Math.Max(mxx, Math.Max(b0.P0.X, b0.P1.X));
+                mny = Math.Min(mny, Math.Min(b0.P0.Y, b0.P1.Y)); mxy = Math.Max(mxy, Math.Max(b0.P0.Y, b0.P1.Y));
+                mnz = Math.Min(mnz, Math.Min(b0.P0.Z, b0.P1.Z)); mxz = Math.Max(mxz, Math.Max(b0.P0.Z, b0.P1.Z));
+            }
+            var off = new Vec3(Math.Round((mnx + mxx) / 2), Math.Round((mny + mxy) / 2), Math.Round((mnz + mxz) / 2));
             const double UnsizedOdMeters = 0.0508;     // 2 in placeholder for unparsed sizes
             const double NodeRound = 1e-5;              // meters: welds within 0.01 mm are one node
 
@@ -89,8 +103,8 @@ namespace Voyager
             int nextBeam = 1;
             foreach (SQL_Beam b in beams)
             {
-                int a = NodeFor(b.P0, scale, NodeRound, nodeIdByKey, nodes, ref nextNode);
-                int z = NodeFor(b.P1, scale, NodeRound, nodeIdByKey, nodes, ref nextNode);
+                int a = NodeFor(b.P0, off, scale, NodeRound, nodeIdByKey, nodes, ref nextNode);
+                int z = NodeFor(b.P1, off, scale, NodeRound, nodeIdByKey, nodes, ref nextNode);
                 if (a == z) continue;                    // degenerate (zero length)
 
                 int sec;
@@ -148,6 +162,10 @@ namespace Voyager
             sc.ModelId = modelId;
             sc.GeometryHash = w.GeometryHash;
             sc.Units["length"] = lengthUnit;
+            // Bbox center subtracted from every node, expressed in FILE units so the
+            // viewer can add it straight back onto picked coordinates.
+            sc.Units["worldOffset"] = string.Format(CultureInfo.InvariantCulture, "{0} {1} {2}",
+                off.X * scale, off.Y * scale, off.Z * scale);
             // One group per pipe size, ascending, colored on a fixed ramp so the
             // legend reads small -> large. Unsized last, in red.
             var sized = sectionIndexByOd.OrderBy(kv => kv.Key).Select(kv => kv.Value).ToList();
@@ -198,7 +216,7 @@ namespace Voyager
             }
         }
 
-        static int NodeFor(Vec3 p, double scale, double round, Dictionary<string, int> byKey,
+        static int NodeFor(Vec3 p, Vec3 off, double scale, double round, Dictionary<string, int> byKey,
                            Dictionary<int, Node> nodes, ref int next)
         {
             string key = string.Format(CultureInfo.InvariantCulture, "{0}|{1}|{2}",
@@ -210,7 +228,10 @@ namespace Voyager
             var n = new Node();
             n.id = id;
             // Node.xyz components are float in the STAAD codebase; cast explicitly.
-            n.xyz.X = (float)(p.X * scale); n.xyz.Y = (float)(p.Y * scale); n.xyz.Z = (float)(p.Z * scale);
+            // Subtract the recenter offset BEFORE the cast so the float32 stays small.
+            n.xyz.X = (float)((p.X - off.X) * scale);
+            n.xyz.Y = (float)((p.Y - off.Y) * scale);
+            n.xyz.Z = (float)((p.Z - off.Z) * scale);
             nodes[id] = n;
             return id;
         }
