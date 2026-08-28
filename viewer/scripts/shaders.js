@@ -313,20 +313,22 @@ var FEAShaders = (function () {
         'uniform float uAbs;',
         'uniform float uNeutral;',
         'uniform vec3  neutralColor;',
+        'uniform float uXray;',   // 0 = opaque; >0 = fragment alpha for additive x-ray mode
         'void main() {',
         '  if (vVis < 0.5) discard;',
         '  float shade = 0.72 + 0.28 * abs(vNrm.z);',
-        '  if (uGroupMode > 0.5) { gl_FragColor = vec4(groupColor(vCat) * shade, 1.0); return; }',
-        '  if (uNeutral > 0.5) { gl_FragColor = vec4(neutralColor * shade, 1.0); return; }',
+        '  float a = uXray > 0.0 ? uXray : 1.0;',
+        '  if (uGroupMode > 0.5) { gl_FragColor = vec4(groupColor(vCat) * shade, a); return; }',
+        '  if (uNeutral > 0.5) { gl_FragColor = vec4(neutralColor * shade, a); return; }',
         '  float f = mix(vEnds.x, vEnds.y, vT);',
         '  if (uAbs > 0.5) f = abs(f);',
-        '  if (!(f == f)) { gl_FragColor = vec4(vec3(0.16, 0.16, 0.18) * shade, 1.0); return; }',
+        '  if (!(f == f)) { gl_FragColor = vec4(vec3(0.16, 0.16, 0.18) * shade, a); return; }',
         '  if (alarmThreshold > 0.0 && f >= alarmThreshold) {',
-        '    gl_FragColor = vec4(alarmColor * shade, 1.0); return;',
+        '    gl_FragColor = vec4(alarmColor * shade, a); return;',
         '  }',
         '  float denom = max(vMax - vMin, 1e-6);',
         '  float t = clamp((f - vMin) / denom, 0.0, 1.0);',
-        '  gl_FragColor = vec4(texture2D(colormap, vec2(t, 0.5)).rgb * shade, 1.0);',
+        '  gl_FragColor = vec4(texture2D(colormap, vec2(t, 0.5)).rgb * shade, a);',
         '}'
     ].join('\n');
 

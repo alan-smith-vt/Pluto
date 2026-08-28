@@ -21,10 +21,13 @@ var FEABeams = (function () {
     var comp = 0;
     var range = { min: 0, max: 1 };
     var visible = true;
+    var xray = false;
+    var XRAY_ALPHA = 0.10;    // per-wall brightness; 2 pipes coincident = 4 walls = obvious glow
     var dispLoaded = -1;
 
     var elSection = document.getElementById('beamSection');
     var elShow    = document.getElementById('beamShow');
+    var elXray    = document.getElementById('beamXray');
     var elComp    = document.getElementById('beamComp');
     var elRange   = document.getElementById('beamRange');
     var elCount   = document.getElementById('beamCount');
@@ -55,12 +58,14 @@ var FEABeams = (function () {
                 dispScale: { value: 0 },
                 uGroupMode: { value: 0 },
                 groupPalette: { value: FEAShaders.makePaletteTexture([[200, 200, 200]]) },
-                uGroupCount: { value: 1 }
+                uGroupCount: { value: 1 },
+                uXray: { value: 0 }
             },
             vertexShader: FEAShaders.beamVertex,
             fragmentShader: FEAShaders.beamFragment,
             side: THREE.DoubleSide
         });
+        applyXray();
         beamMesh = new THREE.Mesh(build.geometry, material);
         beamMesh.visible = visible;
         scene.add(beamMesh);
@@ -132,6 +137,18 @@ var FEABeams = (function () {
         needsRender = true;
     }
 
+    // Additive x-ray: depth-write off + additive blending, so brightness counts
+    // overlapping walls (order-independent, no transparency sorting artifacts).
+    // Coincident pipes glow at double the brightness of a single pipe.
+    function applyXray() {
+        if (!material) return;
+        material.uniforms.uXray.value = xray ? XRAY_ALPHA : 0;
+        material.transparent = xray;
+        material.depthWrite = !xray;
+        material.blending = xray ? THREE.AdditiveBlending : THREE.NormalBlending;
+        needsRender = true;
+    }
+
     function setDispScale(v) {
         if (material) material.uniforms.dispScale.value = v;
     }
@@ -196,6 +213,10 @@ var FEABeams = (function () {
         visible = this.checked;
         if (beamMesh) beamMesh.visible = visible;
         needsRender = true;
+    });
+    if (elXray) elXray.addEventListener('change', function () {
+        xray = this.checked;
+        applyXray();
     });
     if (elComp) elComp.addEventListener('change', function () {
         comp = parseInt(this.value, 10) || 0;
