@@ -10,13 +10,13 @@ The SP3D piping arm end to end, as run in the production environment (everything
 
 ## 1. Get the CSV
 
-Run the **v4.1** query from SQL_Tutor `vault/40-join-paths/Pipe Extraction v1.md` and export it raw:
+Run the **v4.2** query (2026-08-28 naming: v4.2 = stable single size per part; v4.1 = the parked taper experiment, formerly "v4.1t") from SQL_Tutor `vault/40-join-paths/Pipe Extraction v1.md` and export it raw:
 
 ```powershell
 Invoke-Sql $q | Export-Csv C:\Temp\pipe_v4.csv -NoTypeInformation
 ```
 
-Columns: `ConnOid, PartOid, PartClass, X, Y, Z, RunOid, RunName, Room, Udf3, Udf4, NPD, OD, EndNPD, EndOD` (meters; `OD` = the part's own size from the model, `EndOD` = the size at that hub = the neighbour across it, so reducers get a different value per row). ~400k rows. **No sizing pass, no Excel filter** — `Build` reads `OD` directly and falls back to the `RunName` regex where it is blank.
+Columns (v4.2): `ConnOid, PartOid, PartClass, X, Y, Z, RunOid, RunName, Room, Udf3, Udf4, NPD, OD` (meters; `OD` = the part's own size from the model, same on both of a part's rows; the taper variant's `EndNPD`/`EndOD` columns are also accepted). ~400k rows. **No sizing pass, no Excel filter** — `Build` reads `OD` directly and falls back to the `RunName` regex where it is blank.
 
 ## 2. Compile (fresh window)
 
