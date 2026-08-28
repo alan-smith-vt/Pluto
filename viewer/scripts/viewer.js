@@ -369,10 +369,12 @@ function updateFocusTween() {
     var t = (performance.now() - focusTween.t0) / focusTween.duration;
     if (t >= 1) {
         controls.target.copy(focusTween.to);
+        if (focusTween.camTo) camera.position.copy(focusTween.camTo);
         focusTween = null;
     } else {
         var s = 1 - Math.pow(1 - t, 3);
         controls.target.lerpVectors(focusTween.from, focusTween.to, s);
+        if (focusTween.camTo) camera.position.lerpVectors(focusTween.camFrom, focusTween.camTo, s);
     }
 }
 
@@ -414,6 +416,20 @@ function tweenFocusTo(point) {
         focusOrb.position.copy(point);
         focusOrbHideAt = performance.now() + 1000;
     }
+}
+
+// Double-click: focus AND fly. Keeps the current view direction (the PCO
+// workbench rule) and lands at 30% of the current orbit distance, so each
+// double-click moves the camera meaningfully closer without disorienting.
+function flyFocusTo(point) {
+    var cur = camera.position.distanceTo(controls.target);
+    var dir = camera.position.clone().sub(controls.target);
+    if (dir.lengthSq() < 1e-12) dir.set(0, 0, 1); else dir.normalize();
+    var dist = Math.max(cur * 0.3, 1e-4);
+    tweenFocusTo(point);
+    focusTween.camFrom = camera.position.clone();
+    focusTween.camTo = point.clone().addScaledVector(dir, dist);
+    focusTween.duration = 600;
 }
 animate();
 
@@ -1606,7 +1622,7 @@ function updateRoMode() {
         ? 'picking disabled while deformed'
         : pinned
             ? 'pinned — click to release'
-            : 'hover = live · click to pin · ctrl+click = focus';
+            : 'hover = live · click to pin · ctrl+click = focus · dblclick = fly';
 }
 
 function setPinned(on) {
@@ -1662,6 +1678,12 @@ renderer.domElement.addEventListener('pointerup', function (e) {
             }
         }
     }
+});
+
+renderer.domElement.addEventListener('dblclick', function (e) {
+    if (e.button !== 0 || deformBlocked()) return;
+    var hit = feaPick(e.clientX, e.clientY);
+    if (hit) flyFocusTo(hit.point);
 });
 
 // ================================================================
