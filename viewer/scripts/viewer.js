@@ -440,6 +440,31 @@ function trimExt(name) {
     return String(name).replace(/\.(bin|feabin|dat|rbnl)$/i, '');
 }
 
+// Files written at plant coordinates (1e4-1e6 in file units) wobble a few
+// pixels while the camera settles: node positions become float32 on the GPU,
+// where 2^-24 relative precision at those magnitudes is a visible fraction
+// of an inch. Recenter the node table (shared by every view: shells, beams,
+// picking) at load; roPosText adds the offset back so the readout still
+// shows plant coordinates. Small models are left untouched.
+var viewRecenter = null;    // [x, y, z] subtracted from every node, or null
+function recenterModel(model) {
+    viewRecenter = null;
+    var xyz = model && model.nodes;
+    var n = model ? model.nNodes : 0;
+    if (!xyz || !n) return;
+    var mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+    for (var i = 0; i < n * 3; i++) {
+        var a = i % 3;
+        if (xyz[i] < mn[a]) mn[a] = xyz[i];
+        if (xyz[i] > mx[a]) mx[a] = xyz[i];
+    }
+    var c = [Math.round((mn[0] + mx[0]) / 2), Math.round((mn[1] + mx[1]) / 2), Math.round((mn[2] + mx[2]) / 2)];
+    if (Math.max(Math.abs(c[0]), Math.abs(c[1]), Math.abs(c[2])) < 1000) return;
+    for (var j = 0; j < n * 3; j++) xyz[j] -= c[j % 3];
+    viewRecenter = c;
+    log('Recentered model by [' + c.join(', ') + '] (large world coordinates; readout adds it back).');
+}
+
 // entries: [{ file, name }] -- one or more model files with identical
 // geometry (e.g. soil-spring variants). The first successfully loaded
 // file is the primary (geometry / components / strengths source);
@@ -480,6 +505,7 @@ async function loadModels(entriesIn) {
         }
 
         var model = accepted[0].model;
+        recenterModel(model);
         var build = FEAGeometry.build(model);
 
         disposeCurrentModel();
@@ -1528,7 +1554,10 @@ function feaPick(clientX, clientY) {
 // units.worldOffset) so the readout shows world/plant coordinates.
 function roPosText(p) {
     var o = (window.FEAFeatures && FEAFeatures.worldOffset) ? FEAFeatures.worldOffset() : null;
-    var x = p.x + (o ? o[0] : 0), y = p.y + (o ? o[1] : 0), z = p.z + (o ? o[2] : 0);
+    var r = viewRecenter;
+    var x = p.x + (o ? o[0] : 0) + (r ? r[0] : 0);
+    var y = p.y + (o ? o[1] : 0) + (r ? r[1] : 0);
+    var z = p.z + (o ? o[2] : 0) + (r ? r[2] : 0);
     return x.toFixed(2) + ', ' + y.toFixed(2) + ', ' + z.toFixed(2);
 }
 
