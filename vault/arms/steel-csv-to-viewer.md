@@ -65,6 +65,26 @@ missing-YDir default, UNSIZED, zero-length drop, room filter) → binary read ba
 with the viewer's own `PlutoFormat.load` (sections, params in inches, labels,
 groups, worldOffset all correct).
 
+## Combined pipes + steel in one file
+
+`viewer/exporters/CombinedBeamsToPluto.cs`: one `.bin` + sidecar from both lists —
+shared node table (a pipe point and a steel work point within 0.01 mm merge into
+one node), one recenter offset, merged section table, groups from both disciplines
+(discipline as tags `pipe`/`steel`, not umbrella groups — the viewer resolves one
+group per element). Unprefixed `PartOid`/`MemberOid` labels. Unsized groups are
+`UNSIZED PIPE` (red) and `UNSIZED STEEL` (orange).
+
+```powershell
+Add-Type -Path .\RawViewerWriter.cs, .\FeaturesSidecar.cs, .\SQL_BeamExporter.cs, .\SteelBeamsToPluto.cs, .\CombinedBeamsToPluto.cs, .\Stubs.cs
+$pipes = (New-Object Voyager.SQL_BeamExporter).Build('C:\Temp\pipe_v4.csv', '<room>')
+$steel = (New-Object Voyager.SteelBeamsToPluto).Build('C:\Temp\steel_v1.csv', '<room>')
+$r = [Voyager.CombinedBeamsToPluto]::Export($pipes, $steel, 'C:\Temp\plant_<room>', '<plant>/combined/<room>', 'in')
+$r.Summary()
+```
+
+Either list may be null/empty (not both). Verified 2026-09-01 same as above
+(strict C#5 compile + probe incl. cross-discipline node dedupe + reader readback).
+
 ## Related
 
 - [[vault/arms/pipe-csv-to-viewer|pipe-csv-to-viewer]] — the sibling pipe bridge
