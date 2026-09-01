@@ -104,29 +104,45 @@ Steel + pipes trib study: color W shapes one group, pipes grouped by size / insu
 tags; the trib analysis reads the same groups back to know which pipes sit on which steel.
 
 ### predicates
-Tree of half-space / slab tests combined with boolean ops. Store the **tree** (intent);
-resolution against the model happens in both the viewer and the scripts. Optionally cache
-the resolved membership with the hash it was resolved against.
+Tree of slab tests combined with boolean ops. Store the **tree** (intent); resolution
+against the model happens in both the viewer and the scripts.
+
+**Decision (2026-09-01):** the node grammar is the PRODUCTION dialect the existing C#
+parser (`Groups.cs` `ParsePlane`/`ParseFinitePlane`, transcribed in
+`scripts_sanitized/lib/readers/Groups.cs`) and the old viewer already speak — not the
+half-space/`side`/`not`-op sketch this section previously carried. Negation is a
+`negated` flag on any node; a leaf is a slab (|distance| ≤ `tol`, both sides) plus a
+normal-alignment test (`normal_tol_deg`, applied to shell elements only — beams and
+nodes have no meaningful surface normal) and an optional finite rectangle (`width` ×
+`length` in the plane; u axis = world axis least aligned with the normal projected into
+the plane, rotated by `angle_deg`; v = normal × u). Points/normals are **world (plant)
+coordinates** in `model.units`; the viewer subtracts its recenter offsets before testing.
 
 ```json
 {
-  "id": "…", "name": "Deck plate",
+  "id": "p-…", "name": "Deck plate",
   "target": "elements",                       // "elements" | "nodes"
-  "domains": ["shells"],                      // optional filter
+  "domains": ["shells"],                      // optional filter ("shells" | "beams")
   "tree": {
-    "op": "and",
+    "kind": "and",                            // "and" | "or"  (ops)
+    "negated": false,
     "children": [
-      { "plane": { "point": [0,0,10], "normal": [0,0,1] }, "side": "positive", "finite": { "extent": [50, 50] } },
-      { "op": "not", "children": [ { "plane": { "point": [20,0,0], "normal": [1,0,0] }, "side": "positive" } ] }
+      { "kind": "finitePlane", "negated": false,
+        "point": [0,0,120], "normal": [0,0,1],
+        "tol": 0.1, "normal_tol_deg": 5.0,
+        "width": 240, "length": 240, "angle_deg": 0 },
+      { "kind": "plane", "negated": true,
+        "point": [240,0,0], "normal": [1,0,0],
+        "tol": 0.1, "normal_tol_deg": 5.0 }
     ]
-  },
-  "resolved": { "geometryHash": "sha256:…", "ids": [ … ] }   // optional cache
+  }
 }
 ```
 
-`op` ∈ `and | or | not`. A leaf is a `plane` with `side` and optional `finite` extent
-(rectangle in the plane, centred on `point`, axes from `normal` + `up`). The C# side emits
-group definitions from this.
+Viewer behaviour (`viewer/scripts/predicates.js`, `FEAPredicates`): tree editor +
+click placement; `resolveMembers(predicateId)` expands to per-domain **real-ID** member
+lists, which is how groups with `{ "predicateId": … }` members resolve. The C# side emits
+STAAD group definitions from the same trees.
 
 ### sectionCuts
 Mirrors the viewer's current section-cut definition (plane + bounds + which domains) so

@@ -1,0 +1,130 @@
+/* ============================================================
+   predicates.css  --  predicate flyout panel (right edge, tab
+   below the section-cut tab). Matches viewer.css dark styling.
+   ============================================================ */
+
+/* sits directly under the section-cut tab (42px tab + 8px gap) */
+:root { --pd-top: calc(var(--sc-top) + 50px); }
+
+#pdPanel {
+    position: fixed;
+    right: 0;
+    top: var(--pd-top);
+    z-index: 13;               /* under scPanel so an open cut panel wins */
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: flex-start;
+    max-height: calc(100vh - var(--pd-top) - 12px);
+}
+
+#pdTab {
+    width: 30px;
+    height: 42px;
+    background: rgba(16, 16, 20, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    color: #6ee06e;
+    user-select: none;
+}
+#pdTab:hover { background: rgba(40, 40, 50, 0.94); }
+
+#pdBody {
+    width: 268px;
+    background: rgba(16, 16, 20, 0.94);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-right: none;
+    padding: 12px 14px;
+    max-height: calc(100vh - var(--pd-top) - 12px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+#pdPanel.collapsed #pdBody { display: none; }
+
+#pdNew.active, #pdAdjust.active { background: #6b5a2d; border-color: #ffd479; color: #fff; }
+.pd-danger { border-color: #a04040 !important; color: #ff8080 !important; }
+
+#pdInspector {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    margin-top: 8px;
+    padding-top: 8px;
+}
+
+#pdTree {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    margin-top: 8px;
+    padding-top: 6px;
+    min-height: 60px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+#pdTree.drop-new { outline: 1px dashed #6ee06e; outline-offset: -3px; }
+
+.pd-empty { color: #777; font-size: 11px; padding: 8px 2px; }
+.pd-summary { color: #aaa; font-size: 11px; line-height: 1.5; margin: 6px 0; }
+
+.pd-toggles { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.pd-checkbox {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; color: #ccc; cursor: pointer; user-select: none;
+}
+
+.pd-posblock {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 4px;
+    padding: 7px 8px;
+    margin-bottom: 8px;
+}
+.pd-poslabel {
+    font-size: 9px; color: #666; text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: 5px;
+}
+.pd-posrow { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; }
+.pd-poschan { width: 10px; font-size: 11px; font-weight: bold; }
+.pd-norm { font-family: 'Consolas', monospace; font-size: 10px; color: #999; }
+
+/* tree rows */
+.pd-row {
+    display: flex; align-items: center; gap: 5px;
+    padding: 3px 4px; border-radius: 3px;
+    font-size: 11px; color: #ccc; cursor: pointer; user-select: none;
+}
+.pd-row:hover { background: rgba(255, 255, 255, 0.05); }
+.pd-row.selected { background: rgba(110, 224, 110, 0.14); }
+.pd-row.root { font-weight: bold; }
+.pd-row.drop-into { outline: 1px dashed #6ee06e; outline-offset: -1px; }
+.pd-row.drop-before { box-shadow: 0 -2px 0 #6ee06e; }
+.pd-row.drop-after { box-shadow: 0 2px 0 #6ee06e; }
+
+.pd-arrow { font-size: 8px; color: #888; cursor: pointer; transition: transform 0.1s; }
+.pd-arrow.open { transform: rotate(90deg); }
+.pd-arrow.spacer { visibility: hidden; }
+
+.pd-pill {
+    font-size: 9px; font-weight: bold; letter-spacing: 0.5px;
+    padding: 1px 5px; border-radius: 3px;
+}
+.pd-pill.op-and { background: #26335f; color: #9db4ff; }
+.pd-pill.op-or  { background: #234a23; color: #8fe08f; }
+.pd-pill.leaf   { background: #3a3a42; color: #bbb; }
+
+.pd-neg { color: #ffb347; font-weight: bold; }
+.pd-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pd-name.dim { color: #888; font-weight: normal; }
+.pd-name.mono { color: #999; font-family: 'Consolas', monospace; font-size: 10px; font-weight: normal; }
+.pd-count { font-size: 10px; color: #8a8a95; }
+.pd-warn { font-size: 10px; }
+
+#pdFooter {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    margin-top: 8px; padding-top: 8px;
+    display: flex; gap: 5px;
+}

@@ -6,6 +6,7 @@
 <title>FEA Per-Corner Field Viewer</title>
 <link rel="stylesheet" href="styles/viewer.css">
 <link rel="stylesheet" href="styles/sectionCut.css">
+<link rel="stylesheet" href="styles/predicates.css">
 </head>
 <body>
 
@@ -279,6 +280,42 @@
     <div id="scTab" title="Section cuts">&#9986;</div>
 </div>
 
+<!-- ============================================================
+     PREDICATE FLYOUT  --  tab under the section-cut tab. Trees of
+     plane / finite-plane tests; stored in the features sidecar.
+     ============================================================ -->
+<div id="pdPanel" class="collapsed">
+    <div id="pdBody">
+        <div class="fea-sub">Predicates</div>
+        <div class="fea-row">
+            <button id="pdNew" class="fea-btn">New</button>
+            <button id="pdAdjust" class="fea-btn" disabled
+                    title="Arm, then Ctrl+click to move the selected leaf">Adjust</button>
+            <button id="pdDelete" class="fea-btn pd-danger" disabled>Delete</button>
+        </div>
+        <div class="fea-row">
+            <button id="pdAnd" class="fea-btn" disabled title="Wrap selection in AND">AND</button>
+            <button id="pdOr" class="fea-btn" disabled title="Wrap selection in OR">OR</button>
+            <button id="pdNot" class="fea-btn" disabled title="Toggle NOT on selection">&not;</button>
+        </div>
+        <div class="fea-hint">
+            Arm <em>New</em>, then Ctrl+left-click the model. Click a shell to
+            take its plane; click a beam for its cross-section plane.
+        </div>
+        <div id="pdInspector"><div class="pd-empty">Nothing selected</div></div>
+        <div id="pdTree"></div>
+        <div id="pdFooter">
+            <button id="pdGroup" class="fea-btn" disabled
+                    title="Add a sidecar group whose members resolve from the selected predicate">Group from pred.</button>
+            <button id="pdExport" class="fea-btn" title="Download the whole features sidecar">Export</button>
+            <button id="pdImport" class="fea-btn"
+                    title="Import a features sidecar or a legacy predicates.json">Import</button>
+            <input type="file" id="pdImportFile" accept=".json,application/json" style="display:none;">
+        </div>
+    </div>
+    <div id="pdTab" title="Predicates">&#9649;</div>
+</div>
+
 <!-- Active-view caption, overlaid top-center on the canvas -->
 <div id="viewCaption">&mdash;</div>
 
@@ -304,6 +341,7 @@
 <script src="scripts/viewerBeams.js"></script>
 <script src="scripts/features.js"></script>
 <script src="scripts/sectionCut.js"></script>
+<script src="scripts/predicates.js"></script>
 
 </body>
 </html>

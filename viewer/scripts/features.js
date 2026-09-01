@@ -76,6 +76,39 @@ var FEAFeatures = (function () {
             (resolved && resolved.unmatched ? ', ' + resolved.unmatched + ' unmatched ID(s)' : '') +
             (resolved && resolved.unresolvedPredicates ? ', ' + resolved.unresolvedPredicates +
                 ' predicate member(s) unresolved (predicate module not loaded)' : '') + ').');
+        // Hand the predicate section to the predicate module; it calls back
+        // into refresh() so predicate-member groups resolve on second pass.
+        if (window.FEAPredicates && FEAPredicates.onEnvelope) FEAPredicates.onEnvelope(envelope);
+    }
+
+    // Minimal empty envelope bound to the loaded model, so features can be
+    // authored in-viewer without importing a sidecar first.
+    function ensureEnvelope() {
+        if (envelope) return envelope;
+        var u = feaModel && feaModel.unified;
+        var obj = {
+            format: 'pluto-features',
+            version: 1,
+            model: {
+                modelId: (u && u.meta && u.meta.modelId) || '',
+                geometryHash: (u && u.geometryHash) || ''
+            },
+            groups: { version: 1, items: [] },
+            predicates: { version: 1, items: [] },
+            sectionCuts: { version: 1, items: [] }
+        };
+        envelope = obj;
+        fileName = 'untitled.features.json';
+        if (elName) elName.textContent = fileName + ' (unsaved)';
+        checkBinding();
+        return envelope;
+    }
+
+    // Re-resolve groups + repaint (public: predicate edits call this).
+    function refresh() {
+        resolve();
+        if (elToggle) elToggle.disabled = !resolved;
+        sync();
     }
 
     function checkBinding() {
@@ -257,6 +290,9 @@ var FEAFeatures = (function () {
     return {
         loadFile: loadFile,
         setEnvelope: setEnvelope,
+        ensureEnvelope: ensureEnvelope,
+        refresh: refresh,
+        fileName: function () { return fileName; },
         onModelLoaded: onModelLoaded,
         onModelCleared: onModelCleared,
         sync: sync,

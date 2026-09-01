@@ -1,0 +1,236 @@
+<div id="info"></div>
+<div id="controls">
+	<input type="file" id="fileInput" accept=".bnl">
+	<br><br>
+	<div id="sliderLayout">
+	<!-- row 1 -->
+	<label for="clipPct">Clip %:</label>
+	<input 
+		type="range" 
+		id="clipPct" 
+		min="1" 
+		max="100" 
+		step="1" 
+		value="100"
+	>
+	<span id="clipLabel">100%</span>
+	<br>
+	<!-- row 2 -->
+	<label for="dispScale">Animate:</label>
+	<input 
+		type="range" 
+		id="dispScale" 
+		min="-300.0" 
+		max="300.0" 
+		step="0.1" 
+		value="0.0"
+	>
+	<span id="dispLabel">0x</span>
+	<input type="number", id="sliderMax", value = "300" step = "10">
+	<!-- &#9208 for the pause button -->
+	<!-- hardcode play button icon because powershell mangles UTF-8 -->
+	<button id="playBtn">&#9654</button>
+	<br><br>
+	</div>
+	<label>File: <select id="modelSelect"></select></label>
+	<label>LC: <select id="lcSelect"></select></label>
+	<label>Component: <select id="compSelect">
+		<option value="5">Mx</option><option value="7">My</option>
+		<option value="6">Mxy</option><option value="0">Sx (Axial)</option>
+		<option value="3">Sy (Axial)</option><option value="1">Sxy (IP)</option>
+		<option value="2">SQx (OOP)</option><option value="4">SQy (OOP)</option>
+		<option value="8">XTr</option><option value="9">YTr</option>
+		<option value="10">ZTr</option><option value="11">XRot</option>
+		<option value="12">YRot</option><option value="13">ZRot</option>
+	</select></label><br>
+</div>
+
+<!-- SECTION CUT UI -->
+<!-- &#9986 for the scissors icon -->
+<div id="sectionCutTab">&#9986;</div>
+<div id="sectionCutPanel" class="collapsed">
+	<div id="sectionCutControls">
+		<div style="font-size:12px; color:#8888aa; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:10px;">
+		Section Cuts</div>
+		
+		<div style="display:flex; gap:5px; margin-bottom:10px;">
+			<button id="btnNewCut" class="sc-btn">New Cut</button>
+			<button id="btnAdjust" class="sc-btn" disabled>Adjust</button>
+			<button id="btnDelete" class="sc-btn sc-btn-danger" disabled>Delete</button>
+		</div>
+		
+		<div class="sc-field-row">
+			<span class="sc-label">Name</span>
+			<input type="text" id="cutName" class="sc-input" disabled>
+		</div>
+		
+		<div class="sc-field-row">
+			<span class="sc-label">Group</span>
+			<select type="text" id="cutGroup" class="sc-select" disabled>
+				<option value="">Ungrouped</option>
+				<option value="__new__">+ New group...</option>
+			</select>
+		</div>
+		
+		<div class="sc-field-row">
+			<span class="sc-label">Axis</span>
+			<div style="display:flex; gap:3px;">
+				<button class="sc-axis-btn" data-axis="X" disabled>X</button>
+				<button class="sc-axis-btn" data-axis="Y" disabled>Y</button>
+				<button class="sc-axis-btn active" data-axis="Z" disabled>Z</button>
+			</div>
+			<span class="sc-label" style="margin-left:auto;">Length</span>
+			<input type="number" id="cutLengthFt" class="sc-input" style="width:45px; text-align:center;" value="10" min="0.1"
+			step="0.1" disabled>
+			<span style="font-size:10px; color:#666;">ft</span>
+		</div>
+
+		<div class="sc-position-block">
+			<div style="font-size:9px; color:#666; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:5px;">
+			Position (inches)</div>
+			<div class="sc-pos-row">
+				<span class="sc-pos-label" style="color:#ff4444;">X</span>
+				<input type="text" id="cutPosX" class="sc-pos-input" disabled>
+			</div>
+			<div class="sc-pos-row">
+				<span class="sc-pos-label" style="color:#44ff44;">Y</span>
+				<input type="text" id="cutPosY" class="sc-pos-input" disabled>
+			</div>
+			<div class="sc-pos-row">
+				<span class="sc-pos-label" style="color:#4488ff;">Z</span>
+				<input type="text" id="cutPosZ" class="sc-pos-input" disabled>
+			</div>
+		</div>
+		
+		<div style="display:flex; gap:5px; margin-top:8px;">
+			<button = class="sc-btn sc-btn-secondary" id="btnExport">Export All</button>
+			<button = class="sc-btn sc-btn-secondary" id="btnImport">Import</button>
+			<input type="file" id="importFile" accept=".json" style="display:none;">
+		</div>
+	</div>
+	
+	<div id="cutList"></div>
+</div>
+
+<!-- PREDICATE UI -->
+<div id="predicateTab">&#9649;</div>
+
+<div id="predicatePanel" class="collapsed">
+	<div id="predicateControls">
+		<div class="pd-section-label">Predicates</div>
+		
+		<div style="display:flex; gap:5px; margin-bottom:5px;">
+			<button id="btnNewPred" class="sc-btn">New</button>
+			<button id="btnAdjPred" class="sc-btn" disabled>Adjust</button>
+			<button id="btnDelPred" class="sc-btn sc-btn-danger" disabled>Delete</button>
+		</div>
+		
+		<div style="display:flex; gap:5px;">
+			<button id="btnGroupAnd" 	class="sc-btn" disabled title="Wrap selection in AND">AND</button>
+			<button id="btnGroupOr" 	class="sc-btn" disabled title="Wrap selection in OR">OR</button>
+			<button id="btnNegate" 		class="sc-btn" disabled title="Toggle NOT on selection">&not;</button>
+		</div>
+	</div>
+	
+	<div id="predInspector">
+		<div class="pd-inspector-empty">Nothing selected</div>
+		
+		<!-- Flat list rows (minimal build) -->
+		<!-- <div class="sc-field-row"> -->
+			<!-- <span class="sc-label">Name</span> -->
+			<!-- <input type="text" id="predName" class="sc-input" disabled> -->
+		<!-- </div> -->
+		
+		<!-- <div class="sc-field-row"> -->
+			<!-- <span class="sc-label">Type</span> -->
+			<!-- <div style="display:flex; gap:4px; flex:1;"> -->
+				<!-- <button class="pd-type-btn active" data-type="plates" disabled>Plates</button> -->
+				<!-- <button class="pd-type-btn" data-type="nodes" disabled>Nodes</button> -->
+			<!-- </div> -->
+		<!-- </div> -->
+		
+		<!-- <div class="sc-position-block"> -->
+			<!-- <div style="font-size:9px; color:#666; text-transform:uppercase; letter-spacing:0.5px; margin-bottom:5px;">Position (inches)</div> -->
+			<!-- <div class="sc-pos-row"> -->
+				<!-- <span class="sc-pos-label" style="color:#ff4444;">X</span> -->
+				<!-- <input type="text" id="predPosX" class="sc-pos-input" disabled> -->
+			<!-- </div> -->
+			<!-- <div class="sc-pos-row"> -->
+				<!-- <span class="sc-pos-label" style="color:#44ff44;">Y</span> -->
+				<!-- <input type="text" id="predPosY" class="sc-pos-input" disabled> -->
+			<!-- </div> -->
+			<!-- <div class="sc-pos-row"> -->
+				<!-- <span class="sc-pos-label" style="color:#4444ff;">Z</span> -->
+				<!-- <input type="text" id="predPosZ" class="sc-pos-input" disabled> -->
+			<!-- </div> -->
+		<!-- </div> -->
+		
+		<!-- <div class="sc-field-row"> -->
+			<!-- <span class="sc-label">Normal</span> -->
+			<!-- <span id="predNormal" class="pd-norm-inline">&#8212;</span> -->
+		<!-- </div> -->
+		
+		<!-- <div class="sc-field-row"> -->
+			<!-- <span class="sc-label">Dist tol</span> -->
+			<!-- <input type="number" id="predDistTol" class="sc-input" style="width:60px; flex;0 0 auto; text-align:center;" value="0.1" min="0.01" step="0.01" disabled> -->
+			<!-- <span style="font-size:10px; color:#666;">in</span> -->
+		<!-- </div> -->
+		
+		<!-- <div class="sc-field-row"> -->
+			<!-- <span class="sc-label">Ang tol</span> -->
+			<!-- <input type="number" id="predAngTol" class="sc-input" style="width:60px; flex:0 0 auto; text-align:center;" value="5.0" min="0.1" step="0.1" disabled> -->
+			<!-- <span style="font-size:10px; color:#666;">deg</span> -->
+		<!-- </div> -->
+		
+		<!-- <div style="display:flex; gap:14px; margin-bottom:8px;"> -->
+			<!-- <label class="pd-checkbox-row" style="margin-bottom:0;"> -->
+				<!-- <input type="checkbox" id="predFinite" disabled> -->
+				<!-- <span>Finite Extents</span> -->
+			<!-- </label> -->
+			<!-- <label class="pd-checkbox-row pd-finite-only" style="margin-bottom:0;"> -->
+				<!-- <input type="checkbox" id="predShowExtents" checked disabled> -->
+				<!-- <span>Show</span> -->
+			<!-- </label> -->
+		<!-- </div> -->
+		
+		<!-- <div class="sc-field-row pd-finite-only"> -->
+			<!-- <span class="sc-label">Width</span> -->
+			<!-- <input type="number" id="predWidth" class="sc-input" -->
+					<!-- style="width:60px; flex:0 0 auto; text-align:center;" -->
+					<!-- value="240" min="0" step="5" disabled> -->
+			<!-- <span style="font-size:10px; color:#666;">in</span> -->
+		<!-- </div> -->
+		
+		<!-- <div class="sc-field-row pd-finite-only"> -->
+			<!-- <span class="sc-label">Length</span> -->
+			<!-- <input type="number" id="predLength" class="sc-input" -->
+					<!-- style="width:60px; flex:0 0 auto; text-align:center;" -->
+					<!-- value="240" min="0" step="5" disabled> -->
+			<!-- <span style="font-size:10px; color:#666;">in</span> -->
+		<!-- </div> -->
+		
+		<!-- <div class="sc-field-row pd-finite-only"> -->
+			<!-- <span class="sc-label">Angle</span> -->
+			<!-- <input type="number" id="predAngle" class="sc-input" -->
+					<!-- style="width:60px; flex:0 0 auto; text-align:center;" -->
+					<!-- value="0" step="5" disabled> -->
+			<!-- <span style="font-size:10px; color:#666;">deg</span> -->
+		<!-- </div> -->
+		
+		<!-- <div class="sc-field-row"> -->
+			<!-- <span class="sc-label">Matches</span> -->
+			<!-- <span id="predCount" class="pd-norm-inline" style="text-align:left;">&#8212;</span> -->
+		<!-- </div> -->
+
+		
+	</div>
+	
+	<div id="predTreePane"></div>
+	<!-- <div id="predList"></div> -->
+	
+	<div style="padding: 8px 14px; border-top: 1px solid rgba(255,255,255,0.06); display:flex; gap:5px;">
+		<button class="sc-btn sc-btn-secondary" id="btnPredExport">Export All</button>
+		<button class="sc-btn sc-btn-secondary" id="btnPredImport">Import</button>
+		<input type="file" id="predImportFile" accept=".json" style="display:none;">
+	</div>
+</div>

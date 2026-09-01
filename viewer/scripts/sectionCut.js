@@ -114,6 +114,7 @@ var FEASectionCut = (function () {
 
     function setArmed(on) {
         armed = on;
+        if (on && window.FEAPredicates && FEAPredicates.disarm) FEAPredicates.disarm();
         elNew.classList.toggle('active', on);
         elNew.textContent = on ? 'Ctrl+click the model…' : 'New section cut';
     }
@@ -749,6 +750,7 @@ var FEASectionCut = (function () {
         placeCenter: placeCenter,
         refresh: refresh,
         updateScale: updateScale,
-        onModelCleared: onModelCleared
+        onModelCleared: onModelCleared,
+        disarm: function () { setArmed(false); }
     };
 })();

@@ -617,6 +617,7 @@ async function loadModels(entriesIn) {
         scene.add(focusOrb);
 
         if (window.FEABeams) FEABeams.onModelLoaded(model);
+        if (window.FEAPredicates) FEAPredicates.onModelLoaded();   // before features: groups may resolve via predicates
         if (window.FEAFeatures) FEAFeatures.onModelLoaded();
 
         populateLCSelect();
@@ -684,6 +685,7 @@ function disposeCurrentModel() {
     if (window.FEABeams) FEABeams.onModelCleared();
     if (window.FEAFeatures) FEAFeatures.onModelCleared();
     if (window.FEASectionCut) FEASectionCut.onModelCleared();
+    if (window.FEAPredicates) FEAPredicates.onModelCleared();
     focusTween = null;
     focusOrbHideAt = 0;
     flashUntil = 0;
@@ -1681,8 +1683,10 @@ renderer.domElement.addEventListener('pointerup', function (e) {
     if (e.ctrlKey) {
         var hitPt = feaPick(e.clientX, e.clientY);
         if (hitPt) {
-            // Armed section-cut placement steals the Ctrl+click.
-            if (window.FEASectionCut && FEASectionCut.wantsPick()) {
+            // An armed tool steals the Ctrl+click (arming one disarms the other).
+            if (window.FEAPredicates && FEAPredicates.wantsPick()) {
+                FEAPredicates.placePick(hitPt);
+            } else if (window.FEASectionCut && FEASectionCut.wantsPick()) {
                 FEASectionCut.placeCenter(hitPt);
             } else {
                 tweenFocusTo(hitPt.point);
