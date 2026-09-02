@@ -221,13 +221,16 @@ namespace Voyager
             if (pipeUnsizedIds.Count > 0)
                 sc.AddGroup("UNSIZED PIPE", "#ff3b3b", "beams", pipeUnsizedIds, new[] { "pipe", "unsized" }, "PIPE_UNSIZED");
 
+            // Steel stays white in the grouped view (matches the neutral color) so the
+            // combined model reads Navisworks-style: white structure, colored pipe.
+            // The groups still exist per section, so the legend/filtering keep working.
             var steelSized = steelSectionByName.Values.OrderBy(si => steelDepth[si]).ToList();
             for (int i = 0; i < steelSized.Count; i++)
             {
                 int si = steelSized[i];
                 List<uint> ids;
                 if (!bySection.TryGetValue(si, out ids)) continue;
-                sc.AddGroup(sections[si].Name, SizeColor(i, steelSized.Count), "beams", ids,
+                sc.AddGroup(sections[si].Name, SteelWhite, "beams", ids,
                             new[] { "steel", "section" }, StaadName(sections[si].Name));
             }
             if (steelUnsizedIds.Count > 0)
@@ -275,6 +278,9 @@ namespace Voyager
             yx /= l; yy /= l; yz /= l;
             return new double[] { yy * az - yz * ay, yz * ax - yx * az, yx * ay - yy * ax };
         }
+
+        // #f2f2f5 = the viewer's neutral beam white (0.95, 0.95, 0.96)
+        const string SteelWhite = "#f2f2f5";
 
         static readonly string[] Ramp = {
             "#3b4cc0", "#4f7fd8", "#6fa8e6", "#8fd0d8", "#a5dca0", "#c9e35a",

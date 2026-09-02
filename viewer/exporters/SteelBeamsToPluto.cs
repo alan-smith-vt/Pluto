@@ -280,13 +280,15 @@ namespace Voyager
             sc.Units["worldOffset"] = string.Format(CultureInfo.InvariantCulture, "{0} {1} {2}",
                 off.X * scale, off.Y * scale, off.Z * scale);
 
+            // White steel in the grouped view too (matches the neutral color); groups
+            // still exist per section for legend/filtering. UNSIZED stays red as a flag.
             var ordered = sectionIndexByName.Values.OrderBy(si => sectionDepth[si]).ToList();
             for (int i = 0; i < ordered.Count; i++)
             {
                 int si = ordered[i];
                 List<uint> ids;
                 if (!bySection.TryGetValue(si, out ids)) continue;
-                sc.AddGroup(sections[si].Name, SizeColor(i, ordered.Count), "beams", ids,
+                sc.AddGroup(sections[si].Name, "#f2f2f5", "beams", ids,
                             new[] { "steel", "section" }, StaadName(sections[si].Name));
             }
             if (unsizedIds.Count > 0) sc.AddGroup("UNSIZED", "#ff3b3b", "beams", unsizedIds, new[] { "steel", "unsized" }, "STEEL_UNSIZED");
