@@ -42,14 +42,14 @@ namespace Voyager
         {
             public string BinPath, SidecarPath, GeometryHash;
             public int Nodes, Beams, PipeBeams, SteelBeams, Sections;
-            public int PipeUnsized, SteelUnsized, OrientDefaulted;
+            public int PipeUnsized, SteelUnsized, OrientDefaulted, CpApplied;
             public string Summary()
             {
                 return string.Format(CultureInfo.InvariantCulture,
                     "nodes={0} beams={1} (pipe={2} steel={3}) sections={4}\n" +
-                    "unsized: pipe={5} steel={6}  orientDefaulted={7}\n{8}\n{9}\n{10}",
+                    "unsized: pipe={5} steel={6}  orientDefaulted={7} cpApplied={8}\n{9}\n{10}\n{11}",
                     Nodes, Beams, PipeBeams, SteelBeams, Sections,
-                    PipeUnsized, SteelUnsized, OrientDefaulted, BinPath, SidecarPath, GeometryHash);
+                    PipeUnsized, SteelUnsized, OrientDefaulted, CpApplied, BinPath, SidecarPath, GeometryHash);
             }
         }
 
@@ -179,6 +179,10 @@ namespace Voyager
                 int dummy = 0;
                 m.LocalY = ResolveLocalY(b, ref dummy);
                 if (dummy > 0) r.OrientDefaulted++;
+                double oy, oz;
+                SteelBeamsToPluto.CpOffsets(b.Cp, (sized ? b.Bf : UBf) * scale / 2, (sized ? b.D : UD) * scale / 2, out oy, out oz);
+                m.OffsetAy = oy; m.OffsetBy = oy; m.OffsetAz = oz; m.OffsetBz = oz;
+                if (oy != 0 || oz != 0) r.CpApplied++;
                 members[m.Id] = m;
                 beamLabels[m.Id] = b.MemberOid ?? "";
                 AddTo(bySection, sec, (uint)m.Id);

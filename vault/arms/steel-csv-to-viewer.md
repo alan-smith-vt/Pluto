@@ -26,6 +26,7 @@ One **row per member** (not per joint, unlike the pipe file). `Export-Csv
 | `YDirX YDirY YDirZ` | unit vector of section local Y (web, bottom→top flange), world coords; blank → default |
 | `Room` | optional; drives the pre-filter |
 | `RunName` | optional; diagnostics only |
+| `CP` | optional; SP3D cardinal point, 15-point code (8 = top-center, confirmed vs Navisworks 2026-09-02). The routed line passes through the CP, so the section is offset the opposite way (writer `OffsetAy/Az/By/Bz`, viewer applies in the section frame). Blank/0/5/10 = centered; 11–15 (shear-center codes) treated as centroid for doubly-symmetric W (`cp unmapped` counts them). `cpApplied` in the Export summary counts offset members |
 
 Orientation fallback (missing or parallel-to-axis vector, counted in
 `orientDefaulted`): web toward global Z projected off the axis; global X for a
