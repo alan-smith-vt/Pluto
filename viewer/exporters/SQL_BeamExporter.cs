@@ -242,17 +242,31 @@ namespace Voyager
             public double EndAt(string hub) { double v; return EndOd.TryGetValue(hub, out v) ? v : Diameter; }
         }
 
-        // A row's Room can hold several rooms ("ROOM1/ROOM2"); match the whole
-        // string or any '/', ',' or ';' delimited token (trimmed, case-insensitive).
+        // A row's Room can hold several rooms. Match the whole string or any
+        // '/', ',' or ';' delimited token (trimmed, case-insensitive). Tokens
+        // after the first may elide the shared prefix: "A-123/321" = A-123 and
+        // A-321. A short token is expanded two ways against the FIRST token and
+        // matches on either: prefix up to the last '-' + token ("A-" + "321"),
+        // and tail replacement (first token with its last N chars swapped).
         internal static bool RoomMatch(string rowRoom, string filter)
         {
             if (rowRoom == null) return false;
-            if (string.Equals(rowRoom.Trim(), filter, StringComparison.OrdinalIgnoreCase)) return true;
+            if (Eq(rowRoom.Trim(), filter)) return true;
             var toks = rowRoom.Split(new[] { '/', ',', ';' });
+            string first = toks.Length > 0 ? toks[0].Trim() : "";
             for (int i = 0; i < toks.Length; i++)
-                if (string.Equals(toks[i].Trim(), filter, StringComparison.OrdinalIgnoreCase)) return true;
+            {
+                string t = toks[i].Trim();
+                if (t.Length == 0) continue;
+                if (Eq(t, filter)) return true;
+                if (i == 0 || t.Length >= first.Length) continue;
+                int dash = first.LastIndexOf('-');
+                if (dash >= 0 && Eq(first.Substring(0, dash + 1) + t, filter)) return true;
+                if (Eq(first.Substring(0, first.Length - t.Length) + t, filter)) return true;
+            }
             return false;
         }
+        static bool Eq(string a, string b) { return string.Equals(a, b, StringComparison.OrdinalIgnoreCase); }
 
         static string Get(Dictionary<string, string> r, string col)
         {
