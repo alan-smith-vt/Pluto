@@ -41,12 +41,12 @@ namespace Voyager
         public class Result
         {
             public string BinPath, SidecarPath, GeometryHash;
-            public int Nodes, Beams, Sections, Unsized, Stars, Chords;
+            public int Nodes, Beams, Sections, Unsized, Stars, Chords, Synthetic;
             public string Summary()
             {
                 return string.Format(CultureInfo.InvariantCulture,
-                    "nodes={0} beams={1} sections={2} unsized={3} chords={4} starArms={5}\n{6}\n{7}\n{8}",
-                    Nodes, Beams, Sections, Unsized, Chords, Stars, BinPath, SidecarPath, GeometryHash);
+                    "nodes={0} beams={1} sections={2} unsized={3} chords={4} starArms={5} synthetic={6}\n{7}\n{8}\n{9}",
+                    Nodes, Beams, Sections, Unsized, Chords, Stars, Synthetic, BinPath, SidecarPath, GeometryHash);
             }
         }
 
@@ -88,6 +88,7 @@ namespace Voyager
             var beamLabels = new Dictionary<int, string>();
             var bySection = new Dictionary<int, List<uint>>();     // section index -> beam ids
             var unsized = new List<uint>();
+            var synthetic = new List<uint>();
             var chords = new List<uint>();
             var stars = new List<uint>();
 
@@ -116,7 +117,7 @@ namespace Voyager
                         sections.Add(RawViewerWriter.SectionDef.Pipe("UNSIZED", (float)(UnsizedOdMeters * scale), 0f));
                     }
                     sec = unsizedSection;
-                    unsized.Add((uint)nextBeam);
+                    if (!b.Synthetic) unsized.Add((uint)nextBeam);
                 }
                 else
                 {
@@ -141,7 +142,10 @@ namespace Voyager
                 members[m.Id] = m;
                 beamLabels[m.Id] = b.PartOid ?? "";
 
-                AddTo(bySection, sec, (uint)m.Id);
+                // synthetic (one-hub fallback) beams group as SYNTHETIC, not by size --
+                // the viewer resolves one group per element, so membership is exclusive
+                if (b.Synthetic) synthetic.Add((uint)m.Id);
+                else AddTo(bySection, sec, (uint)m.Id);
                 if (beamsPerPart[b.PartOid] == 1) chords.Add((uint)m.Id); else stars.Add((uint)m.Id);
                 nextBeam++;
             }
@@ -178,13 +182,15 @@ namespace Voyager
                             new[] { "pipe", "size" }, StaadName(sections[si].Name));
             }
             if (unsized.Count > 0) sc.AddGroup("UNSIZED", "#ff3b3b", "beams", unsized, new[] { "pipe", "unsized" }, "PIPE_UNSIZED");
+            // light steel-gray: reads like the white structure, a shade darker
+            if (synthetic.Count > 0) sc.AddGroup("SYNTHETIC", "#c9ccd2", "beams", synthetic, new[] { "pipe", "synthetic" }, "PIPE_SYNTHETIC");
             string scPath = outBase + ".features.json";
             File.WriteAllText(scPath, sc.ToJson(), new System.Text.UTF8Encoding(false));
 
             var r = new Result();
             r.BinPath = binPath; r.SidecarPath = scPath; r.GeometryHash = w.GeometryHash;
             r.Nodes = nodes.Count; r.Beams = members.Count; r.Sections = sections.Count;
-            r.Unsized = unsized.Count; r.Chords = chords.Count; r.Stars = stars.Count;
+            r.Unsized = unsized.Count; r.Chords = chords.Count; r.Stars = stars.Count; r.Synthetic = synthetic.Count;
             return r;
         }
 

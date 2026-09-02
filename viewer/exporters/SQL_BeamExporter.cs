@@ -49,6 +49,7 @@ namespace Voyager
         public string Room;          // from the CSV Room column ("" if absent)
         public string SizeSource;    // "data" (OD column / pipe_sizes.csv), "name" (RunName regex), "none"
         public double D0, D1;        // meters at P0 / P1; OD column (v4.2) or EndOD (v4.1 taper experiment); NaN = unknown
+        public bool Synthetic;       // one-hub fallback: P1 synthesised by reflection through the part bbox centroid
     }
 
     public class SQL_BeamExporter
@@ -58,6 +59,7 @@ namespace Voyager
         // diagnostics, printed by the caller at the end
         public int RowsRead, RowsKept, PartsSeen, PartsSkipped, PartsUnsized, JointConflicts, RunConflicts;
         public int SizedFromData, SizedFromName, SizedNone;
+        public int PartsRescued, PartsRejectedFallback, PartsNoBbox;   // one-hub fallback (Build with bboxPath)
         public int TaperedBeams;     // beams whose two ends differ (reducers / reducing tees)
         public string RoomFilter;
 
@@ -121,10 +123,12 @@ namespace Voyager
         {
             return string.Format(CultureInfo.InvariantCulture,
                 "room={0} rows={1} kept={2} parts={3} skipped={4} unsized={5} jointConflicts={6} runConflicts={7}\n" +
-                "sizes: fromData={8} fromName={9} none={10}  tapered beams={14}  (size table: {11} rows, {12} parts, {13} span two ODs)",
+                "sizes: fromData={8} fromName={9} none={10}  tapered beams={14}  (size table: {11} rows, {12} parts, {13} span two ODs)\n" +
+                "fallback: rescued={15} rejected={16} noBbox={17}",
                 string.IsNullOrEmpty(RoomFilter) ? "(all)" : RoomFilter,
                 RowsRead, RowsKept, PartsSeen, PartsSkipped, PartsUnsized, JointConflicts, RunConflicts,
-                SizedFromData, SizedFromName, SizedNone, SizeRows, SizeParts, SizeSpans, TaperedBeams);
+                SizedFromData, SizedFromName, SizedNone, SizeRows, SizeParts, SizeSpans, TaperedBeams,
+                PartsRescued, PartsRejectedFallback, PartsNoBbox);
         }
 
         public List<SQL_Beam> Build(string csvPath)
@@ -134,8 +138,18 @@ namespace Voyager
 
         public List<SQL_Beam> Build(string csvPath, string room)
         {
+            return Build(csvPath, room, null);
+        }
+
+        // bboxPath (v4.3 sidecar, "Beam Export - Pipe CSV to Beams" one-hub SPEC):
+        // PartOid, PartClass, CX, CY, CZ, EX, EY, EZ -- centroid + FULL extents
+        // (box = C +/- E/2), meters. null = no fallback, byte-identical to before.
+        public List<SQL_Beam> Build(string csvPath, string room, string bboxPath)
+        {
             RowsRead = RowsKept = PartsSeen = PartsSkipped = PartsUnsized = JointConflicts = RunConflicts = 0;
             SizedFromData = SizedFromName = SizedNone = TaperedBeams = 0;
+            PartsRescued = PartsRejectedFallback = PartsNoBbox = 0;
+            var bbox = bboxPath == null ? null : LoadBbox(bboxPath);
             RoomFilter = room == null ? null : room.Trim();
             bool filter = !string.IsNullOrEmpty(RoomFilter);
 
@@ -204,7 +218,34 @@ namespace Voyager
                 if (double.IsNaN(acc.Diameter)) PartsUnsized++;
                 if (acc.SizeSource == "data") SizedFromData++; else if (acc.SizeSource == "name") SizedFromName++; else SizedNone++;
 
-                if (pts.Count < 2) { PartsSkipped++; continue; }
+                if (pts.Count < 2)
+                {
+                    // one-hub fallback: reflect the hub through the part bbox centroid
+                    if (pts.Count == 1 && bbox != null)
+                    {
+                        BboxRec bx;
+                        if (!bbox.TryGetValue(kv.Key, out bx)) { PartsNoBbox++; PartsSkipped++; continue; }
+                        Vec3 H = pts[0];
+                        var F = new Vec3(2 * bx.C.X - H.X, 2 * bx.C.Y - H.Y, 2 * bx.C.Z - H.Z);
+                        double od = double.IsNaN(acc.Diameter) ? 0.0508 : acc.Diameter;   // 2 in when unknown
+                        bool degenerate = Dist(F, H) < Math.Max(0.5 * od, 0.01);
+                        // data tripwire: a reflection through the box centre cannot leave
+                        // the box, so F outside (box grown by one OD) means the hub
+                        // coordinate itself is inconsistent with the part's bbox
+                        bool outside =
+                            Math.Abs(F.X - bx.C.X) > bx.E.X / 2 + od ||
+                            Math.Abs(F.Y - bx.C.Y) > bx.E.Y / 2 + od ||
+                            Math.Abs(F.Z - bx.C.Z) > bx.E.Z / 2 + od;
+                        if (degenerate || outside) { PartsRejectedFallback++; PartsSkipped++; continue; }
+                        var sb = Make(H, F, acc, kv.Key, acc.EndAt(hubs[0]), acc.Diameter);
+                        sb.Synthetic = true;
+                        beams.Add(sb);
+                        PartsRescued++;
+                        continue;
+                    }
+                    PartsSkipped++;
+                    continue;
+                }
 
                 if (pts.Count == 2)
                 {
@@ -227,6 +268,23 @@ namespace Voyager
                 string k = Get(r, "Room").Trim();
                 int c; d.TryGetValue(k, out c); d[k] = c + 1;
             }
+            return d;
+        }
+
+        // ---------- one-hub fallback bbox sidecar ----------
+        class BboxRec { public Vec3 C; public Vec3 E; }   // centroid; FULL extents (box = C +/- E/2)
+
+        Dictionary<string, BboxRec> LoadBbox(string path)
+        {
+            var d = new Dictionary<string, BboxRec>();
+            foreach (var r in ReadCsv(path))
+            {
+                var b = new BboxRec();
+                b.C = new Vec3(D(r["CX"]), D(r["CY"]), D(r["CZ"]));
+                b.E = new Vec3(D(r["EX"]), D(r["EY"]), D(r["EZ"]));
+                d[r["PartOid"]] = b;
+            }
+            ProgressTick(d.Count, true);
             return d;
         }
 

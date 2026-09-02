@@ -90,6 +90,7 @@ namespace Voyager
             var pipeSectionByOd = new Dictionary<long, int>();   // od micrometers -> section index
             int pipeUnsizedSection = -1;
             var pipeUnsizedIds = new List<uint>();
+            var pipeSyntheticIds = new List<uint>();
             for (int i = 0; i < nPipes; i++)
             {
                 SQL_Beam b = pipes[i];
@@ -106,7 +107,7 @@ namespace Voyager
                         sections.Add(RawViewerWriter.SectionDef.Pipe("UNSIZED PIPE", (float)(UnsizedOdMeters * scale), 0f));
                     }
                     sec = pipeUnsizedSection;
-                    pipeUnsizedIds.Add((uint)nextBeam);
+                    if (!b.Synthetic) pipeUnsizedIds.Add((uint)nextBeam);
                 }
                 else
                 {
@@ -128,7 +129,8 @@ namespace Voyager
                 m.LocalY = new double[] { 0, 0, 1 };     // round section: any perpendicular is fine
                 members[m.Id] = m;
                 beamLabels[m.Id] = b.PartOid ?? "";
-                AddTo(bySection, sec, (uint)m.Id);
+                if (b.Synthetic) pipeSyntheticIds.Add((uint)m.Id);   // exclusive: SYNTHETIC, not the size group
+                else AddTo(bySection, sec, (uint)m.Id);
                 r.PipeBeams++;
                 nextBeam++;
             }
@@ -220,6 +222,8 @@ namespace Voyager
             }
             if (pipeUnsizedIds.Count > 0)
                 sc.AddGroup("UNSIZED PIPE", "#ff3b3b", "beams", pipeUnsizedIds, new[] { "pipe", "unsized" }, "PIPE_UNSIZED");
+            if (pipeSyntheticIds.Count > 0)
+                sc.AddGroup("SYNTHETIC", "#c9ccd2", "beams", pipeSyntheticIds, new[] { "pipe", "synthetic" }, "PIPE_SYNTHETIC");
 
             // Steel stays white in the grouped view (matches the neutral color) so the
             // combined model reads Navisworks-style: white structure, colored pipe.

@@ -46,6 +46,27 @@ $ex.LoadSizes('C:\Temp\pipe_sizes.csv')      # once per session, before Build
 
 Columns `PartOid, SrcClass, NPD, OD` (OD in meters). `Build` then uses the model OD for every part it finds there and the `RunName` regex only for the rest; `Summary()` reports `fromData / fromName / none`. A part with two different ODs (reducer, reducing tee) is counted under `span two ODs` and rendered at the larger one for now; `$ex.SizeSpanParts()` lists them (PartOid -> min, max).
 
+## 3c. One-hub fallback (optional — bbox sidecar, 2026-09-02)
+
+Parts with exactly ONE joint row (~6% — hubless pipe-to-pipe joints, caps, blind
+flanges) are skipped by default. Pass the v4.3 bbox sidecar
+(`PartOid, PartClass, CX, CY, CZ, EX, EY, EZ` — centroid + FULL extents, box =
+C ± E/2, meters; query in SQL_Tutor `Pipe Extraction v1` § v4.3) as a third
+argument and they are rescued by reflecting the hub through the part centroid
+(`F = 2C − H`):
+
+```powershell
+$beams = $ex.Build('C:\Temp\pipe_v4.csv', '<room>', 'C:\Temp\pipe_parts_bbox.csv')
+```
+
+Guards: degenerate (`|F−H| < max(OD/2, 1 cm)`) or `F` outside the box grown by
+one OD (a hub coordinate inconsistent with its part's bbox — data tripwire) →
+rejected, still skipped. `Summary()` line 3: `fallback: rescued / rejected /
+noBbox`; old skipped − new skipped = rescued + rejected + noBbox. Rescued beams
+carry `Synthetic = true` and group as **SYNTHETIC** (light gray `#c9ccd2`,
+instead of their size group) in the sidecar. Omit the argument → byte-identical
+to before.
+
 ## 4. Build beams — whole plant or one room
 
 ```powershell
