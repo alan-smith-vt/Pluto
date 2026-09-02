@@ -57,7 +57,7 @@ var FEABeams = (function () {
                 alarmColor: { value: new THREE.Vector3(1, 0, 1) },
                 uAbs: { value: 0 },
                 uNeutral: { value: 1 },
-                neutralColor: { value: new THREE.Vector3(0.62, 0.64, 0.68) },
+                neutralColor: { value: new THREE.Vector3(0.95, 0.95, 0.96) },   // white steel; shade gives the depth
                 dispScale: { value: 0 },
                 uGroupMode: { value: 0 },
                 groupPalette: { value: FEAShaders.makePaletteTexture([[200, 200, 200]]) },

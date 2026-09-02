@@ -273,8 +273,8 @@ var FEAShaders = (function () {
     // ---- beam (solid extruded section) shaders ---------------------
     // Linear interpolation end A -> end B along beamT; same LUT / abs /
     // alarm uniforms as the shell shader. uNeutral = 1 draws a flat
-    // steel-grey (envelope / strength / DSR views have no beam data yet).
-    // Mild lambert term on the flat normal so solids read as 3D.
+    // white steel (envelope / strength / DSR views have no beam data yet).
+    // Headlight + view-hemisphere shade on the flat normal so solids read as 3D.
     var beamVertex = [
         'attribute float beamT;',
         'attribute vec2 endVals;',
@@ -316,7 +316,10 @@ var FEAShaders = (function () {
         'uniform float uXray;',   // 0 = opaque; >0 = fragment alpha for additive x-ray mode
         'void main() {',
         '  if (vVis < 0.5) discard;',
-        '  float shade = 0.72 + 0.28 * abs(vNrm.z);',
+        // Old-viewer lighting rig (ViewerSource init.js: ambient 0.4 + hemi 0.5 +
+        // camera headlight 1.0) folded into the unlit shader. vNrm is VIEW space:
+        // .z = headlight lambert, .y = view hemisphere (screen-up sky, below ground).
+        '  float shade = clamp(0.35 + 0.20 * (vNrm.y * 0.5 + 0.5) + 0.50 * abs(vNrm.z), 0.0, 1.0);',
         '  float a = uXray > 0.0 ? uXray : 1.0;',
         '  if (uGroupMode > 0.5) { gl_FragColor = vec4(groupColor(vCat) * shade, a); return; }',
         '  if (uNeutral > 0.5) { gl_FragColor = vec4(neutralColor * shade, a); return; }',
