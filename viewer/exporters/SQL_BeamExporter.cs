@@ -147,7 +147,7 @@ namespace Voyager
                 RowsRead++;
                 ProgressTick(RowsRead, false);
                 string rowRoom = Get(r, "Room");
-                if (filter && !string.Equals(rowRoom.Trim(), RoomFilter, StringComparison.OrdinalIgnoreCase)) continue;
+                if (filter && !RoomMatch(rowRoom, RoomFilter)) continue;
                 RowsKept++;
 
                 string partOid = r["PartOid"];
@@ -240,6 +240,18 @@ namespace Voyager
             public Dictionary<string, Vec3> Joints = new Dictionary<string, Vec3>();
             public Dictionary<string, double> EndOd = new Dictionary<string, double>();   // hub -> OD at that end
             public double EndAt(string hub) { double v; return EndOd.TryGetValue(hub, out v) ? v : Diameter; }
+        }
+
+        // A row's Room can hold several rooms ("ROOM1/ROOM2"); match the whole
+        // string or any '/', ',' or ';' delimited token (trimmed, case-insensitive).
+        internal static bool RoomMatch(string rowRoom, string filter)
+        {
+            if (rowRoom == null) return false;
+            if (string.Equals(rowRoom.Trim(), filter, StringComparison.OrdinalIgnoreCase)) return true;
+            var toks = rowRoom.Split(new[] { '/', ',', ';' });
+            for (int i = 0; i < toks.Length; i++)
+                if (string.Equals(toks[i].Trim(), filter, StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
         }
 
         static string Get(Dictionary<string, string> r, string col)
