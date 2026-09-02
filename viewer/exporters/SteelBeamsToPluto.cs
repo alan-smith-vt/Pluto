@@ -100,7 +100,7 @@ namespace Voyager
                 RowsRead++;
                 ProgressTick(RowsRead, false);
                 string rowRoom = Get(r, "Room");
-                if (filter && !string.Equals(rowRoom.Trim(), RoomFilter, StringComparison.OrdinalIgnoreCase)) continue;
+                if (filter && !SQL_BeamExporter.RoomMatch(rowRoom, RoomFilter)) continue;   // multi-room "R1/R2" tokens too
                 RowsKept++;
 
                 var m = new SteelMember();
