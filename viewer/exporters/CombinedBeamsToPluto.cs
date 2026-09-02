@@ -248,6 +248,8 @@ namespace Voyager
             mnz = Math.Min(mnz, Math.Min(p0.Z, p1.Z)); mxz = Math.Max(mxz, Math.Max(p0.Z, p1.Z));
         }
 
+        // CSV YDir = WEB direction; the viewer runs section depth along local z,
+        // so the writer's LocalY = FLANGE direction = web x axis (see SteelBeamsToPluto).
         static double[] ResolveLocalY(SteelMember b, ref int defaulted)
         {
             double ax = b.P1.X - b.P0.X, ay = b.P1.Y - b.P0.Y, az = b.P1.Z - b.P0.Z;
@@ -266,7 +268,8 @@ namespace Voyager
             }
             yx -= dot * ax; yy -= dot * ay; yz -= dot * az;
             double l = Math.Sqrt(yx * yx + yy * yy + yz * yz);
-            return new double[] { yx / l, yy / l, yz / l };
+            yx /= l; yy /= l; yz /= l;
+            return new double[] { yy * az - yz * ay, yz * ax - yx * az, yx * ay - yy * ax };
         }
 
         static readonly string[] Ramp = {

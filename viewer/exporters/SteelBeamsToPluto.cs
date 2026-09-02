@@ -285,9 +285,11 @@ namespace Voyager
 
         // ---------- helpers ----------
 
-        // CSV LocalY if present and not parallel to the member axis; otherwise the
-        // STAAD-ish default: web toward global Z projected off the axis, or global X
-        // for a vertical member. Returned vector is unit length, never parallel to axis.
+        // The CSV YDir is the WEB direction (bottom -> top flange). The viewer's
+        // section outline runs the depth along local *z* (beamGeometry.js iShape),
+        // so the writer's LocalY must be the FLANGE direction: LocalY = web x axis
+        // (then local z = axis x LocalY = web). Fallback web (missing or
+        // parallel-to-axis vector): global Z, or global X for a vertical member.
         static double[] ResolveLocalY(SteelMember b, ref int defaulted)
         {
             double ax = b.P1.X - b.P0.X, ay = b.P1.Y - b.P0.Y, az = b.P1.Z - b.P0.Z;
@@ -305,10 +307,12 @@ namespace Voyager
                 if (Math.Abs(az) > 0.99) { yx = 1; yy = 0; yz = 0; } else { yx = 0; yy = 0; yz = 1; }
                 dot = yx * ax + yy * ay + yz * az;
             }
-            // project off the axis and renormalize
+            // project the web off the axis and renormalize
             yx -= dot * ax; yy -= dot * ay; yz -= dot * az;
             double l = Math.Sqrt(yx * yx + yy * yy + yz * yz);
-            return new double[] { yx / l, yy / l, yz / l };
+            yx /= l; yy /= l; yz /= l;
+            // flange direction = web x axis (unit: both unit and orthogonal)
+            return new double[] { yy * az - yz * ay, yz * ax - yx * az, yx * ay - yy * ax };
         }
 
         // 12-step ramp (blue -> green -> yellow -> orange -> red); same as the pipe bridge.
