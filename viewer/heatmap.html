@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pipe Weight Heatmap</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #17181c; color: #d6d8de; font: 13px/1.45 system-ui, Segoe UI, sans-serif; }
+  #top { padding: 10px 14px; display: flex; flex-wrap: wrap; gap: 18px; align-items: center;
+         background: #1e2026; border-bottom: 1px solid #2c2f37; }
+  #top label { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+  #top input[type=number] { width: 90px; background: #14151a; color: #d6d8de; border: 1px solid #3a3e48; border-radius: 3px; padding: 2px 5px; }
+  #smear { width: 260px; }
+  #drop { border: 2px dashed #3a3e48; border-radius: 8px; margin: 14px; padding: 26px; text-align: center; color: #8b8f9a; }
+  #drop.over { border-color: #6fa8e6; color: #d6d8de; }
+  #wrap { display: none; }
+  #stats { padding: 4px 14px; color: #9aa0ac; }
+  #stats b { color: #e8eaf0; }
+  #canvasBox { position: relative; margin: 0 14px 14px; }
+  canvas { display: block; background: #101114; border: 1px solid #2c2f37; max-width: 100%; }
+  #legend { position: absolute; right: 10px; top: 10px; background: rgba(20,21,26,.88);
+            border: 1px solid #3a3e48; border-radius: 5px; padding: 8px 10px; }
+  #legend canvas { border: none; }
+  #tip { position: absolute; pointer-events: none; background: rgba(20,21,26,.94); border: 1px solid #3a3e48;
+         border-radius: 4px; padding: 4px 8px; display: none; white-space: nowrap; }
+  #warn { color: #f6be2e; padding: 0 14px 8px; }
+</style>
+</head>
+<body>
+<div id="top">
+  <b>Pipe weight heatmap</b>
+  <label>Smear <input type="range" id="smear" min="0" max="1" value="0"> <span id="smearLbl"></span></label>
+  <label>Z cutoff (bottom of steel, file units) <input type="number" id="cutoff" step="0.5"></label>
+  <label><input type="checkbox" id="showSteel" checked> steel plan</label>
+</div>
+<div id="stats"></div>
+<div id="warn"></div>
+<div id="drop">Drop the <b>.bin</b> and the <b>psf .json</b> here (together or one after the other).<br>
+  psf JSON: <code>{"4.5": 12.3, "2.375": 6.1, "default": 5}</code> — keys are pipe OD in inches, lb/ft² over the plan footprint.</div>
+<div id="wrap">
+  <div id="canvasBox">
+    <canvas id="cv"></canvas>
+    <div id="legend"><div id="legendMax"></div><canvas id="lg" width="16" height="120"></canvas><div>0</div></div>
+    <div id="tip"></div>
+  </div>
+</div>
+
+<script src="lib/three.min.js"></script>
+<script src="scripts/format/v3Reader.js"></script>
+<script src="scripts/format/v4Reader.js"></script>
+<script src="scripts/format/pluto.js"></script>
+<script src="scripts/heatmapCore.js"></script>
+<script>
+(function () {
+  var core = FEAHeatmapCore;
+  var model = null, bv = null, psfTable = null, info = null, baseGrid = null;
+  var unit = 'in', toFt = 1 / 12;
+  var levels = [];          // aggregation factors, index = slider value (0 = finest)
+  var MAX_BASE_CELLS = 1600;  // cap the finest grid per axis
+
+  var elDrop = document.getElementById('drop'), elWrap = document.getElementById('wrap');
+  var elSmear = document.getElementById('smear'), elSmearLbl = document.getElementById('smearLbl');
+  var elCutoff = document.getElementById('cutoff'), elStats = document.getElementById('stats');
+  var elWarn = document.getElementById('warn'), elSteel = document.getElementById('showSteel');
+  var cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+  var tip = document.getElementById('tip');
+
+  // ---- viridis-ish ramp; 0 weight stays transparent-dark ----
+  var stops = [[68,1,84],[59,82,139],[33,145,140],[94,201,98],[253,231,37]];
+  function color(t) {
+    t = Math.max(0, Math.min(1, t));
+    var f = t * (stops.length - 1), i = Math.min(stops.length - 2, Math.floor(f)), u = f - i;
+    var a = stops[i], b = stops[i + 1];
+    return 'rgb(' + Math.round(a[0] + (b[0]-a[0])*u) + ',' + Math.round(a[1] + (b[1]-a[1])*u) + ',' +
+                    Math.round(a[2] + (b[2]-a[2])*u) + ')';
+  }
+
+  function fmt(v, d) { return Number(v).toLocaleString('en-US', { maximumFractionDigits: d === undefined ? 1 : d }); }
+
+  // ---- file intake ----
+  function onFiles(files) {
+    for (var i = 0; i < files.length; i++) {
+      var f = files[i];
+      if (/\.json$/i.test(f.name)) {
+        f.text().then(function (txt) { psfTable = JSON.parse(txt); maybeStart(); })
+                .catch(function (e) { elWarn.textContent = 'psf JSON parse failed: ' + e.message; });
+      } else if (/\.bin$/i.test(f.name)) {
+        PlutoFormat.load(f).then(function (m) {
+          model = m;
+          bv = PlutoFormat.beamView(m);
+          if (!bv) { elWarn.textContent = 'No beam domain in this file.'; return; }
+          unit = (m.units && m.units.length) || 'in';
+          toFt = core.unitToFeet(unit);
+          maybeStart();
+        }).catch(function (e) { elWarn.textContent = 'bin load failed: ' + e.message; });
+      }
+    }
+  }
+  ['dragover','dragleave','drop'].forEach(function (ev) {
+    document.body.addEventListener(ev, function (e) {
+      e.preventDefault();
+      elDrop.classList.toggle('over', ev === 'dragover');
+      if (ev === 'drop') onFiles(e.dataTransfer.files);
+    });
+  });
+
+  function maybeStart() {
+    if (!bv || !psfTable) {
+      elDrop.innerHTML = 'Loaded: ' + (bv ? '.bin ✓ ' : '.bin ✗ ') + (psfTable ? 'psf.json ✓' : 'psf.json ✗') +
+        '<br>drop the other file…';
+      return;
+    }
+    info = core.analyze(bv);
+    if (!info.steel.length) { elWarn.textContent = 'No steel (I sections) in the file — extents/cutoff need steel.'; return; }
+    if (!info.pipes.length) { elWarn.textContent = 'No pipes (PIPE sections) in the file.'; return; }
+    elCutoff.value = info.defaultCutoff !== null ? info.defaultCutoff.toFixed(2) : 0;
+    elDrop.style.display = 'none';
+    elWrap.style.display = '';
+    recompute();
+  }
+
+  // ---- compute base grid + level ladder ----
+  function recompute() {
+    var ex = info.extents;
+    var span = Math.max(ex.x1 - ex.x0, ex.y1 - ex.y0);
+    var inch = 1 / (toFt * 12);                       // one inch in file units
+    var cell = Math.max(inch, span / MAX_BASE_CELLS); // 1" unless the room is huge
+    baseGrid = core.rasterize(info.pipes, core.makePsfLookup(psfTable),
+      { extents: ex, cutoffZ: parseFloat(elCutoff.value), baseCell: cell, unit: unit });
+
+    levels = [];
+    var f = 1;
+    while (true) {
+      levels.push(f);
+      if (f >= baseGrid.nx && f >= baseGrid.ny) break;
+      f *= 2;
+    }
+    elSmear.min = 0; elSmear.max = levels.length - 1;
+    if (+elSmear.value > levels.length - 1) elSmear.value = levels.length - 1;
+
+    var unmatched = baseGrid.nUnmatched ? ('  ⚠ ' + baseGrid.nUnmatched + ' pipes had no psf key (and no "default")') : '';
+    elWarn.textContent = unmatched;
+    elStats.innerHTML = 'total <b>' + fmt(baseGrid.totalW, 0) + ' lb</b> over the steel plan · ' +
+      'pipes counted <b>' + baseGrid.nCounted + '</b> · below cutoff (floor-supported) <b>' + baseGrid.nBelow + '</b> · ' +
+      'plan ' + fmt((ex.x1 - ex.x0) * toFt, 1) + ' × ' + fmt((ex.y1 - ex.y0) * toFt, 1) + ' ft · file unit ' + unit +
+      ' · <span style="color:#8b8f9a">vertical runs carry ~no plan weight (psf model; plf later)</span>';
+    render();
+  }
+
+  // ---- draw current smear level ----
+  var cur = null, drawScale = 1;
+  function render() {
+    var factor = levels[+elSmear.value];   // slider left = finest, right = one big cell
+    cur = core.aggregate(baseGrid, factor);
+    var cellFt = cur.cellFile * toFt;
+    elSmearLbl.textContent = cur.nx + '×' + cur.ny + ' cells (' +
+      (cellFt >= 1 ? fmt(cellFt, 1) + ' ft' : fmt(cellFt * 12, 1) + ' in') + ')';
+
+    var ex = info.extents;
+    var w = ex.x1 - ex.x0, h = ex.y1 - ex.y0;
+    var maxPx = Math.min(window.innerWidth - 60, 1400);
+    drawScale = maxPx / w;
+    if (h * drawScale > window.innerHeight - 170) drawScale = (window.innerHeight - 170) / h;
+    cv.width = Math.max(1, Math.round(w * drawScale));
+    cv.height = Math.max(1, Math.round(h * drawScale));
+
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    var cellPx = cur.cellFile * drawScale;
+    for (var y = 0; y < cur.ny; y++) {
+      for (var x = 0; x < cur.nx; x++) {
+        var p = cur.psf[y * cur.nx + x];
+        if (p <= 0) continue;
+        ctx.fillStyle = color(cur.maxPsf > 0 ? p / cur.maxPsf : 0);
+        // canvas y down = +Y up in plan -> flip
+        ctx.fillRect(x * cellPx, cv.height - (y + 1) * cellPx, cellPx + 0.5, cellPx + 0.5);
+      }
+    }
+    if (elSteel.checked) {
+      ctx.strokeStyle = 'rgba(214,216,222,0.45)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (var i = 0; i < info.steel.length; i++) {
+        var s = info.steel[i];
+        ctx.moveTo((s.ax - ex.x0) * drawScale, cv.height - (s.ay - ex.y0) * drawScale);
+        ctx.lineTo((s.bx - ex.x0) * drawScale, cv.height - (s.by - ex.y0) * drawScale);
+      }
+      ctx.stroke();
+    }
+
+    // legend
+    var lg = document.getElementById('lg').getContext('2d');
+    for (var j = 0; j < 120; j++) { lg.fillStyle = color(1 - j / 119); lg.fillRect(0, j, 16, 1); }
+    document.getElementById('legendMax').textContent = fmt(cur.maxPsf, 1) + ' psf';
+  }
+
+  cv.addEventListener('mousemove', function (e) {
+    if (!cur) return;
+    var r = cv.getBoundingClientRect();
+    var mx = (e.clientX - r.left) * (cv.width / r.width), my = (e.clientY - r.top) * (cv.height / r.height);
+    var cellPx = cur.cellFile * drawScale;
+    var x = Math.floor(mx / cellPx), y = Math.floor((cv.height - my) / cellPx);
+    if (x < 0 || x >= cur.nx || y < 0 || y >= cur.ny) { tip.style.display = 'none'; return; }
+    var i = y * cur.nx + x;
+    tip.style.display = 'block';
+    tip.style.left = (e.clientX - r.left + 14) + 'px';
+    tip.style.top = (e.clientY - r.top + 14) + 'px';
+    tip.textContent = fmt(cur.psf[i], 2) + ' psf · ' + fmt(cur.w[i], 0) + ' lb';
+  });
+  cv.addEventListener('mouseleave', function () { tip.style.display = 'none'; });
+
+  elSmear.addEventListener('input', render);
+  elSteel.addEventListener('change', render);
+  elCutoff.addEventListener('change', recompute);
+  window.addEventListener('resize', function () { if (cur) render(); });
+})();
+</script>
+</body>
+</html>
