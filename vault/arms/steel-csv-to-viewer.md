@@ -68,6 +68,9 @@ groups, worldOffset all correct).
 
 ## Combined pipes + steel in one file
 
+> [!note] Full start-to-finish recipe (incl. the pipe bbox fallback):
+> [[vault/arms/plant-combined-to-viewer|plant-combined-to-viewer]]. Below is the short form.
+
 `viewer/exporters/CombinedToPluto.cs`: one `.bin` + sidecar from both lists —
 shared node table (a pipe point and a steel work point within 0.01 mm merge into
 one node), one recenter offset, merged section table, groups from both disciplines
