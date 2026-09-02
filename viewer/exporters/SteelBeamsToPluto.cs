@@ -17,6 +17,9 @@ using System.Text;
 //                                                  (web direction, bottom -> top flange)
 //                                                  in world coords; blank -> default up
 //   Room, RunName                                  optional (Room drives the pre-filter)
+//   CP                                             optional; SP3D cardinal point, 15-point
+//                                                  code (8 = top-center); blank/0/5/10+ =
+//                                                  section centered on the routed line
 //
 // Mapping (same rules as PipeBeamsToPluto):
 //   member end  -> node, deduplicated by rounded coordinate (1e-5 m) so a shared
@@ -50,12 +53,14 @@ namespace Voyager
         public string MemberOid;
         public string Room;
         public string RunName;
+        public int Cp;                // SP3D cardinal point (15-point code); 0 = absent -> centroid
     }
 
     public class SteelBeamsToPluto
     {
         // ---- diagnostics, printed by Summary() ----
         public int RowsRead, RowsKept, MembersBuilt, Unsized, OrientMissing, OrientBad, DimConflicts, ZeroLength;
+        public int CpOffCentroid, CpUnmapped;
         public string RoomFilter;
 
         public bool Progress = true;
@@ -68,9 +73,10 @@ namespace Voyager
         {
             return string.Format(CultureInfo.InvariantCulture,
                 "room={0} rows={1} kept={2} members={3} unsized={4} zeroLength={5}\n" +
-                "orient: missing={6} badVector={7}  dimConflicts={8}",
+                "orient: missing={6} badVector={7}  dimConflicts={8}  cp: offCentroid={9} unmapped={10}",
                 string.IsNullOrEmpty(RoomFilter) ? "(all)" : RoomFilter,
-                RowsRead, RowsKept, MembersBuilt, Unsized, ZeroLength, OrientMissing, OrientBad, DimConflicts);
+                RowsRead, RowsKept, MembersBuilt, Unsized, ZeroLength, OrientMissing, OrientBad, DimConflicts,
+                CpOffCentroid, CpUnmapped);
         }
 
         public List<SteelMember> Build(string csvPath)
@@ -81,6 +87,7 @@ namespace Voyager
         public List<SteelMember> Build(string csvPath, string room)
         {
             RowsRead = RowsKept = MembersBuilt = Unsized = OrientMissing = OrientBad = DimConflicts = ZeroLength = 0;
+            CpOffCentroid = CpUnmapped = 0;
             RoomFilter = room == null ? null : room.Trim();
             bool filter = !string.IsNullOrEmpty(RoomFilter);
 
@@ -106,6 +113,11 @@ namespace Voyager
                 m.D = DOpt(Get(r, "D")); m.Bf = DOpt(Get(r, "Bf"));
                 m.Tf = DOpt(Get(r, "Tf")); m.Tw = DOpt(Get(r, "Tw"));
                 if (double.IsNaN(m.D) || double.IsNaN(m.Bf) || double.IsNaN(m.Tf) || double.IsNaN(m.Tw)) Unsized++;
+
+                int cp;
+                m.Cp = int.TryParse(Get(r, "CP"), NumberStyles.Integer, CultureInfo.InvariantCulture, out cp) ? cp : 0;
+                if (m.Cp >= 1 && m.Cp <= 9 && m.Cp != 5) CpOffCentroid++;
+                else if (m.Cp > 10) CpUnmapped++;   // 11..15 shear-center codes: centroid for doubly-symmetric W
 
                 double yx = DOpt(Get(r, "YDirX")), yy = DOpt(Get(r, "YDirY")), yz = DOpt(Get(r, "YDirZ"));
                 double len = Math.Sqrt(yx * yx + yy * yy + yz * yz);
@@ -148,12 +160,12 @@ namespace Voyager
         public class Result
         {
             public string BinPath, SidecarPath, GeometryHash;
-            public int Nodes, Beams, Sections, Unsized, OrientDefaulted;
+            public int Nodes, Beams, Sections, Unsized, OrientDefaulted, CpApplied;
             public string Summary()
             {
                 return string.Format(CultureInfo.InvariantCulture,
-                    "nodes={0} beams={1} sections={2} unsized={3} orientDefaulted={4}\n{5}\n{6}\n{7}",
-                    Nodes, Beams, Sections, Unsized, OrientDefaulted, BinPath, SidecarPath, GeometryHash);
+                    "nodes={0} beams={1} sections={2} unsized={3} orientDefaulted={4} cpApplied={5}\n{6}\n{7}\n{8}",
+                    Nodes, Beams, Sections, Unsized, OrientDefaulted, CpApplied, BinPath, SidecarPath, GeometryHash);
             }
         }
 
@@ -193,6 +205,7 @@ namespace Voyager
             var bySection = new Dictionary<int, List<uint>>();
             var unsizedIds = new List<uint>();
             int orientDefaulted = 0;
+            int cpApplied = 0;
 
             int nextBeam = 1;
             foreach (SteelMember b in members)
@@ -238,6 +251,10 @@ namespace Voyager
                 m.NodeB = z;
                 m.SectionIndex = sec;
                 m.LocalY = ResolveLocalY(b, ref orientDefaulted);
+                double oy, oz;
+                CpOffsets(b.Cp, (sized ? b.Bf : UBf) * scale / 2, (sized ? b.D : UD) * scale / 2, out oy, out oz);
+                m.OffsetAy = oy; m.OffsetBy = oy; m.OffsetAz = oz; m.OffsetBz = oz;
+                if (oy != 0 || oz != 0) cpApplied++;
                 beamMembers[m.Id] = m;
                 beamLabels[m.Id] = b.MemberOid ?? "";
                 AddTo(bySection, sec, (uint)m.Id);
@@ -279,11 +296,28 @@ namespace Voyager
             var r = new Result();
             r.BinPath = binPath; r.SidecarPath = scPath; r.GeometryHash = w.GeometryHash;
             r.Nodes = nodes.Count; r.Beams = beamMembers.Count; r.Sections = sections.Count;
-            r.Unsized = unsizedIds.Count; r.OrientDefaulted = orientDefaulted;
+            r.Unsized = unsizedIds.Count; r.OrientDefaulted = orientDefaulted; r.CpApplied = cpApplied;
             return r;
         }
 
         // ---------- helpers ----------
+
+        // SP3D 15-point cardinal code -> section-local (y=flange, z=web) offset of the
+        // ring center relative to the routed line, in FILE units. The line passes
+        // THROUGH the cardinal point, so the ring shifts the opposite way:
+        //   cols: 1,4,7 left (-y) | 2,5,8 center | 3,6,9 right (+y)
+        //   rows: 1,2,3 bottom (-z) | 4,5,6 middle | 7,8,9 top (+z)
+        //   e.g. CP 8 (top-center, CONFIRMED vs Navisworks) -> ring drops by halfD.
+        // 10 = centroid; 11..15 (shear-center codes) = centroid for doubly-symmetric W.
+        public static void CpOffsets(int cp, double halfBf, double halfD, out double oy, out double oz)
+        {
+            oy = 0; oz = 0;
+            if (cp < 1 || cp > 9) return;
+            int col = (cp - 1) % 3;          // 0 left, 1 center, 2 right
+            int row = (cp - 1) / 3;          // 0 bottom, 1 middle, 2 top
+            oy = col == 0 ? halfBf : col == 2 ? -halfBf : 0;
+            oz = row == 0 ? halfD : row == 2 ? -halfD : 0;
+        }
 
         // The CSV YDir is the WEB direction (bottom -> top flange). The viewer's
         // section outline runs the depth along local *z* (beamGeometry.js iShape),
