@@ -110,7 +110,7 @@ and `Write(false)` are then equivalent). At least one of elements / beams is req
 
 End-to-end usage of the pipe arm (CSV → beams → files → viewer): [[vault/arms/pipe-csv-to-viewer|pipe-csv-to-viewer]].
 
-- `PipeBeamsToPluto.cs` — `Voyager.PipeBeamsToPluto.Export(List<Voyager.SQL_Beam>, outBase, modelId, lengthUnit)`:
+- `PipeToPluto.cs` — `Voyager.PipeToPluto.Export(List<Voyager.PipeBeam>, outBase, modelId, lengthUnit)`:
   dedupes weld points into nodes, one `Pipe` section per distinct diameter (+ `UNSIZED`),
   `PartOid` as beam label, sidecar groups for class / run / star-arms / unsized / src.
   Writes `<outBase>.bin` + `<outBase>.features.json`. Verified C# 5 build and JS read.

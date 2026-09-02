@@ -7,7 +7,7 @@ created: 2026-09-01
 # Steel CSV → viewer — usage
 
 W-shape members from the production-side SQL dump to a Pluto v4 beam-only file. One
-self-contained bridge: `viewer/exporters/SteelBeamsToPluto.cs` (CSV → members →
+self-contained bridge: `viewer/exporters/SteelToPluto.cs` (CSV → members →
 `.bin` + `.features.json`). No viewer changes were needed — I sections and
 per-member orientation were already in `RawViewerWriter.SectionDef.IShape` and
 `beamGeometry.js`.
@@ -35,16 +35,16 @@ near-vertical member.
 ## 2. Run (production side, PowerShell 5.1, fresh window)
 
 ```powershell
-Add-Type -Path .\RawViewerWriter.cs, .\FeaturesSidecar.cs, .\SQL_BeamExporter.cs, .\SteelBeamsToPluto.cs, .\Stubs.cs
-$ex = New-Object Voyager.SteelBeamsToPluto
+Add-Type -Path .\RawViewerWriter.cs, .\FeaturesSidecar.cs, .\PipeCsvReader.cs, .\SteelToPluto.cs, .\Stubs.cs
+$ex = New-Object Voyager.SteelToPluto
 $ex.Rooms('C:\Temp\steel_v1.csv')                        # optional census
 $members = $ex.Build('C:\Temp\steel_v1.csv', '<room>')   # or $ex.Build($csv) for all
 $ex.Summary()
-$r = [Voyager.SteelBeamsToPluto]::Export($members, 'C:\Temp\steel_<room>', '<plant>/steel/<room>', 'in')
+$r = [Voyager.SteelToPluto]::Export($members, 'C:\Temp\steel_<room>', '<plant>/steel/<room>', 'in')
 $r.Summary()
 ```
 
-`SQL_BeamExporter.cs` stays in the Add-Type set because it defines `Voyager.Vec3`.
+`PipeCsvReader.cs` stays in the Add-Type set because it defines `Voyager.Vec3`.
 
 ## 3. What Export does
 
@@ -68,7 +68,7 @@ groups, worldOffset all correct).
 
 ## Combined pipes + steel in one file
 
-`viewer/exporters/CombinedBeamsToPluto.cs`: one `.bin` + sidecar from both lists —
+`viewer/exporters/CombinedToPluto.cs`: one `.bin` + sidecar from both lists —
 shared node table (a pipe point and a steel work point within 0.01 mm merge into
 one node), one recenter offset, merged section table, groups from both disciplines
 (discipline as tags `pipe`/`steel`, not umbrella groups — the viewer resolves one
@@ -76,10 +76,10 @@ group per element). Unprefixed `PartOid`/`MemberOid` labels. Unsized groups are
 `UNSIZED PIPE` (red) and `UNSIZED STEEL` (orange).
 
 ```powershell
-Add-Type -Path .\RawViewerWriter.cs, .\FeaturesSidecar.cs, .\SQL_BeamExporter.cs, .\SteelBeamsToPluto.cs, .\CombinedBeamsToPluto.cs, .\Stubs.cs
-$pipes = (New-Object Voyager.SQL_BeamExporter).Build('C:\Temp\pipe_v4.csv', '<room>')
-$steel = (New-Object Voyager.SteelBeamsToPluto).Build('C:\Temp\steel_v1.csv', '<room>')
-$r = [Voyager.CombinedBeamsToPluto]::Export($pipes, $steel, 'C:\Temp\plant_<room>', '<plant>/combined/<room>', 'in')
+Add-Type -Path .\RawViewerWriter.cs, .\FeaturesSidecar.cs, .\PipeCsvReader.cs, .\SteelToPluto.cs, .\CombinedToPluto.cs, .\Stubs.cs
+$pipes = (New-Object Voyager.PipeCsvReader).Build('C:\Temp\pipe_v4.csv', '<room>')
+$steel = (New-Object Voyager.SteelToPluto).Build('C:\Temp\steel_v1.csv', '<room>')
+$r = [Voyager.CombinedToPluto]::Export($pipes, $steel, 'C:\Temp\plant_<room>', '<plant>/combined/<room>', 'in')
 $r.Summary()
 ```
 

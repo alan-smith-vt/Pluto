@@ -5,7 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 
-// SteelBeamsToPluto  --  steel member CSV (W shapes) -> Pluto v4 geometry-only
+// SteelToPluto  --  steel member CSV (W shapes) -> Pluto v4 geometry-only
 // binary + features sidecar. C# 5 / Add-Type (PowerShell 5.1) compatible.
 //
 // Input CSV (Export-Csv, one ROW PER MEMBER -- unlike the pipe file's row-per-joint):
@@ -21,7 +21,7 @@ using System.Text;
 //                                                  code (8 = top-center); blank/0/5/10+ =
 //                                                  section centered on the routed line
 //
-// Mapping (same rules as PipeBeamsToPluto):
+// Mapping (same rules as PipeToPluto):
 //   member end  -> node, deduplicated by rounded coordinate (1e-5 m) so a shared
 //                  work point becomes one node and the frame reconnects
 //   member      -> BeamMember; MemberOid kept as the LABEL
@@ -31,15 +31,15 @@ using System.Text;
 //                  plus UNSIZED (red). Room/RunName are not grouped (yet).
 //
 // Usage from PowerShell 5.1 (fresh window; all files in ONE Add-Type call):
-//   Add-Type -Path .\RawViewerWriter.cs, .\FeaturesSidecar.cs, .\SQL_BeamExporter.cs, .\SteelBeamsToPluto.cs, .\Stubs.cs
-//   $ex = New-Object Voyager.SteelBeamsToPluto
+//   Add-Type -Path .\RawViewerWriter.cs, .\FeaturesSidecar.cs, .\PipeCsvReader.cs, .\SteelToPluto.cs, .\Stubs.cs
+//   $ex = New-Object Voyager.SteelToPluto
 //   $ex.Rooms('C:\Temp\steel_v1.csv')                       # optional census
 //   $members = $ex.Build('C:\Temp\steel_v1.csv', '<room>')  # or $ex.Build($csv) for all
 //   $ex.Summary()
-//   $r = [Voyager.SteelBeamsToPluto]::Export($members, 'C:\Temp\steel_<room>', '<plant>/steel/<room>', 'in')
+//   $r = [Voyager.SteelToPluto]::Export($members, 'C:\Temp\steel_<room>', '<plant>/steel/<room>', 'in')
 //   $r.Summary()
 //
-// (SQL_BeamExporter.cs is in the set because it defines Voyager.Vec3.)
+// (PipeCsvReader.cs is in the set because it defines Voyager.Vec3.)
 
 namespace Voyager
 {
@@ -56,7 +56,7 @@ namespace Voyager
         public int Cp;                // SP3D cardinal point (15-point code); 0 = absent -> centroid
     }
 
-    public class SteelBeamsToPluto
+    public class SteelToPluto
     {
         // ---- diagnostics, printed by Summary() ----
         public int RowsRead, RowsKept, MembersBuilt, Unsized, OrientMissing, OrientBad, DimConflicts, ZeroLength;
@@ -100,7 +100,7 @@ namespace Voyager
                 RowsRead++;
                 ProgressTick(RowsRead, false);
                 string rowRoom = Get(r, "Room");
-                if (filter && !SQL_BeamExporter.RoomMatch(rowRoom, RoomFilter)) continue;   // multi-room "R1/R2" tokens too
+                if (filter && !PipeCsvReader.RoomMatch(rowRoom, RoomFilter)) continue;   // multi-room "R1/R2" tokens too
                 RowsKept++;
 
                 var m = new SteelMember();
@@ -173,7 +173,7 @@ namespace Voyager
         // Coordinates and dims arrive in meters and are converted.
         public static Result Export(List<SteelMember> members, string outBase, string modelId, string lengthUnit)
         {
-            if (members == null || members.Count == 0) throw new Exception("SteelBeamsToPluto: no members.");
+            if (members == null || members.Count == 0) throw new Exception("SteelToPluto: no members.");
             double scale = LengthScale(lengthUnit);
 
             // Recenter at the bbox center (whole meters) -- same float32 wobble fix
@@ -375,7 +375,7 @@ namespace Voyager
                 case "mm": return 1000.0;
                 case "in": return 1.0 / 0.0254;
                 case "ft": return 1.0 / 0.3048;
-                default: throw new Exception("SteelBeamsToPluto: unknown length unit '" + unit + "'.");
+                default: throw new Exception("SteelToPluto: unknown length unit '" + unit + "'.");
             }
         }
 

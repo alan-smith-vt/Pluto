@@ -4,11 +4,11 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 
-// PipeBeamsToPluto  --  bridge from the pipe CSV exporter's List<Voyager.SQL_Beam>
+// PipeToPluto  --  bridge from the pipe CSV exporter's List<Voyager.PipeBeam>
 // to a Pluto v4 geometry-only binary + features sidecar.
 // C# 5 / Add-Type (PowerShell 5.1) compatible.
 //
-// Input  : List<Voyager.SQL_Beam> { P0, P1 (Vec3, METERS), Diameter (meters or NaN),
+// Input  : List<Voyager.PipeBeam> { P0, P1 (Vec3, METERS), Diameter (meters or NaN),
 //                               PartOid, PartClass, RunOid, RunName }
 // Output : <out>.bin            v4 binary, beam domain only, no load cases
 //          <out>.features.json  groups: ONE PER PIPE SIZE (colored, small -> large
@@ -25,9 +25,9 @@ using System.Linq;
 //   categories   -> sidecar groups (never per-element strings in the binary)
 //
 // Usage from PowerShell 5.1:
-//   Add-Type -Path .\RawViewerWriter.cs, .\FeaturesSidecar.cs, .\SQL_BeamExporter.cs, .\PipeBeamsToPluto.cs
-//   $beams = (New-Object Voyager.SQL_BeamExporter).Build('pipe_v3_2_sized.csv')
-//   $r = [Voyager.PipeBeamsToPluto]::Export($beams, 'C:\out\pipes', 'ProjectX/pipes/rev1', 'in')
+//   Add-Type -Path .\RawViewerWriter.cs, .\FeaturesSidecar.cs, .\PipeCsvReader.cs, .\PipeToPluto.cs
+//   $beams = (New-Object Voyager.PipeCsvReader).Build('pipe_v3_2_sized.csv')
+//   $r = [Voyager.PipeToPluto]::Export($beams, 'C:\out\pipes', 'ProjectX/pipes/rev1', 'in')
 //   $r.Summary()
 //
 // (The stub types Node/Element/etc. that RawViewerWriter references must be
@@ -36,7 +36,7 @@ using System.Linq;
 
 namespace Voyager
 {
-    public class PipeBeamsToPluto
+    public class PipeToPluto
     {
         public class Result
         {
@@ -52,9 +52,9 @@ namespace Voyager
 
         // lengthUnit: "m" | "in" | "ft" -- the unit the FILE is written in.
         // Coordinates and diameters arrive in meters and are converted.
-        public static Result Export(List<SQL_Beam> beams, string outBase, string modelId, string lengthUnit)
+        public static Result Export(List<PipeBeam> beams, string outBase, string modelId, string lengthUnit)
         {
-            if (beams == null || beams.Count == 0) throw new Exception("PipeBeamsToPluto: no beams.");
+            if (beams == null || beams.Count == 0) throw new Exception("PipeToPluto: no beams.");
             double scale = LengthScale(lengthUnit);
 
             // Recenter: plant coordinates run to ~1e4-1e6 in file units, and float32
@@ -63,7 +63,7 @@ namespace Voyager
             // sidecar so the viewer can add it back in the hover readout.
             double mnx = double.MaxValue, mny = double.MaxValue, mnz = double.MaxValue;
             double mxx = double.MinValue, mxy = double.MinValue, mxz = double.MinValue;
-            foreach (SQL_Beam b0 in beams)
+            foreach (PipeBeam b0 in beams)
             {
                 mnx = Math.Min(mnx, Math.Min(b0.P0.X, b0.P1.X)); mxx = Math.Max(mxx, Math.Max(b0.P0.X, b0.P1.X));
                 mny = Math.Min(mny, Math.Min(b0.P0.Y, b0.P1.Y)); mxy = Math.Max(mxy, Math.Max(b0.P0.Y, b0.P1.Y));
@@ -76,7 +76,7 @@ namespace Voyager
             // ---- nodes: dedupe by rounded coordinate ----
             var nodeIdByKey = new Dictionary<string, int>();
             var nodes = new Dictionary<int, Node>();
-            int nextNode = 1;   // (node labels would need WeldOid on SQL_Beam; not carried yet)
+            int nextNode = 1;   // (node labels would need WeldOid on PipeBeam; not carried yet)
 
             // ---- sections: one per distinct diameter ----
             var sectionIndexByOd = new Dictionary<long, int>();    // od in micrometers -> index
@@ -94,7 +94,7 @@ namespace Voyager
 
             // chord vs star: a part with exactly one beam is a chord
             var beamsPerPart = new Dictionary<string, int>();
-            foreach (SQL_Beam b in beams)
+            foreach (PipeBeam b in beams)
             {
                 int c;
                 beamsPerPart.TryGetValue(b.PartOid, out c);
@@ -102,7 +102,7 @@ namespace Voyager
             }
 
             int nextBeam = 1;
-            foreach (SQL_Beam b in beams)
+            foreach (PipeBeam b in beams)
             {
                 int a = NodeFor(b.P0, off, scale, NodeRound, nodeIdByKey, nodes, ref nextNode);
                 int z = NodeFor(b.P1, off, scale, NodeRound, nodeIdByKey, nodes, ref nextNode);
@@ -218,7 +218,7 @@ namespace Voyager
                 case "mm": return 1000.0;
                 case "in": return 1.0 / 0.0254;
                 case "ft": return 1.0 / 0.3048;
-                default: throw new Exception("PipeBeamsToPluto: unknown length unit '" + unit + "'.");
+                default: throw new Exception("PipeToPluto: unknown length unit '" + unit + "'.");
             }
         }
 

@@ -5,10 +5,10 @@ using System.IO;
 using System.Linq;
 using System.Text;
 
-// CombinedBeamsToPluto  --  pipes + steel in ONE Pluto v4 file.
+// CombinedToPluto  --  pipes + steel in ONE Pluto v4 file.
 // C# 5 / Add-Type (PowerShell 5.1) compatible.
 //
-// Takes the pipe bridge's List<SQL_Beam> and the steel bridge's List<SteelMember>
+// Takes the pipe bridge's List<PipeBeam> and the steel bridge's List<SteelMember>
 // and writes a single beam-only, geometry-only binary + sidecar:
 //   - ONE node table: endpoints deduped across BOTH disciplines (1e-5 m), so a
 //     pipe support point and a steel work point at the same coordinate become
@@ -23,20 +23,20 @@ using System.Text;
 //   - labels: PartOid / MemberOid unprefixed (both are oids, unambiguous)
 //
 // Mapping rules are the same as the single-discipline bridges
-// (PipeBeamsToPluto / SteelBeamsToPluto); those stay the reference for a
+// (PipeToPluto / SteelToPluto); those stay the reference for a
 // one-discipline export. Either list may be null or empty, not both.
 //
 // Usage from PowerShell 5.1 (fresh window; one Add-Type call):
-//   Add-Type -Path .\RawViewerWriter.cs, .\FeaturesSidecar.cs, .\SQL_BeamExporter.cs,
-//                  .\SteelBeamsToPluto.cs, .\CombinedBeamsToPluto.cs, .\Stubs.cs
-//   $pipes = (New-Object Voyager.SQL_BeamExporter).Build('C:\Temp\pipe_v4.csv', '<room>')
-//   $steel = (New-Object Voyager.SteelBeamsToPluto).Build('C:\Temp\steel_v1.csv', '<room>')
-//   $r = [Voyager.CombinedBeamsToPluto]::Export($pipes, $steel, 'C:\Temp\plant_<room>', '<plant>/combined/<room>', 'in')
+//   Add-Type -Path .\RawViewerWriter.cs, .\FeaturesSidecar.cs, .\PipeCsvReader.cs,
+//                  .\SteelToPluto.cs, .\CombinedToPluto.cs, .\Stubs.cs
+//   $pipes = (New-Object Voyager.PipeCsvReader).Build('C:\Temp\pipe_v4.csv', '<room>')
+//   $steel = (New-Object Voyager.SteelToPluto).Build('C:\Temp\steel_v1.csv', '<room>')
+//   $r = [Voyager.CombinedToPluto]::Export($pipes, $steel, 'C:\Temp\plant_<room>', '<plant>/combined/<room>', 'in')
 //   $r.Summary()
 
 namespace Voyager
 {
-    public class CombinedBeamsToPluto
+    public class CombinedToPluto
     {
         public class Result
         {
@@ -55,12 +55,12 @@ namespace Voyager
 
         // lengthUnit: "m" | "mm" | "in" | "ft" -- the unit the FILE is written in.
         // Everything arrives in meters and is converted.
-        public static Result Export(List<SQL_Beam> pipes, List<SteelMember> steel,
+        public static Result Export(List<PipeBeam> pipes, List<SteelMember> steel,
                                     string outBase, string modelId, string lengthUnit)
         {
             int nPipes = pipes == null ? 0 : pipes.Count;
             int nSteel = steel == null ? 0 : steel.Count;
-            if (nPipes + nSteel == 0) throw new Exception("CombinedBeamsToPluto: no beams.");
+            if (nPipes + nSteel == 0) throw new Exception("CombinedToPluto: no beams.");
             double scale = LengthScale(lengthUnit);
 
             // ---- shared bbox recenter (whole meters; float32 wobble fix) ----
@@ -93,7 +93,7 @@ namespace Voyager
             var pipeSyntheticIds = new List<uint>();
             for (int i = 0; i < nPipes; i++)
             {
-                SQL_Beam b = pipes[i];
+                PipeBeam b = pipes[i];
                 if (CoordKey(b.P0, NodeRound) == CoordKey(b.P1, NodeRound)) continue;   // zero length
                 int a = NodeFor(b.P0, off, scale, NodeRound, nodeIdByKey, nodes, ref nextNode);
                 int z = NodeFor(b.P1, off, scale, NodeRound, nodeIdByKey, nodes, ref nextNode);
@@ -182,7 +182,7 @@ namespace Voyager
                 m.LocalY = ResolveLocalY(b, ref dummy);
                 if (dummy > 0) r.OrientDefaulted++;
                 double oy, oz;
-                SteelBeamsToPluto.CpOffsets(b.Cp, (sized ? b.Bf : UBf) * scale / 2, (sized ? b.D : UD) * scale / 2, out oy, out oz);
+                SteelToPluto.CpOffsets(b.Cp, (sized ? b.Bf : UBf) * scale / 2, (sized ? b.D : UD) * scale / 2, out oy, out oz);
                 m.OffsetAy = oy; m.OffsetBy = oy; m.OffsetAz = oz; m.OffsetBz = oz;
                 if (oy != 0 || oz != 0) r.CpApplied++;
                 members[m.Id] = m;
@@ -260,7 +260,7 @@ namespace Voyager
         }
 
         // CSV YDir = WEB direction; the viewer runs section depth along local z,
-        // so the writer's LocalY = FLANGE direction = web x axis (see SteelBeamsToPluto).
+        // so the writer's LocalY = FLANGE direction = web x axis (see SteelToPluto).
         static double[] ResolveLocalY(SteelMember b, ref int defaulted)
         {
             double ax = b.P1.X - b.P0.X, ay = b.P1.Y - b.P0.Y, az = b.P1.Z - b.P0.Z;
@@ -309,7 +309,7 @@ namespace Voyager
                 case "mm": return 1000.0;
                 case "in": return 1.0 / 0.0254;
                 case "ft": return 1.0 / 0.3048;
-                default: throw new Exception("CombinedBeamsToPluto: unknown length unit '" + unit + "'.");
+                default: throw new Exception("CombinedToPluto: unknown length unit '" + unit + "'.");
             }
         }
 
