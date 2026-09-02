@@ -116,7 +116,7 @@
     if (!info.pipes.length) { elWarn.textContent = 'No pipes (PIPE sections) in the file.'; return; }
     elCutoff.value = info.defaultCutoff !== null ? info.defaultCutoff.toFixed(2) : 0;
     elDrop.style.display = 'none';
-    elWrap.style.display = '';
+    elWrap.style.display = 'block';   // '' would fall back to the stylesheet's display:none
     recompute();
   }
 
