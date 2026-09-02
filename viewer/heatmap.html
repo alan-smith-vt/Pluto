@@ -166,14 +166,19 @@
     cv.height = Math.max(1, Math.round(h * drawScale));
 
     ctx.clearRect(0, 0, cv.width, cv.height);
-    var cellPx = cur.cellFile * drawScale;
+    // ground: the clipped steel plan reads lighter than the page background
+    ctx.fillStyle = '#1c1e24';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+    var cellPx = Math.max(1, cur.cellFile * drawScale);   // never sub-pixel
     for (var y = 0; y < cur.ny; y++) {
       for (var x = 0; x < cur.nx; x++) {
         var p = cur.psf[y * cur.nx + x];
         if (p <= 0) continue;
-        ctx.fillStyle = color(cur.maxPsf > 0 ? p / cur.maxPsf : 0);
+        // sqrt scale + floor: a lightly loaded cell must still be visible
+        var t = cur.maxPsf > 0 ? Math.sqrt(p / cur.maxPsf) : 0;
+        ctx.fillStyle = color(0.15 + 0.85 * t);
         // canvas y down = +Y up in plan -> flip
-        ctx.fillRect(x * cellPx, cv.height - (y + 1) * cellPx, cellPx + 0.5, cellPx + 0.5);
+        ctx.fillRect(x * (cur.cellFile * drawScale), cv.height - (y + 1) * (cur.cellFile * drawScale), cellPx, cellPx);
       }
     }
     if (elSteel.checked) {
@@ -190,7 +195,7 @@
 
     // legend
     var lg = document.getElementById('lg').getContext('2d');
-    for (var j = 0; j < 120; j++) { lg.fillStyle = color(1 - j / 119); lg.fillRect(0, j, 16, 1); }
+    for (var j = 0; j < 120; j++) { lg.fillStyle = color(0.15 + 0.85 * (1 - j / 119)); lg.fillRect(0, j, 16, 1); }
     document.getElementById('legendMax').textContent = fmt(cur.maxPsf, 1) + ' psf';
   }
 
