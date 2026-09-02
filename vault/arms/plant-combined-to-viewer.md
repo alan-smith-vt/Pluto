@@ -93,6 +93,38 @@ Drop `plant_<room>.bin` + `plant_<room>.features.json` together on the
 viewer's file picker → tick **Color by groups** → tick **Z up**. Hover shows
 the oid and section name; double-click focuses.
 
+## 6. Pipe weight heatmap (optional — `viewer/heatmap.html`)
+
+Top-down psf heatmap of pipe weight over the steel plan. Serve `viewer/` the
+usual way, open `heatmap.html`, and drop TWO files on it:
+
+1. the combined **`.bin`** from step 4 (no CSV, no `.features.json` — pipes vs
+   steel come from the section types in the binary), and
+2. a **psf JSON** you write, mapping pipe OD (inches) → lb/ft² over the pipe's
+   plan footprint (length × OD):
+
+```json
+{ "4.5": 12.3, "2.375": 6.1, "0.84": 2.0, "default": 5 }
+```
+
+- Keys are matched to each pipe's OD within **5%** (so `"4.5"` catches 4.500″
+  schedule variants); anything unmatched falls to `"default"`; pipes matching
+  neither are counted, warned on screen, and contribute **zero** weight.
+- The ODs present in a file are exactly the sidecar group names
+  (`PIPE 4.5 in`, …) — crib the key list from there. `UNSIZED` pipes render at
+  the 2″ placeholder, so give `"2"` (or `default`) a value if you have many.
+
+Controls: **Smear** slider (left = ~1″ cells, each step doubles, right = one
+cell = room total), **Z cutoff** (pre-filled with the lowest bottom flange of
+horizontal steel — hangers excluded; pipes below it count as floor-supported),
+steel-plan overlay toggle. Hover a cell for psf + lb; the stats line shows the
+total, counted/ignored pipes, and unmatched-psf warnings.
+
+Caveats: vertical runs carry ~no weight (no plan length — the psf model;
+switching to plf later fixes risers), and the psf is assumed to apply over the
+pipe's own plan footprint. Check the single-cell total against a hand number
+before trusting the fine grid.
+
 ## Sanity checklist after an export
 
 - `jointConflicts = 0` (pipe side; nonzero = SQL duplicated a hub).
