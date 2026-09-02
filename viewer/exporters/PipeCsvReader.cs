@@ -5,8 +5,8 @@ using System.IO;
 using System.Linq;
 using System.Text;
 
-// SQL_BeamExporter  --  pipe CSV (SQL_Tutor "Pipe Extraction v1", v4) -> List<SQL_Beam>
-// for PipeBeamsToPluto.Export. C# 5 / Add-Type (PowerShell 5.1) compatible.
+// PipeCsvReader  --  pipe CSV (SQL_Tutor "Pipe Extraction v1", v4) -> List<PipeBeam>
+// for PipeToPluto.Export. C# 5 / Add-Type (PowerShell 5.1) compatible.
 //
 // Input CSV columns (Export-Csv, every field quoted):
 //   ConnOid, PartOid, PartClass, X, Y, Z (meters), RunOid, RunName, Room, Udf3, Udf4,
@@ -23,11 +23,11 @@ using System.Text;
 // This replaces the Excel / second-CSV step.
 //
 // Usage from PowerShell 5.1:
-//   Add-Type -Path .\RawViewerWriter.cs, .\FeaturesSidecar.cs, .\SQL_BeamExporter.cs, .\PipeBeamsToPluto.cs, .\Stubs.cs
-//   $ex = New-Object Voyager.SQL_BeamExporter
+//   Add-Type -Path .\RawViewerWriter.cs, .\FeaturesSidecar.cs, .\PipeCsvReader.cs, .\PipeToPluto.cs, .\Stubs.cs
+//   $ex = New-Object Voyager.PipeCsvReader
 //   $beams = $ex.Build('C:\Temp\pipe_v4_sized.csv', '<room>')      # or $ex.Build($csv) for the whole plant
 //   $ex.Summary()
-//   $r = [Voyager.PipeBeamsToPluto]::Export($beams, 'C:\Temp\pipes_<room>', 'ProjectX/pipes/<room>', 'in')
+//   $r = [Voyager.PipeToPluto]::Export($beams, 'C:\Temp\pipes_<room>', 'ProjectX/pipes/<room>', 'in')
 
 namespace Voyager
 {
@@ -37,7 +37,7 @@ namespace Voyager
         public Vec3(double x, double y, double z) { X = x; Y = y; Z = z; }
     }
 
-    public class SQL_Beam
+    public class PipeBeam
     {
         public Vec3 P0;
         public Vec3 P1;
@@ -52,7 +52,7 @@ namespace Voyager
         public bool Synthetic;       // one-hub fallback: P1 synthesised by reflection through the part bbox centroid
     }
 
-    public class SQL_BeamExporter
+    public class PipeCsvReader
     {
         const double InchToMeter = 0.0254;
 
@@ -131,12 +131,12 @@ namespace Voyager
                 PartsRescued, PartsRejectedFallback, PartsNoBbox);
         }
 
-        public List<SQL_Beam> Build(string csvPath)
+        public List<PipeBeam> Build(string csvPath)
         {
             return Build(csvPath, null);
         }
 
-        public List<SQL_Beam> Build(string csvPath, string room)
+        public List<PipeBeam> Build(string csvPath, string room)
         {
             return Build(csvPath, room, null);
         }
@@ -144,7 +144,7 @@ namespace Voyager
         // bboxPath (v4.3 sidecar, "Beam Export - Pipe CSV to Beams" one-hub SPEC):
         // PartOid, PartClass, CX, CY, CZ, EX, EY, EZ -- centroid + FULL extents
         // (box = C +/- E/2), meters. null = no fallback, byte-identical to before.
-        public List<SQL_Beam> Build(string csvPath, string room, string bboxPath)
+        public List<PipeBeam> Build(string csvPath, string room, string bboxPath)
         {
             RowsRead = RowsKept = PartsSeen = PartsSkipped = PartsUnsized = JointConflicts = RunConflicts = 0;
             SizedFromData = SizedFromName = SizedNone = TaperedBeams = 0;
@@ -153,7 +153,7 @@ namespace Voyager
             RoomFilter = room == null ? null : room.Trim();
             bool filter = !string.IsNullOrEmpty(RoomFilter);
 
-            var beams = new List<SQL_Beam>();
+            var beams = new List<PipeBeam>();
             var byPart = new Dictionary<string, PartAcc>();
 
             foreach (var r in ReadCsv(csvPath))
@@ -332,9 +332,9 @@ namespace Voyager
             return r.TryGetValue(col, out v) ? v : "";
         }
 
-        SQL_Beam Make(Vec3 a, Vec3 b, PartAcc acc, string partOid, double d0, double d1)
+        PipeBeam Make(Vec3 a, Vec3 b, PartAcc acc, string partOid, double d0, double d1)
         {
-            var bm = new SQL_Beam();
+            var bm = new PipeBeam();
             bm.P0 = a; bm.P1 = b; bm.SizeSource = acc.SizeSource;
             bm.D0 = d0; bm.D1 = d1;
             // single-radius viewer for now: the larger end (NaN-safe)
