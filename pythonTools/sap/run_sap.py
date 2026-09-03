@@ -93,9 +93,22 @@ def step_export(s2k: Path, results: Path, model_id: str, cylindrical: bool) -> t
     return out_base.with_suffix(".bin"), out_base.with_suffix(".features.json")
 
 
+class _NoCacheHandler(http.server.SimpleHTTPRequestHandler):
+    """Static files with Cache-Control: no-store. SimpleHTTPRequestHandler sends
+    Last-Modified, so browsers heuristically cache viewer.css / *.js across
+    sessions and a stale stylesheet hides new overlays (readout, 2026-09-03)."""
+
+    def end_headers(self):
+        self.send_header("Cache-Control", "no-store, must-revalidate")
+        self.send_header("Expires", "0")
+        super().end_headers()
+
+    def log_message(self, *a, **k):                      # quiet
+        pass
+
+
 def step_viewer(bin_path: Path, features: Path, port: int) -> None:
-    handler = partial(http.server.SimpleHTTPRequestHandler, directory=str(REPO))
-    handler.log_message = lambda *a, **k: None          # quiet
+    handler = partial(_NoCacheHandler, directory=str(REPO))
     httpd = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     rel = lambda p: "/" + p.resolve().relative_to(REPO).as_posix()
