@@ -4,6 +4,8 @@ status: current
 created: 2026-09-01
 ---
 
+*↑ [[vault/Home|Home]] › [[vault/viewer/Viewer map|Viewer map]]*
+
 > **Decisions (user, 2026-09-01):** production dialect for the predicate schema;
 > Phase A end-to-end first, then review.
 > **Phase A implemented 2026-09-01** — `viewer/scripts/predicates.js` + panel
@@ -18,8 +20,6 @@ created: 2026-09-01
 > the old exporter's symmetric-clip contract (absMax envelope appended as last LC).
 
 # Old viewer → new viewer merge plan
-
-*↑ [[vault/Home|Home]] › [[vault/viewer/Viewer map|Viewer map]]*
 
 Source: `archive/ViewerSource/` (the pre-Pluto
 viewer, transcribed 2026-09-01, no `// sanitized` markers — appears intact).
