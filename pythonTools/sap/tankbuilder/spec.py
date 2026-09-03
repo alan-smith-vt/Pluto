@@ -20,15 +20,28 @@ STEEL = dict(
 )
 
 
+@dataclass(frozen=True)
+class Course:
+    """One plate course of the wall: a height range at one thickness.
+
+    divisions: mesh rows in this course; None = share mesh.n_z out by height.
+    """
+    height: float
+    thickness: float
+    divisions: int | None = None
+
+
 @dataclass
 class TankSpec:
     # [geometry]
     radius: float = 30.0  # ft, to the shell mid-surface
-    height: float = 40.0  # ft, wall height
-    thickness: float = 0.0208333  # ft (0.25 in)
+    height: float = 40.0  # ft, wall height (= sum of the courses when given)
+    thickness: float = 0.0208333  # ft (0.25 in); the single course when [[courses]] is absent
+    # [[courses]]  bottom first; overrides geometry.thickness (and fixes height)
+    courses: tuple[Course, ...] | None = None
     # [mesh]
     n_theta: int = 36  # radial (circumferential) divisions
-    n_z: int = 20  # vertical divisions
+    n_z: int = 20  # vertical divisions, in total; shared out to the courses by height
     # [fluid]
     fill_fraction: float = 1.0  # 1.0 = filled to the top of the wall
     fluid_weight: float = GAMMA_WATER
@@ -51,6 +64,20 @@ class TankSpec:
     def fill_height(self) -> float:
         return self.height * self.fill_fraction
 
+    @property
+    def plate_courses(self) -> tuple[Course, ...]:
+        """The courses, bottom first; one course of geometry.thickness by default."""
+        if self.courses:
+            return self.courses
+        return (Course(self.height, self.thickness),)
+
+    def course_divisions(self) -> list[int]:
+        """Mesh rows per course: explicit divisions, else mesh.n_z shared out by
+        height (at least one row each). Every course boundary is a mesh ring."""
+        cs = self.plate_courses
+        return [c.divisions if c.divisions is not None
+                else max(1, round(self.n_z * c.height / self.height)) for c in cs]
+
     def validate(self) -> None:
         if self.n_theta < 3:
             raise ValueError("mesh.n_theta must be at least 3")
@@ -58,6 +85,19 @@ class TankSpec:
             raise ValueError("mesh.n_z must be at least 1")
         if self.radius <= 0 or self.height <= 0 or self.thickness <= 0:
             raise ValueError("geometry.radius/height/thickness must be positive")
+        if self.courses is not None:
+            if not self.courses:
+                raise ValueError("[[courses]] given but empty")
+            for k, c in enumerate(self.courses, 1):
+                if c.height <= 0 or c.thickness <= 0:
+                    raise ValueError(f"courses[{k}]: height and thickness must be positive")
+                if c.divisions is not None and c.divisions < 1:
+                    raise ValueError(f"courses[{k}]: divisions must be at least 1")
+            total = sum(c.height for c in self.courses)
+            if abs(total - self.height) > 1e-9 * max(1.0, self.height):
+                raise ValueError(
+                    f"courses sum to {total:g} ft but geometry.height is {self.height:g} ft"
+                )
         if not 0.0 <= self.fill_fraction <= 1.0:
             raise ValueError("fluid.fill_fraction must be between 0 and 1")
         if self.load_mode not in ("uniform", "joints"):
@@ -75,6 +115,7 @@ class TankSpec:
 # typo in a config is an error instead of a silently ignored setting.
 CONFIG_MAP = {
     "geometry": {"radius": "radius", "height": "height", "thickness": "thickness"},
+    "courses": {"height": "height", "thickness": "thickness", "divisions": "divisions"},
     "mesh": {"n_theta": "n_theta", "n_z": "n_z"},
     "fluid": {
         "fill_fraction": "fill_fraction",
@@ -111,15 +152,40 @@ def spec_from_dict(raw: dict) -> tuple[TankSpec, str, str]:
             continue
         if section not in CONFIG_MAP:
             raise ValueError(f"unknown config section [{section}]")
+        if section == "courses":
+            fields["courses"] = _courses_from_list(values)
+            continue
         if not isinstance(values, dict):
             raise ValueError(f"[{section}] must be a table of key = value entries")
         for key, value in values.items():
             if key not in CONFIG_MAP[section]:
                 raise ValueError(f"unknown key {key!r} in [{section}]")
             fields[CONFIG_MAP[section][key]] = value
+    if fields.get("courses"):
+        if "thickness" in fields:
+            raise ValueError("give either geometry.thickness or [[courses]], not both")
+        total = sum(c.height for c in fields["courses"])
+        fields.setdefault("height", total)   # geometry.height is optional with courses
+        fields["thickness"] = fields["courses"][0].thickness
     spec = TankSpec(**fields)
     spec.validate()
     return spec, out_dir_raw, out_name
+
+
+def _courses_from_list(values) -> tuple[Course, ...]:
+    """[[courses]] rows (bottom first) -> Course tuple, rejecting unknown keys."""
+    if not isinstance(values, list):
+        raise ValueError("[[courses]] must be an array of tables (bottom course first)")
+    out = []
+    for k, row in enumerate(values, 1):
+        unknown = set(row) - set(CONFIG_MAP["courses"])
+        if unknown:
+            raise ValueError(f"unknown key(s) in courses[{k}]: {sorted(unknown)}")
+        if "height" not in row or "thickness" not in row:
+            raise ValueError(f"courses[{k}] needs height and thickness")
+        out.append(Course(float(row["height"]), float(row["thickness"]),
+                          None if row.get("divisions") is None else int(row["divisions"])))
+    return tuple(out)
 
 
 def load_config(path: Path) -> tuple[TankSpec, Path]:

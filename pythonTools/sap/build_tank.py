@@ -8,10 +8,12 @@ model.py: TankModel joints/areas/hydrostatics; s2k.py: the .s2k tables).
 Units are kip, ft, F throughout; conventions in tankbuilder/__init__.py.
 
 Scope today: cylindrical wall meshed by circumferential and vertical
-divisions, thin shells, one steel material, one wall thickness, base ring
-pinned or (base_local_axes + release_radial) freed radially so the wall
-goes into hoop, hydrostatic pressure from the fill height as a surface
-pressure on the inside face. Next: ring-wall base, anchor chairs, settlement.
+divisions, thin shells, one steel material, plate courses of differing
+thickness ([[courses]], one shell section per thickness, a mesh ring on every
+course boundary), base ring pinned or (base_local_axes + release_radial)
+freed radially so the wall goes into hoop, hydrostatic pressure from the
+fill height as a surface pressure on the inside face. Next: baseplate, dome,
+ring wall on gap links, settlement profiles.
 """
 
 from __future__ import annotations
@@ -46,6 +48,7 @@ def main(argv=None) -> int:
     base = "released radially" if spec.release_radial else "pinned"
     print(
         f"{out}: {len(model.joints)} joints, {len(model.areas)} shells, "
+        f"{len(spec.plate_courses)} course(s) / {len(model.sections)} thickness(es), "
         f"base {base}, base pressure "
         f"{spec.fluid_weight * spec.fill_height:.4f} kip/ft^2"
     )

@@ -71,9 +71,10 @@ def section_tables(model: TankModel) -> list[tuple[str, list[str]]]:
     s = model.spec
     return [
         ("AREA SECTION PROPERTIES", [
-            _row(Section="TANKWALL", Material=s.mat_name, MatAngle=0,
-                 AreaType="Shell", Type="Shell-Thin", Thickness=s.thickness,
-                 BendThick=s.thickness, Color="Gray8Dark")]),
+            _row(Section=name, Material=s.mat_name, MatAngle=0,
+                 AreaType="Shell", Type="Shell-Thin", Thickness=t,
+                 BendThick=t, Color="Gray8Dark")
+            for name, t in model.sections.items()]),
     ]
 
 
@@ -86,7 +87,7 @@ def geometry_tables(model: TankModel) -> list[tuple[str, list[str]]]:
             _row(Area=a, NumJoints=4, Joint1=j1, Joint2=j2, Joint3=j3, Joint4=j4)
             for a, (j1, j2, j3, j4) in sorted(model.areas.items())]),
         ("AREA SECTION ASSIGNMENTS", [
-            _row(Area=a, Section="TANKWALL") for a in sorted(model.areas)]),
+            _row(Area=a, Section=model.area_section[a]) for a in sorted(model.areas)]),
     ]
 
 

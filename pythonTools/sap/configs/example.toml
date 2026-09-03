@@ -7,12 +7,22 @@
 
 [geometry]
 radius    = 30.0        # ft, to the shell mid-surface
-height    = 40.0        # ft, wall height
+height    = 40.0        # ft, wall height; optional when [[courses]] is given (= their sum)
+
+# Plate courses, bottom first. Each is a height range at one thickness; a mesh ring
+# lands on every course boundary and COURSE_nn groups follow these, not the mesh rows.
+# A single-thickness wall can instead give geometry.thickness (not both).
+[[courses]]
+height    = 20.0        # ft
 thickness = 0.0208333   # ft = 0.25 in
+[[courses]]
+height    = 20.0
+thickness = 0.015625    # ft = 3/16 in
+# divisions = 10        # optional: mesh rows in this course (default: mesh.n_z shared by height)
 
 [mesh]
 n_theta = 36            # circumferential divisions
-n_z     = 20            # vertical divisions
+n_z     = 20            # vertical divisions in total, shared out to the courses by height
 
 [fluid]
 unit_weight   = 0.0624  # kip/ft^3, water
@@ -25,7 +35,7 @@ release_radial  = true  # free the radial direction so the wall goes into hoop (
 
 [groups]
 enabled = true          # SAP GROUPS: WALL, BASE_RING, TOP_RING (-> sidecar groups via SapToPluto)
-courses = true          # plus COURSE_01.. per horizontal course of shells
+courses = true          # plus COURSE_01.. per plate course
 
 [material]
 name        = "A36"
