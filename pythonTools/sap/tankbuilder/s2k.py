@@ -69,13 +69,22 @@ def material_tables(model: TankModel) -> list[tuple[str, list[str]]]:
 
 def section_tables(model: TankModel) -> list[tuple[str, list[str]]]:
     s = model.spec
-    return [
+    out = [
         ("AREA SECTION PROPERTIES", [
             _row(Section=name, Material=s.mat_name, MatAngle=0,
                  AreaType="Shell", Type="Shell-Thin", Thickness=t,
                  BendThick=t, Color="Gray8Dark")
             for name, t in model.sections.items()]),
     ]
+    if model.frame_sections:
+        # Shape + dimensions only; SAP computes the section properties on import.
+        # NOTE: not yet verified against the v25 importer (first frames in this
+        # generator, 2026-09-03) -- if it rejects the table, the field names are
+        # the suspect, not the values.
+        out.append(("FRAME SECTION PROPERTIES 01 - GENERAL", [
+            _row(SectionName=name, Material=s.mat_name, **props, Color="Yellow")
+            for name, props in model.frame_sections.items()]))
+    return out
 
 
 def geometry_tables(model: TankModel) -> list[tuple[str, list[str]]]:
@@ -84,10 +93,18 @@ def geometry_tables(model: TankModel) -> list[tuple[str, list[str]]]:
             _row(Joint=j, CoordSys="GLOBAL", CoordType="Cartesian", XorR=x, Y=y, Z=z)
             for j, (x, y, z) in sorted(model.joints.items())]),
         ("CONNECTIVITY - AREA", [
-            _row(Area=a, NumJoints=4, Joint1=j1, Joint2=j2, Joint3=j3, Joint4=j4)
-            for a, (j1, j2, j3, j4) in sorted(model.areas.items())]),
+            _row(Area=a, NumJoints=len(js), **{f"Joint{k + 1}": j for k, j in enumerate(js)})
+            for a, js in sorted(model.areas.items())]),
         ("AREA SECTION ASSIGNMENTS", [
             _row(Area=a, Section=model.area_section[a]) for a in sorted(model.areas)]),
+        ("CONNECTIVITY - FRAME", [
+            _row(Frame=f, JointI=i, JointJ=j, IsCurved=False)
+            for f, (i, j) in sorted(model.frames.items())]),
+        ("FRAME SECTION ASSIGNMENTS", [
+            _row(Frame=f, SectionType=model.frame_sections[model.frame_section[f]]["Shape"],
+                 AutoSelect="N.A.", AnalSect=model.frame_section[f],
+                 DesignSect=model.frame_section[f], MatProp="Default")
+            for f in sorted(model.frames)]),
     ]
 
 
@@ -99,25 +116,29 @@ def group_tables(model: TankModel) -> list[tuple[str, list[str]]]:
         return []
     defs = []
     assigns = []
-    for name, (areas, joints) in groups.items():
+    for name, (areas, joints, frames) in groups.items():
         defs.append(_row(GroupName=name, Selection=True, SectionCut=True, Steel=True,
                          Concrete=True, Aluminum=True, ColdFormed=True, Stage=True,
                          Bridge=True, AutoSeismic=False, AutoWind=False, SelDesSteel=False,
                          SelDesAlum=False, SelDesCold=False, MassWeight=True, Color="Green"))
         assigns += [_row(GroupName=name, ObjectType="Area", ObjectLabel=a) for a in areas]
         assigns += [_row(GroupName=name, ObjectType="Joint", ObjectLabel=j) for j in joints]
+        assigns += [_row(GroupName=name, ObjectType="Frame", ObjectLabel=f) for f in frames]
     return [("GROUPS 1 - DEFINITIONS", defs), ("GROUPS 2 - ASSIGNMENTS", assigns)]
 
 
 def support_tables(model: TankModel) -> list[tuple[str, list[str]]]:
     """Pinned base; with release_radial the radial (local 2) direction is freed
-    so the base can expand and the wall goes into hoop."""
+    so the base can expand and the wall goes into hoop. Baseplate interior
+    joints are held vertically only (stand-in for the gap-link support layer)."""
     s = model.spec
     out = [
         ("JOINT RESTRAINT ASSIGNMENTS", [
             _row(Joint=j, U1=True, U2=not s.release_radial, U3=True,
                  R1=False, R2=False, R3=False)
-            for j in model.base_joints]),
+            for j in model.base_joints] + [
+            _row(Joint=j, U1=False, U2=False, U3=True, R1=False, R2=False, R3=False)
+            for j in model.baseplate_interior_joints]),
     ]
     if s.base_local_axes:
         # AngleA rotates the joint local axes about global Z (local 3 stays
@@ -139,8 +160,10 @@ def load_tables(model: TankModel) -> list[tuple[str, list[str]]]:
             _row(Joint=j, Pattern="HYDRO", Value=model.hydro_value(j))
             for j in sorted(model.joints)]),
     ]
-    # Face "Bottom" is shell face 5 (the local -3 side, i.e. the wet inside);
-    # a positive pressure there acts along +3, outward.
+    # Wall: face "Bottom" is shell face 5 (the local -3 side, i.e. the wet
+    # inside); a positive pressure there acts along +3, outward. Baseplate:
+    # local 3 is up, the water sits on face "Top" and pushes along -3, down.
+    # Areas with no wet face (the roof) get no pressure row.
     #
     # NOTE: the by-joint-pattern form of this table was rejected by the v25
     # importer (every record read but "no surface pressure loads are specified"
@@ -150,8 +173,8 @@ def load_tables(model: TankModel) -> list[tuple[str, list[str]]]:
     # written, so switching back is a one-line change once the names are known.
     if s.load_mode == "uniform":
         out.append(("AREA LOADS - SURFACE PRESSURE", [
-            _row(Area=a, LoadPat="HYDRO", Face="Bottom", Pressure=model.area_pressure(a))
-            for a in sorted(model.areas)]))
+            _row(Area=a, LoadPat="HYDRO", Face=model.area_face[a], Pressure=model.area_pressure(a))
+            for a in sorted(model.areas) if a in model.area_face]))
     elif s.load_mode == "joints":
         rows = []
         for j, f in sorted(model.joint_radial_forces().items()):

@@ -46,6 +46,19 @@ class TankSpec:
     fill_fraction: float = 1.0  # 1.0 = filled to the top of the wall
     fluid_weight: float = GAMMA_WATER
     load_mode: str = "uniform"  # "uniform" | "joints"
+    # [baseplate]  flat plate inside the base ring, polar mesh, water on its Top face.
+    # Interior joints are held vertically (U3) until the gap-link support layer lands.
+    baseplate: bool = False
+    baseplate_thickness: float = 0.03125  # ft (3/8 in)
+    baseplate_n_r: int = 8                # radial rings of elements (rim .. centre fan)
+    # [roof]  spherical cap on the top ring, crown radius >= tank radius, dead load only
+    roof: bool = False
+    roof_crown_radius: float = 48.0       # ft (0.8 D for the default tank)
+    roof_thickness: float = 0.03125       # ft (3/8 in)
+    roof_n_r: int = 8
+    roof_ring: bool = True                # eave compression ring: (2) equal-leg angles back to back
+    roof_ring_leg: float = 0.25           # ft (3 in)
+    roof_ring_thickness: float = 0.03125  # ft (3/8 in)
     # [supports]
     base_local_axes: bool = False
     release_radial: bool = False
@@ -98,6 +111,19 @@ class TankSpec:
                 raise ValueError(
                     f"courses sum to {total:g} ft but geometry.height is {self.height:g} ft"
                 )
+        if self.baseplate:
+            if self.baseplate_thickness <= 0 or self.baseplate_n_r < 1:
+                raise ValueError("baseplate.thickness must be positive and baseplate.n_r at least 1")
+        if self.roof:
+            if self.roof_thickness <= 0 or self.roof_n_r < 1:
+                raise ValueError("roof.thickness must be positive and roof.n_r at least 1")
+            if self.roof_crown_radius < self.radius:
+                raise ValueError(
+                    f"roof.crown_radius {self.roof_crown_radius:g} is less than the tank radius "
+                    f"{self.radius:g}; a spherical cap needs crown_radius >= radius"
+                )
+            if self.roof_ring and (self.roof_ring_leg <= 0 or self.roof_ring_thickness <= 0):
+                raise ValueError("roof.ring_leg and roof.ring_thickness must be positive")
         if not 0.0 <= self.fill_fraction <= 1.0:
             raise ValueError("fluid.fill_fraction must be between 0 and 1")
         if self.load_mode not in ("uniform", "joints"):
@@ -121,6 +147,20 @@ CONFIG_MAP = {
         "fill_fraction": "fill_fraction",
         "unit_weight": "fluid_weight",
         "load_mode": "load_mode",
+    },
+    "baseplate": {
+        "enabled": "baseplate",
+        "thickness": "baseplate_thickness",
+        "n_r": "baseplate_n_r",
+    },
+    "roof": {
+        "enabled": "roof",
+        "crown_radius": "roof_crown_radius",
+        "thickness": "roof_thickness",
+        "n_r": "roof_n_r",
+        "ring": "roof_ring",
+        "ring_leg": "roof_ring_leg",
+        "ring_thickness": "roof_ring_thickness",
     },
     "supports": {
         "base_local_axes": "base_local_axes",

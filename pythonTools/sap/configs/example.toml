@@ -29,6 +29,20 @@ unit_weight   = 0.0624  # kip/ft^3, water
 fill_fraction = 1.0     # 1.0 = filled to the top of the wall
 load_mode     = "uniform"   # "uniform" = surface pressure per shell; "joints" = equivalent radial joint forces
 
+[baseplate]
+enabled   = true
+thickness = 0.0208333   # ft = 1/4 in
+n_r       = 6           # radial rings of elements; the innermost is a triangle fan
+
+[roof]
+enabled      = true
+crown_radius = 48.0     # ft, spherical radius (>= geometry.radius); 0.8 D here
+thickness    = 0.0208333
+n_r          = 6
+ring          = true    # eave compression ring: (2) equal-leg angles back to back
+ring_leg      = 0.25    # ft = 3 in
+ring_thickness = 0.03125 # ft = 3/8 in
+
 [supports]
 base_local_axes = true  # base joint local axes: X tangential, Y radial outward
 release_radial  = true  # free the radial direction so the wall goes into hoop (needs base_local_axes)

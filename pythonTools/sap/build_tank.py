@@ -12,8 +12,10 @@ divisions, thin shells, one steel material, plate courses of differing
 thickness ([[courses]], one shell section per thickness, a mesh ring on every
 course boundary), base ring pinned or (base_local_axes + release_radial)
 freed radially so the wall goes into hoop, hydrostatic pressure from the
-fill height as a surface pressure on the inside face. Next: baseplate, dome,
-ring wall on gap links, settlement profiles.
+fill height as a surface pressure on the inside face; optional baseplate (polar mesh, full head on
+its top face, interior held vertically for now) and spherical roof with an
+eave ring of double angles. Next: gap-link support layer, ring wall,
+settlement profiles.
 """
 
 from __future__ import annotations
@@ -46,10 +48,15 @@ def main(argv=None) -> int:
     write_s2k(model, out)
 
     base = "released radially" if spec.release_radial else "pinned"
+    parts = [f"{len(spec.plate_courses)} course(s)"]
+    if spec.baseplate:
+        parts.append(f"baseplate ({len(model.baseplate_areas)} shells)")
+    if spec.roof:
+        parts.append(f"roof ({len(model.roof_areas)} shells, rise {model.roof_rise:.2f} ft"
+                     + (f", {len(model.frames)} ring frames)" if spec.roof_ring else ")"))
     print(
         f"{out}: {len(model.joints)} joints, {len(model.areas)} shells, "
-        f"{len(spec.plate_courses)} course(s) / {len(model.sections)} thickness(es), "
-        f"base {base}, base pressure "
+        + ", ".join(parts) + f", base {base}, base pressure "
         f"{spec.fluid_weight * spec.fill_height:.4f} kip/ft^2"
     )
     return 0

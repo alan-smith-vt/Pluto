@@ -12,6 +12,11 @@ TABLE:  "MATERIAL PROPERTIES 02 - BASIC MECHANICAL PROPERTIES"
 TABLE:  "AREA SECTION PROPERTIES"
    Section=WALL_T1   Material=A36   MatAngle=0   AreaType=Shell   Type=Shell-Thin   Thickness=0.0208333   BendThick=0.0208333   Color=Gray8Dark
    Section=WALL_T2   Material=A36   MatAngle=0   AreaType=Shell   Type=Shell-Thin   Thickness=0.015625   BendThick=0.015625   Color=Gray8Dark
+   Section=BASEPLATE   Material=A36   MatAngle=0   AreaType=Shell   Type=Shell-Thin   Thickness=0.0208333   BendThick=0.0208333   Color=Gray8Dark
+   Section=ROOF   Material=A36   MatAngle=0   AreaType=Shell   Type=Shell-Thin   Thickness=0.0208333   BendThick=0.0208333   Color=Gray8Dark
+
+TABLE:  "FRAME SECTION PROPERTIES 01 - GENERAL"
+   SectionName=ROOF_RING   Material=A36   Shape="Double Angle"   t3=0.25   t2=0.5   tf=0.03125   tw=0.03125   dis=0   Color=Yellow
 
 TABLE:  "JOINT COORDINATES"
    Joint=1   CoordSys=GLOBAL   CoordType=Cartesian   XorR=30   Y=0   Z=0
@@ -770,6 +775,368 @@ TABLE:  "JOINT COORDINATES"
    Joint=754   CoordSys=GLOBAL   CoordType=Cartesian   XorR=25.9807621   Y=-15   Z=40
    Joint=755   CoordSys=GLOBAL   CoordType=Cartesian   XorR=28.1907786   Y=-10.2606043   Z=40
    Joint=756   CoordSys=GLOBAL   CoordType=Cartesian   XorR=29.5442326   Y=-5.20944533   Z=40
+   Joint=757   CoordSys=GLOBAL   CoordType=Cartesian   XorR=0   Y=0   Z=0
+   Joint=758   CoordSys=GLOBAL   CoordType=Cartesian   XorR=5   Y=0   Z=0
+   Joint=759   CoordSys=GLOBAL   CoordType=Cartesian   XorR=4.92403877   Y=0.868240888   Z=0
+   Joint=760   CoordSys=GLOBAL   CoordType=Cartesian   XorR=4.6984631   Y=1.71010072   Z=0
+   Joint=761   CoordSys=GLOBAL   CoordType=Cartesian   XorR=4.33012702   Y=2.5   Z=0
+   Joint=762   CoordSys=GLOBAL   CoordType=Cartesian   XorR=3.83022222   Y=3.21393805   Z=0
+   Joint=763   CoordSys=GLOBAL   CoordType=Cartesian   XorR=3.21393805   Y=3.83022222   Z=0
+   Joint=764   CoordSys=GLOBAL   CoordType=Cartesian   XorR=2.5   Y=4.33012702   Z=0
+   Joint=765   CoordSys=GLOBAL   CoordType=Cartesian   XorR=1.71010072   Y=4.6984631   Z=0
+   Joint=766   CoordSys=GLOBAL   CoordType=Cartesian   XorR=0.868240888   Y=4.92403877   Z=0
+   Joint=767   CoordSys=GLOBAL   CoordType=Cartesian   XorR=3.061617e-16   Y=5   Z=0
+   Joint=768   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-0.868240888   Y=4.92403877   Z=0
+   Joint=769   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-1.71010072   Y=4.6984631   Z=0
+   Joint=770   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-2.5   Y=4.33012702   Z=0
+   Joint=771   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-3.21393805   Y=3.83022222   Z=0
+   Joint=772   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-3.83022222   Y=3.21393805   Z=0
+   Joint=773   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-4.33012702   Y=2.5   Z=0
+   Joint=774   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-4.6984631   Y=1.71010072   Z=0
+   Joint=775   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-4.92403877   Y=0.868240888   Z=0
+   Joint=776   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-5   Y=6.123234e-16   Z=0
+   Joint=777   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-4.92403877   Y=-0.868240888   Z=0
+   Joint=778   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-4.6984631   Y=-1.71010072   Z=0
+   Joint=779   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-4.33012702   Y=-2.5   Z=0
+   Joint=780   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-3.83022222   Y=-3.21393805   Z=0
+   Joint=781   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-3.21393805   Y=-3.83022222   Z=0
+   Joint=782   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-2.5   Y=-4.33012702   Z=0
+   Joint=783   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-1.71010072   Y=-4.6984631   Z=0
+   Joint=784   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-0.868240888   Y=-4.92403877   Z=0
+   Joint=785   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-9.18485099e-16   Y=-5   Z=0
+   Joint=786   CoordSys=GLOBAL   CoordType=Cartesian   XorR=0.868240888   Y=-4.92403877   Z=0
+   Joint=787   CoordSys=GLOBAL   CoordType=Cartesian   XorR=1.71010072   Y=-4.6984631   Z=0
+   Joint=788   CoordSys=GLOBAL   CoordType=Cartesian   XorR=2.5   Y=-4.33012702   Z=0
+   Joint=789   CoordSys=GLOBAL   CoordType=Cartesian   XorR=3.21393805   Y=-3.83022222   Z=0
+   Joint=790   CoordSys=GLOBAL   CoordType=Cartesian   XorR=3.83022222   Y=-3.21393805   Z=0
+   Joint=791   CoordSys=GLOBAL   CoordType=Cartesian   XorR=4.33012702   Y=-2.5   Z=0
+   Joint=792   CoordSys=GLOBAL   CoordType=Cartesian   XorR=4.6984631   Y=-1.71010072   Z=0
+   Joint=793   CoordSys=GLOBAL   CoordType=Cartesian   XorR=4.92403877   Y=-0.868240888   Z=0
+   Joint=794   CoordSys=GLOBAL   CoordType=Cartesian   XorR=10   Y=0   Z=0
+   Joint=795   CoordSys=GLOBAL   CoordType=Cartesian   XorR=9.84807753   Y=1.73648178   Z=0
+   Joint=796   CoordSys=GLOBAL   CoordType=Cartesian   XorR=9.39692621   Y=3.42020143   Z=0
+   Joint=797   CoordSys=GLOBAL   CoordType=Cartesian   XorR=8.66025404   Y=5   Z=0
+   Joint=798   CoordSys=GLOBAL   CoordType=Cartesian   XorR=7.66044443   Y=6.4278761   Z=0
+   Joint=799   CoordSys=GLOBAL   CoordType=Cartesian   XorR=6.4278761   Y=7.66044443   Z=0
+   Joint=800   CoordSys=GLOBAL   CoordType=Cartesian   XorR=5   Y=8.66025404   Z=0
+   Joint=801   CoordSys=GLOBAL   CoordType=Cartesian   XorR=3.42020143   Y=9.39692621   Z=0
+   Joint=802   CoordSys=GLOBAL   CoordType=Cartesian   XorR=1.73648178   Y=9.84807753   Z=0
+   Joint=803   CoordSys=GLOBAL   CoordType=Cartesian   XorR=6.123234e-16   Y=10   Z=0
+   Joint=804   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-1.73648178   Y=9.84807753   Z=0
+   Joint=805   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-3.42020143   Y=9.39692621   Z=0
+   Joint=806   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-5   Y=8.66025404   Z=0
+   Joint=807   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-6.4278761   Y=7.66044443   Z=0
+   Joint=808   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-7.66044443   Y=6.4278761   Z=0
+   Joint=809   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-8.66025404   Y=5   Z=0
+   Joint=810   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-9.39692621   Y=3.42020143   Z=0
+   Joint=811   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-9.84807753   Y=1.73648178   Z=0
+   Joint=812   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-10   Y=1.2246468e-15   Z=0
+   Joint=813   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-9.84807753   Y=-1.73648178   Z=0
+   Joint=814   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-9.39692621   Y=-3.42020143   Z=0
+   Joint=815   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-8.66025404   Y=-5   Z=0
+   Joint=816   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-7.66044443   Y=-6.4278761   Z=0
+   Joint=817   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-6.4278761   Y=-7.66044443   Z=0
+   Joint=818   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-5   Y=-8.66025404   Z=0
+   Joint=819   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-3.42020143   Y=-9.39692621   Z=0
+   Joint=820   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-1.73648178   Y=-9.84807753   Z=0
+   Joint=821   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-1.8369702e-15   Y=-10   Z=0
+   Joint=822   CoordSys=GLOBAL   CoordType=Cartesian   XorR=1.73648178   Y=-9.84807753   Z=0
+   Joint=823   CoordSys=GLOBAL   CoordType=Cartesian   XorR=3.42020143   Y=-9.39692621   Z=0
+   Joint=824   CoordSys=GLOBAL   CoordType=Cartesian   XorR=5   Y=-8.66025404   Z=0
+   Joint=825   CoordSys=GLOBAL   CoordType=Cartesian   XorR=6.4278761   Y=-7.66044443   Z=0
+   Joint=826   CoordSys=GLOBAL   CoordType=Cartesian   XorR=7.66044443   Y=-6.4278761   Z=0
+   Joint=827   CoordSys=GLOBAL   CoordType=Cartesian   XorR=8.66025404   Y=-5   Z=0
+   Joint=828   CoordSys=GLOBAL   CoordType=Cartesian   XorR=9.39692621   Y=-3.42020143   Z=0
+   Joint=829   CoordSys=GLOBAL   CoordType=Cartesian   XorR=9.84807753   Y=-1.73648178   Z=0
+   Joint=830   CoordSys=GLOBAL   CoordType=Cartesian   XorR=15   Y=0   Z=0
+   Joint=831   CoordSys=GLOBAL   CoordType=Cartesian   XorR=14.7721163   Y=2.60472267   Z=0
+   Joint=832   CoordSys=GLOBAL   CoordType=Cartesian   XorR=14.0953893   Y=5.13030215   Z=0
+   Joint=833   CoordSys=GLOBAL   CoordType=Cartesian   XorR=12.9903811   Y=7.5   Z=0
+   Joint=834   CoordSys=GLOBAL   CoordType=Cartesian   XorR=11.4906666   Y=9.64181415   Z=0
+   Joint=835   CoordSys=GLOBAL   CoordType=Cartesian   XorR=9.64181415   Y=11.4906666   Z=0
+   Joint=836   CoordSys=GLOBAL   CoordType=Cartesian   XorR=7.5   Y=12.9903811   Z=0
+   Joint=837   CoordSys=GLOBAL   CoordType=Cartesian   XorR=5.13030215   Y=14.0953893   Z=0
+   Joint=838   CoordSys=GLOBAL   CoordType=Cartesian   XorR=2.60472267   Y=14.7721163   Z=0
+   Joint=839   CoordSys=GLOBAL   CoordType=Cartesian   XorR=9.18485099e-16   Y=15   Z=0
+   Joint=840   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-2.60472267   Y=14.7721163   Z=0
+   Joint=841   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-5.13030215   Y=14.0953893   Z=0
+   Joint=842   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-7.5   Y=12.9903811   Z=0
+   Joint=843   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-9.64181415   Y=11.4906666   Z=0
+   Joint=844   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-11.4906666   Y=9.64181415   Z=0
+   Joint=845   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-12.9903811   Y=7.5   Z=0
+   Joint=846   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-14.0953893   Y=5.13030215   Z=0
+   Joint=847   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-14.7721163   Y=2.60472267   Z=0
+   Joint=848   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-15   Y=1.8369702e-15   Z=0
+   Joint=849   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-14.7721163   Y=-2.60472267   Z=0
+   Joint=850   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-14.0953893   Y=-5.13030215   Z=0
+   Joint=851   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-12.9903811   Y=-7.5   Z=0
+   Joint=852   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-11.4906666   Y=-9.64181415   Z=0
+   Joint=853   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-9.64181415   Y=-11.4906666   Z=0
+   Joint=854   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-7.5   Y=-12.9903811   Z=0
+   Joint=855   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-5.13030215   Y=-14.0953893   Z=0
+   Joint=856   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-2.60472267   Y=-14.7721163   Z=0
+   Joint=857   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-2.7554553e-15   Y=-15   Z=0
+   Joint=858   CoordSys=GLOBAL   CoordType=Cartesian   XorR=2.60472267   Y=-14.7721163   Z=0
+   Joint=859   CoordSys=GLOBAL   CoordType=Cartesian   XorR=5.13030215   Y=-14.0953893   Z=0
+   Joint=860   CoordSys=GLOBAL   CoordType=Cartesian   XorR=7.5   Y=-12.9903811   Z=0
+   Joint=861   CoordSys=GLOBAL   CoordType=Cartesian   XorR=9.64181415   Y=-11.4906666   Z=0
+   Joint=862   CoordSys=GLOBAL   CoordType=Cartesian   XorR=11.4906666   Y=-9.64181415   Z=0
+   Joint=863   CoordSys=GLOBAL   CoordType=Cartesian   XorR=12.9903811   Y=-7.5   Z=0
+   Joint=864   CoordSys=GLOBAL   CoordType=Cartesian   XorR=14.0953893   Y=-5.13030215   Z=0
+   Joint=865   CoordSys=GLOBAL   CoordType=Cartesian   XorR=14.7721163   Y=-2.60472267   Z=0
+   Joint=866   CoordSys=GLOBAL   CoordType=Cartesian   XorR=20   Y=0   Z=0
+   Joint=867   CoordSys=GLOBAL   CoordType=Cartesian   XorR=19.6961551   Y=3.47296355   Z=0
+   Joint=868   CoordSys=GLOBAL   CoordType=Cartesian   XorR=18.7938524   Y=6.84040287   Z=0
+   Joint=869   CoordSys=GLOBAL   CoordType=Cartesian   XorR=17.3205081   Y=10   Z=0
+   Joint=870   CoordSys=GLOBAL   CoordType=Cartesian   XorR=15.3208889   Y=12.8557522   Z=0
+   Joint=871   CoordSys=GLOBAL   CoordType=Cartesian   XorR=12.8557522   Y=15.3208889   Z=0
+   Joint=872   CoordSys=GLOBAL   CoordType=Cartesian   XorR=10   Y=17.3205081   Z=0
+   Joint=873   CoordSys=GLOBAL   CoordType=Cartesian   XorR=6.84040287   Y=18.7938524   Z=0
+   Joint=874   CoordSys=GLOBAL   CoordType=Cartesian   XorR=3.47296355   Y=19.6961551   Z=0
+   Joint=875   CoordSys=GLOBAL   CoordType=Cartesian   XorR=1.2246468e-15   Y=20   Z=0
+   Joint=876   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-3.47296355   Y=19.6961551   Z=0
+   Joint=877   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-6.84040287   Y=18.7938524   Z=0
+   Joint=878   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-10   Y=17.3205081   Z=0
+   Joint=879   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-12.8557522   Y=15.3208889   Z=0
+   Joint=880   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-15.3208889   Y=12.8557522   Z=0
+   Joint=881   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-17.3205081   Y=10   Z=0
+   Joint=882   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-18.7938524   Y=6.84040287   Z=0
+   Joint=883   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-19.6961551   Y=3.47296355   Z=0
+   Joint=884   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-20   Y=2.4492936e-15   Z=0
+   Joint=885   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-19.6961551   Y=-3.47296355   Z=0
+   Joint=886   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-18.7938524   Y=-6.84040287   Z=0
+   Joint=887   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-17.3205081   Y=-10   Z=0
+   Joint=888   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-15.3208889   Y=-12.8557522   Z=0
+   Joint=889   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-12.8557522   Y=-15.3208889   Z=0
+   Joint=890   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-10   Y=-17.3205081   Z=0
+   Joint=891   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-6.84040287   Y=-18.7938524   Z=0
+   Joint=892   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-3.47296355   Y=-19.6961551   Z=0
+   Joint=893   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-3.6739404e-15   Y=-20   Z=0
+   Joint=894   CoordSys=GLOBAL   CoordType=Cartesian   XorR=3.47296355   Y=-19.6961551   Z=0
+   Joint=895   CoordSys=GLOBAL   CoordType=Cartesian   XorR=6.84040287   Y=-18.7938524   Z=0
+   Joint=896   CoordSys=GLOBAL   CoordType=Cartesian   XorR=10   Y=-17.3205081   Z=0
+   Joint=897   CoordSys=GLOBAL   CoordType=Cartesian   XorR=12.8557522   Y=-15.3208889   Z=0
+   Joint=898   CoordSys=GLOBAL   CoordType=Cartesian   XorR=15.3208889   Y=-12.8557522   Z=0
+   Joint=899   CoordSys=GLOBAL   CoordType=Cartesian   XorR=17.3205081   Y=-10   Z=0
+   Joint=900   CoordSys=GLOBAL   CoordType=Cartesian   XorR=18.7938524   Y=-6.84040287   Z=0
+   Joint=901   CoordSys=GLOBAL   CoordType=Cartesian   XorR=19.6961551   Y=-3.47296355   Z=0
+   Joint=902   CoordSys=GLOBAL   CoordType=Cartesian   XorR=25   Y=0   Z=0
+   Joint=903   CoordSys=GLOBAL   CoordType=Cartesian   XorR=24.6201938   Y=4.34120444   Z=0
+   Joint=904   CoordSys=GLOBAL   CoordType=Cartesian   XorR=23.4923155   Y=8.55050358   Z=0
+   Joint=905   CoordSys=GLOBAL   CoordType=Cartesian   XorR=21.6506351   Y=12.5   Z=0
+   Joint=906   CoordSys=GLOBAL   CoordType=Cartesian   XorR=19.1511111   Y=16.0696902   Z=0
+   Joint=907   CoordSys=GLOBAL   CoordType=Cartesian   XorR=16.0696902   Y=19.1511111   Z=0
+   Joint=908   CoordSys=GLOBAL   CoordType=Cartesian   XorR=12.5   Y=21.6506351   Z=0
+   Joint=909   CoordSys=GLOBAL   CoordType=Cartesian   XorR=8.55050358   Y=23.4923155   Z=0
+   Joint=910   CoordSys=GLOBAL   CoordType=Cartesian   XorR=4.34120444   Y=24.6201938   Z=0
+   Joint=911   CoordSys=GLOBAL   CoordType=Cartesian   XorR=1.5308085e-15   Y=25   Z=0
+   Joint=912   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-4.34120444   Y=24.6201938   Z=0
+   Joint=913   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-8.55050358   Y=23.4923155   Z=0
+   Joint=914   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-12.5   Y=21.6506351   Z=0
+   Joint=915   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-16.0696902   Y=19.1511111   Z=0
+   Joint=916   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-19.1511111   Y=16.0696902   Z=0
+   Joint=917   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-21.6506351   Y=12.5   Z=0
+   Joint=918   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-23.4923155   Y=8.55050358   Z=0
+   Joint=919   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-24.6201938   Y=4.34120444   Z=0
+   Joint=920   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-25   Y=3.061617e-15   Z=0
+   Joint=921   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-24.6201938   Y=-4.34120444   Z=0
+   Joint=922   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-23.4923155   Y=-8.55050358   Z=0
+   Joint=923   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-21.6506351   Y=-12.5   Z=0
+   Joint=924   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-19.1511111   Y=-16.0696902   Z=0
+   Joint=925   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-16.0696902   Y=-19.1511111   Z=0
+   Joint=926   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-12.5   Y=-21.6506351   Z=0
+   Joint=927   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-8.55050358   Y=-23.4923155   Z=0
+   Joint=928   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-4.34120444   Y=-24.6201938   Z=0
+   Joint=929   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-4.5924255e-15   Y=-25   Z=0
+   Joint=930   CoordSys=GLOBAL   CoordType=Cartesian   XorR=4.34120444   Y=-24.6201938   Z=0
+   Joint=931   CoordSys=GLOBAL   CoordType=Cartesian   XorR=8.55050358   Y=-23.4923155   Z=0
+   Joint=932   CoordSys=GLOBAL   CoordType=Cartesian   XorR=12.5   Y=-21.6506351   Z=0
+   Joint=933   CoordSys=GLOBAL   CoordType=Cartesian   XorR=16.0696902   Y=-19.1511111   Z=0
+   Joint=934   CoordSys=GLOBAL   CoordType=Cartesian   XorR=19.1511111   Y=-16.0696902   Z=0
+   Joint=935   CoordSys=GLOBAL   CoordType=Cartesian   XorR=21.6506351   Y=-12.5   Z=0
+   Joint=936   CoordSys=GLOBAL   CoordType=Cartesian   XorR=23.4923155   Y=-8.55050358   Z=0
+   Joint=937   CoordSys=GLOBAL   CoordType=Cartesian   XorR=24.6201938   Y=-4.34120444   Z=0
+   Joint=938   CoordSys=GLOBAL   CoordType=Cartesian   XorR=0   Y=0   Z=50.530012
+   Joint=939   CoordSys=GLOBAL   CoordType=Cartesian   XorR=5   Y=0   Z=50.2688851
+   Joint=940   CoordSys=GLOBAL   CoordType=Cartesian   XorR=4.92403877   Y=0.868240888   Z=50.2688851
+   Joint=941   CoordSys=GLOBAL   CoordType=Cartesian   XorR=4.6984631   Y=1.71010072   Z=50.2688851
+   Joint=942   CoordSys=GLOBAL   CoordType=Cartesian   XorR=4.33012702   Y=2.5   Z=50.2688851
+   Joint=943   CoordSys=GLOBAL   CoordType=Cartesian   XorR=3.83022222   Y=3.21393805   Z=50.2688851
+   Joint=944   CoordSys=GLOBAL   CoordType=Cartesian   XorR=3.21393805   Y=3.83022222   Z=50.2688851
+   Joint=945   CoordSys=GLOBAL   CoordType=Cartesian   XorR=2.5   Y=4.33012702   Z=50.2688851
+   Joint=946   CoordSys=GLOBAL   CoordType=Cartesian   XorR=1.71010072   Y=4.6984631   Z=50.2688851
+   Joint=947   CoordSys=GLOBAL   CoordType=Cartesian   XorR=0.868240888   Y=4.92403877   Z=50.2688851
+   Joint=948   CoordSys=GLOBAL   CoordType=Cartesian   XorR=3.061617e-16   Y=5   Z=50.2688851
+   Joint=949   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-0.868240888   Y=4.92403877   Z=50.2688851
+   Joint=950   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-1.71010072   Y=4.6984631   Z=50.2688851
+   Joint=951   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-2.5   Y=4.33012702   Z=50.2688851
+   Joint=952   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-3.21393805   Y=3.83022222   Z=50.2688851
+   Joint=953   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-3.83022222   Y=3.21393805   Z=50.2688851
+   Joint=954   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-4.33012702   Y=2.5   Z=50.2688851
+   Joint=955   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-4.6984631   Y=1.71010072   Z=50.2688851
+   Joint=956   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-4.92403877   Y=0.868240888   Z=50.2688851
+   Joint=957   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-5   Y=6.123234e-16   Z=50.2688851
+   Joint=958   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-4.92403877   Y=-0.868240888   Z=50.2688851
+   Joint=959   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-4.6984631   Y=-1.71010072   Z=50.2688851
+   Joint=960   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-4.33012702   Y=-2.5   Z=50.2688851
+   Joint=961   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-3.83022222   Y=-3.21393805   Z=50.2688851
+   Joint=962   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-3.21393805   Y=-3.83022222   Z=50.2688851
+   Joint=963   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-2.5   Y=-4.33012702   Z=50.2688851
+   Joint=964   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-1.71010072   Y=-4.6984631   Z=50.2688851
+   Joint=965   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-0.868240888   Y=-4.92403877   Z=50.2688851
+   Joint=966   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-9.18485099e-16   Y=-5   Z=50.2688851
+   Joint=967   CoordSys=GLOBAL   CoordType=Cartesian   XorR=0.868240888   Y=-4.92403877   Z=50.2688851
+   Joint=968   CoordSys=GLOBAL   CoordType=Cartesian   XorR=1.71010072   Y=-4.6984631   Z=50.2688851
+   Joint=969   CoordSys=GLOBAL   CoordType=Cartesian   XorR=2.5   Y=-4.33012702   Z=50.2688851
+   Joint=970   CoordSys=GLOBAL   CoordType=Cartesian   XorR=3.21393805   Y=-3.83022222   Z=50.2688851
+   Joint=971   CoordSys=GLOBAL   CoordType=Cartesian   XorR=3.83022222   Y=-3.21393805   Z=50.2688851
+   Joint=972   CoordSys=GLOBAL   CoordType=Cartesian   XorR=4.33012702   Y=-2.5   Z=50.2688851
+   Joint=973   CoordSys=GLOBAL   CoordType=Cartesian   XorR=4.6984631   Y=-1.71010072   Z=50.2688851
+   Joint=974   CoordSys=GLOBAL   CoordType=Cartesian   XorR=4.92403877   Y=-0.868240888   Z=50.2688851
+   Joint=975   CoordSys=GLOBAL   CoordType=Cartesian   XorR=10   Y=0   Z=49.4767904
+   Joint=976   CoordSys=GLOBAL   CoordType=Cartesian   XorR=9.84807753   Y=1.73648178   Z=49.4767904
+   Joint=977   CoordSys=GLOBAL   CoordType=Cartesian   XorR=9.39692621   Y=3.42020143   Z=49.4767904
+   Joint=978   CoordSys=GLOBAL   CoordType=Cartesian   XorR=8.66025404   Y=5   Z=49.4767904
+   Joint=979   CoordSys=GLOBAL   CoordType=Cartesian   XorR=7.66044443   Y=6.4278761   Z=49.4767904
+   Joint=980   CoordSys=GLOBAL   CoordType=Cartesian   XorR=6.4278761   Y=7.66044443   Z=49.4767904
+   Joint=981   CoordSys=GLOBAL   CoordType=Cartesian   XorR=5   Y=8.66025404   Z=49.4767904
+   Joint=982   CoordSys=GLOBAL   CoordType=Cartesian   XorR=3.42020143   Y=9.39692621   Z=49.4767904
+   Joint=983   CoordSys=GLOBAL   CoordType=Cartesian   XorR=1.73648178   Y=9.84807753   Z=49.4767904
+   Joint=984   CoordSys=GLOBAL   CoordType=Cartesian   XorR=6.123234e-16   Y=10   Z=49.4767904
+   Joint=985   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-1.73648178   Y=9.84807753   Z=49.4767904
+   Joint=986   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-3.42020143   Y=9.39692621   Z=49.4767904
+   Joint=987   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-5   Y=8.66025404   Z=49.4767904
+   Joint=988   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-6.4278761   Y=7.66044443   Z=49.4767904
+   Joint=989   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-7.66044443   Y=6.4278761   Z=49.4767904
+   Joint=990   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-8.66025404   Y=5   Z=49.4767904
+   Joint=991   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-9.39692621   Y=3.42020143   Z=49.4767904
+   Joint=992   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-9.84807753   Y=1.73648178   Z=49.4767904
+   Joint=993   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-10   Y=1.2246468e-15   Z=49.4767904
+   Joint=994   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-9.84807753   Y=-1.73648178   Z=49.4767904
+   Joint=995   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-9.39692621   Y=-3.42020143   Z=49.4767904
+   Joint=996   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-8.66025404   Y=-5   Z=49.4767904
+   Joint=997   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-7.66044443   Y=-6.4278761   Z=49.4767904
+   Joint=998   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-6.4278761   Y=-7.66044443   Z=49.4767904
+   Joint=999   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-5   Y=-8.66025404   Z=49.4767904
+   Joint=1000   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-3.42020143   Y=-9.39692621   Z=49.4767904
+   Joint=1001   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-1.73648178   Y=-9.84807753   Z=49.4767904
+   Joint=1002   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-1.8369702e-15   Y=-10   Z=49.4767904
+   Joint=1003   CoordSys=GLOBAL   CoordType=Cartesian   XorR=1.73648178   Y=-9.84807753   Z=49.4767904
+   Joint=1004   CoordSys=GLOBAL   CoordType=Cartesian   XorR=3.42020143   Y=-9.39692621   Z=49.4767904
+   Joint=1005   CoordSys=GLOBAL   CoordType=Cartesian   XorR=5   Y=-8.66025404   Z=49.4767904
+   Joint=1006   CoordSys=GLOBAL   CoordType=Cartesian   XorR=6.4278761   Y=-7.66044443   Z=49.4767904
+   Joint=1007   CoordSys=GLOBAL   CoordType=Cartesian   XorR=7.66044443   Y=-6.4278761   Z=49.4767904
+   Joint=1008   CoordSys=GLOBAL   CoordType=Cartesian   XorR=8.66025404   Y=-5   Z=49.4767904
+   Joint=1009   CoordSys=GLOBAL   CoordType=Cartesian   XorR=9.39692621   Y=-3.42020143   Z=49.4767904
+   Joint=1010   CoordSys=GLOBAL   CoordType=Cartesian   XorR=9.84807753   Y=-1.73648178   Z=49.4767904
+   Joint=1011   CoordSys=GLOBAL   CoordType=Cartesian   XorR=15   Y=0   Z=48.1260645
+   Joint=1012   CoordSys=GLOBAL   CoordType=Cartesian   XorR=14.7721163   Y=2.60472267   Z=48.1260645
+   Joint=1013   CoordSys=GLOBAL   CoordType=Cartesian   XorR=14.0953893   Y=5.13030215   Z=48.1260645
+   Joint=1014   CoordSys=GLOBAL   CoordType=Cartesian   XorR=12.9903811   Y=7.5   Z=48.1260645
+   Joint=1015   CoordSys=GLOBAL   CoordType=Cartesian   XorR=11.4906666   Y=9.64181415   Z=48.1260645
+   Joint=1016   CoordSys=GLOBAL   CoordType=Cartesian   XorR=9.64181415   Y=11.4906666   Z=48.1260645
+   Joint=1017   CoordSys=GLOBAL   CoordType=Cartesian   XorR=7.5   Y=12.9903811   Z=48.1260645
+   Joint=1018   CoordSys=GLOBAL   CoordType=Cartesian   XorR=5.13030215   Y=14.0953893   Z=48.1260645
+   Joint=1019   CoordSys=GLOBAL   CoordType=Cartesian   XorR=2.60472267   Y=14.7721163   Z=48.1260645
+   Joint=1020   CoordSys=GLOBAL   CoordType=Cartesian   XorR=9.18485099e-16   Y=15   Z=48.1260645
+   Joint=1021   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-2.60472267   Y=14.7721163   Z=48.1260645
+   Joint=1022   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-5.13030215   Y=14.0953893   Z=48.1260645
+   Joint=1023   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-7.5   Y=12.9903811   Z=48.1260645
+   Joint=1024   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-9.64181415   Y=11.4906666   Z=48.1260645
+   Joint=1025   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-11.4906666   Y=9.64181415   Z=48.1260645
+   Joint=1026   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-12.9903811   Y=7.5   Z=48.1260645
+   Joint=1027   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-14.0953893   Y=5.13030215   Z=48.1260645
+   Joint=1028   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-14.7721163   Y=2.60472267   Z=48.1260645
+   Joint=1029   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-15   Y=1.8369702e-15   Z=48.1260645
+   Joint=1030   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-14.7721163   Y=-2.60472267   Z=48.1260645
+   Joint=1031   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-14.0953893   Y=-5.13030215   Z=48.1260645
+   Joint=1032   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-12.9903811   Y=-7.5   Z=48.1260645
+   Joint=1033   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-11.4906666   Y=-9.64181415   Z=48.1260645
+   Joint=1034   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-9.64181415   Y=-11.4906666   Z=48.1260645
+   Joint=1035   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-7.5   Y=-12.9903811   Z=48.1260645
+   Joint=1036   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-5.13030215   Y=-14.0953893   Z=48.1260645
+   Joint=1037   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-2.60472267   Y=-14.7721163   Z=48.1260645
+   Joint=1038   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-2.7554553e-15   Y=-15   Z=48.1260645
+   Joint=1039   CoordSys=GLOBAL   CoordType=Cartesian   XorR=2.60472267   Y=-14.7721163   Z=48.1260645
+   Joint=1040   CoordSys=GLOBAL   CoordType=Cartesian   XorR=5.13030215   Y=-14.0953893   Z=48.1260645
+   Joint=1041   CoordSys=GLOBAL   CoordType=Cartesian   XorR=7.5   Y=-12.9903811   Z=48.1260645
+   Joint=1042   CoordSys=GLOBAL   CoordType=Cartesian   XorR=9.64181415   Y=-11.4906666   Z=48.1260645
+   Joint=1043   CoordSys=GLOBAL   CoordType=Cartesian   XorR=11.4906666   Y=-9.64181415   Z=48.1260645
+   Joint=1044   CoordSys=GLOBAL   CoordType=Cartesian   XorR=12.9903811   Y=-7.5   Z=48.1260645
+   Joint=1045   CoordSys=GLOBAL   CoordType=Cartesian   XorR=14.0953893   Y=-5.13030215   Z=48.1260645
+   Joint=1046   CoordSys=GLOBAL   CoordType=Cartesian   XorR=14.7721163   Y=-2.60472267   Z=48.1260645
+   Joint=1047   CoordSys=GLOBAL   CoordType=Cartesian   XorR=20   Y=0   Z=46.1648605
+   Joint=1048   CoordSys=GLOBAL   CoordType=Cartesian   XorR=19.6961551   Y=3.47296355   Z=46.1648605
+   Joint=1049   CoordSys=GLOBAL   CoordType=Cartesian   XorR=18.7938524   Y=6.84040287   Z=46.1648605
+   Joint=1050   CoordSys=GLOBAL   CoordType=Cartesian   XorR=17.3205081   Y=10   Z=46.1648605
+   Joint=1051   CoordSys=GLOBAL   CoordType=Cartesian   XorR=15.3208889   Y=12.8557522   Z=46.1648605
+   Joint=1052   CoordSys=GLOBAL   CoordType=Cartesian   XorR=12.8557522   Y=15.3208889   Z=46.1648605
+   Joint=1053   CoordSys=GLOBAL   CoordType=Cartesian   XorR=10   Y=17.3205081   Z=46.1648605
+   Joint=1054   CoordSys=GLOBAL   CoordType=Cartesian   XorR=6.84040287   Y=18.7938524   Z=46.1648605
+   Joint=1055   CoordSys=GLOBAL   CoordType=Cartesian   XorR=3.47296355   Y=19.6961551   Z=46.1648605
+   Joint=1056   CoordSys=GLOBAL   CoordType=Cartesian   XorR=1.2246468e-15   Y=20   Z=46.1648605
+   Joint=1057   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-3.47296355   Y=19.6961551   Z=46.1648605
+   Joint=1058   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-6.84040287   Y=18.7938524   Z=46.1648605
+   Joint=1059   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-10   Y=17.3205081   Z=46.1648605
+   Joint=1060   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-12.8557522   Y=15.3208889   Z=46.1648605
+   Joint=1061   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-15.3208889   Y=12.8557522   Z=46.1648605
+   Joint=1062   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-17.3205081   Y=10   Z=46.1648605
+   Joint=1063   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-18.7938524   Y=6.84040287   Z=46.1648605
+   Joint=1064   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-19.6961551   Y=3.47296355   Z=46.1648605
+   Joint=1065   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-20   Y=2.4492936e-15   Z=46.1648605
+   Joint=1066   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-19.6961551   Y=-3.47296355   Z=46.1648605
+   Joint=1067   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-18.7938524   Y=-6.84040287   Z=46.1648605
+   Joint=1068   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-17.3205081   Y=-10   Z=46.1648605
+   Joint=1069   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-15.3208889   Y=-12.8557522   Z=46.1648605
+   Joint=1070   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-12.8557522   Y=-15.3208889   Z=46.1648605
+   Joint=1071   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-10   Y=-17.3205081   Z=46.1648605
+   Joint=1072   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-6.84040287   Y=-18.7938524   Z=46.1648605
+   Joint=1073   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-3.47296355   Y=-19.6961551   Z=46.1648605
+   Joint=1074   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-3.6739404e-15   Y=-20   Z=46.1648605
+   Joint=1075   CoordSys=GLOBAL   CoordType=Cartesian   XorR=3.47296355   Y=-19.6961551   Z=46.1648605
+   Joint=1076   CoordSys=GLOBAL   CoordType=Cartesian   XorR=6.84040287   Y=-18.7938524   Z=46.1648605
+   Joint=1077   CoordSys=GLOBAL   CoordType=Cartesian   XorR=10   Y=-17.3205081   Z=46.1648605
+   Joint=1078   CoordSys=GLOBAL   CoordType=Cartesian   XorR=12.8557522   Y=-15.3208889   Z=46.1648605
+   Joint=1079   CoordSys=GLOBAL   CoordType=Cartesian   XorR=15.3208889   Y=-12.8557522   Z=46.1648605
+   Joint=1080   CoordSys=GLOBAL   CoordType=Cartesian   XorR=17.3205081   Y=-10   Z=46.1648605
+   Joint=1081   CoordSys=GLOBAL   CoordType=Cartesian   XorR=18.7938524   Y=-6.84040287   Z=46.1648605
+   Joint=1082   CoordSys=GLOBAL   CoordType=Cartesian   XorR=19.6961551   Y=-3.47296355   Z=46.1648605
+   Joint=1083   CoordSys=GLOBAL   CoordType=Cartesian   XorR=25   Y=0   Z=43.5056145
+   Joint=1084   CoordSys=GLOBAL   CoordType=Cartesian   XorR=24.6201938   Y=4.34120444   Z=43.5056145
+   Joint=1085   CoordSys=GLOBAL   CoordType=Cartesian   XorR=23.4923155   Y=8.55050358   Z=43.5056145
+   Joint=1086   CoordSys=GLOBAL   CoordType=Cartesian   XorR=21.6506351   Y=12.5   Z=43.5056145
+   Joint=1087   CoordSys=GLOBAL   CoordType=Cartesian   XorR=19.1511111   Y=16.0696902   Z=43.5056145
+   Joint=1088   CoordSys=GLOBAL   CoordType=Cartesian   XorR=16.0696902   Y=19.1511111   Z=43.5056145
+   Joint=1089   CoordSys=GLOBAL   CoordType=Cartesian   XorR=12.5   Y=21.6506351   Z=43.5056145
+   Joint=1090   CoordSys=GLOBAL   CoordType=Cartesian   XorR=8.55050358   Y=23.4923155   Z=43.5056145
+   Joint=1091   CoordSys=GLOBAL   CoordType=Cartesian   XorR=4.34120444   Y=24.6201938   Z=43.5056145
+   Joint=1092   CoordSys=GLOBAL   CoordType=Cartesian   XorR=1.5308085e-15   Y=25   Z=43.5056145
+   Joint=1093   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-4.34120444   Y=24.6201938   Z=43.5056145
+   Joint=1094   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-8.55050358   Y=23.4923155   Z=43.5056145
+   Joint=1095   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-12.5   Y=21.6506351   Z=43.5056145
+   Joint=1096   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-16.0696902   Y=19.1511111   Z=43.5056145
+   Joint=1097   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-19.1511111   Y=16.0696902   Z=43.5056145
+   Joint=1098   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-21.6506351   Y=12.5   Z=43.5056145
+   Joint=1099   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-23.4923155   Y=8.55050358   Z=43.5056145
+   Joint=1100   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-24.6201938   Y=4.34120444   Z=43.5056145
+   Joint=1101   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-25   Y=3.061617e-15   Z=43.5056145
+   Joint=1102   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-24.6201938   Y=-4.34120444   Z=43.5056145
+   Joint=1103   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-23.4923155   Y=-8.55050358   Z=43.5056145
+   Joint=1104   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-21.6506351   Y=-12.5   Z=43.5056145
+   Joint=1105   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-19.1511111   Y=-16.0696902   Z=43.5056145
+   Joint=1106   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-16.0696902   Y=-19.1511111   Z=43.5056145
+   Joint=1107   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-12.5   Y=-21.6506351   Z=43.5056145
+   Joint=1108   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-8.55050358   Y=-23.4923155   Z=43.5056145
+   Joint=1109   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-4.34120444   Y=-24.6201938   Z=43.5056145
+   Joint=1110   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-4.5924255e-15   Y=-25   Z=43.5056145
+   Joint=1111   CoordSys=GLOBAL   CoordType=Cartesian   XorR=4.34120444   Y=-24.6201938   Z=43.5056145
+   Joint=1112   CoordSys=GLOBAL   CoordType=Cartesian   XorR=8.55050358   Y=-23.4923155   Z=43.5056145
+   Joint=1113   CoordSys=GLOBAL   CoordType=Cartesian   XorR=12.5   Y=-21.6506351   Z=43.5056145
+   Joint=1114   CoordSys=GLOBAL   CoordType=Cartesian   XorR=16.0696902   Y=-19.1511111   Z=43.5056145
+   Joint=1115   CoordSys=GLOBAL   CoordType=Cartesian   XorR=19.1511111   Y=-16.0696902   Z=43.5056145
+   Joint=1116   CoordSys=GLOBAL   CoordType=Cartesian   XorR=21.6506351   Y=-12.5   Z=43.5056145
+   Joint=1117   CoordSys=GLOBAL   CoordType=Cartesian   XorR=23.4923155   Y=-8.55050358   Z=43.5056145
+   Joint=1118   CoordSys=GLOBAL   CoordType=Cartesian   XorR=24.6201938   Y=-4.34120444   Z=43.5056145
 
 TABLE:  "CONNECTIVITY - AREA"
    Area=1   NumJoints=4   Joint1=1   Joint2=2   Joint3=38   Joint4=37
@@ -1492,6 +1859,438 @@ TABLE:  "CONNECTIVITY - AREA"
    Area=718   NumJoints=4   Joint1=718   Joint2=719   Joint3=755   Joint4=754
    Area=719   NumJoints=4   Joint1=719   Joint2=720   Joint3=756   Joint4=755
    Area=720   NumJoints=4   Joint1=720   Joint2=685   Joint3=721   Joint4=756
+   Area=721   NumJoints=4   Joint1=758   Joint2=794   Joint3=795   Joint4=759
+   Area=722   NumJoints=4   Joint1=759   Joint2=795   Joint3=796   Joint4=760
+   Area=723   NumJoints=4   Joint1=760   Joint2=796   Joint3=797   Joint4=761
+   Area=724   NumJoints=4   Joint1=761   Joint2=797   Joint3=798   Joint4=762
+   Area=725   NumJoints=4   Joint1=762   Joint2=798   Joint3=799   Joint4=763
+   Area=726   NumJoints=4   Joint1=763   Joint2=799   Joint3=800   Joint4=764
+   Area=727   NumJoints=4   Joint1=764   Joint2=800   Joint3=801   Joint4=765
+   Area=728   NumJoints=4   Joint1=765   Joint2=801   Joint3=802   Joint4=766
+   Area=729   NumJoints=4   Joint1=766   Joint2=802   Joint3=803   Joint4=767
+   Area=730   NumJoints=4   Joint1=767   Joint2=803   Joint3=804   Joint4=768
+   Area=731   NumJoints=4   Joint1=768   Joint2=804   Joint3=805   Joint4=769
+   Area=732   NumJoints=4   Joint1=769   Joint2=805   Joint3=806   Joint4=770
+   Area=733   NumJoints=4   Joint1=770   Joint2=806   Joint3=807   Joint4=771
+   Area=734   NumJoints=4   Joint1=771   Joint2=807   Joint3=808   Joint4=772
+   Area=735   NumJoints=4   Joint1=772   Joint2=808   Joint3=809   Joint4=773
+   Area=736   NumJoints=4   Joint1=773   Joint2=809   Joint3=810   Joint4=774
+   Area=737   NumJoints=4   Joint1=774   Joint2=810   Joint3=811   Joint4=775
+   Area=738   NumJoints=4   Joint1=775   Joint2=811   Joint3=812   Joint4=776
+   Area=739   NumJoints=4   Joint1=776   Joint2=812   Joint3=813   Joint4=777
+   Area=740   NumJoints=4   Joint1=777   Joint2=813   Joint3=814   Joint4=778
+   Area=741   NumJoints=4   Joint1=778   Joint2=814   Joint3=815   Joint4=779
+   Area=742   NumJoints=4   Joint1=779   Joint2=815   Joint3=816   Joint4=780
+   Area=743   NumJoints=4   Joint1=780   Joint2=816   Joint3=817   Joint4=781
+   Area=744   NumJoints=4   Joint1=781   Joint2=817   Joint3=818   Joint4=782
+   Area=745   NumJoints=4   Joint1=782   Joint2=818   Joint3=819   Joint4=783
+   Area=746   NumJoints=4   Joint1=783   Joint2=819   Joint3=820   Joint4=784
+   Area=747   NumJoints=4   Joint1=784   Joint2=820   Joint3=821   Joint4=785
+   Area=748   NumJoints=4   Joint1=785   Joint2=821   Joint3=822   Joint4=786
+   Area=749   NumJoints=4   Joint1=786   Joint2=822   Joint3=823   Joint4=787
+   Area=750   NumJoints=4   Joint1=787   Joint2=823   Joint3=824   Joint4=788
+   Area=751   NumJoints=4   Joint1=788   Joint2=824   Joint3=825   Joint4=789
+   Area=752   NumJoints=4   Joint1=789   Joint2=825   Joint3=826   Joint4=790
+   Area=753   NumJoints=4   Joint1=790   Joint2=826   Joint3=827   Joint4=791
+   Area=754   NumJoints=4   Joint1=791   Joint2=827   Joint3=828   Joint4=792
+   Area=755   NumJoints=4   Joint1=792   Joint2=828   Joint3=829   Joint4=793
+   Area=756   NumJoints=4   Joint1=793   Joint2=829   Joint3=794   Joint4=758
+   Area=757   NumJoints=4   Joint1=794   Joint2=830   Joint3=831   Joint4=795
+   Area=758   NumJoints=4   Joint1=795   Joint2=831   Joint3=832   Joint4=796
+   Area=759   NumJoints=4   Joint1=796   Joint2=832   Joint3=833   Joint4=797
+   Area=760   NumJoints=4   Joint1=797   Joint2=833   Joint3=834   Joint4=798
+   Area=761   NumJoints=4   Joint1=798   Joint2=834   Joint3=835   Joint4=799
+   Area=762   NumJoints=4   Joint1=799   Joint2=835   Joint3=836   Joint4=800
+   Area=763   NumJoints=4   Joint1=800   Joint2=836   Joint3=837   Joint4=801
+   Area=764   NumJoints=4   Joint1=801   Joint2=837   Joint3=838   Joint4=802
+   Area=765   NumJoints=4   Joint1=802   Joint2=838   Joint3=839   Joint4=803
+   Area=766   NumJoints=4   Joint1=803   Joint2=839   Joint3=840   Joint4=804
+   Area=767   NumJoints=4   Joint1=804   Joint2=840   Joint3=841   Joint4=805
+   Area=768   NumJoints=4   Joint1=805   Joint2=841   Joint3=842   Joint4=806
+   Area=769   NumJoints=4   Joint1=806   Joint2=842   Joint3=843   Joint4=807
+   Area=770   NumJoints=4   Joint1=807   Joint2=843   Joint3=844   Joint4=808
+   Area=771   NumJoints=4   Joint1=808   Joint2=844   Joint3=845   Joint4=809
+   Area=772   NumJoints=4   Joint1=809   Joint2=845   Joint3=846   Joint4=810
+   Area=773   NumJoints=4   Joint1=810   Joint2=846   Joint3=847   Joint4=811
+   Area=774   NumJoints=4   Joint1=811   Joint2=847   Joint3=848   Joint4=812
+   Area=775   NumJoints=4   Joint1=812   Joint2=848   Joint3=849   Joint4=813
+   Area=776   NumJoints=4   Joint1=813   Joint2=849   Joint3=850   Joint4=814
+   Area=777   NumJoints=4   Joint1=814   Joint2=850   Joint3=851   Joint4=815
+   Area=778   NumJoints=4   Joint1=815   Joint2=851   Joint3=852   Joint4=816
+   Area=779   NumJoints=4   Joint1=816   Joint2=852   Joint3=853   Joint4=817
+   Area=780   NumJoints=4   Joint1=817   Joint2=853   Joint3=854   Joint4=818
+   Area=781   NumJoints=4   Joint1=818   Joint2=854   Joint3=855   Joint4=819
+   Area=782   NumJoints=4   Joint1=819   Joint2=855   Joint3=856   Joint4=820
+   Area=783   NumJoints=4   Joint1=820   Joint2=856   Joint3=857   Joint4=821
+   Area=784   NumJoints=4   Joint1=821   Joint2=857   Joint3=858   Joint4=822
+   Area=785   NumJoints=4   Joint1=822   Joint2=858   Joint3=859   Joint4=823
+   Area=786   NumJoints=4   Joint1=823   Joint2=859   Joint3=860   Joint4=824
+   Area=787   NumJoints=4   Joint1=824   Joint2=860   Joint3=861   Joint4=825
+   Area=788   NumJoints=4   Joint1=825   Joint2=861   Joint3=862   Joint4=826
+   Area=789   NumJoints=4   Joint1=826   Joint2=862   Joint3=863   Joint4=827
+   Area=790   NumJoints=4   Joint1=827   Joint2=863   Joint3=864   Joint4=828
+   Area=791   NumJoints=4   Joint1=828   Joint2=864   Joint3=865   Joint4=829
+   Area=792   NumJoints=4   Joint1=829   Joint2=865   Joint3=830   Joint4=794
+   Area=793   NumJoints=4   Joint1=830   Joint2=866   Joint3=867   Joint4=831
+   Area=794   NumJoints=4   Joint1=831   Joint2=867   Joint3=868   Joint4=832
+   Area=795   NumJoints=4   Joint1=832   Joint2=868   Joint3=869   Joint4=833
+   Area=796   NumJoints=4   Joint1=833   Joint2=869   Joint3=870   Joint4=834
+   Area=797   NumJoints=4   Joint1=834   Joint2=870   Joint3=871   Joint4=835
+   Area=798   NumJoints=4   Joint1=835   Joint2=871   Joint3=872   Joint4=836
+   Area=799   NumJoints=4   Joint1=836   Joint2=872   Joint3=873   Joint4=837
+   Area=800   NumJoints=4   Joint1=837   Joint2=873   Joint3=874   Joint4=838
+   Area=801   NumJoints=4   Joint1=838   Joint2=874   Joint3=875   Joint4=839
+   Area=802   NumJoints=4   Joint1=839   Joint2=875   Joint3=876   Joint4=840
+   Area=803   NumJoints=4   Joint1=840   Joint2=876   Joint3=877   Joint4=841
+   Area=804   NumJoints=4   Joint1=841   Joint2=877   Joint3=878   Joint4=842
+   Area=805   NumJoints=4   Joint1=842   Joint2=878   Joint3=879   Joint4=843
+   Area=806   NumJoints=4   Joint1=843   Joint2=879   Joint3=880   Joint4=844
+   Area=807   NumJoints=4   Joint1=844   Joint2=880   Joint3=881   Joint4=845
+   Area=808   NumJoints=4   Joint1=845   Joint2=881   Joint3=882   Joint4=846
+   Area=809   NumJoints=4   Joint1=846   Joint2=882   Joint3=883   Joint4=847
+   Area=810   NumJoints=4   Joint1=847   Joint2=883   Joint3=884   Joint4=848
+   Area=811   NumJoints=4   Joint1=848   Joint2=884   Joint3=885   Joint4=849
+   Area=812   NumJoints=4   Joint1=849   Joint2=885   Joint3=886   Joint4=850
+   Area=813   NumJoints=4   Joint1=850   Joint2=886   Joint3=887   Joint4=851
+   Area=814   NumJoints=4   Joint1=851   Joint2=887   Joint3=888   Joint4=852
+   Area=815   NumJoints=4   Joint1=852   Joint2=888   Joint3=889   Joint4=853
+   Area=816   NumJoints=4   Joint1=853   Joint2=889   Joint3=890   Joint4=854
+   Area=817   NumJoints=4   Joint1=854   Joint2=890   Joint3=891   Joint4=855
+   Area=818   NumJoints=4   Joint1=855   Joint2=891   Joint3=892   Joint4=856
+   Area=819   NumJoints=4   Joint1=856   Joint2=892   Joint3=893   Joint4=857
+   Area=820   NumJoints=4   Joint1=857   Joint2=893   Joint3=894   Joint4=858
+   Area=821   NumJoints=4   Joint1=858   Joint2=894   Joint3=895   Joint4=859
+   Area=822   NumJoints=4   Joint1=859   Joint2=895   Joint3=896   Joint4=860
+   Area=823   NumJoints=4   Joint1=860   Joint2=896   Joint3=897   Joint4=861
+   Area=824   NumJoints=4   Joint1=861   Joint2=897   Joint3=898   Joint4=862
+   Area=825   NumJoints=4   Joint1=862   Joint2=898   Joint3=899   Joint4=863
+   Area=826   NumJoints=4   Joint1=863   Joint2=899   Joint3=900   Joint4=864
+   Area=827   NumJoints=4   Joint1=864   Joint2=900   Joint3=901   Joint4=865
+   Area=828   NumJoints=4   Joint1=865   Joint2=901   Joint3=866   Joint4=830
+   Area=829   NumJoints=4   Joint1=866   Joint2=902   Joint3=903   Joint4=867
+   Area=830   NumJoints=4   Joint1=867   Joint2=903   Joint3=904   Joint4=868
+   Area=831   NumJoints=4   Joint1=868   Joint2=904   Joint3=905   Joint4=869
+   Area=832   NumJoints=4   Joint1=869   Joint2=905   Joint3=906   Joint4=870
+   Area=833   NumJoints=4   Joint1=870   Joint2=906   Joint3=907   Joint4=871
+   Area=834   NumJoints=4   Joint1=871   Joint2=907   Joint3=908   Joint4=872
+   Area=835   NumJoints=4   Joint1=872   Joint2=908   Joint3=909   Joint4=873
+   Area=836   NumJoints=4   Joint1=873   Joint2=909   Joint3=910   Joint4=874
+   Area=837   NumJoints=4   Joint1=874   Joint2=910   Joint3=911   Joint4=875
+   Area=838   NumJoints=4   Joint1=875   Joint2=911   Joint3=912   Joint4=876
+   Area=839   NumJoints=4   Joint1=876   Joint2=912   Joint3=913   Joint4=877
+   Area=840   NumJoints=4   Joint1=877   Joint2=913   Joint3=914   Joint4=878
+   Area=841   NumJoints=4   Joint1=878   Joint2=914   Joint3=915   Joint4=879
+   Area=842   NumJoints=4   Joint1=879   Joint2=915   Joint3=916   Joint4=880
+   Area=843   NumJoints=4   Joint1=880   Joint2=916   Joint3=917   Joint4=881
+   Area=844   NumJoints=4   Joint1=881   Joint2=917   Joint3=918   Joint4=882
+   Area=845   NumJoints=4   Joint1=882   Joint2=918   Joint3=919   Joint4=883
+   Area=846   NumJoints=4   Joint1=883   Joint2=919   Joint3=920   Joint4=884
+   Area=847   NumJoints=4   Joint1=884   Joint2=920   Joint3=921   Joint4=885
+   Area=848   NumJoints=4   Joint1=885   Joint2=921   Joint3=922   Joint4=886
+   Area=849   NumJoints=4   Joint1=886   Joint2=922   Joint3=923   Joint4=887
+   Area=850   NumJoints=4   Joint1=887   Joint2=923   Joint3=924   Joint4=888
+   Area=851   NumJoints=4   Joint1=888   Joint2=924   Joint3=925   Joint4=889
+   Area=852   NumJoints=4   Joint1=889   Joint2=925   Joint3=926   Joint4=890
+   Area=853   NumJoints=4   Joint1=890   Joint2=926   Joint3=927   Joint4=891
+   Area=854   NumJoints=4   Joint1=891   Joint2=927   Joint3=928   Joint4=892
+   Area=855   NumJoints=4   Joint1=892   Joint2=928   Joint3=929   Joint4=893
+   Area=856   NumJoints=4   Joint1=893   Joint2=929   Joint3=930   Joint4=894
+   Area=857   NumJoints=4   Joint1=894   Joint2=930   Joint3=931   Joint4=895
+   Area=858   NumJoints=4   Joint1=895   Joint2=931   Joint3=932   Joint4=896
+   Area=859   NumJoints=4   Joint1=896   Joint2=932   Joint3=933   Joint4=897
+   Area=860   NumJoints=4   Joint1=897   Joint2=933   Joint3=934   Joint4=898
+   Area=861   NumJoints=4   Joint1=898   Joint2=934   Joint3=935   Joint4=899
+   Area=862   NumJoints=4   Joint1=899   Joint2=935   Joint3=936   Joint4=900
+   Area=863   NumJoints=4   Joint1=900   Joint2=936   Joint3=937   Joint4=901
+   Area=864   NumJoints=4   Joint1=901   Joint2=937   Joint3=902   Joint4=866
+   Area=865   NumJoints=4   Joint1=902   Joint2=1   Joint3=2   Joint4=903
+   Area=866   NumJoints=4   Joint1=903   Joint2=2   Joint3=3   Joint4=904
+   Area=867   NumJoints=4   Joint1=904   Joint2=3   Joint3=4   Joint4=905
+   Area=868   NumJoints=4   Joint1=905   Joint2=4   Joint3=5   Joint4=906
+   Area=869   NumJoints=4   Joint1=906   Joint2=5   Joint3=6   Joint4=907
+   Area=870   NumJoints=4   Joint1=907   Joint2=6   Joint3=7   Joint4=908
+   Area=871   NumJoints=4   Joint1=908   Joint2=7   Joint3=8   Joint4=909
+   Area=872   NumJoints=4   Joint1=909   Joint2=8   Joint3=9   Joint4=910
+   Area=873   NumJoints=4   Joint1=910   Joint2=9   Joint3=10   Joint4=911
+   Area=874   NumJoints=4   Joint1=911   Joint2=10   Joint3=11   Joint4=912
+   Area=875   NumJoints=4   Joint1=912   Joint2=11   Joint3=12   Joint4=913
+   Area=876   NumJoints=4   Joint1=913   Joint2=12   Joint3=13   Joint4=914
+   Area=877   NumJoints=4   Joint1=914   Joint2=13   Joint3=14   Joint4=915
+   Area=878   NumJoints=4   Joint1=915   Joint2=14   Joint3=15   Joint4=916
+   Area=879   NumJoints=4   Joint1=916   Joint2=15   Joint3=16   Joint4=917
+   Area=880   NumJoints=4   Joint1=917   Joint2=16   Joint3=17   Joint4=918
+   Area=881   NumJoints=4   Joint1=918   Joint2=17   Joint3=18   Joint4=919
+   Area=882   NumJoints=4   Joint1=919   Joint2=18   Joint3=19   Joint4=920
+   Area=883   NumJoints=4   Joint1=920   Joint2=19   Joint3=20   Joint4=921
+   Area=884   NumJoints=4   Joint1=921   Joint2=20   Joint3=21   Joint4=922
+   Area=885   NumJoints=4   Joint1=922   Joint2=21   Joint3=22   Joint4=923
+   Area=886   NumJoints=4   Joint1=923   Joint2=22   Joint3=23   Joint4=924
+   Area=887   NumJoints=4   Joint1=924   Joint2=23   Joint3=24   Joint4=925
+   Area=888   NumJoints=4   Joint1=925   Joint2=24   Joint3=25   Joint4=926
+   Area=889   NumJoints=4   Joint1=926   Joint2=25   Joint3=26   Joint4=927
+   Area=890   NumJoints=4   Joint1=927   Joint2=26   Joint3=27   Joint4=928
+   Area=891   NumJoints=4   Joint1=928   Joint2=27   Joint3=28   Joint4=929
+   Area=892   NumJoints=4   Joint1=929   Joint2=28   Joint3=29   Joint4=930
+   Area=893   NumJoints=4   Joint1=930   Joint2=29   Joint3=30   Joint4=931
+   Area=894   NumJoints=4   Joint1=931   Joint2=30   Joint3=31   Joint4=932
+   Area=895   NumJoints=4   Joint1=932   Joint2=31   Joint3=32   Joint4=933
+   Area=896   NumJoints=4   Joint1=933   Joint2=32   Joint3=33   Joint4=934
+   Area=897   NumJoints=4   Joint1=934   Joint2=33   Joint3=34   Joint4=935
+   Area=898   NumJoints=4   Joint1=935   Joint2=34   Joint3=35   Joint4=936
+   Area=899   NumJoints=4   Joint1=936   Joint2=35   Joint3=36   Joint4=937
+   Area=900   NumJoints=4   Joint1=937   Joint2=36   Joint3=1   Joint4=902
+   Area=901   NumJoints=3   Joint1=757   Joint2=758   Joint3=759
+   Area=902   NumJoints=3   Joint1=757   Joint2=759   Joint3=760
+   Area=903   NumJoints=3   Joint1=757   Joint2=760   Joint3=761
+   Area=904   NumJoints=3   Joint1=757   Joint2=761   Joint3=762
+   Area=905   NumJoints=3   Joint1=757   Joint2=762   Joint3=763
+   Area=906   NumJoints=3   Joint1=757   Joint2=763   Joint3=764
+   Area=907   NumJoints=3   Joint1=757   Joint2=764   Joint3=765
+   Area=908   NumJoints=3   Joint1=757   Joint2=765   Joint3=766
+   Area=909   NumJoints=3   Joint1=757   Joint2=766   Joint3=767
+   Area=910   NumJoints=3   Joint1=757   Joint2=767   Joint3=768
+   Area=911   NumJoints=3   Joint1=757   Joint2=768   Joint3=769
+   Area=912   NumJoints=3   Joint1=757   Joint2=769   Joint3=770
+   Area=913   NumJoints=3   Joint1=757   Joint2=770   Joint3=771
+   Area=914   NumJoints=3   Joint1=757   Joint2=771   Joint3=772
+   Area=915   NumJoints=3   Joint1=757   Joint2=772   Joint3=773
+   Area=916   NumJoints=3   Joint1=757   Joint2=773   Joint3=774
+   Area=917   NumJoints=3   Joint1=757   Joint2=774   Joint3=775
+   Area=918   NumJoints=3   Joint1=757   Joint2=775   Joint3=776
+   Area=919   NumJoints=3   Joint1=757   Joint2=776   Joint3=777
+   Area=920   NumJoints=3   Joint1=757   Joint2=777   Joint3=778
+   Area=921   NumJoints=3   Joint1=757   Joint2=778   Joint3=779
+   Area=922   NumJoints=3   Joint1=757   Joint2=779   Joint3=780
+   Area=923   NumJoints=3   Joint1=757   Joint2=780   Joint3=781
+   Area=924   NumJoints=3   Joint1=757   Joint2=781   Joint3=782
+   Area=925   NumJoints=3   Joint1=757   Joint2=782   Joint3=783
+   Area=926   NumJoints=3   Joint1=757   Joint2=783   Joint3=784
+   Area=927   NumJoints=3   Joint1=757   Joint2=784   Joint3=785
+   Area=928   NumJoints=3   Joint1=757   Joint2=785   Joint3=786
+   Area=929   NumJoints=3   Joint1=757   Joint2=786   Joint3=787
+   Area=930   NumJoints=3   Joint1=757   Joint2=787   Joint3=788
+   Area=931   NumJoints=3   Joint1=757   Joint2=788   Joint3=789
+   Area=932   NumJoints=3   Joint1=757   Joint2=789   Joint3=790
+   Area=933   NumJoints=3   Joint1=757   Joint2=790   Joint3=791
+   Area=934   NumJoints=3   Joint1=757   Joint2=791   Joint3=792
+   Area=935   NumJoints=3   Joint1=757   Joint2=792   Joint3=793
+   Area=936   NumJoints=3   Joint1=757   Joint2=793   Joint3=758
+   Area=937   NumJoints=4   Joint1=939   Joint2=975   Joint3=976   Joint4=940
+   Area=938   NumJoints=4   Joint1=940   Joint2=976   Joint3=977   Joint4=941
+   Area=939   NumJoints=4   Joint1=941   Joint2=977   Joint3=978   Joint4=942
+   Area=940   NumJoints=4   Joint1=942   Joint2=978   Joint3=979   Joint4=943
+   Area=941   NumJoints=4   Joint1=943   Joint2=979   Joint3=980   Joint4=944
+   Area=942   NumJoints=4   Joint1=944   Joint2=980   Joint3=981   Joint4=945
+   Area=943   NumJoints=4   Joint1=945   Joint2=981   Joint3=982   Joint4=946
+   Area=944   NumJoints=4   Joint1=946   Joint2=982   Joint3=983   Joint4=947
+   Area=945   NumJoints=4   Joint1=947   Joint2=983   Joint3=984   Joint4=948
+   Area=946   NumJoints=4   Joint1=948   Joint2=984   Joint3=985   Joint4=949
+   Area=947   NumJoints=4   Joint1=949   Joint2=985   Joint3=986   Joint4=950
+   Area=948   NumJoints=4   Joint1=950   Joint2=986   Joint3=987   Joint4=951
+   Area=949   NumJoints=4   Joint1=951   Joint2=987   Joint3=988   Joint4=952
+   Area=950   NumJoints=4   Joint1=952   Joint2=988   Joint3=989   Joint4=953
+   Area=951   NumJoints=4   Joint1=953   Joint2=989   Joint3=990   Joint4=954
+   Area=952   NumJoints=4   Joint1=954   Joint2=990   Joint3=991   Joint4=955
+   Area=953   NumJoints=4   Joint1=955   Joint2=991   Joint3=992   Joint4=956
+   Area=954   NumJoints=4   Joint1=956   Joint2=992   Joint3=993   Joint4=957
+   Area=955   NumJoints=4   Joint1=957   Joint2=993   Joint3=994   Joint4=958
+   Area=956   NumJoints=4   Joint1=958   Joint2=994   Joint3=995   Joint4=959
+   Area=957   NumJoints=4   Joint1=959   Joint2=995   Joint3=996   Joint4=960
+   Area=958   NumJoints=4   Joint1=960   Joint2=996   Joint3=997   Joint4=961
+   Area=959   NumJoints=4   Joint1=961   Joint2=997   Joint3=998   Joint4=962
+   Area=960   NumJoints=4   Joint1=962   Joint2=998   Joint3=999   Joint4=963
+   Area=961   NumJoints=4   Joint1=963   Joint2=999   Joint3=1000   Joint4=964
+   Area=962   NumJoints=4   Joint1=964   Joint2=1000   Joint3=1001   Joint4=965
+   Area=963   NumJoints=4   Joint1=965   Joint2=1001   Joint3=1002   Joint4=966
+   Area=964   NumJoints=4   Joint1=966   Joint2=1002   Joint3=1003   Joint4=967
+   Area=965   NumJoints=4   Joint1=967   Joint2=1003   Joint3=1004   Joint4=968
+   Area=966   NumJoints=4   Joint1=968   Joint2=1004   Joint3=1005   Joint4=969
+   Area=967   NumJoints=4   Joint1=969   Joint2=1005   Joint3=1006   Joint4=970
+   Area=968   NumJoints=4   Joint1=970   Joint2=1006   Joint3=1007   Joint4=971
+   Area=969   NumJoints=4   Joint1=971   Joint2=1007   Joint3=1008   Joint4=972
+   Area=970   NumJoints=4   Joint1=972   Joint2=1008   Joint3=1009   Joint4=973
+   Area=971   NumJoints=4   Joint1=973   Joint2=1009   Joint3=1010   Joint4=974
+   Area=972   NumJoints=4   Joint1=974   Joint2=1010   Joint3=975   Joint4=939
+   Area=973   NumJoints=4   Joint1=975   Joint2=1011   Joint3=1012   Joint4=976
+   Area=974   NumJoints=4   Joint1=976   Joint2=1012   Joint3=1013   Joint4=977
+   Area=975   NumJoints=4   Joint1=977   Joint2=1013   Joint3=1014   Joint4=978
+   Area=976   NumJoints=4   Joint1=978   Joint2=1014   Joint3=1015   Joint4=979
+   Area=977   NumJoints=4   Joint1=979   Joint2=1015   Joint3=1016   Joint4=980
+   Area=978   NumJoints=4   Joint1=980   Joint2=1016   Joint3=1017   Joint4=981
+   Area=979   NumJoints=4   Joint1=981   Joint2=1017   Joint3=1018   Joint4=982
+   Area=980   NumJoints=4   Joint1=982   Joint2=1018   Joint3=1019   Joint4=983
+   Area=981   NumJoints=4   Joint1=983   Joint2=1019   Joint3=1020   Joint4=984
+   Area=982   NumJoints=4   Joint1=984   Joint2=1020   Joint3=1021   Joint4=985
+   Area=983   NumJoints=4   Joint1=985   Joint2=1021   Joint3=1022   Joint4=986
+   Area=984   NumJoints=4   Joint1=986   Joint2=1022   Joint3=1023   Joint4=987
+   Area=985   NumJoints=4   Joint1=987   Joint2=1023   Joint3=1024   Joint4=988
+   Area=986   NumJoints=4   Joint1=988   Joint2=1024   Joint3=1025   Joint4=989
+   Area=987   NumJoints=4   Joint1=989   Joint2=1025   Joint3=1026   Joint4=990
+   Area=988   NumJoints=4   Joint1=990   Joint2=1026   Joint3=1027   Joint4=991
+   Area=989   NumJoints=4   Joint1=991   Joint2=1027   Joint3=1028   Joint4=992
+   Area=990   NumJoints=4   Joint1=992   Joint2=1028   Joint3=1029   Joint4=993
+   Area=991   NumJoints=4   Joint1=993   Joint2=1029   Joint3=1030   Joint4=994
+   Area=992   NumJoints=4   Joint1=994   Joint2=1030   Joint3=1031   Joint4=995
+   Area=993   NumJoints=4   Joint1=995   Joint2=1031   Joint3=1032   Joint4=996
+   Area=994   NumJoints=4   Joint1=996   Joint2=1032   Joint3=1033   Joint4=997
+   Area=995   NumJoints=4   Joint1=997   Joint2=1033   Joint3=1034   Joint4=998
+   Area=996   NumJoints=4   Joint1=998   Joint2=1034   Joint3=1035   Joint4=999
+   Area=997   NumJoints=4   Joint1=999   Joint2=1035   Joint3=1036   Joint4=1000
+   Area=998   NumJoints=4   Joint1=1000   Joint2=1036   Joint3=1037   Joint4=1001
+   Area=999   NumJoints=4   Joint1=1001   Joint2=1037   Joint3=1038   Joint4=1002
+   Area=1000   NumJoints=4   Joint1=1002   Joint2=1038   Joint3=1039   Joint4=1003
+   Area=1001   NumJoints=4   Joint1=1003   Joint2=1039   Joint3=1040   Joint4=1004
+   Area=1002   NumJoints=4   Joint1=1004   Joint2=1040   Joint3=1041   Joint4=1005
+   Area=1003   NumJoints=4   Joint1=1005   Joint2=1041   Joint3=1042   Joint4=1006
+   Area=1004   NumJoints=4   Joint1=1006   Joint2=1042   Joint3=1043   Joint4=1007
+   Area=1005   NumJoints=4   Joint1=1007   Joint2=1043   Joint3=1044   Joint4=1008
+   Area=1006   NumJoints=4   Joint1=1008   Joint2=1044   Joint3=1045   Joint4=1009
+   Area=1007   NumJoints=4   Joint1=1009   Joint2=1045   Joint3=1046   Joint4=1010
+   Area=1008   NumJoints=4   Joint1=1010   Joint2=1046   Joint3=1011   Joint4=975
+   Area=1009   NumJoints=4   Joint1=1011   Joint2=1047   Joint3=1048   Joint4=1012
+   Area=1010   NumJoints=4   Joint1=1012   Joint2=1048   Joint3=1049   Joint4=1013
+   Area=1011   NumJoints=4   Joint1=1013   Joint2=1049   Joint3=1050   Joint4=1014
+   Area=1012   NumJoints=4   Joint1=1014   Joint2=1050   Joint3=1051   Joint4=1015
+   Area=1013   NumJoints=4   Joint1=1015   Joint2=1051   Joint3=1052   Joint4=1016
+   Area=1014   NumJoints=4   Joint1=1016   Joint2=1052   Joint3=1053   Joint4=1017
+   Area=1015   NumJoints=4   Joint1=1017   Joint2=1053   Joint3=1054   Joint4=1018
+   Area=1016   NumJoints=4   Joint1=1018   Joint2=1054   Joint3=1055   Joint4=1019
+   Area=1017   NumJoints=4   Joint1=1019   Joint2=1055   Joint3=1056   Joint4=1020
+   Area=1018   NumJoints=4   Joint1=1020   Joint2=1056   Joint3=1057   Joint4=1021
+   Area=1019   NumJoints=4   Joint1=1021   Joint2=1057   Joint3=1058   Joint4=1022
+   Area=1020   NumJoints=4   Joint1=1022   Joint2=1058   Joint3=1059   Joint4=1023
+   Area=1021   NumJoints=4   Joint1=1023   Joint2=1059   Joint3=1060   Joint4=1024
+   Area=1022   NumJoints=4   Joint1=1024   Joint2=1060   Joint3=1061   Joint4=1025
+   Area=1023   NumJoints=4   Joint1=1025   Joint2=1061   Joint3=1062   Joint4=1026
+   Area=1024   NumJoints=4   Joint1=1026   Joint2=1062   Joint3=1063   Joint4=1027
+   Area=1025   NumJoints=4   Joint1=1027   Joint2=1063   Joint3=1064   Joint4=1028
+   Area=1026   NumJoints=4   Joint1=1028   Joint2=1064   Joint3=1065   Joint4=1029
+   Area=1027   NumJoints=4   Joint1=1029   Joint2=1065   Joint3=1066   Joint4=1030
+   Area=1028   NumJoints=4   Joint1=1030   Joint2=1066   Joint3=1067   Joint4=1031
+   Area=1029   NumJoints=4   Joint1=1031   Joint2=1067   Joint3=1068   Joint4=1032
+   Area=1030   NumJoints=4   Joint1=1032   Joint2=1068   Joint3=1069   Joint4=1033
+   Area=1031   NumJoints=4   Joint1=1033   Joint2=1069   Joint3=1070   Joint4=1034
+   Area=1032   NumJoints=4   Joint1=1034   Joint2=1070   Joint3=1071   Joint4=1035
+   Area=1033   NumJoints=4   Joint1=1035   Joint2=1071   Joint3=1072   Joint4=1036
+   Area=1034   NumJoints=4   Joint1=1036   Joint2=1072   Joint3=1073   Joint4=1037
+   Area=1035   NumJoints=4   Joint1=1037   Joint2=1073   Joint3=1074   Joint4=1038
+   Area=1036   NumJoints=4   Joint1=1038   Joint2=1074   Joint3=1075   Joint4=1039
+   Area=1037   NumJoints=4   Joint1=1039   Joint2=1075   Joint3=1076   Joint4=1040
+   Area=1038   NumJoints=4   Joint1=1040   Joint2=1076   Joint3=1077   Joint4=1041
+   Area=1039   NumJoints=4   Joint1=1041   Joint2=1077   Joint3=1078   Joint4=1042
+   Area=1040   NumJoints=4   Joint1=1042   Joint2=1078   Joint3=1079   Joint4=1043
+   Area=1041   NumJoints=4   Joint1=1043   Joint2=1079   Joint3=1080   Joint4=1044
+   Area=1042   NumJoints=4   Joint1=1044   Joint2=1080   Joint3=1081   Joint4=1045
+   Area=1043   NumJoints=4   Joint1=1045   Joint2=1081   Joint3=1082   Joint4=1046
+   Area=1044   NumJoints=4   Joint1=1046   Joint2=1082   Joint3=1047   Joint4=1011
+   Area=1045   NumJoints=4   Joint1=1047   Joint2=1083   Joint3=1084   Joint4=1048
+   Area=1046   NumJoints=4   Joint1=1048   Joint2=1084   Joint3=1085   Joint4=1049
+   Area=1047   NumJoints=4   Joint1=1049   Joint2=1085   Joint3=1086   Joint4=1050
+   Area=1048   NumJoints=4   Joint1=1050   Joint2=1086   Joint3=1087   Joint4=1051
+   Area=1049   NumJoints=4   Joint1=1051   Joint2=1087   Joint3=1088   Joint4=1052
+   Area=1050   NumJoints=4   Joint1=1052   Joint2=1088   Joint3=1089   Joint4=1053
+   Area=1051   NumJoints=4   Joint1=1053   Joint2=1089   Joint3=1090   Joint4=1054
+   Area=1052   NumJoints=4   Joint1=1054   Joint2=1090   Joint3=1091   Joint4=1055
+   Area=1053   NumJoints=4   Joint1=1055   Joint2=1091   Joint3=1092   Joint4=1056
+   Area=1054   NumJoints=4   Joint1=1056   Joint2=1092   Joint3=1093   Joint4=1057
+   Area=1055   NumJoints=4   Joint1=1057   Joint2=1093   Joint3=1094   Joint4=1058
+   Area=1056   NumJoints=4   Joint1=1058   Joint2=1094   Joint3=1095   Joint4=1059
+   Area=1057   NumJoints=4   Joint1=1059   Joint2=1095   Joint3=1096   Joint4=1060
+   Area=1058   NumJoints=4   Joint1=1060   Joint2=1096   Joint3=1097   Joint4=1061
+   Area=1059   NumJoints=4   Joint1=1061   Joint2=1097   Joint3=1098   Joint4=1062
+   Area=1060   NumJoints=4   Joint1=1062   Joint2=1098   Joint3=1099   Joint4=1063
+   Area=1061   NumJoints=4   Joint1=1063   Joint2=1099   Joint3=1100   Joint4=1064
+   Area=1062   NumJoints=4   Joint1=1064   Joint2=1100   Joint3=1101   Joint4=1065
+   Area=1063   NumJoints=4   Joint1=1065   Joint2=1101   Joint3=1102   Joint4=1066
+   Area=1064   NumJoints=4   Joint1=1066   Joint2=1102   Joint3=1103   Joint4=1067
+   Area=1065   NumJoints=4   Joint1=1067   Joint2=1103   Joint3=1104   Joint4=1068
+   Area=1066   NumJoints=4   Joint1=1068   Joint2=1104   Joint3=1105   Joint4=1069
+   Area=1067   NumJoints=4   Joint1=1069   Joint2=1105   Joint3=1106   Joint4=1070
+   Area=1068   NumJoints=4   Joint1=1070   Joint2=1106   Joint3=1107   Joint4=1071
+   Area=1069   NumJoints=4   Joint1=1071   Joint2=1107   Joint3=1108   Joint4=1072
+   Area=1070   NumJoints=4   Joint1=1072   Joint2=1108   Joint3=1109   Joint4=1073
+   Area=1071   NumJoints=4   Joint1=1073   Joint2=1109   Joint3=1110   Joint4=1074
+   Area=1072   NumJoints=4   Joint1=1074   Joint2=1110   Joint3=1111   Joint4=1075
+   Area=1073   NumJoints=4   Joint1=1075   Joint2=1111   Joint3=1112   Joint4=1076
+   Area=1074   NumJoints=4   Joint1=1076   Joint2=1112   Joint3=1113   Joint4=1077
+   Area=1075   NumJoints=4   Joint1=1077   Joint2=1113   Joint3=1114   Joint4=1078
+   Area=1076   NumJoints=4   Joint1=1078   Joint2=1114   Joint3=1115   Joint4=1079
+   Area=1077   NumJoints=4   Joint1=1079   Joint2=1115   Joint3=1116   Joint4=1080
+   Area=1078   NumJoints=4   Joint1=1080   Joint2=1116   Joint3=1117   Joint4=1081
+   Area=1079   NumJoints=4   Joint1=1081   Joint2=1117   Joint3=1118   Joint4=1082
+   Area=1080   NumJoints=4   Joint1=1082   Joint2=1118   Joint3=1083   Joint4=1047
+   Area=1081   NumJoints=4   Joint1=1083   Joint2=721   Joint3=722   Joint4=1084
+   Area=1082   NumJoints=4   Joint1=1084   Joint2=722   Joint3=723   Joint4=1085
+   Area=1083   NumJoints=4   Joint1=1085   Joint2=723   Joint3=724   Joint4=1086
+   Area=1084   NumJoints=4   Joint1=1086   Joint2=724   Joint3=725   Joint4=1087
+   Area=1085   NumJoints=4   Joint1=1087   Joint2=725   Joint3=726   Joint4=1088
+   Area=1086   NumJoints=4   Joint1=1088   Joint2=726   Joint3=727   Joint4=1089
+   Area=1087   NumJoints=4   Joint1=1089   Joint2=727   Joint3=728   Joint4=1090
+   Area=1088   NumJoints=4   Joint1=1090   Joint2=728   Joint3=729   Joint4=1091
+   Area=1089   NumJoints=4   Joint1=1091   Joint2=729   Joint3=730   Joint4=1092
+   Area=1090   NumJoints=4   Joint1=1092   Joint2=730   Joint3=731   Joint4=1093
+   Area=1091   NumJoints=4   Joint1=1093   Joint2=731   Joint3=732   Joint4=1094
+   Area=1092   NumJoints=4   Joint1=1094   Joint2=732   Joint3=733   Joint4=1095
+   Area=1093   NumJoints=4   Joint1=1095   Joint2=733   Joint3=734   Joint4=1096
+   Area=1094   NumJoints=4   Joint1=1096   Joint2=734   Joint3=735   Joint4=1097
+   Area=1095   NumJoints=4   Joint1=1097   Joint2=735   Joint3=736   Joint4=1098
+   Area=1096   NumJoints=4   Joint1=1098   Joint2=736   Joint3=737   Joint4=1099
+   Area=1097   NumJoints=4   Joint1=1099   Joint2=737   Joint3=738   Joint4=1100
+   Area=1098   NumJoints=4   Joint1=1100   Joint2=738   Joint3=739   Joint4=1101
+   Area=1099   NumJoints=4   Joint1=1101   Joint2=739   Joint3=740   Joint4=1102
+   Area=1100   NumJoints=4   Joint1=1102   Joint2=740   Joint3=741   Joint4=1103
+   Area=1101   NumJoints=4   Joint1=1103   Joint2=741   Joint3=742   Joint4=1104
+   Area=1102   NumJoints=4   Joint1=1104   Joint2=742   Joint3=743   Joint4=1105
+   Area=1103   NumJoints=4   Joint1=1105   Joint2=743   Joint3=744   Joint4=1106
+   Area=1104   NumJoints=4   Joint1=1106   Joint2=744   Joint3=745   Joint4=1107
+   Area=1105   NumJoints=4   Joint1=1107   Joint2=745   Joint3=746   Joint4=1108
+   Area=1106   NumJoints=4   Joint1=1108   Joint2=746   Joint3=747   Joint4=1109
+   Area=1107   NumJoints=4   Joint1=1109   Joint2=747   Joint3=748   Joint4=1110
+   Area=1108   NumJoints=4   Joint1=1110   Joint2=748   Joint3=749   Joint4=1111
+   Area=1109   NumJoints=4   Joint1=1111   Joint2=749   Joint3=750   Joint4=1112
+   Area=1110   NumJoints=4   Joint1=1112   Joint2=750   Joint3=751   Joint4=1113
+   Area=1111   NumJoints=4   Joint1=1113   Joint2=751   Joint3=752   Joint4=1114
+   Area=1112   NumJoints=4   Joint1=1114   Joint2=752   Joint3=753   Joint4=1115
+   Area=1113   NumJoints=4   Joint1=1115   Joint2=753   Joint3=754   Joint4=1116
+   Area=1114   NumJoints=4   Joint1=1116   Joint2=754   Joint3=755   Joint4=1117
+   Area=1115   NumJoints=4   Joint1=1117   Joint2=755   Joint3=756   Joint4=1118
+   Area=1116   NumJoints=4   Joint1=1118   Joint2=756   Joint3=721   Joint4=1083
+   Area=1117   NumJoints=3   Joint1=938   Joint2=939   Joint3=940
+   Area=1118   NumJoints=3   Joint1=938   Joint2=940   Joint3=941
+   Area=1119   NumJoints=3   Joint1=938   Joint2=941   Joint3=942
+   Area=1120   NumJoints=3   Joint1=938   Joint2=942   Joint3=943
+   Area=1121   NumJoints=3   Joint1=938   Joint2=943   Joint3=944
+   Area=1122   NumJoints=3   Joint1=938   Joint2=944   Joint3=945
+   Area=1123   NumJoints=3   Joint1=938   Joint2=945   Joint3=946
+   Area=1124   NumJoints=3   Joint1=938   Joint2=946   Joint3=947
+   Area=1125   NumJoints=3   Joint1=938   Joint2=947   Joint3=948
+   Area=1126   NumJoints=3   Joint1=938   Joint2=948   Joint3=949
+   Area=1127   NumJoints=3   Joint1=938   Joint2=949   Joint3=950
+   Area=1128   NumJoints=3   Joint1=938   Joint2=950   Joint3=951
+   Area=1129   NumJoints=3   Joint1=938   Joint2=951   Joint3=952
+   Area=1130   NumJoints=3   Joint1=938   Joint2=952   Joint3=953
+   Area=1131   NumJoints=3   Joint1=938   Joint2=953   Joint3=954
+   Area=1132   NumJoints=3   Joint1=938   Joint2=954   Joint3=955
+   Area=1133   NumJoints=3   Joint1=938   Joint2=955   Joint3=956
+   Area=1134   NumJoints=3   Joint1=938   Joint2=956   Joint3=957
+   Area=1135   NumJoints=3   Joint1=938   Joint2=957   Joint3=958
+   Area=1136   NumJoints=3   Joint1=938   Joint2=958   Joint3=959
+   Area=1137   NumJoints=3   Joint1=938   Joint2=959   Joint3=960
+   Area=1138   NumJoints=3   Joint1=938   Joint2=960   Joint3=961
+   Area=1139   NumJoints=3   Joint1=938   Joint2=961   Joint3=962
+   Area=1140   NumJoints=3   Joint1=938   Joint2=962   Joint3=963
+   Area=1141   NumJoints=3   Joint1=938   Joint2=963   Joint3=964
+   Area=1142   NumJoints=3   Joint1=938   Joint2=964   Joint3=965
+   Area=1143   NumJoints=3   Joint1=938   Joint2=965   Joint3=966
+   Area=1144   NumJoints=3   Joint1=938   Joint2=966   Joint3=967
+   Area=1145   NumJoints=3   Joint1=938   Joint2=967   Joint3=968
+   Area=1146   NumJoints=3   Joint1=938   Joint2=968   Joint3=969
+   Area=1147   NumJoints=3   Joint1=938   Joint2=969   Joint3=970
+   Area=1148   NumJoints=3   Joint1=938   Joint2=970   Joint3=971
+   Area=1149   NumJoints=3   Joint1=938   Joint2=971   Joint3=972
+   Area=1150   NumJoints=3   Joint1=938   Joint2=972   Joint3=973
+   Area=1151   NumJoints=3   Joint1=938   Joint2=973   Joint3=974
+   Area=1152   NumJoints=3   Joint1=938   Joint2=974   Joint3=939
 
 TABLE:  "AREA SECTION ASSIGNMENTS"
    Area=1   Section=WALL_T1
@@ -2214,6 +3013,514 @@ TABLE:  "AREA SECTION ASSIGNMENTS"
    Area=718   Section=WALL_T2
    Area=719   Section=WALL_T2
    Area=720   Section=WALL_T2
+   Area=721   Section=BASEPLATE
+   Area=722   Section=BASEPLATE
+   Area=723   Section=BASEPLATE
+   Area=724   Section=BASEPLATE
+   Area=725   Section=BASEPLATE
+   Area=726   Section=BASEPLATE
+   Area=727   Section=BASEPLATE
+   Area=728   Section=BASEPLATE
+   Area=729   Section=BASEPLATE
+   Area=730   Section=BASEPLATE
+   Area=731   Section=BASEPLATE
+   Area=732   Section=BASEPLATE
+   Area=733   Section=BASEPLATE
+   Area=734   Section=BASEPLATE
+   Area=735   Section=BASEPLATE
+   Area=736   Section=BASEPLATE
+   Area=737   Section=BASEPLATE
+   Area=738   Section=BASEPLATE
+   Area=739   Section=BASEPLATE
+   Area=740   Section=BASEPLATE
+   Area=741   Section=BASEPLATE
+   Area=742   Section=BASEPLATE
+   Area=743   Section=BASEPLATE
+   Area=744   Section=BASEPLATE
+   Area=745   Section=BASEPLATE
+   Area=746   Section=BASEPLATE
+   Area=747   Section=BASEPLATE
+   Area=748   Section=BASEPLATE
+   Area=749   Section=BASEPLATE
+   Area=750   Section=BASEPLATE
+   Area=751   Section=BASEPLATE
+   Area=752   Section=BASEPLATE
+   Area=753   Section=BASEPLATE
+   Area=754   Section=BASEPLATE
+   Area=755   Section=BASEPLATE
+   Area=756   Section=BASEPLATE
+   Area=757   Section=BASEPLATE
+   Area=758   Section=BASEPLATE
+   Area=759   Section=BASEPLATE
+   Area=760   Section=BASEPLATE
+   Area=761   Section=BASEPLATE
+   Area=762   Section=BASEPLATE
+   Area=763   Section=BASEPLATE
+   Area=764   Section=BASEPLATE
+   Area=765   Section=BASEPLATE
+   Area=766   Section=BASEPLATE
+   Area=767   Section=BASEPLATE
+   Area=768   Section=BASEPLATE
+   Area=769   Section=BASEPLATE
+   Area=770   Section=BASEPLATE
+   Area=771   Section=BASEPLATE
+   Area=772   Section=BASEPLATE
+   Area=773   Section=BASEPLATE
+   Area=774   Section=BASEPLATE
+   Area=775   Section=BASEPLATE
+   Area=776   Section=BASEPLATE
+   Area=777   Section=BASEPLATE
+   Area=778   Section=BASEPLATE
+   Area=779   Section=BASEPLATE
+   Area=780   Section=BASEPLATE
+   Area=781   Section=BASEPLATE
+   Area=782   Section=BASEPLATE
+   Area=783   Section=BASEPLATE
+   Area=784   Section=BASEPLATE
+   Area=785   Section=BASEPLATE
+   Area=786   Section=BASEPLATE
+   Area=787   Section=BASEPLATE
+   Area=788   Section=BASEPLATE
+   Area=789   Section=BASEPLATE
+   Area=790   Section=BASEPLATE
+   Area=791   Section=BASEPLATE
+   Area=792   Section=BASEPLATE
+   Area=793   Section=BASEPLATE
+   Area=794   Section=BASEPLATE
+   Area=795   Section=BASEPLATE
+   Area=796   Section=BASEPLATE
+   Area=797   Section=BASEPLATE
+   Area=798   Section=BASEPLATE
+   Area=799   Section=BASEPLATE
+   Area=800   Section=BASEPLATE
+   Area=801   Section=BASEPLATE
+   Area=802   Section=BASEPLATE
+   Area=803   Section=BASEPLATE
+   Area=804   Section=BASEPLATE
+   Area=805   Section=BASEPLATE
+   Area=806   Section=BASEPLATE
+   Area=807   Section=BASEPLATE
+   Area=808   Section=BASEPLATE
+   Area=809   Section=BASEPLATE
+   Area=810   Section=BASEPLATE
+   Area=811   Section=BASEPLATE
+   Area=812   Section=BASEPLATE
+   Area=813   Section=BASEPLATE
+   Area=814   Section=BASEPLATE
+   Area=815   Section=BASEPLATE
+   Area=816   Section=BASEPLATE
+   Area=817   Section=BASEPLATE
+   Area=818   Section=BASEPLATE
+   Area=819   Section=BASEPLATE
+   Area=820   Section=BASEPLATE
+   Area=821   Section=BASEPLATE
+   Area=822   Section=BASEPLATE
+   Area=823   Section=BASEPLATE
+   Area=824   Section=BASEPLATE
+   Area=825   Section=BASEPLATE
+   Area=826   Section=BASEPLATE
+   Area=827   Section=BASEPLATE
+   Area=828   Section=BASEPLATE
+   Area=829   Section=BASEPLATE
+   Area=830   Section=BASEPLATE
+   Area=831   Section=BASEPLATE
+   Area=832   Section=BASEPLATE
+   Area=833   Section=BASEPLATE
+   Area=834   Section=BASEPLATE
+   Area=835   Section=BASEPLATE
+   Area=836   Section=BASEPLATE
+   Area=837   Section=BASEPLATE
+   Area=838   Section=BASEPLATE
+   Area=839   Section=BASEPLATE
+   Area=840   Section=BASEPLATE
+   Area=841   Section=BASEPLATE
+   Area=842   Section=BASEPLATE
+   Area=843   Section=BASEPLATE
+   Area=844   Section=BASEPLATE
+   Area=845   Section=BASEPLATE
+   Area=846   Section=BASEPLATE
+   Area=847   Section=BASEPLATE
+   Area=848   Section=BASEPLATE
+   Area=849   Section=BASEPLATE
+   Area=850   Section=BASEPLATE
+   Area=851   Section=BASEPLATE
+   Area=852   Section=BASEPLATE
+   Area=853   Section=BASEPLATE
+   Area=854   Section=BASEPLATE
+   Area=855   Section=BASEPLATE
+   Area=856   Section=BASEPLATE
+   Area=857   Section=BASEPLATE
+   Area=858   Section=BASEPLATE
+   Area=859   Section=BASEPLATE
+   Area=860   Section=BASEPLATE
+   Area=861   Section=BASEPLATE
+   Area=862   Section=BASEPLATE
+   Area=863   Section=BASEPLATE
+   Area=864   Section=BASEPLATE
+   Area=865   Section=BASEPLATE
+   Area=866   Section=BASEPLATE
+   Area=867   Section=BASEPLATE
+   Area=868   Section=BASEPLATE
+   Area=869   Section=BASEPLATE
+   Area=870   Section=BASEPLATE
+   Area=871   Section=BASEPLATE
+   Area=872   Section=BASEPLATE
+   Area=873   Section=BASEPLATE
+   Area=874   Section=BASEPLATE
+   Area=875   Section=BASEPLATE
+   Area=876   Section=BASEPLATE
+   Area=877   Section=BASEPLATE
+   Area=878   Section=BASEPLATE
+   Area=879   Section=BASEPLATE
+   Area=880   Section=BASEPLATE
+   Area=881   Section=BASEPLATE
+   Area=882   Section=BASEPLATE
+   Area=883   Section=BASEPLATE
+   Area=884   Section=BASEPLATE
+   Area=885   Section=BASEPLATE
+   Area=886   Section=BASEPLATE
+   Area=887   Section=BASEPLATE
+   Area=888   Section=BASEPLATE
+   Area=889   Section=BASEPLATE
+   Area=890   Section=BASEPLATE
+   Area=891   Section=BASEPLATE
+   Area=892   Section=BASEPLATE
+   Area=893   Section=BASEPLATE
+   Area=894   Section=BASEPLATE
+   Area=895   Section=BASEPLATE
+   Area=896   Section=BASEPLATE
+   Area=897   Section=BASEPLATE
+   Area=898   Section=BASEPLATE
+   Area=899   Section=BASEPLATE
+   Area=900   Section=BASEPLATE
+   Area=901   Section=BASEPLATE
+   Area=902   Section=BASEPLATE
+   Area=903   Section=BASEPLATE
+   Area=904   Section=BASEPLATE
+   Area=905   Section=BASEPLATE
+   Area=906   Section=BASEPLATE
+   Area=907   Section=BASEPLATE
+   Area=908   Section=BASEPLATE
+   Area=909   Section=BASEPLATE
+   Area=910   Section=BASEPLATE
+   Area=911   Section=BASEPLATE
+   Area=912   Section=BASEPLATE
+   Area=913   Section=BASEPLATE
+   Area=914   Section=BASEPLATE
+   Area=915   Section=BASEPLATE
+   Area=916   Section=BASEPLATE
+   Area=917   Section=BASEPLATE
+   Area=918   Section=BASEPLATE
+   Area=919   Section=BASEPLATE
+   Area=920   Section=BASEPLATE
+   Area=921   Section=BASEPLATE
+   Area=922   Section=BASEPLATE
+   Area=923   Section=BASEPLATE
+   Area=924   Section=BASEPLATE
+   Area=925   Section=BASEPLATE
+   Area=926   Section=BASEPLATE
+   Area=927   Section=BASEPLATE
+   Area=928   Section=BASEPLATE
+   Area=929   Section=BASEPLATE
+   Area=930   Section=BASEPLATE
+   Area=931   Section=BASEPLATE
+   Area=932   Section=BASEPLATE
+   Area=933   Section=BASEPLATE
+   Area=934   Section=BASEPLATE
+   Area=935   Section=BASEPLATE
+   Area=936   Section=BASEPLATE
+   Area=937   Section=ROOF
+   Area=938   Section=ROOF
+   Area=939   Section=ROOF
+   Area=940   Section=ROOF
+   Area=941   Section=ROOF
+   Area=942   Section=ROOF
+   Area=943   Section=ROOF
+   Area=944   Section=ROOF
+   Area=945   Section=ROOF
+   Area=946   Section=ROOF
+   Area=947   Section=ROOF
+   Area=948   Section=ROOF
+   Area=949   Section=ROOF
+   Area=950   Section=ROOF
+   Area=951   Section=ROOF
+   Area=952   Section=ROOF
+   Area=953   Section=ROOF
+   Area=954   Section=ROOF
+   Area=955   Section=ROOF
+   Area=956   Section=ROOF
+   Area=957   Section=ROOF
+   Area=958   Section=ROOF
+   Area=959   Section=ROOF
+   Area=960   Section=ROOF
+   Area=961   Section=ROOF
+   Area=962   Section=ROOF
+   Area=963   Section=ROOF
+   Area=964   Section=ROOF
+   Area=965   Section=ROOF
+   Area=966   Section=ROOF
+   Area=967   Section=ROOF
+   Area=968   Section=ROOF
+   Area=969   Section=ROOF
+   Area=970   Section=ROOF
+   Area=971   Section=ROOF
+   Area=972   Section=ROOF
+   Area=973   Section=ROOF
+   Area=974   Section=ROOF
+   Area=975   Section=ROOF
+   Area=976   Section=ROOF
+   Area=977   Section=ROOF
+   Area=978   Section=ROOF
+   Area=979   Section=ROOF
+   Area=980   Section=ROOF
+   Area=981   Section=ROOF
+   Area=982   Section=ROOF
+   Area=983   Section=ROOF
+   Area=984   Section=ROOF
+   Area=985   Section=ROOF
+   Area=986   Section=ROOF
+   Area=987   Section=ROOF
+   Area=988   Section=ROOF
+   Area=989   Section=ROOF
+   Area=990   Section=ROOF
+   Area=991   Section=ROOF
+   Area=992   Section=ROOF
+   Area=993   Section=ROOF
+   Area=994   Section=ROOF
+   Area=995   Section=ROOF
+   Area=996   Section=ROOF
+   Area=997   Section=ROOF
+   Area=998   Section=ROOF
+   Area=999   Section=ROOF
+   Area=1000   Section=ROOF
+   Area=1001   Section=ROOF
+   Area=1002   Section=ROOF
+   Area=1003   Section=ROOF
+   Area=1004   Section=ROOF
+   Area=1005   Section=ROOF
+   Area=1006   Section=ROOF
+   Area=1007   Section=ROOF
+   Area=1008   Section=ROOF
+   Area=1009   Section=ROOF
+   Area=1010   Section=ROOF
+   Area=1011   Section=ROOF
+   Area=1012   Section=ROOF
+   Area=1013   Section=ROOF
+   Area=1014   Section=ROOF
+   Area=1015   Section=ROOF
+   Area=1016   Section=ROOF
+   Area=1017   Section=ROOF
+   Area=1018   Section=ROOF
+   Area=1019   Section=ROOF
+   Area=1020   Section=ROOF
+   Area=1021   Section=ROOF
+   Area=1022   Section=ROOF
+   Area=1023   Section=ROOF
+   Area=1024   Section=ROOF
+   Area=1025   Section=ROOF
+   Area=1026   Section=ROOF
+   Area=1027   Section=ROOF
+   Area=1028   Section=ROOF
+   Area=1029   Section=ROOF
+   Area=1030   Section=ROOF
+   Area=1031   Section=ROOF
+   Area=1032   Section=ROOF
+   Area=1033   Section=ROOF
+   Area=1034   Section=ROOF
+   Area=1035   Section=ROOF
+   Area=1036   Section=ROOF
+   Area=1037   Section=ROOF
+   Area=1038   Section=ROOF
+   Area=1039   Section=ROOF
+   Area=1040   Section=ROOF
+   Area=1041   Section=ROOF
+   Area=1042   Section=ROOF
+   Area=1043   Section=ROOF
+   Area=1044   Section=ROOF
+   Area=1045   Section=ROOF
+   Area=1046   Section=ROOF
+   Area=1047   Section=ROOF
+   Area=1048   Section=ROOF
+   Area=1049   Section=ROOF
+   Area=1050   Section=ROOF
+   Area=1051   Section=ROOF
+   Area=1052   Section=ROOF
+   Area=1053   Section=ROOF
+   Area=1054   Section=ROOF
+   Area=1055   Section=ROOF
+   Area=1056   Section=ROOF
+   Area=1057   Section=ROOF
+   Area=1058   Section=ROOF
+   Area=1059   Section=ROOF
+   Area=1060   Section=ROOF
+   Area=1061   Section=ROOF
+   Area=1062   Section=ROOF
+   Area=1063   Section=ROOF
+   Area=1064   Section=ROOF
+   Area=1065   Section=ROOF
+   Area=1066   Section=ROOF
+   Area=1067   Section=ROOF
+   Area=1068   Section=ROOF
+   Area=1069   Section=ROOF
+   Area=1070   Section=ROOF
+   Area=1071   Section=ROOF
+   Area=1072   Section=ROOF
+   Area=1073   Section=ROOF
+   Area=1074   Section=ROOF
+   Area=1075   Section=ROOF
+   Area=1076   Section=ROOF
+   Area=1077   Section=ROOF
+   Area=1078   Section=ROOF
+   Area=1079   Section=ROOF
+   Area=1080   Section=ROOF
+   Area=1081   Section=ROOF
+   Area=1082   Section=ROOF
+   Area=1083   Section=ROOF
+   Area=1084   Section=ROOF
+   Area=1085   Section=ROOF
+   Area=1086   Section=ROOF
+   Area=1087   Section=ROOF
+   Area=1088   Section=ROOF
+   Area=1089   Section=ROOF
+   Area=1090   Section=ROOF
+   Area=1091   Section=ROOF
+   Area=1092   Section=ROOF
+   Area=1093   Section=ROOF
+   Area=1094   Section=ROOF
+   Area=1095   Section=ROOF
+   Area=1096   Section=ROOF
+   Area=1097   Section=ROOF
+   Area=1098   Section=ROOF
+   Area=1099   Section=ROOF
+   Area=1100   Section=ROOF
+   Area=1101   Section=ROOF
+   Area=1102   Section=ROOF
+   Area=1103   Section=ROOF
+   Area=1104   Section=ROOF
+   Area=1105   Section=ROOF
+   Area=1106   Section=ROOF
+   Area=1107   Section=ROOF
+   Area=1108   Section=ROOF
+   Area=1109   Section=ROOF
+   Area=1110   Section=ROOF
+   Area=1111   Section=ROOF
+   Area=1112   Section=ROOF
+   Area=1113   Section=ROOF
+   Area=1114   Section=ROOF
+   Area=1115   Section=ROOF
+   Area=1116   Section=ROOF
+   Area=1117   Section=ROOF
+   Area=1118   Section=ROOF
+   Area=1119   Section=ROOF
+   Area=1120   Section=ROOF
+   Area=1121   Section=ROOF
+   Area=1122   Section=ROOF
+   Area=1123   Section=ROOF
+   Area=1124   Section=ROOF
+   Area=1125   Section=ROOF
+   Area=1126   Section=ROOF
+   Area=1127   Section=ROOF
+   Area=1128   Section=ROOF
+   Area=1129   Section=ROOF
+   Area=1130   Section=ROOF
+   Area=1131   Section=ROOF
+   Area=1132   Section=ROOF
+   Area=1133   Section=ROOF
+   Area=1134   Section=ROOF
+   Area=1135   Section=ROOF
+   Area=1136   Section=ROOF
+   Area=1137   Section=ROOF
+   Area=1138   Section=ROOF
+   Area=1139   Section=ROOF
+   Area=1140   Section=ROOF
+   Area=1141   Section=ROOF
+   Area=1142   Section=ROOF
+   Area=1143   Section=ROOF
+   Area=1144   Section=ROOF
+   Area=1145   Section=ROOF
+   Area=1146   Section=ROOF
+   Area=1147   Section=ROOF
+   Area=1148   Section=ROOF
+   Area=1149   Section=ROOF
+   Area=1150   Section=ROOF
+   Area=1151   Section=ROOF
+   Area=1152   Section=ROOF
+
+TABLE:  "CONNECTIVITY - FRAME"
+   Frame=1   JointI=721   JointJ=722   IsCurved=No
+   Frame=2   JointI=722   JointJ=723   IsCurved=No
+   Frame=3   JointI=723   JointJ=724   IsCurved=No
+   Frame=4   JointI=724   JointJ=725   IsCurved=No
+   Frame=5   JointI=725   JointJ=726   IsCurved=No
+   Frame=6   JointI=726   JointJ=727   IsCurved=No
+   Frame=7   JointI=727   JointJ=728   IsCurved=No
+   Frame=8   JointI=728   JointJ=729   IsCurved=No
+   Frame=9   JointI=729   JointJ=730   IsCurved=No
+   Frame=10   JointI=730   JointJ=731   IsCurved=No
+   Frame=11   JointI=731   JointJ=732   IsCurved=No
+   Frame=12   JointI=732   JointJ=733   IsCurved=No
+   Frame=13   JointI=733   JointJ=734   IsCurved=No
+   Frame=14   JointI=734   JointJ=735   IsCurved=No
+   Frame=15   JointI=735   JointJ=736   IsCurved=No
+   Frame=16   JointI=736   JointJ=737   IsCurved=No
+   Frame=17   JointI=737   JointJ=738   IsCurved=No
+   Frame=18   JointI=738   JointJ=739   IsCurved=No
+   Frame=19   JointI=739   JointJ=740   IsCurved=No
+   Frame=20   JointI=740   JointJ=741   IsCurved=No
+   Frame=21   JointI=741   JointJ=742   IsCurved=No
+   Frame=22   JointI=742   JointJ=743   IsCurved=No
+   Frame=23   JointI=743   JointJ=744   IsCurved=No
+   Frame=24   JointI=744   JointJ=745   IsCurved=No
+   Frame=25   JointI=745   JointJ=746   IsCurved=No
+   Frame=26   JointI=746   JointJ=747   IsCurved=No
+   Frame=27   JointI=747   JointJ=748   IsCurved=No
+   Frame=28   JointI=748   JointJ=749   IsCurved=No
+   Frame=29   JointI=749   JointJ=750   IsCurved=No
+   Frame=30   JointI=750   JointJ=751   IsCurved=No
+   Frame=31   JointI=751   JointJ=752   IsCurved=No
+   Frame=32   JointI=752   JointJ=753   IsCurved=No
+   Frame=33   JointI=753   JointJ=754   IsCurved=No
+   Frame=34   JointI=754   JointJ=755   IsCurved=No
+   Frame=35   JointI=755   JointJ=756   IsCurved=No
+   Frame=36   JointI=756   JointJ=721   IsCurved=No
+
+TABLE:  "FRAME SECTION ASSIGNMENTS"
+   Frame=1   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=2   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=3   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=4   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=5   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=6   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=7   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=8   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=9   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=10   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=11   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=12   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=13   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=14   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=15   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=16   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=17   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=18   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=19   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=20   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=21   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=22   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=23   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=24   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=25   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=26   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=27   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=28   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=29   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=30   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=31   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=32   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=33   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=34   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=35   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=36   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
 
 TABLE:  "GROUPS 1 - DEFINITIONS"
    GroupName=WALL   Selection=Yes   SectionCut=Yes   Steel=Yes   Concrete=Yes   Aluminum=Yes   ColdFormed=Yes   Stage=Yes   Bridge=Yes   AutoSeismic=No   AutoWind=No   SelDesSteel=No   SelDesAlum=No   SelDesCold=No   MassWeight=Yes   Color=Green
@@ -2221,6 +3528,9 @@ TABLE:  "GROUPS 1 - DEFINITIONS"
    GroupName=COURSE_02   Selection=Yes   SectionCut=Yes   Steel=Yes   Concrete=Yes   Aluminum=Yes   ColdFormed=Yes   Stage=Yes   Bridge=Yes   AutoSeismic=No   AutoWind=No   SelDesSteel=No   SelDesAlum=No   SelDesCold=No   MassWeight=Yes   Color=Green
    GroupName=BASE_RING   Selection=Yes   SectionCut=Yes   Steel=Yes   Concrete=Yes   Aluminum=Yes   ColdFormed=Yes   Stage=Yes   Bridge=Yes   AutoSeismic=No   AutoWind=No   SelDesSteel=No   SelDesAlum=No   SelDesCold=No   MassWeight=Yes   Color=Green
    GroupName=TOP_RING   Selection=Yes   SectionCut=Yes   Steel=Yes   Concrete=Yes   Aluminum=Yes   ColdFormed=Yes   Stage=Yes   Bridge=Yes   AutoSeismic=No   AutoWind=No   SelDesSteel=No   SelDesAlum=No   SelDesCold=No   MassWeight=Yes   Color=Green
+   GroupName=BASEPLATE   Selection=Yes   SectionCut=Yes   Steel=Yes   Concrete=Yes   Aluminum=Yes   ColdFormed=Yes   Stage=Yes   Bridge=Yes   AutoSeismic=No   AutoWind=No   SelDesSteel=No   SelDesAlum=No   SelDesCold=No   MassWeight=Yes   Color=Green
+   GroupName=ROOF   Selection=Yes   SectionCut=Yes   Steel=Yes   Concrete=Yes   Aluminum=Yes   ColdFormed=Yes   Stage=Yes   Bridge=Yes   AutoSeismic=No   AutoWind=No   SelDesSteel=No   SelDesAlum=No   SelDesCold=No   MassWeight=Yes   Color=Green
+   GroupName=ROOF_RING   Selection=Yes   SectionCut=Yes   Steel=Yes   Concrete=Yes   Aluminum=Yes   ColdFormed=Yes   Stage=Yes   Bridge=Yes   AutoSeismic=No   AutoWind=No   SelDesSteel=No   SelDesAlum=No   SelDesCold=No   MassWeight=Yes   Color=Green
 
 TABLE:  "GROUPS 2 - ASSIGNMENTS"
    GroupName=WALL   ObjectType=Area   ObjectLabel=1
@@ -3735,6 +5045,474 @@ TABLE:  "GROUPS 2 - ASSIGNMENTS"
    GroupName=TOP_RING   ObjectType=Joint   ObjectLabel=754
    GroupName=TOP_RING   ObjectType=Joint   ObjectLabel=755
    GroupName=TOP_RING   ObjectType=Joint   ObjectLabel=756
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=721
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=722
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=723
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=724
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=725
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=726
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=727
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=728
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=729
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=730
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=731
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=732
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=733
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=734
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=735
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=736
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=737
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=738
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=739
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=740
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=741
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=742
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=743
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=744
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=745
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=746
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=747
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=748
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=749
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=750
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=751
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=752
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=753
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=754
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=755
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=756
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=757
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=758
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=759
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=760
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=761
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=762
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=763
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=764
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=765
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=766
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=767
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=768
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=769
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=770
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=771
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=772
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=773
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=774
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=775
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=776
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=777
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=778
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=779
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=780
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=781
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=782
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=783
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=784
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=785
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=786
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=787
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=788
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=789
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=790
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=791
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=792
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=793
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=794
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=795
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=796
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=797
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=798
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=799
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=800
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=801
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=802
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=803
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=804
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=805
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=806
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=807
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=808
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=809
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=810
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=811
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=812
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=813
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=814
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=815
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=816
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=817
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=818
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=819
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=820
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=821
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=822
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=823
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=824
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=825
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=826
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=827
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=828
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=829
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=830
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=831
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=832
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=833
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=834
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=835
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=836
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=837
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=838
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=839
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=840
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=841
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=842
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=843
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=844
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=845
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=846
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=847
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=848
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=849
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=850
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=851
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=852
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=853
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=854
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=855
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=856
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=857
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=858
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=859
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=860
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=861
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=862
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=863
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=864
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=865
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=866
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=867
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=868
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=869
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=870
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=871
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=872
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=873
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=874
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=875
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=876
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=877
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=878
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=879
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=880
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=881
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=882
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=883
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=884
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=885
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=886
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=887
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=888
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=889
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=890
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=891
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=892
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=893
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=894
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=895
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=896
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=897
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=898
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=899
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=900
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=901
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=902
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=903
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=904
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=905
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=906
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=907
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=908
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=909
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=910
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=911
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=912
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=913
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=914
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=915
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=916
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=917
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=918
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=919
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=920
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=921
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=922
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=923
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=924
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=925
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=926
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=927
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=928
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=929
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=930
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=931
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=932
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=933
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=934
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=935
+   GroupName=BASEPLATE   ObjectType=Area   ObjectLabel=936
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=937
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=938
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=939
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=940
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=941
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=942
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=943
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=944
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=945
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=946
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=947
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=948
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=949
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=950
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=951
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=952
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=953
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=954
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=955
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=956
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=957
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=958
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=959
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=960
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=961
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=962
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=963
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=964
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=965
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=966
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=967
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=968
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=969
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=970
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=971
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=972
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=973
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=974
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=975
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=976
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=977
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=978
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=979
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=980
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=981
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=982
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=983
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=984
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=985
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=986
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=987
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=988
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=989
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=990
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=991
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=992
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=993
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=994
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=995
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=996
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=997
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=998
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=999
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1000
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1001
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1002
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1003
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1004
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1005
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1006
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1007
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1008
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1009
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1010
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1011
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1012
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1013
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1014
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1015
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1016
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1017
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1018
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1019
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1020
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1021
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1022
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1023
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1024
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1025
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1026
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1027
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1028
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1029
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1030
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1031
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1032
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1033
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1034
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1035
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1036
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1037
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1038
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1039
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1040
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1041
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1042
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1043
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1044
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1045
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1046
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1047
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1048
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1049
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1050
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1051
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1052
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1053
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1054
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1055
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1056
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1057
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1058
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1059
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1060
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1061
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1062
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1063
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1064
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1065
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1066
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1067
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1068
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1069
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1070
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1071
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1072
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1073
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1074
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1075
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1076
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1077
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1078
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1079
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1080
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1081
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1082
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1083
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1084
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1085
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1086
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1087
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1088
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1089
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1090
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1091
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1092
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1093
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1094
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1095
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1096
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1097
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1098
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1099
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1100
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1101
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1102
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1103
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1104
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1105
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1106
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1107
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1108
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1109
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1110
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1111
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1112
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1113
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1114
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1115
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1116
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1117
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1118
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1119
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1120
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1121
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1122
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1123
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1124
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1125
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1126
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1127
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1128
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1129
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1130
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1131
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1132
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1133
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1134
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1135
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1136
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1137
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1138
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1139
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1140
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1141
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1142
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1143
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1144
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1145
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1146
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1147
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1148
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1149
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1150
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1151
+   GroupName=ROOF   ObjectType=Area   ObjectLabel=1152
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=1
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=2
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=3
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=4
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=5
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=6
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=7
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=8
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=9
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=10
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=11
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=12
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=13
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=14
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=15
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=16
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=17
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=18
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=19
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=20
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=21
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=22
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=23
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=24
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=25
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=26
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=27
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=28
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=29
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=30
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=31
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=32
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=33
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=34
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=35
+   GroupName=ROOF_RING   ObjectType=Frame   ObjectLabel=36
 
 TABLE:  "JOINT RESTRAINT ASSIGNMENTS"
    Joint=1   U1=Yes   U2=No   U3=Yes   R1=No   R2=No   R3=No
@@ -3773,6 +5551,187 @@ TABLE:  "JOINT RESTRAINT ASSIGNMENTS"
    Joint=34   U1=Yes   U2=No   U3=Yes   R1=No   R2=No   R3=No
    Joint=35   U1=Yes   U2=No   U3=Yes   R1=No   R2=No   R3=No
    Joint=36   U1=Yes   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=757   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=758   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=759   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=760   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=761   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=762   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=763   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=764   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=765   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=766   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=767   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=768   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=769   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=770   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=771   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=772   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=773   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=774   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=775   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=776   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=777   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=778   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=779   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=780   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=781   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=782   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=783   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=784   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=785   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=786   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=787   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=788   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=789   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=790   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=791   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=792   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=793   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=794   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=795   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=796   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=797   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=798   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=799   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=800   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=801   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=802   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=803   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=804   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=805   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=806   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=807   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=808   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=809   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=810   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=811   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=812   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=813   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=814   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=815   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=816   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=817   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=818   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=819   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=820   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=821   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=822   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=823   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=824   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=825   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=826   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=827   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=828   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=829   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=830   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=831   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=832   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=833   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=834   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=835   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=836   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=837   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=838   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=839   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=840   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=841   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=842   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=843   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=844   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=845   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=846   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=847   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=848   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=849   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=850   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=851   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=852   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=853   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=854   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=855   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=856   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=857   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=858   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=859   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=860   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=861   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=862   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=863   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=864   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=865   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=866   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=867   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=868   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=869   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=870   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=871   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=872   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=873   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=874   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=875   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=876   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=877   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=878   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=879   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=880   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=881   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=882   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=883   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=884   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=885   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=886   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=887   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=888   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=889   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=890   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=891   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=892   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=893   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=894   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=895   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=896   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=897   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=898   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=899   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=900   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=901   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=902   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=903   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=904   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=905   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=906   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=907   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=908   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=909   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=910   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=911   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=912   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=913   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=914   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=915   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=916   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=917   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=918   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=919   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=920   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=921   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=922   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=923   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=924   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=925   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=926   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=927   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=928   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=929   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=930   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=931   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=932   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=933   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=934   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=935   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=936   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
+   Joint=937   U1=No   U2=No   U3=Yes   R1=No   R2=No   R3=No
 
 TABLE:  "JOINT LOCAL AXES ASSIGNMENTS 1 - TYPICAL"
    Joint=1   AngleA=-90   AngleB=0   AngleC=0
@@ -4576,6 +6535,368 @@ TABLE:  "JOINT PATTERN ASSIGNMENTS"
    Joint=754   Pattern=HYDRO   Value=0
    Joint=755   Pattern=HYDRO   Value=0
    Joint=756   Pattern=HYDRO   Value=0
+   Joint=757   Pattern=HYDRO   Value=2.496
+   Joint=758   Pattern=HYDRO   Value=2.496
+   Joint=759   Pattern=HYDRO   Value=2.496
+   Joint=760   Pattern=HYDRO   Value=2.496
+   Joint=761   Pattern=HYDRO   Value=2.496
+   Joint=762   Pattern=HYDRO   Value=2.496
+   Joint=763   Pattern=HYDRO   Value=2.496
+   Joint=764   Pattern=HYDRO   Value=2.496
+   Joint=765   Pattern=HYDRO   Value=2.496
+   Joint=766   Pattern=HYDRO   Value=2.496
+   Joint=767   Pattern=HYDRO   Value=2.496
+   Joint=768   Pattern=HYDRO   Value=2.496
+   Joint=769   Pattern=HYDRO   Value=2.496
+   Joint=770   Pattern=HYDRO   Value=2.496
+   Joint=771   Pattern=HYDRO   Value=2.496
+   Joint=772   Pattern=HYDRO   Value=2.496
+   Joint=773   Pattern=HYDRO   Value=2.496
+   Joint=774   Pattern=HYDRO   Value=2.496
+   Joint=775   Pattern=HYDRO   Value=2.496
+   Joint=776   Pattern=HYDRO   Value=2.496
+   Joint=777   Pattern=HYDRO   Value=2.496
+   Joint=778   Pattern=HYDRO   Value=2.496
+   Joint=779   Pattern=HYDRO   Value=2.496
+   Joint=780   Pattern=HYDRO   Value=2.496
+   Joint=781   Pattern=HYDRO   Value=2.496
+   Joint=782   Pattern=HYDRO   Value=2.496
+   Joint=783   Pattern=HYDRO   Value=2.496
+   Joint=784   Pattern=HYDRO   Value=2.496
+   Joint=785   Pattern=HYDRO   Value=2.496
+   Joint=786   Pattern=HYDRO   Value=2.496
+   Joint=787   Pattern=HYDRO   Value=2.496
+   Joint=788   Pattern=HYDRO   Value=2.496
+   Joint=789   Pattern=HYDRO   Value=2.496
+   Joint=790   Pattern=HYDRO   Value=2.496
+   Joint=791   Pattern=HYDRO   Value=2.496
+   Joint=792   Pattern=HYDRO   Value=2.496
+   Joint=793   Pattern=HYDRO   Value=2.496
+   Joint=794   Pattern=HYDRO   Value=2.496
+   Joint=795   Pattern=HYDRO   Value=2.496
+   Joint=796   Pattern=HYDRO   Value=2.496
+   Joint=797   Pattern=HYDRO   Value=2.496
+   Joint=798   Pattern=HYDRO   Value=2.496
+   Joint=799   Pattern=HYDRO   Value=2.496
+   Joint=800   Pattern=HYDRO   Value=2.496
+   Joint=801   Pattern=HYDRO   Value=2.496
+   Joint=802   Pattern=HYDRO   Value=2.496
+   Joint=803   Pattern=HYDRO   Value=2.496
+   Joint=804   Pattern=HYDRO   Value=2.496
+   Joint=805   Pattern=HYDRO   Value=2.496
+   Joint=806   Pattern=HYDRO   Value=2.496
+   Joint=807   Pattern=HYDRO   Value=2.496
+   Joint=808   Pattern=HYDRO   Value=2.496
+   Joint=809   Pattern=HYDRO   Value=2.496
+   Joint=810   Pattern=HYDRO   Value=2.496
+   Joint=811   Pattern=HYDRO   Value=2.496
+   Joint=812   Pattern=HYDRO   Value=2.496
+   Joint=813   Pattern=HYDRO   Value=2.496
+   Joint=814   Pattern=HYDRO   Value=2.496
+   Joint=815   Pattern=HYDRO   Value=2.496
+   Joint=816   Pattern=HYDRO   Value=2.496
+   Joint=817   Pattern=HYDRO   Value=2.496
+   Joint=818   Pattern=HYDRO   Value=2.496
+   Joint=819   Pattern=HYDRO   Value=2.496
+   Joint=820   Pattern=HYDRO   Value=2.496
+   Joint=821   Pattern=HYDRO   Value=2.496
+   Joint=822   Pattern=HYDRO   Value=2.496
+   Joint=823   Pattern=HYDRO   Value=2.496
+   Joint=824   Pattern=HYDRO   Value=2.496
+   Joint=825   Pattern=HYDRO   Value=2.496
+   Joint=826   Pattern=HYDRO   Value=2.496
+   Joint=827   Pattern=HYDRO   Value=2.496
+   Joint=828   Pattern=HYDRO   Value=2.496
+   Joint=829   Pattern=HYDRO   Value=2.496
+   Joint=830   Pattern=HYDRO   Value=2.496
+   Joint=831   Pattern=HYDRO   Value=2.496
+   Joint=832   Pattern=HYDRO   Value=2.496
+   Joint=833   Pattern=HYDRO   Value=2.496
+   Joint=834   Pattern=HYDRO   Value=2.496
+   Joint=835   Pattern=HYDRO   Value=2.496
+   Joint=836   Pattern=HYDRO   Value=2.496
+   Joint=837   Pattern=HYDRO   Value=2.496
+   Joint=838   Pattern=HYDRO   Value=2.496
+   Joint=839   Pattern=HYDRO   Value=2.496
+   Joint=840   Pattern=HYDRO   Value=2.496
+   Joint=841   Pattern=HYDRO   Value=2.496
+   Joint=842   Pattern=HYDRO   Value=2.496
+   Joint=843   Pattern=HYDRO   Value=2.496
+   Joint=844   Pattern=HYDRO   Value=2.496
+   Joint=845   Pattern=HYDRO   Value=2.496
+   Joint=846   Pattern=HYDRO   Value=2.496
+   Joint=847   Pattern=HYDRO   Value=2.496
+   Joint=848   Pattern=HYDRO   Value=2.496
+   Joint=849   Pattern=HYDRO   Value=2.496
+   Joint=850   Pattern=HYDRO   Value=2.496
+   Joint=851   Pattern=HYDRO   Value=2.496
+   Joint=852   Pattern=HYDRO   Value=2.496
+   Joint=853   Pattern=HYDRO   Value=2.496
+   Joint=854   Pattern=HYDRO   Value=2.496
+   Joint=855   Pattern=HYDRO   Value=2.496
+   Joint=856   Pattern=HYDRO   Value=2.496
+   Joint=857   Pattern=HYDRO   Value=2.496
+   Joint=858   Pattern=HYDRO   Value=2.496
+   Joint=859   Pattern=HYDRO   Value=2.496
+   Joint=860   Pattern=HYDRO   Value=2.496
+   Joint=861   Pattern=HYDRO   Value=2.496
+   Joint=862   Pattern=HYDRO   Value=2.496
+   Joint=863   Pattern=HYDRO   Value=2.496
+   Joint=864   Pattern=HYDRO   Value=2.496
+   Joint=865   Pattern=HYDRO   Value=2.496
+   Joint=866   Pattern=HYDRO   Value=2.496
+   Joint=867   Pattern=HYDRO   Value=2.496
+   Joint=868   Pattern=HYDRO   Value=2.496
+   Joint=869   Pattern=HYDRO   Value=2.496
+   Joint=870   Pattern=HYDRO   Value=2.496
+   Joint=871   Pattern=HYDRO   Value=2.496
+   Joint=872   Pattern=HYDRO   Value=2.496
+   Joint=873   Pattern=HYDRO   Value=2.496
+   Joint=874   Pattern=HYDRO   Value=2.496
+   Joint=875   Pattern=HYDRO   Value=2.496
+   Joint=876   Pattern=HYDRO   Value=2.496
+   Joint=877   Pattern=HYDRO   Value=2.496
+   Joint=878   Pattern=HYDRO   Value=2.496
+   Joint=879   Pattern=HYDRO   Value=2.496
+   Joint=880   Pattern=HYDRO   Value=2.496
+   Joint=881   Pattern=HYDRO   Value=2.496
+   Joint=882   Pattern=HYDRO   Value=2.496
+   Joint=883   Pattern=HYDRO   Value=2.496
+   Joint=884   Pattern=HYDRO   Value=2.496
+   Joint=885   Pattern=HYDRO   Value=2.496
+   Joint=886   Pattern=HYDRO   Value=2.496
+   Joint=887   Pattern=HYDRO   Value=2.496
+   Joint=888   Pattern=HYDRO   Value=2.496
+   Joint=889   Pattern=HYDRO   Value=2.496
+   Joint=890   Pattern=HYDRO   Value=2.496
+   Joint=891   Pattern=HYDRO   Value=2.496
+   Joint=892   Pattern=HYDRO   Value=2.496
+   Joint=893   Pattern=HYDRO   Value=2.496
+   Joint=894   Pattern=HYDRO   Value=2.496
+   Joint=895   Pattern=HYDRO   Value=2.496
+   Joint=896   Pattern=HYDRO   Value=2.496
+   Joint=897   Pattern=HYDRO   Value=2.496
+   Joint=898   Pattern=HYDRO   Value=2.496
+   Joint=899   Pattern=HYDRO   Value=2.496
+   Joint=900   Pattern=HYDRO   Value=2.496
+   Joint=901   Pattern=HYDRO   Value=2.496
+   Joint=902   Pattern=HYDRO   Value=2.496
+   Joint=903   Pattern=HYDRO   Value=2.496
+   Joint=904   Pattern=HYDRO   Value=2.496
+   Joint=905   Pattern=HYDRO   Value=2.496
+   Joint=906   Pattern=HYDRO   Value=2.496
+   Joint=907   Pattern=HYDRO   Value=2.496
+   Joint=908   Pattern=HYDRO   Value=2.496
+   Joint=909   Pattern=HYDRO   Value=2.496
+   Joint=910   Pattern=HYDRO   Value=2.496
+   Joint=911   Pattern=HYDRO   Value=2.496
+   Joint=912   Pattern=HYDRO   Value=2.496
+   Joint=913   Pattern=HYDRO   Value=2.496
+   Joint=914   Pattern=HYDRO   Value=2.496
+   Joint=915   Pattern=HYDRO   Value=2.496
+   Joint=916   Pattern=HYDRO   Value=2.496
+   Joint=917   Pattern=HYDRO   Value=2.496
+   Joint=918   Pattern=HYDRO   Value=2.496
+   Joint=919   Pattern=HYDRO   Value=2.496
+   Joint=920   Pattern=HYDRO   Value=2.496
+   Joint=921   Pattern=HYDRO   Value=2.496
+   Joint=922   Pattern=HYDRO   Value=2.496
+   Joint=923   Pattern=HYDRO   Value=2.496
+   Joint=924   Pattern=HYDRO   Value=2.496
+   Joint=925   Pattern=HYDRO   Value=2.496
+   Joint=926   Pattern=HYDRO   Value=2.496
+   Joint=927   Pattern=HYDRO   Value=2.496
+   Joint=928   Pattern=HYDRO   Value=2.496
+   Joint=929   Pattern=HYDRO   Value=2.496
+   Joint=930   Pattern=HYDRO   Value=2.496
+   Joint=931   Pattern=HYDRO   Value=2.496
+   Joint=932   Pattern=HYDRO   Value=2.496
+   Joint=933   Pattern=HYDRO   Value=2.496
+   Joint=934   Pattern=HYDRO   Value=2.496
+   Joint=935   Pattern=HYDRO   Value=2.496
+   Joint=936   Pattern=HYDRO   Value=2.496
+   Joint=937   Pattern=HYDRO   Value=2.496
+   Joint=938   Pattern=HYDRO   Value=0
+   Joint=939   Pattern=HYDRO   Value=0
+   Joint=940   Pattern=HYDRO   Value=0
+   Joint=941   Pattern=HYDRO   Value=0
+   Joint=942   Pattern=HYDRO   Value=0
+   Joint=943   Pattern=HYDRO   Value=0
+   Joint=944   Pattern=HYDRO   Value=0
+   Joint=945   Pattern=HYDRO   Value=0
+   Joint=946   Pattern=HYDRO   Value=0
+   Joint=947   Pattern=HYDRO   Value=0
+   Joint=948   Pattern=HYDRO   Value=0
+   Joint=949   Pattern=HYDRO   Value=0
+   Joint=950   Pattern=HYDRO   Value=0
+   Joint=951   Pattern=HYDRO   Value=0
+   Joint=952   Pattern=HYDRO   Value=0
+   Joint=953   Pattern=HYDRO   Value=0
+   Joint=954   Pattern=HYDRO   Value=0
+   Joint=955   Pattern=HYDRO   Value=0
+   Joint=956   Pattern=HYDRO   Value=0
+   Joint=957   Pattern=HYDRO   Value=0
+   Joint=958   Pattern=HYDRO   Value=0
+   Joint=959   Pattern=HYDRO   Value=0
+   Joint=960   Pattern=HYDRO   Value=0
+   Joint=961   Pattern=HYDRO   Value=0
+   Joint=962   Pattern=HYDRO   Value=0
+   Joint=963   Pattern=HYDRO   Value=0
+   Joint=964   Pattern=HYDRO   Value=0
+   Joint=965   Pattern=HYDRO   Value=0
+   Joint=966   Pattern=HYDRO   Value=0
+   Joint=967   Pattern=HYDRO   Value=0
+   Joint=968   Pattern=HYDRO   Value=0
+   Joint=969   Pattern=HYDRO   Value=0
+   Joint=970   Pattern=HYDRO   Value=0
+   Joint=971   Pattern=HYDRO   Value=0
+   Joint=972   Pattern=HYDRO   Value=0
+   Joint=973   Pattern=HYDRO   Value=0
+   Joint=974   Pattern=HYDRO   Value=0
+   Joint=975   Pattern=HYDRO   Value=0
+   Joint=976   Pattern=HYDRO   Value=0
+   Joint=977   Pattern=HYDRO   Value=0
+   Joint=978   Pattern=HYDRO   Value=0
+   Joint=979   Pattern=HYDRO   Value=0
+   Joint=980   Pattern=HYDRO   Value=0
+   Joint=981   Pattern=HYDRO   Value=0
+   Joint=982   Pattern=HYDRO   Value=0
+   Joint=983   Pattern=HYDRO   Value=0
+   Joint=984   Pattern=HYDRO   Value=0
+   Joint=985   Pattern=HYDRO   Value=0
+   Joint=986   Pattern=HYDRO   Value=0
+   Joint=987   Pattern=HYDRO   Value=0
+   Joint=988   Pattern=HYDRO   Value=0
+   Joint=989   Pattern=HYDRO   Value=0
+   Joint=990   Pattern=HYDRO   Value=0
+   Joint=991   Pattern=HYDRO   Value=0
+   Joint=992   Pattern=HYDRO   Value=0
+   Joint=993   Pattern=HYDRO   Value=0
+   Joint=994   Pattern=HYDRO   Value=0
+   Joint=995   Pattern=HYDRO   Value=0
+   Joint=996   Pattern=HYDRO   Value=0
+   Joint=997   Pattern=HYDRO   Value=0
+   Joint=998   Pattern=HYDRO   Value=0
+   Joint=999   Pattern=HYDRO   Value=0
+   Joint=1000   Pattern=HYDRO   Value=0
+   Joint=1001   Pattern=HYDRO   Value=0
+   Joint=1002   Pattern=HYDRO   Value=0
+   Joint=1003   Pattern=HYDRO   Value=0
+   Joint=1004   Pattern=HYDRO   Value=0
+   Joint=1005   Pattern=HYDRO   Value=0
+   Joint=1006   Pattern=HYDRO   Value=0
+   Joint=1007   Pattern=HYDRO   Value=0
+   Joint=1008   Pattern=HYDRO   Value=0
+   Joint=1009   Pattern=HYDRO   Value=0
+   Joint=1010   Pattern=HYDRO   Value=0
+   Joint=1011   Pattern=HYDRO   Value=0
+   Joint=1012   Pattern=HYDRO   Value=0
+   Joint=1013   Pattern=HYDRO   Value=0
+   Joint=1014   Pattern=HYDRO   Value=0
+   Joint=1015   Pattern=HYDRO   Value=0
+   Joint=1016   Pattern=HYDRO   Value=0
+   Joint=1017   Pattern=HYDRO   Value=0
+   Joint=1018   Pattern=HYDRO   Value=0
+   Joint=1019   Pattern=HYDRO   Value=0
+   Joint=1020   Pattern=HYDRO   Value=0
+   Joint=1021   Pattern=HYDRO   Value=0
+   Joint=1022   Pattern=HYDRO   Value=0
+   Joint=1023   Pattern=HYDRO   Value=0
+   Joint=1024   Pattern=HYDRO   Value=0
+   Joint=1025   Pattern=HYDRO   Value=0
+   Joint=1026   Pattern=HYDRO   Value=0
+   Joint=1027   Pattern=HYDRO   Value=0
+   Joint=1028   Pattern=HYDRO   Value=0
+   Joint=1029   Pattern=HYDRO   Value=0
+   Joint=1030   Pattern=HYDRO   Value=0
+   Joint=1031   Pattern=HYDRO   Value=0
+   Joint=1032   Pattern=HYDRO   Value=0
+   Joint=1033   Pattern=HYDRO   Value=0
+   Joint=1034   Pattern=HYDRO   Value=0
+   Joint=1035   Pattern=HYDRO   Value=0
+   Joint=1036   Pattern=HYDRO   Value=0
+   Joint=1037   Pattern=HYDRO   Value=0
+   Joint=1038   Pattern=HYDRO   Value=0
+   Joint=1039   Pattern=HYDRO   Value=0
+   Joint=1040   Pattern=HYDRO   Value=0
+   Joint=1041   Pattern=HYDRO   Value=0
+   Joint=1042   Pattern=HYDRO   Value=0
+   Joint=1043   Pattern=HYDRO   Value=0
+   Joint=1044   Pattern=HYDRO   Value=0
+   Joint=1045   Pattern=HYDRO   Value=0
+   Joint=1046   Pattern=HYDRO   Value=0
+   Joint=1047   Pattern=HYDRO   Value=0
+   Joint=1048   Pattern=HYDRO   Value=0
+   Joint=1049   Pattern=HYDRO   Value=0
+   Joint=1050   Pattern=HYDRO   Value=0
+   Joint=1051   Pattern=HYDRO   Value=0
+   Joint=1052   Pattern=HYDRO   Value=0
+   Joint=1053   Pattern=HYDRO   Value=0
+   Joint=1054   Pattern=HYDRO   Value=0
+   Joint=1055   Pattern=HYDRO   Value=0
+   Joint=1056   Pattern=HYDRO   Value=0
+   Joint=1057   Pattern=HYDRO   Value=0
+   Joint=1058   Pattern=HYDRO   Value=0
+   Joint=1059   Pattern=HYDRO   Value=0
+   Joint=1060   Pattern=HYDRO   Value=0
+   Joint=1061   Pattern=HYDRO   Value=0
+   Joint=1062   Pattern=HYDRO   Value=0
+   Joint=1063   Pattern=HYDRO   Value=0
+   Joint=1064   Pattern=HYDRO   Value=0
+   Joint=1065   Pattern=HYDRO   Value=0
+   Joint=1066   Pattern=HYDRO   Value=0
+   Joint=1067   Pattern=HYDRO   Value=0
+   Joint=1068   Pattern=HYDRO   Value=0
+   Joint=1069   Pattern=HYDRO   Value=0
+   Joint=1070   Pattern=HYDRO   Value=0
+   Joint=1071   Pattern=HYDRO   Value=0
+   Joint=1072   Pattern=HYDRO   Value=0
+   Joint=1073   Pattern=HYDRO   Value=0
+   Joint=1074   Pattern=HYDRO   Value=0
+   Joint=1075   Pattern=HYDRO   Value=0
+   Joint=1076   Pattern=HYDRO   Value=0
+   Joint=1077   Pattern=HYDRO   Value=0
+   Joint=1078   Pattern=HYDRO   Value=0
+   Joint=1079   Pattern=HYDRO   Value=0
+   Joint=1080   Pattern=HYDRO   Value=0
+   Joint=1081   Pattern=HYDRO   Value=0
+   Joint=1082   Pattern=HYDRO   Value=0
+   Joint=1083   Pattern=HYDRO   Value=0
+   Joint=1084   Pattern=HYDRO   Value=0
+   Joint=1085   Pattern=HYDRO   Value=0
+   Joint=1086   Pattern=HYDRO   Value=0
+   Joint=1087   Pattern=HYDRO   Value=0
+   Joint=1088   Pattern=HYDRO   Value=0
+   Joint=1089   Pattern=HYDRO   Value=0
+   Joint=1090   Pattern=HYDRO   Value=0
+   Joint=1091   Pattern=HYDRO   Value=0
+   Joint=1092   Pattern=HYDRO   Value=0
+   Joint=1093   Pattern=HYDRO   Value=0
+   Joint=1094   Pattern=HYDRO   Value=0
+   Joint=1095   Pattern=HYDRO   Value=0
+   Joint=1096   Pattern=HYDRO   Value=0
+   Joint=1097   Pattern=HYDRO   Value=0
+   Joint=1098   Pattern=HYDRO   Value=0
+   Joint=1099   Pattern=HYDRO   Value=0
+   Joint=1100   Pattern=HYDRO   Value=0
+   Joint=1101   Pattern=HYDRO   Value=0
+   Joint=1102   Pattern=HYDRO   Value=0
+   Joint=1103   Pattern=HYDRO   Value=0
+   Joint=1104   Pattern=HYDRO   Value=0
+   Joint=1105   Pattern=HYDRO   Value=0
+   Joint=1106   Pattern=HYDRO   Value=0
+   Joint=1107   Pattern=HYDRO   Value=0
+   Joint=1108   Pattern=HYDRO   Value=0
+   Joint=1109   Pattern=HYDRO   Value=0
+   Joint=1110   Pattern=HYDRO   Value=0
+   Joint=1111   Pattern=HYDRO   Value=0
+   Joint=1112   Pattern=HYDRO   Value=0
+   Joint=1113   Pattern=HYDRO   Value=0
+   Joint=1114   Pattern=HYDRO   Value=0
+   Joint=1115   Pattern=HYDRO   Value=0
+   Joint=1116   Pattern=HYDRO   Value=0
+   Joint=1117   Pattern=HYDRO   Value=0
+   Joint=1118   Pattern=HYDRO   Value=0
 
 TABLE:  "AREA LOADS - SURFACE PRESSURE"
    Area=1   LoadPat=HYDRO   Face=Bottom   Pressure=2.4336
@@ -5298,6 +7619,222 @@ TABLE:  "AREA LOADS - SURFACE PRESSURE"
    Area=718   LoadPat=HYDRO   Face=Bottom   Pressure=0.0624
    Area=719   LoadPat=HYDRO   Face=Bottom   Pressure=0.0624
    Area=720   LoadPat=HYDRO   Face=Bottom   Pressure=0.0624
+   Area=721   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=722   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=723   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=724   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=725   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=726   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=727   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=728   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=729   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=730   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=731   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=732   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=733   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=734   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=735   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=736   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=737   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=738   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=739   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=740   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=741   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=742   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=743   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=744   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=745   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=746   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=747   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=748   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=749   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=750   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=751   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=752   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=753   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=754   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=755   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=756   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=757   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=758   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=759   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=760   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=761   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=762   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=763   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=764   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=765   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=766   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=767   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=768   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=769   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=770   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=771   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=772   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=773   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=774   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=775   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=776   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=777   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=778   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=779   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=780   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=781   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=782   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=783   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=784   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=785   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=786   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=787   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=788   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=789   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=790   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=791   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=792   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=793   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=794   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=795   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=796   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=797   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=798   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=799   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=800   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=801   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=802   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=803   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=804   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=805   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=806   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=807   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=808   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=809   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=810   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=811   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=812   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=813   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=814   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=815   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=816   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=817   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=818   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=819   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=820   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=821   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=822   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=823   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=824   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=825   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=826   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=827   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=828   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=829   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=830   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=831   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=832   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=833   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=834   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=835   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=836   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=837   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=838   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=839   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=840   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=841   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=842   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=843   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=844   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=845   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=846   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=847   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=848   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=849   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=850   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=851   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=852   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=853   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=854   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=855   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=856   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=857   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=858   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=859   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=860   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=861   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=862   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=863   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=864   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=865   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=866   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=867   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=868   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=869   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=870   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=871   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=872   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=873   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=874   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=875   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=876   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=877   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=878   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=879   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=880   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=881   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=882   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=883   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=884   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=885   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=886   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=887   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=888   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=889   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=890   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=891   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=892   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=893   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=894   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=895   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=896   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=897   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=898   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=899   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=900   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=901   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=902   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=903   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=904   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=905   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=906   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=907   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=908   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=909   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=910   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=911   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=912   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=913   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=914   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=915   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=916   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=917   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=918   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=919   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=920   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=921   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=922   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=923   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=924   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=925   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=926   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=927   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=928   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=929   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=930   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=931   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=932   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=933   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=934   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=935   LoadPat=HYDRO   Face=Top   Pressure=2.496
+   Area=936   LoadPat=HYDRO   Face=Top   Pressure=2.496
 
 TABLE:  "LOAD CASE DEFINITIONS"
    Case=DEAD   Type=LinStatic   InitialCond=Zero

@@ -16,6 +16,9 @@ Geometry / numbering conventions (SapToPluto and the tests rely on these):
     (theta_i, z_k+1) so the shell local 3 axis points radially OUTWARD.
     Water is therefore on the local -3 side = shell face 5 = "Bottom", and a
     positive pressure on that face pushes outward.
+  * baseplate / roof are polar caps sharing the wall's base / top ring joints;
+    their local 3 is UP (corners inner, outer, outer+1, inner+1), so the
+    baseplate's wet face is "Top". Centre = a fan of triangles.
 """
 
 from .spec import GAMMA_WATER, G_ACCEL, STEEL, Course, TankSpec, load_config

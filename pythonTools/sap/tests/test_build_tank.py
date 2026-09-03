@@ -41,7 +41,8 @@ def test_cli_writes_the_same_file(tmp_path):
     r = subprocess.run([sys.executable, str(ROOT / "build_tank.py"),
                         str(CONFIGS / "example.toml"), "-o", str(out)],
                        capture_output=True, text=True, check=True)
-    assert "756 joints, 720 shells, 2 course(s) / 2 thickness(es), base released radially" in r.stdout
+    assert ("1118 joints, 1152 shells, 2 course(s), baseplate (216 shells), "
+            "roof (216 shells, rise 10.53 ft, 36 ring frames), base released radially") in r.stdout
     assert out.read_text() == (GOLDEN / "example.s2k").read_text()
 
 
@@ -53,8 +54,9 @@ def test_example_config_loads_and_builds():
     assert (spec.base_local_axes, spec.release_radial) == (True, True)
     assert spec.height == 40.0 and len(spec.courses) == 2 and spec.course_divisions() == [10, 10]
     m = TankModel(spec)
-    assert len(m.joints) == 36 * 21 and len(m.areas) == 36 * 20
-    assert m.sections == {"WALL_T1": 0.0208333, "WALL_T2": 0.015625}
+    assert len(m.ids.block("joint", "wall")) == 36 * 21 and len(m.ids.block("area", "wall")) == 36 * 20
+    assert len(m.joints) == 36 * 21 + 2 * (5 * 36 + 1) and len(m.areas) == 36 * 20 + 2 * 6 * 36
+    assert m.sections == {"WALL_T1": 0.0208333, "WALL_T2": 0.015625, "BASEPLATE": 0.0208333, "ROOF": 0.0208333}
     assert "END TABLE DATA" in s2k_text(m)
 
 
@@ -145,7 +147,7 @@ def test_courses_share_sections_by_thickness_and_group_by_course():
     assert [m.area_section[a] for a in (1, 9, 17)] == ["WALL_T1", "WALL_T2", "WALL_T1"]
     g = m.groups()
     assert list(g) == ["WALL", "COURSE_01", "COURSE_02", "COURSE_03", "BASE_RING", "TOP_RING"]
-    assert g["COURSE_02"] == (list(range(9, 17)), [])
+    assert g["COURSE_02"] == (list(range(9, 17)), [], [])
     t = parse_s2k(s2k_text(m))
     assert [r["SECTION"] for r in t["AREA SECTION PROPERTIES"]] == ["WALL_T1", "WALL_T2"]
     assert {r["AREA"]: r["SECTION"] for r in t["AREA SECTION ASSIGNMENTS"]}["9"] == "WALL_T2"
@@ -224,16 +226,124 @@ def test_joint_load_mode_writes_forces_not_pressures():
     assert float(r0["F2"]) == pytest.approx(0.0, abs=1e-12) and float(r0["F1"]) > 0
 
 
+# --- baseplate / roof (polar caps) ----------------------------------------------
+
+def capped(**kw):
+    return TankModel(TankSpec(radius=10.0, height=8.0, n_theta=8, n_z=4,
+                              baseplate=True, baseplate_n_r=3, baseplate_thickness=0.02,
+                              roof=True, roof_crown_radius=16.0, roof_n_r=3, roof_thickness=0.02,
+                              **kw))
+
+
+def normal(m, aid):
+    js = m.areas[aid]
+    p1, p2, p3 = (m.joints[j] for j in js[:3])
+    u = [p2[k] - p1[k] for k in range(3)]
+    v = [p3[k] - p1[k] for k in range(3)]
+    return (u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0])
+
+
+def test_caps_claim_blocks_after_the_wall_and_share_the_rims():
+    m = capped()                                     # wall: 40 joints, 32 areas
+    assert m.ids.block("joint", "baseplate") == range(41, 41 + 2 * 8 + 1)   # 2 interior rings + centre
+    assert m.ids.block("area", "baseplate") == range(33, 33 + 3 * 8)        # 2 quad rings + fan
+    assert m.ids.block("joint", "roof") == range(58, 75) and m.ids.block("area", "roof") == range(57, 81)
+    assert m.ids.block("frame", "roof_ring") == range(1, 9)
+    # outer quads use the wall's own base / top joints, no duplicates
+    outer = m.areas[33 + 8]                          # ring 2 -> rim
+    assert outer[1] in m.base_joints and outer[2] in m.base_joints
+    assert m.areas[57 + 8][1] in m.top_joints
+    assert len(m.joints) == 40 + 17 + 17 and len(set(m.joints)) == len(m.joints)
+
+
+def test_cap_topology_and_normals():
+    m = capped()
+    bp = m.baseplate_areas
+    assert [len(m.areas[a]) for a in bp] == [4] * 16 + [3] * 8
+    assert all(m.joints[j][2] == 0.0 for a in bp for j in m.areas[a])
+    for a in bp:
+        assert normal(m, a)[2] > 0, a                # local 3 up -> water on "Top"
+    for a in m.roof_areas:
+        assert normal(m, a)[2] > 0, a
+    centre = m.ids.block("joint", "baseplate").start
+    assert m.joints[centre] == (0.0, 0.0, 0.0)
+    assert all(m.areas[a][0] == centre for a in bp[16:])
+
+
+def test_roof_is_a_spherical_cap_on_the_top_ring():
+    m = capped()                                     # R 10, H 8, crown 16
+    rise = 16.0 - math.sqrt(16.0 ** 2 - 10.0 ** 2)
+    assert m.roof_rise == pytest.approx(rise)
+    assert m.roof_z(10.0) == pytest.approx(8.0)
+    crown = m.ids.block("joint", "roof").start
+    assert m.joints[crown] == pytest.approx((0.0, 0.0, 8.0 + rise))
+    for j in m.cap_joints["roof"]:
+        x, y, z = m.joints[j]
+        assert math.hypot(x, y) ** 2 + (z - (8.0 + rise - 16.0)) ** 2 == pytest.approx(16.0 ** 2)
+
+
+def test_roof_ring_frames_close_the_eave():
+    m = capped()
+    fr = [m.frames[f] for f in sorted(m.frames)]
+    assert [i for i, _ in fr] == m.top_joints and fr[-1][1] == m.top_joints[0]
+    assert set(m.frame_section.values()) == {"ROOF_RING"}
+    assert m.frame_sections["ROOF_RING"]["Shape"] == "Double Angle"
+    assert m.frame_sections["ROOF_RING"]["t2"] == 2 * m.spec.roof_ring_leg
+    assert not capped(roof_ring=False).frames
+
+
+def test_baseplate_pressure_face_and_restraints():
+    m = capped()
+    t = parse_s2k(s2k_text(m))
+    press = {r["AREA"]: r for r in t["AREA LOADS - SURFACE PRESSURE"]}
+    assert press["1"]["FACE"] == "Bottom"
+    for a in m.baseplate_areas:
+        assert press[str(a)]["FACE"] == "Top" and float(press[str(a)]["PRESSURE"]) == pytest.approx(0.0624 * 8)
+    assert not any(str(a) in press for a in m.roof_areas)
+    rest = {r["JOINT"]: r for r in t["JOINT RESTRAINT ASSIGNMENTS"]}
+    for j in m.baseplate_interior_joints:
+        assert (rest[str(j)]["U1"], rest[str(j)]["U3"]) == ("No", "Yes")
+    assert not any(str(j) in rest for j in m.cap_joints["roof"])
+
+
+def test_cap_tables_and_groups_written():
+    m = capped()
+    t = parse_s2k(s2k_text(m))
+    conn = {r["AREA"]: r for r in t["CONNECTIVITY - AREA"]}
+    assert conn["33"]["NUMJOINTS"] == "4" and conn["56"]["NUMJOINTS"] == "3" and "JOINT4" not in conn["56"]
+    assert [r["SECTION"] for r in t["AREA SECTION PROPERTIES"]] == ["WALL_T1", "BASEPLATE", "ROOF"]
+    assert len(t["CONNECTIVITY - FRAME"]) == 8 and t["CONNECTIVITY - FRAME"][0]["JOINTI"] == "33"
+    assert t["FRAME SECTION PROPERTIES 01 - GENERAL"][0]["SECTIONNAME"] == "ROOF_RING"
+    assert t["FRAME SECTION ASSIGNMENTS"][0]["ANALSECT"] == "ROOF_RING"
+    g = m.groups()
+    assert list(g)[-3:] == ["BASEPLATE", "ROOF", "ROOF_RING"]
+    assert g["ROOF_RING"] == ([], [], list(range(1, 9)))
+    asg = [r for r in t["GROUPS 2 - ASSIGNMENTS"] if r["GROUPNAME"] == "ROOF_RING"]
+    assert len(asg) == 8 and asg[0]["OBJECTTYPE"] == "Frame"
+    plain = parse_s2k(s2k_text(small()))
+    assert "CONNECTIVITY - FRAME" not in plain and "FRAME SECTION PROPERTIES 01 - GENERAL" not in plain
+
+
+@pytest.mark.parametrize("raw, msg", [
+    ({"roof": {"enabled": True, "crown_radius": 5}, "geometry": {"radius": 10}}, "crown_radius"),
+    ({"baseplate": {"enabled": True, "n_r": 0}}, "n_r at least 1"),
+    ({"roof": {"crownradius": 5}}, "unknown key 'crownradius'"),
+])
+def test_cap_config_validation(raw, msg):
+    with pytest.raises(ValueError, match=msg):
+        spec_from_dict(raw)
+
+
 # --- SAP groups ----------------------------------------------------------------
 
 def test_group_membership():
     m = small()                                   # n_theta 8, n_z 4, one plate course
     g = m.groups()
     assert list(g) == ["WALL", "COURSE_01", "BASE_RING", "TOP_RING"]
-    assert g["WALL"] == (list(range(1, 33)), [])
-    assert g["COURSE_01"] == (list(range(1, 33)), [])
-    assert g["BASE_RING"] == ([], list(range(1, 9))) and g["TOP_RING"] == ([], list(range(33, 41)))
-    assert sum(len(a) for a, _ in g.values()) == 32 * 2       # every shell in WALL and one course
+    assert g["WALL"] == (list(range(1, 33)), [], [])
+    assert g["COURSE_01"] == (list(range(1, 33)), [], [])
+    assert g["BASE_RING"] == ([], list(range(1, 9)), []) and g["TOP_RING"] == ([], list(range(33, 41)), [])
+    assert sum(len(a) for a, _, _ in g.values()) == 32 * 2    # every shell in WALL and one course
 
 
 def test_group_tables_written_and_switchable():
