@@ -1,5 +1,7 @@
-# Example tank config -- the TankSpec defaults, round numbers, not a real project.
-# Real configs live beside it and are gitignored (configs/* except this file).
+# TRACKED TEST FIXTURE -- the TankSpec defaults, round numbers, not a real project.
+# Pinned to tests/golden/example.s2k (changing it fails the golden test). Real configs
+# live beside it and are gitignored (configs/* except this file); never edit this one
+# toward a real tank -- copy it.
 #     python build_tank.py configs/example.toml
 # Units are kip, ft, F throughout.
 

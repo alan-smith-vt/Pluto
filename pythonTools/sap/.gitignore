@@ -1,10 +1,8 @@
 models/
 __pycache__/
 *.pyc
-# New configs / goldens are project-specific and stay local. The generic ones below are tracked.
+# Configs and goldens are project data and stay local; only the generic example is tracked.
 configs/*
 !configs/example.toml
-!configs/tank.toml
-!configs/tank_hoop.toml
 tests/golden/*
-!tests/golden/tank_hoop.s2k
+!tests/golden/example.s2k

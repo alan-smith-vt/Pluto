@@ -1,10 +1,11 @@
 """tankbuilder tests.  Run from pythonTools/sap:  python -m pytest -q
 
-The golden test is the contract: tests/golden/tank_hoop.s2k is the file SAP2000
-v25 imported and ran (the tank_hoop model, 2026-08-13; generic dimensions,
-tracked). New configs and goldens are gitignored by default (project data);
-the golden tests skip if the files are absent. Any change to the writer must
-keep the golden byte-identical or regenerate it on purpose.
+The golden test is the contract: tests/golden/example.s2k is what the writer
+produced for configs/example.toml on 2026-09-03, with the writer that was
+byte-identical to the file SAP2000 v25 imported and ran (the SapViewer
+tank_hoop model). Any change to the writer must keep it byte-identical or
+regenerate it on purpose:  python build_tank.py configs/example.toml -o tests/golden/example.s2k
+Other configs and goldens are gitignored (project data).
 """
 
 from __future__ import annotations
@@ -30,25 +31,18 @@ GOLDEN = HERE / "golden"
 
 # --- golden -----------------------------------------------------------------
 
-needs_golden = pytest.mark.skipif(
-    not (GOLDEN / "tank_hoop.s2k").exists() or not (CONFIGS / "tank_hoop.toml").exists(),
-    reason="golden files absent")
+def test_example_matches_golden():
+    spec, _ = load_config(CONFIGS / "example.toml")
+    assert s2k_text(TankModel(spec)) == (GOLDEN / "example.s2k").read_text()
 
 
-@needs_golden
-def test_tank_hoop_matches_sap_run_file():
-    spec, _ = load_config(CONFIGS / "tank_hoop.toml")
-    assert s2k_text(TankModel(spec)) == (GOLDEN / "tank_hoop.s2k").read_text()
-
-
-@needs_golden
 def test_cli_writes_the_same_file(tmp_path):
     out = tmp_path / "t.s2k"
     r = subprocess.run([sys.executable, str(ROOT / "build_tank.py"),
-                        str(CONFIGS / "tank_hoop.toml"), "-o", str(out)],
+                        str(CONFIGS / "example.toml"), "-o", str(out)],
                        capture_output=True, text=True, check=True)
     assert "756 joints, 720 shells, base released radially" in r.stdout
-    assert out.read_text() == (GOLDEN / "tank_hoop.s2k").read_text()
+    assert out.read_text() == (GOLDEN / "example.s2k").read_text()
 
 
 # --- config -----------------------------------------------------------------
@@ -60,14 +54,6 @@ def test_example_config_loads_and_builds():
     m = TankModel(spec)
     assert len(m.joints) == 36 * 21 and len(m.areas) == 36 * 20
     assert "END TABLE DATA" in s2k_text(m)
-
-
-def test_cli_runs_on_example(tmp_path):
-    out = tmp_path / "e.s2k"
-    r = subprocess.run([sys.executable, str(ROOT / "build_tank.py"),
-                        str(CONFIGS / "example.toml"), "-o", str(out)],
-                       capture_output=True, text=True, check=True)
-    assert "756 joints, 720 shells, base released radially" in r.stdout and out.exists()
 
 
 @pytest.mark.parametrize("raw, msg", [
