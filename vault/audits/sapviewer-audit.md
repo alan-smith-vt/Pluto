@@ -5,6 +5,11 @@ created: 2026-09-03
 ---
 
 Quick read-only audit of `../SapViewer` (2026-09-03) ahead of folding it into Pluto.
+
+**Status 2026-09-03 (later):** folded in as C#, not Python -- `scripts/arms/SapToPluto.cs`
+(usage: [[vault/arms/sap-s2k-to-viewer|sap-s2k-to-viewer]]); Python archived to
+`pythonTools/sap/`. The UI redesign (`sample/`, `docs/ui/`) was **not** carried over by
+user decision (existing Pluto UI preferred). Items 3-5 below are therefore closed.
 Companion: [[vault/handoffs/handoff|handoff]], [[vault/format/v3-schema|v3-schema]].
 
 ## What it is

@@ -106,7 +106,7 @@ Verified by compiling with `<LangVersion>5</LangVersion>`.
 beam domain becomes domain 0; with no load cases no `FLDS` blocks are written (`Write()`
 and `Write(false)` are then equivalent). At least one of elements / beams is required.
 
-## Bridges (`scripts/exporters/`)
+## Bridges (`scripts/arms/`)
 
 End-to-end usage of the pipe arm (CSV → beams → files → viewer): [[vault/arms/pipe-csv-to-viewer|pipe-csv-to-viewer]].
 
@@ -114,6 +114,11 @@ End-to-end usage of the pipe arm (CSV → beams → files → viewer): [[vault/a
   dedupes weld points into nodes, one `Pipe` section per distinct diameter (+ `UNSIZED`),
   `PartOid` as beam label, sidecar groups for class / run / star-arms / unsized / src.
   Writes `<outBase>.bin` + `<outBase>.features.json`. Verified C# 5 build and JS read.
+- `SteelToPluto.cs` / `CombinedToPluto.cs` -- steel W-shape CSV, and pipes + steel in one
+  file: [[vault/arms/steel-csv-to-viewer|steel-csv-to-viewer]].
+- `SapToPluto.cs` -- SAP2000 `.s2k` shells + results -> v4 + sidecar via the generic
+  `AppendShellValues(List<CornerRecord>, kind)` (raw values, no STAAD unit conversion;
+  added 2026-09-03): [[vault/arms/sap-s2k-to-viewer|sap-s2k-to-viewer]].
 
 ## Profiles
 
@@ -132,10 +137,14 @@ All blocks 8-byte aligned. Directory sits right after the header with final coun
 `APPEND` flag needed). `GeometryHash` property exposes the hash after construction — hand it
 to `FeaturesSidecar.GeometryHash` so the sidecar binds.
 
-## Placeholders still to fill (as in v3)
+## Append methods
 
-`StressNames`, `DispNames`, `nameUnits()`, `BuildComponents()` are `TODO` catalogs that
-live with the STAAD enums; port them with the scripts.
+`AppendStresses` (STAAD `StressRecord`, converts canonical lb/in units via
+`StressViewForce`), `AppendDisplacements` (raw `Disp.DR`, fans to shell corners and beam
+ends), `AppendDsr` / `AppendStr`, `AppendBeamForces(records, kind)`, and the generic
+`AppendShellValues(records, kind)` for any shell component kind, written raw. The
+`StressNames` / `DispNames` / `nameUnits()` / `BuildComponents()` catalogs were ported from
+the v3 writer on 2026-09-03.
 
 ## Related
 

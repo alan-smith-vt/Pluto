@@ -6,7 +6,7 @@ created: 2026-08-27
 
 # Pipe CSV → viewer — usage
 
-The SP3D piping arm end to end, as run in the production environment (everything under `C:\Temp`, PowerShell 5.1, C# 5 via `Add-Type`). Source files: `scripts/exporters/PipeCsvReader.cs` (CSV → beams) and `scripts/exporters/PipeToPluto.cs` (beams → `.bin` + `.features.json`), plus `scripts/lib/writers/RawViewerWriter.cs`, `scripts/lib/sidecar/FeaturesSidecar.cs` and the rest of `scripts/lib/` (the writer needs `Types.cs`, which needs the lib). Since 2026-09-03 the exporters are part of the single `Config.ps1` Add-Type batch — dot-source it and everything is loaded; the old production-box `Stubs.cs` is retired.
+The SP3D piping arm end to end, as run in the production environment (everything under `C:\Temp`, PowerShell 5.1, C# 5 via `Add-Type`). Source files: `scripts/arms/PipeCsvReader.cs` (CSV → beams) and `scripts/arms/PipeToPluto.cs` (beams → `.bin` + `.features.json`), plus `scripts/lib/writers/RawViewerWriter.cs`, `scripts/lib/sidecar/FeaturesSidecar.cs` and the rest of `scripts/lib/` (the writer needs `Types.cs`, which needs the lib). Since 2026-09-03 the exporters are part of the single `Config.ps1` Add-Type batch — dot-source it and everything is loaded; the old production-box `Stubs.cs` is retired.
 
 ## 1. Get the CSV
 
@@ -21,7 +21,7 @@ Columns (v4.2): `ConnOid, PartOid, PartClass, X, Y, Z, RunOid, RunName, Room, Ud
 ## 2. Compile (fresh window)
 
 ```powershell
-. <repo>\scripts\lib\Config.ps1   # one Add-Type batch: scripts/lib + scripts/exporters
+. <repo>\scripts\lib\Config.ps1   # one Add-Type batch: scripts/lib + scripts/arms
 ```
 
 Everything loads in one `Add-Type` call (types can't be redefined: edit → new window). `Types.cs` defines `Vec3`; `PipeCsvReader.cs` defines `PipeBeam`. Do not also load the old `Stubs.cs`.

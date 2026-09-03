@@ -260,13 +260,26 @@ public class Sap2kParser
 // -------------------------------------------------------------------
 
 public static class Sap2kReader {
+	// STAAD pathway: SAP global (Z up) is rotated to STAAD global (Y up).
 	public static GeometryResult ExtractGeometry(string sapFilePath)
+	{
+		return ExtractGeometry(sapFilePath, true);
+	}
+	
+	// toStaadAxes = false keeps SAP global coordinates as-is (the Pluto viewer
+	// arm, scripts/arms/SapToPluto.cs, 2026-09-03; the viewer has its own Z-up toggle).
+	public static GeometryResult ExtractGeometry(string sapFilePath, bool toStaadAxes)
 	{
 		Console.WriteLine("Start");
 		Sap2kParser parser = new Sap2kParser(sapFilePath);
 		Console.WriteLine("File Parsed");
-		
-		List<Node> nodeList = GetJoints(parser);
+		return ExtractGeometry(parser, toStaadAxes);
+	}
+	
+	// Reuse an already-parsed file (results tables may live in the same .s2k).
+	public static GeometryResult ExtractGeometry(Sap2kParser parser, bool toStaadAxes)
+	{
+		List<Node> nodeList = GetJoints(parser, toStaadAxes);
 		Dictionary<int, Node> nodeDict = nodeList.ToDictionary(n => n.id);
 		Console.WriteLine(string.Format("Nodes Extracted {0}",nodeList.Count));
 		
@@ -279,7 +292,7 @@ public static class Sap2kReader {
 	}
 	
 	// Extract joints with global-coord transformation applied where needed
-	private static List<Node> GetJoints(Sap2kParser parser)
+	private static List<Node> GetJoints(Sap2kParser parser, bool toStaadAxes)
 	{
 		Dictionary<string, Sap2kCoordSystem> systems = BuildSystems(parser);
 		List<Node> joints = new List<Node>();
@@ -326,8 +339,11 @@ public static class Sap2kReader {
 				
 			}
 			// Convert from Sap Global (Z up) to Staad Global (Y up)
-			var StaadXyz = new Vector3(j.xyz.X, j.xyz.Z, -j.xyz.Y);
-			j.xyz = StaadXyz;
+			if (toStaadAxes)
+			{
+				var StaadXyz = new Vector3(j.xyz.X, j.xyz.Z, -j.xyz.Y);
+				j.xyz = StaadXyz;
+			}
 			
 			joints.Add(j);
 		}

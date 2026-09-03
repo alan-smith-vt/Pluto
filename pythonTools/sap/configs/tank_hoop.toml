@@ -1,0 +1,37 @@
+# Cylindrical steel tank -- base local axes rotated and the radial direction
+# released, so the wall carries hoop stress instead of base bending.
+# Identical to tank.toml apart from [supports] and [output].
+#     python3 sap/build_tank.py configs/tank_hoop.toml
+
+[geometry]
+radius    = 34.0
+height    = 32.0
+thickness = 0.0208333   # ft = 0.25 in, placeholder -- see tank.toml
+
+[mesh]
+n_theta = 36
+n_z     = 20
+
+[fluid]
+unit_weight   = 0.0624 	# kip / ft3
+fill_fraction = 1.0
+load_mode     = "uniform"
+
+[supports]
+# X tangential, Y radial outward (AngleA = theta - 90), then U2 freed.
+# Tangential and vertical stay pinned.
+base_local_axes = true
+release_radial  = true
+
+[material]
+name        = "A36"
+e           = 4176000.0 # kip / sf
+poisson     = 0.3
+unit_weight = 0.490 	#kip / ft3
+alpha       = 6.5e-06 	#1 / deg F
+
+[output]
+dir  = "../models"   # relative to this config file
+name = "tank_hoop"
+# The model is written to <dir>/<name>/<name>.s2k -- its own folder, because
+# SAP scatters .sdb/.msh/.Y_*/.LOG working files beside whatever it opens.

@@ -871,6 +871,49 @@ public class RawViewerWriter
         }
     }
 
+    // Generic per-corner shell record: Values[] fills the contiguous run of
+    // components of one kind. Written raw -- NO unit conversion (unlike
+    // AppendStresses, which converts STAAD canonical units). Used by arms
+    // whose results are already in the file's units (SAP .s2k, 2026-09-03).
+    public class CornerRecord
+    {
+        public int LC;
+        public int elemID;
+        public int node;
+        public float[] Values;
+    }
+
+    // Per-corner shell results for any component kind. Mirrors AppendBeamForces
+    // for the shell domain: kind names the run of the shell component list
+    // the record's Values[] fills; null = the whole per-LC list.
+    public void AppendShellValues(List<CornerRecord> records, string kind)
+    {
+        if (records == null) return;
+        if (layout == null) throw new Exception("AppendShellValues: writer was built without shell elements.");
+        if (nFieldLC == 0) throw new Exception("AppendShellValues: writer was built with no load cases (geometry-only).");
+        if (kind != null && !layout.HasKind(kind))
+            throw new Exception(string.Format("AppendShellValues: component layout has no '{0}' fields.", kind));
+        int start = kind == null ? 0 : layout.Start(kind);
+        int count = kind == null ? cornerComponents : layout.Count(kind);
+        using (MemoryMappedFile mmf = OpenMap())
+        using (MemoryMappedViewAccessor acc = mmf.CreateViewAccessor(0, 0, MemoryMappedFileAccess.ReadWrite))
+        {
+            foreach (CornerRecord r in records)
+            {
+                int plane = ResolveLcPlane(r.LC, "ShellValues");
+                int elemIndex;
+                if (!elemIdToIndex.TryGetValue(r.elemID, out elemIndex))
+                    throw new Exception(string.Format("AppendShellValues: element id {0} not in model.", r.elemID));
+                int slot = CornerSlotForNode(elemIndex, r.node);
+                if (slot < 0) continue;   // element-centre results mixed in -- skip
+                if (r.Values == null || r.Values.Length < count)
+                    throw new Exception(string.Format("AppendShellValues: record for elem {0} node {1} has {2} values, expected {3}.",
+                        r.elemID, r.node, (r.Values == null ? 0 : r.Values.Length), count));
+                acc.WriteArray(fieldOffsetShell + (FieldPos(plane, elemIndex, slot) + start) * FLOAT_SIZE, r.Values, 0, count);
+            }
+        }
+    }
+
     // ---- offset helpers ------------------------------------------------------
     private long FieldPos(int lc, int elemIndex, int slot)
     {

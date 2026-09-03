@@ -7,7 +7,7 @@ created: 2026-09-01
 # Steel CSV → viewer — usage
 
 W-shape members from the production-side SQL dump to a Pluto v4 beam-only file. One
-self-contained bridge: `scripts/exporters/SteelToPluto.cs` (CSV → members →
+self-contained bridge: `scripts/arms/SteelToPluto.cs` (CSV → members →
 `.bin` + `.features.json`). No viewer changes were needed — I sections and
 per-member orientation were already in `RawViewerWriter.SectionDef.IShape` and
 `beamGeometry.js`.
@@ -35,7 +35,7 @@ near-vertical member.
 ## 2. Run (production side, PowerShell 5.1, fresh window)
 
 ```powershell
-. <repo>\scripts\lib\Config.ps1   # one Add-Type batch: scripts/lib + scripts/exporters
+. <repo>\scripts\lib\Config.ps1   # one Add-Type batch: scripts/lib + scripts/arms
 $ex = New-Object SteelToPluto
 $ex.Rooms('C:\Temp\steel_v1.csv')                        # optional census
 $members = $ex.Build('C:\Temp\steel_v1.csv', '<room>')   # or $ex.Build($csv) for all
@@ -71,7 +71,7 @@ groups, worldOffset all correct).
 > [!note] Full start-to-finish recipe (incl. the pipe bbox fallback):
 > [[vault/arms/plant-combined-to-viewer|plant-combined-to-viewer]]. Below is the short form.
 
-`scripts/exporters/CombinedToPluto.cs`: one `.bin` + sidecar from both lists —
+`scripts/arms/CombinedToPluto.cs`: one `.bin` + sidecar from both lists —
 shared node table (a pipe point and a steel work point within 0.01 mm merge into
 one node), one recenter offset, merged section table, groups from both disciplines
 (discipline as tags `pipe`/`steel`, not umbrella groups — the viewer resolves one
@@ -79,7 +79,7 @@ group per element). Unprefixed `PartOid`/`MemberOid` labels. Unsized groups are
 `UNSIZED PIPE` (red) and `UNSIZED STEEL` (orange).
 
 ```powershell
-. <repo>\scripts\lib\Config.ps1   # one Add-Type batch: scripts/lib + scripts/exporters (CombinedToPluto included)
+. <repo>\scripts\lib\Config.ps1   # one Add-Type batch: scripts/lib + scripts/arms (CombinedToPluto included)
 $pipes = (New-Object PipeCsvReader).Build('C:\Temp\pipe_v4.csv', '<room>')
 $steel = (New-Object SteelToPluto).Build('C:\Temp\steel_v1.csv', '<room>')
 $r = [CombinedToPluto]::Export($pipes, $steel, 'C:\Temp\plant_<room>', '<plant>/combined/<room>', 'in')

@@ -29,7 +29,7 @@ of rescued.
 ## 1. Compile (fresh window every time a .cs changes)
 
 ```powershell
-. <repo>\scripts\lib\Config.ps1   # one Add-Type batch: scripts/lib + scripts/exporters
+. <repo>\scripts\lib\Config.ps1   # one Add-Type batch: scripts/lib + scripts/arms
 ```
 
 One call — the files reference each other. `PipeCsvReader.cs` defines
