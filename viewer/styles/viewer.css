@@ -113,26 +113,34 @@ input[type=file].fea-file::file-selector-button {
     font-size: 10px; cursor: pointer; margin-right: 8px;
 }
 
-/* === Colormap legend === */
-.fea-legend-wrap {
-    display: flex;
-    gap: 8px;
-    align-items: stretch;
+/* === Colormap legend (bottom-left overlay, horizontal bar) === */
+#legendOverlay {
+    position: fixed;
+    left: calc(272px + 16px);        /* clear the left control panel */
+    bottom: 14px;
+    width: 248px;
+    z-index: 12;
+    background: rgba(16, 16, 20, 0.86);
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 5px;
+    padding: 8px 8px 7px;
 }
+#legendOverlay #legendTitle { margin: 0 0 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #feaLegend {
-    width: 20px;
-    height: 132px;
+    display: block;
+    width: 232px;
+    height: 14px;
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 2px;
-    flex-shrink: 0;
 }
 .fea-legend-labels {
     display: flex;
-    flex-direction: column;
     justify-content: space-between;
     font-family: 'Consolas', monospace;
     font-size: 10px;
     color: #aaa;
+    margin-top: 3px;
 }
 
 /* === Readout (bottom-right overlay) === */

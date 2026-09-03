@@ -1449,11 +1449,14 @@ function drawLegend() {
     if (inCatMode()) {
         // Discrete controlling-check swatches, top = category 0.
         var n = Math.max(dsrIndices.length, 1);
+        var catHoriz = w >= h;          // same axis rule as the gradient below
         for (var i = 0; i < n; i++) {
             var c0 = FEAShaders.categoryColor(i);
             ctx.fillStyle = 'rgb(' + c0[0] + ',' + c0[1] + ',' + c0[2] + ')';
-            var y0 = Math.round(i * h / n), y1 = Math.round((i + 1) * h / n);
-            ctx.fillRect(0, y0, w, y1 - y0);
+            var span = catHoriz ? w : h;
+            var a0 = Math.round(i * span / n), a1 = Math.round((i + 1) * span / n);
+            if (catHoriz) ctx.fillRect(a0, 0, a1 - a0, h);
+            else ctx.fillRect(0, a0, w, a1 - a0);
         }
         elLegendLabels.style.display = 'none';
         elLegendCats.style.display = '';
@@ -1485,22 +1488,28 @@ function drawLegend() {
         ? (alarmThreshold - vMin) / Math.max(vMax - vMin, 1e-6)
         : Infinity;
     var aRGB = 'rgb(' + alarmColor[0] + ',' + alarmColor[1] + ',' + alarmColor[2] + ')';
-    for (var y = 0; y < h; y++) {
-        var t = 1 - y / (h - 1);                  // top = max
+    // Orientation follows the canvas aspect: wide = horizontal bar with min
+    // at the left, tall = vertical strip with max at the top. The CSS
+    // decides, so this can never disagree with what is on screen.
+    var horiz = w >= h;
+    var n = horiz ? w : h;
+    for (var i = 0; i < n; i++) {
+        var t = horiz ? i / (n - 1) : 1 - i / (n - 1);
         if (t >= tAlarm) {
             ctx.fillStyle = aRGB;
         } else {
             var c = FEAShaders.sampleAnchors(anchors, t);
             ctx.fillStyle = 'rgb(' + (c[0] | 0) + ',' + (c[1] | 0) + ',' + (c[2] | 0) + ')';
         }
-        ctx.fillRect(0, y, w, 1);
+        if (horiz) ctx.fillRect(i, 0, 1, h);
+        else ctx.fillRect(0, i, w, 1);
     }
     // Threshold tick so the alarm boundary is readable even when it sits
     // mid-gradient.
     if (alarmActive && tAlarm > 0 && tAlarm < 1) {
-        var ty = Math.round((1 - tAlarm) * (h - 1));
         ctx.fillStyle = '#fff';
-        ctx.fillRect(0, ty, w, 1);
+        if (horiz) ctx.fillRect(Math.round(tAlarm * (w - 1)), 0, 1, h);
+        else ctx.fillRect(0, Math.round((1 - tAlarm) * (h - 1)), w, 1);
     }
     elLegendMax.textContent = alarmActive && tAlarm <= 1
         ? '≥ ' + fmt(alarmThreshold, 4)

@@ -122,16 +122,6 @@
             <span class="fea-label" style="width:auto;">Max</span>
             <input type="text" id="feaMax" class="fea-input num">
         </div>
-        <div id="legendTitle" class="fea-hint" style="margin:9px 0 3px;">&mdash;</div>
-        <div class="fea-row fea-legend-wrap">
-            <canvas id="feaLegend" width="20" height="132"></canvas>
-            <div class="fea-legend-labels" id="feaLegendLabels">
-                <span id="feaLegendMax">&mdash;</span>
-                <span id="feaLegendMid">&mdash;</span>
-                <span id="feaLegendMin">&mdash;</span>
-            </div>
-            <div class="fea-legend-cats" id="feaLegendCats" style="display:none;"></div>
-        </div>
     </div>
 
     <details class="fea-section fea-details" id="beamSection" style="display:none;" open>
@@ -332,6 +322,20 @@
 
 <!-- Active-view caption, overlaid top-center on the canvas -->
 <div id="viewCaption">&mdash;</div>
+
+<!-- Colormap legend, anchored bottom-left on the canvas (moved out of the
+     left panel 2026-09-03, horizontal like the SapViewer layout). Same
+     element ids; drawLegend picks the axis from the canvas aspect. -->
+<div id="legendOverlay">
+    <div id="legendTitle" class="fea-hint">&mdash;</div>
+    <canvas id="feaLegend" width="232" height="14"></canvas>
+    <div class="fea-legend-labels" id="feaLegendLabels">
+        <span id="feaLegendMin">&mdash;</span>
+        <span id="feaLegendMid">&mdash;</span>
+        <span id="feaLegendMax">&mdash;</span>
+    </div>
+    <div class="fea-legend-cats" id="feaLegendCats" style="display:none;"></div>
+</div>
 
 <!-- Hover / pin readout, anchored bottom-right on the canvas (moved out of
      the left panel 2026-09-03). Same element ids; viewer.js is unchanged. -->
