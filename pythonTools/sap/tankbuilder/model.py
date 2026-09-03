@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 
+from .section import z_pair_outline, z_pair_section
 from .spec import TankSpec
 
 
@@ -37,7 +38,9 @@ class TankModel:
     area_section: id -> section name; sections: section name -> thickness;
     area_face: id -> "Bottom" | "Top", the wet face for the HYDRO pressure
     (absent = no pressure); frames: id -> (joint I, joint J);
-    frame_section: id -> section name; frame_sections: name -> property dict.
+    frame_section: id -> section name; frame_sections: name -> property dict;
+    frame_outlines: name -> (y, z) polygon for sections SAP has no shape for
+    (written beside the .s2k for the viewer).
     """
 
     def __init__(self, spec: TankSpec):
@@ -53,6 +56,7 @@ class TankModel:
         self.frames: dict[int, tuple[int, int]] = {}
         self.frame_section: dict[int, str] = {}
         self.frame_sections: dict[str, dict] = {}
+        self.frame_outlines: dict[str, list[tuple[float, float]]] = {}
         self.cap_joints: dict[str, list[int]] = {}   # interior joints of each cap (rim excluded)
         self._build_levels()
         self._build_wall()
@@ -228,10 +232,12 @@ class TankModel:
         self._polar_cap("roof", self.top_joints, s.roof_n_r, self.roof_z, "ROOF", None)
         if s.roof_ring:
             # compression ring at the eave: (2) equal-leg angles back to back
-            self.frame_sections["ROOF_RING"] = {
-                "Shape": "Double Angle", "t3": s.roof_ring_leg, "t2": 2.0 * s.roof_ring_leg,
-                "tf": s.roof_ring_thickness, "tw": s.roof_ring_thickness, "dis": 0.0,
-            }
+            # forming a Z (not a T) -- SAP has no such shape, so a General
+            # section carries the computed properties and the outline goes to
+            # the viewer via the .outlines.txt sidecar.
+            outline = z_pair_outline(s.roof_ring_leg, s.roof_ring_thickness)
+            self.frame_outlines["ROOF_RING"] = outline
+            self.frame_sections["ROOF_RING"] = z_pair_section(s.roof_ring_leg, s.roof_ring_thickness)
             top = self.top_joints
             frames = self.ids.claim("frame", "roof_ring", s.n_theta)
             for k, fid in enumerate(frames):

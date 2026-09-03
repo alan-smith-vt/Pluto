@@ -22,7 +22,8 @@ ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))
 
 from tankbuilder import Course, TankModel, TankSpec, load_config, parse_s2k  # noqa: E402
-from tankbuilder.s2k import s2k_text  # noqa: E402
+from tankbuilder.s2k import outlines_text, s2k_text  # noqa: E402
+from tankbuilder.section import polygon_properties, z_pair_outline, z_pair_section  # noqa: E402
 from tankbuilder.spec import spec_from_dict  # noqa: E402
 
 CONFIGS = ROOT / "configs"
@@ -33,7 +34,9 @@ GOLDEN = HERE / "golden"
 
 def test_example_matches_golden():
     spec, _ = load_config(CONFIGS / "example.toml")
-    assert s2k_text(TankModel(spec)) == (GOLDEN / "example.s2k").read_text()
+    m = TankModel(spec)
+    assert s2k_text(m) == (GOLDEN / "example.s2k").read_text()
+    assert outlines_text(m) == (GOLDEN / "example.outlines.txt").read_text()
 
 
 def test_cli_writes_the_same_file(tmp_path):
@@ -287,9 +290,46 @@ def test_roof_ring_frames_close_the_eave():
     fr = [m.frames[f] for f in sorted(m.frames)]
     assert [i for i, _ in fr] == m.top_joints and fr[-1][1] == m.top_joints[0]
     assert set(m.frame_section.values()) == {"ROOF_RING"}
-    assert m.frame_sections["ROOF_RING"]["Shape"] == "Double Angle"
-    assert m.frame_sections["ROOF_RING"]["t2"] == 2 * m.spec.roof_ring_leg
+    sec = m.frame_sections["ROOF_RING"]
+    assert sec["Shape"] == "General" and sec["t3"] == pytest.approx(0.25) and sec["t2"] == pytest.approx(0.5)
+    assert sec["Area"] == pytest.approx(2 * (2 * 0.25 * 0.03125 - 0.03125 ** 2))
     assert not capped(roof_ring=False).frames
+    assert "ROOF_RING" in m.frame_outlines
+
+
+def test_z_pair_section_properties():
+    leg, t = 0.25, 0.03125
+    pts = z_pair_outline(leg, t)
+    p = polygon_properties(pts)
+    assert p["A"] == pytest.approx(2 * (2 * leg * t - t * t))
+    assert (p["cy"], p["cz"]) == pytest.approx((0.0, 0.0), abs=1e-12)   # centred
+    # a Z is antisymmetric: Iyz != 0, and the flanges make Izz > 0 with both flanges counted
+    assert p["Iyz"] != pytest.approx(0.0)
+    # strong axis: same as the two angles about their shared back (thin-wall check)
+    web = 2 * t * leg ** 3 / 12
+    flange = 2 * ((leg - t) * t ** 3 / 12 + (leg - t) * t * (leg / 2 - t / 2) ** 2)
+    assert p["Iyy"] == pytest.approx(web + flange, rel=1e-9)
+    g = z_pair_section(leg, t)
+    assert g["I33"] == pytest.approx(p["Iyy"]) and g["I22"] == pytest.approx(p["Izz"])
+    assert g["TorsConst"] == pytest.approx(leg * (2 * t) ** 3 / 3 + 2 * (leg - t) * t ** 3 / 3)
+    assert g["AS2"] == pytest.approx(2 * leg * t) and g["AS3"] == pytest.approx(2 * (leg - t) * t) and g["R33"] > 0
+    # square: no product of inertia, equal moments
+    sq = polygon_properties([(-1, -1), (1, -1), (1, 1), (-1, 1)])
+    assert sq["A"] == 4 and sq["Iyy"] == pytest.approx(4 / 3) and sq["Iyz"] == pytest.approx(0)
+
+
+def test_outlines_sidecar_written_beside_the_s2k(tmp_path):
+    from tankbuilder import write_s2k
+    m = capped()
+    out = tmp_path / "t.s2k"
+    write_s2k(m, out)
+    side = tmp_path / "t.outlines.txt"
+    assert side.exists()
+    line = side.read_text().splitlines()[0]
+    assert line.startswith("ROOF_RING: ") and len(line.split(": ")[1].split()) == 8
+    assert outlines_text(m) == side.read_text()
+    write_s2k(small(), out)                        # no frames -> stale sidecar removed
+    assert not side.exists()
 
 
 def test_baseplate_pressure_face_and_restraints():
@@ -313,7 +353,8 @@ def test_cap_tables_and_groups_written():
     assert conn["33"]["NUMJOINTS"] == "4" and conn["56"]["NUMJOINTS"] == "3" and "JOINT4" not in conn["56"]
     assert [r["SECTION"] for r in t["AREA SECTION PROPERTIES"]] == ["WALL_T1", "BASEPLATE", "ROOF"]
     assert len(t["CONNECTIVITY - FRAME"]) == 8 and t["CONNECTIVITY - FRAME"][0]["JOINTI"] == "33"
-    assert t["FRAME SECTION PROPERTIES 01 - GENERAL"][0]["SECTIONNAME"] == "ROOF_RING"
+    fs = t["FRAME SECTION PROPERTIES 01 - GENERAL"][0]
+    assert fs["SECTIONNAME"] == "ROOF_RING" and fs["SHAPE"] == "General" and float(fs["I33"]) > 0
     assert t["FRAME SECTION ASSIGNMENTS"][0]["ANALSECT"] == "ROOF_RING"
     g = m.groups()
     assert list(g)[-3:] == ["BASEPLATE", "ROOF", "ROOF_RING"]

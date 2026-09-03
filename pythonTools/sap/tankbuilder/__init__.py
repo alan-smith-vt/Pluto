@@ -23,9 +23,9 @@ Geometry / numbering conventions (SapToPluto and the tests rely on these):
 
 from .spec import GAMMA_WATER, G_ACCEL, STEEL, Course, TankSpec, load_config
 from .model import TankModel
-from .s2k import S2KWriter, parse_s2k, write_s2k
+from .s2k import S2KWriter, outlines_text, parse_s2k, write_s2k
 
 __all__ = [
     "GAMMA_WATER", "G_ACCEL", "STEEL", "Course", "TankSpec", "load_config",
-    "TankModel", "S2KWriter", "parse_s2k", "write_s2k",
+    "TankModel", "S2KWriter", "outlines_text", "parse_s2k", "write_s2k",
 ]

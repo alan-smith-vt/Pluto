@@ -77,7 +77,8 @@ def section_tables(model: TankModel) -> list[tuple[str, list[str]]]:
             for name, t in model.sections.items()]),
     ]
     if model.frame_sections:
-        # Shape + dimensions only; SAP computes the section properties on import.
+        # Shape + dimensions for SAP's own shapes; Shape=General rows carry the
+        # computed properties (section.general_section).
         # NOTE: not yet verified against the v25 importer (first frames in this
         # generator, 2026-09-03) -- if it rejects the table, the field names are
         # the suspect, not the values.
@@ -211,8 +212,22 @@ def s2k_text(model: TankModel) -> str:
     return w.text()
 
 
+def outlines_text(model: TankModel) -> str:
+    """Section outlines for the viewer: one line per section,
+    NAME: y,z y,z ... (section-local, centroid origin, file length units).
+    SapToPluto reads <model>.outlines.txt beside the .s2k when it exists."""
+    return "".join(
+        name + ": " + " ".join(f"{_fmt(y)},{_fmt(z)}" for y, z in pts) + "\n"
+        for name, pts in model.frame_outlines.items())
+
+
 def write_s2k(model: TankModel, path: Path) -> None:
     path.write_text(s2k_text(model))
+    outlines = path.with_suffix(".outlines.txt")
+    if model.frame_outlines:
+        outlines.write_text(outlines_text(model))
+    elif outlines.exists():
+        outlines.unlink()
 
 
 # --- reader -----------------------------------------------------------------

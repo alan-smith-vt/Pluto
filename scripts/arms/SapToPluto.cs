@@ -35,8 +35,15 @@ using System.Text;
 //                                 Tee map to the writer's parametric sections;
 //                                 Double Angle draws as a Tee (stem = 2 tw);
 //                                 unknown shapes get a small RECT placeholder.
+//   <model>.outlines.txt         OPTIONAL, beside the model .s2k: "NAME: y,z y,z ..."
+//                                 per section (section-local, centroid origin,
+//                                 file units) -> POLY outline, wins over Shape.
+//                                 The tank builder writes it for its Z eave ring.
 //                                 Local 2 = SAP default (vertical plane; +X for
 //                                 vertical members); roll angles are NOT read.
+//                                 Viewer frame: z = x cross y carries the depth
+//                                 (schema 4.3), so LocalY = local2 cross local1
+//                                 = MINUS SAP local 3.
 //                                 Beam ends get the joint displacements; frame
 //                                 forces are not exported yet.
 //   ELEMENT FORCES - AREA SHELLS -> per-corner "stress" components, SAP order
@@ -161,6 +168,7 @@ public class SapToPluto
             string s;
             if (r.TryGetValue("SectionName", out s)) frameSecProps[s] = r;
         }
+        Dictionary<string, float[][]> outlines = ReadOutlines(Path.ChangeExtension(modelS2k, ".outlines.txt"));
         var beams = new Dictionary<int, RawViewerWriter.BeamMember>();
         var beamLabels = new Dictionary<int, string>();
         var sectionDefs = new List<RawViewerWriter.SectionDef>();
@@ -180,8 +188,11 @@ public class SapToPluto
             if (!sectionIndex.TryGetValue(secName, out si))
             {
                 Dictionary<string, string> props;
-                bool known;
-                RawViewerWriter.SectionDef def = FrameSection(secName, frameSecProps.TryGetValue(secName, out props) ? props : null, out known);
+                bool known = true;
+                float[][] outline;
+                RawViewerWriter.SectionDef def;
+                if (outlines.TryGetValue(secName, out outline)) def = RawViewerWriter.SectionDef.Poly(secName, outline);
+                else def = FrameSection(secName, frameSecProps.TryGetValue(secName, out props) ? props : null, out known);
                 if (!known) res.FramesUnknownShape++;
                 si = sectionDefs.Count;
                 sectionDefs.Add(def);
@@ -189,7 +200,7 @@ public class SapToPluto
             }
             var m = new RawViewerWriter.BeamMember();
             m.Id = fid; m.NodeA = a; m.NodeB = b; m.SectionIndex = si;
-            m.LocalY = DefaultLocal2(na, nb);
+            m.LocalY = DefaultLocalY(na, nb);
             beams[fid] = m;
             beamLabels[fid] = f;
             Add(beamsBySection, beamSectionOrder, secName, (uint)fid);
@@ -566,16 +577,43 @@ public class SapToPluto
         return RawViewerWriter.SectionDef.Rect(name, d, d);
     }
 
-    // SAP default frame local 2: in the vertical plane through the member (the
-    // projection of +Z perpendicular to the axis); +X for vertical members.
-    static double[] DefaultLocal2(Node a, Node b)
+    // "<NAME>: y,z y,z ..." per line; blank lines and lines without ':' skipped.
+    static Dictionary<string, float[][]> ReadOutlines(string path)
+    {
+        var map = new Dictionary<string, float[][]>(StringComparer.OrdinalIgnoreCase);
+        if (path == null || !File.Exists(path)) return map;
+        foreach (string raw in File.ReadAllLines(path))
+        {
+            int colon = raw.IndexOf(':');
+            if (colon <= 0) continue;
+            string name = raw.Substring(0, colon).Trim();
+            string[] pairs = raw.Substring(colon + 1).Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+            var pts = new List<float[]>();
+            foreach (string pr in pairs)
+            {
+                string[] yz = pr.Split(',');
+                if (yz.Length != 2) continue;
+                pts.Add(new[] { float.Parse(yz[0], CultureInfo.InvariantCulture), float.Parse(yz[1], CultureInfo.InvariantCulture) });
+            }
+            if (pts.Count >= 3) map[name] = pts.ToArray();
+        }
+        return map;
+    }
+
+    // Viewer local y for a SAP frame with default axes. SAP local 2 (the depth
+    // direction) is the projection of +Z perpendicular to the member, or +X for
+    // a vertical member. The viewer puts the depth along z = x cross y, so
+    // y = local2 cross local1 (= minus SAP local 3).
+    static double[] DefaultLocalY(Node a, Node b)
     {
         double dx = b.xyz.X - a.xyz.X, dy = b.xyz.Y - a.xyz.Y, dz = b.xyz.Z - a.xyz.Z;
         double len = Math.Sqrt(dx * dx + dy * dy + dz * dz);
-        if (len < 1e-12) return new double[] { 0, 0, 1 };
+        if (len < 1e-12) return new double[] { 0, 1, 0 };
         double tx = dx / len, ty = dy / len, tz = dz / len;
-        if (Math.Abs(tz) > 1.0 - 1e-6) return new double[] { 1, 0, 0 };
-        double yx = -tz * tx, yy = -tz * ty, yz = 1.0 - tz * tz;     // Z - (Z.t) t
+        double ux, uy, uz;                                           // desired local 2
+        if (Math.Abs(tz) > 1.0 - 1e-6) { ux = 1; uy = 0; uz = 0; }
+        else { ux = -tz * tx; uy = -tz * ty; uz = 1.0 - tz * tz; }
+        double yx = uy * tz - uz * ty, yy = uz * tx - ux * tz, yz = ux * ty - uy * tx;   // u cross t
         double n = Math.Sqrt(yx * yx + yy * yy + yz * yz);
         return new double[] { yx / n, yy / n, yz / n };
     }

@@ -16,7 +16,7 @@ TABLE:  "AREA SECTION PROPERTIES"
    Section=ROOF   Material=A36   MatAngle=0   AreaType=Shell   Type=Shell-Thin   Thickness=0.0208333   BendThick=0.0208333   Color=Gray8Dark
 
 TABLE:  "FRAME SECTION PROPERTIES 01 - GENERAL"
-   SectionName=ROOF_RING   Material=A36   Shape="Double Angle"   t3=0.25   t2=0.5   tf=0.03125   tw=0.03125   dis=0   Color=Yellow
+   SectionName=ROOF_RING   Material=A36   Shape=General   t3=0.25   t2=0.5   Area=0.029296875   TorsConst=2.47955322e-05   I33=0.000246047974   I22=0.000329971313   I23=-0.000210285187   AS2=0.015625   AS3=0.013671875   S33=0.00196838379   S22=0.00131988525   Z33=0.00196838379   Z22=0.00131988525   R33=0.0916429894   R22=0.10612738   Color=Yellow
 
 TABLE:  "JOINT COORDINATES"
    Joint=1   CoordSys=GLOBAL   CoordType=Cartesian   XorR=30   Y=0   Z=0
@@ -3485,42 +3485,42 @@ TABLE:  "CONNECTIVITY - FRAME"
    Frame=36   JointI=756   JointJ=721   IsCurved=No
 
 TABLE:  "FRAME SECTION ASSIGNMENTS"
-   Frame=1   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=2   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=3   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=4   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=5   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=6   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=7   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=8   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=9   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=10   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=11   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=12   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=13   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=14   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=15   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=16   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=17   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=18   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=19   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=20   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=21   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=22   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=23   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=24   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=25   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=26   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=27   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=28   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=29   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=30   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=31   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=32   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=33   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=34   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=35   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
-   Frame=36   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=1   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=2   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=3   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=4   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=5   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=6   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=7   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=8   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=9   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=10   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=11   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=12   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=13   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=14   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=15   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=16   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=17   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=18   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=19   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=20   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=21   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=22   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=23   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=24   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=25   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=26   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=27   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=28   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=29   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=30   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=31   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=32   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=33   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=34   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=35   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
+   Frame=36   SectionType=General   AutoSelect=N.A.   AnalSect=ROOF_RING   DesignSect=ROOF_RING   MatProp=Default
 
 TABLE:  "GROUPS 1 - DEFINITIONS"
    GroupName=WALL   Selection=Yes   SectionCut=Yes   Steel=Yes   Concrete=Yes   Aluminum=Yes   ColdFormed=Yes   Stage=Yes   Bridge=Yes   AutoSeismic=No   AutoWind=No   SelDesSteel=No   SelDesAlum=No   SelDesCold=No   MassWeight=Yes   Color=Green
