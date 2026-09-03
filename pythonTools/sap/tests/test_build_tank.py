@@ -291,7 +291,7 @@ def test_roof_ring_frames_close_the_eave():
     assert [i for i, _ in fr] == m.top_joints and fr[-1][1] == m.top_joints[0]
     assert set(m.frame_section.values()) == {"ROOF_RING"}
     sec = m.frame_sections["ROOF_RING"]
-    assert sec["Shape"] == "General" and sec["t3"] == pytest.approx(0.25) and sec["t2"] == pytest.approx(0.5)
+    assert sec["Shape"] == "General" and sec["t3"] == pytest.approx(0.5) and sec["t2"] == pytest.approx(0.25)
     assert sec["Area"] == pytest.approx(2 * (2 * 0.25 * 0.03125 - 0.03125 ** 2))
     assert not capped(roof_ring=False).frames
     assert "ROOF_RING" in m.frame_outlines
@@ -302,15 +302,22 @@ def test_z_pair_section_properties():
     pts = z_pair_outline(leg, t)
     p = polygon_properties(pts)
     assert p["A"] == pytest.approx(2 * (2 * leg * t - t * t))
-    assert (p["cy"], p["cz"]) == pytest.approx((0.0, 0.0), abs=1e-12)   # centred
-    # a Z is antisymmetric: Iyz != 0, and the flanges make Izz > 0 with both flanges counted
-    assert p["Iyz"] != pytest.approx(0.0)
-    # strong axis: same as the two angles about their shared back (thin-wall check)
+    # anchored at the wall: the shell line (y = 0) is the inner face, outward is -y,
+    # the down leg hangs below the wall top (z < 0) and the lip stands above it
+    ys = [y for y, _ in pts]; zs = [z for _, z in pts]
+    assert max(ys) == 0.0 and min(ys) == pytest.approx(-leg)
+    assert min(zs) == pytest.approx(t - leg) and max(zs) == pytest.approx(t + leg)
+    assert p["Iyz"] != pytest.approx(0.0)                     # a Z is antisymmetric
+    # the same Z stood upright (rotate 90 deg) has the axes swapped: the doubled
+    # web then bends about the horizontal axis like two angles back to back
+    upright = polygon_properties([(z, -y) for y, z in pts])
     web = 2 * t * leg ** 3 / 12
     flange = 2 * ((leg - t) * t ** 3 / 12 + (leg - t) * t * (leg / 2 - t / 2) ** 2)
-    assert p["Iyy"] == pytest.approx(web + flange, rel=1e-9)
+    assert upright["Iyy"] == pytest.approx(web + flange, rel=1e-9)
+    assert p["Izz"] == pytest.approx(upright["Iyy"]) and p["Iyy"] == pytest.approx(upright["Izz"])
     g = z_pair_section(leg, t)
     assert g["I33"] == pytest.approx(p["Iyy"]) and g["I22"] == pytest.approx(p["Izz"])
+    assert g["S33"] == pytest.approx(p["Iyy"] / max(abs(max(zs) - p["cz"]), abs(min(zs) - p["cz"])))
     assert g["TorsConst"] == pytest.approx(leg * (2 * t) ** 3 / 3 + 2 * (leg - t) * t ** 3 / 3)
     assert g["AS2"] == pytest.approx(2 * leg * t) and g["AS3"] == pytest.approx(2 * (leg - t) * t) and g["R33"] > 0
     # square: no product of inertia, equal moments

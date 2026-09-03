@@ -52,14 +52,20 @@ def z_pair_section(leg: float, t: float) -> dict:
 
 
 def z_pair_outline(leg: float, t: float) -> list[tuple[float, float]]:
-    """(2) equal-leg angles back to back forming a Z: web 2t thick, height = leg,
-    centred on the centroid (0, 0), in the VIEWER's section frame (y, z):
-    z = up (depth), y = up x member axis. For the eave ring running
-    counter-clockwise, +y points INTO the tank -- so the top flange (+y) sits
-    under the roof plate and the bottom flange (-y) sticks out as the gutter.
-    SAP's local 3 is -y."""
-    L, h = leg, leg / 2.0
-    return [(t, -h), (-L, -h), (-L, t - h), (-t, t - h), (-t, h), (L, h), (L, h - t), (t, h - t)]
+    """(2) equal-leg angles forming a Z lying on its side (the eave gutter):
+    horizontal legs stacked 2t thick on top of the wall running OUTWARD, the
+    inner angle's leg hanging down flush on the outside of the shell, the
+    outer angle's leg standing up as the gutter lip.
+
+    Viewer section frame (y, z): z = up, y = up x member axis = INTO the tank
+    for the counter-clockwise ring, so outward is -y. The outline is anchored
+    at the wall, not the centroid: origin = shell line at the top of the wall,
+    so the viewer draws it flush without BPRP offsets (the SAP General section
+    is centroidal regardless; the small eccentricity to the joint is ignored).
+    SAP's local 3 is -y. Points run counter-clockwise."""
+    L = leg
+    return [(0.0, t - L), (0.0, 2 * t), (t - L, 2 * t), (t - L, t + L),
+            (-L, t + L), (-L, 0.0), (-t, 0.0), (-t, t - L)]
 
 
 def general_section(pts: list[tuple[float, float]], j: float, as2: float, as3: float) -> dict:
@@ -75,8 +81,8 @@ def general_section(pts: list[tuple[float, float]], j: float, as2: float, as3: f
     depth = max(zs) - min(zs)
     width = max(ys) - min(ys)
     i33, i22 = p["Iyy"], p["Izz"]
-    c2 = max(abs(max(zs)), abs(min(zs)))
-    c3 = max(abs(max(ys)), abs(min(ys)))
+    c2 = max(abs(max(zs) - p["cz"]), abs(min(zs) - p["cz"]))   # extreme fibres from the centroid
+    c3 = max(abs(max(ys) - p["cy"]), abs(min(ys) - p["cy"]))
     s33, s22 = i33 / c2, i22 / c3
     return {
         "Shape": "General", "t3": depth, "t2": width,
