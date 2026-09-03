@@ -1,3 +1,6 @@
+# TRACKED TEST FIXTURE (generic dimensions). Do NOT edit this toward a real tank --
+# copy it to a new file under configs/ (gitignored) instead. tank_hoop.toml is pinned
+# to tests/golden/tank_hoop.s2k: changing it fails the golden test.
 # Cylindrical steel tank -- base local axes rotated and the radial direction
 # released, so the wall carries hoop stress instead of base bending.
 # Identical to tank.toml apart from [supports] and [output].

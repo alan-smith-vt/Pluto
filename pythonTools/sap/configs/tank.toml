@@ -1,3 +1,6 @@
+# TRACKED TEST FIXTURE (generic dimensions). Do NOT edit this toward a real tank --
+# copy it to a new file under configs/ (gitignored) instead. tank_hoop.toml is pinned
+# to tests/golden/tank_hoop.s2k: changing it fails the golden test.
 # Cylindrical steel tank -- pinned base (baseline model).
 # Units are kip, ft, F throughout.  Build with:
 #     python3 sap/build_tank.py configs/tank.toml

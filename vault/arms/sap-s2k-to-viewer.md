@@ -85,7 +85,9 @@ TOML loader with typo rejection), `model.py` (`TankModel`: numbering, `base_join
 CLI. **Contract:** `tests/golden/tank_hoop.s2k` is the exact file SAP2000 v25 ran; the
 writer must stay byte-identical to it unless the golden is regenerated on purpose.
 **Configs:** `configs/example.toml` is the generic template; new configs and goldens are
-gitignored by default (project dimensions stay local), the three existing generic ones are tracked.
+gitignored by default (project dimensions stay local); the three tracked ones (`tank`, `tank_hoop`,
+`example`) are **test fixtures with generic dimensions** — never edit them toward a real tank, copy
+them to a new (ignored) file.
 
 `build_tank.py` + `configs/*.toml` (Python 3.11+, stdlib `tomllib`) generate the tank `.s2k` (wall mesh,
 base restraints, local axes, hydrostatic joint pattern). It is a model *generator*, not a
