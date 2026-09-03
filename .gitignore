@@ -10,3 +10,4 @@ Thumbs.db
 # Obsidian config lives ONLY at the repo root (root = vault)
 **/.obsidian/
 !/.obsidian/
+/.obsidian/*.json
