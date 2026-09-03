@@ -88,6 +88,32 @@ def section_tables(model: TankModel) -> list[tuple[str, list[str]]]:
     return out
 
 
+def link_tables(model: TankModel) -> list[tuple[str, list[str]]]:
+    """Compression-only Gap links (foundation.mode = 'gap'). U1 is the only
+    active DOF: nonlinear gap with zero opening; TransKE is the effective
+    stiffness the LINEAR cases see (a two-way spring), TransK the nonlinear
+    one. NOTE: field names from the SAP2000 table set, unverified against the
+    v25 importer like the frame tables."""
+    if not model.links:
+        return []
+    return [
+        ("LINK PROPERTY DEFINITIONS 01 - GENERAL", [
+            _row(Link=name, LinkType="Gap", Mass=0, Weight=0, RotInert1=0, RotInert2=0,
+                 RotInert3=0, DefLength=1, DefArea=1, PDM2I=0, PDM2J=0, PDM3I=0, PDM3J=0,
+                 Color="Magenta")
+            for name in model.link_props]),
+        ("LINK PROPERTY DEFINITIONS 05 - GAP", [
+            _row(Link=name, DOF="U1", Fixed=False, NonLinear=True, TransKE=p["k"],
+                 TransCE=0, TransK=p["k"], Open=0)
+            for name, p in model.link_props.items()]),
+        ("CONNECTIVITY - LINK", [
+            _row(Link=l, JointI=i, JointJ=j) for l, (i, j) in sorted(model.links.items())]),
+        ("LINK PROPERTY ASSIGNMENTS", [
+            _row(Link=l, LinkProp=model.link_prop[l], LinkFDProp="None")
+            for l in sorted(model.links)]),
+    ]
+
+
 def geometry_tables(model: TankModel) -> list[tuple[str, list[str]]]:
     return [
         ("JOINT COORDINATES", [
@@ -106,7 +132,7 @@ def geometry_tables(model: TankModel) -> list[tuple[str, list[str]]]:
                  AutoSelect="N.A.", AnalSect=model.frame_section[f],
                  DesignSect=model.frame_section[f], MatProp="Default")
             for f in sorted(model.frames)]),
-    ]
+    ] + link_tables(model)
 
 
 def group_tables(model: TankModel) -> list[tuple[str, list[str]]]:
@@ -129,17 +155,22 @@ def group_tables(model: TankModel) -> list[tuple[str, list[str]]]:
 
 
 def support_tables(model: TankModel) -> list[tuple[str, list[str]]]:
-    """Pinned base; with release_radial the radial (local 2) direction is freed
-    so the base can expand and the wall goes into hoop. Baseplate interior
-    joints are held vertically only (stand-in for the gap-link support layer)."""
+    """Base ring: with release_radial the radial (local 2) direction is freed so
+    the base can expand and the wall goes into hoop. foundation 'fixed': ring
+    pinned, baseplate interior joints held in U3. foundation 'gap': the links
+    carry the vertical, so the ring keeps only U1 (tangential, and U2 unless
+    released), the interior is free, and the ground joints are fully fixed."""
     s = model.spec
+    gap = model.gap
     out = [
         ("JOINT RESTRAINT ASSIGNMENTS", [
-            _row(Joint=j, U1=True, U2=not s.release_radial, U3=True,
+            _row(Joint=j, U1=True, U2=not s.release_radial, U3=not gap,
                  R1=False, R2=False, R3=False)
             for j in model.base_joints] + [
             _row(Joint=j, U1=False, U2=False, U3=True, R1=False, R2=False, R3=False)
-            for j in model.baseplate_interior_joints]),
+            for j in ([] if gap else model.baseplate_interior_joints)] + [
+            _row(Joint=j, U1=True, U2=True, U3=True, R1=True, R2=True, R3=True)
+            for j in model.ground_joints]),
     ]
     if s.base_local_axes:
         # AngleA rotates the joint local axes about global Z (local 3 stays
@@ -188,14 +219,30 @@ def load_tables(model: TankModel) -> list[tuple[str, list[str]]]:
         out.append(("JOINT LOADS - FORCE", rows))
     else:
         raise ValueError(f"unknown load_mode {s.load_mode!r}")
+    cases = [
+        _row(Case="DEAD", Type="LinStatic", InitialCond="Zero"),
+        _row(Case="HYDRO", Type="LinStatic", InitialCond="Zero")]
+    assigns = [
+        _row(Case="DEAD", LoadType="Load pattern", LoadName="DEAD", LoadSF=1),
+        _row(Case="HYDRO", LoadType="Load pattern", LoadName="HYDRO", LoadSF=1)]
+    if model.gap:
+        # Gap links are nonlinear: the linear cases above see their effective
+        # stiffness (a two-way spring, kept for reference); the real answer is
+        # the staged nonlinear pair, HYDRO continuing from the DEAD state.
+        cases += [
+            _row(Case="NL_DEAD", Type="NonStatic", InitialCond="Zero"),
+            _row(Case="NL_HYDRO", Type="NonStatic", InitialCond="NL_DEAD")]
+        assigns += [
+            _row(Case="NL_DEAD", LoadType="Load pattern", LoadName="DEAD", LoadSF=1),
+            _row(Case="NL_HYDRO", LoadType="Load pattern", LoadName="HYDRO", LoadSF=1)]
     out += [
-        ("LOAD CASE DEFINITIONS", [
-            _row(Case="DEAD", Type="LinStatic", InitialCond="Zero"),
-            _row(Case="HYDRO", Type="LinStatic", InitialCond="Zero")]),
-        ("CASE - STATIC 1 - LOAD ASSIGNMENTS", [
-            _row(Case="DEAD", LoadType="Load pattern", LoadName="DEAD", LoadSF=1),
-            _row(Case="HYDRO", LoadType="Load pattern", LoadName="HYDRO", LoadSF=1)]),
+        ("LOAD CASE DEFINITIONS", cases),
+        ("CASE - STATIC 1 - LOAD ASSIGNMENTS", assigns),
     ]
+    if model.gap:
+        out.append(("CASE - STATIC 2 - NONLINEAR LOAD APPLICATION", [
+            _row(Case=c, LoadApp="Full Load", MonitorDOF="U3", MonitorJt=model.base_joints[0])
+            for c in ("NL_DEAD", "NL_HYDRO")]))
     return out
 
 

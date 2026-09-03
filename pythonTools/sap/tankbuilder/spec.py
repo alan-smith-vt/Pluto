@@ -59,6 +59,15 @@ class TankSpec:
     roof_ring: bool = True                # eave compression ring: (2) equal-leg angles back to back
     roof_ring_leg: float = 0.25           # ft (3 in)
     roof_ring_thickness: float = 0.03125  # ft (3/8 in)
+    # [foundation]  what holds the baseplate down/up.
+    #   "fixed": interior joints held in U3, base ring pinned (linear stand-in)
+    #   "gap":   a coincident fixed GROUND joint under every baseplate joint and a
+    #            zero-length compression-only Gap link between them (vertical
+    #            stiffness = subgrade modulus x tributary area); the tank side
+    #            keeps only the rim's tangential restraint. Adds the nonlinear
+    #            static cases NL_DEAD -> NL_HYDRO.
+    foundation: str = "fixed"
+    subgrade_modulus: float = 170.0       # kip/ft^3 (compacted sand, guess)
     # [supports]
     base_local_axes: bool = False
     release_radial: bool = False
@@ -124,6 +133,13 @@ class TankSpec:
                 )
             if self.roof_ring and (self.roof_ring_leg <= 0 or self.roof_ring_thickness <= 0):
                 raise ValueError("roof.ring_leg and roof.ring_thickness must be positive")
+        if self.foundation not in ("fixed", "gap"):
+            raise ValueError(f"foundation.mode {self.foundation!r} not recognised (fixed | gap)")
+        if self.foundation == "gap":
+            if not self.baseplate:
+                raise ValueError("foundation.mode = 'gap' needs baseplate.enabled = true")
+            if self.subgrade_modulus <= 0:
+                raise ValueError("foundation.subgrade_modulus must be positive")
         if not 0.0 <= self.fill_fraction <= 1.0:
             raise ValueError("fluid.fill_fraction must be between 0 and 1")
         if self.load_mode not in ("uniform", "joints"):
@@ -162,6 +178,7 @@ CONFIG_MAP = {
         "ring_leg": "roof_ring_leg",
         "ring_thickness": "roof_ring_thickness",
     },
+    "foundation": {"mode": "foundation", "subgrade_modulus": "subgrade_modulus"},
     "supports": {
         "base_local_axes": "base_local_axes",
         "release_radial": "release_radial",

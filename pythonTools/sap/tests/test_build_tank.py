@@ -44,8 +44,9 @@ def test_cli_writes_the_same_file(tmp_path):
     r = subprocess.run([sys.executable, str(ROOT / "build_tank.py"),
                         str(CONFIGS / "example.toml"), "-o", str(out)],
                        capture_output=True, text=True, check=True)
-    assert ("1118 joints, 1152 shells, 2 course(s), baseplate (216 shells), "
-            "roof (216 shells, rise 10.53 ft, 36 ring frames), base released radially") in r.stdout
+    assert ("1335 joints, 1152 shells, 2 course(s), baseplate (216 shells), "
+            "roof (216 shells, rise 10.53 ft, 36 ring frames), base released radially, "
+            "217 gap links on ground (ks 100 kip/ft^3)") in r.stdout
     assert out.read_text() == (GOLDEN / "example.s2k").read_text()
 
 
@@ -58,7 +59,8 @@ def test_example_config_loads_and_builds():
     assert spec.height == 40.0 and len(spec.courses) == 2 and spec.course_divisions() == [10, 10]
     m = TankModel(spec)
     assert len(m.ids.block("joint", "wall")) == 36 * 21 and len(m.ids.block("area", "wall")) == 36 * 20
-    assert len(m.joints) == 36 * 21 + 2 * (5 * 36 + 1) and len(m.areas) == 36 * 20 + 2 * 6 * 36
+    assert len(m.joints) == 36 * 21 + 2 * (5 * 36 + 1) + (5 * 36 + 1 + 36)   # + ground joints
+    assert len(m.areas) == 36 * 20 + 2 * 6 * 36
     assert m.sections == {"WALL_T1": 0.0208333, "WALL_T2": 0.015625, "BASEPLATE": 0.0208333, "ROOF": 0.0208333}
     assert "END TABLE DATA" in s2k_text(m)
 
@@ -378,6 +380,68 @@ def test_cap_tables_and_groups_written():
     ({"roof": {"crownradius": 5}}, "unknown key 'crownradius'"),
 ])
 def test_cap_config_validation(raw, msg):
+    with pytest.raises(ValueError, match=msg):
+        spec_from_dict(raw)
+
+
+# --- foundation: ground joints + gap links ----------------------------------------
+
+def gapped():
+    return capped(foundation="gap", subgrade_modulus=100.0)
+
+
+def test_gap_layer_has_a_fixed_ground_joint_under_every_baseplate_joint():
+    m = gapped()                                     # baseplate: 17 interior + 8 rim = 25 joints
+    assert len(m.ground_joints) == 25 and len(m.links) == 25
+    assert m.ids.block("joint", "ground") == range(75, 100) and m.ids.block("link", "gap") == range(1, 26)
+    for tj, gj in m.ground_of.items():
+        assert m.joints[gj] == m.joints[tj]          # coincident
+    assert set(m.ground_of) == set(m.baseplate_joints)
+    for lid, (i, j) in m.links.items():
+        assert i in m.ground_joints and j == [t for t, g in m.ground_of.items() if g == i][0]
+
+
+def test_tributary_areas_sum_to_the_plate():
+    m = gapped()                                     # R 10, n_r 3, n_theta 8
+    total = sum(m.baseplate_tributary_area(j) for j in m.baseplate_joints)
+    assert total == pytest.approx(math.pi * 100.0)
+    dr = 10.0 / 3
+    assert m.baseplate_tributary_area(m.ids.block("joint", "baseplate").start) == pytest.approx(math.pi * (dr / 2) ** 2)
+    assert m.baseplate_tributary_area(m.base_joints[0]) == pytest.approx(math.pi * (100 - (10 - dr / 2) ** 2) / 8)
+    props = m.link_props
+    assert list(props) == ["GAP_R00", "GAP_R01", "GAP_R02", "GAP_R03"]
+    assert props["GAP_R03"]["k"] == pytest.approx(100.0 * m.baseplate_tributary_area(m.base_joints[0]))
+    assert not capped().links and not capped().ground_joints
+
+
+def test_gap_tables_restraints_and_cases():
+    m = gapped()
+    t = parse_s2k(s2k_text(m))
+    assert [r["LINK"] for r in t["LINK PROPERTY DEFINITIONS 01 - GENERAL"]] == ["GAP_R00", "GAP_R01", "GAP_R02", "GAP_R03"]
+    gp = t["LINK PROPERTY DEFINITIONS 05 - GAP"][0]
+    assert (gp["DOF"], gp["NONLINEAR"], gp["OPEN"]) == ("U1", "Yes", "0") and float(gp["TRANSK"]) > 0
+    conn = t["CONNECTIVITY - LINK"]
+    assert len(conn) == 25 and int(conn[0]["JOINTI"]) in m.ground_joints
+    assert t["LINK PROPERTY ASSIGNMENTS"][0]["LINKPROP"] == "GAP_R00"
+    rest = {r["JOINT"]: r for r in t["JOINT RESTRAINT ASSIGNMENTS"]}
+    assert rest[str(m.base_joints[0])]["U3"] == "No" and rest[str(m.base_joints[0])]["U1"] == "Yes"
+    assert not any(str(j) in rest for j in m.baseplate_interior_joints)
+    g = rest[str(m.ground_joints[0])]
+    assert all(g[d] == "Yes" for d in ("U1", "U2", "U3", "R1", "R2", "R3"))
+    cases = {r["CASE"]: r for r in t["LOAD CASE DEFINITIONS"]}
+    assert cases["NL_DEAD"]["TYPE"] == "NonStatic" and cases["NL_HYDRO"]["INITIALCOND"] == "NL_DEAD"
+    assert len(t["CASE - STATIC 2 - NONLINEAR LOAD APPLICATION"]) == 2
+    assert m.groups()["GROUND"] == ([], m.ground_joints, [])
+    fixed = parse_s2k(s2k_text(capped()))
+    assert "CONNECTIVITY - LINK" not in fixed and "NL_DEAD" not in {r["CASE"] for r in fixed["LOAD CASE DEFINITIONS"]}
+
+
+@pytest.mark.parametrize("raw, msg", [
+    ({"foundation": {"mode": "gap"}}, "needs baseplate.enabled"),
+    ({"foundation": {"mode": "springs"}}, "not recognised"),
+    ({"foundation": {"mode": "gap", "subgrade_modulus": 0}, "baseplate": {"enabled": True}}, "must be positive"),
+])
+def test_foundation_config_validation(raw, msg):
     with pytest.raises(ValueError, match=msg):
         spec_from_dict(raw)
 

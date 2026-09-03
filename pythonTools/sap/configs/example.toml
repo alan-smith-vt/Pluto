@@ -43,6 +43,11 @@ ring          = true    # eave compression ring: (2) equal-leg angles back to ba
 ring_leg      = 0.25    # ft = 3 in
 ring_thickness = 0.03125 # ft = 3/8 in
 
+[foundation]
+mode             = "gap"  # "fixed" = interior held in U3 (linear); "gap" = fixed ground joints +
+                          # compression-only links under the plate, nonlinear cases NL_DEAD -> NL_HYDRO
+subgrade_modulus = 100.0  # kip/ft^3; link k = this x the joint's tributary plan area
+
 [supports]
 base_local_axes = true  # base joint local axes: X tangential, Y radial outward
 release_radial  = true  # free the radial direction so the wall goes into hoop (needs base_local_axes)

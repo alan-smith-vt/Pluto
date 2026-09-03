@@ -48,6 +48,8 @@ def main(argv=None) -> int:
     write_s2k(model, out)
 
     base = "released radially" if spec.release_radial else "pinned"
+    if model.gap:
+        base += f", {len(model.links)} gap links on ground (ks {spec.subgrade_modulus:g} kip/ft^3)"
     parts = [f"{len(spec.plate_courses)} course(s)"]
     if spec.baseplate:
         parts.append(f"baseplate ({len(model.baseplate_areas)} shells)")

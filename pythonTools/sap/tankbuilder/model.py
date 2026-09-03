@@ -41,6 +41,9 @@ class TankModel:
     frame_section: id -> section name; frame_sections: name -> property dict;
     frame_outlines: name -> (y, z) polygon for sections SAP has no shape for
     (written beside the .s2k for the viewer).
+    Foundation "gap": ground_joints (fixed, coincident with the baseplate
+    joints), ground_of: tank joint -> ground joint, links: id -> (I = ground,
+    J = tank), link_prop: id -> property name, link_props: name -> {"k": ...}.
     """
 
     def __init__(self, spec: TankSpec):
@@ -58,12 +61,20 @@ class TankModel:
         self.frame_sections: dict[str, dict] = {}
         self.frame_outlines: dict[str, list[tuple[float, float]]] = {}
         self.cap_joints: dict[str, list[int]] = {}   # interior joints of each cap (rim excluded)
+        self.cap_ring: dict[str, dict[int, int]] = {}  # cap -> joint -> ring index (0 = centre)
+        self.ground_joints: list[int] = []
+        self.ground_of: dict[int, int] = {}
+        self.links: dict[int, tuple[int, int]] = {}
+        self.link_prop: dict[int, str] = {}
+        self.link_props: dict[str, dict] = {}
         self._build_levels()
         self._build_wall()
         if spec.baseplate:
             self._build_baseplate()
         if spec.roof:
             self._build_roof()
+        if spec.foundation == "gap":
+            self._build_foundation()
 
     # --- numbering ----------------------------------------------------------
 
@@ -184,6 +195,9 @@ class TankModel:
                 return rim[i % n]
             return joints.start + 1 + (k - 1) * n + (i % n)
 
+        ring_of = {centre: 0}
+        for i in range(n):
+            ring_of[rim[i]] = n_r
         self.joints[centre] = (0.0, 0.0, z_of_r(0.0))
         self.thetas[centre] = 0.0
         for k in range(1, n_r):
@@ -194,7 +208,9 @@ class TankModel:
                 j = jid(k, i)
                 self.joints[j] = (r * math.cos(theta), r * math.sin(theta), z)
                 self.thetas[j] = theta
+                ring_of[j] = k
         self.cap_joints[name] = list(joints)
+        self.cap_ring[name] = ring_of
 
         aid = areas.start - 1
         for k in range(1, n_r):                        # quads: ring k -> k+1
@@ -257,6 +273,56 @@ class TankModel:
         """Baseplate joints inside the rim (the rim is the wall's base ring)."""
         return self.cap_joints.get("baseplate", [])
 
+    @property
+    def baseplate_joints(self) -> list[int]:
+        """Every baseplate joint: interior (centre first) then the rim."""
+        return self.baseplate_interior_joints + (self.base_joints if self.spec.baseplate else [])
+
+    def baseplate_tributary_area(self, jid: int) -> float:
+        """Plan area carried by one baseplate joint, ft^2: the centre disc, an
+        annulus slice for an interior ring, half an annulus slice at the rim.
+        Sums to pi R^2 over the plate."""
+        s = self.spec
+        n_r, n = s.baseplate_n_r, s.n_theta
+        dr = s.radius / n_r
+        k = self.cap_ring["baseplate"][jid]
+        if k == 0:
+            return math.pi * (dr / 2.0) ** 2
+        r_in = (k - 0.5) * dr
+        r_out = min((k + 0.5) * dr, s.radius)
+        return math.pi * (r_out * r_out - r_in * r_in) / n
+
+    # --- foundation: ground joints + compression-only gap links ------------------
+
+    def _build_foundation(self) -> None:
+        """Gap support: one fixed ground joint coincident with every baseplate
+        joint, one zero-length Gap link (I = ground, J = tank; local 1 = +Z for
+        a zero-length link, so the tank pressing down closes the gap). One link
+        property per baseplate ring, k = subgrade modulus x tributary area."""
+        s = self.spec
+        tank = self.baseplate_joints
+        ground = self.ids.claim("joint", "ground", len(tank))
+        links = self.ids.claim("link", "gap", len(tank))
+        width = max(2, len(str(s.baseplate_n_r)))
+        for tj, gj, lid in zip(tank, ground, links):
+            self.joints[gj] = self.joints[tj]
+            self.thetas[gj] = self.thetas[tj]
+            self.ground_joints.append(gj)
+            self.ground_of[tj] = gj
+            k = self.cap_ring["baseplate"][tj]
+            name = f"GAP_R{k:0{width}d}"
+            if name not in self.link_props:
+                self.link_props[name] = {
+                    "k": s.subgrade_modulus * self.baseplate_tributary_area(tj),
+                    "ring": k, "tributary_area": self.baseplate_tributary_area(tj),
+                }
+            self.links[lid] = (gj, tj)
+            self.link_prop[lid] = name
+
+    @property
+    def gap(self) -> bool:
+        return self.spec.foundation == "gap"
+
     # --- groups ----------------------------------------------------------------
 
     def groups(self) -> dict[str, tuple[list[int], list[int], list[int]]]:
@@ -286,6 +352,8 @@ class TankModel:
             out["ROOF"] = (self.roof_areas, [], [])
             if s.roof_ring:
                 out["ROOF_RING"] = ([], [], list(self.ids.block("frame", "roof_ring")))
+        if self.gap:
+            out["GROUND"] = ([], list(self.ground_joints), [])
         return out
 
     # --- hydrostatics --------------------------------------------------------
