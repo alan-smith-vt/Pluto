@@ -28,6 +28,17 @@ using System.Text;
 //   CONNECTIVITY - AREA        -> shell elements (tri / quad). Joint and Area
 //                                 labels must be integers (SAP default); the
 //                                 label text is also written to the LABL block.
+//   CONNECTIVITY - FRAME       -> beam domain (2026-09-03). Section from FRAME
+//   FRAME SECTION ASSIGNMENTS     SECTION ASSIGNMENTS (AnalSect) + FRAME SECTION
+//   FRAME SECTION PROPERTIES 01   PROPERTIES 01 - GENERAL (Shape, t3 t2 tf tw):
+//                                 Rectangular / Pipe / Box / I / Angle / Channel /
+//                                 Tee map to the writer's parametric sections;
+//                                 Double Angle draws as a Tee (stem = 2 tw);
+//                                 unknown shapes get a small RECT placeholder.
+//                                 Local 2 = SAP default (vertical plane; +X for
+//                                 vertical members); roll angles are NOT read.
+//                                 Beam ends get the joint displacements; frame
+//                                 forces are not exported yet.
 //   ELEMENT FORCES - AREA SHELLS -> per-corner "stress" components, SAP order
 //                                 F11 F22 F12 M11 M22 M12 V13 V23, raw file units
 //                                 (forces per unit length -- continuous across a
@@ -51,7 +62,8 @@ using System.Text;
 //                                      tags sap, section, thickness  (shells)
 //   one per distinct restraint pattern tags sap, restraint      (nodes)
 //   "Local axes assigned"              tags sap, localAxes      (nodes)
-//   SAP GROUPS 2 - ASSIGNMENTS         tags sap, group          (areas / joints)
+//   one per FRAME section name         tags sap, frameSection   (beams)
+//   SAP GROUPS 2 - ASSIGNMENTS         tags sap, group          (areas / joints / frames)
 // Hydrostatic head (JOINT PATTERN ASSIGNMENTS) is deliberately NOT exported;
 // it is a continuous scalar, not a category -- add it as a "model" component
 // if it is ever wanted.
@@ -66,6 +78,7 @@ public class SapExportResult
 {
     public string BinPath, SidecarPath;
     public int Nodes, Elements, LoadCases, ForceRows, ForceRowsUsed, DispRows, DispRowsUsed, Groups;
+    public int Frames, FrameSections, FramesUnknownShape;
     public string ForceUnit, LengthUnit;
     public List<string> LoadCaseNames = new List<string>();
     public List<string> Warnings = new List<string>();
@@ -77,6 +90,9 @@ public class SapExportResult
             Nodes, Elements, LoadCases, string.Join(", ", LoadCaseNames), ForceUnit, LengthUnit));
         sb.AppendLine(string.Format("  shell force rows {0} (used {1}), joint displacement rows {2} (used {3})",
             ForceRows, ForceRowsUsed, DispRows, DispRowsUsed));
+        if (Frames > 0)
+            sb.AppendLine(string.Format("  {0} frames -> beams, {1} section(s){2}", Frames, FrameSections,
+                FramesUnknownShape > 0 ? string.Format(", {0} with an unknown shape (RECT placeholder)", FramesUnknownShape) : ""));
         sb.AppendLine(string.Format("  {0} groups -> {1}", Groups, SidecarPath));
         sb.AppendLine("  bin -> " + BinPath);
         foreach (string w in Warnings) sb.AppendLine("  WARN " + w);
@@ -127,6 +143,54 @@ public class SapToPluto
         if (nodes.Count == 0) throw new Exception("SapToPluto: no JOINT COORDINATES rows in " + modelS2k);
         if (elements.Count == 0) throw new Exception("SapToPluto: no CONNECTIVITY - AREA rows in " + modelS2k);
         res.Nodes = nodes.Count; res.Elements = elements.Count;
+
+        // ---- frames -> beam domain ----
+        var frameSecOf = new Dictionary<int, string>();
+        foreach (var r in model.GetTable("FRAME SECTION ASSIGNMENTS"))
+        {
+            string f, s;
+            if (r.TryGetValue("Frame", out f) && r.TryGetValue("AnalSect", out s)) frameSecOf[Int(f)] = s;
+        }
+        var frameSecProps = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in model.GetTable("FRAME SECTION PROPERTIES 01 - GENERAL"))
+        {
+            string s;
+            if (r.TryGetValue("SectionName", out s)) frameSecProps[s] = r;
+        }
+        var beams = new Dictionary<int, RawViewerWriter.BeamMember>();
+        var beamLabels = new Dictionary<int, string>();
+        var sectionDefs = new List<RawViewerWriter.SectionDef>();
+        var sectionIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var beamsBySection = new Dictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
+        var beamSectionOrder = new List<string>();
+        foreach (var r in model.GetTable("CONNECTIVITY - FRAME"))
+        {
+            string f, ji, jj;
+            if (!r.TryGetValue("Frame", out f) || !r.TryGetValue("JointI", out ji) || !r.TryGetValue("JointJ", out jj)) continue;
+            int fid = Int(f), a = Int(ji), b = Int(jj);
+            Node na, nb;
+            if (!nodes.TryGetValue(a, out na) || !nodes.TryGetValue(b, out nb) || a == b) continue;
+            string secName;
+            if (!frameSecOf.TryGetValue(fid, out secName)) secName = "UNSECTIONED";
+            int si;
+            if (!sectionIndex.TryGetValue(secName, out si))
+            {
+                Dictionary<string, string> props;
+                bool known;
+                RawViewerWriter.SectionDef def = FrameSection(secName, frameSecProps.TryGetValue(secName, out props) ? props : null, out known);
+                if (!known) res.FramesUnknownShape++;
+                si = sectionDefs.Count;
+                sectionDefs.Add(def);
+                sectionIndex[secName] = si;
+            }
+            var m = new RawViewerWriter.BeamMember();
+            m.Id = fid; m.NodeA = a; m.NodeB = b; m.SectionIndex = si;
+            m.LocalY = DefaultLocal2(na, nb);
+            beams[fid] = m;
+            beamLabels[fid] = f;
+            Add(beamsBySection, beamSectionOrder, secName, (uint)fid);
+        }
+        res.Frames = beams.Count; res.FrameSections = sectionDefs.Count;
 
         // ---- load cases (first-seen order across both result tables) ----
         List<Dictionary<string, string>> forceRows = results.GetTable("ELEMENT FORCES - AREA SHELLS");
@@ -204,10 +268,24 @@ public class SapToPluto
         units["length"] = lengthUnit;
         units["force"] = forceUnit;
         string binPath = outBase + ".bin";
+        List<RawViewerWriter.Component> beamComps = null;
+        if (beams.Count > 0)
+        {
+            // beam ends carry the joint displacements (AppendDisplacements fans
+            // them out); no frame forces yet, so a layout-only force component
+            // when there are no displacements at all.
+            beamComps = new List<RawViewerWriter.Component>();
+            if (hasDisp)
+                for (int i = 0; i < 6; i++) beamComps.Add(new RawViewerWriter.Component(DispNames[i], "displacement", i < 3 ? lengthUnit : "rad"));
+            else
+                beamComps.Add(new RawViewerWriter.Component("Axial N", "force", forceUnit));
+        }
         var w = new RawViewerWriter(binPath, nodes, elements, hasResults ? lcNames : null, comps,
-                                    null, null, null, modelId, units);
+                                    beams.Count > 0 ? beams : null, beams.Count > 0 ? sectionDefs : null, beamComps,
+                                    modelId, units);
         w.SetNodeLabels(nodeLabels);
         w.SetShellLabels(shellLabels);
+        if (beams.Count > 0) w.SetBeamLabels(beamLabels);
         w.Write(hasResults);
         res.BinPath = binPath;
 
@@ -311,6 +389,10 @@ public class SapToPluto
             sc.AddGroup(name, null, "shells", bySection[s], new[] { "sap", "section", "thickness" }, StaadName(s));
         }
 
+        // frame sections: one beam group each
+        foreach (string s in beamSectionOrder)
+            sc.AddGroup(s, null, "beams", beamsBySection[s], new[] { "sap", "frameSection" }, StaadName(s));
+
         // restraints (one node group per distinct pattern)
         var byRestraint = new Dictionary<string, List<uint>>();
         var restraintOrder = new List<string>();
@@ -343,6 +425,7 @@ public class SapToPluto
         // SAP groups (GROUPS 2 - ASSIGNMENTS: GroupName, ObjectType, ObjectLabel)
         var grpAreas = new Dictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
         var grpJoints = new Dictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
+        var grpFrames = new Dictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
         var grpOrder = new List<string>();
         foreach (var r in model.GetTable("GROUPS 2 - ASSIGNMENTS"))
         {
@@ -350,6 +433,7 @@ public class SapToPluto
             if (!r.TryGetValue("GroupName", out g) || !r.TryGetValue("ObjectType", out ty) || !r.TryGetValue("ObjectLabel", out lab)) continue;
             if (string.Equals(ty, "Area", StringComparison.OrdinalIgnoreCase)) Add(grpAreas, grpOrder, g, (uint)Int(lab));
             else if (string.Equals(ty, "Joint", StringComparison.OrdinalIgnoreCase)) Add(grpJoints, grpOrder, g, (uint)Int(lab));
+            else if (string.Equals(ty, "Frame", StringComparison.OrdinalIgnoreCase) && beams.ContainsKey(Int(lab))) Add(grpFrames, grpOrder, g, (uint)Int(lab));
         }
         foreach (string g in grpOrder)
         {
@@ -357,6 +441,11 @@ public class SapToPluto
             FeaturesSidecar.Group grp = null;
             List<uint> ids;
             if (grpAreas.TryGetValue(g, out ids)) grp = sc.AddGroup(g, null, "shells", ids, new[] { "sap", "group" }, StaadName(g));
+            if (grpFrames.TryGetValue(g, out ids))
+            {
+                if (grp == null) grp = sc.AddGroup(g, null, "beams", ids, new[] { "sap", "group" }, StaadName(g));
+                else grp.Members.Add(new FeaturesSidecar.Member { Domain = "beams", Ids = ids });
+            }
             if (grpJoints.TryGetValue(g, out ids))
             {
                 if (grp == null) sc.AddNodeGroup(g, null, ids, new[] { "sap", "group" }, StaadName(g));
@@ -442,6 +531,46 @@ public class SapToPluto
         List<uint> ids;
         if (!map.TryGetValue(key, out ids)) { ids = new List<uint>(); map[key] = ids; order.Add(key); }
         ids.Add(id);
+    }
+
+    // SAP frame section (Shape + t3 t2 tf tw, file length units) -> writer
+    // SectionDef. t3 = depth (along local 2), t2 = width (along local 3).
+    // known = false when the shape is not mapped and a placeholder is returned.
+    static RawViewerWriter.SectionDef FrameSection(string name, Dictionary<string, string> p, out bool known)
+    {
+        known = true;
+        string shape = "";
+        if (p != null) { string s; if (p.TryGetValue("Shape", out s)) shape = s; }
+        shape = shape.Trim().ToLowerInvariant();
+        float t3 = p == null ? 0f : (float)Num(p, "t3", 0), t2 = p == null ? 0f : (float)Num(p, "t2", 0);
+        float tf = p == null ? 0f : (float)Num(p, "tf", 0), tw = p == null ? 0f : (float)Num(p, "tw", 0);
+        bool dims = t3 > 0 && t2 > 0;
+        if (shape == "rectangular" && dims) return RawViewerWriter.SectionDef.Rect(name, t2, t3);
+        if (shape == "pipe" && t3 > 0 && tw > 0) return RawViewerWriter.SectionDef.Pipe(name, t3, tw);
+        if ((shape == "box/tube" || shape == "box" || shape == "tube") && dims && tf > 0) return RawViewerWriter.SectionDef.Box(name, t2, t3, tf);
+        if ((shape == "i/wide flange" || shape == "i" || shape == "wide flange") && dims && tf > 0 && tw > 0)
+            return RawViewerWriter.SectionDef.IShape(name, t3, t2, tf, t2, tf, tw);
+        if (shape == "angle" && dims && tf > 0) return RawViewerWriter.SectionDef.Angle(name, t2, t3, tf);
+        if (shape == "channel" && dims && tf > 0 && tw > 0) return RawViewerWriter.SectionDef.Channel(name, t3, t2, tf, tw);
+        if (shape == "tee" && dims && tf > 0 && tw > 0) return RawViewerWriter.SectionDef.Tee(name, t3, t2, tf, tw);
+        if (shape == "double angle" && dims && tf > 0 && tw > 0) return RawViewerWriter.SectionDef.Tee(name, t3, t2, tf, 2f * tw);
+        known = false;
+        float d = dims ? Math.Max(t3, t2) : 0.5f;       // something visible, flagged in the summary
+        return RawViewerWriter.SectionDef.Rect(name, d, d);
+    }
+
+    // SAP default frame local 2: in the vertical plane through the member (the
+    // projection of +Z perpendicular to the axis); +X for vertical members.
+    static double[] DefaultLocal2(Node a, Node b)
+    {
+        double dx = b.xyz.X - a.xyz.X, dy = b.xyz.Y - a.xyz.Y, dz = b.xyz.Z - a.xyz.Z;
+        double len = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+        if (len < 1e-12) return new double[] { 0, 0, 1 };
+        double tx = dx / len, ty = dy / len, tz = dz / len;
+        if (Math.Abs(tz) > 1.0 - 1e-6) return new double[] { 1, 0, 0 };
+        double yx = -tz * tx, yy = -tz * ty, yz = 1.0 - tz * tz;     // Z - (Z.t) t
+        double n = Math.Sqrt(yx * yx + yy * yy + yz * yz);
+        return new double[] { yx / n, yy / n, yz / n };
     }
 
     // Stress = force/length / thickness, in file units force/length^2; report ksi

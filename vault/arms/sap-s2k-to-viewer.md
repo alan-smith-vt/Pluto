@@ -56,6 +56,7 @@ Writes `<outBase>.bin` + `<outBase>.features.json`. Drop both on the viewer toge
 |---|---|
 | `JOINT COORDINATES` (+ `COORDINATE SYSTEMS`) | nodes, f64, global SAP axes; joint label → node `LABL` |
 | `CONNECTIVITY - AREA` | shell domain, tri/quad; area label → shell `LABL` |
+| `CONNECTIVITY - FRAME` + `FRAME SECTION ASSIGNMENTS` + `FRAME SECTION PROPERTIES 01 - GENERAL` | beam domain (2026-09-03): parametric section from `Shape` + `t3 t2 tf tw` (Rectangular, Pipe, Box, I, Angle, Channel, Tee; Double Angle drawn as a Tee; unknown → RECT placeholder, counted in the summary); local 2 = SAP default, roll angles not read; beam ends get the joint displacements, no frame forces yet; one beam group per section (`sap`, `frameSection`) |
 | `ELEMENT FORCES - AREA SHELLS` | per-corner `stress` components `F11 F22 F12 M11 M22 M12 V13 V23` (those present), unit `kip/ft` or `kip-ft/ft` |
 | `JOINT DISPLACEMENTS` | `displacement` `Translation X/Y/Z`, `Rotation X/Y/Z` **in global** (rotated out of joint local axes, `Rz(A)·Ry(B)·Rx(C)`), fanned to every corner on the joint; optional `Translation R` / `T` |
 | `OutputCase` | load cases, first-seen order, ids 1..N |
@@ -63,7 +64,7 @@ Writes `<outBase>.bin` + `<outBase>.features.json`. Drop both on the viewer toge
 | `AREA SECTION PROPERTIES` | thickness goes into the section group's name, e.g. `WALL_T1 (0.500 in)` (`sap`, `section`, `thickness`); also drives the derived membrane stresses `S11 S22 S12 = F / t` (ksi for Kip/ft files) written after the forces |
 | `JOINT RESTRAINT ASSIGNMENTS` | one node group per restraint pattern, e.g. `Restrained U1 U3` (`sap`, `restraint`) |
 | `JOINT LOCAL AXES ASSIGNMENTS 1 - TYPICAL` | node group `Local axes assigned` (`sap`, `localAxes`) |
-| `GROUPS 2 - ASSIGNMENTS` | SAP groups (areas + joints, `ALL` skipped) (`sap`, `group`) |
+| `GROUPS 2 - ASSIGNMENTS` | SAP groups (areas + joints + frames, `ALL` skipped) (`sap`, `group`) |
 
 Groups carry no colour, so the viewer auto-assigns. Per the sidecar rule, nothing a user
 *defines* goes in the binary. Not carried over from the Python: hydrostatic head, mesh
