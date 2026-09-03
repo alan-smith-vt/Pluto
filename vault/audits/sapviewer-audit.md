@@ -4,6 +4,8 @@ status: current
 created: 2026-09-03
 ---
 
+*↑ [[vault/Home|Home]] › [[vault/audits/Audits map|Audits map]]*
+
 Quick read-only audit of `../SapViewer` (2026-09-03) ahead of folding it into Pluto.
 
 **Status 2026-09-03 (later):** folded in as C#, not Python -- `scripts/arms/SapToPluto.cs`

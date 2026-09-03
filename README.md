@@ -37,7 +37,7 @@ viewer/            the viewer arm (open viewer/index.html)
   scripts/         viewer JS modules
   styles/          CSS
   lib/             vendored Three.js r128 + OrbitControls
-vault/             Obsidian vault — ALL project documentation lives here
+vault/             Obsidian vault — ALL project documentation lives here (start at vault/Home.md)
 .claude/skills/    project-scoped agent skills (placeholder)
 ```
 

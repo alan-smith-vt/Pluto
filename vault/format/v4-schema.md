@@ -7,6 +7,8 @@ supersedes: "[[vault/format/v3-schema|v3-schema]]"
 
 # Binary format v4
 
+*↑ [[vault/Home|Home]] › [[vault/format/Format map|Format map]]*
+
 Goal: one file that carries **multiple element families** (shells today, beams next,
 solids/springs later) behind a **block directory** so readers skip what they don't know
 and writers never need a header change to add data. v3 files keep loading through a

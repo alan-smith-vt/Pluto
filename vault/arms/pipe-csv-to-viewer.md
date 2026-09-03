@@ -6,6 +6,8 @@ created: 2026-08-27
 
 # Pipe CSV → viewer — usage
 
+*↑ [[vault/Home|Home]] › [[vault/arms/Arms map|Arms map]]*
+
 The SP3D piping arm end to end, as run in the production environment (everything under `C:\Temp`, PowerShell 5.1, C# 5 via `Add-Type`). Source files: `scripts/arms/PipeCsvReader.cs` (CSV → beams) and `scripts/arms/PipeToPluto.cs` (beams → `.bin` + `.features.json`), plus `scripts/lib/writers/RawViewerWriter.cs`, `scripts/lib/sidecar/FeaturesSidecar.cs` and the rest of `scripts/lib/` (the writer needs `Types.cs`, which needs the lib). Since 2026-09-03 the exporters are part of the single `Config.ps1` Add-Type batch — dot-source it and everything is loaded; the old production-box `Stubs.cs` is retired.
 
 ## 1. Get the CSV
@@ -114,5 +116,5 @@ Drop the `.bin` and `.features.json` together on the viewer's file picker → ti
 
 - [[vault/format/raw-viewer-writer|raw-viewer-writer]] — the binary writer and bridges section
 - [[vault/format/features-sidecar|features-sidecar]] — groups JSON
-- [[vault/handoff|handoff]] — current state and constraints
+- [[vault/handoffs/handoff|handoff]] — current state and constraints
 - SQL_Tutor `vault/40-join-paths/Pipe Extraction v1.md` (query) and `Beam Export - Pipe CSV to Beams.md` (design rationale)

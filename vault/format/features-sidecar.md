@@ -6,6 +6,8 @@ created: 2026-08-25
 
 # Features sidecar (`*.features.json`)
 
+*↑ [[vault/Home|Home]] › [[vault/format/Format map|Format map]]*
+
 Everything a user **defines** in the viewer — predicates, section cuts, supports, springs,
 whatever comes next — lives in one JSON file beside the model, never in the binary
 ([[vault/format/v4-schema|v4-schema]]). The binary is results: large, write-once, solver-produced. Features are

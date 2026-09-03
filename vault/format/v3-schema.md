@@ -7,6 +7,8 @@ superseded-by: "[[vault/format/v4-schema|v4-schema]]"
 
 # Binary format v3 — frozen
 
+*↑ [[vault/Home|Home]] › [[vault/format/Format map|Format map]]*
+
 The original StressViewerDev per-corner field format. **Frozen:** v3 files load through
 the legacy shim (`viewer/scripts/format/v3Reader.js` + adapter in `pluto.js`); bugs are
 fixed by re-exporting as v4, not by extending this reader. Reference writer:

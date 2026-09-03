@@ -1,4 +1,12 @@
-# Viewer
+---
+title: Viewer overview
+status: current
+created: 2026-08-26
+---
+
+# Viewer overview
+
+*↑ [[vault/Home|Home]] › [[vault/viewer/Viewer map|Viewer map]]*
 
 Predicates (2026-09-01, ported from the old viewer — plan:
 [[vault/viewer/old-viewer-merge-plan|old-viewer-merge-plan]]):

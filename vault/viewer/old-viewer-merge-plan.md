@@ -19,6 +19,8 @@ created: 2026-09-01
 
 # Old viewer → new viewer merge plan
 
+*↑ [[vault/Home|Home]] › [[vault/viewer/Viewer map|Viewer map]]*
+
 Source: `archive/ViewerSource/` (the pre-Pluto
 viewer, transcribed 2026-09-01, no `// sanitized` markers — appears intact).
 Target: `viewer/` (the v4 viewer). Companion audit of the whole sanitized drop:
@@ -116,8 +118,8 @@ consumes the definitions.
 ## Phase C — cross-check and polish
 
 When the sanitized-scripts audit lands: diff its ViewerSource feature inventory against
-this plan (anything missed), reconcile with `vault/viewer/index.md`, update
-[[vault/handoff|handoff]]. Candidates already visible: nothing else — shell features all
+this plan (anything missed), reconcile with `vault/viewer/Viewer overview.md`, update
+[[vault/handoffs/handoff|handoff]]. Candidates already visible: nothing else — shell features all
 have v4 equivalents.
 
 ## Verification

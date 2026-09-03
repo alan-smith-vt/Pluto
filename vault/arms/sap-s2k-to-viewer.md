@@ -6,6 +6,8 @@ created: 2026-09-03
 
 # SAP2000 `.s2k` → viewer — usage
 
+*↑ [[vault/Home|Home]] › [[vault/arms/Arms map|Arms map]]*
+
 Shell models and results from SAP2000's text export to a Pluto v4 file + features
 sidecar. One arm: `scripts/arms/SapToPluto.cs`, built on the lib's existing
 `Sap2kParser` / `Sap2kReader` (`scripts/lib/readers/SapReader.cs`, which the STAAD
@@ -77,5 +79,5 @@ lib). Decision 2026-09-03: **stays Python** in `pythonTools/sap/` (SAP OAPI auto
 
 ## Related
 
-[[vault/arms/index|index]] · [[vault/format/raw-viewer-writer|raw-viewer-writer]] ·
+[[vault/arms/Arms map|Arms map]] · [[vault/format/raw-viewer-writer|raw-viewer-writer]] ·
 [[vault/format/features-sidecar|features-sidecar]] · [[vault/audits/sapviewer-audit|sapviewer-audit]]
