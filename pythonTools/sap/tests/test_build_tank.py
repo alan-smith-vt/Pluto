@@ -1,8 +1,10 @@
 """tankbuilder tests.  Run from pythonTools/sap:  python -m pytest -q
 
 The golden test is the contract: tests/golden/tank_hoop.s2k is the file SAP2000
-v25 imported and ran (the SapViewer tank_hoop model, 2026-08-13). Any change
-to the writer must either keep it byte-identical or regenerate it on purpose.
+v25 imported and ran (the tank_hoop model, 2026-08-13; generic dimensions,
+tracked). New configs and goldens are gitignored by default (project data);
+the golden tests skip if the files are absent. Any change to the writer must
+keep the golden byte-identical or regenerate it on purpose.
 """
 
 from __future__ import annotations
@@ -28,11 +30,18 @@ GOLDEN = HERE / "golden"
 
 # --- golden -----------------------------------------------------------------
 
+needs_golden = pytest.mark.skipif(
+    not (GOLDEN / "tank_hoop.s2k").exists() or not (CONFIGS / "tank_hoop.toml").exists(),
+    reason="golden files absent")
+
+
+@needs_golden
 def test_tank_hoop_matches_sap_run_file():
     spec, _ = load_config(CONFIGS / "tank_hoop.toml")
     assert s2k_text(TankModel(spec)) == (GOLDEN / "tank_hoop.s2k").read_text()
 
 
+@needs_golden
 def test_cli_writes_the_same_file(tmp_path):
     out = tmp_path / "t.s2k"
     r = subprocess.run([sys.executable, str(ROOT / "build_tank.py"),
@@ -44,13 +53,21 @@ def test_cli_writes_the_same_file(tmp_path):
 
 # --- config -----------------------------------------------------------------
 
-def test_both_configs_load_and_differ_only_where_documented():
-    hoop, hoop_out = load_config(CONFIGS / "tank_hoop.toml")
-    base, base_out = load_config(CONFIGS / "tank.toml")
-    assert hoop_out.name == "tank_hoop.s2k" and hoop_out.parent.name == "tank_hoop"
-    assert base_out.name == "tank.s2k"
-    assert (hoop.base_local_axes, hoop.release_radial) == (True, True)
-    assert (base.base_local_axes, base.release_radial) == (False, False)
+def test_example_config_loads_and_builds():
+    spec, out = load_config(CONFIGS / "example.toml")
+    assert out.name == "example.s2k" and out.parent.name == "example"
+    assert (spec.base_local_axes, spec.release_radial) == (True, True)
+    m = TankModel(spec)
+    assert len(m.joints) == 36 * 21 and len(m.areas) == 36 * 20
+    assert "END TABLE DATA" in s2k_text(m)
+
+
+def test_cli_runs_on_example(tmp_path):
+    out = tmp_path / "e.s2k"
+    r = subprocess.run([sys.executable, str(ROOT / "build_tank.py"),
+                        str(CONFIGS / "example.toml"), "-o", str(out)],
+                       capture_output=True, text=True, check=True)
+    assert "756 joints, 720 shells, base released radially" in r.stdout and out.exists()
 
 
 @pytest.mark.parametrize("raw, msg", [
