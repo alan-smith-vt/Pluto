@@ -295,8 +295,9 @@ public class SapToPluto
             // them out); no frame forces yet, so a layout-only force component
             // when there are no displacements at all.
             beamComps = new List<RawViewerWriter.Component>();
-            bool hasFrameForces = frameRows.Count > 0;
-            if (hasFrameForces || !hasDisp)
+            // force components always present with beams + results (NaN = "no
+            // data" until a results file carries ELEMENT FORCES - FRAMES), so the
+            // viewer's beam dropdown does not change shape between runs
             {
                 string mUnit = forceUnit + "-" + lengthUnit;
                 beamComps.Add(new RawViewerWriter.Component("P (axial)", "force", forceUnit));
