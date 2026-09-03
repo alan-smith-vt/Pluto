@@ -86,14 +86,23 @@ differs) treat predicate members as empty and say so; the C# exporter resolves t
 writing STAAD groups. `source.predicateId` remains for the "materialised from" audit trail
 when IDs *are* written out.
 
-Viewer behaviour (`viewer/scripts/features.js`):
+Optional display flag (2026-09-03): `"hidden": true` on a group item — the viewer lists
+the group but does not paint it (and it drops out of the precedence chain). Absent = shown.
+Exporters never write it; the viewer's Groups tab sets and clears it, and Export keeps it.
+
+Viewer behaviour (`viewer/scripts/features.js`, **Groups tab** on the right edge, 2026-09-03):
 - One switch, **Color by groups**: every element painted by its group's color through a
   palette LUT (`catIdx` vertex attribute + `uGroupMode`); ungrouped = neutral grey. Works
   on shells and beams; envelope/field views are untouched when the switch is off.
-- Precedence: last group listing an element wins → order coarse-to-fine ("all W shapes",
-  then "pipes by size", then "insulated").
-- `color` omitted → auto palette. Legend lists name + resolved member count.
-- Hover/pick readout shows the group name.
+- Precedence: the **last enabled** group listing an element wins → order coarse-to-fine
+  ("all W shapes", then "pipes by size", then "insulated"). The tab shows each group as
+  a row: enable tick (`hidden`), colour swatch (edits `color`), name, and
+  **painted / members** counts — an orange count means members are shadowed by a group
+  lower in the list. Drag rows to reorder (mutates `groups.items` order); All / None /
+  Invert; Export writes the whole sidecar with order, colours and `hidden` flags.
+- Node groups (`nodeIds` members) are listed with their node count and never painted.
+- `color` omitted → auto palette. Hover/pick readout shows the winning group name.
+- Headless test: `node viewer/tests/test_groups.js`.
 
 Predicate-referenced members are accepted by `features.js` today (counted as unresolved
 until the predicate module is ported); the hook point is `resolveMember()`.

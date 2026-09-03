@@ -1,0 +1,95 @@
+/* ============================================================
+   groups.css  --  groups flyout panel (right edge, tab below the
+   predicate tab). Matches predicates.css / sectionCut.css styling.
+   ============================================================ */
+
+/* sits directly under the predicate tab (42px tab + 8px gap) */
+:root { --gr-top: calc(var(--pd-top) + 50px); }
+
+#grPanel {
+    position: fixed;
+    right: 0;
+    top: var(--gr-top);
+    z-index: 12;               /* under pdPanel / scPanel */
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: flex-start;
+    max-height: calc(100vh - var(--gr-top) - 12px);
+}
+
+#grTab {
+    width: 30px;
+    height: 42px;
+    background: rgba(16, 16, 20, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    color: #f2b84b;
+    user-select: none;
+}
+#grTab:hover { background: rgba(40, 40, 50, 0.94); }
+
+#grBody {
+    width: 268px;
+    background: rgba(16, 16, 20, 0.94);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-right: none;
+    padding: 12px 14px;
+    max-height: calc(100vh - var(--gr-top) - 12px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+#grPanel.collapsed #grBody { display: none; }
+
+#grList {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    margin-top: 8px;
+    padding-top: 6px;
+    min-height: 40px;
+    max-height: 46vh;
+    overflow-y: auto;
+}
+
+/* one group per row: [enable] [swatch] name .......... painted/members */
+.gr-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 3px 4px; border-radius: 3px;
+    font-size: 11px; color: #ccc; user-select: none;
+    cursor: grab;
+}
+.gr-row:hover { background: rgba(255, 255, 255, 0.05); }
+.gr-row.off { color: #777; }
+.gr-row.off .gr-swatch { opacity: 0.35; }
+.gr-row.nodes { cursor: default; }
+.gr-row.drop-before { box-shadow: 0 -2px 0 #f2b84b; }
+.gr-row.drop-after  { box-shadow: 0 2px 0 #f2b84b; }
+.gr-row.dragging { opacity: 0.4; }
+
+.gr-check { margin: 0; cursor: pointer; }
+.gr-swatch {
+    width: 14px; height: 14px; border-radius: 3px; flex: none;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    padding: 0; background: none; cursor: pointer;
+}
+.gr-swatch::-webkit-color-swatch-wrapper { padding: 0; }
+.gr-swatch::-webkit-color-swatch { border: none; border-radius: 2px; }
+.gr-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gr-count { font-size: 10px; color: #8a8a95; font-family: 'Consolas', monospace; }
+.gr-count.shadowed { color: #b86b3a; }
+.gr-tags { font-size: 9px; color: #666; }
+.gr-empty { color: #777; font-size: 11px; padding: 8px 2px; }
+.gr-ungrouped { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #999; padding: 4px; }
+.gr-ungrouped .sw { width: 14px; height: 14px; border-radius: 3px; background: rgb(100,102,108); }
+
+#grFooter {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    margin-top: 8px; padding-top: 8px;
+    display: flex; gap: 5px; flex-wrap: wrap;
+}

@@ -25,6 +25,7 @@ import http.server
 import subprocess
 import sys
 import threading
+import time
 import webbrowser
 from functools import partial
 from pathlib import Path
@@ -104,9 +105,11 @@ def step_viewer(bin_path: Path, features: Path, port: int) -> None:
     webbrowser.open(url)
     print("          serving; Ctrl+C to stop")
     try:
-        threading.Event().wait()
+        while True:                     # a timed wait keeps Ctrl+C working on Windows
+            time.sleep(0.5)
     except KeyboardInterrupt:
-        pass
+        print("")
+        print("          stopped")
     finally:
         httpd.shutdown()
 
