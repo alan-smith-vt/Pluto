@@ -313,6 +313,19 @@ var FEASectionCut = (function () {
         }
         attr.needsUpdate = true;
         if (edgeAttr) edgeAttr.needsUpdate = true;
+        // beams follow: keep those whose both ends sit on the kept panel
+        if (window.FEABeams && FEABeams.writeVis) {
+            var nodeKeep = null;
+            if (keep) {
+                nodeKeep = new Uint8Array(feaModel.header.nNodes);
+                for (var e3 = 0; e3 < nElem; e3++) {
+                    if (!keep[e3]) continue;
+                    var nc3 = feaBuild.elemNCount[e3];
+                    for (var k3 = 0; k3 < nc3; k3++) nodeKeep[feaBuild.elemCorners[e3 * 4 + k3]] = 1;
+                }
+            }
+            FEABeams.writeVis(nodeKeep);
+        }
         requestRender();
     }
 

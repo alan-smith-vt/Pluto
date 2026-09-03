@@ -165,6 +165,30 @@ var FEABeams = (function () {
     }
 
     // ---- picking --------------------------------------------------------
+    // Section-cut isolation follows the shells: a beam stays drawn only when
+    // both its end nodes belong to the kept panel (nodeKeep is a per-node
+    // flag array over the shared node table); null = draw everything.
+    function writeVis(nodeKeep) {
+        if (!build || !view) return;
+        var attr = build.geometry.getAttribute('elemVis');
+        var arr = attr.array, elems = view.elems, REC = view.elemRecordU32;
+        for (var e = 0; e < build.nElem; e++) {
+            var vis = 1;
+            if (nodeKeep) {
+                var n0 = elems[e * REC + 1], n1 = elems[e * REC + 2];
+                vis = (nodeKeep[n0] && nodeKeep[n1]) ? 1 : 0;
+            }
+            arr.fill(vis, build.vertStart[e], build.vertStart[e] + build.vertCount[e]);
+        }
+        attr.needsUpdate = true;
+    }
+
+    function elemVisible(e) {
+        if (!build) return false;
+        var attr = build.geometry.getAttribute('elemVis');
+        return !attr || attr.array[build.vertStart[e]] > 0.5;
+    }
+
     function pick(raycaster) {
         if (!beamMesh || !beamMesh.visible) return null;
         var hits = raycaster.intersectObject(beamMesh);
@@ -172,6 +196,7 @@ var FEABeams = (function () {
             var fi = hits[i].faceIndex;
             if (fi == null) continue;
             var e = build.triToElem[fi];
+            if (!elemVisible(e)) continue;          // hidden by the section-cut isolate
             return { beam: true, elem: e, point: hits[i].point, distance: hits[i].distance, faceIndex: fi };
         }
         return null;
@@ -235,6 +260,7 @@ var FEABeams = (function () {
         setDispScale: setDispScale,
         refreshDispVecs: refreshDispVecs,
         pick: pick,
+        writeVis: writeVis,
         fillReadout: fillReadout,
         mesh: function () { return beamMesh; },
         view: function () { return view; },
