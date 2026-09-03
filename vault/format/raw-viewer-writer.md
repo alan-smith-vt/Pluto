@@ -6,7 +6,7 @@ created: 2026-08-25
 
 # RawViewerWriter — structure and usage
 
-`viewer/RawViewerWriter.cs` is the **production writer** for the Pluto v4 binary
+`scripts/lib/writers/RawViewerWriter.cs` is the **production writer** for the Pluto v4 binary
 ([[vault/format/v4-schema|v4-schema]]). It is called by the STAAD post-processing scripts
 that have not been ported into this repo yet; its public surface is kept identical to the
 v3 writer they were written against, plus an optional beam domain. (`viewer/scripts/format/v4Writer.js`
@@ -106,11 +106,11 @@ Verified by compiling with `<LangVersion>5</LangVersion>`.
 beam domain becomes domain 0; with no load cases no `FLDS` blocks are written (`Write()`
 and `Write(false)` are then equivalent). At least one of elements / beams is required.
 
-## Bridges (`viewer/exporters/`)
+## Bridges (`scripts/exporters/`)
 
 End-to-end usage of the pipe arm (CSV → beams → files → viewer): [[vault/arms/pipe-csv-to-viewer|pipe-csv-to-viewer]].
 
-- `PipeToPluto.cs` — `Voyager.PipeToPluto.Export(List<Voyager.PipeBeam>, outBase, modelId, lengthUnit)`:
+- `PipeToPluto.cs` — `PipeToPluto.Export(List<PipeBeam>, outBase, modelId, lengthUnit)`:
   dedupes weld points into nodes, one `Pipe` section per distinct diameter (+ `UNSIZED`),
   `PartOid` as beam label, sidecar groups for class / run / star-arms / unsized / src.
   Writes `<outBase>.bin` + `<outBase>.features.json`. Verified C# 5 build and JS read.

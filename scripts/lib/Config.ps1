@@ -1,12 +1,14 @@
 using module .\std_Utils.psm1
 
-$dataDir = $currDir + "$PSScriptRoot\..\_STAADProcessedData"
+$dataDir = Join-Path $PSScriptRoot "..\_STAADProcessedData"   # sanitized: original used an undefined $currDir prefix
 $basePath = "C:/Temp/_STAADProcessedData/"
 $workingDir = $basePath + "WorkingDirectory\"
 
 #Write-Host "$PSScriptRoot"
 
-$csFiles = Get-ChildItem -Path ".\lib\" -Recurse -Filter *.cs | Select-Object -ExpandProperty FullName
+# One Add-Type batch: the lib (this folder) + the CSV exporters. Path-anchored on this
+# file so the caller's working directory does not matter (was ".\lib\" -- cwd-relative).
+$csFiles = Get-ChildItem -Path $PSScriptRoot, (Join-Path $PSScriptRoot "..\exporters") -Recurse -Filter *.cs | Select-Object -ExpandProperty FullName
 $excelAssembly = [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.Office.Interop.Excel")
 
 $refAssemblies = @($excelAssembly.Location,

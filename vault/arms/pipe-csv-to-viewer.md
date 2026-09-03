@@ -6,7 +6,7 @@ created: 2026-08-27
 
 # Pipe CSV → viewer — usage
 
-The SP3D piping arm end to end, as run in the production environment (everything under `C:\Temp`, PowerShell 5.1, C# 5 via `Add-Type`). Source files: `viewer/exporters/PipeCsvReader.cs` (CSV → beams) and `viewer/exporters/PipeToPluto.cs` (beams → `.bin` + `.features.json`), plus `viewer/RawViewerWriter.cs`, `viewer/FeaturesSidecar.cs` and the production-box `Stubs.cs`.
+The SP3D piping arm end to end, as run in the production environment (everything under `C:\Temp`, PowerShell 5.1, C# 5 via `Add-Type`). Source files: `scripts/exporters/PipeCsvReader.cs` (CSV → beams) and `scripts/exporters/PipeToPluto.cs` (beams → `.bin` + `.features.json`), plus `scripts/lib/writers/RawViewerWriter.cs`, `scripts/lib/sidecar/FeaturesSidecar.cs` and the rest of `scripts/lib/` (the writer needs `Types.cs`, which needs the lib). Since 2026-09-03 the exporters are part of the single `Config.ps1` Add-Type batch — dot-source it and everything is loaded; the old production-box `Stubs.cs` is retired.
 
 ## 1. Get the CSV
 
@@ -21,15 +21,15 @@ Columns (v4.2): `ConnOid, PartOid, PartClass, X, Y, Z, RunOid, RunName, Room, Ud
 ## 2. Compile (fresh window)
 
 ```powershell
-Add-Type -Path .\RawViewerWriter.cs, .\FeaturesSidecar.cs, .\PipeCsvReader.cs, .\PipeToPluto.cs, .\Stubs.cs
+. <repo>\scripts\lib\Config.ps1   # one Add-Type batch: scripts/lib + scripts/exporters
 ```
 
-All files in one `Add-Type` call — they reference each other. `PipeCsvReader.cs` defines `Vec3` and `PipeBeam`; if `Stubs.cs` also defines `Vec3`, delete one copy. Types can't be redefined: edit → new window.
+Everything loads in one `Add-Type` call (types can't be redefined: edit → new window). `Types.cs` defines `Vec3`; `PipeCsvReader.cs` defines `PipeBeam`. Do not also load the old `Stubs.cs`.
 
 ## 3. See what rooms are in the file (optional)
 
 ```powershell
-$ex = New-Object Voyager.PipeCsvReader
+$ex = New-Object PipeCsvReader
 $ex.Rooms('C:\Temp\pipe_v4.csv') | Sort-Object Value -Descending | Select-Object -First 20
 ```
 
@@ -90,7 +90,7 @@ What `Build` does per row: keeps it if `Room` matches (before anything else, so 
 ## 5. Write the viewer files
 
 ```powershell
-$r = [Voyager.PipeToPluto]::Export($beams, 'C:\Temp\pipes_<room>', '<plant>/pipes/<room>', 'in')
+$r = [PipeToPluto]::Export($beams, 'C:\Temp\pipes_<room>', '<plant>/pipes/<room>', 'in')
 $r.Summary()
 ```
 
@@ -107,7 +107,7 @@ Drop the `.bin` and `.features.json` together on the viewer's file picker → ti
 | `Build` returns few beams, `skipped` high | wrong `Room` spelling (use `Rooms()`), or CSV from a query that dropped hubs |
 | everything `UNSIZED` | `RunName` column missing/renamed, or names lack the `"` token — check one row |
 | `jointConflicts > 0` | same `ConnOid` at two coordinates — the SQL side duplicated a hub row; report it |
-| duplicate type `Vec3` at `Add-Type` | remove the copy in `Stubs.cs` (or in `PipeCsvReader.cs`) |
+| duplicate type `Vec3` at `Add-Type` | an old `Stubs.cs` is still in the set — drop it; `Types.cs` owns `Vec3` |
 | bar never moves | it ticks every 5k rows; if nothing after 10 s the file is not being read — check the path |
 
 ## Related

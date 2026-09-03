@@ -107,20 +107,80 @@ public class RawViewerWriter
         public float[] Values;
     }
 
-    // ---- name catalogs / component factory (placeholders -- fill in) ----
-    public static string[] StressNames = { /* TODO */ };
-    public static string[] DispNames = { /* TODO */ };
+    // ---- name catalogs / component factory (ported from the v3 writer 2026-09-03) ----
+    // Names come from these catalogs plus the STR / DSR enums (Types.cs);
+    // units from nameUnits(). The v3 original is archive/RawViewerWriter_v3.cs.
+    public static readonly string[] StressNames =
+    {
+        "Sx (Axial)", "Sxy (IP)", "SQx (OOP)",
+        "Sy (Axial)", "SQy (OOP)", "Mx", "Mxy", "My"
+    };
+
+    public static readonly string[] DispNames =
+    {
+        "Translation X", "Translation Y", "Translation Z",
+        "Rotation X", "Rotation Y", "Rotation Z"
+    };
 
     public static string nameUnits(string name)
     {
-        // TODO
-        return null;
+        string units = "";
+        switch (name[0])
+        {
+            case 'P':
+            case 'S':
+            case 'V':
+                units = "kip / ft";
+                break;
+            case 'M':
+                units = "kip-ft / ft";
+                break;
+            default:
+                break;
+        }
+        return units;
     }
 
+    // Assembles the ONE shell component list the constructor takes.
+    // DSR & capacity names derive from the enums so they can change over time.
     public static List<Component> BuildComponents(bool stress, bool displacement, bool strength, bool dsr)
     {
-        // TODO
-        throw new NotImplementedException();
+        if (!stress && !displacement && !dsr)
+        {
+            throw new Exception("BuildComponents: at least one kind must be enabled.");
+        }
+        List<Component> components = new List<Component>();
+        if (stress)
+        {
+            foreach (string name in StressNames)
+            {
+                components.Add(new Component(name, "stress", nameUnits(name)));
+            }
+        }
+        if (displacement)
+        {
+            for (int i = 0; i < DispNames.Length; i++)
+            {
+                string units = (i >= 3) ? "rad" : "inch";
+                components.Add(new Component(DispNames[i], "displacement", units));
+            }
+        }
+        if (strength)
+        {
+            for (int i = 0; i < (int)STR.Count; i++)
+            {
+                string name = Enum.GetName(typeof(STR), (STR)i);
+                components.Add(new Component(name, "str", nameUnits(name)));
+            }
+        }
+        if (dsr)
+        {
+            for (int i = 0; i < (int)DSR.Count; i++)
+            {
+                components.Add(new Component(Enum.GetName(typeof(DSR), (DSR)i), "dsr"));
+            }
+        }
+        return components;
     }
 
     // Layout derived once from a component list. Each kind must occupy a

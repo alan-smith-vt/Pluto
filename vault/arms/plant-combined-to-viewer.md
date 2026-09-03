@@ -29,18 +29,18 @@ of rescued.
 ## 1. Compile (fresh window every time a .cs changes)
 
 ```powershell
-Add-Type -Path .\RawViewerWriter.cs, .\FeaturesSidecar.cs, .\PipeCsvReader.cs, .\SteelToPluto.cs, .\CombinedToPluto.cs, .\Stubs.cs
+. <repo>\scripts\lib\Config.ps1   # one Add-Type batch: scripts/lib + scripts/exporters
 ```
 
 One call — the files reference each other. `PipeCsvReader.cs` defines
-`Vec3`/`PipeBeam` (delete any duplicate `Vec3` in `Stubs.cs`). Add
+`PipeBeam` (`Vec3` now comes from `Types.cs`; the old `Stubs.cs` is retired). Add
 `.\PipeToPluto.cs` to the list only if you also want single-discipline pipe
 exports in the same session.
 
 ## 2. Build pipe records (with the one-hub fallback)
 
 ```powershell
-$pex = New-Object Voyager.PipeCsvReader
+$pex = New-Object PipeCsvReader
 $pex.Rooms('C:\Temp\pipe_v4.csv')                 # optional: room census first
 $pipes = $pex.Build('C:\Temp\pipe_v4.csv', '<room>', 'C:\Temp\pipe_parts_bbox.csv')
 $pex.Summary()
@@ -57,7 +57,7 @@ $pex.Summary()
 ## 3. Build steel records
 
 ```powershell
-$sex = New-Object Voyager.SteelToPluto
+$sex = New-Object SteelToPluto
 $steel = $sex.Build('C:\Temp\steel_v1.csv', '<room>')
 $sex.Summary()
 ```
@@ -68,7 +68,7 @@ orientation), `cp: offCentroid/unmapped`, `dimConflicts`.
 ## 4. Export one combined file
 
 ```powershell
-$r = [Voyager.CombinedToPluto]::Export($pipes, $steel, 'C:\Temp\plant_<room>', '<plant>/combined/<room>', 'in')
+$r = [CombinedToPluto]::Export($pipes, $steel, 'C:\Temp\plant_<room>', '<plant>/combined/<room>', 'in')
 $r.Summary()
 ```
 

@@ -28,6 +28,10 @@ a FEMAP-style hub for finite-element data. The intended shape:
 ## Repo layout
 
 ```text
+scripts/           production C#/PowerShell toolchain (STAAD post-processing, v4 writer, sidecar, CSV arms)
+  lib/             single Add-Type batch via lib/Config.ps1 (C# 5, PowerShell 5.1)
+  exporters/       pipe / steel / combined CSV -> .bin + sidecar
+archive/           superseded code (old viewer, v3 writer) -- reference only
 viewer/            the viewer arm (open viewer/index.html)
   scripts/         viewer JS modules
   styles/          CSS

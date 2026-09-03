@@ -19,7 +19,7 @@ created: 2026-09-01
 
 # Old viewer → new viewer merge plan
 
-Source: `scripts_sanitized/ViewerSource/ViewerSource/ViewerSource/` (the pre-Pluto
+Source: `archive/ViewerSource/` (the pre-Pluto
 viewer, transcribed 2026-09-01, no `// sanitized` markers — appears intact).
 Target: `viewer/` (the v4 viewer). Companion audit of the whole sanitized drop:
 see the audit note when it lands (workflow running 2026-09-01).
@@ -41,7 +41,7 @@ persistent definition list the C# analysis consumes.
 
 ## The binding constraint: what production C# parses
 
-`scripts_sanitized/lib/readers/Groups.cs:355-417` parses the OLD viewer's JSON dialect:
+`scripts/lib/readers/Groups.cs:355-417` parses the OLD viewer's JSON dialect:
 `kind: "plane" | "finitePlane"` (+ `and`/`or` ops), `tol`, `normal_tol_deg`, `negated`,
 `width/length/angle_deg`. The [[vault/format/features-sidecar|features-sidecar]] draft
 (2026-08-25) sketched a different leaf (`side: positive` half-space, no tolerances,

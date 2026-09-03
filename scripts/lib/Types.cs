@@ -379,7 +379,7 @@ public class Element : IEquatable<Element>
 		// an issue with the mesh.
 		if (localZ.Length() <= 1e-6)
 		{
-			Console.Error.WriteLine("Nodes 1, 2, and 3 are collinear or form a zero-area element.\r\nCheck element {this.id} mesh.");
+			Console.Error.WriteLine(string.Format("Nodes 1, 2, and 3 are collinear or form a zero-area element.\r\nCheck element {0} mesh.", this.id));
 		}
 
 		// Local Y axis as defined per STAAD Help is in the direction of the local Z-axis

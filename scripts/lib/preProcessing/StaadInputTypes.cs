@@ -130,7 +130,7 @@ public class Curve
 	{
 		double dist = Dist(x,z);
 		
-		double i = 0; // sanitized
+		// sanitized: interpolation factor i (soft-zone width constant) removed -- orphaned local was CS0219 under warnings-as-errors
 		double soft_disp = 0; // sanitized
 		return soft_disp;
 	}

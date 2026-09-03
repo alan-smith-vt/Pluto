@@ -422,7 +422,7 @@ public class StaadModel
 						float[] vals = nidKvp.Value;
 						int c = lcCounts[nidKvp.Key];
 						if (c > 0)
-							for (int j = 0; j < 0; j++) vals[j] /= c;
+							for (int j = 0; j < 8; j++) vals[j] /= c;
 
 						//Check for displacements and fill if found, NaN otherwise
 						FillDisp(vals, nidKvp.Key, lcKvp.Key, disps);

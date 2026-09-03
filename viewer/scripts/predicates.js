@@ -382,7 +382,7 @@ var FEAPredicates = (function () {
     }
 
     // ---- envelope (sidecar) serialization -------------------------------
-    // Production dialect: what scripts_sanitized/lib/readers/Groups.cs parses.
+    // Production dialect: what scripts/lib/readers/Groups.cs parses.
     function exportNode(node) {
         if (node.kind === 'leaf') {
             var p = {

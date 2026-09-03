@@ -760,7 +760,7 @@ public class ColumnGrouper
 	public void SectionCutColumnsSF(string path)
 	{
 		// Config
-		Dictionary<char, float> baseOffsetDict; // sanitized
+		Dictionary<char, float> baseOffsetDict = new Dictionary<char, float>(); // sanitized: grid-column letter -> base section-cut offset (ft); re-hydrate production-side
 
 		StringBuilder sb = new StringBuilder();
 		sb.AppendLine("ColumnID, LoadCase#, TopOffset, Axial (T+), Vy, Vz, Torsion, My, Mz, " +

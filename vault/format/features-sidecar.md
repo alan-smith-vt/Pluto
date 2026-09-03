@@ -96,7 +96,7 @@ Viewer behaviour (`viewer/scripts/features.js`):
 Predicate-referenced members are accepted by `features.js` today (counted as unresolved
 until the predicate module is ported); the hook point is `resolveMember()`.
 
-C# side: `viewer/FeaturesSidecar.cs` — `AddGroup(...)`, `AddNodeGroup(...)`,
+C# side: `scripts/lib/sidecar/FeaturesSidecar.cs` — `AddGroup(...)`, `AddNodeGroup(...)`,
 `ComputeGeometryHash(blocks)`, `ToJson()`, `ToStaadGroupBlock()` (bridge to the existing
 STAAD group writer; adjust prefixes to its conventions when ported).
 
@@ -109,7 +109,7 @@ against the model happens in both the viewer and the scripts.
 
 **Decision (2026-09-01):** the node grammar is the PRODUCTION dialect the existing C#
 parser (`Groups.cs` `ParsePlane`/`ParseFinitePlane`, transcribed in
-`scripts_sanitized/lib/readers/Groups.cs`) and the old viewer already speak — not the
+`scripts/lib/readers/Groups.cs`) and the old viewer already speak — not the
 half-space/`side`/`not`-op sketch this section previously carried. Negation is a
 `negated` flag on any node; a leaf is a slab (|distance| ≤ `tol`, both sides) plus a
 normal-alignment test (`normal_tol_deg`, applied to shell elements only — beams and
