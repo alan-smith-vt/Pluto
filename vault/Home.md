@@ -41,8 +41,8 @@ plain JS (`viewer/`).
 - `scripts/arms/` — the Pluto arms ([[vault/arms/Arms map|Arms map]]).
 - `viewer/` — plain JS/HTML/CSS, Three.js r128 vendored under `viewer/lib/`
   ([[vault/viewer/Viewer overview|Viewer overview]]).
-- `pythonTools/sap/` — development-side Python: `build_tank.py` (CLI) + the `tankbuilder`
-  package (`spec.py` / `model.py` / `s2k.py`) + `configs/*.toml` generate the SAP2000 tank
+- `pythonTools/sap/` — development-side Python: `build_tank.py` (CLI), `run_sap.py` (one-command
+  loop through SAP2000) + the `tankbuilder` package (`spec.py` / `model.py` / `s2k.py` / `sap_api.py`) + `configs/*.toml` generate the SAP2000 tank
   `.s2k` (`python build_tank.py configs/example.toml` → `models/<name>/`); `python -m pytest`
   runs 20 tests incl. a byte-exact golden. `run_sap.py` drives SAP2000 over the OAPI
   (`tankbuilder/sap_api.py`, needs `comtypes`) and opens the viewer on the result. New
