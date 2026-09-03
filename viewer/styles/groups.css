@@ -10,7 +10,7 @@
     position: fixed;
     right: 0;
     top: var(--gr-top);
-    z-index: 12;               /* under pdPanel / scPanel */
+    z-index: 14;               /* under pdPanel / scPanel, above the view cube canvas (13) */
     display: flex;
     flex-direction: row-reverse;
     align-items: flex-start;

@@ -10,7 +10,7 @@
     position: fixed;
     right: 0;
     top: var(--pd-top);
-    z-index: 13;               /* under scPanel so an open cut panel wins */
+    z-index: 15;               /* under scPanel, above the view cube canvas (13) */
     display: flex;
     flex-direction: row-reverse;
     align-items: flex-start;

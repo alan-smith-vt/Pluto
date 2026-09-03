@@ -18,7 +18,7 @@
     position: fixed;
     right: 0;                  /* tab hangs off the right screen edge */
     top: var(--sc-top);
-    z-index: 14;
+    z-index: 16;               /* flyouts stack sc > pd > gr, all above the view cube (13) */
     display: flex;
     flex-direction: row-reverse;   /* DOM: body, tab -- tab renders left */
     align-items: flex-start;
