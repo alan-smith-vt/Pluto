@@ -74,20 +74,21 @@ aspect ratio, normal-outward flag (continuous per-element "model" fields). Add t
 
 ```text
 cd pythonTools/sap
-python build_tank.py configs/tank_hoop.toml      # -> models/tank_hoop/tank_hoop.s2k (gitignored)
-python -m pytest -q                              # 18 tests, incl. the golden byte-compare
+python build_tank.py configs/example.toml        # -> models/example/example.s2k (gitignored)
+python -m pytest -q                              # 17 tests, incl. the golden byte-compare
 ```
 
 Refactored 2026-09-03 into the `tankbuilder` package: `spec.py` (constants, `TankSpec`,
 TOML loader with typo rejection), `model.py` (`TankModel`: numbering, `base_joints` /
 `top_joints` / `course_areas`, hydrostatics), `s2k.py` (one function per table group,
 `s2k_text`, `write_s2k`, and `parse_s2k` to read tables back). `build_tank.py` is a thin
-CLI. **Contract:** `tests/golden/tank_hoop.s2k` is the exact file SAP2000 v25 ran; the
-writer must stay byte-identical to it unless the golden is regenerated on purpose.
+CLI. **Contract:** `tests/golden/example.s2k` is the writer's output for `example.toml` (the writer
+was byte-identical to the file SAP2000 v25 ran); it must stay byte-identical unless
+regenerated on purpose.
 **Configs:** `configs/example.toml` is the generic template; new configs and goldens are
-gitignored by default (project dimensions stay local); the three tracked ones (`tank`, `tank_hoop`,
-`example`) are **test fixtures with generic dimensions** — never edit them toward a real tank, copy
-them to a new (ignored) file.
+gitignored (project dimensions stay local); `example.toml` is the only tracked config, a
+**test fixture with generic dimensions** — never edit it toward a real tank, copy it to a new
+(ignored) file.
 
 `build_tank.py` + `configs/*.toml` (Python 3.11+, stdlib `tomllib`) generate the tank `.s2k` (wall mesh,
 base restraints, local axes, hydrostatic joint pattern). It is a model *generator*, not a
