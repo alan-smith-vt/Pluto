@@ -135,7 +135,22 @@ input[type=file].fea-file::file-selector-button {
     color: #aaa;
 }
 
-/* === Readout === */
+/* === Readout (bottom-right overlay) === */
+#roPanel {
+    position: fixed;
+    right: 14px;
+    bottom: 14px;
+    width: 268px;
+    max-height: 60vh;
+    overflow-y: auto;
+    z-index: 12;                     /* under the flyouts and the view cube */
+    background: rgba(16, 16, 20, 0.94);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    padding: 10px 14px 12px;
+    pointer-events: auto;
+}
 .ro-row {
     display: flex;
     gap: 6px;

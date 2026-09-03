@@ -178,20 +178,6 @@
         </div>
     </details>
 
-    <div class="fea-section">
-        <div class="fea-sub">Readout</div>
-        <div id="roMode" class="fea-hint" style="margin:-2px 0 8px;">hover = live &middot; click to pin &middot; ctrl+click = focus</div>
-        <div id="roValue" class="ro-value">&mdash;</div>
-        <div class="ro-row"><span class="ro-key">Component</span><span id="roComp" class="ro-val">&mdash;</span></div>
-        <div class="ro-row"><span class="ro-key">Element ID</span><span id="roElem" class="ro-val">&mdash;</span></div>
-        <div class="ro-row"><span class="ro-key">Nearest node</span><span id="roNode" class="ro-val">&mdash;</span></div>
-        <div class="ro-row"><span class="ro-key">Corner nodes</span><span id="roCorners" class="ro-val">&mdash;</span></div>
-        <div class="ro-row" id="roControllingRow" style="display:none;"><span class="ro-key">Controlling</span><span id="roControlling" class="ro-val">&mdash;</span></div>
-        <div class="ro-row"><span class="ro-key">Quad (u,v)</span><span id="roUV" class="ro-val">&mdash;</span></div>
-        <div class="ro-row"><span class="ro-key">World xyz</span><span id="roPos" class="ro-val">&mdash;</span></div>
-        <div id="calcCard" style="display:none;"></div>
-    </div>
-
     <div class="fea-section" style="margin-top:auto;">
         <div class="fea-sub">Status</div>
         <div id="feaStatus">Ready.</div>
@@ -346,6 +332,22 @@
 
 <!-- Active-view caption, overlaid top-center on the canvas -->
 <div id="viewCaption">&mdash;</div>
+
+<!-- Hover / pin readout, anchored bottom-right on the canvas (moved out of
+     the left panel 2026-09-03). Same element ids; viewer.js is unchanged. -->
+<div id="roPanel">
+    <div class="fea-sub">Readout</div>
+    <div id="roMode" class="fea-hint" style="margin:-2px 0 8px;">hover = live &middot; click to pin &middot; ctrl+click = focus</div>
+    <div id="roValue" class="ro-value">&mdash;</div>
+    <div class="ro-row"><span class="ro-key">Component</span><span id="roComp" class="ro-val">&mdash;</span></div>
+    <div class="ro-row"><span class="ro-key">Element ID</span><span id="roElem" class="ro-val">&mdash;</span></div>
+    <div class="ro-row"><span class="ro-key">Nearest node</span><span id="roNode" class="ro-val">&mdash;</span></div>
+    <div class="ro-row"><span class="ro-key">Corner nodes</span><span id="roCorners" class="ro-val">&mdash;</span></div>
+    <div class="ro-row" id="roControllingRow" style="display:none;"><span class="ro-key">Controlling</span><span id="roControlling" class="ro-val">&mdash;</span></div>
+    <div class="ro-row"><span class="ro-key">Quad (u,v)</span><span id="roUV" class="ro-val">&mdash;</span></div>
+    <div class="ro-row"><span class="ro-key">World xyz</span><span id="roPos" class="ro-val">&mdash;</span></div>
+    <div id="calcCard" style="display:none;"></div>
+</div>
 
 <!-- ============================================================
      SCRIPTS  --  vendored Three.js r128 + viewer modules.
