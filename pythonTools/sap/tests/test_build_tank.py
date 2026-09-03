@@ -21,7 +21,7 @@ HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))
 
-from tankbuilder import Course, TankModel, TankSpec, load_config, parse_s2k  # noqa: E402
+from tankbuilder import Course, Dent, TankModel, TankSpec, load_config, parse_s2k  # noqa: E402
 from tankbuilder.s2k import outlines_text, s2k_text  # noqa: E402
 from tankbuilder.section import polygon_properties, z_pair_outline, z_pair_section  # noqa: E402
 from tankbuilder.spec import spec_from_dict  # noqa: E402
@@ -46,7 +46,7 @@ def test_cli_writes_the_same_file(tmp_path):
                        capture_output=True, text=True, check=True)
     assert ("1335 joints, 1152 shells, 2 course(s), baseplate (216 shells), "
             "roof (216 shells, rise 10.53 ft, 36 ring frames), base released radially, "
-            "217 gap links on ground (ks 100 kip/ft^3)") in r.stdout
+            "217 gap links on ground (ks 100 kip/ft^3), ring wall 1 x 3 ft (springs), 1 dent(s)") in r.stdout
     assert out.read_text() == (GOLDEN / "example.s2k").read_text()
 
 
@@ -434,6 +434,99 @@ def test_gap_tables_restraints_and_cases():
     assert m.groups()["GROUND"] == ([], m.ground_joints, [])
     fixed = parse_s2k(s2k_text(capped()))
     assert "CONNECTIVITY - LINK" not in fixed and "NL_DEAD" not in {r["CASE"] for r in fixed["LOAD CASE DEFINITIONS"]}
+
+
+# --- ring wall ------------------------------------------------------------------
+
+def walled(**kw):
+    return capped(foundation="gap", subgrade_modulus=100.0, ringwall=True,
+                  ringwall_width=1.0, ringwall_depth=3.0, **kw)
+
+
+def test_ringwall_frames_close_on_the_rims_ground_joints():
+    m = walled()
+    rw = m.ringwall_joints
+    assert rw == [m.ground_of[j] for j in m.base_joints] and len(rw) == 8
+    assert m.ids.block("frame", "ringwall") == range(9, 17)         # after the 8 roof-ring frames
+    fr = [m.frames[f] for f in m.ids.block("frame", "ringwall")]
+    assert [i for i, _ in fr] == rw and fr[-1][1] == rw[0]
+    assert m.frame_sections["RINGWALL"] == {"Material": "CONC", "Shape": "Rectangular", "t3": 3.0, "t2": 1.0}
+    assert m.ringwall_spring == pytest.approx(100.0 * 1.0 * 2 * math.pi * 10 / 8)
+    assert set(m.plate_ground_joints).isdisjoint(rw) and len(m.plate_ground_joints) == 17
+    c = m.concrete
+    assert c["E"] == pytest.approx(57 * math.sqrt(3000) * 144) and c["name"] == "CONC"
+    assert capped().concrete is None
+
+
+def test_ringwall_tables():
+    m = walled()
+    t = parse_s2k(s2k_text(m))
+    mats = {r["MATERIAL"]: r for r in t["MATERIAL PROPERTIES 01 - GENERAL"]}
+    assert mats["CONC"]["TYPE"] == "Concrete" and "A36" in mats
+    secs = {r["SECTIONNAME"]: r for r in t["FRAME SECTION PROPERTIES 01 - GENERAL"]}
+    assert secs["RINGWALL"]["MATERIAL"] == "CONC" and secs["RINGWALL"]["SHAPE"] == "Rectangular"
+    assert secs["ROOF_RING"]["MATERIAL"] == "A36"
+    rest = {r["JOINT"]: r for r in t["JOINT RESTRAINT ASSIGNMENTS"]}
+    rw0 = str(m.ringwall_joints[0])
+    assert (rest[rw0]["U1"], rest[rw0]["U3"], rest[rw0]["R3"]) == ("Yes", "No", "No")
+    g0 = str(m.plate_ground_joints[0])
+    assert rest[g0]["U3"] == "Yes" and rest[g0]["R3"] == "Yes"
+    spr = t["JOINT SPRING ASSIGNMENTS 1 - UNCOUPLED"]
+    assert len(spr) == 8 and float(spr[0]["U3"]) == pytest.approx(m.ringwall_spring)
+    g = m.groups()
+    assert g["RINGWALL"] == ([], [], list(range(9, 17))) and g["RINGWALL_TOP"] == ([], m.ringwall_joints, [])
+    assert g["GROUND"] == ([], m.plate_ground_joints, [])
+    fixed = parse_s2k(s2k_text(walled(ringwall_support="fixed")))
+    assert "JOINT SPRING ASSIGNMENTS 1 - UNCOUPLED" not in fixed
+    assert {r["JOINT"]: r for r in fixed["JOINT RESTRAINT ASSIGNMENTS"]}[rw0]["U3"] == "Yes"
+
+
+# --- dents ---------------------------------------------------------------------
+
+def dented(**kw):
+    dent = Dent(angle_deg=0.0, elevation=4.0, depth=0.2, width=6.0, height=4.0)
+    return TankModel(TankSpec(radius=10.0, height=8.0, n_theta=8, n_z=4, dents=(dent,), **kw))
+
+
+def test_dent_moves_the_centre_joint_by_its_depth_and_nothing_outside():
+    m = dented()                                        # spoke 0 at theta 0, ring 2 at z = 4
+    centre = m.joint_id(2, 0)
+    x, y, z = m.joints[centre]
+    assert (x, y, z) == pytest.approx((9.8, 0.0, 4.0))  # full depth at rho = 0
+    assert m.dent_fraction(0, centre) == 1.0
+    # spoke 1 is 7.85 ft of arc away: outside a 6 ft wide footprint
+    assert m.dent_fraction(0, m.joint_id(2, 1)) == 0.0
+    x1, y1, _ = m.joints[m.joint_id(2, 1)]
+    assert math.hypot(x1, y1) == pytest.approx(10.0)
+    # 2 ft above/below: rho = 1 -> zero, 1 ft above: cos^2(pi/4) = 0.5
+    assert m.dent_fraction(0, m.joint_id(3, 0)) == pytest.approx(0.0, abs=1e-12)
+    m2 = TankModel(TankSpec(radius=10.0, height=8.0, n_theta=8, n_z=8,
+                            dents=(Dent(0.0, 4.0, 0.2, 6.0, 4.0),)))
+    assert m2.dent_fraction(0, m2.joint_id(5, 0)) == pytest.approx(0.5)
+    assert set(m.dent_joints[0]) == {centre}
+    assert m.dent_areas(0) == [9, 16, 17, 24]           # the four shells sharing that joint
+    assert m.groups()["DENT_01"] == ([9, 16, 17, 24], [], [])
+
+
+def test_dent_wraps_around_theta_zero_and_keeps_ground_joints_coincident():
+    dent = Dent(angle_deg=350.0, elevation=0.0, depth=0.1, width=8.0, height=4.0)
+    m = TankModel(TankSpec(radius=10.0, height=8.0, n_theta=8, n_z=4, dents=(dent,),
+                           baseplate=True, baseplate_n_r=2, foundation="gap"))
+    j0 = m.joint_id(0, 0)                               # theta 0 is 1.75 ft of arc from 350 deg
+    assert 0 < m.dent_fraction(0, j0) < 1
+    assert m.joints[m.ground_of[j0]] == m.joints[j0]    # ground joint copied after the dent
+
+
+@pytest.mark.parametrize("raw, msg", [
+    ({"ringwall": {"enabled": True}, "baseplate": {"enabled": True}}, "needs foundation.mode = 'gap'"),
+    ({"ringwall": {"enabled": True, "support": "magic"}, "baseplate": {"enabled": True}, "foundation": {"mode": "gap"}}, "not recognised"),
+    ({"dents": [{"angle_deg": 0, "elevation": 1, "depth": 0.1, "width": 1}]}, r"dents\[1\] needs height"),
+    ({"dents": [{"angle_deg": 0, "elevation": 99, "depth": 0.1, "width": 1, "height": 1}]}, "off the wall"),
+    ({"dents": [{"angle_deg": 0, "elevation": 1, "depth": 0, "width": 1, "height": 1}]}, "non-zero"),
+])
+def test_ringwall_and_dent_config_validation(raw, msg):
+    with pytest.raises(ValueError, match=msg):
+        spec_from_dict(raw)
 
 
 @pytest.mark.parametrize("raw, msg", [

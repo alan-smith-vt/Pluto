@@ -48,6 +48,23 @@ mode             = "gap"  # "fixed" = interior held in U3 (linear); "gap" = fixe
                           # compression-only links under the plate, nonlinear cases NL_DEAD -> NL_HYDRO
 subgrade_modulus = 100.0  # kip/ft^3; link k = this x the joint's tributary plan area
 
+[ringwall]
+enabled     = true      # concrete ring under the shell on the rim's ground joints (needs foundation "gap")
+width       = 1.0       # ft, radial
+depth       = 3.0       # ft, vertical
+fc          = 3000.0    # psi
+unit_weight = 0.150     # kip/ft^3
+support     = "springs" # "springs": U3 = subgrade_modulus x width x arc per joint | "fixed"
+
+# Wall imperfections: joints move radially inward, mesh unchanged. cos^2 bell over an
+# elliptical footprint. Group DENT_nn per dent.
+[[dents]]
+angle_deg = 0.0
+elevation = 20.0
+depth     = 0.1         # ft inward
+width     = 8.0         # ft along the circumference
+height    = 6.0         # ft up the wall
+
 [supports]
 base_local_axes = true  # base joint local axes: X tangential, Y radial outward
 release_radial  = true  # free the radial direction so the wall goes into hoop (needs base_local_axes)

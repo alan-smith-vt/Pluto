@@ -56,14 +56,21 @@ def material_tables(model: TankModel) -> list[tuple[str, list[str]]]:
     s = model.spec
     g = s.mat_e / (2.0 * (1.0 + s.mat_poisson))
     from .spec import G_ACCEL
-    return [
-        ("MATERIAL PROPERTIES 01 - GENERAL", [
-            _row(Material=s.mat_name, Type="Steel", SymType="Isotropic",
-                 TempDepend=False, Color="Cyan")]),
-        ("MATERIAL PROPERTIES 02 - BASIC MECHANICAL PROPERTIES", [
-            _row(Material=s.mat_name, UnitWeight=s.mat_unit_weight,
+    general = [_row(Material=s.mat_name, Type="Steel", SymType="Isotropic",
+                    TempDepend=False, Color="Cyan")]
+    mech = [_row(Material=s.mat_name, UnitWeight=s.mat_unit_weight,
                  UnitMass=s.mat_unit_weight / G_ACCEL, E1=s.mat_e, G12=g,
-                 U12=s.mat_poisson, A1=s.mat_alpha)]),
+                 U12=s.mat_poisson, A1=s.mat_alpha)]
+    c = model.concrete
+    if c:
+        general.append(_row(Material=c["name"], Type="Concrete", SymType="Isotropic",
+                            TempDepend=False, Color="Gray4"))
+        mech.append(_row(Material=c["name"], UnitWeight=c["unit_weight"],
+                         UnitMass=c["unit_weight"] / G_ACCEL, E1=c["E"],
+                         G12=c["E"] / (2.0 * (1.0 + c["poisson"])), U12=c["poisson"], A1=c["alpha"]))
+    return [
+        ("MATERIAL PROPERTIES 01 - GENERAL", general),
+        ("MATERIAL PROPERTIES 02 - BASIC MECHANICAL PROPERTIES", mech),
     ]
 
 
@@ -83,7 +90,8 @@ def section_tables(model: TankModel) -> list[tuple[str, list[str]]]:
         # generator, 2026-09-03) -- if it rejects the table, the field names are
         # the suspect, not the values.
         out.append(("FRAME SECTION PROPERTIES 01 - GENERAL", [
-            _row(SectionName=name, Material=s.mat_name, **props, Color="Yellow")
+            _row(SectionName=name, Material=props.get("Material", s.mat_name),
+                 **{k: v for k, v in props.items() if k != "Material"}, Color="Yellow")
             for name, props in model.frame_sections.items()]))
     return out
 
@@ -170,8 +178,17 @@ def support_tables(model: TankModel) -> list[tuple[str, list[str]]]:
             _row(Joint=j, U1=False, U2=False, U3=True, R1=False, R2=False, R3=False)
             for j in ([] if gap else model.baseplate_interior_joints)] + [
             _row(Joint=j, U1=True, U2=True, U3=True, R1=True, R2=True, R3=True)
-            for j in model.ground_joints]),
+            for j in model.plate_ground_joints] + [
+            # ring wall joints: lateral held, vertical by spring or fixed
+            _row(Joint=j, U1=True, U2=True, U3=s.ringwall_support == "fixed",
+                 R1=False, R2=False, R3=False)
+            for j in model.ringwall_joints]),
     ]
+    if model.ringwall_joints and s.ringwall_support == "springs":
+        out.append(("JOINT SPRING ASSIGNMENTS 1 - UNCOUPLED", [
+            _row(Joint=j, CoordSys="Global", U1=0, U2=0, U3=model.ringwall_spring,
+                 R1=0, R2=0, R3=0)
+            for j in model.ringwall_joints]))
     if s.base_local_axes:
         # AngleA rotates the joint local axes about global Z (local 3 stays
         # vertical); see TankModel.base_local_angle_deg for the sign choice.

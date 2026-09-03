@@ -21,11 +21,11 @@ Geometry / numbering conventions (SapToPluto and the tests rely on these):
     baseplate's wet face is "Top". Centre = a fan of triangles.
 """
 
-from .spec import GAMMA_WATER, G_ACCEL, STEEL, Course, TankSpec, load_config
+from .spec import GAMMA_WATER, G_ACCEL, STEEL, Course, Dent, TankSpec, load_config
 from .model import TankModel
 from .s2k import S2KWriter, outlines_text, parse_s2k, write_s2k
 
 __all__ = [
-    "GAMMA_WATER", "G_ACCEL", "STEEL", "Course", "TankSpec", "load_config",
+    "GAMMA_WATER", "G_ACCEL", "STEEL", "Course", "Dent", "TankSpec", "load_config",
     "TankModel", "S2KWriter", "outlines_text", "parse_s2k", "write_s2k",
 ]

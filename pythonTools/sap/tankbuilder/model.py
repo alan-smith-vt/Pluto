@@ -44,6 +44,10 @@ class TankModel:
     Foundation "gap": ground_joints (fixed, coincident with the baseplate
     joints), ground_of: tank joint -> ground joint, links: id -> (I = ground,
     J = tank), link_prop: id -> property name, link_props: name -> {"k": ...}.
+    Ring wall: ringwall_joints (the rim's ground joints, now the frame joints
+    of the RINGWALL frames), ringwall_spring: U3 spring per joint (springs mode).
+    Dents: dent_joints: dent index -> {wall joint: offset fraction} for the
+    joints the dent moved (DENT_nn groups come from these).
     """
 
     def __init__(self, spec: TankSpec):
@@ -67,14 +71,20 @@ class TankModel:
         self.links: dict[int, tuple[int, int]] = {}
         self.link_prop: dict[int, str] = {}
         self.link_props: dict[str, dict] = {}
+        self.ringwall_joints: list[int] = []
+        self.ringwall_spring: float = 0.0
+        self.dent_joints: dict[int, dict[int, float]] = {}
         self._build_levels()
         self._build_wall()
+        self._apply_dents()
         if spec.baseplate:
             self._build_baseplate()
         if spec.roof:
             self._build_roof()
         if spec.foundation == "gap":
             self._build_foundation()
+        if spec.ringwall:
+            self._build_ringwall()
 
     # --- numbering ----------------------------------------------------------
 
@@ -142,6 +152,43 @@ class TankModel:
                 )
                 self.area_section[aid] = section
                 self.area_face[aid] = "Bottom"     # water on the local -3 (inside) face
+
+    # --- dents -----------------------------------------------------------------
+
+    def dent_fraction(self, dent_index: int, jid: int) -> float:
+        """0..1 share of the dent depth at a wall joint: cos^2 bell over an
+        elliptical footprint (width along the arc, height up the wall)."""
+        d = self.spec.dents[dent_index]
+        x, y, z = self.joints[jid]
+        theta = self.thetas[jid]
+        dtheta = (theta - math.radians(d.angle_deg) + math.pi) % (2.0 * math.pi) - math.pi
+        arc = self.spec.radius * dtheta
+        rho = math.hypot(arc / (d.width / 2.0), (z - d.elevation) / (d.height / 2.0))
+        if rho >= 1.0:
+            return 0.0
+        return math.cos(math.pi * rho / 2.0) ** 2
+
+    def _apply_dents(self) -> None:
+        """Move wall joints radially inward by depth x fraction; the mesh and
+        the ids are untouched. Applied before the caps, so the caps' rims (the
+        base / top rings) follow if a dent reaches them."""
+        for n, d in enumerate(self.spec.dents):
+            moved: dict[int, float] = {}
+            for jid in self._wall_joints:
+                f = self.dent_fraction(n, jid)
+                if f <= 0.0:
+                    continue
+                x, y, z = self.joints[jid]
+                r = math.hypot(x, y)
+                r2 = r - d.depth * f
+                self.joints[jid] = (x * r2 / r, y * r2 / r, z)
+                moved[jid] = f
+            self.dent_joints[n] = moved
+
+    def dent_areas(self, dent_index: int) -> list[int]:
+        """Wall shells with at least one corner the dent moved."""
+        moved = self.dent_joints.get(dent_index, {})
+        return [a for a in self._wall_areas if any(j in moved for j in self.areas[a])]
 
     @property
     def base_joints(self) -> list[int]:
@@ -323,6 +370,43 @@ class TankModel:
     def gap(self) -> bool:
         return self.spec.foundation == "gap"
 
+    # --- ring wall ---------------------------------------------------------------
+
+    def _build_ringwall(self) -> None:
+        """Closed polygon of concrete frames on the rim's ground joints (which
+        stop being fixed: springs or fixed supports on the same joints; the gap
+        links above them now act shell <-> ring wall). Frame axis at the top of
+        the wall; local 2 is up by SAP default, so t3 = depth."""
+        s = self.spec
+        self.ringwall_joints = [self.ground_of[j] for j in self.base_joints]
+        self.frame_sections["RINGWALL"] = {
+            "Material": "CONC", "Shape": "Rectangular",
+            "t3": s.ringwall_depth, "t2": s.ringwall_width,
+        }
+        frames = self.ids.claim("frame", "ringwall", s.n_theta)
+        rw = self.ringwall_joints
+        for k, fid in enumerate(frames):
+            self.frames[fid] = (rw[k], rw[(k + 1) % s.n_theta])
+            self.frame_section[fid] = "RINGWALL"
+        arc = 2.0 * math.pi * s.radius / s.n_theta
+        self.ringwall_spring = s.subgrade_modulus * s.ringwall_width * arc
+
+    @property
+    def concrete(self) -> dict | None:
+        """Ring-wall concrete material (kip, ft): E = 57000 sqrt(f'c psi)."""
+        s = self.spec
+        if not s.ringwall:
+            return None
+        e_ksi = 57.0 * math.sqrt(s.ringwall_fc)
+        return {"name": "CONC", "E": e_ksi * 144.0, "poisson": 0.2,
+                "unit_weight": s.ringwall_unit_weight, "alpha": 5.5e-06, "fc": s.ringwall_fc}
+
+    @property
+    def plate_ground_joints(self) -> list[int]:
+        """Ground joints that stay fixed ground: all of them, minus the ring wall's."""
+        rw = set(self.ringwall_joints)
+        return [g for g in self.ground_joints if g not in rw]
+
     # --- groups ----------------------------------------------------------------
 
     def groups(self) -> dict[str, tuple[list[int], list[int], list[int]]]:
@@ -353,7 +437,12 @@ class TankModel:
             if s.roof_ring:
                 out["ROOF_RING"] = ([], [], list(self.ids.block("frame", "roof_ring")))
         if self.gap:
-            out["GROUND"] = ([], list(self.ground_joints), [])
+            out["GROUND"] = ([], self.plate_ground_joints, [])
+        if s.ringwall:
+            out["RINGWALL"] = ([], [], list(self.ids.block("frame", "ringwall")))
+            out["RINGWALL_TOP"] = ([], self.ringwall_joints, [])
+        for n in range(len(s.dents)):
+            out[f"DENT_{n + 1:02d}"] = (self.dent_areas(n), [], [])
         return out
 
     # --- hydrostatics --------------------------------------------------------

@@ -50,12 +50,17 @@ def main(argv=None) -> int:
     base = "released radially" if spec.release_radial else "pinned"
     if model.gap:
         base += f", {len(model.links)} gap links on ground (ks {spec.subgrade_modulus:g} kip/ft^3)"
+    if spec.ringwall:
+        base += (f", ring wall {spec.ringwall_width:g} x {spec.ringwall_depth:g} ft "
+                 f"({spec.ringwall_support})")
+    if spec.dents:
+        base += f", {len(spec.dents)} dent(s)"
     parts = [f"{len(spec.plate_courses)} course(s)"]
     if spec.baseplate:
         parts.append(f"baseplate ({len(model.baseplate_areas)} shells)")
     if spec.roof:
         parts.append(f"roof ({len(model.roof_areas)} shells, rise {model.roof_rise:.2f} ft"
-                     + (f", {len(model.frames)} ring frames)" if spec.roof_ring else ")"))
+                     + (f", {len(model.ids.block('frame', 'roof_ring'))} ring frames)" if spec.roof_ring else ")"))
     print(
         f"{out}: {len(model.joints)} joints, {len(model.areas)} shells, "
         + ", ".join(parts) + f", base {base}, base pressure "

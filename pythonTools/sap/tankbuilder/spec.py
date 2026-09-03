@@ -31,6 +31,18 @@ class Course:
     divisions: int | None = None
 
 
+@dataclass(frozen=True)
+class Dent:
+    """A local inward imperfection of the wall: the joints move, the mesh does not.
+    Radial offset = depth * cos^2(pi rho / 2) inside the elliptical footprint
+    rho = sqrt((arc / (width/2))^2 + (dz / (height/2))^2) <= 1, zero outside."""
+    angle_deg: float
+    elevation: float
+    depth: float       # ft, positive = inward
+    width: float       # ft, footprint along the circumference (arc length)
+    height: float      # ft, footprint up the wall
+
+
 @dataclass
 class TankSpec:
     # [geometry]
@@ -68,6 +80,17 @@ class TankSpec:
     #            static cases NL_DEAD -> NL_HYDRO.
     foundation: str = "fixed"
     subgrade_modulus: float = 170.0       # kip/ft^3 (compacted sand, guess)
+    # [ringwall]  concrete ring under the shell (needs foundation "gap": its joints are
+    # the rim's ground joints, so the gap links act shell <-> ring wall). Frame axis at
+    # the top of the wall; supports on the same joints.
+    ringwall: bool = False
+    ringwall_width: float = 1.25          # ft, radial (C)
+    ringwall_depth: float = 3.75          # ft, vertical (A)
+    ringwall_fc: float = 3000.0           # psi; E = 57000 sqrt(f'c)
+    ringwall_unit_weight: float = 0.150   # kip/ft^3
+    ringwall_support: str = "springs"     # "springs": U3 = subgrade x width x arc | "fixed"
+    # [[dents]]  wall imperfections applied to the joint coordinates
+    dents: tuple[Dent, ...] = ()
     # [supports]
     base_local_axes: bool = False
     release_radial: bool = False
@@ -140,6 +163,20 @@ class TankSpec:
                 raise ValueError("foundation.mode = 'gap' needs baseplate.enabled = true")
             if self.subgrade_modulus <= 0:
                 raise ValueError("foundation.subgrade_modulus must be positive")
+        if self.ringwall:
+            if self.foundation != "gap":
+                raise ValueError("ringwall.enabled needs foundation.mode = 'gap' (its joints are the rim's ground joints)")
+            if self.ringwall_width <= 0 or self.ringwall_depth <= 0 or self.ringwall_fc <= 0:
+                raise ValueError("ringwall.width, depth and fc must be positive")
+            if self.ringwall_support not in ("springs", "fixed"):
+                raise ValueError(f"ringwall.support {self.ringwall_support!r} not recognised (springs | fixed)")
+        for k, d in enumerate(self.dents, 1):
+            if d.width <= 0 or d.height <= 0:
+                raise ValueError(f"dents[{k}]: width and height must be positive")
+            if d.depth == 0:
+                raise ValueError(f"dents[{k}]: depth must be non-zero")
+            if not 0.0 <= d.elevation <= self.height:
+                raise ValueError(f"dents[{k}]: elevation {d.elevation:g} is off the wall (0 .. {self.height:g})")
         if not 0.0 <= self.fill_fraction <= 1.0:
             raise ValueError("fluid.fill_fraction must be between 0 and 1")
         if self.load_mode not in ("uniform", "joints"):
@@ -179,6 +216,16 @@ CONFIG_MAP = {
         "ring_thickness": "roof_ring_thickness",
     },
     "foundation": {"mode": "foundation", "subgrade_modulus": "subgrade_modulus"},
+    "ringwall": {
+        "enabled": "ringwall",
+        "width": "ringwall_width",
+        "depth": "ringwall_depth",
+        "fc": "ringwall_fc",
+        "unit_weight": "ringwall_unit_weight",
+        "support": "ringwall_support",
+    },
+    "dents": {"angle_deg": "angle_deg", "elevation": "elevation", "depth": "depth",
+              "width": "width", "height": "height"},
     "supports": {
         "base_local_axes": "base_local_axes",
         "release_radial": "release_radial",
@@ -212,6 +259,9 @@ def spec_from_dict(raw: dict) -> tuple[TankSpec, str, str]:
         if section == "courses":
             fields["courses"] = _courses_from_list(values)
             continue
+        if section == "dents":
+            fields["dents"] = _dents_from_list(values)
+            continue
         if not isinstance(values, dict):
             raise ValueError(f"[{section}] must be a table of key = value entries")
         for key, value in values.items():
@@ -227,6 +277,23 @@ def spec_from_dict(raw: dict) -> tuple[TankSpec, str, str]:
     spec = TankSpec(**fields)
     spec.validate()
     return spec, out_dir_raw, out_name
+
+
+def _dents_from_list(values) -> tuple[Dent, ...]:
+    """[[dents]] rows -> Dent tuple, rejecting unknown / missing keys."""
+    if not isinstance(values, list):
+        raise ValueError("[[dents]] must be an array of tables")
+    keys = list(CONFIG_MAP["dents"])
+    out = []
+    for k, row in enumerate(values, 1):
+        unknown = set(row) - set(keys)
+        if unknown:
+            raise ValueError(f"unknown key(s) in dents[{k}]: {sorted(unknown)}")
+        missing = [key for key in keys if key not in row]
+        if missing:
+            raise ValueError(f"dents[{k}] needs {', '.join(missing)}")
+        out.append(Dent(*(float(row[key]) for key in keys)))
+    return tuple(out)
 
 
 def _courses_from_list(values) -> tuple[Course, ...]:
