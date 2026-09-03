@@ -166,17 +166,30 @@ var FEABeams = (function () {
 
     // ---- picking --------------------------------------------------------
     // Section-cut isolation follows the shells: a beam stays drawn only when
-    // both its end nodes belong to the kept panel (nodeKeep is a per-node
-    // flag array over the shared node table); null = draw everything.
+    // both its ends sit ON the kept panel -- by position, not node id, so a
+    // beam on joints that merely coincide with panel nodes (a ring wall on
+    // its own ground joints under the base ring) is kept too. nodeKeep is a
+    // per-node flag array over the shared node table; null = draw everything.
+    var posKeyCache = null;     // node index -> rounded position key, built once per model
+    function posKey(nodes, n) {
+        var s = 1e4;   // 0.1 mm-ish in ft; coincident joints round identically
+        return Math.round(nodes[n * 3] * s) + ',' + Math.round(nodes[n * 3 + 1] * s) + ',' + Math.round(nodes[n * 3 + 2] * s);
+    }
     function writeVis(nodeKeep) {
         if (!build || !view) return;
         var attr = build.geometry.getAttribute('elemVis');
         var arr = attr.array, elems = view.elems, REC = view.elemRecordU32;
+        var keptPos = null;
+        if (nodeKeep) {
+            var nodes = view.nodes;
+            keptPos = {};
+            for (var n = 0; n < nodeKeep.length; n++) if (nodeKeep[n]) keptPos[posKey(nodes, n)] = 1;
+        }
         for (var e = 0; e < build.nElem; e++) {
             var vis = 1;
             if (nodeKeep) {
                 var n0 = elems[e * REC + 1], n1 = elems[e * REC + 2];
-                vis = (nodeKeep[n0] && nodeKeep[n1]) ? 1 : 0;
+                vis = (keptPos[posKey(view.nodes, n0)] && keptPos[posKey(view.nodes, n1)]) ? 1 : 0;
             }
             arr.fill(vis, build.vertStart[e], build.vertStart[e] + build.vertCount[e]);
         }

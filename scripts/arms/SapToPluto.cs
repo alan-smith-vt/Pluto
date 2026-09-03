@@ -44,8 +44,10 @@ using System.Text;
 //                                 Viewer frame: z = x cross y carries the depth
 //                                 (schema 4.3), so LocalY = local2 cross local1
 //                                 = MINUS SAP local 3.
-//                                 Beam ends get the joint displacements; frame
-//                                 forces are not exported yet.
+//                                 Beam ends get the joint displacements and,
+//   ELEMENT FORCES - FRAMES       when present, the frame forces P V2 V3 T M2 M3
+//                                 (frame local axes) at the first / last station
+//                                 of each frame as "force" components.
 //   ELEMENT FORCES - AREA SHELLS -> per-corner "stress" components, SAP order
 //                                 F11 F22 F12 M11 M22 M12 V13 V23, raw file units
 //                                 (forces per unit length -- continuous across a
@@ -85,7 +87,7 @@ public class SapExportResult
 {
     public string BinPath, SidecarPath;
     public int Nodes, Elements, LoadCases, ForceRows, ForceRowsUsed, DispRows, DispRowsUsed, Groups;
-    public int Frames, FrameSections, FramesUnknownShape;
+    public int Frames, FrameSections, FramesUnknownShape, FrameForceRows, FrameForceRowsUsed;
     public int NodesWithoutDisp;      // model joints with no JOINT DISPLACEMENTS row: results older than the model?
     public string ForceUnit, LengthUnit;
     public List<string> LoadCaseNames = new List<string>();
@@ -102,8 +104,9 @@ public class SapExportResult
             sb.AppendLine(string.Format("  WARNING: {0} of {1} joints have no displacement row (they will not move) -- results file older than the model?",
                 NodesWithoutDisp, Nodes));
         if (Frames > 0)
-            sb.AppendLine(string.Format("  {0} frames -> beams, {1} section(s){2}", Frames, FrameSections,
-                FramesUnknownShape > 0 ? string.Format(", {0} with an unknown shape (RECT placeholder)", FramesUnknownShape) : ""));
+            sb.AppendLine(string.Format("  {0} frames -> beams, {1} section(s){2}; frame force rows {3} (used {4})", Frames, FrameSections,
+                FramesUnknownShape > 0 ? string.Format(", {0} with an unknown shape (RECT placeholder)", FramesUnknownShape) : "",
+                FrameForceRows, FrameForceRowsUsed));
         sb.AppendLine(string.Format("  {0} groups -> {1}", Groups, SidecarPath));
         sb.AppendLine("  bin -> " + BinPath);
         foreach (string w in Warnings) sb.AppendLine("  WARN " + w);
@@ -210,10 +213,12 @@ public class SapToPluto
         // ---- load cases (first-seen order across both result tables) ----
         List<Dictionary<string, string>> forceRows = results.GetTable("ELEMENT FORCES - AREA SHELLS");
         List<Dictionary<string, string>> dispRows = results.GetTable("JOINT DISPLACEMENTS");
-        res.ForceRows = forceRows.Count; res.DispRows = dispRows.Count;
+        List<Dictionary<string, string>> frameRows = results.GetTable("ELEMENT FORCES - FRAMES");
+        res.ForceRows = forceRows.Count; res.DispRows = dispRows.Count; res.FrameForceRows = frameRows.Count;
         var lcNames = new Dictionary<int, string>();
         var lcByName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var r in forceRows) LcId(CaseOf(r), lcByName, lcNames);
+        foreach (var r in frameRows) LcId(CaseOf(r), lcByName, lcNames);
         foreach (var r in dispRows) LcId(CaseOf(r), lcByName, lcNames);
         res.LoadCases = lcNames.Count;
         res.LoadCaseNames.AddRange(lcNames.OrderBy(kv => kv.Key).Select(kv => kv.Value));
@@ -290,10 +295,19 @@ public class SapToPluto
             // them out); no frame forces yet, so a layout-only force component
             // when there are no displacements at all.
             beamComps = new List<RawViewerWriter.Component>();
+            bool hasFrameForces = frameRows.Count > 0;
+            if (hasFrameForces || !hasDisp)
+            {
+                string mUnit = forceUnit + "-" + lengthUnit;
+                beamComps.Add(new RawViewerWriter.Component("P (axial)", "force", forceUnit));
+                beamComps.Add(new RawViewerWriter.Component("V2", "force", forceUnit));
+                beamComps.Add(new RawViewerWriter.Component("V3", "force", forceUnit));
+                beamComps.Add(new RawViewerWriter.Component("T", "force", mUnit));
+                beamComps.Add(new RawViewerWriter.Component("M2", "force", mUnit));
+                beamComps.Add(new RawViewerWriter.Component("M3", "force", mUnit));
+            }
             if (hasDisp)
                 for (int i = 0; i < 6; i++) beamComps.Add(new RawViewerWriter.Component(DispNames[i], "displacement", i < 3 ? lengthUnit : "rad"));
-            else
-                beamComps.Add(new RawViewerWriter.Component("Axial N", "force", forceUnit));
         }
         var w = new RawViewerWriter(binPath, nodes, elements, hasResults ? lcNames : null, comps,
                                     beams.Count > 0 ? beams : null, beams.Count > 0 ? sectionDefs : null, beamComps,
@@ -328,6 +342,49 @@ public class SapToPluto
             }
             res.ForceRowsUsed = recs.Count;
             w.AppendShellValues(recs, "stress");
+        }
+
+        if (beams.Count > 0 && frameRows.Count > 0 && hasResults)
+        {
+            // first and last station of each frame per case -> end A / end B
+            var ends = new Dictionary<string, RawViewerWriter.BeamRecord[]>();   // "<lc>|<frame>" -> [A, B]
+            var staMin = new Dictionary<string, double>();
+            var staMax = new Dictionary<string, double>();
+            var frameForceKeys = new[] { "P", "V2", "V3", "T", "M2", "M3" };
+            foreach (var r in frameRows)
+            {
+                string f;
+                if (!r.TryGetValue("Frame", out f)) continue;
+                int fid = Int(f);
+                if (!beams.ContainsKey(fid)) continue;
+                double sta = Num(r, "Station", double.NaN);
+                if (double.IsNaN(sta)) continue;
+                int lc = lcByName[CaseOf(r)];
+                string key = lc + "|" + fid;
+                RawViewerWriter.BeamRecord[] pair;
+                if (!ends.TryGetValue(key, out pair))
+                {
+                    pair = new RawViewerWriter.BeamRecord[2];
+                    ends[key] = pair;
+                    staMin[key] = double.PositiveInfinity; staMax[key] = double.NegativeInfinity;
+                }
+                var vals = new float[6];
+                for (int c = 0; c < 6; c++) vals[c] = (float)Num(r, frameForceKeys[c], double.NaN);
+                if (sta <= staMin[key])
+                {
+                    staMin[key] = sta;
+                    pair[0] = new RawViewerWriter.BeamRecord { LC = lc, elemID = fid, End = 0, Values = vals };
+                }
+                if (sta >= staMax[key])
+                {
+                    staMax[key] = sta;
+                    pair[1] = new RawViewerWriter.BeamRecord { LC = lc, elemID = fid, End = 1, Values = vals };
+                }
+            }
+            var frecs = new List<RawViewerWriter.BeamRecord>();
+            foreach (var pair in ends.Values) { if (pair[0] != null) frecs.Add(pair[0]); if (pair[1] != null) frecs.Add(pair[1]); }
+            res.FrameForceRowsUsed = frecs.Count;
+            w.AppendBeamForces(frecs, "force");
         }
 
         if (hasDisp)
