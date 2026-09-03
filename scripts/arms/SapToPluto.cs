@@ -79,6 +79,7 @@ public class SapExportResult
     public string BinPath, SidecarPath;
     public int Nodes, Elements, LoadCases, ForceRows, ForceRowsUsed, DispRows, DispRowsUsed, Groups;
     public int Frames, FrameSections, FramesUnknownShape;
+    public int NodesWithoutDisp;      // model joints with no JOINT DISPLACEMENTS row: results older than the model?
     public string ForceUnit, LengthUnit;
     public List<string> LoadCaseNames = new List<string>();
     public List<string> Warnings = new List<string>();
@@ -90,6 +91,9 @@ public class SapExportResult
             Nodes, Elements, LoadCases, string.Join(", ", LoadCaseNames), ForceUnit, LengthUnit));
         sb.AppendLine(string.Format("  shell force rows {0} (used {1}), joint displacement rows {2} (used {3})",
             ForceRows, ForceRowsUsed, DispRows, DispRowsUsed));
+        if (NodesWithoutDisp > 0)
+            sb.AppendLine(string.Format("  WARNING: {0} of {1} joints have no displacement row (they will not move) -- results file older than the model?",
+                NodesWithoutDisp, Nodes));
         if (Frames > 0)
             sb.AppendLine(string.Format("  {0} frames -> beams, {1} section(s){2}", Frames, FrameSections,
                 FramesUnknownShape > 0 ? string.Format(", {0} with an unknown shape (RECT placeholder)", FramesUnknownShape) : ""));
@@ -325,6 +329,7 @@ public class SapToPluto
                 cx /= nodes.Count; cy /= nodes.Count;
             }
             var disps = new List<Disp>();
+            var seenNodes = new HashSet<int>();
             foreach (var r in dispRows)
             {
                 string j;
@@ -332,6 +337,7 @@ public class SapToPluto
                 int nid = Int(j);
                 Node node;
                 if (!nodes.TryGetValue(nid, out node)) continue;
+                seenNodes.Add(nid);
                 var d = new Disp();
                 d.LC = lcByName[CaseOf(r)];
                 d.node = nid;
@@ -359,6 +365,7 @@ public class SapToPluto
                 disps.Add(d);
             }
             res.DispRowsUsed = disps.Count;
+            res.NodesWithoutDisp = nodes.Count - seenNodes.Count;
             w.AppendDisplacements(disps);
         }
 
