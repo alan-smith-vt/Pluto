@@ -36,6 +36,10 @@ class TankSpec:
     # [supports]
     base_local_axes: bool = False
     release_radial: bool = False
+    # [groups]  SAP GROUPS written into the .s2k; they come back out of the
+    # results export and become sidecar groups in SapToPluto (Color by groups).
+    groups: bool = True          # WALL (all shells), BASE_RING / TOP_RING (joints)
+    course_groups: bool = True   # COURSE_01.. one per horizontal course of shells
     # [material]
     mat_name: str = STEEL["name"]
     mat_e: float = STEEL["E"]
@@ -81,6 +85,7 @@ CONFIG_MAP = {
         "base_local_axes": "base_local_axes",
         "release_radial": "release_radial",
     },
+    "groups": {"enabled": "groups", "courses": "course_groups"},
     "material": {
         "name": "mat_name",
         "e": "mat_e",

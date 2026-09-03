@@ -155,3 +155,35 @@ def test_joint_load_mode_writes_forces_not_pressures():
     assert len(rows) == 32                         # top ring (zero force) skipped
     r0 = rows[0]
     assert float(r0["F2"]) == pytest.approx(0.0, abs=1e-12) and float(r0["F1"]) > 0
+
+
+# --- SAP groups ----------------------------------------------------------------
+
+def test_group_membership():
+    m = small()                                   # n_theta 8, n_z 4
+    g = m.groups()
+    assert list(g) == ["WALL", "COURSE_01", "COURSE_02", "COURSE_03", "COURSE_04", "BASE_RING", "TOP_RING"]
+    assert g["WALL"] == (list(range(1, 33)), [])
+    assert g["COURSE_01"] == (list(range(1, 9)), []) and g["COURSE_04"] == (list(range(25, 33)), [])
+    assert g["BASE_RING"] == ([], list(range(1, 9))) and g["TOP_RING"] == ([], list(range(33, 41)))
+    assert sum(len(a) for a, _ in g.values()) == 32 * 2       # every shell in WALL and one course
+
+
+def test_group_tables_written_and_switchable():
+    t = parse_s2k(s2k_text(small()))
+    names = [r["GROUPNAME"] for r in t["GROUPS 1 - DEFINITIONS"]]
+    assert names == ["WALL", "COURSE_01", "COURSE_02", "COURSE_03", "COURSE_04", "BASE_RING", "TOP_RING"]
+    asg = t["GROUPS 2 - ASSIGNMENTS"]
+    assert len(asg) == 32 + 32 + 8 + 8
+    assert {r["OBJECTTYPE"] for r in asg} == {"Area", "Joint"}
+    assert [r["OBJECTLABEL"] for r in asg if r["GROUPNAME"] == "TOP_RING"] == [str(j) for j in range(33, 41)]
+    no_courses = TankModel(TankSpec(radius=10.0, height=8.0, n_theta=8, n_z=4, course_groups=False))
+    assert list(no_courses.groups()) == ["WALL", "BASE_RING", "TOP_RING"]
+    off = TankModel(TankSpec(radius=10.0, height=8.0, n_theta=8, n_z=4, groups=False))
+    assert "GROUPS 1 - DEFINITIONS" not in parse_s2k(s2k_text(off))
+
+
+def test_course_names_pad_to_course_count():
+    m = TankModel(TankSpec(radius=10.0, height=8.0, n_theta=4, n_z=120))
+    names = list(m.groups())
+    assert names[1] == "COURSE_001" and names[120] == "COURSE_120"

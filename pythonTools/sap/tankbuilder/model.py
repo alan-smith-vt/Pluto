@@ -77,6 +77,29 @@ class TankModel:
         """
         return math.degrees(self.thetas[jid]) - 90.0
 
+    # --- groups ----------------------------------------------------------------
+
+    def groups(self) -> dict[str, tuple[list[int], list[int]]]:
+        """SAP group name -> (area ids, joint ids), in definition order.
+
+        WALL = every shell; COURSE_kk = one horizontal course (01 = bottom);
+        BASE_RING / TOP_RING = the boundary joint rings. Names are what SAP
+        writes back in GROUPS 2 - ASSIGNMENTS, so SapToPluto turns them into
+        sidecar groups unchanged.
+        """
+        s = self.spec
+        out: dict[str, tuple[list[int], list[int]]] = {}
+        if not s.groups:
+            return out
+        out["WALL"] = (sorted(self.areas), [])
+        if s.course_groups:
+            width = max(2, len(str(s.n_z)))
+            for ring in range(s.n_z):
+                out[f"COURSE_{ring + 1:0{width}d}"] = (self.course_areas(ring), [])
+        out["BASE_RING"] = ([], self.base_joints)
+        out["TOP_RING"] = ([], self.top_joints)
+        return out
+
     # --- hydrostatics --------------------------------------------------------
 
     def _pressure_at(self, z: float) -> float:

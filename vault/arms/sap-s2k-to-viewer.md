@@ -75,14 +75,18 @@ aspect ratio, normal-outward flag (continuous per-element "model" fields). Add t
 ```text
 cd pythonTools/sap
 python build_tank.py configs/example.toml        # -> models/example/example.s2k (gitignored)
-python -m pytest -q                              # 17 tests, incl. the golden byte-compare
+python -m pytest -q                              # 20 tests, incl. the golden byte-compare
 ```
 
 Refactored 2026-09-03 into the `tankbuilder` package: `spec.py` (constants, `TankSpec`,
 TOML loader with typo rejection), `model.py` (`TankModel`: numbering, `base_joints` /
 `top_joints` / `course_areas`, hydrostatics), `s2k.py` (one function per table group,
 `s2k_text`, `write_s2k`, and `parse_s2k` to read tables back). `build_tank.py` is a thin
-CLI. **Contract:** `tests/golden/example.s2k` is the writer's output for `example.toml` (the writer
+CLI. **SAP groups** (2026-09-03, `[groups]` in the config): `WALL`, `COURSE_01..`, `BASE_RING`,
+`TOP_RING` are written as `GROUPS 1 - DEFINITIONS` + `GROUPS 2 - ASSIGNMENTS`; SAP re-exports
+them and `SapToPluto` turns them into sidecar groups (verified on the example: 23 groups
+through to the viewer readback). Not yet confirmed: SAP2000's importer accepting the two
+GROUPS tables — check on the next import. **Contract:** `tests/golden/example.s2k` is the writer's output for `example.toml` (the writer
 was byte-identical to the file SAP2000 v25 ran); it must stay byte-identical unless
 regenerated on purpose.
 **Configs:** `configs/example.toml` is the generic template; new configs and goldens are

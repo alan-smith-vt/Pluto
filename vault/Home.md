@@ -44,7 +44,7 @@ plain JS (`viewer/`).
 - `pythonTools/sap/` — development-side Python: `build_tank.py` (CLI) + the `tankbuilder`
   package (`spec.py` / `model.py` / `s2k.py`) + `configs/*.toml` generate the SAP2000 tank
   `.s2k` (`python build_tank.py configs/example.toml` → `models/<name>/`); `python -m pytest`
-  runs 17 tests incl. a byte-exact golden. New configs/goldens are gitignored (project data).
+  runs 20 tests incl. a byte-exact golden. New configs/goldens are gitignored (project data).
   `s2k_to_bin.py` is superseded reference. `models/` is generated and gitignored. Python by
   design (SAP OAPI automation belongs there); see [[vault/arms/sap-s2k-to-viewer|sap-s2k-to-viewer]].
 - `archive/` — superseded code, nothing here is loaded or built. `ViewerSource/` is the

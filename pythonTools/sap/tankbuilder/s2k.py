@@ -1,7 +1,8 @@
 """SAP2000 .s2k text tables: writer for TankModel, and a small reader.
 
-The output of write_s2k for configs/tank_hoop.toml is byte-identical to the
-file SAP2000 v25 imported and ran (tests/golden/tank_hoop.s2k) -- keep it so.
+The output of write_s2k for configs/example.toml is pinned to
+tests/golden/example.s2k (see tests/test_build_tank.py) -- keep it so, or
+regenerate the golden on purpose.
 """
 
 from __future__ import annotations
@@ -89,6 +90,24 @@ def geometry_tables(model: TankModel) -> list[tuple[str, list[str]]]:
     ]
 
 
+def group_tables(model: TankModel) -> list[tuple[str, list[str]]]:
+    """SAP GROUPS. Definition flags mirror what SAP2000 v25 wrote for its own
+    ALL group; assignments are one row per object (Joint / Area)."""
+    groups = model.groups()
+    if not groups:
+        return []
+    defs = []
+    assigns = []
+    for name, (areas, joints) in groups.items():
+        defs.append(_row(GroupName=name, Selection=True, SectionCut=True, Steel=True,
+                         Concrete=True, Aluminum=True, ColdFormed=True, Stage=True,
+                         Bridge=True, AutoSeismic=False, AutoWind=False, SelDesSteel=False,
+                         SelDesAlum=False, SelDesCold=False, MassWeight=True, Color="Green"))
+        assigns += [_row(GroupName=name, ObjectType="Area", ObjectLabel=a) for a in areas]
+        assigns += [_row(GroupName=name, ObjectType="Joint", ObjectLabel=j) for j in joints]
+    return [("GROUPS 1 - DEFINITIONS", defs), ("GROUPS 2 - ASSIGNMENTS", assigns)]
+
+
 def support_tables(model: TankModel) -> list[tuple[str, list[str]]]:
     """Pinned base; with release_radial the radial (local 2) direction is freed
     so the base can expand and the wall goes into hoop."""
@@ -162,7 +181,7 @@ def s2k_text(model: TankModel) -> str:
     w.lines.append("")
     w.table("PROGRAM CONTROL", program_control())
     for name, rows in (material_tables(model) + section_tables(model)
-                       + geometry_tables(model) + support_tables(model)
+                       + geometry_tables(model) + group_tables(model) + support_tables(model)
                        + load_tables(model)):
         w.table(name, rows)
     return w.text()

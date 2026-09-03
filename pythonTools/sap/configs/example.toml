@@ -23,6 +23,10 @@ load_mode     = "uniform"   # "uniform" = surface pressure per shell; "joints" =
 base_local_axes = true  # base joint local axes: X tangential, Y radial outward
 release_radial  = true  # free the radial direction so the wall goes into hoop (needs base_local_axes)
 
+[groups]
+enabled = true          # SAP GROUPS: WALL, BASE_RING, TOP_RING (-> sidecar groups via SapToPluto)
+courses = true          # plus COURSE_01.. per horizontal course of shells
+
 [material]
 name        = "A36"
 e           = 4176000.0 # kip/ft^2 = 29000 ksi
