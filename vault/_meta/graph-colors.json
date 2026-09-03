@@ -1,5 +1,5 @@
 {
-  "_note": "Restore source for .obsidian/graph.json colorGroups (Obsidian closed first). Home/maps gold, handoffs red, arms blue, format green, viewer orange, audits gray, decisions teal, code READMEs white.",
+  "_note": "Restore source for .obsidian/graph.json (Obsidian closed first): colorGroups -> colorGroups, search -> the graph filter (hides handoffs, archive, READMEs, code folders).",
   "colorGroups": [
     {
       "query": "path:vault/Home.md",
@@ -85,5 +85,6 @@
         "rgb": 15921909
       }
     }
-  ]
+  ],
+  "search": "-path:vault/handoffs -path:archive -file:README -path:pythonTools -path:scripts -path:.claude"
 }

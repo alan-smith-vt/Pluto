@@ -8,6 +8,96 @@ created: 2026-08-26
 
 *↑ [[vault/Home|Home]] › [[vault/viewer/Viewer map|Viewer map]]*
 
+## What it is
+
+Browser-based Three.js viewer for plate/shell FEA results with **true per-corner field
+visualization** — bilinear interpolation across quads, no nodal averaging, no flat-shaded
+triangle seams. Per-corner field planes hold stress and displacement components (and any
+generic kind); stress and displacement are selected through the same dropdown, read by
+the same strided math, and colored by the same shader. Beams are a second domain (below).
+
+- **Multiple models at once**: the file picker accepts several `.bin`
+  files with identical geometry (e.g. the same structure re-run with
+  different soil springs). Load cases from all files form one globally
+  indexed list — the LC dropdown groups them under file-name dividers
+  (LC names/numbers commonly collide across variants), and captions /
+  controlling-LC readouts cite "file · LC". The first file supplies
+  geometry, components and strengths; other files must match its
+  geometry exactly (verified at load) and may differ in component
+  order/coverage (remapped by name, missing fields read as no-data).
+- **Envelopes** (in-memory, never persisted): min / max / abs(max)
+  across all primary LCs **of every loaded model**, each tracking
+  **which model + LC controlled** every corner value, plus a **Global
+  DSR** envelope (worst check across all LCs *and* all `kind:"dsr"`
+  components) tracking the controlling check and controlling LC per
+  corner. "By check" recolors the Global DSR view as a categorical
+  controlling-check map.
+- **Calc review**: pinning a point in a Global DSR view slices the
+  controlling LC's element record straight from the file (a few hundred
+  bytes) and shows every DSR check, the constituent stress components,
+  and the corner's worst check per primary LC.
+- **Deformed shape**: GPU-side (`position + dispScale * dispVec`), with
+  a ±scale cycling animation. Requires the metadata to tag the
+  translation components (see below). Picking is disabled while the
+  deformed shape is shown.
+- **Design strengths** (phi factors applied): LC-independent
+  per-corner fields stored once in the
+  file (see the metadata notes below), selectable from the component
+  dropdown and summarized in the readout on every pin.
+- **Display transforms**: |value| toggle (abs applied after
+  interpolation, so interior zero crossings are exact), overstress
+  alarm color with an x-ray **Flash** pulse to reveal obscured flagged
+  regions, coincident-node smoothing.
+- **Navigation**: find element/node by real ID (moves the orbit focus
+  and flashes the target on top of everything -- no zoom),
+  orthographic projection + axis triad, load-case stepping (arrow
+  keys), persistent active-view caption.
+
+## Run
+
+Just open `viewer/index.html` in a browser — no server needed. A synthetic
+demo (v4: curved plate of shells + a steel beam frame with I / pipe / rect
+sections) loads automatically; use the file picker to open a real
+`.bin`. Binary files are read on demand through the file picker, so
+multi-GB files never get materialized whole.
+
+## Inspector
+
+Open `viewer/inspector.html` to inspect a `.bin` field by field — header
+fields with a raw hex dump, the range-checked block layout, metadata
+tables, paged node/element/ID tables, and per-load-case field data
+(per-component min/max/mean stats plus a per-element corner × component
+matrix). It reuses the frozen `format/v3Reader.js`, so it can never disagree with the
+viewer about the file layout. Use **Download Sample .bin** to emit a
+test file from `sampleModel.js`, then open it back through the picker.
+
+## Layout (`viewer/scripts/`)
+
+| File | Role |
+|------|------|
+| `format/pluto.js` | format entry point: version dispatch, unified model, v3-shaped domain views, `FEABinary` compat |
+| `format/v4Reader.js` | v4 block-directory reader |
+| `format/v4Writer.js` | demo/test-only in-browser v4 writer (sample generator); production files come from `RawViewerWriter.cs` |
+| `format/v3Reader.js` | frozen legacy v3 reader (adapted by `pluto.js`) |
+| `modelSet.js` | multi-model set: geometry validation, global LC index, per-file read routing |
+| `geometryBuilder.js` | duplicate-vertex shell mesh build, tri/quad triangulation |
+| `beamGeometry.js` | extruded cross-section beam mesh (parametric sections), axis param for picking |
+| `viewerBeams.js` | beam-domain display layered on viewer.js: own component/range, neutral in envelope views, pick readout |
+| `attributeUpdaters.js` | rewrite `cornerVals` on component/LC swap (only per-update path) |
+| `shaders.js` | bilinear vertex/fragment GLSL, colormap LUTs |
+| `pointQuery.js` | raycast → inverse-bilinear → exact field eval |
+| `sampleModel.js` | synthetic FEA binary generator + `.bin` download (demo / format reference) |
+| `viewer.js` | scene wiring, render loop, UI, hover/pin readout |
+| `features.js` | sidecar loader, Color by groups, legend, predicate hook |
+| `predicates.js` | predicate flyout + engine (`FEAPredicates`) |
+| `sectionCut.js` | section-cut probe tool |
+| `viewCube.js` | orientation cube |
+| `inspector.html` / `inspector.js` | standalone field-by-field binary inspector |
+
+Three.js r128 and OrbitControls are vendored under `lib/`.
+
+## Recent additions (newest first)
+
 Predicates (2026-09-01, ported from the old viewer — plan:
 [[vault/viewer/old-viewer-merge-plan|old-viewer-merge-plan]]):
 - `scripts/predicates.js` (`FEAPredicates`), flyout tab under the section-cut tab.

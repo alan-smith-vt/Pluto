@@ -72,7 +72,12 @@ aspect ratio, normal-outward flag (continuous per-element "model" fields). Add t
 
 ## 4. Tank generator (`build_tank.py`) — Python by design
 
-`pythonTools/sap/build_tank.py` + `configs/*.toml` generate the tank `.s2k` (wall mesh,
+```text
+cd pythonTools/sap
+python build_tank.py configs/tank_hoop.toml      # -> models/tank_hoop/tank_hoop.s2k (gitignored)
+```
+
+`build_tank.py` + `configs/*.toml` (Python 3.11+, stdlib `tomllib`) generate the tank `.s2k` (wall mesh,
 base restraints, local axes, hydrostatic joint pattern). It is a model *generator*, not a
 Pluto arm, runs on the development side only, and needs a TOML parser (no C# 5 one in the
 lib). Decision 2026-09-03: **stays Python** in `pythonTools/sap/` (SAP OAPI automation lives naturally there); port only if a production-side need appears, switching configs to JSON then.
