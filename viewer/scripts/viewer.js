@@ -2252,4 +2252,31 @@ setPinned(false);
 clearReadout();
 drawLegend();
 updateViewCaption();
-loadDemo();
+
+// URL-driven load: index.html?bin=<url>[&features=<url>] (same-origin fetch;
+// run_sap.py serves the repo root and opens this). Falls back to the demo.
+(function () {
+    var q = new URLSearchParams(window.location.search);
+    var binUrl = q.get('bin');
+    if (!binUrl) { loadDemo(); return; }
+    var base = function (u) { return decodeURIComponent(u.split('/').pop()); };
+    log('Loading ' + base(binUrl) + ' ...');
+    fetch(binUrl).then(function (r) {
+        if (!r.ok) throw new Error(r.status + ' ' + r.statusText + ' for ' + binUrl);
+        return r.blob();
+    }).then(function (blob) {
+        return loadModels([{ file: blob, name: trimExt(base(binUrl)) }]);
+    }).then(function () {
+        var fUrl = q.get('features');
+        if (!fUrl || !window.FEAFeatures) return;
+        return fetch(fUrl).then(function (r) {
+            if (!r.ok) throw new Error(r.status + ' ' + r.statusText + ' for ' + fUrl);
+            return r.blob();
+        }).then(function (blob) {
+            return FEAFeatures.loadFile(new File([blob], base(fUrl), { type: 'application/json' }));
+        });
+    }).catch(function (err) {
+        log('URL load failed: ' + err.message);
+        loadDemo();
+    });
+})();

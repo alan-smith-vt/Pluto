@@ -70,7 +70,28 @@ Groups carry no colour, so the viewer auto-assigns. Per the sidecar rule, nothin
 aspect ratio, normal-outward flag (continuous per-element "model" fields). Add them as
 `kind: "model"` components through `AppendShellValues` if they are wanted.
 
-## 4. Tank generator (`build_tank.py`) — Python by design
+## 4. One command: `run_sap.py` (config → SAP2000 → results → viewer)
+
+```text
+cd pythonTools/sap
+python run_sap.py configs/example.toml            # build, run in SAP2000, export, open viewer
+python run_sap.py configs/example.toml --no-run   # SAP already holds the analysed model
+python run_sap.py configs/example.toml --no-viewer
+```
+
+Drives SAP2000 through its OAPI (COM, `comtypes` — `pip install comtypes`; `pywin32`
+cannot bind SAP's interfaces). Attaches to the running SAP2000 or starts one;
+`File.OpenFile` imports the `.s2k` (SAP accepts our GROUPS tables: 24 groups on the
+example), saves the `.sdb`, `RunAnalysis`, then `Results.JointDispl` +
+`Results.AreaForceShell` (full doubles — the `DatabaseTables` display tables are rounded)
+are written as `results.s2k` in SAP's own table format, `SapToPluto` runs under PS 5.1, and
+a local server on the repo root opens `viewer/index.html?bin=…&features=…` (the viewer
+fetches both; 2026-09-03 addition). Everything lands in `models/<name>/` (gitignored).
+`Results.JointDispl` reports in joint **local** axes, same as the table export, so the
+arm's local→global rotation is still right. Module: `tankbuilder/sap_api.py`. Verified
+end to end on the example 2026-09-03 (5 s import, 2 s run).
+
+## 5. Tank generator (`build_tank.py`) — Python by design
 
 ```text
 cd pythonTools/sap

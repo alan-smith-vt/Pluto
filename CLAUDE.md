@@ -10,6 +10,7 @@ Repo root is the Obsidian vault; documentation lives under `vault/` only.
   (`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`, never `pwsh`).
 - Binary = results / geometry, C#-written, write-once. User-defined things go in the sidecar.
 - Python only under `pythonTools/` (development side). Nothing in `scripts/` may need it.
+  SAP2000 is driven over its OAPI with `comtypes` (`pythonTools/sap/tankbuilder/sap_api.py`).
 - Files are CRLF; edit bytes-safely. Never edit `.obsidian/` while Obsidian is running.
 
 ## Vault structure

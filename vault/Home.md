@@ -44,8 +44,9 @@ plain JS (`viewer/`).
 - `pythonTools/sap/` — development-side Python: `build_tank.py` (CLI) + the `tankbuilder`
   package (`spec.py` / `model.py` / `s2k.py`) + `configs/*.toml` generate the SAP2000 tank
   `.s2k` (`python build_tank.py configs/example.toml` → `models/<name>/`); `python -m pytest`
-  runs 20 tests incl. a byte-exact golden. New configs/goldens are gitignored (project data).
-  `s2k_to_bin.py` is superseded reference. `models/` is generated and gitignored. Python by
+  runs 20 tests incl. a byte-exact golden. `run_sap.py` drives SAP2000 over the OAPI
+  (`tankbuilder/sap_api.py`, needs `comtypes`) and opens the viewer on the result. New
+  configs/goldens are gitignored (project data). `s2k_to_bin.py` is superseded reference. `models/` is generated and gitignored. Python by
   design (SAP OAPI automation belongs there); see [[vault/arms/sap-s2k-to-viewer|sap-s2k-to-viewer]].
 - `archive/` — superseded code, nothing here is loaded or built. `ViewerSource/` is the
   pre-Pluto browser viewer (predicates already ported; its `sectionCut.js` is the CRUD/JSON
