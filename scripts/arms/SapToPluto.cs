@@ -29,7 +29,13 @@ using System.Text;
 //                                 labels must be integers (SAP default); the
 //                                 label text is also written to the LABL block.
 //   ELEMENT FORCES - AREA SHELLS -> per-corner "stress" components, SAP order
-//                                 F11 F22 F12 M11 M22 M12 V13 V23, raw file units.
+//                                 F11 F22 F12 M11 M22 M12 V13 V23, raw file units
+//                                 (forces per unit length -- continuous across a
+//                                 thickness change), then derived MEMBRANE stresses
+//                                 S11 S22 S12 = F / section thickness, which do
+//                                 step at a change. ksi when the file is Kip/ft
+//                                 or Kip/in, else force/length^2. Bending faces
+//                                 (+/- 6M/t^2) are not derived.
 //   JOINT DISPLACEMENTS        -> "displacement" U1..R3 rotated from the joint's
 //                                 LOCAL axes (JOINT LOCAL AXES ASSIGNMENTS 1 -
 //                                 TYPICAL, Rz(A)Ry(B)Rx(C)) into global, fanned
@@ -41,8 +47,8 @@ using System.Text;
 //
 // Sidecar groups (everything a user might filter/colour by; nothing goes in
 // the binary that is not a result):
-//   one per area SECTION name          tags sap, section
-//   one per distinct THICKNESS         tags sap, thickness      (shells)
+//   one per area SECTION name, thickness in the name ("WALL_T1 (0.500 in)")
+//                                      tags sap, section, thickness  (shells)
 //   one per distinct restraint pattern tags sap, restraint      (nodes)
 //   "Local axes assigned"              tags sap, localAxes      (nodes)
 //   SAP GROUPS 2 - ASSIGNMENTS         tags sap, group          (areas / joints)
@@ -141,11 +147,40 @@ public class SapToPluto
         bool hasDisp = dispRows.Count > 0;
         int nDisp = hasDisp ? (cylindrical ? 8 : 6) : 0;
 
+        // area sections: element -> section name, section -> thickness (file length units)
+        var sectionOf = new Dictionary<int, string>();
+        foreach (var r in model.GetTable("AREA SECTION ASSIGNMENTS"))
+        {
+            string a, s;
+            if (r.TryGetValue("Area", out a) && r.TryGetValue("Section", out s)) sectionOf[Int(a)] = s;
+        }
+        var thickOf = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in model.GetTable("AREA SECTION PROPERTIES"))
+        {
+            string s; double t = Num(r, "Thickness", double.NaN);
+            if (r.TryGetValue("Section", out s) && !double.IsNaN(t) && t > 0) thickOf[s] = t;
+        }
+        double stressScale; string stressUnit;
+        StressUnits(forceUnit, lengthUnit, out stressScale, out stressUnit);
+        // derived membrane stresses: which force columns have a stress twin
+        var stressFrom = new List<int>();
+        var stressNames = new List<string>();
+        if (hasForces && thickOf.Count > 0)
+        {
+            for (int c = 0; c < forceKeysPresent.Length; c++)
+            {
+                string k = forceKeysPresent[c];
+                if (k == "F11" || k == "F22" || k == "F12") { stressFrom.Add(c); stressNames.Add("S" + k.Substring(1)); }
+            }
+        }
+
         var comps = new List<RawViewerWriter.Component>();
         if (hasForces)
         {
             foreach (string k in forceKeysPresent)
                 comps.Add(new RawViewerWriter.Component(k, "stress", k[0] == 'M' ? forceUnit + "-" + lengthUnit + "/" + lengthUnit : forceUnit + "/" + lengthUnit));
+            foreach (string k in stressNames)
+                comps.Add(new RawViewerWriter.Component(k, "stress", stressUnit));
         }
         if (hasDisp)
         {
@@ -189,8 +224,13 @@ public class SapToPluto
                 var rec = new RawViewerWriter.CornerRecord();
                 rec.LC = lcByName[CaseOf(r)];
                 rec.elemID = eid; rec.node = nid;
-                rec.Values = new float[forceKeysPresent.Length];
+                rec.Values = new float[forceKeysPresent.Length + stressFrom.Count];
                 for (int c = 0; c < forceKeysPresent.Length; c++) rec.Values[c] = (float)Num(r, forceKeysPresent[c], double.NaN);
+                string sec; double thick = double.NaN;
+                if (sectionOf.TryGetValue(eid, out sec)) thickOf.TryGetValue(sec, out thick);
+                for (int c = 0; c < stressFrom.Count; c++)
+                    rec.Values[forceKeysPresent.Length + c] = double.IsNaN(thick) ? float.NaN
+                        : (float)(rec.Values[stressFrom[c]] / thick * stressScale);
                 recs.Add(rec);
             }
             res.ForceRowsUsed = recs.Count;
@@ -252,36 +292,24 @@ public class SapToPluto
         sc.Units["force"] = forceUnit;
         sc.Units["worldOffset"] = "0 0 0";
 
-        // sections + thickness
-        var sectionOf = new Dictionary<int, string>();
-        foreach (var r in model.GetTable("AREA SECTION ASSIGNMENTS"))
-        {
-            string a, s;
-            if (r.TryGetValue("Area", out a) && r.TryGetValue("Section", out s)) sectionOf[Int(a)] = s;
-        }
-        var thickOf = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var r in model.GetTable("AREA SECTION PROPERTIES"))
-        {
-            string s, t;
-            if (r.TryGetValue("Section", out s) && r.TryGetValue("Thickness", out t)) thickOf[s] = t;
-        }
+        // sections: one group each, thickness in the name (inches when the file
+        // is in ft or in, else file units). A separate per-thickness family was
+        // dropped 2026-09-03 -- the tank builder writes one section per thickness,
+        // so it only duplicated these.
         var bySection = new Dictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
-        var byThick = new Dictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
         var sectionOrder = new List<string>();
-        var thickOrder = new List<string>();
         foreach (int eid in elements.Keys.OrderBy(k => k))
         {
             string s;
             if (!sectionOf.TryGetValue(eid, out s)) continue;
             Add(bySection, sectionOrder, s, (uint)eid);
-            string t;
-            if (thickOf.TryGetValue(s, out t)) Add(byThick, thickOrder, t, (uint)eid);
         }
         foreach (string s in sectionOrder)
-            sc.AddGroup(s, null, "shells", bySection[s], new[] { "sap", "section" }, StaadName(s));
-        if (thickOrder.Count > 1)
-            foreach (string t in thickOrder)
-                sc.AddGroup("t = " + t + " " + lengthUnit, null, "shells", byThick[t], new[] { "sap", "thickness" }, StaadName("T_" + t));
+        {
+            double t;
+            string name = thickOf.TryGetValue(s, out t) ? s + " (" + ThicknessText(t, lengthUnit) + ")" : s;
+            sc.AddGroup(name, null, "shells", bySection[s], new[] { "sap", "section", "thickness" }, StaadName(s));
+        }
 
         // restraints (one node group per distinct pattern)
         var byRestraint = new Dictionary<string, List<uint>>();
@@ -414,6 +442,25 @@ public class SapToPluto
         List<uint> ids;
         if (!map.TryGetValue(key, out ids)) { ids = new List<uint>(); map[key] = ids; order.Add(key); }
         ids.Add(id);
+    }
+
+    // Stress = force/length / thickness, in file units force/length^2; report ksi
+    // when the file is Kip with ft or in (144 ksf = 1 ksi), else leave the file units.
+    static void StressUnits(string forceUnit, string lengthUnit, out double scale, out string unit)
+    {
+        string f = (forceUnit ?? "").Trim().ToLowerInvariant(), l = (lengthUnit ?? "").Trim().ToLowerInvariant();
+        if (f == "kip" && l == "ft") { scale = 1.0 / 144.0; unit = "ksi"; return; }
+        if (f == "kip" && l == "in") { scale = 1.0; unit = "ksi"; return; }
+        scale = 1.0; unit = forceUnit + "/" + lengthUnit + "^2";
+    }
+
+    // "0.500 in" for a thickness in file units when those are ft or in, else "0.0417 ft".
+    static string ThicknessText(double t, string lengthUnit)
+    {
+        string l = (lengthUnit ?? "").Trim().ToLowerInvariant();
+        if (l == "ft") return (t * 12.0).ToString("0.000", CultureInfo.InvariantCulture) + " in";
+        if (l == "in") return t.ToString("0.000", CultureInfo.InvariantCulture) + " in";
+        return t.ToString("0.####", CultureInfo.InvariantCulture) + " " + lengthUnit;
     }
 
     static string StaadName(string s)

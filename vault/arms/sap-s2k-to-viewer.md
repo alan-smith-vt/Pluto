@@ -60,7 +60,7 @@ Writes `<outBase>.bin` + `<outBase>.features.json`. Drop both on the viewer toge
 | `JOINT DISPLACEMENTS` | `displacement` `Translation X/Y/Z`, `Rotation X/Y/Z` **in global** (rotated out of joint local axes, `Rz(A)·Ry(B)·Rx(C)`), fanned to every corner on the joint; optional `Translation R` / `T` |
 | `OutputCase` | load cases, first-seen order, ids 1..N |
 | `AREA SECTION ASSIGNMENTS` | one shell group per section name (`sap`, `section`) |
-| `AREA SECTION PROPERTIES` | one shell group per distinct thickness, only if more than one (`sap`, `thickness`) |
+| `AREA SECTION PROPERTIES` | thickness goes into the section group's name, e.g. `WALL_T1 (0.500 in)` (`sap`, `section`, `thickness`); also drives the derived membrane stresses `S11 S22 S12 = F / t` (ksi for Kip/ft files) written after the forces |
 | `JOINT RESTRAINT ASSIGNMENTS` | one node group per restraint pattern, e.g. `Restrained U1 U3` (`sap`, `restraint`) |
 | `JOINT LOCAL AXES ASSIGNMENTS 1 - TYPICAL` | node group `Local axes assigned` (`sap`, `localAxes`) |
 | `GROUPS 2 - ASSIGNMENTS` | SAP groups (areas + joints, `ALL` skipped) (`sap`, `group`) |
