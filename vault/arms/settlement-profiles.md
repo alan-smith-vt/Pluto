@@ -49,8 +49,8 @@ the model itself:
 ![[vault/arms/assets/settlement-TANK-A.svg|900]]
 
 TANK-A, 2026-09-04, **slope** 0.5 ft at the edge, hinge along +X (the figure above; 432 of
-865 ground joints moved; results in `models/TANK-A/`, which the next run overwrites — copy
-the folder under a new name to keep a run, as done for the open-top comparison). SAP 26, `NL_SETTLE`: ground joints match the CSV to 5e-7 ft. The
+865 ground joints moved; kept as `models/TANK-A-roof-slope/` with config
+`configs/TANK-A-roof-slope.toml`, since `models/TANK-A/` is overwritten by every run). SAP 26, `NL_SETTLE`: ground joints match the CSV to 5e-7 ft. The
 plate follows the ground everywhere. The **ring wall does not**: it bridges the hinge as a
 stiff ring — wall top −0.139 ft at the hinge azimuths (soil there compressed 1.7 in, ~87
 kip per joint at the linear 624 kip/ft), soil gap open on 38 of 72 spokes on the flat
