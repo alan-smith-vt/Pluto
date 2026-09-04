@@ -764,42 +764,78 @@ var FEASectionCut = (function () {
 
     function hexOf(c) { return parseInt(cutCss(c).slice(1), 16); }
 
+    // Where along the cut the probe found data: contiguous runs of
+    // [s0, s1, hit] from the selected cut's samples (a segment between two
+    // stations counts as data only when both ends hit, matching the
+    // integral). Any other cut, or no samples yet, is one "hit" run.
+    var MISS_HEX = 0xffffff;
+    function dataRuns(c) {
+        var half = c.length / 2;
+        if (c.id !== activeId || !samples || samples.hit.length !== N_SAMPLES + 1) return [[-half, half, true]];
+        var runs = [], s0 = -half, cur = samples.hit[0] && samples.hit[1];
+        for (var i = 1; i < N_SAMPLES; i++) {
+            var h = samples.hit[i] && samples.hit[i + 1];
+            if (h !== cur) { runs.push([s0, samples.t[i], cur]); s0 = samples.t[i]; cur = h; }
+        }
+        runs.push([s0, half, cur]);
+        return runs;
+    }
+    // One cylinder per run along the cut direction, coloured by whether it
+    // reached data (cut colour) or not (white).
+    function addRunCylinders(c, group, runs, radius, segs, makeMat) {
+        runs.forEach(function (r) {
+            var len = r[1] - r[0];
+            if (len <= 0) return;
+            var cyl = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, len, segs), makeMat(r[2] ? hexOf(c) : MISS_HEX));
+            orientAlong(cyl, c.dir);
+            cyl.position.copy(c.dir).multiplyScalar((r[0] + r[1]) / 2);
+            cyl.renderOrder = 8;
+            group.add(cyl);
+            c.visParts.push({ obj: cyl, axial: 'model' });
+        });
+    }
+
     // Solid: an orb like the focus target with a bar running the full
-    // cut length. The selected cut's orb also gets a wireframe halo.
+    // cut length, white where the probe found nothing. The selected cut's
+    // orb also gets a wireframe halo.
     function buildSolidMarker(c, group) {
         var mat = new THREE.MeshPhongMaterial({ color: hexOf(c), shininess: 60 });
         var sph = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), mat);
         group.add(sph);
         c.visParts.push({ obj: sph, axial: 'iso' });
-        var cyl = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, c.length, 16), mat);
-        orientAlong(cyl, c.dir);
-        group.add(cyl);
-        c.visParts.push({ obj: cyl, axial: 'model' });
+        addRunCylinders(c, group, dataRuns(c), 0.3, 16, function (hex) {
+            return new THREE.MeshPhongMaterial({ color: hex, shininess: 60 });
+        });
     }
 
     // Thin / dotted: a hairline spine down the cut (solid, or broken
     // into dashes) plus a crosshair at the center, drawn depth-test free.
     function buildThinMarker(c, group, dashed) {
         var mat = new THREE.MeshBasicMaterial({ color: hexOf(c), depthTest: false });
+        var missMat = new THREE.MeshBasicMaterial({ color: MISS_HEX, depthTest: false });
         var half = c.length / 2;
+        var runs = dataRuns(c);
+        function hitAt(s) {
+            for (var k = 0; k < runs.length; k++) if (s >= runs[k][0] && s <= runs[k][1]) return runs[k][2];
+            return true;
+        }
         if (dashed) {
             var nDash = 24;
             var period = c.length / nDash;
             var geo = new THREE.CylinderGeometry(THIN_R, THIN_R, period * 0.45, 8);
             for (var i = 0; i < nDash; i++) {
-                var dash = new THREE.Mesh(geo, mat);
+                var s = -half + period * (i + 0.5);
+                var dash = new THREE.Mesh(geo, hitAt(s) ? mat : missMat);
                 orientAlong(dash, c.dir);
-                dash.position.copy(c.dir).multiplyScalar(-half + period * (i + 0.5));
+                dash.position.copy(c.dir).multiplyScalar(s);
                 dash.renderOrder = 8;
                 group.add(dash);
                 c.visParts.push({ obj: dash, axial: 'model' });
             }
         } else {
-            var spine = new THREE.Mesh(new THREE.CylinderGeometry(THIN_R, THIN_R, c.length, 8), mat);
-            orientAlong(spine, c.dir);
-            spine.renderOrder = 8;
-            group.add(spine);
-            c.visParts.push({ obj: spine, axial: 'model' });
+            addRunCylinders(c, group, runs, THIN_R, 8, function (hex) {
+                return hex === MISS_HEX ? missMat : mat;
+            });
         }
         var armGeo = new THREE.CylinderGeometry(THIN_R, THIN_R, 1, 8);
         perpDirs(c).forEach(function (p) {
@@ -814,8 +850,7 @@ var FEASectionCut = (function () {
     function buildHalo(c, group) {
         var halo = new THREE.Mesh(
             new THREE.SphereGeometry(1, 16, 12),
-            new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.35, depthTest: false }));
-        halo.renderOrder = 9;
+            new THREE.MeshBasicMaterial({ color: 0xffffff, wireframe: true, transparent: true, opacity: 0.35 }));
         group.add(halo);
         c.visParts.push({ obj: halo, axial: 'halo' });
     }
@@ -1075,19 +1110,20 @@ var FEASectionCut = (function () {
         syncEnvelope();
         rebuild();
     }
-    function rebuild() {          // params changed: visual + data + UI
-        updateVisuals();
+    function rebuild() {          // params changed: data, then visual + UI
         applyIsolation();         // before resample: it scopes the probe
         resample();
+        updateVisuals();          // after resample: the marker shows where data was found
         drawPlot();
         syncFields();
         renderList();
     }
 
-    function refresh() {          // displayed field changed: data only
+    function refresh() {          // displayed field changed: data (+ marker runs)
         syncModelUnits();
         if (!active()) return;
         resample();
+        updateVisuals();
         drawPlot();
     }
 
@@ -1143,6 +1179,8 @@ var FEASectionCut = (function () {
         _importLegacy: importLegacy,
         _makeCut: makeCut,
         _setSloped: setSloped,
+        _dataRuns: dataRuns,
+        _setSamples: function (s) { samples = s; },
         _push: function (c) { cuts.push(c); activeId = c.id; afterMutation(c); }
     };
 })();

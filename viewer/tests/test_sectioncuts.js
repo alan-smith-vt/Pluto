@@ -68,6 +68,22 @@ assert(near(flat.dir.x, 1), 'sloped X on a flat plate is still X');
 const degenerate = FEASectionCut._makeCut({ center: new THREE.Vector3(), normal: new THREE.Vector3(0, 0, 1), dir: new THREE.Vector3(0, 0, 1), length: 4, axis: 'z', sloped: true });
 assert(near(degenerate.dir.z, 1), 'sloped Z on a horizontal plate falls back to Z (nothing to bend)');
 
+// 2c. data runs: the marker splits where the probe found nothing
+{
+  const rc = FEASectionCut._makeCut({ center: new THREE.Vector3(), normal: new THREE.Vector3(0, 0, 1), dir: new THREE.Vector3(1, 0, 0), length: 200 });
+  FEASectionCut._push(rc);
+  const N = 200, t = [], hit = [];
+  for (let i = 0; i <= N; i++) { t.push(-100 + i); hit.push(i >= 50 && i <= 150); }   // data only on the middle half
+  FEASectionCut._setSamples({ t, v: t.map(() => 1), hit, area: 0, effLen: 0 });
+  const runs = FEASectionCut._dataRuns(rc);
+  assert(runs.length === 3 && runs[0][2] === false && runs[1][2] === true && runs[2][2] === false, 'three runs: miss, hit, miss');
+  assert(near(runs[1][0], -50) && near(runs[1][1], 50), 'hit run spans the middle half: ' + runs[1]);
+  const other = FEASectionCut._makeCut({ center: new THREE.Vector3(), normal: new THREE.Vector3(0, 0, 1), dir: new THREE.Vector3(1, 0, 0), length: 10 });
+  assert(FEASectionCut._dataRuns(other).length === 1 && FEASectionCut._dataRuns(other)[0][2] === true, 'a non-selected cut is one hit run');
+  FEASectionCut._delete(rc.id);
+  FEASectionCut._setSamples(null);
+}
+
 // 3. runtime bookkeeping: push, select, delete, groups pruned, envelope synced
 FEASectionCut._push(FEASectionCut._makeCut({ name: 'A', group: 'G1', center: new THREE.Vector3(0, 0, 0), normal: new THREE.Vector3(0, 0, 1), dir: new THREE.Vector3(1, 0, 0), length: 2 }));
 FEASectionCut._push(FEASectionCut._makeCut({ name: 'B', center: new THREE.Vector3(1, 0, 0), normal: new THREE.Vector3(0, 0, 1), dir: new THREE.Vector3(0, 1, 0), length: 2 }));
