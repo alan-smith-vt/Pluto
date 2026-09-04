@@ -98,6 +98,12 @@ Three.js r128 and OrbitControls are vendored under `lib/`.
 
 ## Recent additions (newest first)
 
+Files (2026-09-04, `files.js`): one "Choose files…" for .bin + .json (File System Access
+API on Chrome / Edge, hidden `<input type=file>` otherwise), one "Save features" (Ctrl+S)
+that writes the sidecar back in place through the kept handle, or downloads; legacy
+`section_cuts.json` / `predicates.json` route through the same picker. Edits mark the
+features name `*`. Verified over localhost with the extension (first time it connected).
+
 Groups tab (2026-09-03): the sidecar-groups UI moved out of the main panel into a flyout
 tab under the predicates tab (`#grPanel`, `styles/groups.css`). Per-group enable
 (`hidden` flag in the sidecar), colour edit, drag reorder, painted/members counts that

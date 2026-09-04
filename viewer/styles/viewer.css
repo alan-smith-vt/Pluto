@@ -101,6 +101,9 @@ html, body {
 }
 .fea-check { accent-color: #6c8cff; cursor: pointer; }
 
+#feaSave.dirty { background: #6b5a2d; border-color: #ffd479; color: #fff; }
+#featName.dirty { color: #ffd479; }
+
 input[type=file].fea-file {
     font-size: 10px;
     color: #999;

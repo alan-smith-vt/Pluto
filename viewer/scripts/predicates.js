@@ -68,9 +68,6 @@ var FEAPredicates = (function () {
     var elInspector = document.getElementById('pdInspector');
     var elTree    = document.getElementById('pdTree');
     var elGroup   = document.getElementById('pdGroup');
-    var elExport  = document.getElementById('pdExport');
-    var elImport  = document.getElementById('pdImport');
-    var elImportFile = document.getElementById('pdImportFile');
 
     // ---- small helpers --------------------------------------------------
     function round6(v) { return parseFloat(v.toFixed(6)); }
@@ -451,6 +448,7 @@ var FEAPredicates = (function () {
             if (!env) return;
         }
         if (!env.predicates) env.predicates = { version: 1, items: [] };
+        if (FEAFeatures.markDirty) FEAFeatures.markDirty();
         env.predicates.items = items.map(function (it) {
             var raw = it._raw || {};
             raw.id = it.id;
@@ -1435,45 +1433,6 @@ var FEAPredicates = (function () {
     if (elAnd) elAnd.addEventListener('click', function () { groupSelectionInto('and'); });
     if (elOr) elOr.addEventListener('click', function () { groupSelectionInto('or'); });
     if (elGroup) elGroup.addEventListener('click', groupFromSelected);
-
-    if (elExport) elExport.addEventListener('click', function () {
-        syncEnvelope();
-        if (!window.FEAFeatures) return;
-        if (!FEAFeatures.envelope() && items.length > 0 && FEAFeatures.ensureEnvelope) {
-            FEAFeatures.ensureEnvelope();
-            syncEnvelope();
-        }
-        var json = FEAFeatures.exportJson();
-        if (!json) { say('Predicates: nothing to export (no features envelope).'); return; }
-        var blob = new Blob([json], { type: 'application/json' });
-        var a = document.createElement('a');
-        a.href = URL.createObjectURL(blob);
-        a.download = (FEAFeatures.fileName && FEAFeatures.fileName()) || 'model.features.json';
-        a.click();
-        URL.revokeObjectURL(a.href);
-    });
-
-    if (elImport) elImport.addEventListener('click', function () {
-        if (elImportFile) elImportFile.click();
-    });
-
-    if (elImportFile) elImportFile.addEventListener('change', function (e) {
-        var file = e.target.files && e.target.files[0];
-        this.value = '';
-        if (!file) return;
-        var reader = new FileReader();
-        reader.onload = function (ev) {
-            var data;
-            try { data = JSON.parse(ev.target.result); }
-            catch (err) { say('Predicates: invalid JSON (' + err.message + ').'); return; }
-            if (data && data.format === 'pluto-features') {
-                FEAFeatures.setEnvelope(data, file.name);   // full sidecar -> normal path
-            } else {
-                importLegacy(data);
-            }
-        };
-        reader.readAsText(file);
-    });
 
     if (elTree) {
         elTree.addEventListener('click', function (e) {

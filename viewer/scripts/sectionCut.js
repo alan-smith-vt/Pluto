@@ -92,9 +92,6 @@ var FEASectionCut = (function () {
     var elStats = document.getElementById('scStats');
     var elList  = document.getElementById('scList');
     var elCount = document.getElementById('scCount');
-    var elImport = document.getElementById('scImport');
-    var elImportFile = document.getElementById('scImportFile');
-    var elExport = document.getElementById('scExport');
 
     function on(el, ev, fn) { if (el) el.addEventListener(ev, fn); }
 
@@ -162,15 +159,6 @@ var FEASectionCut = (function () {
         applyIsolation();
         resample();          // isolation also scopes what the probe samples
         drawPlot();
-    });
-    on(elImport, 'click', function () { if (elImportFile) elImportFile.click(); });
-    on(elImportFile, 'change', function (e) {
-        var f = e.target.files && e.target.files[0];
-        if (f) importFile(f);
-        e.target.value = '';
-    });
-    on(elExport, 'click', function () {
-        if (window.FEAFeatures && FEAFeatures.download) FEAFeatures.download();
     });
 
     function setArmed(onOff) {
@@ -356,6 +344,7 @@ var FEASectionCut = (function () {
             if (!env) return;
         }
         if (!env.sectionCuts) env.sectionCuts = { version: 1, items: [] };
+        if (FEAFeatures.markDirty) FEAFeatures.markDirty();
         env.sectionCuts.items = cuts.map(cutToItem);
         if (groups.length) env.sectionCuts.groups = groups.map(function (g) { return { name: g.name, visible: g.visible !== false }; });
         else delete env.sectionCuts.groups;
@@ -430,17 +419,6 @@ var FEASectionCut = (function () {
         return best == null ? new THREE.Vector3(0, 0, 1) : faceNormal(best);
     }
 
-    async function importFile(file) {
-        var text = await file.text(), obj;
-        try { obj = JSON.parse(text); }
-        catch (err) { if (typeof log === 'function') log('Section cuts: ' + file.name + ' is not valid JSON.'); return; }
-        if (obj && obj.format === 'pluto-features') {
-            if (window.FEAFeatures && FEAFeatures.setEnvelope) FEAFeatures.setEnvelope(obj, file.name);
-            return;
-        }
-        if (obj && Array.isArray(obj.cuts)) { importLegacy(obj); return; }
-        if (typeof log === 'function') log('Section cuts: ' + file.name + ' is neither a features sidecar nor a section_cuts.json.');
-    }
 
     // ---- marker color ------------------------------------------
     // 'By axis' follows the cut's direction; 'Custom' takes the swatch.
@@ -1167,6 +1145,7 @@ var FEASectionCut = (function () {
         onModelLoaded: onModelLoaded,
         onModelCleared: onModelCleared,
         onEnvelope: onEnvelope,
+        importLegacy: importLegacy,
         disarm: function () { setArmed(false); setAdjusting(false); },
         // test hooks (viewer/tests/test_sectioncuts.js)
         _itemToCut: itemToCut,

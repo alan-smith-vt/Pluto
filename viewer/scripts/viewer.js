@@ -2041,16 +2041,8 @@ function updateFlash(now) {
 // ================================================================
 // Panel controls
 // ================================================================
-elFile.addEventListener('change', function (e) {
-    var files = Array.prototype.slice.call(e.target.files);
-    var jsons = files.filter(function (f) { return /\.json$/i.test(f.name); });
-    var entries = files.filter(function (f) { return !/\.json$/i.test(f.name); }).map(function (f) {
-        return { file: f, name: trimExt(f.name) };
-    });
-    var p = entries.length ? loadModels(entries) : Promise.resolve();
-    if (jsons.length && window.FEAFeatures) p.then(function () { FEAFeatures.loadFile(jsons[0]); });
-    e.target.value = '';    // allow re-selecting the same files later
-});
+// The file input is driven by files.js (FEAFiles): one picker for .bin + .json,
+// File System Access handles when available, "Save features" writes back.
 
 elBtnDemo.addEventListener('click', function () {
     log('Generating demo models...');

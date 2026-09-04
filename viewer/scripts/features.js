@@ -38,6 +38,7 @@ var FEAFeatures = (function () {
 
     var envelope = null;      // parsed sidecar (or null)
     var fileName = '';
+    var dirty = false;        // edits since the sidecar was loaded / saved (files.js shows it)
     var enabled = false;      // the single switch
     var resolved = null;      // { shells: Float32Array|null, beams: ..., counts, unmatched }
     var palette = null;       // THREE.DataTexture of group colors
@@ -50,7 +51,6 @@ var FEAFeatures = (function () {
     var listTab = 'elements';        // 'elements' | 'nodes' -- which sub-tab is showing
     try { listTab = localStorage.getItem('pluto.groupsTab') === 'nodes' ? 'nodes' : 'elements'; } catch (e0) {}
 
-    var elFile   = document.getElementById('featFile');
     var elToggle = document.getElementById('featGroups');
     var elName   = document.getElementById('featName');
     var elHint   = document.getElementById('featHint');
@@ -63,7 +63,6 @@ var FEAFeatures = (function () {
     var elAll    = document.getElementById('grAll');
     var elNone   = document.getElementById('grNone');
     var elInvert = document.getElementById('grInvert');
-    var elExport = document.getElementById('grExport');
 
     // ---- helpers --------------------------------------------------------
     function hexToRgb(hex) {
@@ -110,8 +109,10 @@ var FEAFeatures = (function () {
         }
         envelope = obj;
         fileName = name || 'features.json';
+        dirty = false;
         if (elName) elName.textContent = fileName;
         checkBinding();
+        if (window.FEAFiles) FEAFiles.syncUI();
         resolve();
         if (elToggle) elToggle.disabled = !resolved;
         sync();
@@ -145,8 +146,10 @@ var FEAFeatures = (function () {
         envelope = obj;
         var mid = (u && u.meta && u.meta.modelId) ? String(u.meta.modelId).split('/').pop() : '';
         fileName = (mid || 'untitled') + '.features.json';
+        dirty = true;
         if (elName) elName.textContent = fileName + ' (unsaved)';
         checkBinding();
+        if (window.FEAFiles) FEAFiles.syncUI();
         return envelope;
     }
 
@@ -452,7 +455,7 @@ var FEAFeatures = (function () {
             sw.type = 'color'; sw.className = 'gr-swatch';
             sw.value = '#' + hex2(info.rgb[0]) + hex2(info.rgb[1]) + hex2(info.rgb[2]);
             sw.title = 'Group colour (saved on Export)';
-            sw.addEventListener('input', function () { g.color = this.value; refresh(); });
+            sw.addEventListener('input', function () { g.color = this.value; markDirty(); refresh(); });
             sw.addEventListener('mousedown', function (e) { e.stopPropagation(); });
 
             var name = document.createElement('span');
@@ -519,6 +522,7 @@ var FEAFeatures = (function () {
     function setHidden(gi, hidden) {
         var g = items()[gi]; if (!g) return;
         writeHidden(g, hidden);
+        markDirty();
         refresh();
     }
     // All / None / Invert act on the sub-tab that is showing.
@@ -528,6 +532,7 @@ var FEAFeatures = (function () {
             if (nodes !== (listTab === 'nodes')) return;
             writeHidden(g, fn(groupHidden(g)));
         });
+        markDirty();
         refresh();
     }
     // Move item `from` so it lands at index `to` (index in the ORIGINAL list, before removal).
@@ -538,6 +543,7 @@ var FEAFeatures = (function () {
         if (to === from) return;
         var g = list.splice(from, 1)[0];
         list.splice(to, 0, g);
+        markDirty();
         refresh();
     }
 
@@ -575,21 +581,28 @@ var FEAFeatures = (function () {
             if (window.FEAPredicates && FEAPredicates.onEnvelope) FEAPredicates.onEnvelope(null);
             if (window.FEASectionCut && FEASectionCut.onEnvelope) FEASectionCut.onEnvelope(null);
             renderList(false);
+            if (window.FEAFiles) FEAFiles.syncUI();
         }
     }
 
-    // ---- export ---------------------------------------------------------
+    // ---- export / dirty state --------------------------------------------
     function exportJson() {
         if (!envelope) return null;
         return JSON.stringify(envelope, null, 2);
     }
+    function markDirty() {
+        if (!envelope) return;
+        dirty = true;
+        if (window.FEAFiles) FEAFiles.syncUI();
+    }
+    function markSaved(name) {
+        dirty = false;
+        if (name) fileName = name;
+        if (elName) elName.textContent = fileName;
+        if (window.FEAFiles) FEAFiles.syncUI();
+    }
 
     // ---- UI -------------------------------------------------------------
-    if (elFile) elFile.addEventListener('change', function (e) {
-        var f = e.target.files && e.target.files[0];
-        if (f) loadFile(f);
-        e.target.value = '';
-    });
     if (elToggle) elToggle.addEventListener('change', function () {
         enabled = this.checked;
         sync();
@@ -600,18 +613,6 @@ var FEAFeatures = (function () {
     if (elAll) elAll.addEventListener('click', function () { setAllHidden(function () { return false; }); });
     if (elNone) elNone.addEventListener('click', function () { setAllHidden(function () { return true; }); });
     if (elInvert) elInvert.addEventListener('click', function () { setAllHidden(function (h) { return !h; }); });
-    // Download the whole sidecar (groups, predicates, section cuts); the
-    // section-cut panel's Export button calls this too.
-    function download() {
-        var json = exportJson();
-        if (!json) { log('Features: nothing to export.'); return; }
-        var a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([json], { type: 'application/json' }));
-        a.download = fileName.replace(/ \(unsaved\)$/, '') || 'features.json';
-        document.body.appendChild(a); a.click(); document.body.removeChild(a);
-        setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
-    }
-    if (elExport) elExport.addEventListener('click', download);
 
     return {
         loadFile: loadFile,
@@ -635,7 +636,9 @@ var FEAFeatures = (function () {
             return (p.length === 3 && p.every(isFinite)) ? p : null;
         },
         exportJson: exportJson,
-        download: download,
+        markDirty: markDirty,
+        markSaved: markSaved,
+        isDirty: function () { return dirty; },
         // test hooks (viewer/tests/test_groups.js)
         _groupList: function () { return groupList; },
         _resolved: function () { return resolved; },

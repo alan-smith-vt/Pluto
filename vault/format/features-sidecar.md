@@ -218,8 +218,17 @@ no longer match the new geometry shows as unmatched in the viewer rather than va
 
 ## Naming / discovery
 
-`model.bin` + `model.features.json` side by side. The viewer file picker accepts either or
-both; export writes back to the same name. Exfiltration: the JSON is plain text and small.
+`model.bin` + `model.features.json` side by side. **One picker, one save** (2026-09-04,
+`viewer/scripts/files.js`): "Choose files…" takes .bin and .json together (Ctrl-click);
+the sidecar is matched to the model by base name (`X.features.json` or `X.json` ↔ `X.bin`).
+JSON is classified by shape — a `pluto-features` sidecar, the archived viewer's
+`section_cuts.json` (`{cuts:[…]}`) or `predicates.json` (`{expressions:[…]}` /
+`{groups:[{predicate}]}`) — and the legacy files merge into the current sidecar. Edits
+(groups, predicates, cuts) mark the file `*`; **Save features** (Ctrl+S) writes it back.
+Chrome / Edge: the File System Access API keeps a handle to the picked sidecar, so Save
+writes over it in place; a first save opens the picker beside the model with the model's
+name suggested. Elsewhere it downloads. The per-tab Import / Export buttons are gone.
+Exfiltration: the JSON is plain text and small.
 
 ## Open
 
