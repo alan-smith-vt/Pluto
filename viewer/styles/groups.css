@@ -48,9 +48,19 @@
 }
 #grPanel.collapsed #grBody { display: none; }
 
-#grList {
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
-    margin-top: 8px;
+#grTabs {
+    display: flex; gap: 2px; margin-top: 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+.gr-tab {
+    flex: 1; padding: 4px 0; font-size: 11px; cursor: pointer;
+    background: none; border: none; border-bottom: 2px solid transparent;
+    color: #8a8a95; font-family: inherit;
+}
+.gr-tab:hover { color: #ccc; }
+.gr-tab.active { color: #f2b84b; border-bottom-color: #f2b84b; }
+
+#grList, #grNodeList {
     padding-top: 6px;
     min-height: 40px;
     max-height: 46vh;
@@ -67,7 +77,6 @@
 .gr-row:hover { background: rgba(255, 255, 255, 0.05); }
 .gr-row.off { color: #777; }
 .gr-row.off .gr-swatch { opacity: 0.35; }
-.gr-row.nodes .gr-name::after { content: " \25CF"; font-size: 9px; color: #888; }   /* node group: drawn as points */
 .gr-row.drop-before { box-shadow: 0 -2px 0 #f2b84b; }
 .gr-row.drop-after  { box-shadow: 0 2px 0 #f2b84b; }
 .gr-row.dragging { opacity: 0.4; }

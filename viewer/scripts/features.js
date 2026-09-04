@@ -11,10 +11,12 @@
 // a later export round-trips them.
 //
 // Node groups (2026-09-04): `nodeIds` members resolve to a per-node
-// category the same way and are drawn as a point layer (nodeMarkers, one
-// THREE.Points, vertex colours from the palette) while the switch is on;
-// the section-cut isolate hides markers off the kept panel via writeVis.
-// Markers sit on the undeformed node positions (no displacement scale).
+// category the same way and are drawn as orbs (nodeMarkers, one
+// THREE.InstancedMesh of small spheres, depth test off so they show
+// through shells and beams) while the switch is on; the section-cut
+// isolate hides orbs off the kept panel via writeVis. Orbs sit on the
+// undeformed node positions (no displacement scale). The Groups tab lists
+// element groups and node groups on two sub-tabs (Elements | Nodes).
 //
 // Precedence: an element in several groups takes the LAST enabled group
 // that lists it (envelope order) -- so "all W shapes grey" first, then
@@ -31,9 +33,11 @@ var FEAFeatures = (function () {
     var resolved = null;      // { shells: Float32Array|null, beams: ..., counts, unmatched }
     var palette = null;       // THREE.DataTexture of group colors
     var groupList = [];       // [{name,color,rgb,count}] in envelope order
-    var nodeMarkers = null;   // THREE.Points for painted node-group members (or null)
+    var nodeMarkers = null;   // THREE.InstancedMesh of orbs at painted node-group members (or null)
     var nodeKeepMask = null;  // Uint8Array from the section-cut isolate (null = all)
-    var NODE_POINT_PX = 7;
+    var ORB_SPAN_FRACTION = 0.005;   // orb radius = model span x this (focus orb is 0.012)
+    var listTab = 'elements';        // 'elements' | 'nodes' -- which sub-tab is showing
+    try { listTab = localStorage.getItem('pluto.groupsTab') === 'nodes' ? 'nodes' : 'elements'; } catch (e0) {}
 
     var elFile   = document.getElementById('featFile');
     var elToggle = document.getElementById('featGroups');
@@ -42,6 +46,9 @@ var FEAFeatures = (function () {
     var elPanel  = document.getElementById('grPanel');
     var elTab    = document.getElementById('grTab');
     var elList   = document.getElementById('grList');
+    var elNodeList = document.getElementById('grNodeList');
+    var elTabE   = document.getElementById('grTabElems');
+    var elTabN   = document.getElementById('grTabNodes');
     var elAll    = document.getElementById('grAll');
     var elNone   = document.getElementById('grNone');
     var elInvert = document.getElementById('grInvert');
@@ -260,8 +267,23 @@ var FEAFeatures = (function () {
         nodeMarkers.material.dispose();
         nodeMarkers = null;
     }
-    // One THREE.Points over every painted node (category >= 0), vertex-coloured by
-    // its group; nodes hidden by the section-cut isolate are skipped.
+    // Model span (largest bbox side) from the node table, cached on the model.
+    function modelSpan(model) {
+        if (model._featSpan) return model._featSpan;
+        var nd = model.nodes, lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+        for (var i = 0; i < nd.length; i += 3) for (var a = 0; a < 3; a++) {
+            var v = nd[i + a];
+            if (v < lo[a]) lo[a] = v;
+            if (v > hi[a]) hi[a] = v;
+        }
+        var span = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+        model._featSpan = (isFinite(span) && span > 0) ? span : 1;
+        return model._featSpan;
+    }
+    // One instanced sphere per painted node (category >= 0), coloured by its
+    // group. Depth test off: a node inside the ring wall or behind a shell
+    // still shows (like the focus orb, but sized down). Nodes hidden by the
+    // section-cut isolate are skipped.
     function rebuildMarkers(on) {
         disposeMarkers();
         if (!on || !resolved || !resolved.nodes || !feaModel || !feaModel.nodes) return;
@@ -269,22 +291,24 @@ var FEAFeatures = (function () {
         var cat = resolved.nodes, nodes = feaModel.nodes, n = 0;
         for (var i = 0; i < cat.length; i++) if (cat[i] >= 0 && (!nodeKeepMask || nodeKeepMask[i])) n++;
         if (n === 0) return;
-        var pos = new Float32Array(n * 3), col = new Float32Array(n * 3), k = 0;
+        var r = modelSpan(feaModel) * ORB_SPAN_FRACTION;
+        var geom = new THREE.SphereGeometry(1, 10, 7);
+        var mat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 40, depthTest: false, depthWrite: false });
+        var mesh = new THREE.InstancedMesh(geom, mat, n);
+        var m4 = new THREE.Matrix4(), col = new THREE.Color(), k = 0;
         for (var j = 0; j < cat.length; j++) {
             if (cat[j] < 0 || (nodeKeepMask && !nodeKeepMask[j])) continue;
-            pos[k * 3] = nodes[j * 3]; pos[k * 3 + 1] = nodes[j * 3 + 1]; pos[k * 3 + 2] = nodes[j * 3 + 2];
+            m4.makeScale(r, r, r).setPosition(nodes[j * 3], nodes[j * 3 + 1], nodes[j * 3 + 2]);
+            mesh.setMatrixAt(k, m4);
             var c = groupList[cat[j]].rgb;
-            col[k * 3] = c[0] / 255; col[k * 3 + 1] = c[1] / 255; col[k * 3 + 2] = c[2] / 255;
+            mesh.setColorAt(k, col.setRGB(c[0] / 255, c[1] / 255, c[2] / 255));
             k++;
         }
-        var geom = new THREE.BufferGeometry();
-        geom.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-        geom.setAttribute('color', new THREE.BufferAttribute(col, 3));
-        var mat = new THREE.PointsMaterial({ size: NODE_POINT_PX, sizeAttenuation: false, vertexColors: true,
-                                             depthTest: true, depthWrite: false });
-        nodeMarkers = new THREE.Points(geom, mat);
-        nodeMarkers.renderOrder = 5;
-        nodeMarkers.frustumCulled = false;
+        mesh.instanceMatrix.needsUpdate = true;
+        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+        mesh.renderOrder = 6;
+        mesh.frustumCulled = false;
+        nodeMarkers = mesh;
         scene.add(nodeMarkers);
     }
     // Section-cut isolate hook (sectionCut.js): null = show every painted node.
@@ -319,26 +343,43 @@ var FEAFeatures = (function () {
     function items() { return (envelope && envelope.groups && Array.isArray(envelope.groups.items)) ? envelope.groups.items : []; }
     function hex2(c) { return ('0' + c.toString(16)).slice(-2); }
 
+    function isNodeGroup(info) { return !!info && info.count === 0 && info.nodeCount > 0; }
+    function showTab(tab) {
+        listTab = tab === 'nodes' ? 'nodes' : 'elements';
+        try { localStorage.setItem('pluto.groupsTab', listTab); } catch (e0) {}
+        if (elList) elList.hidden = listTab !== 'elements';
+        if (elNodeList) elNodeList.hidden = listTab !== 'nodes';
+        if (elTabE) elTabE.classList.toggle('active', listTab === 'elements');
+        if (elTabN) elTabN.classList.toggle('active', listTab === 'nodes');
+    }
+
     function renderList(on) {
         if (!elList) return;
         elList.innerHTML = '';
+        if (elNodeList) elNodeList.innerHTML = '';
+        showTab(listTab);
         var list = items();
         var can = list.length > 0 && !!feaModel;
         [elAll, elNone, elInvert].forEach(function (b) { if (b) b.disabled = !can; });
         if (!list.length) {
-            elList.innerHTML = '<div class="gr-empty">' + (envelope ? 'No groups in file' : 'No features file') + '</div>';
+            var empty = '<div class="gr-empty">' + (envelope ? 'No groups in file' : 'No features file') + '</div>';
+            elList.innerHTML = empty;
+            if (elNodeList) elNodeList.innerHTML = empty;
             return;
         }
+        var nElemRows = 0, nNodeRows = 0;
         list.forEach(function (g, gi) {
             var info = groupList[gi] || { name: g.name, rgb: [200, 200, 200], count: 0, nodeCount: 0, painted: 0, nodePainted: 0, hidden: !!g.hidden, tags: [] };
-            var isNodes = info.count === 0 && info.nodeCount > 0;
+            var isNodes = isNodeGroup(info);
+            var target = isNodes ? (elNodeList || elList) : elList;
+            if (isNodes) nNodeRows++; else nElemRows++;
             var row = document.createElement('div');
             row.className = 'gr-row' + (info.hidden ? ' off' : '') + (isNodes ? ' nodes' : '');
             row.draggable = true;
 
             var cb = document.createElement('input');
             cb.type = 'checkbox'; cb.className = 'gr-check'; cb.checked = !info.hidden;
-            cb.title = isNodes ? 'Node group: draw its nodes as points in this colour' : 'Paint this group';
+            cb.title = isNodes ? 'Node group: draw its nodes as orbs in this colour' : 'Paint this group';
             cb.addEventListener('change', function () { setHidden(gi, !this.checked); });
 
             var sw = document.createElement('input');
@@ -387,24 +428,37 @@ var FEAFeatures = (function () {
                 var r = row.getBoundingClientRect(), after = (e.clientY - r.top) > r.height / 2;
                 moveGroup(dragFrom, gi + (after ? 1 : 0));
             });
-            elList.appendChild(row);
+            target.appendChild(row);
         });
+        if (nElemRows === 0) elList.innerHTML = '<div class="gr-empty">No element groups</div>';
         var rest = document.createElement('div');
         rest.className = 'gr-ungrouped';
         rest.innerHTML = '<span class="sw"></span><span>ungrouped' + (on ? '' : ' (colouring off)') + '</span>';
         elList.appendChild(rest);
+        if (elNodeList) {
+            if (nNodeRows === 0) elNodeList.innerHTML = '<div class="gr-empty">No node groups</div>';
+            var nh = document.createElement('div');
+            nh.className = 'gr-ungrouped';
+            nh.innerHTML = '<span>orbs at the nodes, drawn on top' + (on ? '' : ' (colouring off)') + '</span>';
+            elNodeList.appendChild(nh);
+        }
     }
     function clearDrop() {
-        if (!elList) return;
-        Array.prototype.forEach.call(elList.querySelectorAll('.gr-row'), function (r) { r.classList.remove('drop-before', 'drop-after'); });
+        [elList, elNodeList].forEach(function (el) {
+            if (!el) return;
+            Array.prototype.forEach.call(el.querySelectorAll('.gr-row'), function (r) { r.classList.remove('drop-before', 'drop-after'); });
+        });
     }
     function setHidden(gi, hidden) {
         var g = items()[gi]; if (!g) return;
         if (hidden) g.hidden = true; else delete g.hidden;
         refresh();
     }
+    // All / None / Invert act on the sub-tab that is showing.
     function setAllHidden(fn) {
-        items().forEach(function (g) {
+        items().forEach(function (g, gi) {
+            var nodes = isNodeGroup(groupList[gi]);
+            if (nodes !== (listTab === 'nodes')) return;
             var h = fn(!!g.hidden);
             if (h) g.hidden = true; else delete g.hidden;
         });
@@ -463,6 +517,8 @@ var FEAFeatures = (function () {
         sync();
     });
     if (elTab && elPanel) elTab.addEventListener('click', function () { elPanel.classList.toggle('collapsed'); });
+    if (elTabE) elTabE.addEventListener('click', function () { showTab('elements'); });
+    if (elTabN) elTabN.addEventListener('click', function () { showTab('nodes'); });
     if (elAll) elAll.addEventListener('click', function () { setAllHidden(function () { return false; }); });
     if (elNone) elNone.addEventListener('click', function () { setAllHidden(function () { return true; }); });
     if (elInvert) elInvert.addEventListener('click', function () { setAllHidden(function (h) { return !h; }); });

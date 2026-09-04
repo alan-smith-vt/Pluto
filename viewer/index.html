@@ -312,7 +312,12 @@
             Tick = paints. Overlaps: the <em>lowest</em> enabled group wins &mdash; drag rows
             to reorder. Counts are painted / members.
         </div>
+        <div id="grTabs">
+            <button id="grTabElems" class="gr-tab active" title="Shell and beam groups: paint the elements">Elements</button>
+            <button id="grTabNodes" class="gr-tab" title="Node groups: drawn as orbs at the nodes, always on top">Nodes</button>
+        </div>
         <div id="grList"><div class="gr-empty">No features file</div></div>
+        <div id="grNodeList" hidden><div class="gr-empty">No features file</div></div>
         <div id="grFooter">
             <button id="grExport" class="fea-btn" title="Download the whole features sidecar (order + enabled state included)">Export</button>
         </div>
