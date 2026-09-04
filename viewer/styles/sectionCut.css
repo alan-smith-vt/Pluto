@@ -90,7 +90,9 @@
 .sc-row.grouped { padding-left: 16px; }
 .sc-row.off { color: #777; }
 .sc-row.off .sc-dot { opacity: 0.35; }
-.sc-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.sc-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; box-sizing: border-box; }
+.sc-dot.sloped { border-radius: 2px; transform: rotate(45deg); width: 8px; height: 8px; }   /* diamond = bent onto the panel */
+#scSloped.active { background: #5d4a1f; border-color: #f2b84b; color: #fff; }
 .sc-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sc-info { font-size: 10px; color: #8a8a95; font-family: 'Consolas', monospace; }
 .sc-vis { font-size: 12px; color: #8a8a95; cursor: pointer; }

@@ -114,8 +114,8 @@ one haloed), select re-attaches probe / plot / isolate, Adjust (Ctrl+click) and 
 numeric centre entry, sidecar round trip with unknown keys preserved, legacy
 `section_cuts.json` import shim (inches → model unit, panel normal by probing). Stored as
 plane `{point, normal}` + `bounds.up` (panel normal), direction derived, `axis` key when
-it is a global axis (list colour). Test: `viewer/tests/test_sectioncuts.js`. Sloped cuts
-are a later UX step (the storage already carries them). C# `SectionCuts.cs` (2074 lines,
+it is a global axis (list colour). Test: `viewer/tests/test_sectioncuts.js`. Sloped cuts: a
+**Sloped** toggle bends the chosen axis onto the panel (same day). C# `SectionCuts.cs` (2074 lines,
 audit pending) consumes the definitions.
 
 ## Phase C — cross-check and polish

@@ -23,8 +23,11 @@
 //     domains: ["shells"] }
 //
 // The probe direction is not stored twice: dir = normal x up. `axis`
-// ("x" | "y" | "z") is written when the direction is a global axis so the
-// list can colour-code it; a direction that is no axis reads as "sloped".
+// ("x" | "y" | "z") is the axis the user chose and colours the list;
+// `sloped: true` means that axis is bent onto the panel (dir = axis minus
+// its component along up, normalised: Z on a roof runs up the slope, X on
+// a curved wall follows the tangent). An item with neither key, or whose
+// direction matches no axis, reads as "sloped" (amber).
 // Unknown keys on an item survive a round trip (kept on item._raw).
 // The archived viewer's standalone section_cuts.json ({version, groups,
 // cuts:[{point, axis, length(in)}]}) imports through a shim.
@@ -50,6 +53,7 @@ var FEASectionCut = (function () {
     var armed = false;              // placing a NEW cut
     var adjusting = false;          // re-placing the selected cut
     var defAxis = 'x';              // axis for the next new cut
+    var defSloped = false;          // bend the axis onto the panel for the next new cut
     var defLength = 0;              // 0 -> auto default on first placement
     var cuts = [];                  // runtime cut objects (see makeCut)
     var groups = [];                // [{ name, visible }] from the sidecar
@@ -73,6 +77,7 @@ var FEASectionCut = (function () {
     var elAxisX = document.getElementById('scAxisX');
     var elAxisY = document.getElementById('scAxisY');
     var elAxisZ = document.getElementById('scAxisZ');
+    var elSloped = document.getElementById('scSloped');
     var elLen   = document.getElementById('scLen');
     var elPosX  = document.getElementById('scPosX');
     var elPosY  = document.getElementById('scPosY');
@@ -101,6 +106,7 @@ var FEASectionCut = (function () {
     on(elAxisX, 'click', function () { setAxis('x'); });
     on(elAxisY, 'click', function () { setAxis('y'); });
     on(elAxisZ, 'click', function () { setAxis('z'); });
+    on(elSloped, 'click', function () { setSloped(!(active() ? active().sloped : defSloped)); });
 
     on(elLen, 'change', function () {
         var v = parseFloat(this.value.replace(/,/g, ''));
@@ -196,15 +202,38 @@ var FEASectionCut = (function () {
     function setAxis(a) {
         defAxis = a;
         var c = active();
-        if (c) { c.dir = AXIS_DIR[a].clone(); c.axis = a; afterMutation(c); }
+        if (c) { c.axis = a; computeDir(c); afterMutation(c); }
         else { syncAxisButtons(); syncColorSwatch(); }
+    }
+    function setSloped(onOff) {
+        defSloped = !!onOff;
+        var c = active();
+        if (c) { c.sloped = defSloped; computeDir(c); afterMutation(c); }
+        else syncAxisButtons();
+    }
+    // The probe direction from the chosen axis: the axis itself, or the axis
+    // bent onto the panel (component along the panel normal removed). A cut
+    // that came in with no axis keeps whatever direction it has.
+    function computeDir(c) {
+        if (!AXIS_DIR[c.axis]) return;
+        var d = AXIS_DIR[c.axis].clone();
+        if (c.sloped) {
+            d.addScaledVector(c.normal, -d.dot(c.normal));
+            if (d.lengthSq() < 1e-8) d = AXIS_DIR[c.axis].clone();     // axis is the panel normal: nothing to bend
+        }
+        c.dir = d.normalize();
     }
     function syncAxisButtons() {
         var c = active();
         var a = c ? c.axis : defAxis;
+        var s = c ? !!c.sloped : defSloped;
         if (elAxisX) elAxisX.classList.toggle('active', a === 'x');
         if (elAxisY) elAxisY.classList.toggle('active', a === 'y');
         if (elAxisZ) elAxisZ.classList.toggle('active', a === 'z');
+        if (elSloped) {
+            elSloped.classList.toggle('active', s);
+            elSloped.disabled = !!(c && !AXIS_DIR[c.axis]);
+        }
     }
 
     // ---- cut objects --------------------------------------------
@@ -250,12 +279,14 @@ var FEASectionCut = (function () {
             normal: fields.normal.clone().normalize(),      // panel normal = bounds.up
             dir: fields.dir.clone().normalize(),
             length: fields.length,
+            sloped: !!fields.sloped,
             elem: -1,
             visual: null,
             visParts: [],
             _raw: fields._raw || null
         };
         c.axis = fields.axis || axisOf(c.dir);
+        if (c.sloped && AXIS_DIR[c.axis]) computeDir(c);
         return c;
     }
     function nextName() {
@@ -281,15 +312,16 @@ var FEASectionCut = (function () {
         if (!point || !n) return null;
         if (!up || up.lengthSq() < 1e-12) up = new THREE.Vector3(0, 0, 1);
         n.normalize(); up.normalize();
-        var dir = raw.axis && AXIS_DIR[raw.axis] ? AXIS_DIR[raw.axis].clone()
+        var hasAxis = !!(raw.axis && AXIS_DIR[raw.axis]);
+        var dir = hasAxis && !raw.sloped ? AXIS_DIR[raw.axis].clone()
                 : new THREE.Vector3().crossVectors(n, up);
-        if (dir.lengthSq() < 1e-12) dir = new THREE.Vector3(1, 0, 0);
+        if (dir.lengthSq() < 1e-12) dir = hasAxis ? AXIS_DIR[raw.axis].clone() : new THREE.Vector3(1, 0, 0);
         dir.normalize();
         var half = isFinite(bounds.halfWidth) && bounds.halfWidth > 0 ? bounds.halfWidth : 0;
         return makeCut({
             id: raw.id, name: raw.name, group: raw.group, visible: raw.visible,
             center: point, normal: up, dir: dir, length: half * 2 || defLength || 1,
-            axis: raw.axis && AXIS_DIR[raw.axis] ? raw.axis : null, _raw: raw
+            axis: hasAxis ? raw.axis : null, sloped: hasAxis && !!raw.sloped, _raw: raw
         });
     }
 
@@ -310,6 +342,7 @@ var FEASectionCut = (function () {
         raw.bounds = b;
         if (!Array.isArray(raw.domains)) raw.domains = ['shells'];
         if (c.axis && AXIS_DIR[c.axis]) raw.axis = c.axis; else delete raw.axis;
+        if (c.sloped && AXIS_DIR[c.axis]) raw.sloped = true; else delete raw.sloped;
         c._raw = raw;
         return raw;
     }
@@ -651,11 +684,12 @@ var FEASectionCut = (function () {
             c.center = hit.point.clone();
             c.normal = faceNormal(hit.faceIndex);
             c.elem = feaBuild.triToElem[hit.faceIndex];
+            computeDir(c);
             setAdjusting(false);
         } else {
             c = makeCut({
                 center: hit.point, normal: faceNormal(hit.faceIndex), dir: AXIS_DIR[defAxis],
-                length: defaultLength(), axis: defAxis
+                length: defaultLength(), axis: defAxis, sloped: defSloped
             });
             c.elem = feaBuild.triToElem[hit.faceIndex];
             cuts.push(c);
@@ -947,7 +981,7 @@ var FEASectionCut = (function () {
         ctx.fillStyle = '#999'; ctx.textAlign = 'left';
         ctx.fillText(fmt(samples.t[iFirst], 3), padL + 2, H - padB + 10);
         ctx.textAlign = 'right';
-        var axLabel = c.axis === 'sloped' ? 'sloped' : c.axis.toUpperCase();
+        var axLabel = c.axis === 'sloped' ? 'sloped' : c.axis.toUpperCase() + (c.sloped ? ' (sloped)' : '');
         ctx.fillText(fmt(samples.t[iLast], 3) + '  ' + axLabel + (lu ? ' [' + lu + ']' : ''), W - padR - 2, H - padB + 10);
         var avg = samples.effLen > 0 ? samples.area / samples.effLen : NaN;
         var area = areaDisplay(samples.area);
@@ -1024,10 +1058,11 @@ var FEASectionCut = (function () {
         row.addEventListener('click', function () { selectCut(c.id); });
         var dot = document.createElement('span'); dot.className = 'sc-dot';
         dot.style.background = AXIS_CSS[c.axis] || AXIS_CSS.sloped;
-        dot.title = c.axis === 'sloped' ? 'sloped direction' : 'along ' + c.axis.toUpperCase();
+        if (c.sloped) dot.classList.add('sloped');
+        dot.title = c.axis === 'sloped' ? 'sloped direction' : 'along ' + c.axis.toUpperCase() + (c.sloped ? ', bent onto the panel' : '');
         var name = document.createElement('span'); name.className = 'sc-name'; name.textContent = c.name;
         var info = document.createElement('span'); info.className = 'sc-info';
-        info.textContent = (c.axis === 'sloped' ? '∠' : c.axis.toUpperCase()) + ' ' + fmt(c.length, 3) + (lengthUnit() ? ' ' + lengthUnit() : '');
+        info.textContent = (c.axis === 'sloped' ? '∠' : c.axis.toUpperCase() + (c.sloped ? '∠' : '')) + ' ' + fmt(c.length, 3) + (lengthUnit() ? ' ' + lengthUnit() : '');
         var vis = document.createElement('span'); vis.className = 'sc-vis'; vis.innerHTML = c.visible ? '&#9673;' : '&#9676;';
         vis.title = 'Show / hide this cut';
         vis.addEventListener('click', function (e) { e.stopPropagation(); toggleCutVis(c.id); });
@@ -1107,6 +1142,7 @@ var FEASectionCut = (function () {
         _delete: deleteCut,
         _importLegacy: importLegacy,
         _makeCut: makeCut,
+        _setSloped: setSloped,
         _push: function (c) { cuts.push(c); activeId = c.id; afterMutation(c); }
     };
 })();

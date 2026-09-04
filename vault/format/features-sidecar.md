@@ -186,8 +186,10 @@ archived viewer's management layer) and round-trips them.
   plane's normal. `bounds.up` = the panel's normal at the centre (the probe ray direction);
   `halfWidth` = half the cut length. The probe line direction is derived, `dir = normal ×
   up`, so a sloped direction round-trips without an extra field.
-- `axis` (`"x" | "y" | "z"`) is written when `dir` is a global axis (within 1°) — the list
-  colour-codes by it; absent = sloped (amber). Today's UI only creates axis cuts.
+- `axis` (`"x" | "y" | "z"`) is the axis the user chose; the list colour-codes by it.
+  `sloped: true` bends that axis onto the panel (dir = axis minus its component along
+  `up`, normalised): Z on a roof runs up the slope, X on a curved wall follows the tangent.
+  An item with no `axis` (a foreign direction) reads as sloped, amber.
 - `groups[]` carries per-group visibility; collapsed/expanded is view state only.
 - Unknown keys on an item survive a round trip (kept on the runtime object's `_raw`).
 - The archived viewer's standalone `section_cuts.json` (`{version, groups, cuts:[{point

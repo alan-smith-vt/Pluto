@@ -54,6 +54,20 @@ assert(!('axis' in slopedItem) && near(slopedItem.plane.normal[0], Math.SQRT1_2,
 const sl2 = FEASectionCut._itemToCut(slopedItem);
 assert(sl2.axis === 'sloped' && near(sl2.dir.dot(d), 1, 1e-6), 'sloped cut round-trips its direction');
 
+// 2b. sloped toggle: the chosen axis bent onto the panel, colour still by axis
+const roofUp = new THREE.Vector3(0, 0.6, 0.8);         // a panel leaning back 37 deg
+const zc = FEASectionCut._makeCut({ center: new THREE.Vector3(), normal: roofUp, dir: new THREE.Vector3(0, 0, 1), length: 4, axis: 'z', sloped: true });
+assert(zc.axis === 'z' && zc.sloped && near(zc.dir.y, -0.8, 1e-9) && near(zc.dir.z, 0.6, 1e-9) && near(zc.dir.dot(roofUp), 0, 1e-9),
+  'sloped Z on a leaning panel: dir = Z bent into the panel (0,-0.8,0.6)');
+const zItem = FEASectionCut._cutToItem(zc);
+assert(zItem.axis === 'z' && zItem.sloped === true, 'sloped item keeps axis z and sloped: true');
+const zBack = FEASectionCut._itemToCut(zItem);
+assert(zBack.sloped && near(zBack.dir.dot(zc.dir), 1, 1e-6), 'sloped item round-trips its bent direction');
+const flat = FEASectionCut._makeCut({ center: new THREE.Vector3(), normal: new THREE.Vector3(0, 0, 1), dir: new THREE.Vector3(1, 0, 0), length: 4, axis: 'x', sloped: true });
+assert(near(flat.dir.x, 1), 'sloped X on a flat plate is still X');
+const degenerate = FEASectionCut._makeCut({ center: new THREE.Vector3(), normal: new THREE.Vector3(0, 0, 1), dir: new THREE.Vector3(0, 0, 1), length: 4, axis: 'z', sloped: true });
+assert(near(degenerate.dir.z, 1), 'sloped Z on a horizontal plate falls back to Z (nothing to bend)');
+
 // 3. runtime bookkeeping: push, select, delete, groups pruned, envelope synced
 FEASectionCut._push(FEASectionCut._makeCut({ name: 'A', group: 'G1', center: new THREE.Vector3(0, 0, 0), normal: new THREE.Vector3(0, 0, 1), dir: new THREE.Vector3(1, 0, 0), length: 2 }));
 FEASectionCut._push(FEASectionCut._makeCut({ name: 'B', center: new THREE.Vector3(1, 0, 0), normal: new THREE.Vector3(0, 0, 1), dir: new THREE.Vector3(0, 1, 0), length: 2 }));
