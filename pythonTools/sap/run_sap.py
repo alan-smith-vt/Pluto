@@ -66,6 +66,20 @@ def step_audit(cfg: Path, s2k: Path) -> None:
     print(f"[audit]   {csv_path.name}, {svg_path.name} -> vault/arms/assets/settlement-{s2k.stem}.svg")
 
 
+def step_figures(cfg: Path) -> None:
+    """The vault's model diagrams (loads, shell local axes, beam nodes) follow the config too."""
+    import doc_figures
+    spec, _ = load_config(cfg)
+    m = TankModel(spec)
+    doc_figures.ASSETS.mkdir(parents=True, exist_ok=True)
+    names = []
+    for name, fn in (("tank-loads", doc_figures.fig_loads), ("tank-local-axes", doc_figures.fig_axes),
+                     ("tank-beam-nodes", doc_figures.fig_beam_nodes)):
+        (doc_figures.ASSETS / f"{name}.svg").write_bytes(fn(m).replace("\n", "\r\n").encode("utf-8"))
+        names.append(name)
+    print(f"[figures] {', '.join(names)} -> vault/arms/assets")
+
+
 def step_axes_check(sap, cfg: Path) -> None:
     """After import: does SAP's local 1 match the meridional direction the builder
     intended, on every shell? Reports the count and the worst angle; a failure here
@@ -189,6 +203,7 @@ def main(argv=None) -> int:
     else:
         s2k, model_id = step_build(a.config)
     step_audit(a.config, s2k)
+    step_figures(a.config)
 
     sap = step_run(s2k, run=not a.no_run, cfg=a.config)
     results = step_results(sap, s2k)
