@@ -101,8 +101,8 @@ Three.js r128 and OrbitControls are vendored under `lib/`.
 Groups tab (2026-09-03): the sidecar-groups UI moved out of the main panel into a flyout
 tab under the predicates tab (`#grPanel`, `styles/groups.css`). Per-group enable
 (`hidden` flag in the sidecar), colour edit, drag reorder, painted/members counts that
-expose shadowing (e.g. WALL 0/720 under twenty COURSE groups), node groups listed but not
-painted, All/None/Invert, Export. Spec: [[vault/format/features-sidecar|features-sidecar]];
+expose shadowing (e.g. WALL 0/720 under twenty COURSE groups), node groups drawn as
+coloured points (`nodeMarkers`, 2026-09-04; undeformed positions), All/None/Invert, Export. Spec: [[vault/format/features-sidecar|features-sidecar]];
 test `viewer/tests/test_groups.js`. URL load `index.html?bin=…&features=…` (same day).
 
 Predicates (2026-09-01, ported from the old viewer — plan:

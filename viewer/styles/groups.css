@@ -67,7 +67,7 @@
 .gr-row:hover { background: rgba(255, 255, 255, 0.05); }
 .gr-row.off { color: #777; }
 .gr-row.off .gr-swatch { opacity: 0.35; }
-.gr-row.nodes { cursor: default; }
+.gr-row.nodes .gr-name::after { content: " \25CF"; font-size: 9px; color: #888; }   /* node group: drawn as points */
 .gr-row.drop-before { box-shadow: 0 -2px 0 #f2b84b; }
 .gr-row.drop-after  { box-shadow: 0 2px 0 #f2b84b; }
 .gr-row.dragging { opacity: 0.4; }

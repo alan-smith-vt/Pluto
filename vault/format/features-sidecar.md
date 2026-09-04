@@ -100,7 +100,9 @@ Viewer behaviour (`viewer/scripts/features.js`, **Groups tab** on the right edge
   **painted / members** counts — an orange count means members are shadowed by a group
   lower in the list. Drag rows to reorder (mutates `groups.items` order); All / None /
   Invert; Export writes the whole sidecar with order, colours and `hidden` flags.
-- Node groups (`nodeIds` members) are listed with their node count and never painted.
+- Node groups (`nodeIds` members) paint too (2026-09-04): their nodes are drawn as points in
+  the group colour while Color by groups is on, same last-enabled-wins precedence, count
+  shown as painted/total nodes; the section-cut isolate hides points off the kept panel.
 - `color` omitted → auto palette. Hover/pick readout shows the winning group name.
 - Headless test: `node viewer/tests/test_groups.js`.
 

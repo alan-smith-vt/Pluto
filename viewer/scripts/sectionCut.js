@@ -325,6 +325,7 @@ var FEASectionCut = (function () {
                 }
             }
             FEABeams.writeVis(nodeKeep);
+            if (window.FEAFeatures && FEAFeatures.writeVis) FEAFeatures.writeVis(nodeKeep);
         }
         requestRender();
     }

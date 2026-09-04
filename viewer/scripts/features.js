@@ -10,6 +10,12 @@
 // of by field. Unknown sections of the envelope are kept verbatim so
 // a later export round-trips them.
 //
+// Node groups (2026-09-04): `nodeIds` members resolve to a per-node
+// category the same way and are drawn as a point layer (nodeMarkers, one
+// THREE.Points, vertex colours from the palette) while the switch is on;
+// the section-cut isolate hides markers off the kept panel via writeVis.
+// Markers sit on the undeformed node positions (no displacement scale).
+//
 // Precedence: an element in several groups takes the LAST enabled group
 // that lists it (envelope order) -- so "all W shapes grey" first, then
 // "pipes by size" refine on top. The Groups tab (2026-09-03) exposes that:
@@ -25,6 +31,9 @@ var FEAFeatures = (function () {
     var resolved = null;      // { shells: Float32Array|null, beams: ..., counts, unmatched }
     var palette = null;       // THREE.DataTexture of group colors
     var groupList = [];       // [{name,color,rgb,count}] in envelope order
+    var nodeMarkers = null;   // THREE.Points for painted node-group members (or null)
+    var nodeKeepMask = null;  // Uint8Array from the section-cut isolate (null = all)
+    var NODE_POINT_PX = 7;
 
     var elFile   = document.getElementById('featFile');
     var elToggle = document.getElementById('featGroups');
@@ -48,6 +57,15 @@ var FEAFeatures = (function () {
     function autoColor(i) {
         var c = FEAShaders.categoryColor(i);
         return [c[0], c[1], c[2]];
+    }
+
+    function nodeIdMap(model) {
+        if (model._featNodeIdMap) return model._featNodeIdMap;
+        var m = new Map();
+        var ids = model.nodeIds || [];
+        for (var i = 0; i < ids.length; i++) m.set(ids[i], i);
+        model._featNodeIdMap = m;
+        return m;
     }
 
     function idMap(view) {
@@ -155,7 +173,10 @@ var FEAFeatures = (function () {
         if (items.length === 0) return;
 
         var views = { shell: feaModel, beam: window.FEABeams ? FEABeams.view() : null };
-        var out = { shell: null, beam: null, unmatched: 0 };
+        var out = { shell: null, beam: null, nodes: null, unmatched: 0 };
+        var nNodes = (feaModel.header && feaModel.header.nNodes) || (feaModel.nodeIds ? feaModel.nodeIds.length : 0);
+        if (nNodes > 0) { out.nodes = new Float32Array(nNodes); out.nodes.fill(-1); }
+        var nmap = nodeIdMap(feaModel);
         Object.keys(views).forEach(function (fam) {
             var v = views[fam];
             if (!v) return;
@@ -188,7 +209,12 @@ var FEAFeatures = (function () {
                 if (fam === 'shells') fam = 'shell';
                 if (fam === 'beams') fam = 'beam';
                 if (fam === 'nodes' || (m.nodeIds && m.nodeIds.length)) {
-                    nodeCount += (m.nodeIds || []).length;    // node groups: listed, not painted
+                    (m.nodeIds || []).forEach(function (id) {
+                        var ni = nmap.get(id);
+                        if (ni === undefined) { out.unmatched++; return; }
+                        nodeCount++;
+                        if (!hidden && out.nodes) out.nodes[ni] = gi;
+                    });
                     return;
                 }
                 var v = views[fam], arr = out[fam];
@@ -202,7 +228,7 @@ var FEAFeatures = (function () {
                 });
             })(members[mi]);
             groupList.push({ name: g.name || ('Group ' + (gi + 1)), color: g.color, rgb: color,
-                             count: count, nodeCount: nodeCount, hidden: hidden, painted: 0,
+                             count: count, nodeCount: nodeCount, hidden: hidden, painted: 0, nodePainted: 0,
                              tags: Array.isArray(g.tags) ? g.tags : [] });
         });
         // painted = elements whose final category is this group (after precedence)
@@ -211,6 +237,7 @@ var FEAFeatures = (function () {
             if (!arr) return;
             for (var i = 0; i < arr.length; i++) if (arr[i] >= 0) groupList[arr[i]].painted++;
         });
+        if (out.nodes) for (var ni = 0; ni < out.nodes.length; ni++) if (out.nodes[ni] >= 0) groupList[out.nodes[ni]].nodePainted++;
         resolved = out;
         palette = FEAShaders.makePaletteTexture(rgb);
     }
@@ -225,6 +252,48 @@ var FEAFeatures = (function () {
         }
     }
 
+    // ---- node markers ---------------------------------------------------
+    function disposeMarkers() {
+        if (!nodeMarkers) return;
+        if (typeof scene !== 'undefined' && scene) scene.remove(nodeMarkers);
+        nodeMarkers.geometry.dispose();
+        nodeMarkers.material.dispose();
+        nodeMarkers = null;
+    }
+    // One THREE.Points over every painted node (category >= 0), vertex-coloured by
+    // its group; nodes hidden by the section-cut isolate are skipped.
+    function rebuildMarkers(on) {
+        disposeMarkers();
+        if (!on || !resolved || !resolved.nodes || !feaModel || !feaModel.nodes) return;
+        if (typeof THREE === 'undefined' || typeof scene === 'undefined' || !scene) return;
+        var cat = resolved.nodes, nodes = feaModel.nodes, n = 0;
+        for (var i = 0; i < cat.length; i++) if (cat[i] >= 0 && (!nodeKeepMask || nodeKeepMask[i])) n++;
+        if (n === 0) return;
+        var pos = new Float32Array(n * 3), col = new Float32Array(n * 3), k = 0;
+        for (var j = 0; j < cat.length; j++) {
+            if (cat[j] < 0 || (nodeKeepMask && !nodeKeepMask[j])) continue;
+            pos[k * 3] = nodes[j * 3]; pos[k * 3 + 1] = nodes[j * 3 + 1]; pos[k * 3 + 2] = nodes[j * 3 + 2];
+            var c = groupList[cat[j]].rgb;
+            col[k * 3] = c[0] / 255; col[k * 3 + 1] = c[1] / 255; col[k * 3 + 2] = c[2] / 255;
+            k++;
+        }
+        var geom = new THREE.BufferGeometry();
+        geom.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        geom.setAttribute('color', new THREE.BufferAttribute(col, 3));
+        var mat = new THREE.PointsMaterial({ size: NODE_POINT_PX, sizeAttenuation: false, vertexColors: true,
+                                             depthTest: true, depthWrite: false });
+        nodeMarkers = new THREE.Points(geom, mat);
+        nodeMarkers.renderOrder = 5;
+        nodeMarkers.frustumCulled = false;
+        scene.add(nodeMarkers);
+    }
+    // Section-cut isolate hook (sectionCut.js): null = show every painted node.
+    function writeVis(nodeKeep) {
+        nodeKeepMask = nodeKeep || null;
+        rebuildMarkers(enabled && !!resolved);
+        needsRender = true;
+    }
+
     function sync() {
         var on = enabled && !!resolved;
         if (feaBuild && resolved) {
@@ -236,6 +305,7 @@ var FEAFeatures = (function () {
         }
         applyUniforms(feaMaterial, on);
         if (window.FEABeams && FEABeams.mesh()) applyUniforms(FEABeams.mesh().material, on);
+        rebuildMarkers(on);
         if (elToggle) elToggle.checked = enabled;
         drawLegend(on);
         if (typeof updateViewCaption === 'function') updateViewCaption();
@@ -260,7 +330,7 @@ var FEAFeatures = (function () {
             return;
         }
         list.forEach(function (g, gi) {
-            var info = groupList[gi] || { name: g.name, rgb: [200, 200, 200], count: 0, nodeCount: 0, painted: 0, hidden: !!g.hidden, tags: [] };
+            var info = groupList[gi] || { name: g.name, rgb: [200, 200, 200], count: 0, nodeCount: 0, painted: 0, nodePainted: 0, hidden: !!g.hidden, tags: [] };
             var isNodes = info.count === 0 && info.nodeCount > 0;
             var row = document.createElement('div');
             row.className = 'gr-row' + (info.hidden ? ' off' : '') + (isNodes ? ' nodes' : '');
@@ -268,8 +338,7 @@ var FEAFeatures = (function () {
 
             var cb = document.createElement('input');
             cb.type = 'checkbox'; cb.className = 'gr-check'; cb.checked = !info.hidden;
-            cb.title = isNodes ? 'Node group: listed for reference, nothing to paint' : 'Paint this group';
-            cb.disabled = isNodes;
+            cb.title = isNodes ? 'Node group: draw its nodes as points in this colour' : 'Paint this group';
             cb.addEventListener('change', function () { setHidden(gi, !this.checked); });
 
             var sw = document.createElement('input');
@@ -285,8 +354,13 @@ var FEAFeatures = (function () {
 
             var cnt = document.createElement('span');
             cnt.className = 'gr-count';
-            if (isNodes) cnt.textContent = info.nodeCount + ' nodes';
-            else {
+            if (isNodes) {
+                cnt.textContent = info.nodePainted + '/' + info.nodeCount + ' nodes';
+                if (!info.hidden && info.nodeCount > 0 && info.nodePainted < info.nodeCount) {
+                    cnt.classList.add('shadowed');
+                    cnt.title = (info.nodeCount - info.nodePainted) + ' node(s) painted by a group lower in the list';
+                }
+            } else {
                 cnt.textContent = info.painted + '/' + info.count;
                 if (!info.hidden && info.count > 0 && info.painted < info.count) {
                     cnt.classList.add('shadowed');
@@ -330,9 +404,7 @@ var FEAFeatures = (function () {
         refresh();
     }
     function setAllHidden(fn) {
-        items().forEach(function (g, gi) {
-            var info = groupList[gi];
-            if (info && info.count === 0 && info.nodeCount > 0) return;   // node groups untouched
+        items().forEach(function (g) {
             var h = fn(!!g.hidden);
             if (h) g.hidden = true; else delete g.hidden;
         });
@@ -352,7 +424,7 @@ var FEAFeatures = (function () {
     // Group name for a (family, element index), or null.
     function groupOf(family, e) {
         if (!resolved || !enabled) return null;
-        var arr = resolved[family];
+        var arr = resolved[family === 'node' ? 'nodes' : family];
         if (!arr || e < 0 || e >= arr.length) return null;
         var gi = arr[e];
         return gi >= 0 ? groupList[gi].name : null;
@@ -360,7 +432,8 @@ var FEAFeatures = (function () {
 
     // ---- hooks from viewer.js -------------------------------------------
     function onModelLoaded() {
-        if (feaModel) feaModel._featIdMap = null;
+        if (feaModel) { feaModel._featIdMap = null; feaModel._featNodeIdMap = null; }
+        nodeKeepMask = null;
         checkBinding();
         resolve();
         if (elToggle) elToggle.disabled = !resolved;
@@ -368,6 +441,8 @@ var FEAFeatures = (function () {
     }
     function onModelCleared() {
         resolved = null;
+        nodeKeepMask = null;
+        disposeMarkers();
         if (palette) { palette.dispose(); palette = null; }
     }
 
@@ -410,6 +485,7 @@ var FEAFeatures = (function () {
         onModelLoaded: onModelLoaded,
         onModelCleared: onModelCleared,
         sync: sync,
+        writeVis: writeVis,
         groupOf: groupOf,
         isOn: function () { return enabled && !!resolved; },
         envelope: function () { return envelope; },
