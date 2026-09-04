@@ -33,15 +33,17 @@ const env = () => ({
     { name: 'WALL', members: [{ domain: 'shells', ids: [101, 102, 103, 104, 105, 106, 107, 108, 109, 110] }] },
     { name: 'C1', members: [{ domain: 'shells', ids: [101, 102, 103, 104, 105] }] },
     { name: 'C2', members: [{ domain: 'shells', ids: [106, 107, 108, 109, 110] }] },
-    { name: 'BASE', members: [{ domain: 'nodes', nodeIds: [1, 2, 3] }] },
-    { name: 'RIM', members: [{ domain: 'nodes', nodeIds: [3, 4, 99] }] }
+    { name: 'BASE', members: [{ domain: 'nodes', nodeIds: [1, 2, 3] }], hidden: false },
+    { name: 'RIM', members: [{ domain: 'nodes', nodeIds: [3, 4, 99] }], hidden: false },
+    { name: 'REF', members: [{ domain: 'nodes', nodeIds: [1] }] }        // no flag: node groups start off
   ] }
 });
 
 // 1. precedence: later groups shadow WALL completely
 FEAFeatures.setEnvelope(env(), 't.features.json');
 let gl = FEAFeatures._groupList();
-assert(gl.map(g => g.name).join() === 'WALL,C1,C2,BASE,RIM', 'five groups listed');
+assert(gl.map(g => g.name).join() === 'WALL,C1,C2,BASE,RIM,REF', 'six groups listed');
+assert(gl[5].hidden && gl[5].nodePainted === 0 && gl[5].nodeCount === 1, 'node group without a flag starts hidden');
 assert(gl[0].count === 10 && gl[0].painted === 0, 'WALL: 10 members, 0 painted (shadowed by courses)');
 assert(gl[1].painted === 5 && gl[2].painted === 5, 'C1 / C2 paint 5 each');
 assert(gl[3].nodeCount === 3 && gl[3].count === 0, 'BASE is a node group (3 nodes, no elements)');
@@ -59,17 +61,17 @@ assert(gl[1].hidden && gl[1].painted === 0 && gl[1].count === 5, 'hidden course 
 
 // 3. reorder: WALL moved to the end wins over the courses
 delete e.groups.items[1].hidden; delete e.groups.items[2].hidden;
-FEAFeatures._moveGroup(0, 5);            // to the end (index in original list)
+FEAFeatures._moveGroup(0, 6);            // to the end (index in original list)
 FEAFeatures.refresh();
 gl = FEAFeatures._groupList();
-assert(gl.map(g => g.name).join() === 'C1,C2,BASE,RIM,WALL', 'WALL now last: ' + gl.map(g => g.name).join());
-assert(gl[4].painted === 10 && gl[0].painted === 0, 'last group wins after reorder');
+assert(gl.map(g => g.name).join() === 'C1,C2,BASE,RIM,REF,WALL', 'WALL now last: ' + gl.map(g => g.name).join());
+assert(gl[5].painted === 10 && gl[0].painted === 0, 'last group wins after reorder');
 // 3b. hiding a node group frees its nodes for the one above
 e.groups.items[3].hidden = true;                 // RIM
 FEAFeatures.refresh();
 gl = FEAFeatures._groupList();
 assert(gl[2].nodePainted === 3 && gl[3].nodePainted === 0, 'hidden RIM: BASE paints all 3 nodes');
-delete e.groups.items[3].hidden;
+e.groups.items[3].hidden = false;          // a node group needs the explicit false to paint
 FEAFeatures.refresh();
 
 // 4. export round-trips hidden + order

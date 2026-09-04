@@ -11,12 +11,14 @@
 // a later export round-trips them.
 //
 // Node groups (2026-09-04): `nodeIds` members resolve to a per-node
-// category the same way and are drawn as orbs (nodeMarkers, one
-// THREE.InstancedMesh of small spheres, depth test off so they show
-// through shells and beams) while the switch is on; the section-cut
-// isolate hides orbs off the kept panel via writeVis. Orbs sit on the
-// undeformed node positions (no displacement scale). The Groups tab lists
-// element groups and node groups on two sub-tabs (Elements | Nodes).
+// category the same way and are drawn as a point layer (nodeMarkers, one
+// THREE.Points, square screen-space markers, vertex colours from the
+// palette) while the switch is on; the section-cut isolate hides markers
+// off the kept panel via writeVis. Markers sit on the undeformed node
+// positions (no displacement scale). The Groups tab lists element groups
+// and node groups on two sub-tabs (Elements | Nodes); node groups start
+// UNTICKED unless the sidecar says `hidden: false` (orbs were tried and
+// rejected the same day -- too much clutter).
 //
 // Precedence: an element in several groups takes the LAST enabled group
 // that lists it (envelope order) -- so "all W shapes grey" first, then
@@ -33,9 +35,9 @@ var FEAFeatures = (function () {
     var resolved = null;      // { shells: Float32Array|null, beams: ..., counts, unmatched }
     var palette = null;       // THREE.DataTexture of group colors
     var groupList = [];       // [{name,color,rgb,count}] in envelope order
-    var nodeMarkers = null;   // THREE.InstancedMesh of orbs at painted node-group members (or null)
+    var nodeMarkers = null;   // THREE.Points for painted node-group members (or null)
     var nodeKeepMask = null;  // Uint8Array from the section-cut isolate (null = all)
-    var ORB_SPAN_FRACTION = 0.005;   // orb radius = model span x this (focus orb is 0.012)
+    var NODE_POINT_PX = 7;
     var listTab = 'elements';        // 'elements' | 'nodes' -- which sub-tab is showing
     try { listTab = localStorage.getItem('pluto.groupsTab') === 'nodes' ? 'nodes' : 'elements'; } catch (e0) {}
 
@@ -199,7 +201,7 @@ var FEAFeatures = (function () {
             var color = g.color ? hexToRgb(g.color) : autoColor(gi);
             rgb.push(color);
             var count = 0, nodeCount = 0;
-            var hidden = !!g.hidden;
+            var hidden = groupHidden(g);
             // Work on a COPY: predicate members expand into explicit entries
             // appended to the queue; the envelope itself is never mutated.
             var members = (Array.isArray(g.members) ? g.members : (g.members ? [g.members] : [])).slice();
@@ -267,23 +269,9 @@ var FEAFeatures = (function () {
         nodeMarkers.material.dispose();
         nodeMarkers = null;
     }
-    // Model span (largest bbox side) from the node table, cached on the model.
-    function modelSpan(model) {
-        if (model._featSpan) return model._featSpan;
-        var nd = model.nodes, lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
-        for (var i = 0; i < nd.length; i += 3) for (var a = 0; a < 3; a++) {
-            var v = nd[i + a];
-            if (v < lo[a]) lo[a] = v;
-            if (v > hi[a]) hi[a] = v;
-        }
-        var span = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
-        model._featSpan = (isFinite(span) && span > 0) ? span : 1;
-        return model._featSpan;
-    }
-    // One instanced sphere per painted node (category >= 0), coloured by its
-    // group. Depth test off: a node inside the ring wall or behind a shell
-    // still shows (like the focus orb, but sized down). Nodes hidden by the
-    // section-cut isolate are skipped.
+    // One THREE.Points over every painted node (category >= 0), vertex-coloured by
+    // its group; nodes hidden by the section-cut isolate are skipped. Depth-tested,
+    // so a node inside solid geometry (the ring wall) is hidden by it.
     function rebuildMarkers(on) {
         disposeMarkers();
         if (!on || !resolved || !resolved.nodes || !feaModel || !feaModel.nodes) return;
@@ -291,24 +279,22 @@ var FEAFeatures = (function () {
         var cat = resolved.nodes, nodes = feaModel.nodes, n = 0;
         for (var i = 0; i < cat.length; i++) if (cat[i] >= 0 && (!nodeKeepMask || nodeKeepMask[i])) n++;
         if (n === 0) return;
-        var r = modelSpan(feaModel) * ORB_SPAN_FRACTION;
-        var geom = new THREE.SphereGeometry(1, 10, 7);
-        var mat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 40, depthTest: false, depthWrite: false });
-        var mesh = new THREE.InstancedMesh(geom, mat, n);
-        var m4 = new THREE.Matrix4(), col = new THREE.Color(), k = 0;
+        var pos = new Float32Array(n * 3), col = new Float32Array(n * 3), k = 0;
         for (var j = 0; j < cat.length; j++) {
             if (cat[j] < 0 || (nodeKeepMask && !nodeKeepMask[j])) continue;
-            m4.makeScale(r, r, r).setPosition(nodes[j * 3], nodes[j * 3 + 1], nodes[j * 3 + 2]);
-            mesh.setMatrixAt(k, m4);
+            pos[k * 3] = nodes[j * 3]; pos[k * 3 + 1] = nodes[j * 3 + 1]; pos[k * 3 + 2] = nodes[j * 3 + 2];
             var c = groupList[cat[j]].rgb;
-            mesh.setColorAt(k, col.setRGB(c[0] / 255, c[1] / 255, c[2] / 255));
+            col[k * 3] = c[0] / 255; col[k * 3 + 1] = c[1] / 255; col[k * 3 + 2] = c[2] / 255;
             k++;
         }
-        mesh.instanceMatrix.needsUpdate = true;
-        if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-        mesh.renderOrder = 6;
-        mesh.frustumCulled = false;
-        nodeMarkers = mesh;
+        var geom = new THREE.BufferGeometry();
+        geom.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        geom.setAttribute('color', new THREE.BufferAttribute(col, 3));
+        var mat = new THREE.PointsMaterial({ size: NODE_POINT_PX, sizeAttenuation: false, vertexColors: true,
+                                             depthTest: true, depthWrite: false });
+        nodeMarkers = new THREE.Points(geom, mat);
+        nodeMarkers.renderOrder = 5;
+        nodeMarkers.frustumCulled = false;
         scene.add(nodeMarkers);
     }
     // Section-cut isolate hook (sectionCut.js): null = show every painted node.
@@ -344,6 +330,28 @@ var FEAFeatures = (function () {
     function hex2(c) { return ('0' + c.toString(16)).slice(-2); }
 
     function isNodeGroup(info) { return !!info && info.count === 0 && info.nodeCount > 0; }
+    // A group with only nodeIds members, from the envelope item itself.
+    function itemIsNodes(g) {
+        var ms = Array.isArray(g.members) ? g.members : (g.members ? [g.members] : []);
+        if (!ms.length) return false;
+        for (var i = 0; i < ms.length; i++) {
+            var m = ms[i];
+            if (m.predicateId) return false;
+            if (!(m.domain === 'nodes' || (m.nodeIds && m.nodeIds.length))) return false;
+        }
+        return true;
+    }
+    // Enabled state: element groups paint unless `hidden: true`; node groups
+    // stay off unless `hidden: false` is written (they are reference sets).
+    function groupHidden(g) {
+        if (g.hidden !== undefined) return !!g.hidden;
+        return itemIsNodes(g);
+    }
+    function writeHidden(g, hidden) {
+        if (hidden) g.hidden = true;
+        else if (itemIsNodes(g)) g.hidden = false;
+        else delete g.hidden;
+    }
     function showTab(tab) {
         listTab = tab === 'nodes' ? 'nodes' : 'elements';
         try { localStorage.setItem('pluto.groupsTab', listTab); } catch (e0) {}
@@ -369,7 +377,7 @@ var FEAFeatures = (function () {
         }
         var nElemRows = 0, nNodeRows = 0;
         list.forEach(function (g, gi) {
-            var info = groupList[gi] || { name: g.name, rgb: [200, 200, 200], count: 0, nodeCount: 0, painted: 0, nodePainted: 0, hidden: !!g.hidden, tags: [] };
+            var info = groupList[gi] || { name: g.name, rgb: [200, 200, 200], count: 0, nodeCount: 0, painted: 0, nodePainted: 0, hidden: groupHidden(g), tags: [] };
             var isNodes = isNodeGroup(info);
             var target = isNodes ? (elNodeList || elList) : elList;
             if (isNodes) nNodeRows++; else nElemRows++;
@@ -379,7 +387,7 @@ var FEAFeatures = (function () {
 
             var cb = document.createElement('input');
             cb.type = 'checkbox'; cb.className = 'gr-check'; cb.checked = !info.hidden;
-            cb.title = isNodes ? 'Node group: draw its nodes as orbs in this colour' : 'Paint this group';
+            cb.title = isNodes ? 'Node group: draw its nodes as points in this colour (off by default)' : 'Paint this group';
             cb.addEventListener('change', function () { setHidden(gi, !this.checked); });
 
             var sw = document.createElement('input');
@@ -439,7 +447,7 @@ var FEAFeatures = (function () {
             if (nNodeRows === 0) elNodeList.innerHTML = '<div class="gr-empty">No node groups</div>';
             var nh = document.createElement('div');
             nh.className = 'gr-ungrouped';
-            nh.innerHTML = '<span>orbs at the nodes, drawn on top' + (on ? '' : ' (colouring off)') + '</span>';
+            nh.innerHTML = '<span>points at the nodes; off by default' + (on ? '' : ' (colouring off)') + '</span>';
             elNodeList.appendChild(nh);
         }
     }
@@ -451,7 +459,7 @@ var FEAFeatures = (function () {
     }
     function setHidden(gi, hidden) {
         var g = items()[gi]; if (!g) return;
-        if (hidden) g.hidden = true; else delete g.hidden;
+        writeHidden(g, hidden);
         refresh();
     }
     // All / None / Invert act on the sub-tab that is showing.
@@ -459,8 +467,7 @@ var FEAFeatures = (function () {
         items().forEach(function (g, gi) {
             var nodes = isNodeGroup(groupList[gi]);
             if (nodes !== (listTab === 'nodes')) return;
-            var h = fn(!!g.hidden);
-            if (h) g.hidden = true; else delete g.hidden;
+            writeHidden(g, fn(groupHidden(g)));
         });
         refresh();
     }
