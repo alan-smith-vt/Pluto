@@ -19,8 +19,8 @@
 <text x="360.0" y="70.0" fill="#1f2328" text-anchor="start" font-size="12" font-weight="bold">PLATE</text>
 <line x1="360.0" y1="190.0" x2="500.0" y2="190.0" stroke="#1f2328" stroke-width="3"/>
 <circle cx="430.0" cy="190.0" r="5" fill="#1f2328"/>
-<text x="444.0" y="194.0" fill="#1f2328" text-anchor="start" font-size="12" font-weight="bold">plate</text>
-<text x="444.0" y="208.0" fill="#6b7380" text-anchor="start" font-size="11">BASEPLATE</text>
+<text x="444.0" y="201.0" fill="#1f2328" text-anchor="start" font-size="12" font-weight="bold">plate</text>
+<text x="444.0" y="215.0" fill="#6b7380" text-anchor="start" font-size="11">BASEPLATE</text>
 <line x1="430.0" y1="195.0" x2="430.0" y2="255.0" stroke="#2f6b9a" stroke-width="2"/>
 <path d="M421 211 h18 M421 217 h18" fill="none" stroke="#2f6b9a" stroke-width="2"/>
 <polyline points="430,224 423,227.5 437,234.5 423,241.5 437,248.5 430,252" fill="none" stroke="#2f6b9a" stroke-width="2"/>
@@ -35,7 +35,7 @@
 <line x1="430.0" y1="268.0" x2="424.0" y2="275.0" stroke="#1f2328" stroke-width="1"/>
 <line x1="439.0" y1="268.0" x2="433.0" y2="275.0" stroke="#1f2328" stroke-width="1"/>
 <line x1="448.0" y1="268.0" x2="442.0" y2="275.0" stroke="#1f2328" stroke-width="1"/>
-<text x="466.0" y="276.0" fill="#6b7380" text-anchor="start" font-size="11">fixed</text>
+<text x="400.0" y="276.0" fill="#6b7380" text-anchor="end" font-size="11">fixed</text>
 <text x="360.0" y="420.0" fill="#6b7380" text-anchor="start" font-size="11">two joints coincident</text>
 <text x="360.0" y="436.0" fill="#6b7380" text-anchor="start" font-size="11">k = ks x tributary area</text>
 <text x="600.0" y="70.0" fill="#1f2328" text-anchor="start" font-size="12" font-weight="bold">RIM</text>
@@ -50,8 +50,8 @@
 <path d="M711 157 h18 M711 163 h18" fill="none" stroke="#2f6b9a" stroke-width="2"/>
 <text x="706.0" y="164.0" fill="#2f6b9a" text-anchor="end" font-size="11">GAP_CONTACT</text>
 <circle cx="720.0" cy="190.0" r="5" fill="#ffffff" stroke="#2f6b9a" stroke-width="1.5"/>
-<text x="734.0" y="194.0" fill="#2f6b9a" text-anchor="start" font-size="12" font-weight="bold">wall top</text>
-<text x="734.0" y="208.0" fill="#6b7380" text-anchor="start" font-size="11">RINGWALL_TOP</text>
+<text x="764.0" y="194.0" fill="#2f6b9a" text-anchor="start" font-size="12" font-weight="bold">wall top</text>
+<text x="764.0" y="208.0" fill="#6b7380" text-anchor="start" font-size="11">RINGWALL_TOP</text>
 <rect x="696.0" y="190" width="48" height="130" fill="#e3e1dc" stroke="#1f2328" stroke-width="1"/>
 <line x1="720.0" y1="190.0" x2="720.0" y2="255.0" stroke="#2f6b9a" stroke-width="1.2" stroke-dasharray="2 4"/>
 <circle cx="720.0" cy="255.0" r="3" fill="none" stroke="#2f6b9a" stroke-width="1.5"/>
@@ -73,7 +73,7 @@
 <line x1="720.0" y1="398.0" x2="714.0" y2="405.0" stroke="#1f2328" stroke-width="1"/>
 <line x1="729.0" y1="398.0" x2="723.0" y2="405.0" stroke="#1f2328" stroke-width="1"/>
 <line x1="738.0" y1="398.0" x2="732.0" y2="405.0" stroke="#1f2328" stroke-width="1"/>
-<text x="756.0" y="406.0" fill="#6b7380" text-anchor="start" font-size="11">fixed</text>
+<text x="690.0" y="406.0" fill="#6b7380" text-anchor="end" font-size="11">fixed</text>
 <text x="600.0" y="470.0" fill="#6b7380" text-anchor="start" font-size="11">three joints coincident</text>
 <text x="600.0" y="486.0" fill="#6b7380" text-anchor="start" font-size="11">both gaps compression only</text>
 <text x="600.0" y="502.0" fill="#6b7380" text-anchor="start" font-size="11">drawn apart</text>

@@ -236,7 +236,7 @@ def fig_beam_nodes(m: TankModel) -> str:
     jx, jy = cx, 190
     f.line(jx - 70, jy, jx + 70, jy, w=3)
     f.dot(jx, jy, 5, fill=INK)
-    right(jx, jy, "plate", "BASEPLATE")
+    right(jx, jy + 7, "plate", "BASEPLATE")
     y1 = jy + 70
     f.line(jx, jy + 5, jx, y1 - 5, stroke=STEEL, w=2)
     gap_symbol(jx, jy + 24)
@@ -246,7 +246,7 @@ def fig_beam_nodes(m: TankModel) -> str:
     f.dot(jx, y1, 5, fill=STEEL)
     right(jx, y1, "ground", "GROUND", STEEL)
     support(jx, y1 + 8)
-    f.text(jx + 36, y1 + 16, "fixed", fill=MUTED, size=11)
+    f.text(jx - 30, y1 + 16, "fixed", fill=MUTED, size=11, anchor="end")
     f.text(360, 420, "two joints coincident", fill=MUTED, size=11)
     f.text(360, 436, "k = ks x tributary area", fill=MUTED, size=11)
 
@@ -266,7 +266,7 @@ def fig_beam_nodes(m: TankModel) -> str:
     gap_symbol(jx, jy + 30)
     left(jx, jy + 30, "GAP_CONTACT")
     f.dot(jx, y1, 5, fill="#ffffff", stroke=STEEL)
-    right(jx, y1, "wall top", "RINGWALL_TOP", STEEL)
+    right(jx + 30, y1, "wall top", "RINGWALL_TOP", STEEL)
     # ring wall body below the top joint
     cw, ch = 48, 130
     f.add(f'<rect x="{jx - cw / 2}" y="{y1}" width="{cw}" height="{ch}" fill="{CONC}" stroke="{INK}" stroke-width="1"/>')
@@ -286,7 +286,7 @@ def fig_beam_nodes(m: TankModel) -> str:
     f.dot(jx, y2, 5, fill=STEEL)
     right(jx, y2, "ground", "RINGWALL_GROUND", STEEL)
     support(jx, y2 + 8)
-    f.text(jx + 36, y2 + 16, "fixed", fill=MUTED, size=11)
+    f.text(jx - 30, y2 + 16, "fixed", fill=MUTED, size=11, anchor="end")
     f.text(600, 470, "three joints coincident", fill=MUTED, size=11)
     f.text(600, 486, "both gaps compression only", fill=MUTED, size=11)
     f.text(600, 502, "drawn apart", fill=MUTED, size=11)
