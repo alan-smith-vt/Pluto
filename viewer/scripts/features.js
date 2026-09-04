@@ -143,7 +143,8 @@ var FEAFeatures = (function () {
             sectionCuts: { version: 1, items: [] }
         };
         envelope = obj;
-        fileName = 'untitled.features.json';
+        var mid = (u && u.meta && u.meta.modelId) ? String(u.meta.modelId).split('/').pop() : '';
+        fileName = (mid || 'untitled') + '.features.json';
         if (elName) elName.textContent = fileName + ' (unsaved)';
         checkBinding();
         return envelope;
@@ -558,11 +559,23 @@ var FEAFeatures = (function () {
         if (elToggle) elToggle.disabled = !resolved;
         sync();
     }
+    var DEMO_NAME = 'PlateDemo.features.json';
     function onModelCleared() {
         resolved = null;
         nodeKeepMask = null;
         disposeMarkers();
         if (palette) { palette.dispose(); palette = null; }
+        // The demo's sample sidecar must not outlive the demo: a real model
+        // loaded over it would otherwise inherit demo groups and export as
+        // "PlateDemo.features.json" (2026-09-04).
+        if (envelope && fileName === DEMO_NAME) {
+            envelope = null; fileName = '';
+            if (elName) elName.textContent = 'no features file';
+            if (elHint) elHint.textContent = '';
+            if (window.FEAPredicates && FEAPredicates.onEnvelope) FEAPredicates.onEnvelope(null);
+            if (window.FEASectionCut && FEASectionCut.onEnvelope) FEASectionCut.onEnvelope(null);
+            renderList(false);
+        }
     }
 
     // ---- export ---------------------------------------------------------
