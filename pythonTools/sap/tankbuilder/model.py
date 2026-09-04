@@ -437,16 +437,23 @@ class TankModel:
 
     def settlement_dz(self, x: float, y: float) -> float:
         """Ground settlement w(x, y) in ft (negative = down) for the configured
-        profile. trench: parabolic across a straight trench of width W along
-        direction theta through the point at perpendicular offset c from the
-        centre: w = -depth (1 - (2 d / W)^2) for |d| <= W/2, else 0, where
-        d = -x sin(theta) + y cos(theta) - c."""
+        profile. d = -x sin(theta) + y cos(theta) - c is the signed distance
+        from the line at direction theta through the point at offset c.
+        trench: parabolic across a straight trench of width W on that line,
+        w = -depth (1 - (2 d / W)^2) for |d| <= W/2, else 0.
+        slope: half-plane linear settlement hinged on that line, zero for
+        d <= 0 and w = -depth * d / R beyond it, so the full depth is reached
+        at the tank edge (d = R; the ring wall just outside gets slightly more)."""
         s = self.spec
+        if s.settlement == "none":
+            return 0.0
+        th = math.radians(s.settlement_direction_deg)
+        d = -x * math.sin(th) + y * math.cos(th) - s.settlement_offset
         if s.settlement == "trench":
-            th = math.radians(s.settlement_direction_deg)
-            d = -x * math.sin(th) + y * math.cos(th) - s.settlement_offset
             u = 2.0 * d / s.settlement_width
             return -s.settlement_depth * (1.0 - u * u) if abs(u) <= 1.0 else 0.0
+        if s.settlement == "slope":
+            return -s.settlement_depth * d / s.radius if d > 0.0 else 0.0
         return 0.0
 
     def _build_settlement(self) -> None:

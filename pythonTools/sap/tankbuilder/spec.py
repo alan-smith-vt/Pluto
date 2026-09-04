@@ -94,11 +94,11 @@ class TankSpec:
     # [settlement]  ground displacement on the ground joints (plate GROUND + RINGWALL_GROUND)
     # from a surface w(x, y); needs foundation "gap". Pattern SETTLE, nonlinear case
     # NL_SETTLE continuing from NL_HYDRO (the gaps open where the ground drops away).
-    settlement: str = "none"              # "none" | "trench" (parabolic cross-section)
-    settlement_depth: float = 0.0         # ft, settlement at the trench centreline (positive = down)
-    settlement_width: float = 0.0         # ft, trench width (w = 0 at +/- width/2)
-    settlement_direction_deg: float = 0.0 # trench axis direction in plan, from +X
-    settlement_offset: float = 0.0        # ft, axis offset from the tank centre, +90 deg side
+    settlement: str = "none"              # "none" | "trench" (parabolic) | "slope" (half-plane, linear)
+    settlement_depth: float = 0.0         # ft, positive = down: trench centreline / slope at the tank edge (d = R)
+    settlement_width: float = 0.0         # ft, trench width (w = 0 at +/- width/2); unused by slope
+    settlement_direction_deg: float = 0.0 # trench axis / slope hinge line direction in plan, from +X
+    settlement_offset: float = 0.0        # ft, axis / hinge offset from the tank centre, +90 deg side
     # [supports]
     base_local_axes: bool = False
     release_radial: bool = False
@@ -180,13 +180,15 @@ class TankSpec:
                 self.ringwall_support = "gap"
             if self.ringwall_support not in ("gap", "fixed"):
                 raise ValueError(f"ringwall.support {self.ringwall_support!r} not recognised (gap | fixed)")
-        if self.settlement not in ("none", "trench"):
-            raise ValueError(f"settlement.profile {self.settlement!r} not recognised (none | trench)")
+        if self.settlement not in ("none", "trench", "slope"):
+            raise ValueError(f"settlement.profile {self.settlement!r} not recognised (none | trench | slope)")
         if self.settlement != "none":
             if self.foundation != "gap":
                 raise ValueError("settlement needs foundation.mode = 'gap' (it moves the ground joints)")
-            if self.settlement_depth <= 0 or self.settlement_width <= 0:
-                raise ValueError("settlement.depth and width must be positive")
+            if self.settlement_depth <= 0:
+                raise ValueError("settlement.depth must be positive")
+            if self.settlement == "trench" and self.settlement_width <= 0:
+                raise ValueError("settlement.width must be positive for a trench")
         for k, d in enumerate(self.dents, 1):
             if d.width <= 0 or d.height <= 0:
                 raise ValueError(f"dents[{k}]: width and height must be positive")

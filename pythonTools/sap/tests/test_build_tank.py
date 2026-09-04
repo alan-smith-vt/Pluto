@@ -579,6 +579,23 @@ def test_trench_settlement_profile_and_tables():
         capped(settlement="trench", settlement_depth=0.5, settlement_width=10.0)   # needs gap
 
 
+def test_slope_settlement_profile():
+    m = walled(settlement="slope", settlement_depth=0.5)          # R = 10
+    assert m.settlement_dz(0.0, -3.0) == 0.0 and m.settlement_dz(5.0, 0.0) == 0.0     # the flat half, hinge line included
+    assert m.settlement_dz(0.0, 5.0) == pytest.approx(-0.25)
+    assert m.settlement_dz(3.0, 10.0) == pytest.approx(-0.5)                          # full depth at the tank edge
+    assert m.settlement_dz(0.0, 11.0) == pytest.approx(-0.55)                         # ring wall just outside: a little more
+    r = walled(settlement="slope", settlement_depth=0.5, settlement_direction_deg=90.0)   # hinge along Y: rises toward -X
+    assert r.settlement_dz(-10.0, 2.0) == pytest.approx(-0.5) and r.settlement_dz(4.0, 0.0) == 0.0
+    moved = {j for j, v in m.settlements.items() if v != 0.0}
+    assert moved and all(m.joints[j][1] > 0 for j in moved) and all(m.joints[j][1] <= 0 for j in m.settlements if j not in moved)
+    t = parse_s2k(s2k_text(m))
+    assert len(t["JOINT LOADS - GROUND DISPLACEMENT"]) == len(moved)
+    with pytest.raises(ValueError):
+        walled(settlement="slope", settlement_depth=0.0)
+    walled(settlement="slope", settlement_depth=0.5, settlement_width=0.0)            # width not needed for a slope
+
+
 def test_settlement_audit_writes_csv_and_svg(tmp_path):
     import csv
     sys.path.insert(0, str(ROOT))

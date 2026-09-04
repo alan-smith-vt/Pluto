@@ -93,7 +93,7 @@ def settlement_svg(model: TankModel, rows: list[dict], title: str) -> str:
     o.append(f'<rect x="0" y="0" width="{W}" height="{H}" fill="#ffffff"/>')
     o.append(f'<text x="16" y="24" font-size="13" font-weight="bold" fill="#1f2328">{_esc(title)}</text>')
     kind = s.settlement
-    desc = (f"{kind}: depth {s.settlement_depth:g} ft, width {s.settlement_width:g} ft, "
+    desc = (f"{kind}: depth {s.settlement_depth:g} ft" + (f", width {s.settlement_width:g} ft" if kind == "trench" else " at the tank edge") + ", "
             f"direction {s.settlement_direction_deg:g} deg, offset {s.settlement_offset:g} ft; "
             f"{sum(1 for r in rows if r['dz'] != 0)} of {len(rows)} ground joints moved; "
             f"case NL_SETTLE after NL_HYDRO")
@@ -110,7 +110,9 @@ def settlement_svg(model: TankModel, rows: list[dict], title: str) -> str:
     nx, ny = -math.sin(th), math.cos(th)            # perpendicular (+d side)
     L = R + rw + 2.0
     c = s.settlement_offset
-    for dd, dash, col in ((0.0, "6 4", "#b4472b"), (s.settlement_width / 2, "2 3", "#b4472b"), (-s.settlement_width / 2, "2 3", "#b4472b")):
+    edges = ((0.0, "6 4", "#b4472b"),) if s.settlement != "trench" else (
+        (0.0, "6 4", "#b4472b"), (s.settlement_width / 2, "2 3", "#b4472b"), (-s.settlement_width / 2, "2 3", "#b4472b"))
+    for dd, dash, col in edges:
         x0, y0 = nx * (c + dd) - ux * L, ny * (c + dd) - uy * L
         x1, y1 = nx * (c + dd) + ux * L, ny * (c + dd) + uy * L
         o.append(f'<line x1="{px(x0):.1f}" y1="{py(y0):.1f}" x2="{px(x1):.1f}" y2="{py(y1):.1f}" stroke="{col}" stroke-width="1" stroke-dasharray="{dash}"/>')
@@ -124,7 +126,7 @@ def settlement_svg(model: TankModel, rows: list[dict], title: str) -> str:
     o.append(f'<line x1="{px(0):.1f}" y1="{py(-L):.1f}" x2="{px(0):.1f}" y2="{py(L):.1f}" stroke="#c0c4c8" stroke-width=".6"/>')
     o.append(f'<text x="{px(L) + 4:.1f}" y="{py(0) + 4:.1f}" fill="#6b7380">+X</text>')
     o.append(f'<text x="{px(0) - 4:.1f}" y="{py(L) - 4:.1f}" fill="#6b7380" text-anchor="end">+Y</text>')
-    o.append(f'<text x="{plan_cx}" y="{plan_cy + plan_r + 26}" text-anchor="middle" fill="#6b7380">dashed: profile axis and edges; ring wall shaded; R = {R:g} ft</text>')
+    o.append(f'<text x="{plan_cx}" y="{plan_cy + plan_r + 26}" text-anchor="middle" fill="#6b7380">dashed: {"profile axis and edges" if kind == "trench" else "hinge line"}; ring wall shaded; R = {R:g} ft</text>')
 
     # ---- colour bar ----
     steps = 24
@@ -169,7 +171,7 @@ def settlement_svg(model: TankModel, rows: list[dict], title: str) -> str:
     # d axis ticks
     ticks = [-R, 0.0, R]
     hw = s.settlement_width / 2
-    if hw < R * 0.85:
+    if s.settlement == "trench" and 0 < hw < R * 0.85:
         ticks += [-hw, hw]
     for d in sorted(ticks):
         o.append(f'<line x1="{ex(d):.1f}" y1="{el_y1}" x2="{ex(d):.1f}" y2="{el_y1 + 5}" stroke="#1f2328" stroke-width=".6"/>')

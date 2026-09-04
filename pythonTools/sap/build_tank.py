@@ -58,8 +58,9 @@ def main(argv=None) -> int:
         base += f", {len(spec.dents)} dent(s)"
     if spec.settlement != "none":
         moved = sum(1 for v in model.settlements.values() if v != 0.0)
-        base += (f", settlement {spec.settlement} {spec.settlement_depth:g} ft deep x "
-                 f"{spec.settlement_width:g} ft wide at {spec.settlement_direction_deg:g} deg ({moved} ground joints moved)")
+        size = (f"{spec.settlement_depth:g} ft deep x {spec.settlement_width:g} ft wide" if spec.settlement == "trench"
+                else f"{spec.settlement_depth:g} ft at the edge")
+        base += f", settlement {spec.settlement} {size} at {spec.settlement_direction_deg:g} deg ({moved} ground joints moved)"
     parts = [f"{len(spec.plate_courses)} course(s)"]
     if spec.baseplate:
         parts.append(f"baseplate ({len(model.baseplate_areas)} shells)")
