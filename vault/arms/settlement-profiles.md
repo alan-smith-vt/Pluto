@@ -49,7 +49,8 @@ the model itself:
 ![[vault/arms/assets/settlement-TANK-A.svg|900]]
 
 TANK-A, 2026-09-04, **slope** 0.5 ft at the edge, hinge along +X (the figure above; 432 of
-865 ground joints moved). SAP 26, `NL_SETTLE`: ground joints match the CSV to 5e-7 ft. The
+865 ground joints moved; results in `models/TANK-A/`, which the next run overwrites — copy
+the folder under a new name to keep a run, as done for the open-top comparison). SAP 26, `NL_SETTLE`: ground joints match the CSV to 5e-7 ft. The
 plate follows the ground everywhere. The **ring wall does not**: it bridges the hinge as a
 stiff ring — wall top −0.139 ft at the hinge azimuths (soil there compressed 1.7 in, ~87
 kip per joint at the linear 624 kip/ft), soil gap open on 38 of 72 spokes on the flat
@@ -59,7 +60,9 @@ near the hinge. Two things to weigh before trusting the magnitudes: the soil is 
 spring (no bearing limit), and the concrete's vertical compliance lives in `GAP_CONTACT`.
 
 **Why the lift-off (checked the same day):** the same slope on an open-top variant (roof
-and eave ring off, scratch run) closes every contact gap — 0 of 72 spokes lifted, the rim
+and eave ring off; config `configs/TANK-A-noroof-slope.toml`, record in
+`models/TANK-A-noroof-slope/` with its .s2k, results.s2k, .bin + sidecar and audit — both
+local, gitignored like every model) closes every contact gap — 0 of 72 spokes lifted, the rim
 folds with the ground (best-fit-plane residual ±0.1 ft), the ring wall presses only 0.07
 ft into the soil at the hinge. So the dome + eave ring are what hold the rim planar; the
 tank then tilts as a rigid drum on its best-fit plane and the deviation of the fold from
