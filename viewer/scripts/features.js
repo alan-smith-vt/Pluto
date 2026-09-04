@@ -15,7 +15,13 @@
 // THREE.Points, square screen-space markers, vertex colours from the
 // palette) while the switch is on; the section-cut isolate hides markers
 // off the kept panel via writeVis. Markers sit on the undeformed node
-// positions (no displacement scale). The Groups tab lists element groups
+// positions (no displacement scale). Unlike elements, node groups do NOT
+// shadow each other: every enabled group draws all its nodes, and where
+// two markers would land on the same spot (a node in two groups, or
+// coincident joints such as a plate joint over its ground joint) the
+// later group's marker is nudged aside by a small world-space step per
+// occupant, so both show. Rows report how many were nudged. groupOf()
+// for nodes still answers last-enabled-wins. The Groups tab lists element groups
 // and node groups on two sub-tabs (Elements | Nodes). EVERY group starts
 // unticked unless the sidecar item says `hidden: false`; ticking writes the
 // flag so Export remembers it. (Orbs on top were tried and rejected the
@@ -38,7 +44,9 @@ var FEAFeatures = (function () {
     var groupList = [];       // [{name,color,rgb,count}] in envelope order
     var nodeMarkers = null;   // THREE.Points for painted node-group members (or null)
     var nodeKeepMask = null;  // Uint8Array from the section-cut isolate (null = all)
+    var nodeMembers = [];     // per group: Int32Array of node indices (resolved members, in order)
     var NODE_POINT_PX = 7;
+    var NUDGE_SPAN_FRACTION = 0.004;   // coincident-marker step = model span x this
     var listTab = 'elements';        // 'elements' | 'nodes' -- which sub-tab is showing
     try { listTab = localStorage.getItem('pluto.groupsTab') === 'nodes' ? 'nodes' : 'elements'; } catch (e0) {}
 
@@ -184,6 +192,7 @@ var FEAFeatures = (function () {
 
         var views = { shell: feaModel, beam: window.FEABeams ? FEABeams.view() : null };
         var out = { shell: null, beam: null, nodes: null, unmatched: 0 };
+        nodeMembers = [];
         var nNodes = (feaModel.header && feaModel.header.nNodes) || (feaModel.nodeIds ? feaModel.nodeIds.length : 0);
         if (nNodes > 0) { out.nodes = new Float32Array(nNodes); out.nodes.fill(-1); }
         var nmap = nodeIdMap(feaModel);
@@ -201,7 +210,7 @@ var FEAFeatures = (function () {
         items.forEach(function (g, gi) {
             var color = g.color ? hexToRgb(g.color) : autoColor(gi);
             rgb.push(color);
-            var count = 0, nodeCount = 0;
+            var count = 0, nodeCount = 0, nodeIdx = [];
             var hidden = groupHidden(g);
             // Work on a COPY: predicate members expand into explicit entries
             // appended to the queue; the envelope itself is never mutated.
@@ -223,6 +232,7 @@ var FEAFeatures = (function () {
                         var ni = nmap.get(id);
                         if (ni === undefined) { out.unmatched++; return; }
                         nodeCount++;
+                        nodeIdx.push(ni);
                         if (!hidden && out.nodes) out.nodes[ni] = gi;
                     });
                     return;
@@ -238,8 +248,9 @@ var FEAFeatures = (function () {
                 });
             })(members[mi]);
             groupList.push({ name: g.name || ('Group ' + (gi + 1)), color: g.color, rgb: color,
-                             count: count, nodeCount: nodeCount, hidden: hidden, painted: 0, nodePainted: 0,
+                             count: count, nodeCount: nodeCount, hidden: hidden, painted: 0, nodePainted: 0, nodeNudged: 0,
                              tags: Array.isArray(g.tags) ? g.tags : [] });
+            nodeMembers.push(Int32Array.from(nodeIdx));
         });
         // painted = elements whose final category is this group (after precedence)
         ['shell', 'beam'].forEach(function (fam) {
@@ -247,7 +258,7 @@ var FEAFeatures = (function () {
             if (!arr) return;
             for (var i = 0; i < arr.length; i++) if (arr[i] >= 0) groupList[arr[i]].painted++;
         });
-        if (out.nodes) for (var ni = 0; ni < out.nodes.length; ni++) if (out.nodes[ni] >= 0) groupList[out.nodes[ni]].nodePainted++;
+        markerData = buildMarkerData();     // also fills nodePainted / nodeNudged
         resolved = out;
         palette = FEAShaders.makePaletteTexture(rgb);
     }
@@ -270,27 +281,73 @@ var FEAFeatures = (function () {
         nodeMarkers.material.dispose();
         nodeMarkers = null;
     }
-    // One THREE.Points over every painted node (category >= 0), vertex-coloured by
-    // its group; nodes hidden by the section-cut isolate are skipped. Depth-tested,
+    var markerData = null;    // { n, pos: Float32Array, col: Float32Array } from buildMarkerData
+    // Model span (largest bbox side) from the node table, cached on the model.
+    function modelSpan(model) {
+        if (model._featSpan) return model._featSpan;
+        var nd = model.nodes || [], lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity];
+        for (var i = 0; i < nd.length; i += 3) for (var a = 0; a < 3; a++) {
+            var v = nd[i + a];
+            if (v < lo[a]) lo[a] = v;
+            if (v > hi[a]) hi[a] = v;
+        }
+        var span = Math.max(hi[0] - lo[0], hi[1] - lo[1], hi[2] - lo[2]);
+        model._featSpan = (isFinite(span) && span > 0) ? span : 1;
+        return model._featSpan;
+    }
+    // Nudge directions for the 1st, 2nd, 3rd... extra occupant of a spot: steps
+    // along +x, +y, +z, then the diagonals, scaled by the occupant number.
+    var NUDGE_DIRS = [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 0], [0, 1, 1], [1, 0, 1], [1, 1, 1]];
+    // Marker list: every enabled node group draws all its (kept) nodes in list
+    // order; a marker landing on an occupied spot (same rounded position) is
+    // nudged by step x occupant count. Fills nodePainted / nodeNudged per group.
+    function buildMarkerData() {
+        for (var g = 0; g < groupList.length; g++) { groupList[g].nodePainted = 0; groupList[g].nodeNudged = 0; }
+        if (!feaModel || !feaModel.nodes) return null;
+        var nodes = feaModel.nodes, step = modelSpan(feaModel) * NUDGE_SPAN_FRACTION;
+        var scale = 1e4, occupied = {};
+        var px = [], py = [], pz = [], cr = [], cg = [], cb = [];
+        for (var gi = 0; gi < groupList.length; gi++) {
+            var info = groupList[gi];
+            if (info.hidden || !nodeMembers[gi] || !nodeMembers[gi].length) continue;
+            var c = info.rgb, mem = nodeMembers[gi];
+            for (var k = 0; k < mem.length; k++) {
+                var ni = mem[k];
+                if (nodeKeepMask && !nodeKeepMask[ni]) continue;
+                var x = nodes[ni * 3], y = nodes[ni * 3 + 1], z = nodes[ni * 3 + 2];
+                var key = Math.round(x * scale) + ',' + Math.round(y * scale) + ',' + Math.round(z * scale);
+                var occ = occupied[key] || 0;
+                occupied[key] = occ + 1;
+                if (occ > 0) {
+                    var d = NUDGE_DIRS[(occ - 1) % NUDGE_DIRS.length], m = step * (1 + Math.floor((occ - 1) / NUDGE_DIRS.length));
+                    x += d[0] * m; y += d[1] * m; z += d[2] * m;
+                    info.nodeNudged++;
+                }
+                info.nodePainted++;
+                px.push(x); py.push(y); pz.push(z);
+                cr.push(c[0] / 255); cg.push(c[1] / 255); cb.push(c[2] / 255);
+            }
+        }
+        var n = px.length;
+        if (n === 0) return null;
+        var pos = new Float32Array(n * 3), col = new Float32Array(n * 3);
+        for (var i = 0; i < n; i++) {
+            pos[i * 3] = px[i]; pos[i * 3 + 1] = py[i]; pos[i * 3 + 2] = pz[i];
+            col[i * 3] = cr[i]; col[i * 3 + 1] = cg[i]; col[i * 3 + 2] = cb[i];
+        }
+        return { n: n, pos: pos, col: col };
+    }
+    // One THREE.Points over the marker list, vertex-coloured by group. Depth-tested,
     // so a node inside solid geometry (the ring wall) is hidden by it.
     function rebuildMarkers(on) {
         disposeMarkers();
-        if (!on || !resolved || !resolved.nodes || !feaModel || !feaModel.nodes) return;
+        if (!on || !resolved || !feaModel || !feaModel.nodes) return;
+        markerData = buildMarkerData();
         if (typeof THREE === 'undefined' || typeof scene === 'undefined' || !scene) return;
-        var cat = resolved.nodes, nodes = feaModel.nodes, n = 0;
-        for (var i = 0; i < cat.length; i++) if (cat[i] >= 0 && (!nodeKeepMask || nodeKeepMask[i])) n++;
-        if (n === 0) return;
-        var pos = new Float32Array(n * 3), col = new Float32Array(n * 3), k = 0;
-        for (var j = 0; j < cat.length; j++) {
-            if (cat[j] < 0 || (nodeKeepMask && !nodeKeepMask[j])) continue;
-            pos[k * 3] = nodes[j * 3]; pos[k * 3 + 1] = nodes[j * 3 + 1]; pos[k * 3 + 2] = nodes[j * 3 + 2];
-            var c = groupList[cat[j]].rgb;
-            col[k * 3] = c[0] / 255; col[k * 3 + 1] = c[1] / 255; col[k * 3 + 2] = c[2] / 255;
-            k++;
-        }
+        if (!markerData) return;
         var geom = new THREE.BufferGeometry();
-        geom.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-        geom.setAttribute('color', new THREE.BufferAttribute(col, 3));
+        geom.setAttribute('position', new THREE.BufferAttribute(markerData.pos, 3));
+        geom.setAttribute('color', new THREE.BufferAttribute(markerData.col, 3));
         var mat = new THREE.PointsMaterial({ size: NODE_POINT_PX, sizeAttenuation: false, vertexColors: true,
                                              depthTest: true, depthWrite: false });
         nodeMarkers = new THREE.Points(geom, mat);
@@ -302,6 +359,7 @@ var FEAFeatures = (function () {
     function writeVis(nodeKeep) {
         nodeKeepMask = nodeKeep || null;
         rebuildMarkers(enabled && !!resolved);
+        renderList(enabled && !!resolved);      // painted / nudged counts follow the isolate
         needsRender = true;
     }
 
@@ -403,9 +461,10 @@ var FEAFeatures = (function () {
             cnt.className = 'gr-count';
             if (isNodes) {
                 cnt.textContent = info.nodePainted + '/' + info.nodeCount + ' nodes';
-                if (!info.hidden && info.nodeCount > 0 && info.nodePainted < info.nodeCount) {
+                if (!info.hidden && info.nodeNudged > 0) {
+                    cnt.textContent += ' \u00b7 ' + info.nodeNudged + ' nudged';
                     cnt.classList.add('shadowed');
-                    cnt.title = (info.nodeCount - info.nodePainted) + ' node(s) painted by a group lower in the list';
+                    cnt.title = info.nodeNudged + ' marker(s) sit on a spot already taken by a group higher in the list (or a coincident joint) and are drawn nudged aside';
                 }
             } else {
                 cnt.textContent = info.painted + '/' + info.count;
@@ -562,6 +621,7 @@ var FEAFeatures = (function () {
         // test hooks (viewer/tests/test_groups.js)
         _groupList: function () { return groupList; },
         _resolved: function () { return resolved; },
+        _markers: function () { return markerData; },
         _moveGroup: moveGroup,
         _setEnabled: function (on) { enabled = !!on; sync(); }
     };

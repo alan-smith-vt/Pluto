@@ -102,8 +102,12 @@ Viewer behaviour (`viewer/scripts/features.js`, **Groups tab** on the right edge
   lower in the list. Drag rows to reorder (mutates `groups.items` order); All / None /
   Invert; Export writes the whole sidecar with order, colours and `hidden` flags.
 - Node groups (`nodeIds` members) paint too (2026-09-04): their nodes are drawn as square
-  points in the group colour while Color by groups is on (depth-tested), same
-  last-enabled-wins precedence, count shown as painted/total nodes; the section-cut isolate
+  points in the group colour while Color by groups is on (depth-tested). They do **not**
+  shadow each other: every enabled group draws all its nodes, and a marker landing on a
+  spot already taken (a node in two groups, or coincident joints such as a plate joint
+  over its ground joint) is nudged aside by a small step (0.4 % of the model span per
+  occupant, +x then +y then +z…), so the group **higher** in the list holds the true
+  position. Rows show painted/total and how many were nudged; the section-cut isolate
   hides points off the kept panel. Like every group they start unticked until the item
   carries `hidden: false`. The Groups tab lists them on a separate **Nodes** sub-tab; All /
   None / Invert act on the sub-tab showing.
