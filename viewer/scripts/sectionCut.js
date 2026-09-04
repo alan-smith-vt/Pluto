@@ -171,7 +171,9 @@ var FEASectionCut = (function () {
     });
     on(elIso, 'change', function () {
         applyIsolation();
-        resample();          // isolation also scopes what the probe samples
+        cuts.forEach(function (c) { c.samples = null; });   // isolation scopes what every probe may hit
+        resample();
+        updateVisuals();
         drawPlot();
     });
 
@@ -771,11 +773,12 @@ var FEASectionCut = (function () {
     var MISS_HEX = 0xffffff;
     function dataRuns(c) {
         var half = c.length / 2;
-        if (c.id !== activeId || !samples || samples.hit.length !== N_SAMPLES + 1) return [[-half, half, true]];
-        var runs = [], s0 = -half, cur = samples.hit[0] && samples.hit[1];
+        var sm = c.samples;
+        if (!sm || sm.hit.length !== N_SAMPLES + 1) return [[-half, half, true]];
+        var runs = [], s0 = -half, cur = sm.hit[0] && sm.hit[1];
         for (var i = 1; i < N_SAMPLES; i++) {
-            var h = samples.hit[i] && samples.hit[i + 1];
-            if (h !== cur) { runs.push([s0, samples.t[i], cur]); s0 = samples.t[i]; cur = h; }
+            var h = sm.hit[i] && sm.hit[i + 1];
+            if (h !== cur) { runs.push([s0, sm.t[i], cur]); s0 = sm.t[i]; cur = h; }
         }
         runs.push([s0, half, cur]);
         return runs;
@@ -894,6 +897,7 @@ var FEASectionCut = (function () {
         var style = elMarker ? elMarker.value : 'solid';
         cuts.forEach(function (c) {
             if (!cutShown(c)) return;
+            if (!c.samples && feaModel) sampleCut(c);       // white tips on every cut, not just the selected one
             var group = new THREE.Group();
             if (style !== 'none') {
                 if (style === 'thin' || style === 'dotted') buildThinMarker(c, group, style === 'dotted');
@@ -1017,9 +1021,18 @@ var FEASectionCut = (function () {
         return neg.concat([{ s: 0, p: c.center.clone(), face: c0 ? c0.faceIndex : -1, point: c0 ? c0.point : null }], pos);
     }
 
+    // Sample the ACTIVE cut for the plot. Every cut caches its own samples
+    // (c.samples) so its marker keeps the white miss runs while deselected;
+    // updateVisuals samples any shown cut that has none yet.
     function resample() {
         samples = null;
         var c = active();
+        if (!c) return;
+        sampleCut(c);
+        samples = c.samples;
+    }
+    function sampleCut(c) {
+        c.samples = null;
         if (!c || !mesh || !feaModel || !(c.length > 0)) return;
         if (c.wrap && AXIS_DIR[c.axis]) { resampleWrapped(c); return; }
         var dir = c.dir;
@@ -1048,7 +1061,7 @@ var FEASectionCut = (function () {
         for (var k = 0; k < N_SAMPLES; k++) {
             if (hit[k] && hit[k + 1]) { area += 0.5 * (v[k] + v[k + 1]) * dx; eff += dx; }
         }
-        samples = { t: t, v: v, hit: hit, area: area, effLen: eff };
+        c.samples = { t: t, v: v, hit: hit, area: area, effLen: eff };
         c.pts = null;
     }
     function resampleWrapped(c) {
@@ -1062,8 +1075,8 @@ var FEASectionCut = (function () {
         for (var k = 0; k + 1 < st.length; k++) {
             if (hit[k] && hit[k + 1]) { area += 0.5 * (v[k] + v[k + 1]) * dx; eff += dx; }
         }
-        samples = { t: t, v: v, hit: hit, area: area, effLen: eff, pts: pts };
-        c.pts = pts; c.ptHits = hit;            // kept so the marker survives deselection
+        c.samples = { t: t, v: v, hit: hit, area: area, effLen: eff, pts: pts };
+        c.pts = pts; c.ptHits = hit;            // the marker polyline
     }
 
     // ---- plot --------------------------------------------------
@@ -1236,6 +1249,7 @@ var FEASectionCut = (function () {
 
     // ---- orchestration -----------------------------------------
     function afterMutation(c) {
+        if (c) c.samples = null;
         syncEnvelope();
         rebuild();
     }
@@ -1248,9 +1262,10 @@ var FEASectionCut = (function () {
         renderList();
     }
 
-    function refresh() {          // displayed field changed: data (+ marker runs)
+    function refresh() {          // displayed field changed: every cut's data is stale
         syncModelUnits();
-        if (!active()) return;
+        cuts.forEach(function (c) { c.samples = null; });
+        if (!cuts.length) return;
         resample();
         updateVisuals();
         drawPlot();
@@ -1267,7 +1282,7 @@ var FEASectionCut = (function () {
 
     function onModelLoaded() {    // geometry available: re-find the elements under saved cuts
         syncModelUnits();
-        cuts.forEach(resolveElem);
+        cuts.forEach(function (c) { resolveElem(c); c.samples = null; c.pts = null; });
         rebuild();
     }
 
@@ -1312,7 +1327,7 @@ var FEASectionCut = (function () {
         _setMode: setMode,
         _march: march,
         _dataRuns: dataRuns,
-        _setSamples: function (s) { samples = s; },
+        _setSamples: function (s) { samples = s; var c = active(); if (c) c.samples = s; },
         _push: function (c) { cuts.push(c); activeId = c.id; afterMutation(c); }
     };
 })();
