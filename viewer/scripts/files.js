@@ -36,6 +36,40 @@ var FEAFiles = (function () {
 
     var hasFS = typeof window !== 'undefined' && typeof window.showOpenFilePicker === 'function';
 
+    // Chrome's per-picker-id folder memory does not survive a reload on a
+    // file:// page, so the last picked handle is kept in IndexedDB (handles
+    // are storable) and used as the picker's startIn on the next load.
+    var DB = 'pluto-files', STORE = 'handles', KEY = 'last';
+    function idb() {
+        return new Promise(function (res, rej) {
+            if (typeof indexedDB === 'undefined') { rej(new Error('no IndexedDB')); return; }
+            var rq = indexedDB.open(DB, 1);
+            rq.onupgradeneeded = function () { rq.result.createObjectStore(STORE); };
+            rq.onsuccess = function () { res(rq.result); };
+            rq.onerror = function () { rej(rq.error); };
+        });
+    }
+    async function rememberHandle(h) {
+        try {
+            var db = await idb();
+            await new Promise(function (res, rej) {
+                var tx = db.transaction(STORE, 'readwrite');
+                tx.objectStore(STORE).put(h, KEY);
+                tx.oncomplete = res; tx.onerror = function () { rej(tx.error); };
+            });
+        } catch (e) { /* private mode, blocked storage: no memory, nothing else lost */ }
+    }
+    async function recallHandle() {
+        try {
+            var db = await idb();
+            return await new Promise(function (res, rej) {
+                var rq = db.transaction(STORE, 'readonly').objectStore(STORE).get(KEY);
+                rq.onsuccess = function () { res(rq.result || null); };
+                rq.onerror = function () { rej(rq.error); };
+            });
+        } catch (e) { return null; }
+    }
+
     function say(m) { if (typeof log === 'function') log(m); }
     function baseName(n) { return String(n || '').replace(/\.[^.]+$/, ''); }
     function isJson(n) { return /\.json$/i.test(n); }
@@ -63,11 +97,17 @@ var FEAFiles = (function () {
             id: 'pluto-model', multiple: true,
             types: [{ description: 'Pluto model + features', accept: { 'application/octet-stream': ['.bin'], 'application/json': ['.json'] } }]
         };
-        if (binHandle || featHandle) opts.startIn = binHandle || featHandle;
+        var start = binHandle || featHandle || await recallHandle();
+        if (start) opts.startIn = start;
         try { handles = await window.showOpenFilePicker(opts); }
-        catch (err) { return; }                         // cancelled
+        catch (err) {
+            if (err && err.name === 'AbortError') return;   // cancelled
+            delete opts.startIn;                            // a stale remembered handle: pick without it
+            try { handles = await window.showOpenFilePicker(opts); } catch (err2) { return; }
+        }
         var files = [];
         for (var i = 0; i < handles.length; i++) files.push({ file: await handles[i].getFile(), handle: handles[i] });
+        if (handles.length) rememberHandle(handles[0]);
         await ingest(files);
     }
 
@@ -130,8 +170,15 @@ var FEAFiles = (function () {
                         id: 'pluto-model', suggestedName: name,
                         types: [{ description: 'Pluto features sidecar', accept: { 'application/json': ['.json'] } }]
                     };
-                    if (binHandle) sopts.startIn = binHandle;
-                    featHandle = await window.showSaveFilePicker(sopts);
+                    var sstart = binHandle || await recallHandle();
+                    if (sstart) sopts.startIn = sstart;
+                    try { featHandle = await window.showSaveFilePicker(sopts); }
+                    catch (err0) {
+                        if (err0 && err0.name === 'AbortError') throw err0;
+                        delete sopts.startIn;
+                        featHandle = await window.showSaveFilePicker(sopts);
+                    }
+                    rememberHandle(featHandle);
                 }
                 var w = await featHandle.createWritable();
                 await w.write(json);
