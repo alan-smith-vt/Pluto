@@ -66,7 +66,37 @@ def step_audit(cfg: Path, s2k: Path) -> None:
     print(f"[audit]   {csv_path.name}, {svg_path.name} -> vault/arms/assets/settlement-{s2k.stem}.svg")
 
 
-def step_run(s2k: Path, run: bool):
+def step_axes_check(sap, cfg: Path) -> None:
+    """After import: does SAP's local 1 match the meridional direction the builder
+    intended, on every shell? Reports the count and the worst angle; a failure here
+    means the F11 / S11 = meridional labels are lying on those elements."""
+    import math
+    spec, _ = load_config(cfg)
+    model = TankModel(spec)
+    if not model.area_local_angle:
+        return
+    worst, bad, n = 0.0, [], 0
+    try:
+        for a in sorted(model.areas):
+            v = sap.area_local_1(a)
+            e = model.meridional_direction(a)
+            dot = abs(v[0] * e[0] + v[1] * e[1] + v[2] * e[2])
+            ang = math.degrees(math.acos(max(-1.0, min(1.0, dot))))
+            n += 1
+            worst = max(worst, ang)
+            if ang > 1.0:
+                bad.append((a, ang))
+    except Exception as exc:   # OAPI signature differences: report, do not stop the run
+        print(f"[axes]    could not read area local axes back ({exc}); labels unverified")
+        return
+    if bad:
+        print(f"[axes]    WARNING local 1 is off the meridian on {len(bad)}/{n} shells (worst {worst:.2f} deg), "
+              f"e.g. area {bad[0][0]}")
+    else:
+        print(f"[axes]    local 1 = meridional on all {n} shells (worst {worst:.3f} deg)")
+
+
+def step_run(s2k: Path, run: bool, cfg: Path = None):
     from tankbuilder.sap_api import SapSession
     sap = SapSession.attach_or_start()
     print(f"[sap]     SAP2000 {sap.version} ({'started ' + str(SapSession.find_exe()) if sap.started else 'attached to the running instance'})")
@@ -74,6 +104,7 @@ def step_run(s2k: Path, run: bool):
         sap.open(s2k)
         j, a, _ = sap.counts()
         print(f"[open]    {j} joints, {a} areas, groups: {', '.join(sap.groups())}  ({sap.open_seconds:.0f}s)")
+        step_axes_check(sap, cfg)
         secs = sap.run()
         print(f"[run]     cases {', '.join(sap.load_cases())}  ({secs:.1f}s)")
     return sap
@@ -159,7 +190,7 @@ def main(argv=None) -> int:
         s2k, model_id = step_build(a.config)
     step_audit(a.config, s2k)
 
-    sap = step_run(s2k, run=not a.no_run)
+    sap = step_run(s2k, run=not a.no_run, cfg=a.config)
     results = step_results(sap, s2k)
     if a.no_export:
         return 0

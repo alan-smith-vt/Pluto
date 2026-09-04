@@ -58,10 +58,14 @@ using System.Text;
 //                                 S11 S22 S12 = F / section thickness, which do
 //                                 step at a change. ksi when the file is Kip/ft
 //                                 or Kip/in, else force/length^2. Bending faces
-//                                 (+/- 6M/t^2) are not derived. Labels carry the
-//                                 meaning in parentheses ("F11 (hoop membrane
-//                                 force)" in cylindrical mode, "local 1" otherwise);
-//                                 the baseplate's local 1/2 are global X/Y.
+//                                 (+/- 6M/t^2) are not derived. Labels are short:
+//                                 "F11 (merid)" / "F22 (circ)" when the model rotated
+//                                 every shell's axes (AREA LOCAL AXES ASSIGNMENTS
+//                                 covers all areas) in cylindrical mode, else
+//                                 "F11 (dir 1)". Beams: "P (circ)", "V2 (vert shear)",
+//                                 "M3 (vert moment)", "V3 (radial shear)", "M2 (plan
+//                                 moment)", "T (torsion)" for rings (no vertical
+//                                 frame), neutral SAP wording otherwise.
 //   JOINT DISPLACEMENTS        -> "displacement" U1..R3 rotated from the joint's
 //                                 LOCAL axes (JOINT LOCAL AXES ASSIGNMENTS 1 -
 //                                 TYPICAL, Rz(A)Ry(B)Rx(C)) into global, fanned
@@ -125,32 +129,51 @@ public class SapToPluto
     // SAP column -> component name. Force units are per unit length.
     static readonly string[] ForceKeys = { "F11", "F22", "F12", "M11", "M22", "M12", "V13", "V23" };
 
-    // Component label = SAP key + what it is. Shell local axes are SAP defaults:
-    // local 3 normal, local 2 = projection of global +Z (up the wall / up the
-    // roof slope), local 1 = 2 x 3 = horizontal. On the tank (cylindrical) that is
-    // 1 = hoop, 2 = meridional -- except a horizontal shell (the baseplate), where
-    // SAP puts 1 = global X, 2 = global Y.
-    static string ShellCompName(string key, bool cylindrical)
+    // Component label = SAP key + a short meaning. "merid" / "circ" are used only
+    // when the model rotated EVERY shell's local axes (AREA LOCAL AXES ASSIGNMENTS
+    // 1 - TYPICAL covers all areas, as the tank builder writes: local 1 along a
+    // meridian, local 2 circumferential); otherwise the neutral "dir 1" / "dir 2".
+    // SAP names plate moments by the stress they produce: M11 is carried by the
+    // fibres (bars) running in direction 1.
+    static string ShellCompName(string key, bool meridional)
     {
-        string d1 = cylindrical ? "hoop" : "local 1";
-        string d2 = cylindrical ? "meridional" : "local 2";
+        string d1 = meridional ? "merid" : "dir 1";
+        string d2 = meridional ? "circ" : "dir 2";
         string what;
         switch (key)
         {
-            case "F11": what = d1 + " membrane force"; break;
-            case "F22": what = d2 + " membrane force"; break;
-            case "F12": what = "in-plane shear force"; break;
-            case "M11": what = d1 + " bending moment"; break;
-            case "M22": what = d2 + " bending moment"; break;
-            case "M12": what = "twisting moment"; break;
-            case "V13": what = "transverse shear, " + d1 + " face"; break;
-            case "V23": what = "transverse shear, " + d2 + " face"; break;
-            case "S11": what = d1 + " membrane stress"; break;
-            case "S22": what = d2 + " membrane stress"; break;
-            case "S12": what = "in-plane shear stress"; break;
+            case "F11": what = d1; break;
+            case "F22": what = d2; break;
+            case "F12": what = "IP shear"; break;
+            case "M11": what = d1; break;
+            case "M22": what = d2; break;
+            case "M12": what = "twist"; break;
+            case "V13": what = "OOP shear 1"; break;
+            case "V23": what = "OOP shear 2"; break;
+            case "S11": what = d1; break;
+            case "S22": what = d2; break;
+            case "S12": what = "IP shear"; break;
             default: return key;
         }
         return key + " (" + what + ")";
+    }
+
+    // Beam force components in dropdown order, with the label for a ring (every
+    // frame non-vertical, so SAP's local 2 is vertical and local 3 is radial
+    // across the ring) or the neutral SAP wording.
+    static readonly string[] BeamForceKeys = { "P", "V2", "M3", "V3", "M2", "T" };
+    static string BeamCompName(string key, bool ring)
+    {
+        switch (key)
+        {
+            case "P":  return ring ? "P (circ)" : "P (axial)";
+            case "V2": return ring ? "V2 (vert shear)" : "V2 (shear 2)";
+            case "M3": return ring ? "M3 (vert moment)" : "M3 (about 3)";
+            case "V3": return ring ? "V3 (radial shear)" : "V3 (shear 3)";
+            case "M2": return ring ? "M2 (plan moment)" : "M2 (about 2)";
+            case "T":  return "T (torsion)";
+            default: return key;
+        }
     }
     static readonly string[] DispKeys = { "U1", "U2", "U3", "R1", "R2", "R3" };
     static readonly string[] DispNames = {
@@ -307,13 +330,17 @@ public class SapToPluto
             }
         }
 
+        // shell axes: "merid" / "circ" only when every area carries a local-axes row
+        int axesRows = 0;
+        foreach (var r in model.GetTable("AREA LOCAL AXES ASSIGNMENTS 1 - TYPICAL")) if (r.ContainsKey("Area")) axesRows++;
+        bool meridional = cylindrical && elements.Count > 0 && axesRows >= elements.Count;
         var comps = new List<RawViewerWriter.Component>();
         if (hasForces)
         {
             foreach (string k in forceKeysPresent)
-                comps.Add(new RawViewerWriter.Component(ShellCompName(k, cylindrical), "stress", k[0] == 'M' ? forceUnit + "-" + lengthUnit + "/" + lengthUnit : forceUnit + "/" + lengthUnit));
+                comps.Add(new RawViewerWriter.Component(ShellCompName(k, meridional), "stress", k[0] == 'M' ? forceUnit + "-" + lengthUnit + "/" + lengthUnit : forceUnit + "/" + lengthUnit));
             foreach (string k in stressNames)
-                comps.Add(new RawViewerWriter.Component(ShellCompName(k, cylindrical), "stress", stressUnit));
+                comps.Add(new RawViewerWriter.Component(ShellCompName(k, meridional), "stress", stressUnit));
         }
         if (hasDisp)
         {
@@ -349,12 +376,16 @@ public class SapToPluto
             // viewer's beam dropdown does not change shape between runs
             {
                 string mUnit = forceUnit + "-" + lengthUnit;
-                beamComps.Add(new RawViewerWriter.Component("P (axial)", "force", forceUnit));
-                beamComps.Add(new RawViewerWriter.Component("V2", "force", forceUnit));
-                beamComps.Add(new RawViewerWriter.Component("V3", "force", forceUnit));
-                beamComps.Add(new RawViewerWriter.Component("T", "force", mUnit));
-                beamComps.Add(new RawViewerWriter.Component("M2", "force", mUnit));
-                beamComps.Add(new RawViewerWriter.Component("M3", "force", mUnit));
+                // ring labels when no frame is vertical (SAP default local 2 = up)
+                bool ring = cylindrical;
+                foreach (var bm in beams.Values)
+                {
+                    Node na = nodes[bm.NodeA], nb = nodes[bm.NodeB];
+                    double dx = nb.xyz.X - na.xyz.X, dy = nb.xyz.Y - na.xyz.Y, dz = nb.xyz.Z - na.xyz.Z;
+                    if (Math.Abs(dz) > 0.99 * Math.Sqrt(dx * dx + dy * dy + dz * dz)) { ring = false; break; }
+                }
+                foreach (string k in BeamForceKeys)
+                    beamComps.Add(new RawViewerWriter.Component(BeamCompName(k, ring), "force", (k == "P" || k[0] == 'V') ? forceUnit : mUnit));
             }
             if (hasDisp)
                 for (int i = 0; i < 6; i++) beamComps.Add(new RawViewerWriter.Component(DispNames[i], "displacement", i < 3 ? lengthUnit : "rad"));
@@ -400,7 +431,7 @@ public class SapToPluto
             var ends = new Dictionary<string, RawViewerWriter.BeamRecord[]>();   // "<lc>|<frame>" -> [A, B]
             var staMin = new Dictionary<string, double>();
             var staMax = new Dictionary<string, double>();
-            var frameForceKeys = new[] { "P", "V2", "V3", "T", "M2", "M3" };
+            var frameForceKeys = BeamForceKeys;
             foreach (var r in frameRows)
             {
                 string f;

@@ -132,6 +132,10 @@ def geometry_tables(model: TankModel) -> list[tuple[str, list[str]]]:
             for a, js in sorted(model.areas.items())]),
         ("AREA SECTION ASSIGNMENTS", [
             _row(Area=a, Section=model.area_section[a]) for a in sorted(model.areas)]),
+        # local 1 meridional / local 2 circumferential on every shell (TankModel._assign_area_axes)
+        ("AREA LOCAL AXES ASSIGNMENTS 1 - TYPICAL", [
+            _row(Area=a, Angle=model.area_local_angle[a], AdvanceAxes=False)
+            for a in sorted(model.areas) if a in model.area_local_angle]),
         ("CONNECTIVITY - FRAME", [
             _row(Frame=f, JointI=i, JointJ=j, IsCurved=False)
             for f, (i, j) in sorted(model.frames.items())]),

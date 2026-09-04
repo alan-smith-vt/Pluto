@@ -118,6 +118,15 @@ class SapSession:
         m = self.model
         return m.PointObj.Count(), m.AreaObj.Count(), m.FrameObj.Count()
 
+    def area_local_1(self, area: int) -> tuple[float, float, float]:
+        """Direction cosines of an area's local 1 axis in global coordinates,
+        from AreaObj.GetTransformationMatrix. The 9 values are column-major:
+        local 1 = elements 0, 3, 6 (checked on SAP 26, 2026-09-04: a wall shell
+        rotated 90 deg reads (0, 0, 1), a baseplate shell reads radial)."""
+        r = self.model.AreaObj.GetTransformationMatrix(str(area), [0.0] * 9, True)
+        v = list(r[0]) if isinstance(r, (list, tuple)) and len(r) >= 1 and not isinstance(r[0], (int, float)) else list(r)
+        return (float(v[0]), float(v[3]), float(v[6]))
+
     def groups(self) -> list[str]:
         r = self.model.GroupDef.GetNameList()
         return list(r[1])

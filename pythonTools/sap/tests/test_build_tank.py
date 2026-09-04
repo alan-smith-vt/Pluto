@@ -514,6 +514,33 @@ def test_ringwall_tables():
     assert walled(ringwall_support="springs").spec.ringwall_support == "gap"     # old name still accepted
 
 
+# --- shell local axes -------------------------------------------------------------
+
+def test_shell_axes_meridional_everywhere():
+    m = capped()
+    assert set(m.area_local_angle) == set(m.areas)
+    wall = set(m.ids.block("area", "wall"))
+    assert all(m.area_local_angle[a] == 90.0 for a in wall)
+    assert all(m.area_local_angle[a] == 90.0 for a in m.roof_areas)
+    # baseplate: angle = azimuth of the element centroid, so local 1 is radial
+    for a in m.baseplate_areas:
+        js = m.areas[a]
+        cx = sum(m.joints[j][0] for j in js) / len(js); cy = sum(m.joints[j][1] for j in js) / len(js)
+        assert m.area_local_angle[a] == pytest.approx(math.degrees(math.atan2(cy, cx)))
+        d = m.meridional_direction(a)
+        assert d[2] == 0.0 and math.hypot(d[0], d[1]) == pytest.approx(1.0)
+        assert d[0] * cx + d[1] * cy > 0            # outward
+    for a in wall:
+        assert m.meridional_direction(a) == (0.0, 0.0, 1.0)
+    for a in m.roof_areas:
+        d = m.meridional_direction(a)
+        assert d[2] > 0 and math.sqrt(sum(c * c for c in d)) == pytest.approx(1.0)   # up the slope
+    t = parse_s2k(s2k_text(m))
+    rows = t["AREA LOCAL AXES ASSIGNMENTS 1 - TYPICAL"]
+    assert len(rows) == len(m.areas) and rows[0]["ADVANCEAXES"] == "No"
+    assert {int(r["AREA"]): float(r["ANGLE"]) for r in rows} == pytest.approx(m.area_local_angle)
+
+
 # --- settlement ------------------------------------------------------------------
 
 def trenched(**kw):

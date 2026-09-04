@@ -83,6 +83,7 @@ class TankModel:
         self.ringwall_contact_k: float = 0.0
         self.dent_joints: dict[int, dict[int, float]] = {}
         self.settlements: dict[int, float] = {}       # ground joint -> dz (ft, negative = down)
+        self.area_local_angle: dict[int, float] = {}  # area -> local-axis rotation (deg) about local 3
         self._build_levels()
         self._build_wall()
         self._apply_dents()
@@ -96,6 +97,7 @@ class TankModel:
             self._build_ringwall()
         if spec.settlement != "none":
             self._build_settlement()
+        self._assign_area_axes()
 
     # --- numbering ----------------------------------------------------------
 
@@ -380,6 +382,51 @@ class TankModel:
     @property
     def gap(self) -> bool:
         return self.spec.foundation == "gap"
+
+    # --- shell local axes: 1 = meridional, 2 = circumferential everywhere -------
+
+    def _assign_area_axes(self) -> None:
+        """Rotate every shell's local 1-2 axes so that local 1 runs along a
+        meridian (up the wall, radially out on the baseplate, up the slope on
+        the roof) and local 2 runs circumferentially. SAP's default gives a
+        non-horizontal element 2 = projection of +Z and 1 = horizontal, so +90
+        deg puts 1 on the meridian; the flat baseplate gets 1 = +X by default,
+        so its angle is the element's azimuth (local 3 is up there, see
+        _polar_cap). Result labels F11 / S11 = meridional, F22 / S22 =
+        circumferential on every shell (2026-09-04)."""
+        plate = set(self.baseplate_areas) if self.spec.baseplate else set()
+        for a, js in self.areas.items():
+            if a in plate:
+                cx = sum(self.joints[j][0] for j in js) / len(js)
+                cy = sum(self.joints[j][1] for j in js) / len(js)
+                self.area_local_angle[a] = math.degrees(math.atan2(cy, cx))
+            else:
+                self.area_local_angle[a] = 90.0
+
+    def meridional_direction(self, aid: int) -> tuple[float, float, float]:
+        """Unit vector local 1 should have after the rotation: radial outward on
+        the baseplate; the in-surface projection of +Z (up the meridian) on the
+        wall and roof, taken at the element centroid of the spherical cap."""
+        s = self.spec
+        js = self.areas[aid]
+        cx = sum(self.joints[j][0] for j in js) / len(js)
+        cy = sum(self.joints[j][1] for j in js) / len(js)
+        r = math.hypot(cx, cy)
+        if s.baseplate and aid in set(self.baseplate_areas):
+            return (cx / r, cy / r, 0.0) if r > 0 else (1.0, 0.0, 0.0)
+        if s.roof and aid in set(self.roof_areas):
+            # the flat facet's own normal (what SAP uses), not the sphere's
+            p0, p1, p2 = (self.joints[j] for j in js[:3])
+            ax, ay, az = (p1[i] - p0[i] for i in range(3))
+            bx, by, bz = (p2[i] - p0[i] for i in range(3))
+            nx, ny, nz = ay * bz - az * by, az * bx - ax * bz, ax * by - ay * bx
+            nm = math.sqrt(nx * nx + ny * ny + nz * nz)
+            nx, ny, nz = nx / nm, ny / nm, nz / nm
+            # projection of +Z onto the facet plane = up the slope
+            tx, ty, tz = -nz * nx, -nz * ny, 1.0 - nz * nz
+            m = math.sqrt(tx * tx + ty * ty + tz * tz)
+            return (tx / m, ty / m, tz / m) if m > 1e-9 else (1.0, 0.0, 0.0)
+        return (0.0, 0.0, 1.0)
 
     # --- settlement: ground displacement on the ground joints -------------------
 

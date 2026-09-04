@@ -15,6 +15,14 @@ features: what each one is in the model, what is still a plan, and how the resul
 meant to be checked. Real project numbers live only in the gitignored `configs/*.toml`.
 
 > [!info]- Built (2026-09-03)
+> - **Shell local axes** (2026-09-04) — every shell is rotated so local 1 runs along a
+>   meridian (up the wall, radially out on the baseplate, up the slope on the roof) and
+>   local 2 circumferentially: `AREA LOCAL AXES ASSIGNMENTS 1 - TYPICAL`, angle 90 on wall
+>   and roof (SAP's default 2 = projection of +Z), the element's azimuth on the flat plate
+>   (default 1 = +X). So `F11 / S11 / M11` = meridional and `F22 / S22 / M22` =
+>   circumferential on every element, and `run_sap.py` reads the axes back over the OAPI
+>   after import (`[axes] local 1 = meridional on all 4104 shells`, TANK-A on SAP 26;
+>   `GetTransformationMatrix` is column-major, local 1 = elements 0, 3, 6).
 > - **Wall courses** `[[courses]]` — height ranges at one thickness each; a mesh ring on
 >   every boundary; one shell section per thickness `WALL_Tn`; `COURSE_nn` groups.
 > - **Baseplate** `[baseplate]` — polar cap on the base ring (quad rings + centre fan),
