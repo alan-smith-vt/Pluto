@@ -46,13 +46,15 @@ function assert(c, m) { if (!c) { fails++; console.error('FAIL ' + m); } else co
     const lcDead = m.loadCases.findIndex(l => l.name === 'DEAD'), lcHydro = m.loadCases.findIndex(l => l.name === 'HYDRO');
     assert(lcDead >= 0 && lcHydro >= 0, 'DEAD and HYDRO load cases present');
     const dead = await sh.readLC(lcDead), hydro = await sh.readLC(lcHydro);
-    const at = (plane, comp) => plane[(e0 * nS + slot) * nC + comps.indexOf(comp)];
+    // component names are 'KEY (meaning)'; match on the key
+    const compIdx = comp => comps.findIndex(c => c === comp || c.startsWith(comp + ' ('));
+    const at = (plane, comp) => plane[(e0 * nS + slot) * nC + compIdx(comp)];
     assert(nearly(at(dead, 'F11'), 0.00138075688363791, 1e-6), 'DEAD F11 area1/joint1 = ' + at(dead, 'F11'));
     assert(nearly(at(dead, 'F22'), -0.317928172737093, 1e-6), 'DEAD F22 area1/joint1 = ' + at(dead, 'F22'));
     assert(nearly(at(dead, 'M22'), -1.03619591472662E-06, 1e-9), 'DEAD M22 area1/joint1 = ' + at(dead, 'M22'));
     assert(nearly(at(hydro, 'Translation X'), 0.0260965088850754, 1e-6), 'HYDRO joint1 Translation X (local U2, AngleA=-90 -> global +X) = ' + at(hydro, 'Translation X'));
     assert(nearly(at(hydro, 'Translation Y'), 0, 1e-6), 'HYDRO joint1 Translation Y ~ 0');
-    if (comps.includes('Translation R'))
+    if (compIdx('Translation R') >= 0)
       assert(nearly(at(hydro, 'Translation R'), 0.0260965088850754, 1e-6), 'HYDRO joint1 Translation R = outward = ' + at(hydro, 'Translation R'));
     let nan = 0; for (let e = 0; e < 720; e++) for (let s = 0; s < nS; s++) if (Number.isNaN(dead[(e * nS + s) * nC])) nan++;
     assert(nan === 0, 'every quad corner has a DEAD F11 value (NaN slots: ' + nan + ')');

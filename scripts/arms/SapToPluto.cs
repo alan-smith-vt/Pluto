@@ -28,6 +28,9 @@ using System.Text;
 //   CONNECTIVITY - AREA        -> shell elements (tri / quad). Joint and Area
 //                                 labels must be integers (SAP default); the
 //                                 label text is also written to the LABL block.
+//   FRAME INSERTION POINT ASSIGNMENTS -> BPRP section offsets from the cardinal point
+//                                 (top centre = section hangs below the joints);
+//                                 parametric shapes only, POLY outlines are anchored.
 //   CONNECTIVITY - FRAME       -> beam domain (2026-09-03). Section from FRAME
 //   FRAME SECTION ASSIGNMENTS     SECTION ASSIGNMENTS (AnalSect) + FRAME SECTION
 //   FRAME SECTION PROPERTIES 01   PROPERTIES 01 - GENERAL (Shape, t3 t2 tf tw):
@@ -55,7 +58,10 @@ using System.Text;
 //                                 S11 S22 S12 = F / section thickness, which do
 //                                 step at a change. ksi when the file is Kip/ft
 //                                 or Kip/in, else force/length^2. Bending faces
-//                                 (+/- 6M/t^2) are not derived.
+//                                 (+/- 6M/t^2) are not derived. Labels carry the
+//                                 meaning in parentheses ("F11 (hoop membrane
+//                                 force)" in cylindrical mode, "local 1" otherwise);
+//                                 the baseplate's local 1/2 are global X/Y.
 //   JOINT DISPLACEMENTS        -> "displacement" U1..R3 rotated from the joint's
 //                                 LOCAL axes (JOINT LOCAL AXES ASSIGNMENTS 1 -
 //                                 TYPICAL, Rz(A)Ry(B)Rx(C)) into global, fanned
@@ -118,6 +124,34 @@ public class SapToPluto
 {
     // SAP column -> component name. Force units are per unit length.
     static readonly string[] ForceKeys = { "F11", "F22", "F12", "M11", "M22", "M12", "V13", "V23" };
+
+    // Component label = SAP key + what it is. Shell local axes are SAP defaults:
+    // local 3 normal, local 2 = projection of global +Z (up the wall / up the
+    // roof slope), local 1 = 2 x 3 = horizontal. On the tank (cylindrical) that is
+    // 1 = hoop, 2 = meridional -- except a horizontal shell (the baseplate), where
+    // SAP puts 1 = global X, 2 = global Y.
+    static string ShellCompName(string key, bool cylindrical)
+    {
+        string d1 = cylindrical ? "hoop" : "local 1";
+        string d2 = cylindrical ? "meridional" : "local 2";
+        string what;
+        switch (key)
+        {
+            case "F11": what = d1 + " membrane force"; break;
+            case "F22": what = d2 + " membrane force"; break;
+            case "F12": what = "in-plane shear force"; break;
+            case "M11": what = d1 + " bending moment"; break;
+            case "M22": what = d2 + " bending moment"; break;
+            case "M12": what = "twisting moment"; break;
+            case "V13": what = "transverse shear, " + d1 + " face"; break;
+            case "V23": what = "transverse shear, " + d2 + " face"; break;
+            case "S11": what = d1 + " membrane stress"; break;
+            case "S22": what = d2 + " membrane stress"; break;
+            case "S12": what = "in-plane shear stress"; break;
+            default: return key;
+        }
+        return key + " (" + what + ")";
+    }
     static readonly string[] DispKeys = { "U1", "U2", "U3", "R1", "R2", "R3" };
     static readonly string[] DispNames = {
         "Translation X", "Translation Y", "Translation Z", "Rotation X", "Rotation Y", "Rotation Z" };
@@ -208,6 +242,21 @@ public class SapToPluto
             beamLabels[fid] = f;
             Add(beamsBySection, beamSectionOrder, secName, (uint)fid);
         }
+        // insertion points: a cardinal point other than the centroid shifts the
+        // drawn section off the joint axis (BPRP offsets, both ends alike).
+        // Parametric shapes only -- a POLY outline is anchored by construction.
+        foreach (var r in model.GetTable("FRAME INSERTION POINT ASSIGNMENTS"))
+        {
+            string f, cp, secName;
+            if (!r.TryGetValue("Frame", out f) || !r.TryGetValue("CardinalPt", out cp)) continue;
+            RawViewerWriter.BeamMember m;
+            if (!beams.TryGetValue(Int(f), out m) || !frameSecOf.TryGetValue(m.Id, out secName)) continue;
+            Dictionary<string, string> props;
+            if (!frameSecProps.TryGetValue(secName, out props) || outlines.ContainsKey(secName)) continue;
+            double dy, dz;
+            if (!CardinalOffset(LeadingInt(cp), Num(props, "t3", 0), Num(props, "t2", 0), out dy, out dz)) continue;
+            m.OffsetAy = m.OffsetBy = dy; m.OffsetAz = m.OffsetBz = dz;
+        }
         res.Frames = beams.Count; res.FrameSections = sectionDefs.Count;
 
         // ---- load cases (first-seen order across both result tables) ----
@@ -262,9 +311,9 @@ public class SapToPluto
         if (hasForces)
         {
             foreach (string k in forceKeysPresent)
-                comps.Add(new RawViewerWriter.Component(k, "stress", k[0] == 'M' ? forceUnit + "-" + lengthUnit + "/" + lengthUnit : forceUnit + "/" + lengthUnit));
+                comps.Add(new RawViewerWriter.Component(ShellCompName(k, cylindrical), "stress", k[0] == 'M' ? forceUnit + "-" + lengthUnit + "/" + lengthUnit : forceUnit + "/" + lengthUnit));
             foreach (string k in stressNames)
-                comps.Add(new RawViewerWriter.Component(k, "stress", stressUnit));
+                comps.Add(new RawViewerWriter.Component(ShellCompName(k, cylindrical), "stress", stressUnit));
         }
         if (hasDisp)
         {
@@ -612,6 +661,30 @@ public class SapToPluto
     // SAP frame section (Shape + t3 t2 tf tw, file length units) -> writer
     // SectionDef. t3 = depth (along local 2), t2 = width (along local 3).
     // known = false when the shape is not mapped and a placeholder is returned.
+    // "8 (top center)" or "8" -> 8; 0 when there is no leading integer.
+    static int LeadingInt(string s)
+    {
+        int n = 0, i = 0;
+        s = (s ?? "").Trim();
+        while (i < s.Length && char.IsDigit(s[i])) { n = n * 10 + (s[i] - '0'); i++; }
+        return i == 0 ? 0 : n;
+    }
+
+    // Section-origin offset (viewer y, z) from the joint for a SAP cardinal
+    // point on a t3 (depth, local 2 = z up) x t2 (width, local 3) box:
+    // rows 1-3 bottom (section above the joint, dz = +t3/2), 4-6 middle, 7-9 top
+    // (dz = -t3/2); columns left / centre / right, where SAP's right = +local 3
+    // = -viewer y. 10 (centroid) and 11 (shear centre) = no offset.
+    static bool CardinalOffset(int c, double t3, double t2, out double dy, out double dz)
+    {
+        dy = 0; dz = 0;
+        if (c < 1 || c > 9) return c == 10 || c == 11;
+        int row = (c - 1) / 3, col = (c - 1) % 3;
+        dz = row == 0 ? t3 / 2 : row == 2 ? -t3 / 2 : 0;
+        dy = col == 0 ? t2 / 2 : col == 2 ? -t2 / 2 : 0;
+        return true;
+    }
+
     static RawViewerWriter.SectionDef FrameSection(string name, Dictionary<string, string> p, out bool known)
     {
         known = true;

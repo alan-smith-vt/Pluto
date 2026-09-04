@@ -18,7 +18,7 @@ TABLE:  "AREA SECTION PROPERTIES"
    Section=ROOF   Material=A36   MatAngle=0   AreaType=Shell   Type=Shell-Thin   Thickness=0.0208333   BendThick=0.0208333   Color=Gray8Dark
 
 TABLE:  "FRAME SECTION PROPERTIES 01 - GENERAL"
-   SectionName=ROOF_RING   Material=A36   Shape=General   t3=0.5   t2=0.25   Area=0.029296875   TorsConst=2.47955322e-05   I33=0.000329971313   I22=0.000246047974   I23=0.000210285187   AS2=0.015625   AS3=0.013671875   S33=0.00131988525   S22=0.00196838379   Z33=0.00131988525   Z22=0.00196838379   R33=0.10612738   R22=0.0916429894   Color=Yellow
+   SectionName=ROOF_RING   Material=A36   Shape=General   t3=0.28125   t2=0.25   Area=0.0224609375   TorsConst=2.25702922e-05   I33=0.000126386034   I22=0.000138825265   I23=7.31426737e-05   AS2=0.0068359375   AS3=0.015625   S33=0.000609968008   S22=0.000877042015   Z33=0.000609968008   Z22=0.000877042015   R33=0.0750128392   R22=0.0786176966   Color=Yellow
    SectionName=RINGWALL   Material=CONC   Shape=Rectangular   t3=3   t2=1   Color=Yellow
 
 TABLE:  "JOINT COORDINATES"
@@ -1357,6 +1357,42 @@ TABLE:  "JOINT COORDINATES"
    Joint=1333   CoordSys=GLOBAL   CoordType=Cartesian   XorR=25.9807621   Y=-15   Z=0
    Joint=1334   CoordSys=GLOBAL   CoordType=Cartesian   XorR=28.1907786   Y=-10.2606043   Z=0
    Joint=1335   CoordSys=GLOBAL   CoordType=Cartesian   XorR=29.5442326   Y=-5.20944533   Z=0
+   Joint=1336   CoordSys=GLOBAL   CoordType=Cartesian   XorR=30   Y=0   Z=0
+   Joint=1337   CoordSys=GLOBAL   CoordType=Cartesian   XorR=29.5442326   Y=5.20944533   Z=0
+   Joint=1338   CoordSys=GLOBAL   CoordType=Cartesian   XorR=28.1907786   Y=10.2606043   Z=0
+   Joint=1339   CoordSys=GLOBAL   CoordType=Cartesian   XorR=25.9807621   Y=15   Z=0
+   Joint=1340   CoordSys=GLOBAL   CoordType=Cartesian   XorR=22.9813333   Y=19.2836283   Z=0
+   Joint=1341   CoordSys=GLOBAL   CoordType=Cartesian   XorR=19.2836283   Y=22.9813333   Z=0
+   Joint=1342   CoordSys=GLOBAL   CoordType=Cartesian   XorR=15   Y=25.9807621   Z=0
+   Joint=1343   CoordSys=GLOBAL   CoordType=Cartesian   XorR=10.2606043   Y=28.1907786   Z=0
+   Joint=1344   CoordSys=GLOBAL   CoordType=Cartesian   XorR=5.20944533   Y=29.5442326   Z=0
+   Joint=1345   CoordSys=GLOBAL   CoordType=Cartesian   XorR=1.8369702e-15   Y=30   Z=0
+   Joint=1346   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-5.20944533   Y=29.5442326   Z=0
+   Joint=1347   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-10.2606043   Y=28.1907786   Z=0
+   Joint=1348   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-15   Y=25.9807621   Z=0
+   Joint=1349   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-19.2836283   Y=22.9813333   Z=0
+   Joint=1350   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-22.9813333   Y=19.2836283   Z=0
+   Joint=1351   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-25.9807621   Y=15   Z=0
+   Joint=1352   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-28.1907786   Y=10.2606043   Z=0
+   Joint=1353   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-29.5442326   Y=5.20944533   Z=0
+   Joint=1354   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-30   Y=3.6739404e-15   Z=0
+   Joint=1355   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-29.5442326   Y=-5.20944533   Z=0
+   Joint=1356   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-28.1907786   Y=-10.2606043   Z=0
+   Joint=1357   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-25.9807621   Y=-15   Z=0
+   Joint=1358   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-22.9813333   Y=-19.2836283   Z=0
+   Joint=1359   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-19.2836283   Y=-22.9813333   Z=0
+   Joint=1360   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-15   Y=-25.9807621   Z=0
+   Joint=1361   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-10.2606043   Y=-28.1907786   Z=0
+   Joint=1362   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-5.20944533   Y=-29.5442326   Z=0
+   Joint=1363   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-5.5109106e-15   Y=-30   Z=0
+   Joint=1364   CoordSys=GLOBAL   CoordType=Cartesian   XorR=5.20944533   Y=-29.5442326   Z=0
+   Joint=1365   CoordSys=GLOBAL   CoordType=Cartesian   XorR=10.2606043   Y=-28.1907786   Z=0
+   Joint=1366   CoordSys=GLOBAL   CoordType=Cartesian   XorR=15   Y=-25.9807621   Z=0
+   Joint=1367   CoordSys=GLOBAL   CoordType=Cartesian   XorR=19.2836283   Y=-22.9813333   Z=0
+   Joint=1368   CoordSys=GLOBAL   CoordType=Cartesian   XorR=22.9813333   Y=-19.2836283   Z=0
+   Joint=1369   CoordSys=GLOBAL   CoordType=Cartesian   XorR=25.9807621   Y=-15   Z=0
+   Joint=1370   CoordSys=GLOBAL   CoordType=Cartesian   XorR=28.1907786   Y=-10.2606043   Z=0
+   Joint=1371   CoordSys=GLOBAL   CoordType=Cartesian   XorR=29.5442326   Y=-5.20944533   Z=0
 
 TABLE:  "CONNECTIVITY - AREA"
    Area=1   NumJoints=4   Joint1=1   Joint2=2   Joint3=38   Joint4=37
@@ -3814,6 +3850,44 @@ TABLE:  "FRAME SECTION ASSIGNMENTS"
    Frame=71   SectionType=Rectangular   AutoSelect=N.A.   AnalSect=RINGWALL   DesignSect=RINGWALL   MatProp=Default
    Frame=72   SectionType=Rectangular   AutoSelect=N.A.   AnalSect=RINGWALL   DesignSect=RINGWALL   MatProp=Default
 
+TABLE:  "FRAME INSERTION POINT ASSIGNMENTS"
+   Frame=37   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=38   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=39   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=40   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=41   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=42   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=43   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=44   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=45   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=46   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=47   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=48   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=49   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=50   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=51   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=52   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=53   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=54   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=55   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=56   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=57   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=58   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=59   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=60   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=61   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=62   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=63   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=64   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=65   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=66   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=67   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=68   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=69   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=70   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=71   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+   Frame=72   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   StiffTransform=No   CoordSys=Local   Offset1I=0   Offset2I=0   Offset3I=0   Offset1J=0   Offset2J=0   Offset3J=0
+
 TABLE:  "LINK PROPERTY DEFINITIONS 01 - GENERAL"
    Link=GAP_R00   LinkType=Gap   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   Color=Magenta
    Link=GAP_R01   LinkType=Gap   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   Color=Magenta
@@ -3821,7 +3895,8 @@ TABLE:  "LINK PROPERTY DEFINITIONS 01 - GENERAL"
    Link=GAP_R03   LinkType=Gap   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   Color=Magenta
    Link=GAP_R04   LinkType=Gap   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   Color=Magenta
    Link=GAP_R05   LinkType=Gap   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   Color=Magenta
-   Link=GAP_R06   LinkType=Gap   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   Color=Magenta
+   Link=GAP_CONTACT   LinkType=Gap   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   Color=Magenta
+   Link=GAP_SOIL   LinkType=Gap   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   Color=Magenta
 
 TABLE:  "LINK PROPERTY DEFINITIONS 05 - GAP"
    Link=GAP_R00   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=1963.49541   TransCE=0   TransK=1963.49541   Open=0
@@ -3830,7 +3905,8 @@ TABLE:  "LINK PROPERTY DEFINITIONS 05 - GAP"
    Link=GAP_R03   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=1308.99694   TransCE=0   TransK=1308.99694   Open=0
    Link=GAP_R04   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=1745.32925   TransCE=0   TransK=1745.32925   Open=0
    Link=GAP_R05   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=2181.66156   TransCE=0   TransK=2181.66156   Open=0
-   Link=GAP_R06   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=1254.4554   TransCE=0   TransK=1254.4554   Open=0
+   Link=GAP_CONTACT   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=784648.85   TransCE=0   TransK=784648.85   Open=0
+   Link=GAP_SOIL   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=523.598776   TransCE=0   TransK=523.598776   Open=0
 
 TABLE:  "CONNECTIVITY - LINK"
    Link=1   JointI=1119   JointJ=757
@@ -4050,6 +4126,42 @@ TABLE:  "CONNECTIVITY - LINK"
    Link=215   JointI=1333   JointJ=34
    Link=216   JointI=1334   JointJ=35
    Link=217   JointI=1335   JointJ=36
+   Link=218   JointI=1336   JointJ=1300
+   Link=219   JointI=1337   JointJ=1301
+   Link=220   JointI=1338   JointJ=1302
+   Link=221   JointI=1339   JointJ=1303
+   Link=222   JointI=1340   JointJ=1304
+   Link=223   JointI=1341   JointJ=1305
+   Link=224   JointI=1342   JointJ=1306
+   Link=225   JointI=1343   JointJ=1307
+   Link=226   JointI=1344   JointJ=1308
+   Link=227   JointI=1345   JointJ=1309
+   Link=228   JointI=1346   JointJ=1310
+   Link=229   JointI=1347   JointJ=1311
+   Link=230   JointI=1348   JointJ=1312
+   Link=231   JointI=1349   JointJ=1313
+   Link=232   JointI=1350   JointJ=1314
+   Link=233   JointI=1351   JointJ=1315
+   Link=234   JointI=1352   JointJ=1316
+   Link=235   JointI=1353   JointJ=1317
+   Link=236   JointI=1354   JointJ=1318
+   Link=237   JointI=1355   JointJ=1319
+   Link=238   JointI=1356   JointJ=1320
+   Link=239   JointI=1357   JointJ=1321
+   Link=240   JointI=1358   JointJ=1322
+   Link=241   JointI=1359   JointJ=1323
+   Link=242   JointI=1360   JointJ=1324
+   Link=243   JointI=1361   JointJ=1325
+   Link=244   JointI=1362   JointJ=1326
+   Link=245   JointI=1363   JointJ=1327
+   Link=246   JointI=1364   JointJ=1328
+   Link=247   JointI=1365   JointJ=1329
+   Link=248   JointI=1366   JointJ=1330
+   Link=249   JointI=1367   JointJ=1331
+   Link=250   JointI=1368   JointJ=1332
+   Link=251   JointI=1369   JointJ=1333
+   Link=252   JointI=1370   JointJ=1334
+   Link=253   JointI=1371   JointJ=1335
 
 TABLE:  "LINK PROPERTY ASSIGNMENTS"
    Link=1   LinkProp=GAP_R00   LinkFDProp=None
@@ -4233,42 +4345,78 @@ TABLE:  "LINK PROPERTY ASSIGNMENTS"
    Link=179   LinkProp=GAP_R05   LinkFDProp=None
    Link=180   LinkProp=GAP_R05   LinkFDProp=None
    Link=181   LinkProp=GAP_R05   LinkFDProp=None
-   Link=182   LinkProp=GAP_R06   LinkFDProp=None
-   Link=183   LinkProp=GAP_R06   LinkFDProp=None
-   Link=184   LinkProp=GAP_R06   LinkFDProp=None
-   Link=185   LinkProp=GAP_R06   LinkFDProp=None
-   Link=186   LinkProp=GAP_R06   LinkFDProp=None
-   Link=187   LinkProp=GAP_R06   LinkFDProp=None
-   Link=188   LinkProp=GAP_R06   LinkFDProp=None
-   Link=189   LinkProp=GAP_R06   LinkFDProp=None
-   Link=190   LinkProp=GAP_R06   LinkFDProp=None
-   Link=191   LinkProp=GAP_R06   LinkFDProp=None
-   Link=192   LinkProp=GAP_R06   LinkFDProp=None
-   Link=193   LinkProp=GAP_R06   LinkFDProp=None
-   Link=194   LinkProp=GAP_R06   LinkFDProp=None
-   Link=195   LinkProp=GAP_R06   LinkFDProp=None
-   Link=196   LinkProp=GAP_R06   LinkFDProp=None
-   Link=197   LinkProp=GAP_R06   LinkFDProp=None
-   Link=198   LinkProp=GAP_R06   LinkFDProp=None
-   Link=199   LinkProp=GAP_R06   LinkFDProp=None
-   Link=200   LinkProp=GAP_R06   LinkFDProp=None
-   Link=201   LinkProp=GAP_R06   LinkFDProp=None
-   Link=202   LinkProp=GAP_R06   LinkFDProp=None
-   Link=203   LinkProp=GAP_R06   LinkFDProp=None
-   Link=204   LinkProp=GAP_R06   LinkFDProp=None
-   Link=205   LinkProp=GAP_R06   LinkFDProp=None
-   Link=206   LinkProp=GAP_R06   LinkFDProp=None
-   Link=207   LinkProp=GAP_R06   LinkFDProp=None
-   Link=208   LinkProp=GAP_R06   LinkFDProp=None
-   Link=209   LinkProp=GAP_R06   LinkFDProp=None
-   Link=210   LinkProp=GAP_R06   LinkFDProp=None
-   Link=211   LinkProp=GAP_R06   LinkFDProp=None
-   Link=212   LinkProp=GAP_R06   LinkFDProp=None
-   Link=213   LinkProp=GAP_R06   LinkFDProp=None
-   Link=214   LinkProp=GAP_R06   LinkFDProp=None
-   Link=215   LinkProp=GAP_R06   LinkFDProp=None
-   Link=216   LinkProp=GAP_R06   LinkFDProp=None
-   Link=217   LinkProp=GAP_R06   LinkFDProp=None
+   Link=182   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=183   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=184   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=185   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=186   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=187   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=188   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=189   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=190   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=191   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=192   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=193   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=194   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=195   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=196   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=197   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=198   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=199   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=200   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=201   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=202   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=203   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=204   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=205   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=206   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=207   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=208   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=209   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=210   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=211   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=212   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=213   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=214   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=215   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=216   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=217   LinkProp=GAP_CONTACT   LinkFDProp=None
+   Link=218   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=219   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=220   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=221   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=222   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=223   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=224   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=225   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=226   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=227   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=228   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=229   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=230   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=231   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=232   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=233   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=234   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=235   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=236   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=237   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=238   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=239   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=240   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=241   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=242   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=243   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=244   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=245   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=246   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=247   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=248   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=249   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=250   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=251   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=252   LinkProp=GAP_SOIL   LinkFDProp=None
+   Link=253   LinkProp=GAP_SOIL   LinkFDProp=None
 
 TABLE:  "GROUPS 1 - DEFINITIONS"
    GroupName=WALL   Selection=Yes   SectionCut=Yes   Steel=Yes   Concrete=Yes   Aluminum=Yes   ColdFormed=Yes   Stage=Yes   Bridge=Yes   AutoSeismic=No   AutoWind=No   SelDesSteel=No   SelDesAlum=No   SelDesCold=No   MassWeight=Yes   Color=Green
@@ -4282,6 +4430,7 @@ TABLE:  "GROUPS 1 - DEFINITIONS"
    GroupName=GROUND   Selection=Yes   SectionCut=Yes   Steel=Yes   Concrete=Yes   Aluminum=Yes   ColdFormed=Yes   Stage=Yes   Bridge=Yes   AutoSeismic=No   AutoWind=No   SelDesSteel=No   SelDesAlum=No   SelDesCold=No   MassWeight=Yes   Color=Green
    GroupName=RINGWALL   Selection=Yes   SectionCut=Yes   Steel=Yes   Concrete=Yes   Aluminum=Yes   ColdFormed=Yes   Stage=Yes   Bridge=Yes   AutoSeismic=No   AutoWind=No   SelDesSteel=No   SelDesAlum=No   SelDesCold=No   MassWeight=Yes   Color=Green
    GroupName=RINGWALL_TOP   Selection=Yes   SectionCut=Yes   Steel=Yes   Concrete=Yes   Aluminum=Yes   ColdFormed=Yes   Stage=Yes   Bridge=Yes   AutoSeismic=No   AutoWind=No   SelDesSteel=No   SelDesAlum=No   SelDesCold=No   MassWeight=Yes   Color=Green
+   GroupName=RINGWALL_GROUND   Selection=Yes   SectionCut=Yes   Steel=Yes   Concrete=Yes   Aluminum=Yes   ColdFormed=Yes   Stage=Yes   Bridge=Yes   AutoSeismic=No   AutoWind=No   SelDesSteel=No   SelDesAlum=No   SelDesCold=No   MassWeight=Yes   Color=Green
    GroupName=DENT_01   Selection=Yes   SectionCut=Yes   Steel=Yes   Concrete=Yes   Aluminum=Yes   ColdFormed=Yes   Stage=Yes   Bridge=Yes   AutoSeismic=No   AutoWind=No   SelDesSteel=No   SelDesAlum=No   SelDesCold=No   MassWeight=Yes   Color=Green
 
 TABLE:  "GROUPS 2 - ASSIGNMENTS"
@@ -6518,6 +6667,42 @@ TABLE:  "GROUPS 2 - ASSIGNMENTS"
    GroupName=RINGWALL_TOP   ObjectType=Joint   ObjectLabel=1333
    GroupName=RINGWALL_TOP   ObjectType=Joint   ObjectLabel=1334
    GroupName=RINGWALL_TOP   ObjectType=Joint   ObjectLabel=1335
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1336
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1337
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1338
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1339
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1340
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1341
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1342
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1343
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1344
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1345
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1346
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1347
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1348
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1349
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1350
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1351
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1352
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1353
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1354
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1355
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1356
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1357
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1358
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1359
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1360
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1361
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1362
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1363
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1364
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1365
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1366
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1367
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1368
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1369
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1370
+   GroupName=RINGWALL_GROUND   ObjectType=Joint   ObjectLabel=1371
    GroupName=DENT_01   ObjectType=Area   ObjectLabel=289
    GroupName=DENT_01   ObjectType=Area   ObjectLabel=324
    GroupName=DENT_01   ObjectType=Area   ObjectLabel=325
@@ -6745,80 +6930,78 @@ TABLE:  "JOINT RESTRAINT ASSIGNMENTS"
    Joint=1297   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
    Joint=1298   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
    Joint=1299   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
-   Joint=1300   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1301   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1302   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1303   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1304   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1305   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1306   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1307   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1308   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1309   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1310   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1311   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1312   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1313   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1314   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1315   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1316   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1317   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1318   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1319   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1320   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1321   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1322   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1323   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1324   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1325   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1326   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1327   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1328   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1329   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1330   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1331   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1332   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1333   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1334   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-   Joint=1335   U1=Yes   U2=Yes   U3=No   R1=No   R2=No   R3=No
-
-TABLE:  "JOINT SPRING ASSIGNMENTS 1 - UNCOUPLED"
-   Joint=1300   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1301   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1302   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1303   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1304   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1305   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1306   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1307   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1308   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1309   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1310   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1311   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1312   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1313   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1314   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1315   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1316   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1317   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1318   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1319   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1320   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1321   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1322   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1323   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1324   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1325   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1326   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1327   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1328   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1329   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1330   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1331   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1332   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1333   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1334   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
-   Joint=1335   CoordSys=Global   U1=0   U2=0   U3=523.598776   R1=0   R2=0   R3=0
+   Joint=1336   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1337   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1338   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1339   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1340   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1341   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1342   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1343   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1344   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1345   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1346   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1347   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1348   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1349   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1350   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1351   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1352   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1353   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1354   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1355   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1356   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1357   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1358   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1359   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1360   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1361   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1362   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1363   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1364   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1365   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1366   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1367   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1368   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1369   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1370   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1371   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+   Joint=1300   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1301   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1302   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1303   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1304   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1305   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1306   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1307   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1308   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1309   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1310   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1311   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1312   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1313   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1314   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1315   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1316   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1317   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1318   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1319   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1320   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1321   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1322   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1323   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1324   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1325   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1326   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1327   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1328   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1329   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1330   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1331   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1332   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1333   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1334   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
+   Joint=1335   U1=Yes   U2=No   U3=No   R1=No   R2=No   R3=No
 
 TABLE:  "JOINT LOCAL AXES ASSIGNMENTS 1 - TYPICAL"
    Joint=1   AngleA=-90   AngleB=0   AngleC=0
@@ -6857,6 +7040,42 @@ TABLE:  "JOINT LOCAL AXES ASSIGNMENTS 1 - TYPICAL"
    Joint=34   AngleA=240   AngleB=0   AngleC=0
    Joint=35   AngleA=250   AngleB=0   AngleC=0
    Joint=36   AngleA=260   AngleB=0   AngleC=0
+   Joint=1300   AngleA=-90   AngleB=0   AngleC=0
+   Joint=1301   AngleA=-80   AngleB=0   AngleC=0
+   Joint=1302   AngleA=-70   AngleB=0   AngleC=0
+   Joint=1303   AngleA=-60   AngleB=0   AngleC=0
+   Joint=1304   AngleA=-50   AngleB=0   AngleC=0
+   Joint=1305   AngleA=-40   AngleB=0   AngleC=0
+   Joint=1306   AngleA=-30   AngleB=0   AngleC=0
+   Joint=1307   AngleA=-20   AngleB=0   AngleC=0
+   Joint=1308   AngleA=-10   AngleB=0   AngleC=0
+   Joint=1309   AngleA=0   AngleB=0   AngleC=0
+   Joint=1310   AngleA=10   AngleB=0   AngleC=0
+   Joint=1311   AngleA=20   AngleB=0   AngleC=0
+   Joint=1312   AngleA=30   AngleB=0   AngleC=0
+   Joint=1313   AngleA=40   AngleB=0   AngleC=0
+   Joint=1314   AngleA=50   AngleB=0   AngleC=0
+   Joint=1315   AngleA=60   AngleB=0   AngleC=0
+   Joint=1316   AngleA=70   AngleB=0   AngleC=0
+   Joint=1317   AngleA=80   AngleB=0   AngleC=0
+   Joint=1318   AngleA=90   AngleB=0   AngleC=0
+   Joint=1319   AngleA=100   AngleB=0   AngleC=0
+   Joint=1320   AngleA=110   AngleB=0   AngleC=0
+   Joint=1321   AngleA=120   AngleB=0   AngleC=0
+   Joint=1322   AngleA=130   AngleB=0   AngleC=0
+   Joint=1323   AngleA=140   AngleB=0   AngleC=0
+   Joint=1324   AngleA=150   AngleB=0   AngleC=0
+   Joint=1325   AngleA=160   AngleB=0   AngleC=0
+   Joint=1326   AngleA=170   AngleB=0   AngleC=0
+   Joint=1327   AngleA=180   AngleB=0   AngleC=0
+   Joint=1328   AngleA=190   AngleB=0   AngleC=0
+   Joint=1329   AngleA=200   AngleB=0   AngleC=0
+   Joint=1330   AngleA=210   AngleB=0   AngleC=0
+   Joint=1331   AngleA=220   AngleB=0   AngleC=0
+   Joint=1332   AngleA=230   AngleB=0   AngleC=0
+   Joint=1333   AngleA=240   AngleB=0   AngleC=0
+   Joint=1334   AngleA=250   AngleB=0   AngleC=0
+   Joint=1335   AngleA=260   AngleB=0   AngleC=0
 
 TABLE:  "LOAD PATTERN DEFINITIONS"
    LoadPat=DEAD   DesignType=Dead   SelfWtMult=1
@@ -8201,6 +8420,42 @@ TABLE:  "JOINT PATTERN ASSIGNMENTS"
    Joint=1333   Pattern=HYDRO   Value=2.496
    Joint=1334   Pattern=HYDRO   Value=2.496
    Joint=1335   Pattern=HYDRO   Value=2.496
+   Joint=1336   Pattern=HYDRO   Value=2.496
+   Joint=1337   Pattern=HYDRO   Value=2.496
+   Joint=1338   Pattern=HYDRO   Value=2.496
+   Joint=1339   Pattern=HYDRO   Value=2.496
+   Joint=1340   Pattern=HYDRO   Value=2.496
+   Joint=1341   Pattern=HYDRO   Value=2.496
+   Joint=1342   Pattern=HYDRO   Value=2.496
+   Joint=1343   Pattern=HYDRO   Value=2.496
+   Joint=1344   Pattern=HYDRO   Value=2.496
+   Joint=1345   Pattern=HYDRO   Value=2.496
+   Joint=1346   Pattern=HYDRO   Value=2.496
+   Joint=1347   Pattern=HYDRO   Value=2.496
+   Joint=1348   Pattern=HYDRO   Value=2.496
+   Joint=1349   Pattern=HYDRO   Value=2.496
+   Joint=1350   Pattern=HYDRO   Value=2.496
+   Joint=1351   Pattern=HYDRO   Value=2.496
+   Joint=1352   Pattern=HYDRO   Value=2.496
+   Joint=1353   Pattern=HYDRO   Value=2.496
+   Joint=1354   Pattern=HYDRO   Value=2.496
+   Joint=1355   Pattern=HYDRO   Value=2.496
+   Joint=1356   Pattern=HYDRO   Value=2.496
+   Joint=1357   Pattern=HYDRO   Value=2.496
+   Joint=1358   Pattern=HYDRO   Value=2.496
+   Joint=1359   Pattern=HYDRO   Value=2.496
+   Joint=1360   Pattern=HYDRO   Value=2.496
+   Joint=1361   Pattern=HYDRO   Value=2.496
+   Joint=1362   Pattern=HYDRO   Value=2.496
+   Joint=1363   Pattern=HYDRO   Value=2.496
+   Joint=1364   Pattern=HYDRO   Value=2.496
+   Joint=1365   Pattern=HYDRO   Value=2.496
+   Joint=1366   Pattern=HYDRO   Value=2.496
+   Joint=1367   Pattern=HYDRO   Value=2.496
+   Joint=1368   Pattern=HYDRO   Value=2.496
+   Joint=1369   Pattern=HYDRO   Value=2.496
+   Joint=1370   Pattern=HYDRO   Value=2.496
+   Joint=1371   Pattern=HYDRO   Value=2.496
 
 TABLE:  "AREA LOADS - SURFACE PRESSURE"
    Area=1   LoadPat=HYDRO   Face=Bottom   Pressure=2.4336

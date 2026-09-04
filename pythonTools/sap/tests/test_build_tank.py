@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT))
 
 from tankbuilder import Course, Dent, TankModel, TankSpec, load_config, parse_s2k  # noqa: E402
 from tankbuilder.s2k import outlines_text, s2k_text  # noqa: E402
-from tankbuilder.section import polygon_properties, z_pair_outline, z_pair_section  # noqa: E402
+from tankbuilder.section import polygon_properties, eave_ring_outline, eave_ring_section  # noqa: E402
 from tankbuilder.spec import spec_from_dict  # noqa: E402
 
 CONFIGS = ROOT / "configs"
@@ -44,9 +44,9 @@ def test_cli_writes_the_same_file(tmp_path):
     r = subprocess.run([sys.executable, str(ROOT / "build_tank.py"),
                         str(CONFIGS / "example.toml"), "-o", str(out)],
                        capture_output=True, text=True, check=True)
-    assert ("1335 joints, 1152 shells, 2 course(s), baseplate (216 shells), "
+    assert ("1371 joints, 1152 shells, 2 course(s), baseplate (216 shells), "
             "roof (216 shells, rise 10.53 ft, 36 ring frames), base released radially, "
-            "217 gap links on ground (ks 100 kip/ft^3), ring wall 1 x 3 ft (springs), 1 dent(s)") in r.stdout
+            "217 gap links on ground (ks 100 kip/ft^3), ring wall 1 x 3 ft (gap: 36 contact + 36 soil links), 1 dent(s)") in r.stdout
     assert out.read_text() == (GOLDEN / "example.s2k").read_text()
 
 
@@ -59,7 +59,7 @@ def test_example_config_loads_and_builds():
     assert spec.height == 40.0 and len(spec.courses) == 2 and spec.course_divisions() == [10, 10]
     m = TankModel(spec)
     assert len(m.ids.block("joint", "wall")) == 36 * 21 and len(m.ids.block("area", "wall")) == 36 * 20
-    assert len(m.joints) == 36 * 21 + 2 * (5 * 36 + 1) + (5 * 36 + 1 + 36)   # + ground joints
+    assert len(m.joints) == 36 * 21 + 2 * (5 * 36 + 1) + (5 * 36 + 1 + 36) + 36   # + ground joints + ring wall ground
     assert len(m.areas) == 36 * 20 + 2 * 6 * 36
     assert m.sections == {"WALL_T1": 0.0208333, "WALL_T2": 0.015625, "BASEPLATE": 0.0208333, "ROOF": 0.0208333}
     assert "END TABLE DATA" in s2k_text(m)
@@ -293,38 +293,49 @@ def test_roof_ring_frames_close_the_eave():
     assert [i for i, _ in fr] == m.top_joints and fr[-1][1] == m.top_joints[0]
     assert set(m.frame_section.values()) == {"ROOF_RING"}
     sec = m.frame_sections["ROOF_RING"]
-    assert sec["Shape"] == "General" and sec["t3"] == pytest.approx(0.5) and sec["t2"] == pytest.approx(0.25)
-    assert sec["Area"] == pytest.approx(2 * (2 * 0.25 * 0.03125 - 0.03125 ** 2))
+    assert sec["Shape"] == "General" and sec["t3"] == pytest.approx(0.28125) and sec["t2"] == pytest.approx(0.25)
+    assert sec["Area"] == pytest.approx(3 * 0.25 * 0.03125 - 0.03125 ** 2)
     assert not capped(roof_ring=False).frames
     assert "ROOF_RING" in m.frame_outlines
 
 
-def test_z_pair_section_properties():
+def test_eave_ring_section_properties():
     leg, t = 0.25, 0.03125
-    pts = z_pair_outline(leg, t)
+    pts = eave_ring_outline(leg, t)
     p = polygon_properties(pts)
-    assert p["A"] == pytest.approx(2 * (2 * leg * t - t * t))
+    assert len(pts) == 6
+    assert p["A"] == pytest.approx(3 * leg * t - t * t)
     # anchored at the wall: the shell line (y = 0) is the inner face, outward is -y,
-    # the down leg hangs below the wall top (z < 0) and the lip stands above it
+    # the down leg hangs below the wall top (z < 0); no upstanding lip
     ys = [y for y, _ in pts]; zs = [z for _, z in pts]
     assert max(ys) == 0.0 and min(ys) == pytest.approx(-leg)
-    assert min(zs) == pytest.approx(t - leg) and max(zs) == pytest.approx(t + leg)
-    assert p["Iyz"] != pytest.approx(0.0)                     # a Z is antisymmetric
-    # the same Z stood upright (rotate 90 deg) has the axes swapped: the doubled
-    # web then bends about the horizontal axis like two angles back to back
-    upright = polygon_properties([(z, -y) for y, z in pts])
-    web = 2 * t * leg ** 3 / 12
-    flange = 2 * ((leg - t) * t ** 3 / 12 + (leg - t) * t * (leg / 2 - t / 2) ** 2)
-    assert upright["Iyy"] == pytest.approx(web + flange, rel=1e-9)
-    assert p["Izz"] == pytest.approx(upright["Iyy"]) and p["Iyy"] == pytest.approx(upright["Izz"])
-    g = z_pair_section(leg, t)
+    assert min(zs) == pytest.approx(t - leg) and max(zs) == pytest.approx(2 * t)
+    assert p["Iyz"] != pytest.approx(0.0)                     # an L is asymmetric
+    # hand check: 2t plate on top of the wall + the (leg - t) down leg
+    plate = leg * (2 * t) ** 3 / 12 + 2 * leg * t * (t - p["cz"]) ** 2
+    down = t * (leg - t) ** 3 / 12 + t * (leg - t) * ((t - leg) / 2 - p["cz"]) ** 2
+    assert p["Iyy"] == pytest.approx(plate + down, rel=1e-9)
+    g = eave_ring_section(leg, t)
+    assert g["t3"] == pytest.approx(leg + t) and g["t2"] == pytest.approx(leg)
     assert g["I33"] == pytest.approx(p["Iyy"]) and g["I22"] == pytest.approx(p["Izz"])
     assert g["S33"] == pytest.approx(p["Iyy"] / max(abs(max(zs) - p["cz"]), abs(min(zs) - p["cz"])))
-    assert g["TorsConst"] == pytest.approx(leg * (2 * t) ** 3 / 3 + 2 * (leg - t) * t ** 3 / 3)
-    assert g["AS2"] == pytest.approx(2 * leg * t) and g["AS3"] == pytest.approx(2 * (leg - t) * t) and g["R33"] > 0
+    assert g["TorsConst"] == pytest.approx(leg * (2 * t) ** 3 / 3 + (leg - t) * t ** 3 / 3)
+    assert g["AS2"] == pytest.approx((leg - t) * t) and g["AS3"] == pytest.approx(2 * leg * t) and g["R33"] > 0
     # square: no product of inertia, equal moments
     sq = polygon_properties([(-1, -1), (1, -1), (1, 1), (-1, 1)])
     assert sq["A"] == 4 and sq["Iyy"] == pytest.approx(4 / 3) and sq["Iyz"] == pytest.approx(0)
+
+
+def test_ringwall_frames_insert_at_top_centre():
+    from tankbuilder.s2k import insertion_tables
+    m = walled()
+    rw = list(m.ids.block("frame", "ringwall"))
+    assert all(m.frame_cardinal[f] == 8 for f in rw) and set(m.frame_cardinal) == set(rw)
+    (name, rows), = insertion_tables(m)
+    assert name == "FRAME INSERTION POINT ASSIGNMENTS" and len(rows) == len(rw)
+    assert rows[0].startswith(f'   Frame={rw[0]}   CardinalPt="8 (top center)"   Mirror2=No')
+    assert "StiffTransform=No" in rows[0] and "CoordSys=Local" in rows[0]
+    assert not insertion_tables(capped())            # no ring wall -> no table
 
 
 def test_outlines_sidecar_written_beside_the_s2k(tmp_path):
@@ -335,7 +346,7 @@ def test_outlines_sidecar_written_beside_the_s2k(tmp_path):
     side = tmp_path / "t.outlines.txt"
     assert side.exists()
     line = side.read_text().splitlines()[0]
-    assert line.startswith("ROOF_RING: ") and len(line.split(": ")[1].split()) == 8
+    assert line.startswith("ROOF_RING: ") and len(line.split(": ")[1].split()) == 6
     assert outlines_text(m) == side.read_text()
     write_s2k(small(), out)                        # no frames -> stale sidecar removed
     assert not side.exists()
@@ -451,8 +462,22 @@ def test_ringwall_frames_close_on_the_rims_ground_joints():
     fr = [m.frames[f] for f in m.ids.block("frame", "ringwall")]
     assert [i for i, _ in fr] == rw and fr[-1][1] == rw[0]
     assert m.frame_sections["RINGWALL"] == {"Material": "CONC", "Shape": "Rectangular", "t3": 3.0, "t2": 1.0}
-    assert m.ringwall_spring == pytest.approx(100.0 * 1.0 * 2 * math.pi * 10 / 8)
+    arc = 2 * math.pi * 10 / 8
+    assert m.ringwall_soil_k == pytest.approx(100.0 * 1.0 * arc)
+    assert m.ringwall_contact_k == pytest.approx(m.concrete["E"] * 1.0 * arc / 3.0)
     assert set(m.plate_ground_joints).isdisjoint(rw) and len(m.plate_ground_joints) == 17
+    # load path: rim joint -> GAP_CONTACT -> wall top -> GAP_SOIL -> fixed ground joint
+    base = set(m.base_joints)
+    rim = {m.links[l][1]: l for l in m.links if m.links[l][1] in base}
+    assert len(rim) == 8 and all(m.link_prop[l] == "GAP_CONTACT" for l in rim.values())
+    assert [m.links[rim[j]][0] for j in m.base_joints] == rw
+    assert len(m.ringwall_ground) == 8 and all(m.joints[g] == m.joints[w] for g, w in zip(m.ringwall_ground, rw))
+    soil = {m.links[l][1]: l for l in m.ids.block("link", "ringwall_gap")}
+    assert [m.links[soil[w]][0] for w in rw] == m.ringwall_ground
+    assert all(m.link_prop[l] == "GAP_SOIL" for l in soil.values())
+    assert {"GAP_CONTACT", "GAP_SOIL"} <= set(m.link_props)
+    assert not any(m.link_prop[l] == "GAP_R03" for l in m.links)      # rim ring prop replaced
+    assert m.link_props["GAP_SOIL"]["k"] == pytest.approx(m.ringwall_soil_k)
     c = m.concrete
     assert c["E"] == pytest.approx(57 * math.sqrt(3000) * 144) and c["name"] == "CONC"
     assert capped().concrete is None
@@ -468,17 +493,25 @@ def test_ringwall_tables():
     assert secs["ROOF_RING"]["MATERIAL"] == "A36"
     rest = {r["JOINT"]: r for r in t["JOINT RESTRAINT ASSIGNMENTS"]}
     rw0 = str(m.ringwall_joints[0])
-    assert (rest[rw0]["U1"], rest[rw0]["U3"], rest[rw0]["R3"]) == ("Yes", "No", "No")
+    assert (rest[rw0]["U1"], rest[rw0]["U2"], rest[rw0]["U3"], rest[rw0]["R3"]) == ("Yes", "No", "No", "No")
     g0 = str(m.plate_ground_joints[0])
     assert rest[g0]["U3"] == "Yes" and rest[g0]["R3"] == "Yes"
-    spr = t["JOINT SPRING ASSIGNMENTS 1 - UNCOUPLED"]
-    assert len(spr) == 8 and float(spr[0]["U3"]) == pytest.approx(m.ringwall_spring)
+    gr0 = str(m.ringwall_ground[0])
+    assert rest[gr0]["U1"] == "Yes" and rest[gr0]["U3"] == "Yes" and rest[gr0]["R3"] == "Yes"
+    assert "JOINT SPRING ASSIGNMENTS 1 - UNCOUPLED" not in t
+    axes = {r["JOINT"]: r for r in t["JOINT LOCAL AXES ASSIGNMENTS 1 - TYPICAL"]}
+    assert float(axes[rw0]["ANGLEA"]) == pytest.approx(m.base_local_angle_deg(m.base_joints[0]))
+    gap = {r["LINK"]: r for r in t["LINK PROPERTY DEFINITIONS 05 - GAP"]}
+    assert float(gap["GAP_SOIL"]["TRANSK"]) == pytest.approx(m.ringwall_soil_k)
+    assert float(gap["GAP_CONTACT"]["TRANSK"]) == pytest.approx(m.ringwall_contact_k)
     g = m.groups()
     assert g["RINGWALL"] == ([], [], list(range(9, 17))) and g["RINGWALL_TOP"] == ([], m.ringwall_joints, [])
-    assert g["GROUND"] == ([], m.plate_ground_joints, [])
-    fixed = parse_s2k(s2k_text(walled(ringwall_support="fixed")))
-    assert "JOINT SPRING ASSIGNMENTS 1 - UNCOUPLED" not in fixed
+    assert g["RINGWALL_GROUND"] == ([], m.ringwall_ground, []) and g["GROUND"] == ([], m.plate_ground_joints, [])
+    fixed_m = walled(ringwall_support="fixed")
+    fixed = parse_s2k(s2k_text(fixed_m))
+    assert not fixed_m.ringwall_ground and "GAP_SOIL" not in fixed_m.link_props
     assert {r["JOINT"]: r for r in fixed["JOINT RESTRAINT ASSIGNMENTS"]}[rw0]["U3"] == "Yes"
+    assert walled(ringwall_support="springs").spec.ringwall_support == "gap"     # old name still accepted
 
 
 # --- dents ---------------------------------------------------------------------

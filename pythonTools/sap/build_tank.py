@@ -49,10 +49,11 @@ def main(argv=None) -> int:
 
     base = "released radially" if spec.release_radial else "pinned"
     if model.gap:
-        base += f", {len(model.links)} gap links on ground (ks {spec.subgrade_modulus:g} kip/ft^3)"
+        n_soil = len(model.ringwall_ground)
+        base += f", {len(model.links) - n_soil} gap links on ground (ks {spec.subgrade_modulus:g} kip/ft^3)"
     if spec.ringwall:
         base += (f", ring wall {spec.ringwall_width:g} x {spec.ringwall_depth:g} ft "
-                 f"({spec.ringwall_support})")
+                 f"({spec.ringwall_support}: {len(model.ringwall_joints)} contact + {len(model.ringwall_ground)} soil links)")
     if spec.dents:
         base += f", {len(spec.dents)} dent(s)"
     parts = [f"{len(spec.plate_courses)} course(s)"]

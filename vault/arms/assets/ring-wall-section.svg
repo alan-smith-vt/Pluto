@@ -1,0 +1,100 @@
+<svg font-family="Consolas, Menlo, monospace" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 500" role="img" aria-label="Section at the rim, as built: tank shell and baseplate on the rim joint; a contact gap link down to the wall-top joint, which is the ring wall frame node; the concrete section hangs below it with its centroid depth over two lower, joined to the node by a dotted offset line; a soil gap link at the node down to a fixed ground joint; lateral earth pressure on the inner face marked deferred.">
+      <defs>
+        <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#1f2328"/></marker>
+        <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#1f2328" stroke-width=".8" stroke-opacity=".5"/></pattern>
+      </defs>
+      <rect x="0" y="0" width="800" height="500" fill="#ffffff"/>
+      <text x="16" y="24" font-size="12" font-weight="500" fill="#1f2328">SECTION AT THE RIM — load path now</text>
+      <text x="16" y="40" font-size="11" fill="#6b7380">inside of tank ←   → outside.  Joints ①, ③ and ⑤ are coincident in SAP (all at the wall top); drawn apart here.</text>
+
+      <!-- ground: sand pad inside, grade outside -->
+      <rect x="40" y="190" width="290" height="180" fill="#d9cbb0"/>
+      <text x="70" y="300" font-size="11" fill="#6b7380">sand pad, product above</text>
+      <rect x="400" y="230" width="150" height="140" fill="url(#hatch)"/>
+      <text x="410" y="224" font-size="11" fill="#6b7380">grade</text>
+
+      <!-- concrete ring wall: top at the frame node, depth below -->
+      <rect x="330" y="190" width="70" height="180" fill="#e3e1dc" stroke="#1f2328" stroke-width="1.2"/>
+      <text x="420" y="304" font-size="11" fill="#1f2328">ring wall, width C × depth A</text>
+
+      <!-- frame node -> section centroid: the insertion-point offset -->
+      <line x1="365" y1="190" x2="365" y2="280" stroke="#2f6b9a" stroke-width="1.5" stroke-dasharray="2 4"/>
+      <circle cx="365" cy="280" r="3" fill="none" stroke="#2f6b9a" stroke-width="1.5"/>
+      <line x1="357" y1="280" x2="373" y2="280" stroke="#2f6b9a" stroke-width="1"/>
+      <line x1="365" y1="272" x2="365" y2="288" stroke="#2f6b9a" stroke-width="1"/>
+      <text x="420" y="262" font-size="11" fill="#2f6b9a">section centroid, A/2 below the node</text>
+      <text x="420" y="275" font-size="11" fill="#6b7380">insertion point 8 (top centre), StiffTransform = No:</text>
+      <text x="420" y="288" font-size="11" fill="#6b7380">drawn here, analysed on the node (dotted = offset)</text>
+      <!-- dimension A/2 -->
+      <line x1="340" y1="190" x2="340" y2="280" stroke="#2f6b9a" stroke-width=".8" marker-start="url(#a3)" marker-end="url(#a3)"/>
+      <text x="336" y="239" font-size="10" fill="#2f6b9a" text-anchor="end">A/2</text>
+
+      <!-- baseplate and shell, resting on the rim joint -->
+      <line x1="40" y1="150" x2="400" y2="150" stroke="#1f2328" stroke-width="3"/>
+      <text x="60" y="142" font-size="11" fill="#1f2328">baseplate</text>
+      <line x1="365" y1="150" x2="365" y2="60" stroke="#1f2328" stroke-width="3"/>
+      <text x="374" y="72" font-size="11" fill="#1f2328">shell</text>
+      <line x1="365" y1="86" x2="365" y2="126" stroke="#1f2328" stroke-width="1.5" marker-end="url(#a3)"/>
+      <text x="330" y="104" font-size="11" text-anchor="end" fill="#1f2328">shell + roof + product weight</text>
+
+      <!-- 1. rim joint -->
+      <circle cx="365" cy="150" r="4.5" fill="#1f2328"/>
+      <text x="420" y="146" font-size="11" fill="#1f2328">① tank rim joint  (BASE_RING)</text>
+      <text x="420" y="159" font-size="11" fill="#6b7380">U1 tangential held, radial released</text>
+
+      <!-- 2. contact gap link, drawn as a short exploded gap -->
+      <g stroke="#2f6b9a" fill="none" stroke-width="2">
+        <line x1="365" y1="154" x2="365" y2="162"/>
+        <path d="M357 162 h16 M357 168 h16"/>
+        <line x1="365" y1="168" x2="365" y2="186"/>
+      </g>
+      <text x="420" y="172" font-size="11" fill="#2f6b9a">② GAP_CONTACT link, compression only, vertical</text>
+      <text x="420" y="185" font-size="11" fill="#2f6b9a">k = E_c · C · arc / A  (steel bearing on concrete)</text>
+
+      <!-- 3. wall-top joint = frame node -->
+      <circle cx="365" cy="190" r="5" fill="#ffffff" stroke="#2f6b9a" stroke-width="2"/>
+      <text x="420" y="204" font-size="11" fill="#2f6b9a">③ wall-top joint  (RINGWALL_TOP) = RINGWALL frame node</text>
+      <text x="420" y="217" font-size="11" fill="#2f6b9a">held along its tangent only; frame axis runs through here</text>
+
+      <!-- 4. soil gap link, from the node down beside the wall to the ground joint -->
+      <!-- soil gap link, drawn down the centreline from the centroid: spring, gap, solid to the base -->
+      <!-- wall body: rigid from the centroid to the base -->
+      <line x1="365" y1="288" x2="365" y2="370" stroke="#2f6b9a" stroke-width="2"/>
+      <text x="420" y="330" font-size="11" fill="#6b7380">wall body: rigid vertically in the model</text>
+      <text x="420" y="343" font-size="11" fill="#6b7380">(the concrete column's E·A/A compliance is in ② above)</text>
+      <!-- the soil link lives BETWEEN the wall base and the ground: gap, then spring -->
+      <g stroke="#2f6b9a" fill="none" stroke-width="2">
+        <line x1="365" y1="370" x2="365" y2="380"/>
+        <path d="M357 380 h16 M357 388 h16"/>
+        <line x1="365" y1="388" x2="365" y2="396"/>
+        <polyline points="365,396 357,400 373,408 357,416 373,424 357,432 365,436"/>
+        <line x1="365" y1="436" x2="365" y2="444"/>
+      </g>
+      <text x="420" y="386" font-size="11" fill="#2f6b9a">④ GAP_SOIL link, between wall base and ground:</text>
+      <text x="420" y="399" font-size="11" fill="#2f6b9a">gap (open = 0) in series with a spring, k = ks · C · arc</text>
+      <text x="420" y="412" font-size="11" fill="#2f6b9a">compression only — carries nothing while the gap is open</text>
+      <text x="420" y="425" font-size="11" fill="#6b7380">zero-length in SAP (③ and ⑤ coincide); drawn long here</text>
+
+      <!-- 5. ground joint, fixed -->
+      <circle cx="365" cy="448" r="4.5" fill="#2f6b9a"/>
+      <line x1="345" y1="456" x2="385" y2="456" stroke="#1f2328" stroke-width="2"/>
+      <line x1="349" y1="456" x2="343" y2="463" stroke="#1f2328"/><line x1="357" y1="456" x2="351" y2="463" stroke="#1f2328"/><line x1="365" y1="456" x2="359" y2="463" stroke="#1f2328"/><line x1="373" y1="456" x2="367" y2="463" stroke="#1f2328"/><line x1="381" y1="456" x2="375" y2="463" stroke="#1f2328"/>
+      <text x="420" y="452" font-size="11" fill="#1f2328">⑤ ground joint  (RINGWALL_GROUND), fixed</text>
+      <text x="420" y="465" font-size="11" fill="#6b7380">settlement w(x, y) is a ground displacement here: the ground</text>
+      <text x="420" y="478" font-size="11" fill="#6b7380">drops away, the gap opens, the wall spans; contact returns when it closes</text>
+
+      <!-- deferred earth pressure -->
+      <g stroke="#b4472b" stroke-width="1.5" stroke-dasharray="4 3">
+        <line x1="150" y1="316" x2="322" y2="316" marker-end="url(#a3)"/>
+        <line x1="150" y1="340" x2="322" y2="340" marker-end="url(#a3)"/>
+      </g>
+      <text x="60" y="320" font-size="11" fill="#b4472b">lateral earth pressure</text>
+      <text x="60" y="333" font-size="11" fill="#b4472b">Ka · (γ z + q)</text>
+      <text x="60" y="346" font-size="11" fill="#b4472b">deferred — not modelled</text>
+
+      <!-- result box -->
+      <text x="60" y="392" font-size="11" fill="#6b7380">NL_HYDRO, TANK-A, SAP 26:</text>
+      <text x="60" y="406" font-size="11" fill="#6b7380">① rim U3 = −0.02743 ft   ③ wall top −0.02740 ft   ⑤ ground 0</text>
+      <text x="60" y="420" font-size="11" fill="#6b7380">contact link closes by 0.00003 ft: tank and wall settle together</text>
+      <text x="60" y="434" font-size="11" fill="#6b7380">no radial load yet → hoop P ≈ 0</text>
+    </svg>

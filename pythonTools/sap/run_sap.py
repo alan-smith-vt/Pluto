@@ -56,7 +56,7 @@ def spec_model_id(cfg: Path) -> str:
 def step_run(s2k: Path, run: bool):
     from tankbuilder.sap_api import SapSession
     sap = SapSession.attach_or_start()
-    print(f"[sap]     SAP2000 {sap.version} ({'started' if sap.started else 'attached'})")
+    print(f"[sap]     SAP2000 {sap.version} ({'started ' + str(SapSession.find_exe()) if sap.started else 'attached to the running instance'})")
     if run:
         sap.open(s2k)
         j, a, _ = sap.counts()

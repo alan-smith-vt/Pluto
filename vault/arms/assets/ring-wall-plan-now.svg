@@ -1,0 +1,36 @@
+<svg font-family="Consolas, Menlo, monospace" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 330" role="img" aria-label="Plan view, proposed: each ring wall joint held along its tangent only; radial expansion free; hoop tension N equals p times R." >
+      <defs>
+        <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#1f2328"/></marker>
+      </defs>
+      <rect x="0" y="0" width="400" height="330" fill="#ffffff"/>
+      <text x="16" y="24" font-size="12" fill="#2f6b9a" font-weight="500">NOW — U1 tangential only (local axes)</text>
+      <path d="M40 300 A 200 200 0 0 1 360 300" fill="none" stroke="#1f2328" stroke-width="8" stroke-opacity=".25"/>
+      <path d="M40 300 A 200 200 0 0 1 360 300" fill="none" stroke="#1f2328" stroke-width="1.2"/>
+      <!-- expanded ring, dashed -->
+      <path d="M22 300 A 218 218 0 0 1 378 300" fill="none" stroke="#2f6b9a" stroke-width="1.2" stroke-dasharray="5 4"/>
+      <line x1="196" y1="296" x2="204" y2="304" stroke="#1f2328"/><line x1="204" y1="296" x2="196" y2="304" stroke="#1f2328"/>
+      <text x="212" y="304" font-size="11" fill="#6b7380">tank centre</text>
+      <g stroke="#2f6b9a" fill="#2f6b9a">
+        <!-- top joint: tangential pin only (a roller across the tangent) -->
+        <circle cx="200" cy="100" r="4"/>
+        <path d="M200 100 l-12 -7 v14 z" fill="none"/>
+        <!-- left joint: tangent is ~ (0.57,-0.82); draw pin along tangent -->
+        <circle cx="86" cy="164" r="4"/>
+        <path d="M86 164 l-2 -14 l12 8 z" fill="none"/>
+        <!-- right joint -->
+        <circle cx="314" cy="164" r="4"/>
+        <path d="M314 164 l2 -14 l-12 8 z" fill="none"/>
+      </g>
+      <text x="200" y="88" font-size="11" text-anchor="middle" fill="#2f6b9a">held along the tangent</text>
+      <!-- free radial arrows -->
+      <g stroke="#2f6b9a" style="color: #2f6b9a" stroke-width="1.5">
+        <line x1="200" y1="100" x2="200" y2="56" marker-end="url(#a2)"/>
+        <line x1="86" y1="164" x2="52" y2="138" marker-end="url(#a2)"/>
+        <line x1="314" y1="164" x2="348" y2="138" marker-end="url(#a2)"/>
+      </g>
+      <text x="220" y="62" font-size="11" fill="#2f6b9a">radial: free</text>
+      <!-- hoop -->
+      <path d="M150 140 A 70 70 0 0 1 250 140" fill="none" stroke="#1f2328" stroke-width="1.2" marker-start="url(#a2)" marker-end="url(#a2)"/>
+      <text x="200" y="210" font-size="12" text-anchor="middle">hoop N = p · R</text>
+      <text x="200" y="226" font-size="11" text-anchor="middle" fill="#6b7380">once a radial load p exists</text>
+    </svg>

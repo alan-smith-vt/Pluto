@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from .section import z_pair_outline, z_pair_section
+from .section import eave_ring_outline, eave_ring_section
 from .spec import TankSpec
 
 
@@ -40,12 +40,17 @@ class TankModel:
     (absent = no pressure); frames: id -> (joint I, joint J);
     frame_section: id -> section name; frame_sections: name -> property dict;
     frame_outlines: name -> (y, z) polygon for sections SAP has no shape for
+    frame_cardinal: frame -> SAP insertion point (8 = top centre: the ring wall
+    hangs below its joints; drawing only, StiffTransform=No)
     (written beside the .s2k for the viewer).
     Foundation "gap": ground_joints (fixed, coincident with the baseplate
     joints), ground_of: tank joint -> ground joint, links: id -> (I = ground,
     J = tank), link_prop: id -> property name, link_props: name -> {"k": ...}.
-    Ring wall: ringwall_joints (the rim's ground joints, now the frame joints
-    of the RINGWALL frames), ringwall_spring: U3 spring per joint (springs mode).
+    Ring wall: ringwall_joints = top-of-wall joints (the rim's former ground
+    joints; the rim gap links now act shell -> wall with a stiff contact k),
+    ringwall_ground = fixed ground joints under the wall, ringwall_soil_k = the
+    soil gap link stiffness between them (support "gap"; settlements later go
+    on ringwall_ground).
     Dents: dent_joints: dent index -> {wall joint: offset fraction} for the
     joints the dent moved (DENT_nn groups come from these).
     """
@@ -64,6 +69,7 @@ class TankModel:
         self.frame_section: dict[int, str] = {}
         self.frame_sections: dict[str, dict] = {}
         self.frame_outlines: dict[str, list[tuple[float, float]]] = {}
+        self.frame_cardinal: dict[int, int] = {}      # frame -> SAP cardinal point (default 10 = centroid)
         self.cap_joints: dict[str, list[int]] = {}   # interior joints of each cap (rim excluded)
         self.cap_ring: dict[str, dict[int, int]] = {}  # cap -> joint -> ring index (0 = centre)
         self.ground_joints: list[int] = []
@@ -72,7 +78,9 @@ class TankModel:
         self.link_prop: dict[int, str] = {}
         self.link_props: dict[str, dict] = {}
         self.ringwall_joints: list[int] = []
-        self.ringwall_spring: float = 0.0
+        self.ringwall_ground: list[int] = []
+        self.ringwall_soil_k: float = 0.0
+        self.ringwall_contact_k: float = 0.0
         self.dent_joints: dict[int, dict[int, float]] = {}
         self._build_levels()
         self._build_wall()
@@ -294,13 +302,13 @@ class TankModel:
         self.sections["ROOF"] = s.roof_thickness
         self._polar_cap("roof", self.top_joints, s.roof_n_r, self.roof_z, "ROOF", None)
         if s.roof_ring:
-            # compression ring at the eave: (2) equal-leg angles back to back
-            # forming a Z (not a T) -- SAP has no such shape, so a General
+            # compression ring at the eave: an angle on the wall top plus a flat
+            # bar on its horizontal leg (an L) -- SAP has no such shape, so a General
             # section carries the computed properties and the outline goes to
             # the viewer via the .outlines.txt sidecar.
-            outline = z_pair_outline(s.roof_ring_leg, s.roof_ring_thickness)
+            outline = eave_ring_outline(s.roof_ring_leg, s.roof_ring_thickness)
             self.frame_outlines["ROOF_RING"] = outline
-            self.frame_sections["ROOF_RING"] = z_pair_section(s.roof_ring_leg, s.roof_ring_thickness)
+            self.frame_sections["ROOF_RING"] = eave_ring_section(s.roof_ring_leg, s.roof_ring_thickness)
             top = self.top_joints
             frames = self.ids.claim("frame", "roof_ring", s.n_theta)
             for k, fid in enumerate(frames):
@@ -373,12 +381,43 @@ class TankModel:
     # --- ring wall ---------------------------------------------------------------
 
     def _build_ringwall(self) -> None:
-        """Closed polygon of concrete frames on the rim's ground joints (which
-        stop being fixed: springs or fixed supports on the same joints; the gap
-        links above them now act shell <-> ring wall). Frame axis at the top of
-        the wall; local 2 is up by SAP default, so t3 = depth."""
+        """Rim load path: tank rim joint -> GAP_CONTACT link (compression only,
+        k = the concrete column under the joint, E A / depth) -> top-of-wall
+        joint (the rim's former ground joint) -> RINGWALL frames -> GAP_SOIL
+        link (compression only, k = subgrade x width x arc) -> fixed ground
+        joint (support "gap"; "fixed" pins the wall top in U3 instead). The
+        wall top keeps a tangential restraint only (local axes as the rim), so
+        the ring can expand and settle with the tank. Frame axis at the top of
+        the wall; local 2 is up by SAP default, so t3 = depth. Insertion point
+        8 (top centre) so the section draws below the joints, in SAP and in the
+        viewer; StiffTransform=No keeps the analysis on the joint axis."""
         s = self.spec
         self.ringwall_joints = [self.ground_of[j] for j in self.base_joints]
+        arc = 2.0 * math.pi * s.radius / s.n_theta
+        # the rim's gap links: soil stiffness -> concrete contact stiffness
+        self.ringwall_contact_k = self.concrete["E"] * s.ringwall_width * arc / s.ringwall_depth
+        base = set(self.base_joints)
+        rim_links = [lid for lid, (_, j) in self.links.items() if j in base]
+        old_props = {self.link_prop[lid] for lid in rim_links}
+        for lid in rim_links:
+            self.link_prop[lid] = "GAP_CONTACT"
+        for name in old_props:
+            if name not in self.link_prop.values():
+                del self.link_props[name]
+        self.link_props["GAP_CONTACT"] = {"k": self.ringwall_contact_k, "ring": None,
+                                          "tributary_area": s.ringwall_width * arc}
+        self.ringwall_soil_k = s.subgrade_modulus * s.ringwall_width * arc
+        if s.ringwall_support == "gap":
+            ground = self.ids.claim("joint", "ringwall_ground", s.n_theta)
+            links = self.ids.claim("link", "ringwall_gap", s.n_theta)
+            for wj, gj, lid in zip(self.ringwall_joints, ground, links):
+                self.joints[gj] = self.joints[wj]
+                self.thetas[gj] = self.thetas[wj]
+                self.ringwall_ground.append(gj)
+                self.links[lid] = (gj, wj)
+                self.link_prop[lid] = "GAP_SOIL"
+            self.link_props["GAP_SOIL"] = {"k": self.ringwall_soil_k, "ring": None,
+                                           "tributary_area": s.ringwall_width * arc}
         self.frame_sections["RINGWALL"] = {
             "Material": "CONC", "Shape": "Rectangular",
             "t3": s.ringwall_depth, "t2": s.ringwall_width,
@@ -388,8 +427,7 @@ class TankModel:
         for k, fid in enumerate(frames):
             self.frames[fid] = (rw[k], rw[(k + 1) % s.n_theta])
             self.frame_section[fid] = "RINGWALL"
-        arc = 2.0 * math.pi * s.radius / s.n_theta
-        self.ringwall_spring = s.subgrade_modulus * s.ringwall_width * arc
+            self.frame_cardinal[fid] = 8            # top centre: section hangs below the joints
 
     @property
     def concrete(self) -> dict | None:
@@ -441,6 +479,8 @@ class TankModel:
         if s.ringwall:
             out["RINGWALL"] = ([], [], list(self.ids.block("frame", "ringwall")))
             out["RINGWALL_TOP"] = ([], self.ringwall_joints, [])
+            if self.ringwall_ground:
+                out["RINGWALL_GROUND"] = ([], self.ringwall_ground, [])
         for n in range(len(s.dents)):
             out[f"DENT_{n + 1:02d}"] = (self.dent_areas(n), [], [])
         return out

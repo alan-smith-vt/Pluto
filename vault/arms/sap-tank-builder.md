@@ -20,9 +20,10 @@ meant to be checked. Real project numbers live only in the gitignored `configs/*
 > - **Baseplate** `[baseplate]` — polar cap on the base ring (quad rings + centre fan),
 >   local 3 up, full head on face `Top`.
 > - **Roof** `[roof]` — spherical cap on the top ring from a crown radius; eave ring
->   `ROOF_RING` of (2) equal angles lying as a Z (stacked legs on the wall top, inner leg
->   down flush outside the shell, outer lip up = gutter): SAP `General` section from
->   `section.py`, viewer outline via `<model>.outlines.txt`.
+>   `ROOF_RING` = an equal angle on the wall top (horizontal leg outward, other leg down
+>   flush outside the shell) plus a flat bar on the horizontal leg, so the plate is 2t
+>   thick (an L; the second angle's upstanding lip was dropped 2026-09-04): SAP `General`
+>   section from `section.py`, viewer outline via `<model>.outlines.txt`.
 > - **Support layer** `[foundation] mode = "gap"` — fixed `GROUND` joint coincident with
 >   every baseplate joint, zero-length compression-only Gap link (I = ground, J = tank),
 >   k = subgrade modulus × tributary plan area, one property per ring `GAP_Rnn`; the tank
@@ -32,16 +33,29 @@ meant to be checked. Real project numbers live only in the gitignored `configs/*
 >   (joint / area / frame / link); the wall claims first, so wall numbering never moves.
 
 > [!info]- Ring wall (plan → built the same day, see below)
-> **Model.** A closed polygon of concrete frames on the shell radius, one per spoke. The
-> frame joints are the rim's former ground joints, so the gap links now act shell ↔ ring
-> wall (compression only; the shell can lift off). Frame axis at the top of the wall, not
+> **Model.** A closed polygon of concrete frames on the shell radius, one per spoke. Load
+> path (2026-09-04): rim joint → `GAP_CONTACT` link (compression only, k = E_c × width × arc
+> / depth, the concrete column under the joint) → wall-top joint (the rim's former ground
+> joint, `RINGWALL_TOP`) → `RINGWALL` frames → `GAP_SOIL` link (compression only, k =
+> subgrade × width × arc) → fixed ground joint (`RINGWALL_GROUND`, where settlements go).
+> Pictures: [[vault/arms/ring-wall-load-path|ring-wall-load-path]].
+> The tank mates with the wall as it settles and the two move down together (verified on
+> SAP 26: rim U3 −0.02743 ft, wall top −0.02740 ft under NL_HYDRO). Frame axis at the top of the wall, not
 > the centroid: loads and supports both sit on the axis, so hoop tension and bending about
-> the horizontal axis are unaffected; the vertical eccentricity is ignored.
+> the horizontal axis are unaffected; the vertical eccentricity is ignored. Insertion point
+> `8 (top center)`, `StiffTransform=No` (2026-09-04): SAP and the viewer draw the section
+> hanging below the joints, the analysis stays on the joint axis.
 > **Section.** Rectangular, width C × depth A, concrete `CONC` with E = 57 000 √f'c,
 > ν = 0.2, 0.150 kcf (self-weight in `DEAD`).
-> **Supports.** `springs` (default): U3 spring k = subgrade modulus × width × arc per
-> joint, U1/U2 restrained; or `fixed`. Settlement profiles later apply to these joints
-> and to the plate's ground joints, one soil surface.
+> **Supports.** `gap` (default; `springs` still accepted): the soil gap link above, wall-top
+> joints held tangentially only (local axes like the rim, so the ring can expand and
+> settle); or `fixed`: wall top pinned in U3, no soil link. Settlement profiles later
+> apply to `RINGWALL_GROUND` and to the plate's ground joints, one soil surface.
+> **Why P ≈ 0 in the ring wall (2026-09-04).** Nothing loads it radially: the gap links
+> carry vertical only and the earth pressure is not modelled (user: not at this time). The
+> restraint half is done (tangential only). What it shows is self-weight bending between
+> the soil links (V2 ≈ 1 kip, M3 ≈ 0.76 kip-ft on TANK-A). Hoop tension arrives with the
+> lateral earth-pressure line load below.
 > **Not yet.** Lateral earth pressure on the ring wall from the sand pad + product
 > surcharge (needs a K_a from the user) — this is the API 650 hoop-tension load.
 >

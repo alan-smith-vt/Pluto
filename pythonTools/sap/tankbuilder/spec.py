@@ -68,7 +68,7 @@ class TankSpec:
     roof_crown_radius: float = 48.0       # ft (0.8 D for the default tank)
     roof_thickness: float = 0.03125       # ft (3/8 in)
     roof_n_r: int = 8
-    roof_ring: bool = True                # eave compression ring: (2) equal-leg angles back to back
+    roof_ring: bool = True                # eave compression ring: angle + flat bar (L, 2t horizontal plate)
     roof_ring_leg: float = 0.25           # ft (3 in)
     roof_ring_thickness: float = 0.03125  # ft (3/8 in)
     # [foundation]  what holds the baseplate down/up.
@@ -80,15 +80,15 @@ class TankSpec:
     #            static cases NL_DEAD -> NL_HYDRO.
     foundation: str = "fixed"
     subgrade_modulus: float = 170.0       # kip/ft^3 (compacted sand, guess)
-    # [ringwall]  concrete ring under the shell (needs foundation "gap": its joints are
-    # the rim's ground joints, so the gap links act shell <-> ring wall). Frame axis at
-    # the top of the wall; supports on the same joints.
+    # [ringwall]  concrete ring under the shell (needs foundation "gap"). Load path:
+    # rim joint -> contact gap link -> wall top joint (frame axis) -> frames -> soil gap
+    # link -> fixed ground joint. "fixed" pins the wall top in U3 instead of the soil link.
     ringwall: bool = False
     ringwall_width: float = 1.25          # ft, radial (C)
     ringwall_depth: float = 3.75          # ft, vertical (A)
     ringwall_fc: float = 3000.0           # psi; E = 57000 sqrt(f'c)
     ringwall_unit_weight: float = 0.150   # kip/ft^3
-    ringwall_support: str = "springs"     # "springs": U3 = subgrade x width x arc | "fixed"
+    ringwall_support: str = "gap"         # "gap": soil gap link k = subgrade x width x arc | "fixed"
     # [[dents]]  wall imperfections applied to the joint coordinates
     dents: tuple[Dent, ...] = ()
     # [supports]
@@ -168,8 +168,10 @@ class TankSpec:
                 raise ValueError("ringwall.enabled needs foundation.mode = 'gap' (its joints are the rim's ground joints)")
             if self.ringwall_width <= 0 or self.ringwall_depth <= 0 or self.ringwall_fc <= 0:
                 raise ValueError("ringwall.width, depth and fc must be positive")
-            if self.ringwall_support not in ("springs", "fixed"):
-                raise ValueError(f"ringwall.support {self.ringwall_support!r} not recognised (springs | fixed)")
+            if self.ringwall_support == "springs":       # pre-2026-09-04 name
+                self.ringwall_support = "gap"
+            if self.ringwall_support not in ("gap", "fixed"):
+                raise ValueError(f"ringwall.support {self.ringwall_support!r} not recognised (gap | fixed)")
         for k, d in enumerate(self.dents, 1):
             if d.width <= 0 or d.height <= 0:
                 raise ValueError(f"dents[{k}]: width and height must be positive")

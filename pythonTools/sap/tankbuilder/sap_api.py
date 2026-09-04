@@ -9,7 +9,9 @@ scripts/arms/SapToPluto.cs reads them unchanged.
     sap.run()
     Path("models/example/results.s2k").write_text(sap.results_s2k())
 
-Facts checked against SAP2000 25.1.0 (2026-09-03):
+Facts checked against SAP2000 25.1.0 (2026-09-03); SAP2000 26 in use from
+2026-09-04 (started by exe path, see find_exe; an already-running SAP of any
+version is attached instead -- run_sap prints which):
   * CSI.SAP2000.API.SapObject needs early binding -> comtypes, not pywin32.
   * File.OpenFile accepts .s2k directly (imports it; ~20 s for 756 joints).
   * Results.JointDispl reports in the joint LOCAL axes (same as the table
@@ -20,10 +22,15 @@ Facts checked against SAP2000 25.1.0 (2026-09-03):
 
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
 
 PROGID = "CSI.SAP2000.API.SapObject"
+# Which SAP2000 to start when none is running: PLUTO_SAP_EXE, else the newest
+# "SAP2000 NN" install under Program Files (SAP2000 26 since 2026-09-04). The
+# ProgID alone would start whichever version registered last.
+SAP_ROOT = Path(r"C:\Program Files\Computers and Structures")
 
 # Results.AreaForceShell return slots (after NumberResults):
 #   Obj Elm PointElm LoadCase StepType StepNum F11 F22 F12 FMax FMin FAngle FVM
@@ -51,8 +58,24 @@ class SapSession:
 
     # --- lifecycle ---------------------------------------------------------
 
+    @staticmethod
+    def find_exe() -> Path | None:
+        """SAP2000.exe to launch: $PLUTO_SAP_EXE, else the highest-numbered
+        'SAP2000 NN' folder under Program Files; None when neither exists."""
+        import os
+        env = os.environ.get("PLUTO_SAP_EXE")
+        if env:
+            return Path(env)
+        found = []
+        if SAP_ROOT.is_dir():
+            for d in SAP_ROOT.iterdir():
+                m = re.fullmatch(r"SAP2000 (\d+)", d.name)
+                if m and (d / "SAP2000.exe").is_file():
+                    found.append((int(m.group(1)), d / "SAP2000.exe"))
+        return max(found)[1] if found else None
+
     @classmethod
-    def attach_or_start(cls, visible: bool = True) -> "SapSession":
+    def attach_or_start(cls, visible: bool = True, exe: Path | None = None) -> "SapSession":
         import comtypes.client as cc
         try:
             return cls(cc.GetActiveObject(PROGID), started=False)
@@ -60,7 +83,8 @@ class SapSession:
             pass
         helper = cc.CreateObject("SAP2000v1.Helper")
         helper = helper.QueryInterface(_helper_iface(helper))
-        obj = helper.CreateObjectProgID(PROGID)
+        exe = exe or cls.find_exe()
+        obj = helper.CreateObject(str(exe)) if exe else helper.CreateObjectProgID(PROGID)
         ret = obj.ApplicationStart()
         if ret != 0:
             raise RuntimeError(f"SAP2000 ApplicationStart returned {ret}")

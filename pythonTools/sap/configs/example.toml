@@ -54,7 +54,7 @@ width       = 1.0       # ft, radial
 depth       = 3.0       # ft, vertical
 fc          = 3000.0    # psi
 unit_weight = 0.150     # kip/ft^3
-support     = "springs" # "springs": U3 = subgrade_modulus x width x arc per joint | "fixed"
+support     = "gap"     # "gap": soil gap link under the wall, k = subgrade_modulus x width x arc | "fixed"
 
 # Wall imperfections: joints move radially inward, mesh unchanged. cos^2 bell over an
 # elliptical footprint. Group DENT_nn per dent.

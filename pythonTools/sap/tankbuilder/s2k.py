@@ -140,7 +140,26 @@ def geometry_tables(model: TankModel) -> list[tuple[str, list[str]]]:
                  AutoSelect="N.A.", AnalSect=model.frame_section[f],
                  DesignSect=model.frame_section[f], MatProp="Default")
             for f in sorted(model.frames)]),
-    ] + link_tables(model)
+    ] + insertion_tables(model) + link_tables(model)
+
+
+def insertion_tables(model: TankModel) -> list[tuple[str, list[str]]]:
+    """FRAME INSERTION POINT ASSIGNMENTS for frames with a non-default cardinal
+    point (SAP's own export writes CardinalPt="8 (top center)"; the reader in
+    SapToPluto takes the leading integer). StiffTransform=No: drawing only."""
+    if not model.frame_cardinal:
+        return []
+    return [("FRAME INSERTION POINT ASSIGNMENTS", [
+        _row(Frame=f, CardinalPt=_CARDINAL[c], Mirror2=False, Mirror3=False,
+             StiffTransform=False, CoordSys="Local",
+             Offset1I=0, Offset2I=0, Offset3I=0, Offset1J=0, Offset2J=0, Offset3J=0)
+        for f, c in sorted(model.frame_cardinal.items())])]
+
+
+_CARDINAL = {1: "1 (bottom left)", 2: "2 (bottom center)", 3: "3 (bottom right)",
+             4: "4 (middle left)", 5: "5 (middle center)", 6: "6 (middle right)",
+             7: "7 (top left)", 8: "8 (top center)", 9: "9 (top right)",
+             10: "10 (centroid)", 11: "11 (shear center)"}
 
 
 def group_tables(model: TankModel) -> list[tuple[str, list[str]]]:
@@ -178,23 +197,21 @@ def support_tables(model: TankModel) -> list[tuple[str, list[str]]]:
             _row(Joint=j, U1=False, U2=False, U3=True, R1=False, R2=False, R3=False)
             for j in ([] if gap else model.baseplate_interior_joints)] + [
             _row(Joint=j, U1=True, U2=True, U3=True, R1=True, R2=True, R3=True)
-            for j in model.plate_ground_joints] + [
-            # ring wall joints: lateral held, vertical by spring or fixed
-            _row(Joint=j, U1=True, U2=True, U3=s.ringwall_support == "fixed",
+            for j in model.plate_ground_joints + model.ringwall_ground] + [
+            # ring wall top joints: tangential only (local axes below), so the
+            # ring can expand and settle; vertical through the soil gap link,
+            # or pinned when support = "fixed"
+            _row(Joint=j, U1=True, U2=False, U3=s.ringwall_support == "fixed",
                  R1=False, R2=False, R3=False)
             for j in model.ringwall_joints]),
     ]
-    if model.ringwall_joints and s.ringwall_support == "springs":
-        out.append(("JOINT SPRING ASSIGNMENTS 1 - UNCOUPLED", [
-            _row(Joint=j, CoordSys="Global", U1=0, U2=0, U3=model.ringwall_spring,
-                 R1=0, R2=0, R3=0)
-            for j in model.ringwall_joints]))
-    if s.base_local_axes:
+    if s.base_local_axes or model.ringwall_joints:
         # AngleA rotates the joint local axes about global Z (local 3 stays
         # vertical); see TankModel.base_local_angle_deg for the sign choice.
+        # The ring wall top joints copy their rim joint's angle.
         out.append(("JOINT LOCAL AXES ASSIGNMENTS 1 - TYPICAL", [
             _row(Joint=j, AngleA=model.base_local_angle_deg(j), AngleB=0, AngleC=0)
-            for j in model.base_joints]))
+            for j in (model.base_joints if s.base_local_axes else []) + model.ringwall_joints]))
     return out
 
 
