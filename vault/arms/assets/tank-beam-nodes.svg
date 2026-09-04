@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 560" font-family="Consolas, Menlo, monospace" font-size="12" role="img" aria-label="Node connectivity: the eave ring shares the wall-top joints with the wall and roof; the ring wall's top joints hang under the tank rim joints through contact gap links and sit on soil gap links to fixed ground joints">
+<rect width="860" height="560" fill="#ffffff"/>
+<defs><marker id="ah-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#1f2328"/></marker><marker id="ah-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#6b7380"/></marker><marker id="ah-steel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#2f6b9a"/></marker><marker id="ah-rust" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#b4472b"/></marker><marker id="ah-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#2e7d4f"/></marker><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#1f2328" stroke-width=".8" stroke-opacity=".45"/></pattern></defs>
+<text x="16" y="24" font-size="13" font-weight="bold" fill="#1f2328">BEAM NODES</text>
+<text x="110.0" y="60.0" fill="#1f2328" text-anchor="start" font-size="12" font-weight="bold">EAVE</text>
+<line x1="270.0" y1="210.0" x2="270.0" y2="320.0" stroke="#1f2328" stroke-width="3"/>
+<text x="278.0" y="310.0" fill="#6b7380" text-anchor="start" font-size="12">wall</text>
+<path d="M270 210 Q 200 170 120 140" fill="none" stroke="#1f2328" stroke-width="3"/>
+<text x="120.0" y="130.0" fill="#6b7380" text-anchor="start" font-size="12">roof</text>
+<path d="M270 210 l 22 0 l 0 5 l -22 0 z" fill="#e3e1dc" stroke="#1f2328" stroke-width="1"/>
+<path d="M270 210 l 0 18 l 5 0 l 0 -18 z" fill="#e3e1dc" stroke="#1f2328" stroke-width="1"/>
+<text x="302.0" y="218.0" fill="#2f6b9a" text-anchor="start" font-size="12">ROOF_RING</text>
+<text x="302.0" y="232.0" fill="#6b7380" text-anchor="start" font-size="11">frame</text>
+<circle cx="270.0" cy="210.0" r="5" fill="#2f6b9a"/>
+<text x="262.0" y="198.0" fill="#2f6b9a" text-anchor="end" font-size="12">joint</text>
+<text x="262.0" y="212.0" fill="#2f6b9a" text-anchor="end" font-size="11">TOP_RING</text>
+<text x="110.0" y="300.0" fill="#6b7380" text-anchor="start" font-size="11">one joint : wall + roof + ring</text>
+<text x="470.0" y="60.0" fill="#1f2328" text-anchor="start" font-size="12" font-weight="bold">RIM</text>
+<line x1="630.0" y1="190.0" x2="630.0" y2="80.0" stroke="#1f2328" stroke-width="3"/>
+<text x="638.0" y="90.0" fill="#6b7380" text-anchor="start" font-size="12">wall</text>
+<line x1="630.0" y1="190.0" x2="480.0" y2="190.0" stroke="#1f2328" stroke-width="3"/>
+<text x="480.0" y="182.0" fill="#6b7380" text-anchor="start" font-size="12">baseplate</text>
+<circle cx="630.0" cy="190.0" r="5" fill="#1f2328"/>
+<text x="642.0" y="194.0" fill="#1f2328" text-anchor="start" font-size="12" font-weight="bold">rim</text>
+<text x="642.0" y="208.0" fill="#6b7380" text-anchor="start" font-size="11">BASE_RING</text>
+<line x1="630.0" y1="195.0" x2="630.0" y2="225.0" stroke="#2f6b9a" stroke-width="2"/>
+<path d="M622 210 h16 M622 216 h16" fill="none" stroke="#2f6b9a" stroke-width="2"/>
+<text x="642.0" y="230.0" fill="#2f6b9a" text-anchor="start" font-size="11">GAP_CONTACT</text>
+<circle cx="630.0" cy="230.0" r="5" fill="#ffffff" stroke="#2f6b9a" stroke-width="1.5"/>
+<text x="642.0" y="234.0" fill="#2f6b9a" text-anchor="start" font-size="12" font-weight="bold">wall top</text>
+<text x="642.0" y="248.0" fill="#2f6b9a" text-anchor="start" font-size="11">RINGWALL_TOP</text>
+<rect x="607.0" y="230" width="46" height="120" fill="#e3e1dc" stroke="#1f2328" stroke-width="1"/>
+<text x="630.0" y="294.0" fill="#1f2328" text-anchor="middle" font-size="11">RINGWALL</text>
+<text x="630.0" y="308.0" fill="#6b7380" text-anchor="middle" font-size="11">frame</text>
+<line x1="630.0" y1="230.0" x2="630.0" y2="290.0" stroke="#2f6b9a" stroke-width="1.2" stroke-dasharray="2 4"/>
+<circle cx="630.0" cy="290.0" r="3" fill="none" stroke="#2f6b9a" stroke-width="1.5"/>
+<text x="659.0" y="294.0" fill="#6b7380" text-anchor="start" font-size="11">centroid</text>
+<line x1="630.0" y1="350.0" x2="630.0" y2="385.0" stroke="#2f6b9a" stroke-width="2"/>
+<path d="M622 364 h16 M622 370 h16" fill="none" stroke="#2f6b9a" stroke-width="2"/>
+<polyline points="630,374 623,377 637,382 623,387 630,390" fill="none" stroke="#2f6b9a" stroke-width="2"/>
+<text x="642.0" y="380.0" fill="#2f6b9a" text-anchor="start" font-size="11">GAP_SOIL</text>
+<circle cx="630.0" cy="390.0" r="5" fill="#2f6b9a"/>
+<text x="642.0" y="394.0" fill="#1f2328" text-anchor="start" font-size="12" font-weight="bold">ground</text>
+<text x="642.0" y="408.0" fill="#6b7380" text-anchor="start" font-size="11">RINGWALL_GROUND</text>
+<line x1="608.0" y1="398.0" x2="652.0" y2="398.0" stroke="#1f2328" stroke-width="2"/>
+<line x1="612.0" y1="398.0" x2="606.0" y2="405.0" stroke="#1f2328" stroke-width="1"/>
+<line x1="621.0" y1="398.0" x2="615.0" y2="405.0" stroke="#1f2328" stroke-width="1"/>
+<line x1="630.0" y1="398.0" x2="624.0" y2="405.0" stroke="#1f2328" stroke-width="1"/>
+<line x1="639.0" y1="398.0" x2="633.0" y2="405.0" stroke="#1f2328" stroke-width="1"/>
+<line x1="648.0" y1="398.0" x2="642.0" y2="405.0" stroke="#1f2328" stroke-width="1"/>
+<text x="670.0" y="404.0" fill="#6b7380" text-anchor="start" font-size="11">fixed</text>
+<text x="470.0" y="440.0" fill="#6b7380" text-anchor="start" font-size="11">three joints coincident in SAP</text>
+<text x="230.0" y="250.0" fill="#1f2328" text-anchor="start" font-size="12" font-weight="bold">PLATE</text>
+<line x1="170.0" y1="290.0" x2="290.0" y2="290.0" stroke="#1f2328" stroke-width="3"/>
+<circle cx="230.0" cy="290.0" r="4" fill="#1f2328"/>
+<text x="240.0" y="284.0" fill="#1f2328" text-anchor="start" font-size="11">plate</text>
+<line x1="230.0" y1="295.0" x2="230.0" y2="320.0" stroke="#2f6b9a" stroke-width="2"/>
+<path d="M222 304 h16 M222 310 h16" fill="none" stroke="#2f6b9a" stroke-width="2"/>
+<text x="240.0" y="312.0" fill="#2f6b9a" text-anchor="start" font-size="11">GAP_Rnn</text>
+<circle cx="230.0" cy="326.0" r="4" fill="#2f6b9a"/>
+<text x="240.0" y="330.0" fill="#6b7380" text-anchor="start" font-size="11">GROUND</text>
+<line x1="214.0" y1="333.0" x2="246.0" y2="333.0" stroke="#1f2328" stroke-width="2"/>
+</svg>
