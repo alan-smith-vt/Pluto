@@ -66,6 +66,7 @@ Writes `<outBase>.bin` + `<outBase>.features.json`. Drop both on the viewer toge
 | `AREA SECTION PROPERTIES` | thickness goes into the section group's name, e.g. `WALL_T1 (0.500 in)` (`sap`, `section`, `thickness`); also drives the derived membrane stresses `S11 S22 S12 = F / t` (ksi for Kip/ft files) written after the forces |
 | `JOINT RESTRAINT ASSIGNMENTS` | one node group per restraint pattern, e.g. `Restrained U1 U3` (`sap`, `restraint`) |
 | `JOINT LOCAL AXES ASSIGNMENTS 1 - TYPICAL` | node group `Local axes assigned` (`sap`, `localAxes`) |
+| previous `<outBase>.features.json` | merged before writing (2026-09-04): section cuts, predicates, user groups and the colour / enable edits on `sap` groups survive a re-export (`FeaturesSidecar.MergeFrom`) |
 | `GROUPS 2 - ASSIGNMENTS` | SAP groups (areas + joints + frames, `ALL` skipped) (`sap`, `group`) |
 
 Groups carry no colour, so the viewer auto-assigns. Per the sidecar rule, nothing a user

@@ -95,7 +95,7 @@ using System.Text;
 
 public class SapExportResult
 {
-    public string BinPath, SidecarPath;
+    public string BinPath, SidecarPath, SidecarMerge;
     public int Nodes, Elements, LoadCases, ForceRows, ForceRowsUsed, DispRows, DispRowsUsed, Groups;
     public int Frames, FrameSections, FramesUnknownShape, FrameForceRows, FrameForceRowsUsed;
     public int NodesWithoutDisp;      // model joints with no JOINT DISPLACEMENTS row: results older than the model?
@@ -118,6 +118,7 @@ public class SapExportResult
                 FramesUnknownShape > 0 ? string.Format(", {0} with an unknown shape (RECT placeholder)", FramesUnknownShape) : "",
                 FrameForceRows, FrameForceRowsUsed));
         sb.AppendLine(string.Format("  {0} groups -> {1}", Groups, SidecarPath));
+        if (!string.IsNullOrEmpty(SidecarMerge)) sb.AppendLine("  " + SidecarMerge);
         sb.AppendLine("  bin -> " + BinPath);
         foreach (string w in Warnings) sb.AppendLine("  WARN " + w);
         return sb.ToString();
@@ -609,8 +610,11 @@ public class SapToPluto
             }
         }
 
-        res.Groups = sc.Groups.Count;
+        // the previous sidecar is the user's layer: keep section cuts, predicates,
+        // hand-made groups and the colour / enable edits on our own groups
         string scPath = outBase + ".features.json";
+        res.SidecarMerge = sc.MergeFrom(scPath, "sap");
+        res.Groups = sc.Groups.Count;
         File.WriteAllText(scPath, sc.ToJson(), new UTF8Encoding(false));
         res.SidecarPath = scPath;
         return res;

@@ -205,6 +205,17 @@ archived viewer's management layer) and round-trips them.
   "stiffness": { "tz": 1500 } }
 ```
 
+## Re-export keeps the user's layer (2026-09-04)
+
+An exporter rewrites the sidecar on every run, so `FeaturesSidecar.MergeFrom(previous,
+exporterTag)` runs first and carries over: every top-level section the writer does not
+model (`sectionCuts`, `predicates`, anything unknown) verbatim; groups **without** the
+exporter's tag (hand-made groups) verbatim; and for exporter groups matched by name their
+`id`, `color` and `hidden`. `SapToPluto` does this with tag `sap` and reports
+`merged previous sidecar: …` in its summary. So section cuts, predicates and group styling
+survive `run_sap.py`; only the exporter's own groups are regenerated. A group whose ids
+no longer match the new geometry shows as unmatched in the viewer rather than vanishing.
+
 ## Naming / discovery
 
 `model.bin` + `model.features.json` side by side. The viewer file picker accepts either or

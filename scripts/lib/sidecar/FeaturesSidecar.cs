@@ -34,6 +34,7 @@ using System.Globalization;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Web.Script.Serialization;
 
 public class FeaturesSidecar
 {
@@ -66,6 +67,68 @@ public class FeaturesSidecar
         public List<Member> Members = new List<Member>();
         public string SourcePredicateId; // set when a predicate produced this group
         public string StaadName;         // name to use in the STAAD GROUP block; null = Name
+        public bool? Hidden;             // viewer enable flag (null = not written)
+        public string RawJson;           // a user group carried over verbatim from a previous sidecar
+    }
+
+    // ---- merge with the previous sidecar ----------------------------------
+    // An exporter rewrites the sidecar on every run, but the sidecar is the
+    // USER's layer: section cuts, predicates, hand-made groups, and the
+    // colour / enable edits on exporter groups must survive a re-export.
+    // MergeFrom reads the previous file and carries over:
+    //   * every top-level section this writer does not model (sectionCuts,
+    //     predicates, anything unknown) -> PassThrough, verbatim;
+    //   * groups WITHOUT the exporter's tag (user groups) -> appended as-is;
+    //   * for exporter groups matched by name: color, hidden, and the id.
+    // Returns a one-line summary; "" when there was nothing to merge.
+    public string MergeFrom(string previousJsonPath, string exporterTag)
+    {
+        if (string.IsNullOrEmpty(previousJsonPath) || !System.IO.File.Exists(previousJsonPath)) return "";
+        var ser = new JavaScriptSerializer();
+        ser.MaxJsonLength = int.MaxValue;
+        Dictionary<string, object> root;
+        try { root = ser.DeserializeObject(System.IO.File.ReadAllText(previousJsonPath)) as Dictionary<string, object>; }
+        catch (Exception) { return "previous sidecar unreadable, not merged"; }
+        if (root == null) return "previous sidecar unreadable, not merged";
+        int sections = 0, userGroups = 0, styled = 0;
+        foreach (var kv in root)
+        {
+            if (kv.Key == "format" || kv.Key == "version" || kv.Key == "model" || kv.Key == "groups") continue;
+            PassThrough[kv.Key] = ser.Serialize(kv.Value);
+            sections++;
+        }
+        var groupsSec = root.ContainsKey("groups") ? root["groups"] as Dictionary<string, object> : null;
+        var items = (groupsSec != null && groupsSec.ContainsKey("items")) ? groupsSec["items"] as object[] : null;
+        if (items != null)
+        {
+            var byName = new Dictionary<string, Group>(StringComparer.OrdinalIgnoreCase);
+            foreach (var g in Groups) if (g.Name != null && !byName.ContainsKey(g.Name)) byName[g.Name] = g;
+            foreach (var it in items)
+            {
+                var d = it as Dictionary<string, object>;
+                if (d == null) continue;
+                bool exporterGroup = false;
+                var tags = d.ContainsKey("tags") ? d["tags"] as object[] : null;
+                if (tags != null) foreach (var t in tags) if (string.Equals(t as string, exporterTag, StringComparison.OrdinalIgnoreCase)) exporterGroup = true;
+                string name = d.ContainsKey("name") ? d["name"] as string : null;
+                Group mine;
+                if (exporterGroup)
+                {
+                    if (name == null || !byName.TryGetValue(name, out mine)) continue;   // gone from the model
+                    if (d.ContainsKey("color") && d["color"] is string) mine.Color = (string)d["color"];
+                    if (d.ContainsKey("hidden") && d["hidden"] is bool) mine.Hidden = (bool)d["hidden"];
+                    if (d.ContainsKey("id") && d["id"] is string) mine.Id = (string)d["id"];
+                    styled++;
+                }
+                else
+                {
+                    Groups.Add(new Group { Name = name, RawJson = ser.Serialize(d) });
+                    userGroups++;
+                }
+            }
+        }
+        return string.Format("merged previous sidecar: {0} section(s) kept, {1} user group(s) kept, {2} exporter group(s) restyled",
+                             sections, userGroups, styled);
     }
 
     // ---- building --------------------------------------------------------
@@ -133,10 +196,17 @@ public class FeaturesSidecar
         for (int i = 0; i < Groups.Count; i++)
         {
             var g = Groups[i];
+            if (g.RawJson != null)
+            {
+                sb.Append("    ").Append(g.RawJson);
+                sb.Append(i + 1 < Groups.Count ? ",\n" : "\n");
+                continue;
+            }
             sb.Append("    {");
             sb.Append("\"id\": ").Append(Q(g.Id)).Append(", ");
             sb.Append("\"name\": ").Append(Q(g.Name)).Append(", ");
             if (g.Color != null) sb.Append("\"color\": ").Append(Q(g.Color)).Append(", ");
+            if (g.Hidden.HasValue) sb.Append("\"hidden\": ").Append(g.Hidden.Value ? "true" : "false").Append(", ");
             sb.Append("\"tags\": [").Append(string.Join(", ", g.Tags.Select(Q))).Append("], ");
             if (g.SourcePredicateId != null) sb.Append("\"source\": {\"predicateId\": ").Append(Q(g.SourcePredicateId)).Append("}, ");
             if (g.StaadName != null) sb.Append("\"export\": {\"staadName\": ").Append(Q(g.StaadName)).Append("}, ");
