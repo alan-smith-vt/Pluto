@@ -43,8 +43,8 @@ the model itself:
 
 ![[vault/arms/assets/settlement-TANK-A.svg|900]]
 
-TANK-A, 2026-09-04: trench 0.5 ft deep × 10 ft wide along +X through the centre; 259 of
-865 ground joints moved. **SAP 26 run:** `JOINT LOADS - GROUND DISPLACEMENT` accepted; every
+TANK-A, 2026-09-04: trench 0.5 ft deep × **30 ft** wide along +X through the centre; 583 of
+865 ground joints moved (first run was 10 ft wide, 259 moved; same behaviour). **SAP 26 run:** `JOINT LOADS - GROUND DISPLACEMENT` accepted; every
 ground joint's `NL_SETTLE` U3 equals the CSV to 5e-7 ft. The plate followed the trench
 (centre joint U3 −0.5255 ft = ground −0.5 plus the ~0.02 ft soil compression it already had
 under NL_HYDRO; outside the trench −0.0185 ft, unchanged), i.e. the thin baseplate under
