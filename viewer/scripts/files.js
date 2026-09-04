@@ -56,13 +56,16 @@ var FEAFiles = (function () {
     async function pick() {
         if (!hasFS) { if (elInput) elInput.click(); return; }
         var handles;
-        try {
-            handles = await window.showOpenFilePicker({
-                multiple: true,
-                startIn: binHandle || featHandle || 'documents',
-                types: [{ description: 'Pluto model + features', accept: { 'application/octet-stream': ['.bin'], 'application/json': ['.json'] } }]
-            });
-        } catch (err) { return; }                       // cancelled
+        // `id` lets Chrome remember this picker's last folder across sessions; a
+        // startIn would override that, so it is only given once a model has been
+        // picked in this session (then the pickers stay beside that model).
+        var opts = {
+            id: 'pluto-model', multiple: true,
+            types: [{ description: 'Pluto model + features', accept: { 'application/octet-stream': ['.bin'], 'application/json': ['.json'] } }]
+        };
+        if (binHandle || featHandle) opts.startIn = binHandle || featHandle;
+        try { handles = await window.showOpenFilePicker(opts); }
+        catch (err) { return; }                         // cancelled
         var files = [];
         for (var i = 0; i < handles.length; i++) files.push({ file: await handles[i].getFile(), handle: handles[i] });
         await ingest(files);
@@ -123,11 +126,12 @@ var FEAFiles = (function () {
         if (hasFS) {
             try {
                 if (!featHandle) {
-                    featHandle = await window.showSaveFilePicker({
-                        suggestedName: name,
-                        startIn: binHandle || 'documents',
+                    var sopts = {
+                        id: 'pluto-model', suggestedName: name,
                         types: [{ description: 'Pluto features sidecar', accept: { 'application/json': ['.json'] } }]
-                    });
+                    };
+                    if (binHandle) sopts.startIn = binHandle;
+                    featHandle = await window.showSaveFilePicker(sopts);
                 }
                 var w = await featHandle.createWritable();
                 await w.write(json);
