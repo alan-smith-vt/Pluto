@@ -90,7 +90,7 @@ test file from `sampleModel.js`, then open it back through the picker.
 | `viewer.js` | scene wiring, render loop, UI, hover/pin readout |
 | `features.js` | sidecar loader, Color by groups, legend, predicate hook |
 | `predicates.js` | predicate flyout + engine (`FEAPredicates`) |
-| `sectionCut.js` | section-cut probe tool |
+| `sectionCut.js` | section cuts: named list (groups, visibility, adjust, delete, numeric centre), probe + plot + isolate on the selected cut, sidecar round trip, legacy import (2026-09-04) |
 | `viewCube.js` | orientation cube |
 | `inspector.html` / `inspector.js` | standalone field-by-field binary inspector |
 

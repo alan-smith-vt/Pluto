@@ -166,13 +166,35 @@ lists, which is how groups with `{ "predicateId": … }` members resolve. The C#
 STAAD group definitions from the same trees.
 
 ### sectionCuts
-Mirrors the viewer's current section-cut definition (plane + bounds + which domains) so
-the dedicated C# section-cut analysis uses exactly the geometry the user saw.
+Mirrors the viewer's section-cut definition (plane + bounds + which domains) so the
+dedicated C# section-cut analysis uses exactly the geometry the user saw. Live since
+2026-09-04: the viewer keeps many named cuts here (`sectionCut.js`, ported from the
+archived viewer's management layer) and round-trips them.
 
 ```json
-{ "id": "…", "name": "Cut A-A", "plane": { "point": [], "normal": [] },
-  "bounds": { "up": [0,0,1], "halfWidth": 30, "halfHeight": 10 }, "domains": ["shells","beams"] }
+"sectionCuts": { "version": 1,
+  "groups": [ { "name": "Walls", "visible": true } ],
+  "items": [
+    { "id": "c-…", "name": "Cut A-A", "group": "Walls", "visible": true, "axis": "x",
+      "plane":  { "point": [x, y, z], "normal": [nx, ny, nz] },
+      "bounds": { "up": [ux, uy, uz], "halfWidth": 15 },
+      "domains": ["shells"] }
+  ] }
 ```
+
+- `plane` is the **section plane**: `point` = the cut centre on the panel, `normal` = the
+  plane's normal. `bounds.up` = the panel's normal at the centre (the probe ray direction);
+  `halfWidth` = half the cut length. The probe line direction is derived, `dir = normal ×
+  up`, so a sloped direction round-trips without an extra field.
+- `axis` (`"x" | "y" | "z"`) is written when `dir` is a global axis (within 1°) — the list
+  colour-codes by it; absent = sloped (amber). Today's UI only creates axis cuts.
+- `groups[]` carries per-group visibility; collapsed/expanded is view state only.
+- Unknown keys on an item survive a round trip (kept on the runtime object's `_raw`).
+- The archived viewer's standalone `section_cuts.json` (`{version, groups, cuts:[{point
+  (inches), axis, length (inches)}]}`) imports through the panel's Import button; points
+  convert to the model unit and the panel normal is found by probing.
+- `halfHeight` and `domains: ["beams"]` are reserved for the C# free-body cut; the viewer
+  writes `domains: ["shells"]` and leaves `halfHeight` alone.
 
 ### supports / springs (planned)
 ```json

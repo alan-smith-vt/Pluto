@@ -105,15 +105,18 @@ New IIFE module in the new viewer's house style (`FEAxxx`, DOM in `index.html`,
   (undo stack state exists in `init.js`, implementation was never written or was lost).
   Undo/redo is therefore a fresh feature, not a port — deferred, own backlog item.
 
-## Phase B — section-cut persistence
+## Phase B — section-cut persistence — DONE 2026-09-04
 
-Keep the new probe UX; add the old module's management layer, stored in the sidecar
-`sectionCuts` section ([[vault/format/features-sidecar|features-sidecar]] already
-sketches it; amend to carry the old fields: axis, length, group, name):
-named cut list w/ groups + visibility toggles, orb+line visuals for every saved cut,
-"select cut" re-attaches the probe/plot to it, sidecar round-trip, legacy
-`section_cuts.json` import shim. C# `SectionCuts.cs` (2074 lines, audit pending)
-consumes the definitions.
+Kept the new probe UX; the old module's management layer now lives in `sectionCut.js`
+on the sidecar `sectionCuts` section ([[vault/format/features-sidecar|features-sidecar]]):
+named cut list with groups + visibility toggles, a marker for every shown cut (selected
+one haloed), select re-attaches probe / plot / isolate, Adjust (Ctrl+click) and Delete,
+numeric centre entry, sidecar round trip with unknown keys preserved, legacy
+`section_cuts.json` import shim (inches → model unit, panel normal by probing). Stored as
+plane `{point, normal}` + `bounds.up` (panel normal), direction derived, `axis` key when
+it is a global axis (list colour). Test: `viewer/tests/test_sectioncuts.js`. Sloped cuts
+are a later UX step (the storage already carries them). C# `SectionCuts.cs` (2074 lines,
+audit pending) consumes the definitions.
 
 ## Phase C — cross-check and polish
 

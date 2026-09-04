@@ -184,12 +184,27 @@
      ============================================================ -->
 <div id="scPanel" class="collapsed">
     <div id="scBody">
-        <div class="fea-sub">Section Cut</div>
+        <div class="fea-sub">Section Cuts <span id="scCount" class="sc-count"></span></div>
         <div class="fea-row">
             <button id="scNew" class="fea-btn">New section cut</button>
+            <button id="scAdjust" class="fea-btn" disabled
+                    title="Arm, then Ctrl+click to move the selected cut">Adjust</button>
+            <button id="scDelete" class="fea-btn sc-danger" disabled title="Delete the selected cut">Delete</button>
         </div>
         <div class="fea-hint" style="margin-bottom:7px;">
-            Arm, then Ctrl+left-click the model to place the center.
+            Arm, then Ctrl+left-click the model to place the center. Cuts are saved in the
+            features sidecar (Export).
+        </div>
+        <div id="scList"></div>
+        <div class="fea-row">
+            <span class="fea-label">Name</span>
+            <input type="text" id="scName" class="fea-input" disabled>
+        </div>
+        <div class="fea-row">
+            <span class="fea-label">Group</span>
+            <input type="text" id="scGroup" class="fea-input" list="scGroupList" disabled
+                   placeholder="(ungrouped)" title="Type a group name; existing groups are suggested">
+            <datalist id="scGroupList"></datalist>
         </div>
         <div class="fea-row">
             <span class="fea-label">Direction</span>
@@ -201,6 +216,12 @@
             <span class="fea-label">Length</span>
             <input type="text" id="scLen" class="fea-input num"
                    title="Total cut length in model units; extends L/2 each way from the center">
+        </div>
+        <div class="fea-row sc-pos">
+            <span class="fea-label">Center</span>
+            <span class="sc-axis-x">X</span><input type="text" id="scPosX" class="fea-input num" disabled>
+            <span class="sc-axis-y">Y</span><input type="text" id="scPosY" class="fea-input num" disabled>
+            <span class="sc-axis-z">Z</span><input type="text" id="scPosZ" class="fea-input num" disabled>
         </div>
         <div class="fea-row">
             <span class="fea-label">Model units</span>
@@ -242,8 +263,13 @@
         <canvas id="scPlot" width="240" height="150"></canvas>
         <div id="scStats">&mdash;</div>
         <div class="fea-hint" style="margin-top:5px;">
-            Plots the displayed field along the cut. Gaps (openings /
+            Plots the displayed field along the selected cut. Gaps (openings /
             past the extents) are excluded from area and effective length.
+        </div>
+        <div class="fea-row" style="margin-top:8px;">
+            <button id="scExport" class="fea-btn" title="Download the features sidecar (cuts, groups, predicates)">Export sidecar</button>
+            <button id="scImport" class="fea-btn" title="Load a features sidecar, or the old viewer's section_cuts.json">Import</button>
+            <input type="file" id="scImportFile" accept=".json,application/json" style="display:none;">
         </div>
     </div>
     <div id="scTab" title="Section cuts">&#9986;</div>

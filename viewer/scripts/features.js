@@ -123,6 +123,7 @@ var FEAFeatures = (function () {
         // Hand the predicate section to the predicate module; it calls back
         // into refresh() so predicate-member groups resolve on second pass.
         if (window.FEAPredicates && FEAPredicates.onEnvelope) FEAPredicates.onEnvelope(envelope);
+        if (window.FEASectionCut && FEASectionCut.onEnvelope) FEASectionCut.onEnvelope(envelope);
     }
 
     // Minimal empty envelope bound to the loaded model, so features can be
@@ -586,7 +587,9 @@ var FEAFeatures = (function () {
     if (elAll) elAll.addEventListener('click', function () { setAllHidden(function () { return false; }); });
     if (elNone) elNone.addEventListener('click', function () { setAllHidden(function () { return true; }); });
     if (elInvert) elInvert.addEventListener('click', function () { setAllHidden(function (h) { return !h; }); });
-    if (elExport) elExport.addEventListener('click', function () {
+    // Download the whole sidecar (groups, predicates, section cuts); the
+    // section-cut panel's Export button calls this too.
+    function download() {
         var json = exportJson();
         if (!json) { log('Features: nothing to export.'); return; }
         var a = document.createElement('a');
@@ -594,7 +597,8 @@ var FEAFeatures = (function () {
         a.download = fileName.replace(/ \(unsaved\)$/, '') || 'features.json';
         document.body.appendChild(a); a.click(); document.body.removeChild(a);
         setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
-    });
+    }
+    if (elExport) elExport.addEventListener('click', download);
 
     return {
         loadFile: loadFile,
@@ -618,6 +622,7 @@ var FEAFeatures = (function () {
             return (p.length === 3 && p.every(isFinite)) ? p : null;
         },
         exportJson: exportJson,
+        download: download,
         // test hooks (viewer/tests/test_groups.js)
         _groupList: function () { return groupList; },
         _resolved: function () { return resolved; },

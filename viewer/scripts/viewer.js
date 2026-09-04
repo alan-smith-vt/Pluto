@@ -619,6 +619,7 @@ async function loadModels(entriesIn) {
         if (window.FEABeams) FEABeams.onModelLoaded(model);
         if (window.FEAPredicates) FEAPredicates.onModelLoaded();   // before features: groups may resolve via predicates
         if (window.FEAFeatures) FEAFeatures.onModelLoaded();
+        if (window.FEASectionCut && FEASectionCut.onModelLoaded) FEASectionCut.onModelLoaded();
 
         populateLCSelect();
         populateKindSelect();

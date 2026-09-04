@@ -72,6 +72,45 @@
     line-height: 1.5;
 }
 
+/* cut list: grouped rows, axis-coloured dot, visibility toggle */
+#scList {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    margin: 4px 0 8px; padding: 4px 0;
+    max-height: 30vh; overflow-y: auto;
+}
+.sc-count { font-size: 10px; color: #8a8a95; text-transform: none; letter-spacing: 0; margin-left: 6px; }
+.sc-empty { color: #777; font-size: 11px; padding: 6px 2px; }
+.sc-row {
+    display: flex; align-items: center; gap: 6px;
+    padding: 3px 4px; border-radius: 3px; font-size: 11px; color: #ccc; cursor: pointer; user-select: none;
+}
+.sc-row:hover { background: rgba(255, 255, 255, 0.05); }
+.sc-row.selected { background: rgba(108, 140, 255, 0.16); }
+.sc-row.grouped { padding-left: 16px; }
+.sc-row.off { color: #777; }
+.sc-row.off .sc-dot { opacity: 0.35; }
+.sc-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.sc-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sc-info { font-size: 10px; color: #8a8a95; font-family: 'Consolas', monospace; }
+.sc-vis { font-size: 12px; color: #8a8a95; cursor: pointer; }
+.sc-vis:hover { color: #fff; }
+.sc-group {
+    display: flex; align-items: center; gap: 6px;
+    padding: 3px 4px; font-size: 11px; color: #aab; cursor: pointer; user-select: none;
+}
+.sc-group.off { color: #666; }
+.sc-arrow { font-size: 8px; color: #888; transition: transform .1s; transform: rotate(90deg); }
+.sc-group.collapsed .sc-arrow { transform: none; }
+.sc-gname { flex: 1; font-weight: bold; }
+.sc-gcount { font-size: 10px; color: #8a8a95; }
+.sc-ungrouped { font-size: 10px; color: #666; padding: 4px 4px 2px; text-transform: uppercase; letter-spacing: .5px; }
+.sc-danger { color: #c96a6a; }
+.sc-danger:hover:not(:disabled) { color: #ff6b6b; }
+.sc-pos .fea-input { flex: 1; min-width: 0; padding: 4px 3px; }
+.sc-pos span[class^="sc-axis-"] { font-size: 10px; font-weight: bold; }
+.sc-axis-x { color: #ff5252; } .sc-axis-y { color: #6ee06e; } .sc-axis-z { color: #5f8cff; }
+
 /* axis toggles, active state tinted by axis color (matches triad) */
 #scAxisX.active { background: #5a2727; border-color: #ff5252; color: #fff; }
 #scAxisY.active { background: #234a23; border-color: #6ee06e; color: #fff; }
