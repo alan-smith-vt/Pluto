@@ -190,80 +190,106 @@ def fig_axes(m: TankModel) -> str:
 
 
 def fig_beam_nodes(m: TankModel) -> str:
-    s = m.spec
-    R, H = s.radius, s.height
-    f = Fig(860, 560, "BEAM NODES", "Node connectivity: the eave ring shares the wall-top joints with the wall and roof; the ring wall's top joints hang under the tank rim joints through contact gap links and sit on soil gap links to fixed ground joints")
-    # two zoomed insets: eave (top) and rim (bottom), drawn schematically
-    # ---- eave inset ----
-    ex, ey = 110, 60
-    f.text(ex, ey, "EAVE", bold=True)
-    wx, wy = ex + 160, ey + 150            # wall-top joint px
-    f.line(wx, wy, wx, wy + 110, w=3)      # wall
-    f.text(wx + 8, wy + 100, "wall", fill=MUTED)
-    f.path(f"M{wx} {wy} Q {wx - 70} {wy - 40} {wx - 150} {wy - 70}", w=3)   # roof
-    f.text(wx - 150, wy - 80, "roof", fill=MUTED)
-    # eave ring section (L) at the joint, small outline
-    f.path(f"M{wx} {wy} l 22 0 l 0 5 l -22 0 z", fill=CONC, w=1)
-    f.path(f"M{wx} {wy} l 0 18 l 5 0 l 0 -18 z", fill=CONC, w=1)
-    f.text(wx + 32, wy + 8, "ROOF_RING", fill=STEEL)
-    f.text(wx + 32, wy + 22, "frame", fill=MUTED, size=11)
-    f.dot(wx, wy, 5, fill=STEEL)
-    f.text(wx - 8, wy - 12, "joint", fill=STEEL, anchor="end")
-    f.text(wx - 8, wy + 2, "TOP_RING", fill=STEEL, anchor="end", size=11)
-    f.text(ex, ey + 240, "one joint : wall + roof + ring", fill=MUTED, size=11)
-    # ---- rim inset ----
-    rx, ry = 470, 60
-    f.text(rx, ry, "RIM", bold=True)
-    jx, jy = rx + 160, ry + 130             # rim joint (tank)
-    f.line(jx, jy, jx, jy - 110, w=3)       # wall
-    f.text(jx + 8, jy - 100, "wall", fill=MUTED)
-    f.line(jx, jy, jx - 150, jy, w=3)       # baseplate
-    f.text(jx - 150, jy - 8, "baseplate", fill=MUTED)
+    f = Fig(900, 560, "BEAM NODES", "Node connectivity in three columns: the eave where wall, roof and eave ring share one joint; a plate joint on its gap link to a fixed ground joint; the rim where the tank joint, the ring wall top joint and the ground joint are coincident, linked by the contact gap and the soil gap")
+    GAP = 22   # px between the two plates of a gap symbol
+
+    def gap_symbol(x, y):            # two short bars across a vertical link at y
+        f.path(f"M{x - 9} {y - 3} h18 M{x - 9} {y + 3} h18", stroke=STEEL, w=2)
+
+    def spring(x, y0, y1):           # zigzag between y0 and y1
+        n = 4; h = (y1 - y0) / n
+        pts = [f"{x},{y0}"] + [f"{x + (7 if i % 2 else -7)},{y0 + h * (i + 0.5)}" for i in range(n)] + [f"{x},{y1}"]
+        f.add(f'<polyline points="{" ".join(pts)}" fill="none" stroke="{STEEL}" stroke-width="2"/>')
+
+    def support(x, y):
+        f.line(x - 22, y, x + 22, y, w=2)
+        for k in range(5):
+            f.line(x - 18 + k * 9, y, x - 24 + k * 9, y + 7, w=1)
+
+    def right(x, y, big, small=None, col=INK):
+        f.text(x + 14, y + 4, big, fill=col, bold=True)
+        if small: f.text(x + 14, y + 18, small, fill=MUTED, size=11)
+
+    def left(x, y, s, col=STEEL):
+        f.text(x - 14, y + 4, s, fill=col, anchor="end", size=11)
+
+    # ---------------- column 1: EAVE ----------------
+    cx = 150
+    f.text(60, 70, "EAVE", bold=True)
+    jx, jy = cx, 190
+    f.line(jx, jy, jx, jy + 150, w=3)                                  # wall down
+    f.path(f"M{jx} {jy} Q {jx - 70} {jy - 45} {jx - 130} {jy - 80}", w=3)   # roof toward the crown
+    f.text(jx + 8, jy + 150, "wall", fill=MUTED, size=11)
+    f.text(jx - 130, jy - 90, "roof", fill=MUTED, size=11)
+    f.path(f"M{jx} {jy} l 24 0 l 0 6 l -24 0 z", fill=CONC, w=1)        # eave ring L, outward and down
+    f.path(f"M{jx} {jy} l 0 20 l 6 0 l 0 -20 z", fill=CONC, w=1)
+    f.dot(jx, jy, 5, fill=STEEL)
+    right(jx + 22, jy - 4, "joint", "TOP_RING", STEEL)
+    f.text(jx + 36, jy + 40, "ROOF_RING", fill=STEEL, size=11)
+    f.text(jx + 36, jy + 54, "frame", fill=MUTED, size=11)
+    f.text(60, 420, "one joint", fill=MUTED, size=11)
+    f.text(60, 436, "wall + roof + ring", fill=MUTED, size=11)
+
+    # ---------------- column 2: PLATE ----------------
+    cx = 430
+    f.text(360, 70, "PLATE", bold=True)
+    jx, jy = cx, 190
+    f.line(jx - 70, jy, jx + 70, jy, w=3)
     f.dot(jx, jy, 5, fill=INK)
-    f.text(jx + 12, jy + 4, "rim", bold=True)
-    f.text(jx + 12, jy + 18, "BASE_RING", size=11, fill=MUTED)
-    # contact gap link (drawn with length; zero-length in SAP)
-    g1 = jy + 40
-    f.line(jx, jy + 5, jx, g1 - 5, stroke=STEEL, w=2)
-    f.path(f"M{jx - 8} {jy + 20} h16 M{jx - 8} {jy + 26} h16", stroke=STEEL, w=2)
-    f.text(jx + 12, jy + 40, "GAP_CONTACT", fill=STEEL, size=11)
-    # wall-top joint + ring wall
-    f.dot(jx, g1, 5, fill="#ffffff", stroke=STEEL)
-    f.text(jx + 12, g1 + 4, "wall top", fill=STEEL, bold=True)
-    f.text(jx + 12, g1 + 18, "RINGWALL_TOP", fill=STEEL, size=11)
-    cw, ch = 46, 120
-    f.add(f'<rect x="{jx - cw / 2}" y="{g1}" width="{cw}" height="{ch}" fill="{CONC}" stroke="{INK}" stroke-width="1"/>')
-    f.text(jx, g1 + ch / 2 + 4, "RINGWALL", anchor="middle", size=11)
-    f.text(jx, g1 + ch / 2 + 18, "frame", anchor="middle", size=11, fill=MUTED)
-    f.line(jx, g1, jx, g1 + ch / 2, stroke=STEEL, w=1.2, dash="2 4")
-    f.dot(jx, g1 + ch / 2, 3, fill="none", stroke=STEEL)
-    f.text(jx + cw / 2 + 6, g1 + ch / 2 + 4, "centroid", fill=MUTED, size=11)
-    # soil gap link below the base
-    g2 = g1 + ch + 40
-    f.line(jx, g1 + ch, jx, g2 - 5, stroke=STEEL, w=2)
-    f.path(f"M{jx - 8} {g1 + ch + 14} h16 M{jx - 8} {g1 + ch + 20} h16", stroke=STEEL, w=2)
-    f.add(f'<polyline points="{jx},{g1 + ch + 24} {jx - 7},{g1 + ch + 27} {jx + 7},{g1 + ch + 32} {jx - 7},{g1 + ch + 37} {jx},{g1 + ch + 40}" fill="none" stroke="{STEEL}" stroke-width="2"/>')
-    f.text(jx + 12, g1 + ch + 30, "GAP_SOIL", fill=STEEL, size=11)
-    f.dot(jx, g2, 5, fill=STEEL)
-    f.text(jx + 12, g2 + 4, "ground", bold=True)
-    f.text(jx + 12, g2 + 18, "RINGWALL_GROUND", size=11, fill=MUTED)
-    f.line(jx - 22, g2 + 8, jx + 22, g2 + 8, w=2)
-    for k in range(5):
-        f.line(jx - 18 + k * 9, g2 + 8, jx - 24 + k * 9, g2 + 15, w=1)
-    f.text(jx + 40, g2 + 14, "fixed", fill=MUTED, size=11)
-    f.text(rx, g2 + 50, "three joints coincident in SAP", fill=MUTED, size=11)
-    # plate ground, for comparison, small
-    px_, py_ = rx - 240, g1 + 60
-    f.text(px_, py_ - 40, "PLATE", bold=True)
-    f.line(px_ - 60, py_, px_ + 60, py_, w=3)
-    f.dot(px_, py_, 4, fill=INK)
-    f.text(px_ + 10, py_ - 6, "plate", size=11)
-    f.line(px_, py_ + 5, px_, py_ + 30, stroke=STEEL, w=2)
-    f.path(f"M{px_ - 8} {py_ + 14} h16 M{px_ - 8} {py_ + 20} h16", stroke=STEEL, w=2)
-    f.text(px_ + 10, py_ + 22, "GAP_Rnn", fill=STEEL, size=11)
-    f.dot(px_, py_ + 36, 4, fill=STEEL)
-    f.text(px_ + 10, py_ + 40, "GROUND", size=11, fill=MUTED)
-    f.line(px_ - 16, py_ + 43, px_ + 16, py_ + 43, w=2)
+    right(jx, jy, "plate", "BASEPLATE")
+    y1 = jy + 70
+    f.line(jx, jy + 5, jx, y1 - 5, stroke=STEEL, w=2)
+    gap_symbol(jx, jy + 24)
+    spring(jx, jy + 34, y1 - 8)
+    left(jx, jy + 24, "gap")
+    left(jx, jy + 48, "GAP_Rnn")
+    f.dot(jx, y1, 5, fill=STEEL)
+    right(jx, y1, "ground", "GROUND", STEEL)
+    support(jx, y1 + 8)
+    f.text(jx + 36, y1 + 16, "fixed", fill=MUTED, size=11)
+    f.text(360, 420, "two joints coincident", fill=MUTED, size=11)
+    f.text(360, 436, "k = ks x tributary area", fill=MUTED, size=11)
+
+    # ---------------- column 3: RIM ----------------
+    cx = 720
+    f.text(600, 70, "RIM", bold=True)
+    jx, jy = cx, 130
+    f.line(jx, jy, jx, jy - 60, w=3)                       # wall up
+    f.line(jx, jy, jx - 110, jy, w=3)                      # baseplate inward
+    f.text(jx + 8, jy - 52, "wall", fill=MUTED, size=11)
+    f.text(jx - 110, jy - 8, "baseplate", fill=MUTED, size=11)
+    f.dot(jx, jy, 5, fill=INK)
+    right(jx, jy, "rim", "BASE_RING")
+    # contact gap link
+    y1 = jy + 60
+    f.line(jx, jy + 5, jx, y1 - 5, stroke=STEEL, w=2)
+    gap_symbol(jx, jy + 30)
+    left(jx, jy + 30, "GAP_CONTACT")
+    f.dot(jx, y1, 5, fill="#ffffff", stroke=STEEL)
+    right(jx, y1, "wall top", "RINGWALL_TOP", STEEL)
+    # ring wall body below the top joint
+    cw, ch = 48, 130
+    f.add(f'<rect x="{jx - cw / 2}" y="{y1}" width="{cw}" height="{ch}" fill="{CONC}" stroke="{INK}" stroke-width="1"/>')
+    f.line(jx, y1, jx, y1 + ch / 2, stroke=STEEL, w=1.2, dash="2 4")
+    f.dot(jx, y1 + ch / 2, 3, fill="none", stroke=STEEL)
+    left(jx - cw / 2, y1 + ch / 2, "centroid", MUTED)
+    left(jx - cw / 2, y1 + ch / 2 + 16, "offset", MUTED)
+    f.text(jx + cw / 2 + 12, y1 + ch / 2 + 4, "RINGWALL", fill=INK, size=11)
+    f.text(jx + cw / 2 + 12, y1 + ch / 2 + 18, "frame", fill=MUTED, size=11)
+    # soil gap link under the base
+    y2 = y1 + ch + 70
+    f.line(jx, y1 + ch, jx, y2 - 5, stroke=STEEL, w=2)
+    gap_symbol(jx, y1 + ch + 22)
+    spring(jx, y1 + ch + 32, y2 - 8)
+    left(jx, y1 + ch + 22, "GAP_SOIL")
+    left(jx, y1 + ch + 48, "spring")
+    f.dot(jx, y2, 5, fill=STEEL)
+    right(jx, y2, "ground", "RINGWALL_GROUND", STEEL)
+    support(jx, y2 + 8)
+    f.text(jx + 36, y2 + 16, "fixed", fill=MUTED, size=11)
+    f.text(600, 470, "three joints coincident", fill=MUTED, size=11)
+    f.text(600, 486, "both gaps compression only", fill=MUTED, size=11)
+    f.text(600, 502, "drawn apart", fill=MUTED, size=11)
     return f.done()
 
 
