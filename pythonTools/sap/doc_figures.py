@@ -137,13 +137,12 @@ def fig_loads(m: TankModel) -> str:
     f.text(x, y, "CASES", bold=True)
     # linear: one pattern each. Nonlinear: a chain, each case CONTINUES from the
     # previous one's end state and adds one pattern (so NL_SETTLE holds all three).
-    f.text(x, y + 26, "DEAD", fill=INK); f.text(x + 80, y + 26, "linear", fill=MUTED, size=11)
-    f.text(x, y + 52, "HYDRO", fill=STEEL); f.text(x + 80, y + 52, "linear", fill=MUTED, size=11)
-    chain = [("NL_DEAD", INK, "DEAD"), ("NL_HYDRO", STEEL, "+ HYDRO"), ("NL_SETTLE", RUST, "+ SETTLE")]
-    for i, (name, col, adds) in enumerate(chain):
+    f.text(x, y + 26, "DEAD", fill=INK)
+    f.text(x, y + 52, "HYDRO", fill=STEEL)
+    chain = [("NL_DEAD", INK), ("NL_HYDRO", STEEL), ("NL_SETTLE", RUST)]
+    for i, (name, col) in enumerate(chain):
         yy = y + 96 + i * 30
         f.text(x, yy, name, fill=col)
-        f.text(x + 90, yy, adds, fill=col, size=11)
         if i >= 1:
             f.line(x - 12, yy - 24, x - 12, yy - 6, stroke=MUTED, w=1, arrow=True)
     f.text(x, y + 96 + 30 * len(chain) + 6, "continues from above", fill=MUTED, size=11)
