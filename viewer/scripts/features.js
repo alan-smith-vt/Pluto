@@ -16,9 +16,10 @@
 // palette) while the switch is on; the section-cut isolate hides markers
 // off the kept panel via writeVis. Markers sit on the undeformed node
 // positions (no displacement scale). The Groups tab lists element groups
-// and node groups on two sub-tabs (Elements | Nodes); node groups start
-// UNTICKED unless the sidecar says `hidden: false` (orbs were tried and
-// rejected the same day -- too much clutter).
+// and node groups on two sub-tabs (Elements | Nodes). EVERY group starts
+// unticked unless the sidecar item says `hidden: false`; ticking writes the
+// flag so Export remembers it. (Orbs on top were tried and rejected the
+// same day -- too much clutter.)
 //
 // Precedence: an element in several groups takes the LAST enabled group
 // that lists it (envelope order) -- so "all W shapes grey" first, then
@@ -341,16 +342,13 @@ var FEAFeatures = (function () {
         }
         return true;
     }
-    // Enabled state: element groups paint unless `hidden: true`; node groups
-    // stay off unless `hidden: false` is written (they are reference sets).
+    // Enabled state: a group paints only when the item says `hidden: false`;
+    // absent or true = off. Ticking always writes the flag explicitly.
     function groupHidden(g) {
-        if (g.hidden !== undefined) return !!g.hidden;
-        return itemIsNodes(g);
+        return g.hidden === undefined ? true : !!g.hidden;
     }
     function writeHidden(g, hidden) {
-        if (hidden) g.hidden = true;
-        else if (itemIsNodes(g)) g.hidden = false;
-        else delete g.hidden;
+        g.hidden = !!hidden;
     }
     function showTab(tab) {
         listTab = tab === 'nodes' ? 'nodes' : 'elements';
@@ -387,7 +385,7 @@ var FEAFeatures = (function () {
 
             var cb = document.createElement('input');
             cb.type = 'checkbox'; cb.className = 'gr-check'; cb.checked = !info.hidden;
-            cb.title = isNodes ? 'Node group: draw its nodes as points in this colour (off by default)' : 'Paint this group';
+            cb.title = isNodes ? 'Node group: draw its nodes as points in this colour' : 'Paint this group';
             cb.addEventListener('change', function () { setHidden(gi, !this.checked); });
 
             var sw = document.createElement('input');
@@ -447,7 +445,7 @@ var FEAFeatures = (function () {
             if (nNodeRows === 0) elNodeList.innerHTML = '<div class="gr-empty">No node groups</div>';
             var nh = document.createElement('div');
             nh.className = 'gr-ungrouped';
-            nh.innerHTML = '<span>points at the nodes; off by default' + (on ? '' : ' (colouring off)') + '</span>';
+            nh.innerHTML = '<span>points at the nodes' + (on ? '' : ' (colouring off)') + '</span>';
             elNodeList.appendChild(nh);
         }
     }

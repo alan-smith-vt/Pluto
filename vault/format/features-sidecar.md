@@ -86,9 +86,10 @@ differs) treat predicate members as empty and say so; the C# exporter resolves t
 writing STAAD groups. `source.predicateId` remains for the "materialised from" audit trail
 when IDs *are* written out.
 
-Optional display flag (2026-09-03): `"hidden": true` on a group item — the viewer lists
-the group but does not paint it (and it drops out of the precedence chain). Absent = shown.
-Exporters never write it; the viewer's Groups tab sets and clears it, and Export keeps it.
+Display flag: `"hidden"` on a group item. **Absent or `true` = listed, not painted** (out
+of the precedence chain); only `"hidden": false` paints (2026-09-04: every group starts
+unticked, so a fresh sidecar shows the model uncoloured until you tick). Exporters never
+write it; the viewer's Groups tab writes it explicitly on every tick, and Export keeps it.
 
 Viewer behaviour (`viewer/scripts/features.js`, **Groups tab** on the right edge, 2026-09-03):
 - One switch, **Color by groups**: every element painted by its group's color through a
@@ -103,10 +104,9 @@ Viewer behaviour (`viewer/scripts/features.js`, **Groups tab** on the right edge
 - Node groups (`nodeIds` members) paint too (2026-09-04): their nodes are drawn as square
   points in the group colour while Color by groups is on (depth-tested), same
   last-enabled-wins precedence, count shown as painted/total nodes; the section-cut isolate
-  hides points off the kept panel. They **start unticked**: a node group is hidden unless
-  the item carries `hidden: false` (element groups keep the opposite default). The Groups
-  tab lists them on a separate **Nodes** sub-tab; All / None / Invert act on the sub-tab
-  showing.
+  hides points off the kept panel. Like every group they start unticked until the item
+  carries `hidden: false`. The Groups tab lists them on a separate **Nodes** sub-tab; All /
+  None / Invert act on the sub-tab showing.
 - `color` omitted → auto palette. Hover/pick readout shows the winning group name.
 - Headless test: `node viewer/tests/test_groups.js`.
 

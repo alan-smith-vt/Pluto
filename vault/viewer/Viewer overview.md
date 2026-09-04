@@ -102,9 +102,10 @@ Groups tab (2026-09-03): the sidecar-groups UI moved out of the main panel into 
 tab under the predicates tab (`#grPanel`, `styles/groups.css`). Per-group enable
 (`hidden` flag in the sidecar), colour edit, drag reorder, painted/members counts that
 expose shadowing (e.g. WALL 0/720 under twenty COURSE groups), node groups on their own
-**Nodes** sub-tab, off by default, drawn as coloured square points (`nodeMarkers`, one
+**Nodes** sub-tab, drawn as coloured square points (`nodeMarkers`, one
 THREE.Points, depth-tested, 2026-09-04; undeformed positions; orbs on top were tried and
-rejected as clutter), All/None/Invert per sub-tab, Export. Spec: [[vault/format/features-sidecar|features-sidecar]];
+rejected as clutter), every group off until ticked (`hidden: false`), All/None/Invert per
+sub-tab, Export. Spec: [[vault/format/features-sidecar|features-sidecar]];
 test `viewer/tests/test_groups.js`. URL load `index.html?bin=…&features=…` (same day).
 
 Predicates (2026-09-01, ported from the old viewer — plan:
