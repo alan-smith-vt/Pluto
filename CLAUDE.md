@@ -23,8 +23,10 @@ Repo root is the Obsidian vault; documentation lives under `vault/` only.
 - Links are **path-qualified** (`[[vault/format/v4-schema|v4-schema]]`) and basenames are
   unique (no `index.md`). Frontmatter: `title`, `status` (current | draft | archived), `created`.
 - Long notes fold `##` sections into collapsed callouts (`> [!info]- Title`).
-- Handoffs: `vault/handoffs/handoff.md` is the living state note — refresh it at session end.
-  Dated session records go to `vault/handoffs/YYYY-MM-DD.md` and a line in `Handoff log`.
+- Handoffs: every session writes its own dated record `vault/handoffs/YYYY-MM-DD.md` (suffix
+  b, c… for a second session the same day; updating today's is fine) plus a line in
+  `Handoff log`. `vault/handoffs/handoff.md` is a short **current-state** note, not a log:
+  refresh it at session end, keep history out of it.
 - Graph colour groups: `vault/_meta/graph-colors.json` is the restore source for the
   PC-local `.obsidian/graph.json`.
 
