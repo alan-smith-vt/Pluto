@@ -102,13 +102,14 @@ Viewer behaviour (`viewer/scripts/features.js`, **Groups tab** on the right edge
   lower in the list. Drag rows to reorder (mutates `groups.items` order); All / None /
   Invert; Export writes the whole sidecar with order, colours and `hidden` flags.
 - Node groups (`nodeIds` members) paint too (2026-09-04): their nodes are drawn as square
-  points in the group colour while Color by groups is on (depth-tested). They do **not**
-  shadow each other: every enabled group draws all its nodes, and a marker landing on a
-  spot already taken (a node in two groups, or coincident joints such as a plate joint
-  over its ground joint) is nudged aside by a small step (0.4 % of the model span per
-  occupant, +x then +y then +z…), so the group **higher** in the list holds the true
-  position. Rows show painted/total and how many were nudged; the section-cut isolate
-  hides points off the kept panel. Like every group they start unticked until the item
+  points in the group colour while Color by groups is on (depth-tested). **One marker per
+  node**, coloured by the last enabled group that lists it — the same precedence as
+  elements, so a node in two groups is one square in the lower group's colour and the
+  upper group's row reports it as shadowed. Only **distinct** nodes at the same position
+  (a plate joint over its ground joint) are nudged apart, 0.4 % of the model span per
+  occupant (+x, +y, +z, diagonals…), the winning group's list order deciding who keeps
+  the true spot. Rows show painted/total, shadowed and nudged counts; the section-cut
+  isolate hides points off the kept panel. Like every group they start unticked until the item
   carries `hidden: false`. The Groups tab lists them on a separate **Nodes** sub-tab; All /
   None / Invert act on the sub-tab showing.
 - `color` omitted → auto palette. Hover/pick readout shows the winning group name.
@@ -189,7 +190,13 @@ archived viewer's management layer) and round-trips them.
 - `axis` (`"x" | "y" | "z"`) is the axis the user chose; the list colour-codes by it.
   `sloped: true` bends that axis onto the panel (dir = axis minus its component along
   `up`, normalised): Z on a roof runs up the slope, X on a curved wall follows the tangent.
-  An item with no `axis` (a foreign direction) reads as sloped, amber.
+  `wrap: true` (implies sloped) makes the probe **march over the surface**, re-bending the
+  axis on every face it lands on: a Z cut climbs the wall, turns the eave and continues up
+  the roof; an X cut follows the wall around as an arc (checked on TANK-A: 40 ft of arc
+  = 68.2°, radius held to 0.03 ft). Faces whose normal is within 15° of the axis end the
+  march (a Z march stops at the baseplate and near the crown; an X cut placed where X is
+  the wall normal marches nowhere). Stations are recomputed from the mesh on load, never
+  stored. An item with no `axis` (a foreign direction) reads as sloped, amber.
 - `groups[]` carries per-group visibility; collapsed/expanded is view state only.
 - Unknown keys on an item survive a round trip (kept on the runtime object's `_raw`).
 - The archived viewer's standalone `section_cuts.json` (`{version, groups, cuts:[{point

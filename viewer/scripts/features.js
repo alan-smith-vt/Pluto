@@ -263,6 +263,7 @@ var FEAFeatures = (function () {
             if (!arr) return;
             for (var i = 0; i < arr.length; i++) if (arr[i] >= 0) groupList[arr[i]].painted++;
         });
+        resolved = out;                     // buildMarkerData reads the per-node category
         markerData = buildMarkerData();     // also fills nodePainted / nodeNudged
         resolved = out;
         palette = FEAShaders.makePaletteTexture(rgb);
@@ -303,35 +304,41 @@ var FEAFeatures = (function () {
     // Nudge directions for the 1st, 2nd, 3rd... extra occupant of a spot: steps
     // along +x, +y, +z, then the diagonals, scaled by the occupant number.
     var NUDGE_DIRS = [[1, 0, 0], [0, 1, 0], [0, 0, 1], [1, 1, 0], [0, 1, 1], [1, 0, 1], [1, 1, 1]];
-    // Marker list: every enabled node group draws all its (kept) nodes in list
-    // order; a marker landing on an occupied spot (same rounded position) is
-    // nudged by step x occupant count. Fills nodePainted / nodeNudged per group.
+    // Marker list: ONE marker per painted node, coloured by the group that
+    // wins it (last enabled group listing it -- the same precedence as
+    // elements, so a node in two groups is one square in the lower group's
+    // colour, and the upper group's row reports it as shadowed). Only
+    // DISTINCT nodes at the same position are nudged apart, by step x
+    // occupant count, in order of the winning group's list position then
+    // node index; the first keeps the true spot. Fills nodePainted /
+    // nodeNudged per group (2026-09-04, per the user's correction).
     function buildMarkerData() {
         for (var g = 0; g < groupList.length; g++) { groupList[g].nodePainted = 0; groupList[g].nodeNudged = 0; }
-        if (!feaModel || !feaModel.nodes) return null;
-        var nodes = feaModel.nodes, step = modelSpan(feaModel) * NUDGE_SPAN_FRACTION;
+        if (!feaModel || !feaModel.nodes || !resolved || !resolved.nodes) return null;
+        var nodes = feaModel.nodes, cat = resolved.nodes, step = modelSpan(feaModel) * NUDGE_SPAN_FRACTION;
         var scale = 1e4, occupied = {};
         var px = [], py = [], pz = [], cr = [], cg = [], cb = [];
-        for (var gi = 0; gi < groupList.length; gi++) {
-            var info = groupList[gi];
-            if (info.hidden || !nodeMembers[gi] || !nodeMembers[gi].length) continue;
-            var c = info.rgb, mem = nodeMembers[gi];
-            for (var k = 0; k < mem.length; k++) {
-                var ni = mem[k];
-                if (nodeKeepMask && !nodeKeepMask[ni]) continue;
-                var x = nodes[ni * 3], y = nodes[ni * 3 + 1], z = nodes[ni * 3 + 2];
-                var key = Math.round(x * scale) + ',' + Math.round(y * scale) + ',' + Math.round(z * scale);
-                var occ = occupied[key] || 0;
-                occupied[key] = occ + 1;
-                if (occ > 0) {
-                    var d = NUDGE_DIRS[(occ - 1) % NUDGE_DIRS.length], m = step * (1 + Math.floor((occ - 1) / NUDGE_DIRS.length));
-                    x += d[0] * m; y += d[1] * m; z += d[2] * m;
-                    info.nodeNudged++;
-                }
-                info.nodePainted++;
-                px.push(x); py.push(y); pz.push(z);
-                cr.push(c[0] / 255); cg.push(c[1] / 255); cb.push(c[2] / 255);
+        var order = [];
+        for (var ni = 0; ni < cat.length; ni++) {
+            if (cat[ni] < 0) continue;
+            if (nodeKeepMask && !nodeKeepMask[ni]) continue;
+            order.push(ni);
+        }
+        order.sort(function (a, b) { return (cat[a] - cat[b]) || (a - b); });
+        for (var q = 0; q < order.length; q++) {
+            var n0 = order[q], gi = cat[n0], info = groupList[gi], c = info.rgb;
+            var x = nodes[n0 * 3], y = nodes[n0 * 3 + 1], z = nodes[n0 * 3 + 2];
+            var key = Math.round(x * scale) + ',' + Math.round(y * scale) + ',' + Math.round(z * scale);
+            var occ = occupied[key] || 0;
+            occupied[key] = occ + 1;
+            if (occ > 0) {
+                var d = NUDGE_DIRS[(occ - 1) % NUDGE_DIRS.length], m = step * (1 + Math.floor((occ - 1) / NUDGE_DIRS.length));
+                x += d[0] * m; y += d[1] * m; z += d[2] * m;
+                info.nodeNudged++;
             }
+            info.nodePainted++;
+            px.push(x); py.push(y); pz.push(z);
+            cr.push(c[0] / 255); cg.push(c[1] / 255); cb.push(c[2] / 255);
         }
         var n = px.length;
         if (n === 0) return null;
@@ -466,11 +473,14 @@ var FEAFeatures = (function () {
             cnt.className = 'gr-count';
             if (isNodes) {
                 cnt.textContent = info.nodePainted + '/' + info.nodeCount + ' nodes';
+                var notes = [];
+                if (!info.hidden && info.nodeCount > 0 && info.nodePainted < info.nodeCount)
+                    notes.push((info.nodeCount - info.nodePainted) + ' node(s) painted by a group lower in the list');
                 if (!info.hidden && info.nodeNudged > 0) {
                     cnt.textContent += ' \u00b7 ' + info.nodeNudged + ' nudged';
-                    cnt.classList.add('shadowed');
-                    cnt.title = info.nodeNudged + ' marker(s) sit on a spot already taken by a group higher in the list (or a coincident joint) and are drawn nudged aside';
+                    notes.push(info.nodeNudged + ' marker(s) share a position with another node and are drawn nudged aside');
                 }
+                if (notes.length) { cnt.classList.add('shadowed'); cnt.title = notes.join('; '); }
             } else {
                 cnt.textContent = info.painted + '/' + info.count;
                 if (!info.hidden && info.count > 0 && info.painted < info.count) {

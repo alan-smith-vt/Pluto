@@ -26,8 +26,14 @@
 // ("x" | "y" | "z") is the axis the user chose and colours the list;
 // `sloped: true` means that axis is bent onto the panel (dir = axis minus
 // its component along up, normalised: Z on a roof runs up the slope, X on
-// a curved wall follows the tangent). An item with neither key, or whose
-// direction matches no axis, reads as "sloped" (amber).
+// a curved wall follows the tangent). `wrap: true` goes further: the probe
+// MARCHES across the surface station by station, re-bending the axis onto
+// the face it lands on, so a Z cut climbs the wall, turns the eave and
+// continues up the roof; an X cut follows the wall around as an arc.
+// Faces within EXCLUDE_DEG of perpendicular to the axis stop the march
+// (a Z march stops at the baseplate and near the crown). Stations are
+// recomputed from the mesh on load, never stored. An item with neither key,
+// or whose direction matches no axis, reads as "sloped" (amber).
 // Unknown keys on an item survive a round trip (kept on item._raw).
 // The archived viewer's standalone section_cuts.json ({version, groups,
 // cuts:[{point, axis, length(in)}]}) imports through a shim.
@@ -54,6 +60,9 @@ var FEASectionCut = (function () {
     var adjusting = false;          // re-placing the selected cut
     var defAxis = 'x';              // axis for the next new cut
     var defSloped = false;          // bend the axis onto the panel for the next new cut
+    var defWrap = false;            // ...and march across the surface (implies sloped)
+    var EXCLUDE_DEG = 15;           // faces this close to perpendicular to the axis end a march
+    var EXCLUDE_COS = Math.cos(EXCLUDE_DEG * Math.PI / 180);   // a face is excluded when its normal is within EXCLUDE_DEG of the axis: |axis . n| > cos(15 deg)
     var defLength = 0;              // 0 -> auto default on first placement
     var cuts = [];                  // runtime cut objects (see makeCut)
     var groups = [];                // [{ name, visible }] from the sidecar
@@ -103,7 +112,12 @@ var FEASectionCut = (function () {
     on(elAxisX, 'click', function () { setAxis('x'); });
     on(elAxisY, 'click', function () { setAxis('y'); });
     on(elAxisZ, 'click', function () { setAxis('z'); });
-    on(elSloped, 'click', function () { setSloped(!(active() ? active().sloped : defSloped)); });
+    on(elSloped, 'click', function () {
+        var c = active();
+        var s = c ? !!c.sloped : defSloped, w = c ? !!c.wrap : defWrap;
+        // straight -> sloped -> wrapped -> straight
+        if (!s) setMode(true, false); else if (!w) setMode(true, true); else setMode(false, false);
+    });
 
     on(elLen, 'change', function () {
         var v = parseFloat(this.value.replace(/,/g, ''));
@@ -193,12 +207,15 @@ var FEASectionCut = (function () {
         if (c) { c.axis = a; computeDir(c); afterMutation(c); }
         else { syncAxisButtons(); syncColorSwatch(); }
     }
-    function setSloped(onOff) {
-        defSloped = !!onOff;
+    function setSloped(onOff) { setMode(!!onOff, false); }
+    function setMode(sloped, wrap) {
+        defSloped = !!sloped || !!wrap;
+        defWrap = !!wrap;
         var c = active();
-        if (c) { c.sloped = defSloped; computeDir(c); afterMutation(c); }
+        if (c) { c.sloped = defSloped; c.wrap = defWrap; computeDir(c); afterMutation(c); }
         else syncAxisButtons();
     }
+    function modeLabel(sloped, wrap) { return wrap ? 'Wrapped' : sloped ? 'Sloped' : 'Straight'; }
     // The probe direction from the chosen axis: the axis itself, or the axis
     // bent onto the panel (component along the panel normal removed). A cut
     // that came in with no axis keeps whatever direction it has.
@@ -218,8 +235,11 @@ var FEASectionCut = (function () {
         if (elAxisX) elAxisX.classList.toggle('active', a === 'x');
         if (elAxisY) elAxisY.classList.toggle('active', a === 'y');
         if (elAxisZ) elAxisZ.classList.toggle('active', a === 'z');
+        var w = c ? !!c.wrap : defWrap;
         if (elSloped) {
             elSloped.classList.toggle('active', s);
+            elSloped.classList.toggle('wrap', w);
+            elSloped.textContent = modeLabel(s, w);
             elSloped.disabled = !!(c && !AXIS_DIR[c.axis]);
         }
     }
@@ -267,7 +287,8 @@ var FEASectionCut = (function () {
             normal: fields.normal.clone().normalize(),      // panel normal = bounds.up
             dir: fields.dir.clone().normalize(),
             length: fields.length,
-            sloped: !!fields.sloped,
+            sloped: !!fields.sloped || !!fields.wrap,
+            wrap: !!fields.wrap,
             elem: -1,
             visual: null,
             visParts: [],
@@ -309,7 +330,7 @@ var FEASectionCut = (function () {
         return makeCut({
             id: raw.id, name: raw.name, group: raw.group, visible: raw.visible,
             center: point, normal: up, dir: dir, length: half * 2 || defLength || 1,
-            axis: hasAxis ? raw.axis : null, sloped: hasAxis && !!raw.sloped, _raw: raw
+            axis: hasAxis ? raw.axis : null, sloped: hasAxis && !!(raw.sloped || raw.wrap), wrap: hasAxis && !!raw.wrap, _raw: raw
         });
     }
 
@@ -331,6 +352,7 @@ var FEASectionCut = (function () {
         if (!Array.isArray(raw.domains)) raw.domains = ['shells'];
         if (c.axis && AXIS_DIR[c.axis]) raw.axis = c.axis; else delete raw.axis;
         if (c.sloped && AXIS_DIR[c.axis]) raw.sloped = true; else delete raw.sloped;
+        if (c.wrap && AXIS_DIR[c.axis]) raw.wrap = true; else delete raw.wrap;
         c._raw = raw;
         return raw;
     }
@@ -667,7 +689,7 @@ var FEASectionCut = (function () {
         } else {
             c = makeCut({
                 center: hit.point, normal: faceNormal(hit.faceIndex), dir: AXIS_DIR[defAxis],
-                length: defaultLength(), axis: defAxis, sloped: defSloped
+                length: defaultLength(), axis: defAxis, sloped: defSloped, wrap: defWrap
             });
             c.elem = feaBuild.triToElem[hit.faceIndex];
             cuts.push(c);
@@ -773,6 +795,30 @@ var FEASectionCut = (function () {
         });
     }
 
+    // Wrapped cuts: one short cylinder per station segment along the marched
+    // polyline (positions relative to the cut centre). `every` > 1 draws
+    // only every n-th segment (the dotted style).
+    function addPolylineCylinders(c, group, radius, segs, makeMat, every) {
+        var pts = c.pts, hits = c.ptHits;
+        if (!pts || pts.length < 2) return false;
+        var mats = {};
+        for (var i = 0; i + 1 < pts.length; i++) {
+            if (every > 1 && i % every) continue;
+            var a = pts[i].clone().sub(c.center), b = pts[i + 1].clone().sub(c.center);
+            var d = b.clone().sub(a), len = d.length();
+            if (len < 1e-9) continue;
+            var hex = (hits[i] && hits[i + 1]) ? hexOf(c) : MISS_HEX;
+            if (!mats[hex]) mats[hex] = makeMat(hex);
+            var cyl = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, len * (every > 1 ? 0.45 : 1.02), segs), mats[hex]);
+            orientAlong(cyl, d);
+            cyl.position.copy(a).add(b).multiplyScalar(0.5);
+            cyl.renderOrder = 8;
+            group.add(cyl);
+            c.visParts.push({ obj: cyl, axial: 'model' });
+        }
+        return true;
+    }
+
     // Solid: an orb like the focus target with a bar running the full
     // cut length, white where the probe found nothing. The selected cut's
     // orb also gets a wireframe halo.
@@ -781,9 +827,9 @@ var FEASectionCut = (function () {
         var sph = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 16), mat);
         group.add(sph);
         c.visParts.push({ obj: sph, axial: 'iso' });
-        addRunCylinders(c, group, dataRuns(c), 0.3, 16, function (hex) {
-            return new THREE.MeshPhongMaterial({ color: hex, shininess: 60 });
-        });
+        var phong = function (hex) { return new THREE.MeshPhongMaterial({ color: hex, shininess: 60 }); };
+        if (c.wrap && addPolylineCylinders(c, group, 0.3, 12, phong, 1)) return;
+        addRunCylinders(c, group, dataRuns(c), 0.3, 16, phong);
     }
 
     // Thin / dotted: a hairline spine down the cut (solid, or broken
@@ -792,6 +838,11 @@ var FEASectionCut = (function () {
         var mat = new THREE.MeshBasicMaterial({ color: hexOf(c), depthTest: false });
         var missMat = new THREE.MeshBasicMaterial({ color: MISS_HEX, depthTest: false });
         var half = c.length / 2;
+        var basic = function (hex) { return hex === MISS_HEX ? missMat : mat; };
+        if (c.wrap && addPolylineCylinders(c, group, THIN_R, 6, basic, dashed ? 2 : 1)) {
+            addArms(c, group, mat);
+            return;
+        }
         var runs = dataRuns(c);
         function hitAt(s) {
             for (var k = 0; k < runs.length; k++) if (s >= runs[k][0] && s <= runs[k][1]) return runs[k][2];
@@ -815,6 +866,10 @@ var FEASectionCut = (function () {
                 return hex === MISS_HEX ? missMat : mat;
             });
         }
+        addArms(c, group, mat);
+    }
+    // Two screen-sized crosshair arms across the cut at its centre.
+    function addArms(c, group, mat) {
         var armGeo = new THREE.CylinderGeometry(THIN_R, THIN_R, 1, 8);
         perpDirs(c).forEach(function (p) {
             var armM = new THREE.Mesh(armGeo, mat);
@@ -883,10 +938,90 @@ var FEASectionCut = (function () {
     }
 
     // ---- sampling + integration (active cut) --------------------
+    // ---- wrapped march ---------------------------------------------------
+    // Is a face too close to perpendicular to the cut's axis to carry the march?
+    function excludedNormal(c, n) {
+        var a = AXIS_DIR[c.axis];
+        return !a || Math.abs(a.dot(n)) > EXCLUDE_COS;
+    }
+    function faceNormalAt(faceIndex) {
+        var e = feaBuild.triToElem[faceIndex], nrm = feaBuild.elemNormals;
+        return new THREE.Vector3(nrm[e * 3], nrm[e * 3 + 1], nrm[e * 3 + 2]);
+    }
+    // Nearest usable surface point for a stepped position: down the current
+    // normal first, then back along the axis (convex corners like the eave),
+    // then half a step back. null = the march fell off the surface.
+    function snapToSurface(c, pTry, n, axisDir, ds, eps) {
+        var tries = [
+            [pTry.clone().addScaledVector(n, eps), n.clone().negate(), eps + 3 * ds],
+            [pTry.clone(), axisDir.clone().negate(), 3 * ds],
+            [pTry.clone(), axisDir.clone(), 3 * ds],
+            [pTry.clone().addScaledVector(n, eps).addScaledVector(axisDir, -0.5 * ds), n.clone().negate(), eps + 3 * ds]
+        ];
+        for (var k = 0; k < tries.length; k++) {
+            probeRay.near = 0; probeRay.far = tries[k][2];
+            probeRay.set(tries[k][0], tries[k][1]);
+            var hs = probeRay.intersectObject(mesh);
+            for (var i = 0; i < hs.length; i++) {
+                var fi = hs[i].faceIndex;
+                if (fi == null) continue;
+                var e = feaBuild.triToElem[fi];
+                if (isolated && !isolated[e]) continue;
+                if (excludedNormal(c, faceNormalAt(fi))) continue;
+                return { point: hs[i].point.clone(), faceIndex: fi };
+            }
+        }
+        return null;
+    }
+    // March both ways from the centre: N_SAMPLES/2 stations each side, step
+    // ds = L / N. Each side: bend the axis onto the current face, step, snap
+    // back onto the surface, adopt that face's normal (kept on the same side
+    // as before). When the march ends early the remaining stations continue
+    // straight along the last direction as misses, so the marker shows the
+    // length that found nothing.
+    function marchSide(c, sgn, ds, eps) {
+        var out = [];
+        var half = N_SAMPLES / 2;
+        var p = c.center.clone(), n = c.normal.clone();
+        var axisDir = AXIS_DIR[c.axis].clone().multiplyScalar(sgn);
+        var dirLocal = null, alive = !excludedNormal(c, n);
+        for (var i = 1; i <= half; i++) {
+            if (alive) {
+                var d = axisDir.clone().addScaledVector(n, -axisDir.dot(n));
+                if (d.lengthSq() < 1e-8) alive = false;
+                else {
+                    dirLocal = d.normalize();
+                    var hit = snapToSurface(c, p.clone().addScaledVector(dirLocal, ds), n, axisDir, ds, eps);
+                    if (!hit) alive = false;
+                    else {
+                        var nn = faceNormalAt(hit.faceIndex);
+                        if (nn.dot(n) < 0) nn.negate();
+                        p = hit.point; n = nn;
+                        out.push({ s: sgn * i * ds, p: p.clone(), face: hit.faceIndex, point: hit.point });
+                        continue;
+                    }
+                }
+            }
+            if (!dirLocal) dirLocal = c.dir.clone().multiplyScalar(sgn);
+            p = p.clone().addScaledVector(dirLocal, ds);
+            out.push({ s: sgn * i * ds, p: p.clone(), face: -1, point: null });
+        }
+        return out;
+    }
+    function march(c) {
+        var ds = c.length / N_SAMPLES, eps = modelSpan() * 0.01;
+        // centre station: the face under the centre
+        var c0 = snapToSurface(c, c.center, c.normal, AXIS_DIR[c.axis], ds, eps);
+        var neg = marchSide(c, -1, ds, eps).reverse();
+        var pos = marchSide(c, +1, ds, eps);
+        return neg.concat([{ s: 0, p: c.center.clone(), face: c0 ? c0.faceIndex : -1, point: c0 ? c0.point : null }], pos);
+    }
+
     function resample() {
         samples = null;
         var c = active();
         if (!c || !mesh || !feaModel || !(c.length > 0)) return;
+        if (c.wrap && AXIS_DIR[c.axis]) { resampleWrapped(c); return; }
         var dir = c.dir;
         var eps = modelSpan() * 0.01;
         var back = c.normal.clone().negate();
@@ -914,6 +1049,21 @@ var FEASectionCut = (function () {
             if (hit[k] && hit[k + 1]) { area += 0.5 * (v[k] + v[k + 1]) * dx; eff += dx; }
         }
         samples = { t: t, v: v, hit: hit, area: area, effLen: eff };
+        c.pts = null;
+    }
+    function resampleWrapped(c) {
+        var st = march(c);
+        var t = [], v = [], hit = [], pts = [];
+        for (var i = 0; i < st.length; i++) {
+            var val = st[i].face >= 0 ? queryValue(st[i].face, st[i].point) : NaN;
+            t.push(st[i].s); v.push(val); hit.push(val === val); pts.push(st[i].p);
+        }
+        var dx = c.length / N_SAMPLES, area = 0, eff = 0;
+        for (var k = 0; k + 1 < st.length; k++) {
+            if (hit[k] && hit[k + 1]) { area += 0.5 * (v[k] + v[k + 1]) * dx; eff += dx; }
+        }
+        samples = { t: t, v: v, hit: hit, area: area, effLen: eff, pts: pts };
+        c.pts = pts; c.ptHits = hit;            // kept so the marker survives deselection
     }
 
     // ---- plot --------------------------------------------------
@@ -994,7 +1144,7 @@ var FEASectionCut = (function () {
         ctx.fillStyle = '#999'; ctx.textAlign = 'left';
         ctx.fillText(fmt(samples.t[iFirst], 3), padL + 2, H - padB + 10);
         ctx.textAlign = 'right';
-        var axLabel = c.axis === 'sloped' ? 'sloped' : c.axis.toUpperCase() + (c.sloped ? ' (sloped)' : '');
+        var axLabel = c.axis === 'sloped' ? 'sloped' : c.axis.toUpperCase() + (c.wrap ? ' (wrapped)' : c.sloped ? ' (sloped)' : '');
         ctx.fillText(fmt(samples.t[iLast], 3) + '  ' + axLabel + (lu ? ' [' + lu + ']' : ''), W - padR - 2, H - padB + 10);
         var avg = samples.effLen > 0 ? samples.area / samples.effLen : NaN;
         var area = areaDisplay(samples.area);
@@ -1072,10 +1222,11 @@ var FEASectionCut = (function () {
         var dot = document.createElement('span'); dot.className = 'sc-dot';
         dot.style.background = AXIS_CSS[c.axis] || AXIS_CSS.sloped;
         if (c.sloped) dot.classList.add('sloped');
-        dot.title = c.axis === 'sloped' ? 'sloped direction' : 'along ' + c.axis.toUpperCase() + (c.sloped ? ', bent onto the panel' : '');
+        if (c.wrap) dot.classList.add('wrap');
+        dot.title = c.axis === 'sloped' ? 'sloped direction' : 'along ' + c.axis.toUpperCase() + (c.wrap ? ', wrapped over the surface' : c.sloped ? ', bent onto the panel' : '');
         var name = document.createElement('span'); name.className = 'sc-name'; name.textContent = c.name;
         var info = document.createElement('span'); info.className = 'sc-info';
-        info.textContent = (c.axis === 'sloped' ? '∠' : c.axis.toUpperCase() + (c.sloped ? '∠' : '')) + ' ' + fmt(c.length, 3) + (lengthUnit() ? ' ' + lengthUnit() : '');
+        info.textContent = (c.axis === 'sloped' ? '∠' : c.axis.toUpperCase() + (c.wrap ? '↻' : c.sloped ? '∠' : '')) + ' ' + fmt(c.length, 3) + (lengthUnit() ? ' ' + lengthUnit() : '');
         var vis = document.createElement('span'); vis.className = 'sc-vis'; vis.innerHTML = c.visible ? '&#9673;' : '&#9676;';
         vis.title = 'Show / hide this cut';
         vis.addEventListener('click', function (e) { e.stopPropagation(); toggleCutVis(c.id); });
@@ -1158,6 +1309,8 @@ var FEASectionCut = (function () {
         _importLegacy: importLegacy,
         _makeCut: makeCut,
         _setSloped: setSloped,
+        _setMode: setMode,
+        _march: march,
         _dataRuns: dataRuns,
         _setSamples: function (s) { samples = s; },
         _push: function (c) { cuts.push(c); activeId = c.id; afterMutation(c); }

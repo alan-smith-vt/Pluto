@@ -49,17 +49,27 @@ assert(gl[6].hidden && gl[6].nodePainted === 0 && gl[6].nodeCount === 1, 'node g
 assert(gl[0].count === 10 && gl[0].painted === 0, 'WALL: 10 members, 0 painted (shadowed by courses)');
 assert(gl[1].painted === 5 && gl[2].painted === 5, 'C1 / C2 paint 5 each');
 assert(gl[4].nodeCount === 3 && gl[4].count === 0, 'BASE is a node group (3 nodes, no elements)');
-assert(gl[4].nodePainted === 3 && gl[5].nodePainted === 2, 'node groups do not shadow: BASE draws 3, RIM draws 2');
-assert(gl[4].nodeNudged === 0 && gl[5].nodeNudged === 1, 'RIM (later) is nudged off node 3, BASE keeps the true spot');
+assert(gl[4].nodePainted === 2 && gl[5].nodePainted === 2, 'node precedence like elements: RIM (later) takes node 3, BASE paints 2 of 3');
+assert(gl[4].nodeNudged === 0 && gl[5].nodeNudged === 0, 'a node in two groups is ONE marker: nothing nudged');
 assert(Array.from(FEAFeatures._resolved().nodes).join() === '4,4,5,5', 'per-node category for groupOf: BASE,BASE,RIM,RIM');
 {
   const mk = FEAFeatures._markers();
-  assert(mk.n === 5, 'five markers drawn (3 BASE + 2 RIM)');
-  const p = mk.pos;                                         // BASE: nodes 0,1,2 then RIM: nodes 2,3
-  assert(p[2 * 3] === 2 && p[2 * 3 + 1] === 0, 'BASE marker on node 3 at the true position (2,0,0)');
-  assert(p[3 * 3] > 2 && p[3 * 3] < 2.1 && p[3 * 3 + 1] === 0, 'RIM marker on node 3 nudged +x by a small step: x=' + p[3 * 3]);
-  assert(p[4 * 3] === 3, 'RIM marker on node 4 unnudged');
+  assert(mk.n === 4, 'four markers drawn: one per painted node');
+  const p = mk.pos;                                         // BASE: nodes 0,1 then RIM: nodes 2,3, all at distinct positions
+  assert(p[2 * 3] === 2 && p[2 * 3 + 1] === 0, 'node 3 (RIM) at its true position (2,0,0)');
+  assert(Math.abs(mk.col[2 * 3] - 5 / 255) < 1e-6, 'node 3 coloured by RIM (group index 5)');
 }
+// 2b. distinct coincident nodes DO nudge: put node 4 on top of node 3
+feaModel.nodes[3 * 3] = 2;
+FEAFeatures.refresh();
+{
+  const mk = FEAFeatures._markers();
+  assert(mk.n === 4, 'still four markers with two nodes coincident');
+  assert(mk.pos[2 * 3] === 2 && mk.pos[3 * 3] > 2 && mk.pos[3 * 3] < 2.1, 'node 3 keeps the spot, node 4 (same group, higher index) nudged +x: ' + mk.pos[3 * 3]);
+  assert(FEAFeatures._groupList()[5].nodeNudged === 1, 'RIM reports 1 nudged');
+}
+feaModel.nodes[3 * 3] = 3;
+FEAFeatures.refresh();
 assert(FEAFeatures._resolved().unmatched === 1, 'unknown node id 99 counted as unmatched');
 
 // 2. hiding the courses lets WALL paint
@@ -81,7 +91,7 @@ assert(gl[6].painted === 10 && gl[0].painted === 0, 'last group wins after reord
 e.groups.items[4].hidden = true;                 // RIM
 FEAFeatures.refresh();
 gl = FEAFeatures._groupList();
-assert(gl[3].nodePainted === 3 && gl[4].nodePainted === 0 && FEAFeatures._markers().n === 3, 'hidden RIM: BASE draws its 3 nodes, 3 markers');
+assert(gl[3].nodePainted === 3 && gl[4].nodePainted === 0 && FEAFeatures._markers().n === 3, 'hidden RIM: BASE paints all 3 nodes, 3 markers');
 e.groups.items[4].hidden = false;          // the explicit false is what paints
 FEAFeatures.refresh();
 

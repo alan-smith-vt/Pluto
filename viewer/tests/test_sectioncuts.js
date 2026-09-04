@@ -68,6 +68,18 @@ assert(near(flat.dir.x, 1), 'sloped X on a flat plate is still X');
 const degenerate = FEASectionCut._makeCut({ center: new THREE.Vector3(), normal: new THREE.Vector3(0, 0, 1), dir: new THREE.Vector3(0, 0, 1), length: 4, axis: 'z', sloped: true });
 assert(near(degenerate.dir.z, 1), 'sloped Z on a horizontal plate falls back to Z (nothing to bend)');
 
+// 2b2. wrapped: stored as axis + wrap, implies sloped, round-trips
+{
+  const wc = FEASectionCut._makeCut({ center: new THREE.Vector3(), normal: new THREE.Vector3(1, 0, 0), dir: new THREE.Vector3(0, 0, 1), length: 20, axis: 'z', wrap: true });
+  assert(wc.wrap && wc.sloped && near(wc.dir.z, 1), 'wrapped Z on a wall: sloped implied, initial dir = Z');
+  const wi = FEASectionCut._cutToItem(wc);
+  assert(wi.wrap === true && wi.sloped === true && wi.axis === 'z', 'wrapped item carries wrap + sloped + axis');
+  const wb = FEASectionCut._itemToCut(wi);
+  assert(wb.wrap && wb.sloped, 'wrapped item round-trips');
+  const legacyWrapOnly = FEASectionCut._itemToCut({ id: 'w2', axis: 'x', wrap: true, plane: { point: [0, 0, 0], normal: [0, 0, 1] }, bounds: { up: [0, 1, 0], halfWidth: 2 } });
+  assert(legacyWrapOnly.sloped && legacyWrapOnly.wrap, 'wrap without an explicit sloped key still reads as sloped');
+}
+
 // 2c. data runs: the marker splits where the probe found nothing
 {
   const rc = FEASectionCut._makeCut({ center: new THREE.Vector3(), normal: new THREE.Vector3(0, 0, 1), dir: new THREE.Vector3(1, 0, 0), length: 200 });
