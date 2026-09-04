@@ -65,6 +65,13 @@ depth     = 0.1         # ft inward
 width     = 8.0         # ft along the circumference
 height    = 6.0         # ft up the wall
 
+[settlement]
+profile       = "trench"   # "none" | "trench": parabolic cross-section, ground displacement on the ground joints
+depth         = 0.25       # ft at the trench centreline (down)
+width         = 12.0       # ft; zero settlement at +/- width/2
+direction_deg = 0.0        # trench axis in plan, from +X
+offset        = 0.0        # ft, axis offset from the tank centre (+90 deg side)
+
 [supports]
 base_local_axes = true  # base joint local axes: X tangential, Y radial outward
 release_radial  = true  # free the radial direction so the wall goes into hoop (needs base_local_axes)

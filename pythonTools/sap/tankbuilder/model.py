@@ -82,6 +82,7 @@ class TankModel:
         self.ringwall_soil_k: float = 0.0
         self.ringwall_contact_k: float = 0.0
         self.dent_joints: dict[int, dict[int, float]] = {}
+        self.settlements: dict[int, float] = {}       # ground joint -> dz (ft, negative = down)
         self._build_levels()
         self._build_wall()
         self._apply_dents()
@@ -93,6 +94,8 @@ class TankModel:
             self._build_foundation()
         if spec.ringwall:
             self._build_ringwall()
+        if spec.settlement != "none":
+            self._build_settlement()
 
     # --- numbering ----------------------------------------------------------
 
@@ -377,6 +380,32 @@ class TankModel:
     @property
     def gap(self) -> bool:
         return self.spec.foundation == "gap"
+
+    # --- settlement: ground displacement on the ground joints -------------------
+
+    @property
+    def all_ground_joints(self) -> list[int]:
+        """Every fixed ground joint: under the plate and under the ring wall."""
+        return self.plate_ground_joints + self.ringwall_ground
+
+    def settlement_dz(self, x: float, y: float) -> float:
+        """Ground settlement w(x, y) in ft (negative = down) for the configured
+        profile. trench: parabolic across a straight trench of width W along
+        direction theta through the point at perpendicular offset c from the
+        centre: w = -depth (1 - (2 d / W)^2) for |d| <= W/2, else 0, where
+        d = -x sin(theta) + y cos(theta) - c."""
+        s = self.spec
+        if s.settlement == "trench":
+            th = math.radians(s.settlement_direction_deg)
+            d = -x * math.sin(th) + y * math.cos(th) - s.settlement_offset
+            u = 2.0 * d / s.settlement_width
+            return -s.settlement_depth * (1.0 - u * u) if abs(u) <= 1.0 else 0.0
+        return 0.0
+
+    def _build_settlement(self) -> None:
+        for g in self.all_ground_joints:
+            x, y, _ = self.joints[g]
+            self.settlements[g] = self.settlement_dz(x, y)
 
     # --- ring wall ---------------------------------------------------------------
 

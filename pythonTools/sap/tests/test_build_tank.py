@@ -514,6 +514,63 @@ def test_ringwall_tables():
     assert walled(ringwall_support="springs").spec.ringwall_support == "gap"     # old name still accepted
 
 
+# --- settlement ------------------------------------------------------------------
+
+def trenched(**kw):
+    return walled(settlement="trench", settlement_depth=0.5, settlement_width=10.0, **kw)
+
+
+def test_trench_settlement_profile_and_tables():
+    m = trenched()
+    # parabola across the trench: full depth on the axis, zero at the edges, zero outside
+    assert m.settlement_dz(0.0, 0.0) == pytest.approx(-0.5)
+    assert m.settlement_dz(7.0, 0.0) == pytest.approx(-0.5)           # anywhere along the axis
+    assert m.settlement_dz(0.0, 2.5) == pytest.approx(-0.5 * 0.75)
+    assert m.settlement_dz(0.0, 5.0) == pytest.approx(0.0) and m.settlement_dz(0.0, 6.0) == 0.0
+    # rotated 90 deg the trench runs along Y, offset shifts the axis along +X... (the +90 side)
+    r = trenched(settlement_direction_deg=90.0, settlement_offset=3.0)
+    assert r.settlement_dz(-3.0, 8.0) == pytest.approx(-0.5) and r.settlement_dz(2.0, 0.0) == pytest.approx(0.0)
+    # every ground joint (plate + ring wall) has an entry; only those inside the trench move
+    assert set(m.settlements) == set(m.plate_ground_joints) | set(m.ringwall_ground)
+    moved = {j for j, v in m.settlements.items() if v != 0.0}
+    assert moved and all(abs(m.joints[j][1]) < 5.0 for j in moved)
+    assert all(abs(m.joints[j][1]) >= 5.0 for j in m.settlements if j not in moved)
+    t = parse_s2k(s2k_text(m))
+    pats = {r["LOADPAT"] for r in t["LOAD PATTERN DEFINITIONS"]}
+    assert "SETTLE" in pats
+    gd = t["JOINT LOADS - GROUND DISPLACEMENT"]
+    assert len(gd) == len(moved) and all(r["LOADPAT"] == "SETTLE" and r["U1"] == "0" for r in gd)
+    assert {int(r["JOINT"]) for r in gd} == moved
+    cases = {r["CASE"]: r for r in t["LOAD CASE DEFINITIONS"]}
+    assert cases["NL_SETTLE"]["INITIALCOND"] == "NL_HYDRO" and cases["NL_SETTLE"]["TYPE"] == "NonStatic"
+    nl = {r["CASE"] for r in t["CASE - STATIC 2 - NONLINEAR LOAD APPLICATION"]}
+    assert nl == {"NL_DEAD", "NL_HYDRO", "NL_SETTLE"}
+    # none: no pattern, no table, no case
+    t0 = parse_s2k(s2k_text(walled()))
+    assert "JOINT LOADS - GROUND DISPLACEMENT" not in t0 and "NL_SETTLE" not in {r["CASE"] for r in t0["LOAD CASE DEFINITIONS"]}
+    with pytest.raises(ValueError):
+        capped(settlement="trench", settlement_depth=0.5, settlement_width=10.0)   # needs gap
+
+
+def test_settlement_audit_writes_csv_and_svg(tmp_path):
+    import csv
+    sys.path.insert(0, str(ROOT))
+    from settlement_audit import write_audit
+    m = trenched()
+    csv_path, svg_path = write_audit(m, tmp_path, "t")
+    rows = list(csv.DictReader(open(csv_path, newline="")))
+    assert [c for c in rows[0]] == ["node", "x", "y", "z", "dx", "dy", "dz"]
+    assert len(rows) == len(m.settlements)
+    by = {int(r["node"]): r for r in rows}
+    g0 = m.all_ground_joints[0]
+    assert float(by[g0]["dz"]) == pytest.approx(m.settlements[g0]) and by[g0]["dx"] == "0" and by[g0]["dy"] == "0"
+    assert float(by[g0]["x"]) == pytest.approx(m.joints[g0][0])
+    svg = svg_path.read_text()
+    assert svg.startswith("<svg") and "PLAN" in svg and "ELEVATION" in svg and svg.count("<circle") >= len(m.settlements)
+    import xml.dom.minidom
+    xml.dom.minidom.parseString(svg)
+
+
 # --- dents ---------------------------------------------------------------------
 
 def dented(**kw):

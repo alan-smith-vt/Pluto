@@ -56,6 +56,10 @@ def main(argv=None) -> int:
                  f"({spec.ringwall_support}: {len(model.ringwall_joints)} contact + {len(model.ringwall_ground)} soil links)")
     if spec.dents:
         base += f", {len(spec.dents)} dent(s)"
+    if spec.settlement != "none":
+        moved = sum(1 for v in model.settlements.values() if v != 0.0)
+        base += (f", settlement {spec.settlement} {spec.settlement_depth:g} ft deep x "
+                 f"{spec.settlement_width:g} ft wide at {spec.settlement_direction_deg:g} deg ({moved} ground joints moved)")
     parts = [f"{len(spec.plate_courses)} course(s)"]
     if spec.baseplate:
         parts.append(f"baseplate ({len(model.baseplate_areas)} shells)")

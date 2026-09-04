@@ -217,10 +217,12 @@ def support_tables(model: TankModel) -> list[tuple[str, list[str]]]:
 
 def load_tables(model: TankModel) -> list[tuple[str, list[str]]]:
     s = model.spec
+    settle = bool(model.settlements)
     out = [
         ("LOAD PATTERN DEFINITIONS", [
             _row(LoadPat="DEAD", DesignType="Dead", SelfWtMult=1),
-            _row(LoadPat="HYDRO", DesignType="Live", SelfWtMult=0)]),
+            _row(LoadPat="HYDRO", DesignType="Live", SelfWtMult=0)] + (
+            [_row(LoadPat="SETTLE", DesignType="Other", SelfWtMult=0)] if settle else [])),
         ("JOINT PATTERN DEFINITIONS", [_row(Pattern="HYDRO")]),
         ("JOINT PATTERN ASSIGNMENTS", [
             _row(Joint=j, Pattern="HYDRO", Value=model.hydro_value(j))
@@ -253,6 +255,13 @@ def load_tables(model: TankModel) -> list[tuple[str, list[str]]]:
         out.append(("JOINT LOADS - FORCE", rows))
     else:
         raise ValueError(f"unknown load_mode {s.load_mode!r}")
+    if settle:
+        # Ground displacement on the fixed ground joints: the soil surface moves,
+        # the gap above each joint opens where it drops away. Field names per the
+        # SAP2000 table set (unverified against the importer until the first run).
+        out.append(("JOINT LOADS - GROUND DISPLACEMENT", [
+            _row(Joint=j, LoadPat="SETTLE", CoordSys="GLOBAL", U1=0, U2=0, U3=dz, R1=0, R2=0, R3=0)
+            for j, dz in sorted(model.settlements.items()) if dz != 0.0]))
     cases = [
         _row(Case="DEAD", Type="LinStatic", InitialCond="Zero"),
         _row(Case="HYDRO", Type="LinStatic", InitialCond="Zero")]
@@ -269,6 +278,9 @@ def load_tables(model: TankModel) -> list[tuple[str, list[str]]]:
         assigns += [
             _row(Case="NL_DEAD", LoadType="Load pattern", LoadName="DEAD", LoadSF=1),
             _row(Case="NL_HYDRO", LoadType="Load pattern", LoadName="HYDRO", LoadSF=1)]
+        if settle:
+            cases.append(_row(Case="NL_SETTLE", Type="NonStatic", InitialCond="NL_HYDRO"))
+            assigns.append(_row(Case="NL_SETTLE", LoadType="Load pattern", LoadName="SETTLE", LoadSF=1))
     out += [
         ("LOAD CASE DEFINITIONS", cases),
         ("CASE - STATIC 1 - LOAD ASSIGNMENTS", assigns),
@@ -276,7 +288,7 @@ def load_tables(model: TankModel) -> list[tuple[str, list[str]]]:
     if model.gap:
         out.append(("CASE - STATIC 2 - NONLINEAR LOAD APPLICATION", [
             _row(Case=c, LoadApp="Full Load", MonitorDOF="U3", MonitorJt=model.base_joints[0])
-            for c in ("NL_DEAD", "NL_HYDRO")]))
+            for c in (("NL_DEAD", "NL_HYDRO", "NL_SETTLE") if settle else ("NL_DEAD", "NL_HYDRO"))]))
     return out
 
 

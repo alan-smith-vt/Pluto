@@ -16,6 +16,7 @@ PowerShell 5.1, C# 5). Every arm writes the same pair: `<outBase>.bin` (v4) +
 ## Solvers
 
 - [[vault/arms/sap-tank-builder|sap-tank-builder]] — the Python tank generator (`pythonTools/sap/tankbuilder`): what each feature is in the model (courses, baseplate, roof + gutter ring, gap support layer, ring wall, dents), the plans for ports and surveys, how to check the ring-wall section, and which SAP tables are still unverified.
+- [[vault/arms/settlement-profiles|settlement-profiles]] — ground displacement on the ground joints (`[settlement]`, trench first): config, the audit CSV + generated SVG (plan heatmap + elevation) and how `run_sap.py` refreshes them.
 - [[vault/arms/ring-wall-load-path|ring-wall-load-path]] — the ring wall in pictures (SVG assets): tangential-only restraints in plan, and the rim → contact gap → wall → soil gap → ground section with the SAP 26 check numbers.
 - [[vault/arms/sap-s2k-to-viewer|sap-s2k-to-viewer]] — SAP2000: `.s2k` model + results → `SapToPluto` (reuses the lib's `Sap2kParser`/`Sap2kReader`, SAP axes kept) → v4 shells with per-corner forces, global displacements, and section / thickness / restraint / local-axes groups. The tank generator that feeds it is Python (`pythonTools/sap/`).
 - STAAD — the post-processing lib itself (`scripts/lib/`): `.anl` readers, DSRs, section cuts, STAAD input generation. No arm note yet; see the audit in [[vault/audits/scripts-sanitized-audit|scripts-sanitized-audit]] for the re-hydration state.

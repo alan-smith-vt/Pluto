@@ -7080,6 +7080,7 @@ TABLE:  "JOINT LOCAL AXES ASSIGNMENTS 1 - TYPICAL"
 TABLE:  "LOAD PATTERN DEFINITIONS"
    LoadPat=DEAD   DesignType=Dead   SelfWtMult=1
    LoadPat=HYDRO   DesignType=Live   SelfWtMult=0
+   LoadPat=SETTLE   DesignType=Other   SelfWtMult=0
 
 TABLE:  "JOINT PATTERN DEFINITIONS"
    Pattern=HYDRO
@@ -9395,20 +9396,104 @@ TABLE:  "AREA LOADS - SURFACE PRESSURE"
    Area=935   LoadPat=HYDRO   Face=Top   Pressure=2.496
    Area=936   LoadPat=HYDRO   Face=Top   Pressure=2.496
 
+TABLE:  "JOINT LOADS - GROUND DISPLACEMENT"
+   Joint=1119   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.25   R1=0   R2=0   R3=0
+   Joint=1120   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.25   R1=0   R2=0   R3=0
+   Joint=1121   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.244764984   R1=0   R2=0   R3=0
+   Joint=1122   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.229691358   R1=0   R2=0   R3=0
+   Joint=1123   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.206597222   R1=0   R2=0   R3=0
+   Joint=1124   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.178268071   R1=0   R2=0   R3=0
+   Joint=1125   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.148120818   R1=0   R2=0   R3=0
+   Joint=1126   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.119791667   R1=0   R2=0   R3=0
+   Joint=1127   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.096697531   R1=0   R2=0   R3=0
+   Joint=1128   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.0816239044   R1=0   R2=0   R3=0
+   Joint=1129   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.0763888889   R1=0   R2=0   R3=0
+   Joint=1130   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.0816239044   R1=0   R2=0   R3=0
+   Joint=1131   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.096697531   R1=0   R2=0   R3=0
+   Joint=1132   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.119791667   R1=0   R2=0   R3=0
+   Joint=1133   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.148120818   R1=0   R2=0   R3=0
+   Joint=1134   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.178268071   R1=0   R2=0   R3=0
+   Joint=1135   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.206597222   R1=0   R2=0   R3=0
+   Joint=1136   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.229691358   R1=0   R2=0   R3=0
+   Joint=1137   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.244764984   R1=0   R2=0   R3=0
+   Joint=1138   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.25   R1=0   R2=0   R3=0
+   Joint=1139   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.244764984   R1=0   R2=0   R3=0
+   Joint=1140   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.229691358   R1=0   R2=0   R3=0
+   Joint=1141   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.206597222   R1=0   R2=0   R3=0
+   Joint=1142   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.178268071   R1=0   R2=0   R3=0
+   Joint=1143   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.148120818   R1=0   R2=0   R3=0
+   Joint=1144   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.119791667   R1=0   R2=0   R3=0
+   Joint=1145   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.096697531   R1=0   R2=0   R3=0
+   Joint=1146   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.0816239044   R1=0   R2=0   R3=0
+   Joint=1147   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.0763888889   R1=0   R2=0   R3=0
+   Joint=1148   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.0816239044   R1=0   R2=0   R3=0
+   Joint=1149   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.096697531   R1=0   R2=0   R3=0
+   Joint=1150   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.119791667   R1=0   R2=0   R3=0
+   Joint=1151   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.148120818   R1=0   R2=0   R3=0
+   Joint=1152   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.178268071   R1=0   R2=0   R3=0
+   Joint=1153   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.206597222   R1=0   R2=0   R3=0
+   Joint=1154   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.229691358   R1=0   R2=0   R3=0
+   Joint=1155   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.244764984   R1=0   R2=0   R3=0
+   Joint=1156   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.25   R1=0   R2=0   R3=0
+   Joint=1157   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.229059938   R1=0   R2=0   R3=0
+   Joint=1158   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.168765432   R1=0   R2=0   R3=0
+   Joint=1159   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.0763888889   R1=0   R2=0   R3=0
+   Joint=1171   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.0763888889   R1=0   R2=0   R3=0
+   Joint=1172   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.168765432   R1=0   R2=0   R3=0
+   Joint=1173   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.229059938   R1=0   R2=0   R3=0
+   Joint=1174   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.25   R1=0   R2=0   R3=0
+   Joint=1175   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.229059938   R1=0   R2=0   R3=0
+   Joint=1176   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.168765432   R1=0   R2=0   R3=0
+   Joint=1177   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.0763888889   R1=0   R2=0   R3=0
+   Joint=1189   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.0763888889   R1=0   R2=0   R3=0
+   Joint=1190   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.168765432   R1=0   R2=0   R3=0
+   Joint=1191   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.229059938   R1=0   R2=0   R3=0
+   Joint=1192   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.25   R1=0   R2=0   R3=0
+   Joint=1193   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.20288486   R1=0   R2=0   R3=0
+   Joint=1194   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.0672222212   R1=0   R2=0   R3=0
+   Joint=1208   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.0672222212   R1=0   R2=0   R3=0
+   Joint=1209   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.20288486   R1=0   R2=0   R3=0
+   Joint=1210   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.25   R1=0   R2=0   R3=0
+   Joint=1211   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.20288486   R1=0   R2=0   R3=0
+   Joint=1212   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.0672222212   R1=0   R2=0   R3=0
+   Joint=1226   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.0672222212   R1=0   R2=0   R3=0
+   Joint=1227   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.20288486   R1=0   R2=0   R3=0
+   Joint=1228   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.25   R1=0   R2=0   R3=0
+   Joint=1229   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.166239751   R1=0   R2=0   R3=0
+   Joint=1245   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.166239751   R1=0   R2=0   R3=0
+   Joint=1246   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.25   R1=0   R2=0   R3=0
+   Joint=1247   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.166239751   R1=0   R2=0   R3=0
+   Joint=1263   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.166239751   R1=0   R2=0   R3=0
+   Joint=1264   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.25   R1=0   R2=0   R3=0
+   Joint=1265   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.119124611   R1=0   R2=0   R3=0
+   Joint=1281   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.119124611   R1=0   R2=0   R3=0
+   Joint=1282   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.25   R1=0   R2=0   R3=0
+   Joint=1283   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.119124611   R1=0   R2=0   R3=0
+   Joint=1299   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.119124611   R1=0   R2=0   R3=0
+   Joint=1336   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.25   R1=0   R2=0   R3=0
+   Joint=1337   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.06153944   R1=0   R2=0   R3=0
+   Joint=1353   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.06153944   R1=0   R2=0   R3=0
+   Joint=1354   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.25   R1=0   R2=0   R3=0
+   Joint=1355   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.06153944   R1=0   R2=0   R3=0
+   Joint=1371   LoadPat=SETTLE   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.06153944   R1=0   R2=0   R3=0
+
 TABLE:  "LOAD CASE DEFINITIONS"
    Case=DEAD   Type=LinStatic   InitialCond=Zero
    Case=HYDRO   Type=LinStatic   InitialCond=Zero
    Case=NL_DEAD   Type=NonStatic   InitialCond=Zero
    Case=NL_HYDRO   Type=NonStatic   InitialCond=NL_DEAD
+   Case=NL_SETTLE   Type=NonStatic   InitialCond=NL_HYDRO
 
 TABLE:  "CASE - STATIC 1 - LOAD ASSIGNMENTS"
    Case=DEAD   LoadType="Load pattern"   LoadName=DEAD   LoadSF=1
    Case=HYDRO   LoadType="Load pattern"   LoadName=HYDRO   LoadSF=1
    Case=NL_DEAD   LoadType="Load pattern"   LoadName=DEAD   LoadSF=1
    Case=NL_HYDRO   LoadType="Load pattern"   LoadName=HYDRO   LoadSF=1
+   Case=NL_SETTLE   LoadType="Load pattern"   LoadName=SETTLE   LoadSF=1
 
 TABLE:  "CASE - STATIC 2 - NONLINEAR LOAD APPLICATION"
    Case=NL_DEAD   LoadApp="Full Load"   MonitorDOF=U3   MonitorJt=1
    Case=NL_HYDRO   LoadApp="Full Load"   MonitorDOF=U3   MonitorJt=1
+   Case=NL_SETTLE   LoadApp="Full Load"   MonitorDOF=U3   MonitorJt=1
 
 END TABLE DATA

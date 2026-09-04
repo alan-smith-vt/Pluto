@@ -53,6 +53,19 @@ def spec_model_id(cfg: Path) -> str:
     return f"sap/{cfg.stem}"
 
 
+def step_audit(cfg: Path, s2k: Path) -> None:
+    """Settlement audit beside the model (CSV + SVG) and into the vault, when a profile is set."""
+    from settlement_audit import write_audit, VAULT_ASSETS
+    import shutil
+    spec, _ = load_config(cfg)
+    if spec.settlement == "none":
+        return
+    csv_path, svg_path = write_audit(TankModel(spec), s2k.parent, s2k.stem)
+    VAULT_ASSETS.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(svg_path, VAULT_ASSETS / f"settlement-{s2k.stem}.svg")
+    print(f"[audit]   {csv_path.name}, {svg_path.name} -> vault/arms/assets/settlement-{s2k.stem}.svg")
+
+
 def step_run(s2k: Path, run: bool):
     from tankbuilder.sap_api import SapSession
     sap = SapSession.attach_or_start()
@@ -144,6 +157,7 @@ def main(argv=None) -> int:
         print(f"[build]   skipped, using {s2k}")
     else:
         s2k, model_id = step_build(a.config)
+    step_audit(a.config, s2k)
 
     sap = step_run(s2k, run=not a.no_run)
     results = step_results(sap, s2k)

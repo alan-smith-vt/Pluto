@@ -91,6 +91,14 @@ class TankSpec:
     ringwall_support: str = "gap"         # "gap": soil gap link k = subgrade x width x arc | "fixed"
     # [[dents]]  wall imperfections applied to the joint coordinates
     dents: tuple[Dent, ...] = ()
+    # [settlement]  ground displacement on the ground joints (plate GROUND + RINGWALL_GROUND)
+    # from a surface w(x, y); needs foundation "gap". Pattern SETTLE, nonlinear case
+    # NL_SETTLE continuing from NL_HYDRO (the gaps open where the ground drops away).
+    settlement: str = "none"              # "none" | "trench" (parabolic cross-section)
+    settlement_depth: float = 0.0         # ft, settlement at the trench centreline (positive = down)
+    settlement_width: float = 0.0         # ft, trench width (w = 0 at +/- width/2)
+    settlement_direction_deg: float = 0.0 # trench axis direction in plan, from +X
+    settlement_offset: float = 0.0        # ft, axis offset from the tank centre, +90 deg side
     # [supports]
     base_local_axes: bool = False
     release_radial: bool = False
@@ -172,6 +180,13 @@ class TankSpec:
                 self.ringwall_support = "gap"
             if self.ringwall_support not in ("gap", "fixed"):
                 raise ValueError(f"ringwall.support {self.ringwall_support!r} not recognised (gap | fixed)")
+        if self.settlement not in ("none", "trench"):
+            raise ValueError(f"settlement.profile {self.settlement!r} not recognised (none | trench)")
+        if self.settlement != "none":
+            if self.foundation != "gap":
+                raise ValueError("settlement needs foundation.mode = 'gap' (it moves the ground joints)")
+            if self.settlement_depth <= 0 or self.settlement_width <= 0:
+                raise ValueError("settlement.depth and width must be positive")
         for k, d in enumerate(self.dents, 1):
             if d.width <= 0 or d.height <= 0:
                 raise ValueError(f"dents[{k}]: width and height must be positive")
@@ -228,6 +243,13 @@ CONFIG_MAP = {
     },
     "dents": {"angle_deg": "angle_deg", "elevation": "elevation", "depth": "depth",
               "width": "width", "height": "height"},
+    "settlement": {
+        "profile": "settlement",
+        "depth": "settlement_depth",
+        "width": "settlement_width",
+        "direction_deg": "settlement_direction_deg",
+        "offset": "settlement_offset",
+    },
     "supports": {
         "base_local_axes": "base_local_axes",
         "release_radial": "release_radial",
