@@ -123,22 +123,31 @@ def fig_loads(m: TankModel) -> str:
         f.line(f.X(r), f.Y(hf * 0.35), f.X(r), f.Y(0.6), stroke=STEEL, w=1.3, arrow=True)
     f.text(f.X(R * 0.35), f.Y(hf * 0.35) - 6, "HYDRO", fill=STEEL, anchor="middle", bold=True)
     # SETTLE: ground joints move
-    for r in [R * 0.2, R * 0.45, R * 0.7, R]:
+    for r in [R * 0.2, R * 0.45, R * 0.7]:
         f.dot(f.X(r), f.Y(0), 3.5, fill=RUST)
         f.line(f.X(r), f.Y(0) + 6, f.X(r), f.Y(0) + 26, stroke=RUST, w=1.3, arrow=True)
+    # the ring wall's ground joint: drawn under the concrete, where the soil link acts
+    yb = f.Y(-s.ringwall_depth) if s.ringwall else f.Y(0)
+    f.dot(f.X(R), yb, 3.5, fill=RUST)
+    f.line(f.X(R), yb + 6, f.X(R), yb + 26, stroke=RUST, w=1.3, arrow=True)
     f.text(f.X(R * 0.45), f.Y(0) + 42, "SETTLE", fill=RUST, anchor="middle", bold=True)
     f.text(f.X(R * 0.45), f.Y(0) + 56, "w(x, y)", fill=RUST, anchor="middle")
     # case chain
     x, y = 720, 120
     f.text(x, y, "CASES", bold=True)
-    chain = [("DEAD", INK), ("HYDRO", STEEL), ("NL_DEAD", INK), ("NL_HYDRO", STEEL), ("NL_SETTLE", RUST)]
-    for i, (name, col) in enumerate(chain):
-        yy = y + 26 + i * 26
+    # linear: one pattern each. Nonlinear: a chain, each case CONTINUES from the
+    # previous one's end state and adds one pattern (so NL_SETTLE holds all three).
+    f.text(x, y + 26, "DEAD", fill=INK); f.text(x + 80, y + 26, "linear", fill=MUTED, size=11)
+    f.text(x, y + 52, "HYDRO", fill=STEEL); f.text(x + 80, y + 52, "linear", fill=MUTED, size=11)
+    chain = [("NL_DEAD", INK, "DEAD"), ("NL_HYDRO", STEEL, "+ HYDRO"), ("NL_SETTLE", RUST, "+ SETTLE")]
+    for i, (name, col, adds) in enumerate(chain):
+        yy = y + 96 + i * 30
         f.text(x, yy, name, fill=col)
-        if i >= 3:
-            f.line(x - 12, yy - 20, x - 12, yy - 6, stroke=MUTED, w=1, arrow=True)
-    f.text(x, y + 26 * len(chain) + 30, "linear", fill=MUTED, size=11)
-    f.text(x, y + 26 * len(chain) + 44, "then gaps", fill=MUTED, size=11)
+        f.text(x + 90, yy, adds, fill=col, size=11)
+        if i >= 1:
+            f.line(x - 12, yy - 24, x - 12, yy - 6, stroke=MUTED, w=1, arrow=True)
+    f.text(x, y + 96 + 30 * len(chain) + 6, "continues from above", fill=MUTED, size=11)
+    f.text(x, y + 96 + 30 * len(chain) + 20, "gaps open / close", fill=MUTED, size=11)
     return f.done()
 
 
@@ -148,24 +157,29 @@ def fig_axes(m: TankModel) -> str:
     f = Fig(860, 520, "SHELL LOCAL AXES", "Tank half-section with the shell local axes drawn on the wall, baseplate and roof: 1 meridional, 2 circumferential, 3 normal")
     f.map(0, R * 1.35, -6, zc + 4, 80, 700, 470, 60)
     half_section(f, m, show_ringwall=False)
-    L = 30  # px arrow length
+    L = 44  # px arrow length
 
-    def triad(x, y, d1, d3, label_side=1):
-        # d1, d3: unit px directions for local 1 and 3 in the section plane; 2 is out of plane
-        f.line(x, y, x + d1[0] * L, y + d1[1] * L, stroke=RUST, w=2, arrow=True)
-        f.text(x + d1[0] * (L + 12), y + d1[1] * (L + 12) + 4, "1", fill=RUST, anchor="middle", bold=True)
-        f.line(x, y, x + d3[0] * L, y + d3[1] * L, stroke=STEEL, w=2, arrow=True)
-        f.text(x + d3[0] * (L + 12), y + d3[1] * (L + 12) + 4, "3", fill=STEEL, anchor="middle", bold=True)
+    def triad(x, y, d1, d3):
+        # d1, d3: unit px directions for local 1 and 3 in the section plane; 2 is out of plane.
+        # Labels sit past the arrow tip AND off to its side, so a label never lands on the
+        # shell line the arrow leaves from; "2" goes into the quadrant away from both arrows.
+        def side(d): return (-d[1], d[0])
+        for d, col, lab in ((d1, RUST, "1"), (d3, STEEL, "3")):
+            f.line(x, y, x + d[0] * L, y + d[1] * L, stroke=col, w=2, arrow=True)
+            sd = side(d)
+            f.text(x + d[0] * (L + 10) + sd[0] * 9, y + d[1] * (L + 10) + sd[1] * 9 + 4, lab, fill=col, anchor="middle", bold=True)
         f.add(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="6" fill="none" stroke="{GREEN}" stroke-width="2"/>')
         f.dot(x, y, 2, fill=GREEN)
-        f.text(x + 10 * label_side, y - 9, "2", fill=GREEN, anchor="middle", bold=True)
+        ax, ay = -(d1[0] + d3[0]), -(d1[1] + d3[1])
+        m = math.hypot(ax, ay) or 1
+        f.text(x + ax / m * 16, y + ay / m * 16 + 4, "2", fill=GREEN, anchor="middle", bold=True)
 
     # wall: 1 up, 3 outward (+r), 2 circumferential (out of page)
     triad(f.X(R), f.Y(H * 0.5), (0, -1), (1, 0))
-    f.text(f.X(R) + 44, f.Y(H * 0.5) + 4, "wall", fill=MUTED)
+    f.text(f.X(R) + L + 30, f.Y(H * 0.5) + 4, "wall", fill=MUTED)
     # baseplate: 1 radial outward, 3 up
     triad(f.X(R * 0.45), f.Y(0), (1, 0), (0, -1))
-    f.text(f.X(R * 0.45), f.Y(0) + 22, "baseplate", fill=MUTED, anchor="middle")
+    f.text(f.X(R * 0.45), f.Y(0) + 24, "baseplate", fill=MUTED, anchor="middle")
     # roof: 1 up the slope toward the crown, 3 normal (outward/up)
     r = R * 0.55
     z = m.roof_z(r)
@@ -176,7 +190,7 @@ def fig_axes(m: TankModel) -> str:
     nrm = (-t[1], t[0])                                   # rotate: outward normal (up-right)
     if nrm[1] > 0: nrm = (-nrm[0], -nrm[1])
     triad(f.X(r), f.Y(z), t, nrm)
-    f.text(f.X(r) + 8, f.Y(z) + 40, "roof", fill=MUTED)
+    f.text(f.X(r) + 24, f.Y(z) + 34, "roof", fill=MUTED)
     # legend
     x, y = 720, 120
     f.text(x, y, "1", fill=RUST, bold=True); f.text(x + 18, y, "merid")
@@ -206,9 +220,9 @@ def fig_beam_nodes(m: TankModel) -> str:
         for k in range(5):
             f.line(x - 18 + k * 9, y, x - 24 + k * 9, y + 7, w=1)
 
-    def right(x, y, big, small=None, col=INK):
-        f.text(x + 14, y + 4, big, fill=col, bold=True)
-        if small: f.text(x + 14, y + 18, small, fill=MUTED, size=11)
+    def right(x, y, big, small=None, col=INK, dy=18):
+        f.text(x + 14, y + 4, big, fill=INK, bold=True)
+        if small: f.text(x + 14, y + dy, small, fill=MUTED, size=11)
 
     def left(x, y, s, col=STEEL):
         f.text(x - 14, y + 4, s, fill=col, anchor="end", size=11)
@@ -225,10 +239,17 @@ def fig_beam_nodes(m: TankModel) -> str:
     f.path(f"M{jx} {jy} l 0 20 l 6 0 l 0 -20 z", fill=CONC, w=1)
     f.dot(jx, jy, 5, fill=STEEL)
     right(jx + 22, jy - 4, "joint", "TOP_RING", STEEL)
-    f.text(jx + 36, jy + 40, "ROOF_RING", fill=STEEL, size=11)
+    f.text(jx + 36, jy + 40, "ROOF_RING", fill=MUTED, size=11)
     f.text(jx + 36, jy + 54, "frame", fill=MUTED, size=11)
     f.text(60, 420, "one joint", fill=MUTED, size=11)
     f.text(60, 436, "wall + roof + ring", fill=MUTED, size=11)
+    # legend
+    lx, ly = 60, 480
+    f.add(f'<rect x="{lx - 10}" y="{ly - 16}" width="230" height="70" fill="none" stroke="{MUTED}" stroke-width=".6"/>')
+    f.text(lx, ly, "joint", bold=True); f.text(lx + 90, ly, "joint", fill=MUTED, size=11)
+    f.text(lx, ly + 16, "GROUP", fill=MUTED, size=11); f.text(lx + 90, ly + 16, "SAP group", fill=MUTED, size=11)
+    f.text(lx, ly + 32, "GAP_LINK", fill=STEEL, size=11); f.text(lx + 90, ly + 32, "link property", fill=MUTED, size=11)
+    f.text(lx, ly + 48, "part", fill=MUTED, size=11); f.text(lx + 90, ly + 48, "wall roof frame", fill=MUTED, size=11)
 
     # ---------------- column 2: PLATE ----------------
     cx = 430
@@ -244,7 +265,7 @@ def fig_beam_nodes(m: TankModel) -> str:
     left(jx, jy + 24, "gap")
     left(jx, jy + 48, "GAP_Rnn")
     f.dot(jx, y1, 5, fill=STEEL)
-    right(jx, y1, "ground", "GROUND", STEEL)
+    right(jx, y1, "ground", "GROUND", STEEL, dy=32)
     support(jx, y1 + 8)
     f.text(jx - 30, y1 + 16, "fixed", fill=MUTED, size=11, anchor="end")
     f.text(360, 420, "two joints coincident", fill=MUTED, size=11)
@@ -274,7 +295,7 @@ def fig_beam_nodes(m: TankModel) -> str:
     f.dot(jx, y1 + ch / 2, 3, fill="none", stroke=STEEL)
     left(jx - cw / 2, y1 + ch / 2, "centroid", MUTED)
     left(jx - cw / 2, y1 + ch / 2 + 16, "offset", MUTED)
-    f.text(jx + cw / 2 + 12, y1 + ch / 2 + 4, "RINGWALL", fill=INK, size=11)
+    f.text(jx + cw / 2 + 12, y1 + ch / 2 + 4, "RINGWALL", fill=MUTED, size=11)
     f.text(jx + cw / 2 + 12, y1 + ch / 2 + 18, "frame", fill=MUTED, size=11)
     # soil gap link under the base
     y2 = y1 + ch + 70
@@ -284,7 +305,7 @@ def fig_beam_nodes(m: TankModel) -> str:
     left(jx, y1 + ch + 22, "GAP_SOIL")
     left(jx, y1 + ch + 48, "spring")
     f.dot(jx, y2, 5, fill=STEEL)
-    right(jx, y2, "ground", "RINGWALL_GROUND", STEEL)
+    right(jx, y2, "ground", "RINGWALL_GROUND", STEEL, dy=32)
     support(jx, y2 + 8)
     f.text(jx - 30, y2 + 16, "fixed", fill=MUTED, size=11, anchor="end")
     f.text(600, 470, "three joints coincident", fill=MUTED, size=11)

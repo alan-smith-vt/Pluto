@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 640" font-family="Consolas, Menlo, monospace" font-size="11" role="img" aria-label="Applied ground settlement: plan heatmap of dz on the ground joints and the profile in elevation">
-<rect x="0" y="0" width="900" height="640" fill="#ffffff"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" font-family="Consolas, Menlo, monospace" font-size="11" role="img" aria-label="Applied ground settlement: plan heatmap of dz on the ground joints and the profile in elevation">
+<rect x="0" y="0" width="900" height="560" fill="#ffffff"/>
 <text x="16" y="24" font-size="13" font-weight="bold" fill="#1f2328">example — applied ground settlement</text>
 <text x="16" y="42" fill="#6b7380">trench: depth 0.25 ft, width 12 ft, direction 0 deg, offset 0 ft; 79 of 217 ground joints moved; case NL_SETTLE after NL_HYDRO</text>
 <text x="250" y="62" text-anchor="middle" font-weight="bold" fill="#1f2328">PLAN  dz on the ground joints (ft)</text>
@@ -230,36 +230,36 @@
 <text x="449.9" y="274.0" fill="#6b7380">+X</text>
 <text x="246.0" y="70.1" fill="#6b7380" text-anchor="end">+Y</text>
 <text x="250" y="486" text-anchor="middle" fill="#6b7380">dashed: profile axis and edges; ring wall shaded; R = 30 ft</text>
-<rect x="480" y="435.0" width="18" height="15.5" fill="#e4e8ee"/>
-<rect x="480" y="420.0" width="18" height="15.5" fill="#dbe1ea"/>
-<rect x="480" y="405.0" width="18" height="15.5" fill="#d2dae6"/>
-<rect x="480" y="390.0" width="18" height="15.5" fill="#cad3e1"/>
-<rect x="480" y="375.0" width="18" height="15.5" fill="#c1ccdd"/>
-<rect x="480" y="360.0" width="18" height="15.5" fill="#b8c5d9"/>
-<rect x="480" y="345.0" width="18" height="15.5" fill="#afbdd5"/>
-<rect x="480" y="330.0" width="18" height="15.5" fill="#a7b6d1"/>
-<rect x="480" y="315.0" width="18" height="15.5" fill="#9eafcd"/>
-<rect x="480" y="300.0" width="18" height="15.5" fill="#95a8c8"/>
-<rect x="480" y="285.0" width="18" height="15.5" fill="#8da1c4"/>
-<rect x="480" y="270.0" width="18" height="15.5" fill="#849ac0"/>
-<rect x="480" y="255.0" width="18" height="15.5" fill="#7b92bc"/>
-<rect x="480" y="240.0" width="18" height="15.5" fill="#728bb8"/>
-<rect x="480" y="225.0" width="18" height="15.5" fill="#6a84b4"/>
-<rect x="480" y="210.0" width="18" height="15.5" fill="#617daf"/>
-<rect x="480" y="195.0" width="18" height="15.5" fill="#5876ab"/>
-<rect x="480" y="180.0" width="18" height="15.5" fill="#506fa7"/>
-<rect x="480" y="165.0" width="18" height="15.5" fill="#4767a3"/>
-<rect x="480" y="150.0" width="18" height="15.5" fill="#3e609f"/>
-<rect x="480" y="135.0" width="18" height="15.5" fill="#35599b"/>
-<rect x="480" y="120.0" width="18" height="15.5" fill="#2d5296"/>
-<rect x="480" y="105.0" width="18" height="15.5" fill="#244b92"/>
-<rect x="480" y="90.0" width="18" height="15.5" fill="#1b448e"/>
+<rect x="480" y="90.0" width="18" height="15.5" fill="#e4e8ee"/>
+<rect x="480" y="105.0" width="18" height="15.5" fill="#dbe1ea"/>
+<rect x="480" y="120.0" width="18" height="15.5" fill="#d2dae6"/>
+<rect x="480" y="135.0" width="18" height="15.5" fill="#cad3e1"/>
+<rect x="480" y="150.0" width="18" height="15.5" fill="#c1ccdd"/>
+<rect x="480" y="165.0" width="18" height="15.5" fill="#b8c5d9"/>
+<rect x="480" y="180.0" width="18" height="15.5" fill="#afbdd5"/>
+<rect x="480" y="195.0" width="18" height="15.5" fill="#a7b6d1"/>
+<rect x="480" y="210.0" width="18" height="15.5" fill="#9eafcd"/>
+<rect x="480" y="225.0" width="18" height="15.5" fill="#95a8c8"/>
+<rect x="480" y="240.0" width="18" height="15.5" fill="#8da1c4"/>
+<rect x="480" y="255.0" width="18" height="15.5" fill="#849ac0"/>
+<rect x="480" y="270.0" width="18" height="15.5" fill="#7b92bc"/>
+<rect x="480" y="285.0" width="18" height="15.5" fill="#728bb8"/>
+<rect x="480" y="300.0" width="18" height="15.5" fill="#6a84b4"/>
+<rect x="480" y="315.0" width="18" height="15.5" fill="#617daf"/>
+<rect x="480" y="330.0" width="18" height="15.5" fill="#5876ab"/>
+<rect x="480" y="345.0" width="18" height="15.5" fill="#506fa7"/>
+<rect x="480" y="360.0" width="18" height="15.5" fill="#4767a3"/>
+<rect x="480" y="375.0" width="18" height="15.5" fill="#3e609f"/>
+<rect x="480" y="390.0" width="18" height="15.5" fill="#35599b"/>
+<rect x="480" y="405.0" width="18" height="15.5" fill="#2d5296"/>
+<rect x="480" y="420.0" width="18" height="15.5" fill="#244b92"/>
+<rect x="480" y="435.0" width="18" height="15.5" fill="#1b448e"/>
 <rect x="480" y="90" width="18" height="360" fill="none" stroke="#1f2328" stroke-width=".6"/>
-<text x="503" y="454.0" fill="#1f2328">-0</text>
-<text x="503" y="364.0" fill="#1f2328">-0.0625</text>
+<text x="503" y="94.0" fill="#1f2328">0</text>
+<text x="503" y="184.0" fill="#1f2328">-0.0625</text>
 <text x="503" y="274.0" fill="#1f2328">-0.125</text>
-<text x="503" y="184.0" fill="#1f2328">-0.188</text>
-<text x="503" y="94.0" fill="#1f2328">-0.25</text>
+<text x="503" y="364.0" fill="#1f2328">-0.188</text>
+<text x="503" y="454.0" fill="#1f2328">-0.25</text>
 <text x="480" y="82" fill="#6b7380">dz ft</text>
 <text x="710.0" y="72" text-anchor="middle" font-weight="bold" fill="#1f2328">ELEVATION  across the profile (d = distance from the axis)</text>
 <rect x="540" y="90" width="340" height="360" fill="none" stroke="#c0c4c8" stroke-width=".6"/>
@@ -486,8 +486,6 @@
 <circle cx="710.0" cy="416.0" r="2.4" fill="#17408c" stroke="#1f2328" stroke-width=".3"/>
 <circle cx="710.0" cy="416.0" r="2.4" fill="#17408c" stroke="#1f2328" stroke-width=".3"/>
 <circle cx="710.0" cy="416.0" r="2.4" fill="#17408c" stroke="#1f2328" stroke-width=".3"/>
-<line x1="540.0" y1="450" x2="540.0" y2="455" stroke="#1f2328" stroke-width=".6"/>
-<text x="540.0" y="467" text-anchor="middle" fill="#6b7380">-31</text>
 <line x1="545.5" y1="450" x2="545.5" y2="455" stroke="#1f2328" stroke-width=".6"/>
 <text x="545.5" y="467" text-anchor="middle" fill="#6b7380">-30</text>
 <line x1="677.1" y1="450" x2="677.1" y2="455" stroke="#1f2328" stroke-width=".6"/>
@@ -498,10 +496,8 @@
 <text x="742.9" y="467" text-anchor="middle" fill="#6b7380">6</text>
 <line x1="874.5" y1="450" x2="874.5" y2="455" stroke="#1f2328" stroke-width=".6"/>
 <text x="874.5" y="467" text-anchor="middle" fill="#6b7380">30</text>
-<line x1="880.0" y1="450" x2="880.0" y2="455" stroke="#1f2328" stroke-width=".6"/>
-<text x="880.0" y="467" text-anchor="middle" fill="#6b7380">31</text>
 <text x="710.0" y="484" text-anchor="middle" fill="#6b7380">d, ft (perpendicular to the axis; + = the 90 deg side)</text>
 <text x="534" y="114.0" text-anchor="end" fill="#6b7380">0</text>
 <text x="534" y="420.0" text-anchor="end" fill="#6b7380">-0.25</text>
-<text x="710.0" y="624" text-anchor="middle" fill="#6b7380">red: w(d) as applied; dots: ground joints (plate + ring wall) at their own d</text>
+<text x="710.0" y="500" text-anchor="middle" fill="#6b7380">red: applied w(d); dots: ground joints (plate + ring wall)</text>
 </svg>

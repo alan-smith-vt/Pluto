@@ -10,12 +10,21 @@
 <path d="M150 190 l 24 0 l 0 6 l -24 0 z" fill="#e3e1dc" stroke="#1f2328" stroke-width="1"/>
 <path d="M150 190 l 0 20 l 6 0 l 0 -20 z" fill="#e3e1dc" stroke="#1f2328" stroke-width="1"/>
 <circle cx="150.0" cy="190.0" r="5" fill="#2f6b9a"/>
-<text x="186.0" y="190.0" fill="#2f6b9a" text-anchor="start" font-size="12" font-weight="bold">joint</text>
+<text x="186.0" y="190.0" fill="#1f2328" text-anchor="start" font-size="12" font-weight="bold">joint</text>
 <text x="186.0" y="204.0" fill="#6b7380" text-anchor="start" font-size="11">TOP_RING</text>
-<text x="186.0" y="230.0" fill="#2f6b9a" text-anchor="start" font-size="11">ROOF_RING</text>
+<text x="186.0" y="230.0" fill="#6b7380" text-anchor="start" font-size="11">ROOF_RING</text>
 <text x="186.0" y="244.0" fill="#6b7380" text-anchor="start" font-size="11">frame</text>
 <text x="60.0" y="420.0" fill="#6b7380" text-anchor="start" font-size="11">one joint</text>
 <text x="60.0" y="436.0" fill="#6b7380" text-anchor="start" font-size="11">wall + roof + ring</text>
+<rect x="50" y="464" width="230" height="70" fill="none" stroke="#6b7380" stroke-width=".6"/>
+<text x="60.0" y="480.0" fill="#1f2328" text-anchor="start" font-size="12" font-weight="bold">joint</text>
+<text x="150.0" y="480.0" fill="#6b7380" text-anchor="start" font-size="11">joint</text>
+<text x="60.0" y="496.0" fill="#6b7380" text-anchor="start" font-size="11">GROUP</text>
+<text x="150.0" y="496.0" fill="#6b7380" text-anchor="start" font-size="11">SAP group</text>
+<text x="60.0" y="512.0" fill="#2f6b9a" text-anchor="start" font-size="11">GAP_LINK</text>
+<text x="150.0" y="512.0" fill="#6b7380" text-anchor="start" font-size="11">link property</text>
+<text x="60.0" y="528.0" fill="#6b7380" text-anchor="start" font-size="11">part</text>
+<text x="150.0" y="528.0" fill="#6b7380" text-anchor="start" font-size="11">wall roof frame</text>
 <text x="360.0" y="70.0" fill="#1f2328" text-anchor="start" font-size="12" font-weight="bold">PLATE</text>
 <line x1="360.0" y1="190.0" x2="500.0" y2="190.0" stroke="#1f2328" stroke-width="3"/>
 <circle cx="430.0" cy="190.0" r="5" fill="#1f2328"/>
@@ -27,8 +36,8 @@
 <text x="416.0" y="218.0" fill="#2f6b9a" text-anchor="end" font-size="11">gap</text>
 <text x="416.0" y="242.0" fill="#2f6b9a" text-anchor="end" font-size="11">GAP_Rnn</text>
 <circle cx="430.0" cy="260.0" r="5" fill="#2f6b9a"/>
-<text x="444.0" y="264.0" fill="#2f6b9a" text-anchor="start" font-size="12" font-weight="bold">ground</text>
-<text x="444.0" y="278.0" fill="#6b7380" text-anchor="start" font-size="11">GROUND</text>
+<text x="444.0" y="264.0" fill="#1f2328" text-anchor="start" font-size="12" font-weight="bold">ground</text>
+<text x="444.0" y="292.0" fill="#6b7380" text-anchor="start" font-size="11">GROUND</text>
 <line x1="408.0" y1="268.0" x2="452.0" y2="268.0" stroke="#1f2328" stroke-width="2"/>
 <line x1="412.0" y1="268.0" x2="406.0" y2="275.0" stroke="#1f2328" stroke-width="1"/>
 <line x1="421.0" y1="268.0" x2="415.0" y2="275.0" stroke="#1f2328" stroke-width="1"/>
@@ -50,14 +59,14 @@
 <path d="M711 157 h18 M711 163 h18" fill="none" stroke="#2f6b9a" stroke-width="2"/>
 <text x="706.0" y="164.0" fill="#2f6b9a" text-anchor="end" font-size="11">GAP_CONTACT</text>
 <circle cx="720.0" cy="190.0" r="5" fill="#ffffff" stroke="#2f6b9a" stroke-width="1.5"/>
-<text x="764.0" y="194.0" fill="#2f6b9a" text-anchor="start" font-size="12" font-weight="bold">wall top</text>
+<text x="764.0" y="194.0" fill="#1f2328" text-anchor="start" font-size="12" font-weight="bold">wall top</text>
 <text x="764.0" y="208.0" fill="#6b7380" text-anchor="start" font-size="11">RINGWALL_TOP</text>
 <rect x="696.0" y="190" width="48" height="130" fill="#e3e1dc" stroke="#1f2328" stroke-width="1"/>
 <line x1="720.0" y1="190.0" x2="720.0" y2="255.0" stroke="#2f6b9a" stroke-width="1.2" stroke-dasharray="2 4"/>
 <circle cx="720.0" cy="255.0" r="3" fill="none" stroke="#2f6b9a" stroke-width="1.5"/>
 <text x="682.0" y="259.0" fill="#6b7380" text-anchor="end" font-size="11">centroid</text>
 <text x="682.0" y="275.0" fill="#6b7380" text-anchor="end" font-size="11">offset</text>
-<text x="756.0" y="259.0" fill="#1f2328" text-anchor="start" font-size="11">RINGWALL</text>
+<text x="756.0" y="259.0" fill="#6b7380" text-anchor="start" font-size="11">RINGWALL</text>
 <text x="756.0" y="273.0" fill="#6b7380" text-anchor="start" font-size="11">frame</text>
 <line x1="720.0" y1="320.0" x2="720.0" y2="385.0" stroke="#2f6b9a" stroke-width="2"/>
 <path d="M711 339 h18 M711 345 h18" fill="none" stroke="#2f6b9a" stroke-width="2"/>
@@ -65,8 +74,8 @@
 <text x="706.0" y="346.0" fill="#2f6b9a" text-anchor="end" font-size="11">GAP_SOIL</text>
 <text x="706.0" y="372.0" fill="#2f6b9a" text-anchor="end" font-size="11">spring</text>
 <circle cx="720.0" cy="390.0" r="5" fill="#2f6b9a"/>
-<text x="734.0" y="394.0" fill="#2f6b9a" text-anchor="start" font-size="12" font-weight="bold">ground</text>
-<text x="734.0" y="408.0" fill="#6b7380" text-anchor="start" font-size="11">RINGWALL_GROUND</text>
+<text x="734.0" y="394.0" fill="#1f2328" text-anchor="start" font-size="12" font-weight="bold">ground</text>
+<text x="734.0" y="422.0" fill="#6b7380" text-anchor="start" font-size="11">RINGWALL_GROUND</text>
 <line x1="698.0" y1="398.0" x2="742.0" y2="398.0" stroke="#1f2328" stroke-width="2"/>
 <line x1="702.0" y1="398.0" x2="696.0" y2="405.0" stroke="#1f2328" stroke-width="1"/>
 <line x1="711.0" y1="398.0" x2="705.0" y2="405.0" stroke="#1f2328" stroke-width="1"/>

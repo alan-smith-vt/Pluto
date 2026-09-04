@@ -79,7 +79,7 @@ def settlement_svg(model: TankModel, rows: list[dict], title: str) -> str:
     depth = max((abs(r["dz"]) for r in rows), default=0.0) or 1.0
 
     # ---- layout (all in SVG px) ----
-    W, H = 900, 640
+    W, H = 900, 560
     plan_cx, plan_cy, plan_r = 250, 270, 190
     sc = plan_r / (R + rw + 1.0)            # ft -> px in plan
     bar_x, bar_y, bar_w, bar_h = 480, 90, 18, 360
@@ -128,15 +128,16 @@ def settlement_svg(model: TankModel, rows: list[dict], title: str) -> str:
 
     # ---- colour bar ----
     steps = 24
-    for i in range(steps):
+    for i in range(steps):                    # 0 (pale) at the top, full depth (dark) at the bottom: down is down
         t0, t1 = i / steps, (i + 1) / steps
-        yy = bar_y + bar_h * (1 - t1)
+        yy = bar_y + bar_h * t0
         o.append(f'<rect x="{bar_x}" y="{yy:.1f}" width="{bar_w}" height="{bar_h / steps + .5:.1f}" fill="{_color((t0 + t1) / 2)}"/>')
     o.append(f'<rect x="{bar_x}" y="{bar_y}" width="{bar_w}" height="{bar_h}" fill="none" stroke="#1f2328" stroke-width=".6"/>')
     for k in range(5):
         t = k / 4
-        yy = bar_y + bar_h * (1 - t)
-        o.append(f'<text x="{bar_x + bar_w + 5}" y="{yy + 4:.1f}" fill="#1f2328">{-t * depth:.3g}</text>')
+        yy = bar_y + bar_h * t
+        lab = "0" if t == 0 else f"{-t * depth:.3g}"
+        o.append(f'<text x="{bar_x + bar_w + 5}" y="{yy + 4:.1f}" fill="#1f2328">{lab}</text>')
     o.append(f'<text x="{bar_x}" y="{bar_y - 8}" fill="#6b7380">dz ft</text>')
 
     # ---- elevation across the profile ----
@@ -166,15 +167,17 @@ def settlement_svg(model: TankModel, rows: list[dict], title: str) -> str:
         t = abs(r["dz"]) / depth
         o.append(f'<circle cx="{ex(d):.1f}" cy="{ey(r["dz"]):.1f}" r="2.4" fill="{_color(t)}" stroke="#1f2328" stroke-width=".3"/>')
     # d axis ticks
-    for d in (-dmax, -R, -s.settlement_width / 2, 0.0, s.settlement_width / 2, R, dmax):
-        if abs(d) > dmax:
-            continue
+    ticks = [-R, 0.0, R]
+    hw = s.settlement_width / 2
+    if hw < R * 0.85:
+        ticks += [-hw, hw]
+    for d in sorted(ticks):
         o.append(f'<line x1="{ex(d):.1f}" y1="{el_y1}" x2="{ex(d):.1f}" y2="{el_y1 + 5}" stroke="#1f2328" stroke-width=".6"/>')
         o.append(f'<text x="{ex(d):.1f}" y="{el_y1 + 17}" text-anchor="middle" fill="#6b7380">{d:g}</text>')
     o.append(f'<text x="{(el_x0 + el_x1) / 2}" y="{el_y1 + 34}" text-anchor="middle" fill="#6b7380">d, ft (perpendicular to the axis; + = the {s.settlement_direction_deg + 90:g} deg side)</text>')
     o.append(f'<text x="{el_x0 - 6}" y="{ey(0) + 4:.1f}" text-anchor="end" fill="#6b7380">0</text>')
     o.append(f'<text x="{el_x0 - 6}" y="{ey(-depth) + 4:.1f}" text-anchor="end" fill="#6b7380">{-depth:.3g}</text>')
-    o.append(f'<text x="{(el_x0 + el_x1) / 2}" y="{H - 16}" text-anchor="middle" fill="#6b7380">red: w(d) as applied; dots: ground joints (plate + ring wall) at their own d</text>')
+    o.append(f'<text x="{(el_x0 + el_x1) / 2}" y="{el_y1 + 50}" text-anchor="middle" fill="#6b7380">red: applied w(d); dots: ground joints (plate + ring wall)</text>')
     o.append('</svg>')
     return "\n".join(o) + "\n"
 
