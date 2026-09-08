@@ -152,8 +152,16 @@ class SapSession:
     # --- results ----------------------------------------------------------------
 
     def _select_all_cases(self) -> list[str]:
+        """Select every case for output, nonlinear static cases as step-by-step
+        (SetOptionNLStatic 2). The default, envelopes, returns a Max and a Min row
+        per corner with the principal / von Mises fields ZEROED (SAP does not
+        derive principals for envelope rows); step-by-step returns one 'Step' row
+        per saved step -- the final state, since the cases save Final State only --
+        with FMax FMin FVM, SMax SMin SVM filled in (verified 2026-09-08, SAP 26.3.0;
+        option 1 "last step" made no difference)."""
         setup = self.model.Results.Setup
         setup.DeselectAllCasesAndCombosForOutput()
+        setup.SetOptionNLStatic(2)
         cases = self.load_cases()
         for c in cases:
             setup.SetCaseSelectedForOutput(c)

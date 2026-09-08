@@ -32,8 +32,12 @@ length at each element corner, plus a stress recovery at the top and bottom face
 | stress / force **averaging at joints** | viewer | — | nodal smoothing toggle | smoothing hides the real force step at a thickness change; turn it off to read course boundaries |
 
 Every shell row carries `Joint` (the corner), so the viewer paints per corner, not one
-value per element. Values are the **final state** of each case (`StepType` final; the
-nonlinear cases save Final State only).
+value per element. Values are the **final state** of each case: `sap_api` asks for
+nonlinear static output **step-by-step** (`Results.Setup.SetOptionNLStatic(2)`), which
+with Final State saved is one `Step` row per corner. SAP's default, envelopes, returns a
+`Max` and a `Min` row per corner and **zeroes every principal and von Mises field** on
+them (found 2026-09-08 when `NL_SETTLE` showed no principals); the linear cases were
+never affected.
 
 ## Frames (viewer beams)
 
