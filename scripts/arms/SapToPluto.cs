@@ -56,7 +56,14 @@ using System.Text;
 //                                 (forces per unit length -- continuous across a
 //                                 thickness change), then derived MEMBRANE stresses
 //                                 S11 S22 S12 = F / section thickness, which do
-//                                 step at a change. ksi when the file is Kip/ft
+//                                 step at a change. ksi when the file is Kip/ft.
+//                                 2026-09-08: kinds force (F11 F22 F12 V13 V23 FMax
+//                                 FMin FVM) / moment (M11 M22 M12 MMax MMin) / stress
+//                                 (S11 S22 S12 membrane = F/t, then SAP's face
+//                                 stresses S11 S22 S12 SMax SMin SVM at top and bot
+//                                 from ELEMENT STRESSES - AREA SHELLS); beams force
+//                                 / moment / stress (P/A, M/S) / envelope (max |v|
+//                                 over all stations).
 //                                 or Kip/in, else force/length^2. Bending faces
 //                                 (+/- 6M/t^2) are not derived. Labels are short:
 //                                 "F11 (merid)" / "F22 (circ)" when the model rotated
@@ -127,8 +134,17 @@ public class SapExportResult
 
 public class SapToPluto
 {
-    // SAP column -> component name. Force units are per unit length.
-    static readonly string[] ForceKeys = { "F11", "F22", "F12", "M11", "M22", "M12", "V13", "V23" };
+    // SAP columns -> components, by kind (each kind is one contiguous run in the
+    // component list). Forces and moments are per unit length from ELEMENT FORCES -
+    // AREA SHELLS; face stresses come from ELEMENT STRESSES - AREA SHELLS (SAP's own
+    // recovery, membrane +/- bending at the top and bottom face, in file stress units);
+    // the membrane S11 S22 S12 are derived here as F / t. (2026-09-08: principals, von
+    // Mises and faces added; kinds force / moment / stress so the dropdown filters.)
+    static readonly string[] ForceKeys = { "F11", "F22", "F12", "V13", "V23", "FMax", "FMin", "FVM" };
+    static readonly string[] MomentKeys = { "M11", "M22", "M12", "MMax", "MMin" };
+    static readonly string[] MembraneKeys = { "F11", "F22", "F12" };          // -> S11 S22 S12 = F / t
+    static readonly string[] FaceKeys = { "S11Top", "S22Top", "S12Top", "SMaxTop", "SMinTop", "SVMTop",
+                                          "S11Bot", "S22Bot", "S12Bot", "SMaxBot", "SMinBot", "SVMBot" };
 
     // Component label = SAP key + a short meaning. "merid" / "circ" are used only
     // when the model rotated EVERY shell's local axes (AREA LOCAL AXES ASSIGNMENTS
@@ -151,10 +167,34 @@ public class SapToPluto
             case "M12": what = "twist"; break;
             case "V13": what = "OOP shear 1"; break;
             case "V23": what = "OOP shear 2"; break;
-            case "S11": what = d1; break;
-            case "S22": what = d2; break;
-            case "S12": what = "IP shear"; break;
-            default: return key;
+            case "S11": what = d1 + " membrane"; break;
+            case "S22": what = d2 + " membrane"; break;
+            case "S12": what = "IP shear membrane"; break;
+            case "FMax": what = "principal max"; break;
+            case "FMin": what = "principal min"; break;
+            case "FVM": what = "von Mises"; break;
+            case "MMax": what = "principal max"; break;
+            case "MMin": what = "principal min"; break;
+            default:
+                // face stresses: S11Top -> "S11 top (merid)", SVMBot -> "SVM bot (von Mises)"
+                if (key.EndsWith("Top") || key.EndsWith("Bot"))
+                {
+                    string face = key.EndsWith("Top") ? "top" : "bot";
+                    string k2 = key.Substring(0, key.Length - 3);
+                    string w2;
+                    switch (k2)
+                    {
+                        case "S11": w2 = d1; break;
+                        case "S22": w2 = d2; break;
+                        case "S12": w2 = "IP shear"; break;
+                        case "SMax": w2 = "principal max"; break;
+                        case "SMin": w2 = "principal min"; break;
+                        case "SVM": w2 = "von Mises"; break;
+                        default: w2 = null; break;
+                    }
+                    return w2 == null ? key : k2 + " " + face + " (" + w2 + ")";
+                }
+                return key;
         }
         return key + " (" + what + ")";
     }
@@ -162,7 +202,13 @@ public class SapToPluto
     // Beam force components in dropdown order, with the label for a ring (every
     // frame non-vertical, so SAP's local 2 is vertical and local 3 is radial
     // across the ring) or the neutral SAP wording.
-    static readonly string[] BeamForceKeys = { "P", "V2", "M3", "V3", "M2", "T" };
+    static readonly string[] BeamForceKeys = { "P", "V2", "M3", "V3", "M2", "T" };   // SAP column order
+    static readonly string[] BeamForceKind = { "P", "V2", "V3" };                      // kind "force"
+    static readonly string[] BeamMomentKind = { "M3", "M2", "T" };                     // kind "moment"
+    // kind "stress": elastic fibre stresses at the station from the section properties
+    // (A, S33, S22 from FRAME SECTION PROPERTIES 01 - GENERAL, or the rectangle's t3 x t2)
+    static readonly string[] BeamStressNames = { "Sa (P/A)", "Sb3 (M3/S33)", "Sb2 (M2/S22)",
+                                                 "Smax (P/A + |M3/S33| + |M2/S22|)", "Smin (P/A - |M3/S33| - |M2/S22|)" };
     static string BeamCompName(string key, bool ring)
     {
         switch (key)
@@ -285,12 +331,14 @@ public class SapToPluto
 
         // ---- load cases (first-seen order across both result tables) ----
         List<Dictionary<string, string>> forceRows = results.GetTable("ELEMENT FORCES - AREA SHELLS");
+        List<Dictionary<string, string>> stressRows = results.GetTable("ELEMENT STRESSES - AREA SHELLS");
         List<Dictionary<string, string>> dispRows = results.GetTable("JOINT DISPLACEMENTS");
         List<Dictionary<string, string>> frameRows = results.GetTable("ELEMENT FORCES - FRAMES");
         res.ForceRows = forceRows.Count; res.DispRows = dispRows.Count; res.FrameForceRows = frameRows.Count;
         var lcNames = new Dictionary<int, string>();
         var lcByName = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (var r in forceRows) LcId(CaseOf(r), lcByName, lcNames);
+        foreach (var r in stressRows) LcId(CaseOf(r), lcByName, lcNames);
         foreach (var r in frameRows) LcId(CaseOf(r), lcByName, lcNames);
         foreach (var r in dispRows) LcId(CaseOf(r), lcByName, lcNames);
         res.LoadCases = lcNames.Count;
@@ -298,9 +346,15 @@ public class SapToPluto
         bool hasResults = lcNames.Count > 0;
 
         // ---- components ----
-        string[] forceKeysPresent = ForceKeys;
-        if (forceRows.Count > 0) forceKeysPresent = ForceKeys.Where(k => forceRows[0].ContainsKey(k)).ToArray();
+        string[] forceKeysPresent = ForceKeys, momentKeysPresent = MomentKeys, faceKeysPresent = FaceKeys;
+        if (forceRows.Count > 0)
+        {
+            forceKeysPresent = ForceKeys.Where(k => forceRows[0].ContainsKey(k)).ToArray();
+            momentKeysPresent = MomentKeys.Where(k => forceRows[0].ContainsKey(k)).ToArray();
+        }
+        faceKeysPresent = stressRows.Count > 0 ? FaceKeys.Where(k => stressRows[0].ContainsKey(k)).ToArray() : new string[0];
         bool hasForces = forceRows.Count > 0 && forceKeysPresent.Length > 0;
+        bool hasMoments = forceRows.Count > 0 && momentKeysPresent.Length > 0;
         bool hasDisp = dispRows.Count > 0;
         int nDisp = hasDisp ? (cylindrical ? 8 : 6) : 0;
 
@@ -327,21 +381,25 @@ public class SapToPluto
             for (int c = 0; c < forceKeysPresent.Length; c++)
             {
                 string k = forceKeysPresent[c];
-                if (k == "F11" || k == "F22" || k == "F12") { stressFrom.Add(c); stressNames.Add("S" + k.Substring(1)); }
+                if (Array.IndexOf(MembraneKeys, k) >= 0) { stressFrom.Add(c); stressNames.Add("S" + k.Substring(1)); }
             }
         }
+        bool hasStress = stressNames.Count > 0 || faceKeysPresent.Length > 0;
 
         // shell axes: "merid" / "circ" only when every area carries a local-axes row
         int axesRows = 0;
         foreach (var r in model.GetTable("AREA LOCAL AXES ASSIGNMENTS 1 - TYPICAL")) if (r.ContainsKey("Area")) axesRows++;
         bool meridional = cylindrical && elements.Count > 0 && axesRows >= elements.Count;
         var comps = new List<RawViewerWriter.Component>();
+        string perLen = forceUnit + "/" + lengthUnit, momUnit = forceUnit + "-" + lengthUnit + "/" + lengthUnit;
         if (hasForces)
+            foreach (string k in forceKeysPresent) comps.Add(new RawViewerWriter.Component(ShellCompName(k, meridional), "force", perLen));
+        if (hasMoments)
+            foreach (string k in momentKeysPresent) comps.Add(new RawViewerWriter.Component(ShellCompName(k, meridional), "moment", momUnit));
+        if (hasStress)
         {
-            foreach (string k in forceKeysPresent)
-                comps.Add(new RawViewerWriter.Component(ShellCompName(k, meridional), "stress", k[0] == 'M' ? forceUnit + "-" + lengthUnit + "/" + lengthUnit : forceUnit + "/" + lengthUnit));
-            foreach (string k in stressNames)
-                comps.Add(new RawViewerWriter.Component(ShellCompName(k, meridional), "stress", stressUnit));
+            foreach (string k in stressNames) comps.Add(new RawViewerWriter.Component(ShellCompName(k, meridional), "stress", stressUnit));
+            foreach (string k in faceKeysPresent) comps.Add(new RawViewerWriter.Component(ShellCompName(k, meridional), "stress", stressUnit));
         }
         if (hasDisp)
         {
@@ -352,7 +410,7 @@ public class SapToPluto
                 comps.Add(new RawViewerWriter.Component("Translation T", "displacement", lengthUnit));
             }
         }
-        if (comps.Count == 0) comps.Add(new RawViewerWriter.Component("F11", "stress", forceUnit + "/" + lengthUnit));   // layout only; geometry-only file
+        if (comps.Count == 0) comps.Add(new RawViewerWriter.Component("F11", "force", forceUnit + "/" + lengthUnit));   // layout only; geometry-only file
 
         // ---- labels ----
         var nodeLabels = new Dictionary<int, string>();
@@ -385,8 +443,14 @@ public class SapToPluto
                     double dx = nb.xyz.X - na.xyz.X, dy = nb.xyz.Y - na.xyz.Y, dz = nb.xyz.Z - na.xyz.Z;
                     if (Math.Abs(dz) > 0.99 * Math.Sqrt(dx * dx + dy * dy + dz * dz)) { ring = false; break; }
                 }
-                foreach (string k in BeamForceKeys)
-                    beamComps.Add(new RawViewerWriter.Component(BeamCompName(k, ring), "force", (k == "P" || k[0] == 'V') ? forceUnit : mUnit));
+                foreach (string k in BeamForceKind) beamComps.Add(new RawViewerWriter.Component(BeamCompName(k, ring), "force", forceUnit));
+                foreach (string k in BeamMomentKind) beamComps.Add(new RawViewerWriter.Component(BeamCompName(k, ring), "moment", mUnit));
+                foreach (string k in BeamStressNames) beamComps.Add(new RawViewerWriter.Component(k, "stress", stressUnit));
+                // station envelopes: max |value| over every output station of the frame,
+                // written to both ends (the binary holds two stations; the interior peak
+                // would otherwise be lost)
+                foreach (string k in BeamForceKind) beamComps.Add(new RawViewerWriter.Component(BeamCompName(k, ring) + " env", "envelope", forceUnit));
+                foreach (string k in BeamMomentKind) beamComps.Add(new RawViewerWriter.Component(BeamCompName(k, ring) + " env", "envelope", mUnit));
             }
             if (hasDisp)
                 for (int i = 0; i < 6; i++) beamComps.Add(new RawViewerWriter.Component(DispNames[i], "displacement", i < 3 ? lengthUnit : "rad"));
@@ -400,9 +464,16 @@ public class SapToPluto
         w.Write(hasResults);
         res.BinPath = binPath;
 
-        if (hasForces)
+        if (hasForces || hasMoments || hasStress)
         {
-            var recs = new List<RawViewerWriter.CornerRecord>();
+            // one record per (case, area, corner) and kind; face stresses join the
+            // membrane ones on the same key from the stress table
+            var forceRecs = new List<RawViewerWriter.CornerRecord>();
+            var momentRecs = new List<RawViewerWriter.CornerRecord>();
+            var stressRecs = new Dictionary<string, RawViewerWriter.CornerRecord>();
+            var stressOrder = new List<string>();
+            int nStress = stressNames.Count + faceKeysPresent.Length;
+            int used = 0;
             foreach (var r in forceRows)
             {
                 string a, j;
@@ -410,29 +481,60 @@ public class SapToPluto
                 if (!r.TryGetValue("Joint", out j)) continue;   // element-centre row
                 int eid = Int(a), nid = Int(j);
                 if (!elements.ContainsKey(eid)) continue;
-                var rec = new RawViewerWriter.CornerRecord();
-                rec.LC = lcByName[CaseOf(r)];
-                rec.elemID = eid; rec.node = nid;
-                rec.Values = new float[forceKeysPresent.Length + stressFrom.Count];
-                for (int c = 0; c < forceKeysPresent.Length; c++) rec.Values[c] = (float)Num(r, forceKeysPresent[c], double.NaN);
-                string sec; double thick = double.NaN;
-                if (sectionOf.TryGetValue(eid, out sec)) thickOf.TryGetValue(sec, out thick);
-                for (int c = 0; c < stressFrom.Count; c++)
-                    rec.Values[forceKeysPresent.Length + c] = double.IsNaN(thick) ? float.NaN
-                        : (float)(rec.Values[stressFrom[c]] / thick * stressScale);
-                recs.Add(rec);
+                int lc = lcByName[CaseOf(r)];
+                used++;
+                if (hasForces)
+                {
+                    var rec = new RawViewerWriter.CornerRecord { LC = lc, elemID = eid, node = nid, Values = new float[forceKeysPresent.Length] };
+                    for (int c = 0; c < forceKeysPresent.Length; c++) rec.Values[c] = (float)Num(r, forceKeysPresent[c], double.NaN);
+                    forceRecs.Add(rec);
+                    if (stressFrom.Count > 0)
+                    {
+                        string sec; double thick = double.NaN;
+                        if (sectionOf.TryGetValue(eid, out sec)) thickOf.TryGetValue(sec, out thick);
+                        var srec = StressRec(stressRecs, stressOrder, lc, eid, nid, nStress);
+                        for (int c = 0; c < stressFrom.Count; c++)
+                            srec.Values[c] = double.IsNaN(thick) ? float.NaN : (float)(rec.Values[stressFrom[c]] / thick * stressScale);
+                    }
+                }
+                if (hasMoments)
+                {
+                    var rec = new RawViewerWriter.CornerRecord { LC = lc, elemID = eid, node = nid, Values = new float[momentKeysPresent.Length] };
+                    for (int c = 0; c < momentKeysPresent.Length; c++) rec.Values[c] = (float)Num(r, momentKeysPresent[c], double.NaN);
+                    momentRecs.Add(rec);
+                }
             }
-            res.ForceRowsUsed = recs.Count;
-            w.AppendShellValues(recs, "stress");
+            foreach (var r in stressRows)
+            {
+                string a, j;
+                if (!r.TryGetValue("Area", out a) && !r.TryGetValue("AreaElem", out a)) continue;
+                if (!r.TryGetValue("Joint", out j)) continue;
+                int eid = Int(a), nid = Int(j);
+                if (!elements.ContainsKey(eid)) continue;
+                var srec = StressRec(stressRecs, stressOrder, lcByName[CaseOf(r)], eid, nid, nStress);
+                for (int c = 0; c < faceKeysPresent.Length; c++)
+                    srec.Values[stressNames.Count + c] = (float)(Num(r, faceKeysPresent[c], double.NaN) * stressScale);
+            }
+            res.ForceRowsUsed = used;
+            if (hasForces) w.AppendShellValues(forceRecs, "force");
+            if (hasMoments) w.AppendShellValues(momentRecs, "moment");
+            if (hasStress)
+            {
+                var list = new List<RawViewerWriter.CornerRecord>();
+                foreach (string k in stressOrder) list.Add(stressRecs[k]);
+                w.AppendShellValues(list, "stress");
+            }
         }
 
         if (beams.Count > 0 && frameRows.Count > 0 && hasResults)
         {
-            // first and last station of each frame per case -> end A / end B
-            var ends = new Dictionary<string, RawViewerWriter.BeamRecord[]>();   // "<lc>|<frame>" -> [A, B]
+            // first and last station of each frame per case -> end A / end B; every
+            // station feeds the envelope
+            var ends = new Dictionary<string, float[][]>();          // "<lc>|<frame>" -> [A, B] SAP column values
+            var env = new Dictionary<string, float[]>();             // "<lc>|<frame>" -> max |value| per SAP column
             var staMin = new Dictionary<string, double>();
             var staMax = new Dictionary<string, double>();
-            var frameForceKeys = BeamForceKeys;
+            var keyOrder = new List<string>();
             foreach (var r in frameRows)
             {
                 string f;
@@ -443,30 +545,55 @@ public class SapToPluto
                 if (double.IsNaN(sta)) continue;
                 int lc = lcByName[CaseOf(r)];
                 string key = lc + "|" + fid;
-                RawViewerWriter.BeamRecord[] pair;
+                float[][] pair;
                 if (!ends.TryGetValue(key, out pair))
                 {
-                    pair = new RawViewerWriter.BeamRecord[2];
+                    pair = new float[2][];
                     ends[key] = pair;
+                    env[key] = new float[6];
                     staMin[key] = double.PositiveInfinity; staMax[key] = double.NegativeInfinity;
+                    keyOrder.Add(key);
                 }
                 var vals = new float[6];
-                for (int c = 0; c < 6; c++) vals[c] = (float)Num(r, frameForceKeys[c], double.NaN);
-                if (sta <= staMin[key])
+                for (int c = 0; c < 6; c++) vals[c] = (float)Num(r, BeamForceKeys[c], double.NaN);
+                float[] e = env[key];
+                for (int c = 0; c < 6; c++) if (!float.IsNaN(vals[c]) && Math.Abs(vals[c]) > e[c]) e[c] = Math.Abs(vals[c]);
+                if (sta <= staMin[key]) { staMin[key] = sta; pair[0] = vals; }
+                if (sta >= staMax[key]) { staMax[key] = sta; pair[1] = vals; }
+            }
+            var forceRecs = new List<RawViewerWriter.BeamRecord>();
+            var momentRecs = new List<RawViewerWriter.BeamRecord>();
+            var stressRecs = new List<RawViewerWriter.BeamRecord>();
+            var envRecs = new List<RawViewerWriter.BeamRecord>();
+            int iP = 0, iV2 = 1, iM3 = 2, iV3 = 3, iM2 = 4, iT = 5;   // BeamForceKeys order
+            foreach (string key in keyOrder)
+            {
+                int bar = key.IndexOf('|');
+                int lc = Int(key.Substring(0, bar)), fid = Int(key.Substring(bar + 1));
+                double A, S33, S22;
+                SectionModuli(sectionDefs[beams[fid].SectionIndex].Name, frameSecProps, out A, out S33, out S22);
+                float[] e = env[key];
+                float[] envVals = { e[iP], e[iV2], e[iV3], e[iM3], e[iM2], e[iT] };
+                for (int end = 0; end < 2; end++)
                 {
-                    staMin[key] = sta;
-                    pair[0] = new RawViewerWriter.BeamRecord { LC = lc, elemID = fid, End = 0, Values = vals };
-                }
-                if (sta >= staMax[key])
-                {
-                    staMax[key] = sta;
-                    pair[1] = new RawViewerWriter.BeamRecord { LC = lc, elemID = fid, End = 1, Values = vals };
+                    float[] v = ends[key][end];
+                    if (v == null) continue;
+                    forceRecs.Add(new RawViewerWriter.BeamRecord { LC = lc, elemID = fid, End = end, Values = new[] { v[iP], v[iV2], v[iV3] } });
+                    momentRecs.Add(new RawViewerWriter.BeamRecord { LC = lc, elemID = fid, End = end, Values = new[] { v[iM3], v[iM2], v[iT] } });
+                    double sa = A > 0 ? v[iP] / A * stressScale : double.NaN;
+                    double sb3 = S33 > 0 ? v[iM3] / S33 * stressScale : double.NaN;
+                    double sb2 = S22 > 0 ? v[iM2] / S22 * stressScale : double.NaN;
+                    stressRecs.Add(new RawViewerWriter.BeamRecord { LC = lc, elemID = fid, End = end, Values = new[] {
+                        (float)sa, (float)sb3, (float)sb2,
+                        (float)(sa + Math.Abs(sb3) + Math.Abs(sb2)), (float)(sa - Math.Abs(sb3) - Math.Abs(sb2)) } });
+                    envRecs.Add(new RawViewerWriter.BeamRecord { LC = lc, elemID = fid, End = end, Values = envVals });
                 }
             }
-            var frecs = new List<RawViewerWriter.BeamRecord>();
-            foreach (var pair in ends.Values) { if (pair[0] != null) frecs.Add(pair[0]); if (pair[1] != null) frecs.Add(pair[1]); }
-            res.FrameForceRowsUsed = frecs.Count;
-            w.AppendBeamForces(frecs, "force");
+            res.FrameForceRowsUsed = forceRecs.Count;
+            w.AppendBeamForces(forceRecs, "force");
+            w.AppendBeamForces(momentRecs, "moment");
+            w.AppendBeamForces(stressRecs, "stress");
+            w.AppendBeamForces(envRecs, "envelope");
         }
 
         if (hasDisp)
@@ -703,6 +830,40 @@ public class SapToPluto
         s = (s ?? "").Trim();
         while (i < s.Length && char.IsDigit(s[i])) { n = n * 10 + (s[i] - '0'); i++; }
         return i == 0 ? 0 : n;
+    }
+
+    // Stress record per (case, area, corner), created on first use, NaN-filled.
+    static RawViewerWriter.CornerRecord StressRec(Dictionary<string, RawViewerWriter.CornerRecord> recs, List<string> order,
+                                                  int lc, int eid, int nid, int n)
+    {
+        string key = lc + "|" + eid + "|" + nid;
+        RawViewerWriter.CornerRecord rec;
+        if (!recs.TryGetValue(key, out rec))
+        {
+            rec = new RawViewerWriter.CornerRecord { LC = lc, elemID = eid, node = nid, Values = new float[n] };
+            for (int i = 0; i < n; i++) rec.Values[i] = float.NaN;
+            recs[key] = rec;
+            order.Add(key);
+        }
+        return rec;
+    }
+
+    // Area and elastic section moduli (file length units) for the beam stresses:
+    // the Area / S33 / S22 columns when the section row carries them (General
+    // sections do), else the rectangle t3 x t2; 0 when unknown (stress = NaN).
+    static void SectionModuli(string secName, Dictionary<string, Dictionary<string, string>> props, out double A, out double S33, out double S22)
+    {
+        A = 0; S33 = 0; S22 = 0;
+        Dictionary<string, string> p;
+        if (secName == null || !props.TryGetValue(secName, out p)) return;
+        A = Num(p, "Area", 0); S33 = Num(p, "S33", 0); S22 = Num(p, "S22", 0);
+        if (A > 0 && S33 > 0 && S22 > 0) return;
+        string shape; p.TryGetValue("Shape", out shape);
+        double t3 = Num(p, "t3", 0), t2 = Num(p, "t2", 0);
+        if ((shape ?? "").Trim().ToLowerInvariant() == "rectangular" && t3 > 0 && t2 > 0)
+        {
+            A = t3 * t2; S33 = t2 * t3 * t3 / 6.0; S22 = t3 * t2 * t2 / 6.0;
+        }
     }
 
     // Section-origin offset (viewer y, z) from the joint for a SAP cardinal

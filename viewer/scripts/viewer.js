@@ -749,8 +749,8 @@ function populateLCSelect() {
 // Display label for a component kind. Known kinds get fixed labels;
 // anything else (a "generic field" -- e.g. constituent preDSR checks)
 // shows its kind string verbatim, so the writer controls the casing.
-var KIND_LABELS = { stress: 'Stress', displacement: 'Displacement', dsr: 'DSR', other: 'Other', unknown: 'Other' };
-var KIND_ORDER = ['stress', 'displacement', 'dsr', 'other', 'unknown'];
+var KIND_LABELS = { force: 'Force', moment: 'Moment', stress: 'Stress', envelope: 'Envelope', displacement: 'Displacement', dsr: 'DSR', other: 'Other', unknown: 'Other' };
+var KIND_ORDER = ['force', 'moment', 'stress', 'envelope', 'displacement', 'dsr', 'other', 'unknown'];
 function kindLabel(k) { return KIND_LABELS[k] || k; }
 
 // Kinds present in the model, known ones first in fixed order, then any

@@ -38,6 +38,14 @@ SAP_ROOT = Path(r"C:\Program Files\Computers and Structures")
 _SHELL_FIELDS = ["Obj", "Elm", "PointElm", "LoadCase", "StepType", "StepNum",
                  "F11", "F22", "F12", "FMax", "FMin", "FAngle", "FVM",
                  "M11", "M22", "M12", "MMax", "MMin", "MAngle", "V13", "V23", "VMax", "VAngle"]
+# Results.AreaStressShell (verified on SAP2000 26.3.0, 2026-09-08): after NumberResults,
+#   Obj Elm PointElm LoadCase StepType StepNum S11Top S22Top S12Top SMaxTop SMinTop
+#   SAngleTop SVMTop S11Bot S22Bot S12Bot SMaxBot SMinBot SAngleBot SVMBot
+#   S13Avg S23Avg SMaxAvg SAngleAvg      (file stress units, kip/ft^2 for kip, ft)
+_STRESS_FIELDS = ["Obj", "Elm", "PointElm", "LoadCase", "StepType", "StepNum",
+                  "S11Top", "S22Top", "S12Top", "SMaxTop", "SMinTop", "SAngleTop", "SVMTop",
+                  "S11Bot", "S22Bot", "S12Bot", "SMaxBot", "SMinBot", "SAngleBot", "SVMBot",
+                  "S13Avg", "S23Avg", "SMaxAvg", "SAngleAvg"]
 _DISP_FIELDS = ["Obj", "Elm", "LoadCase", "StepType", "StepNum", "U1", "U2", "U3", "R1", "R2", "R3"]
 # Results.FrameForce: Obj ObjSta Elm ElmSta LoadCase StepType StepNum P V2 V3 T M2 M3
 _FRAME_FIELDS = ["Obj", "ObjSta", "Elm", "ElmSta", "LoadCase", "StepType", "StepNum",
@@ -181,6 +189,21 @@ class SapSession:
                                                "V13", "V23", "VMax", "VAngle")}})
         return out
 
+    def shell_stresses(self) -> list[dict]:
+        """One dict per shell per joint per case: SAP's face stress recovery (membrane
+        +/- bending at the top and bottom face, principals, von Mises, transverse)."""
+        self._select_all_cases()
+        r = self.model.Results.AreaStressShell("ALL", 2)
+        n = r[0]
+        cols = r[1:1 + len(_STRESS_FIELDS)]
+        out = []
+        for i in range(n):
+            row = {f: cols[k][i] for k, f in enumerate(_STRESS_FIELDS)}
+            out.append({"Area": row["Obj"], "AreaElem": row["Elm"], "ShellType": "Shell-Thin",
+                        "Joint": row["PointElm"], "OutputCase": row["LoadCase"], "CaseType": "LinStatic",
+                        **{k: row[k] for k in _STRESS_FIELDS[6:]}})
+        return out
+
     def frame_forces(self) -> list[dict]:
         """One dict per frame per station per case, SAP 'Element Forces - Frames'
         columns (P V2 V3 T M2 M3 in the frame local axes). Empty when the model
@@ -207,6 +230,7 @@ class SapSession:
                  f'   ProgramName=SAP2000   Version={self.version}   CurrUnits="Kip, ft, F"', ""]
         for title, rows in (("JOINT DISPLACEMENTS", self.joint_displacements()),
                             ("ELEMENT FORCES - AREA SHELLS", self.shell_forces()),
+                            ("ELEMENT STRESSES - AREA SHELLS", self.shell_stresses()),
                             ("ELEMENT FORCES - FRAMES", self.frame_forces())):
             if not rows:
                 continue
