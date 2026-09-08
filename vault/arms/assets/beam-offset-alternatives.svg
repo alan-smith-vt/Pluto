@@ -1,0 +1,88 @@
+<svg font-family="Consolas, Menlo, monospace" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 470" role="img" aria-label="Four ways to place the three-joint chain of a beam on soil: tank joint, contact gap, wall joint, soil gap, ground joint. A: all three at the centroid. B: all three at the top, section drawn hanging below, no stiffness transform. X: same joints, stiffness transformed with rigid arms to the centroid. C: true geometry, tank joint at the top, wall joint at the centroid, ground joint at the base, links with length.">
+  <defs>
+    <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#1f2328" stroke-width=".8" stroke-opacity=".5"/></pattern>
+  </defs>
+  <rect x="0" y="0" width="1180" height="470" fill="#ffffff"/>
+  <text x="16" y="24" font-size="12" font-weight="500" fill="#1f2328">THE THREE-JOINT CHAIN AT ONE SUPPORT — four geometric-offset schemes (elevation)</text>
+  <text x="16" y="40" font-size="11" fill="#6b7380">▲ tank joint (shell rim)   ● wall joint (frame node)   ○ ground joint (fixed)   ⌇ Gap link, compression only, local 1 = +Z, hatched = ground</text>
+  <text x="16" y="54" font-size="11" fill="#6b7380">Joints drawn side by side where they are coincident in SAP. Ring / beam numbers: offset-ring.csv, offset-beam.csv.</text>
+
+  <!-- A -->
+  <g transform="translate(30,80)">
+    <text x="0" y="0" font-size="12" font-weight="500" fill="#1f2328">A  COINCIDENT</text>
+    <text x="0" y="14" font-size="10" fill="#6b7380">all three joints at the centroid;</text>
+    <text x="0" y="26" font-size="10" fill="#6b7380">cardinal 10; zero-length links</text>
+    <rect x="30" y="90" width="200" height="60" fill="#c9c9c9" stroke="#1f2328" stroke-width="1"/>
+    <line x1="10" y1="120" x2="250" y2="120" stroke="#1f2328" stroke-width="1.5"/>
+    <rect x="30" y="150" width="200" height="60" fill="url(#hatch)" stroke="none" opacity=".6"/>
+    <line x1="30" y1="150" x2="230" y2="150" stroke="#1f2328" stroke-width="1"/>
+    <polygon points="112,114 106,124 118,124" fill="#1f2328"/>
+    <circle cx="130" cy="120" r="5" fill="#1f2328"/>
+    <circle cx="148" cy="120" r="5" fill="#ffffff" stroke="#1f2328" stroke-width="1.5"/>
+    <text x="130" y="240" font-size="10" fill="#6b7380" text-anchor="middle">shell and soil both act at mid-depth;</text>
+    <text x="130" y="252" font-size="10" fill="#6b7380" text-anchor="middle">no lever arm anywhere</text>
+  </g>
+
+  <!-- B -->
+  <g transform="translate(320,80)">
+    <text x="0" y="0" font-size="12" font-weight="500" fill="#1f2328">B  TANK (builder intent)</text>
+    <text x="0" y="14" font-size="10" fill="#6b7380">joints at the TOP; cardinal 8, Transform = No:</text>
+    <text x="0" y="26" font-size="10" fill="#6b7380">drawn A/2 lower, analysis on the joint line</text>
+    <line x1="10" y1="90" x2="250" y2="90" stroke="#1f2328" stroke-width="1.5"/>
+    <rect x="30" y="90" width="200" height="60" fill="#c9c9c9" stroke="#1f2328" stroke-width="1"/>
+    <line x1="130" y1="90" x2="130" y2="120" stroke="#1f2328" stroke-width="1" stroke-dasharray="3 3"/>
+    <text x="136" y="124" font-size="10" fill="#6b7380">A/2 drawing offset</text>
+    <rect x="30" y="150" width="200" height="60" fill="url(#hatch)" stroke="none"/>
+    <line x1="30" y1="150" x2="230" y2="150" stroke="#1f2328" stroke-width="1"/>
+    <polygon points="112,84 106,94 118,94" fill="#1f2328"/>
+    <circle cx="130" cy="90" r="5" fill="#1f2328"/>
+    <circle cx="148" cy="90" r="5" fill="#ffffff" stroke="#1f2328" stroke-width="1.5"/>
+    <text x="130" y="240" font-size="10" fill="#6b7380" text-anchor="middle">same answer as A: the picture moved,</text>
+    <text x="130" y="252" font-size="10" fill="#6b7380" text-anchor="middle">the stiffness did not</text>
+  </g>
+
+  <!-- X -->
+  <g transform="translate(610,80)">
+    <text x="0" y="0" font-size="12" font-weight="500" fill="#1f2328">X  XFORM (tank as built to 2026-09-08)</text>
+    <text x="0" y="14" font-size="10" fill="#6b7380">joints as B; cardinal 8, Transform = Yes: rigid arm</text>
+    <text x="0" y="26" font-size="10" fill="#6b7380">joint → centroid, stiffness at the centroid</text>
+    <line x1="10" y1="90" x2="250" y2="90" stroke="#1f2328" stroke-width="1" stroke-dasharray="4 3"/>
+    <rect x="30" y="90" width="200" height="60" fill="#c9c9c9" stroke="#1f2328" stroke-width="1"/>
+    <line x1="10" y1="120" x2="250" y2="120" stroke="#1f2328" stroke-width="1.5"/>
+    <line x1="130" y1="90" x2="130" y2="120" stroke="#b3261e" stroke-width="3"/>
+    <text x="136" y="110" font-size="10" fill="#b3261e">rigid arm A/2</text>
+    <rect x="30" y="150" width="200" height="60" fill="url(#hatch)" stroke="none"/>
+    <line x1="30" y1="150" x2="230" y2="150" stroke="#1f2328" stroke-width="1"/>
+    <polygon points="112,84 106,94 118,94" fill="#1f2328"/>
+    <circle cx="130" cy="90" r="5" fill="#1f2328"/>
+    <circle cx="148" cy="90" r="5" fill="#ffffff" stroke="#1f2328" stroke-width="1.5"/>
+    <text x="130" y="240" font-size="10" fill="#6b7380" text-anchor="middle">vertical load through the arm: same</text>
+    <text x="130" y="252" font-size="10" fill="#6b7380" text-anchor="middle">answer within 0.4 % (arm couples P with rotation)</text>
+  </g>
+
+  <!-- C -->
+  <g transform="translate(900,80)">
+    <text x="0" y="0" font-size="12" font-weight="500" fill="#1f2328">C  TRUE geometry</text>
+    <text x="0" y="14" font-size="10" fill="#6b7380">tank joint top, wall joint centroid, ground</text>
+    <text x="0" y="26" font-size="10" fill="#6b7380">joint base; the links have length</text>
+    <rect x="30" y="90" width="200" height="60" fill="#c9c9c9" stroke="#1f2328" stroke-width="1"/>
+    <line x1="10" y1="120" x2="250" y2="120" stroke="#1f2328" stroke-width="1.5"/>
+    <rect x="30" y="150" width="200" height="60" fill="url(#hatch)" stroke="none"/>
+    <line x1="30" y1="150" x2="230" y2="150" stroke="#1f2328" stroke-width="1"/>
+    <polygon points="130,84 124,94 136,94" fill="#1f2328"/>
+    <polyline points="130,96 125,101 135,107 125,113 130,116" fill="none" stroke="#b3261e" stroke-width="1.5"/>
+    <circle cx="130" cy="120" r="5" fill="#1f2328"/>
+    <polyline points="130,126 125,131 135,137 125,143 130,146" fill="none" stroke="#b3261e" stroke-width="1.5"/>
+    <circle cx="130" cy="150" r="5" fill="#ffffff" stroke="#1f2328" stroke-width="1.5"/>
+    <text x="140" y="104" font-size="10" fill="#b3261e">contact gap, A/2</text>
+    <text x="140" y="140" font-size="10" fill="#b3261e">soil gap, A/2</text>
+    <text x="130" y="240" font-size="10" fill="#6b7380" text-anchor="middle">same answer as A and B; every joint is</text>
+    <text x="130" y="252" font-size="10" fill="#6b7380" text-anchor="middle">its own point in the GUI — preferred</text>
+  </g>
+
+  <text x="16" y="368" font-size="11" fill="#1f2328">Vertical load: A = B = C to solver precision (ring M3 0.750 kip-ft, U3 −0.0174 ft); X within 0.4 % (the arm couples axial force with end rotation).</text>
+  <text x="16" y="384" font-size="11" fill="#1f2328">Slope settlement on the ring, 0.5 ft at the edge: M3 = 555.07 (A, B, C) vs 552.9 (X) kip-ft, T = 148.5 in all four, U3 −0.521 ft in all four.</text>
+  <text x="16" y="400" font-size="11" fill="#1f2328">A vertical force on the section centreline makes no couple wherever it enters, and a Gap link's k is a number, not EA/L — the vertical offset is not a lever arm.</text>
+  <text x="16" y="416" font-size="11" fill="#6b7380">The .s2k column is `Transform`; written as `StiffTransform` it is ignored and SAP defaults to Yes, so the tank was scheme X until the builder fix.</text>
+  <text x="16" y="432" font-size="11" fill="#6b7380">Model: pythonTools/sap/offset_study.py [--ring] --run → models/offset-study/offset-{beam,ring}.s2k, groups A_COINCIDENT, B_TANK, X_XFORM, C_TRUE.</text>
+</svg>

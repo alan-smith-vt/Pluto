@@ -39,8 +39,12 @@ One chain per spoke, all three joints coincident in SAP (drawn apart):
 
 The `RINGWALL` frame node is the wall-top joint ③. The concrete section is drawn hanging
 below it (SAP insertion point 8, top centre) so its centroid sits A/2 under the node; the
-dotted line is that offset. `StiffTransform = No`, so the analysis stays on the node and
-the offset is drawing only, in SAP and in the viewer.
+dotted line is that offset. The intent was `Transform = No` (analysis on the node, offset
+drawing only, in SAP and in the viewer) — but the builder wrote the column as
+`StiffTransform`, which SAP ignores, so every run to 2026-09-08 had `Transform = Yes`:
+rigid arms from the node down to the centroid. Same answer under vertical load; not the
+same once a horizontal push acts at the top. Fixed in the builder, `[ringwall] transform`;
+the study is [[vault/arms/beam-offset-study|beam-offset-study]].
 
 Verified on SAP2000 26.3.0, TANK-A, `NL_HYDRO`:
 

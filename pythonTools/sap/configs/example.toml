@@ -55,6 +55,8 @@ depth       = 3.0       # ft, vertical
 fc          = 3000.0    # psi
 unit_weight = 0.150     # kip/ft^3
 support     = "gap"     # "gap": soil gap link under the wall, k = subgrade_modulus x width x arc | "fixed"
+transform   = false     # SAP insertion "Transform": false = section drawn hanging below the wall-top joint,
+                        # analysis on the joint line; true = rigid arms joint -> centroid (top push rolls the ring)
 
 # Wall imperfections: joints move radially inward, mesh unchanged. cos^2 bell over an
 # elliptical footprint. Group DENT_nn per dent.

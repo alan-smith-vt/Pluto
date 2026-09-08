@@ -150,12 +150,14 @@ def geometry_tables(model: TankModel) -> list[tuple[str, list[str]]]:
 def insertion_tables(model: TankModel) -> list[tuple[str, list[str]]]:
     """FRAME INSERTION POINT ASSIGNMENTS for frames with a non-default cardinal
     point (SAP's own export writes CardinalPt="8 (top center)"; the reader in
-    SapToPluto takes the leading integer). StiffTransform=No: drawing only."""
+    SapToPluto takes the leading integer). Transform=No: drawing only. The
+    column is `Transform`; it was written as StiffTransform until 2026-09-08 and SAP
+    silently kept its default, Yes (rigid arms joint -> centroid)."""
     if not model.frame_cardinal:
         return []
     return [("FRAME INSERTION POINT ASSIGNMENTS", [
         _row(Frame=f, CardinalPt=_CARDINAL[c], Mirror2=False, Mirror3=False,
-             StiffTransform=False, CoordSys="Local",
+             Transform=model.frame_transform.get(f, False), CoordSys="Local",
              Offset1I=0, Offset2I=0, Offset3I=0, Offset1J=0, Offset2J=0, Offset3J=0)
         for f, c in sorted(model.frame_cardinal.items())])]
 

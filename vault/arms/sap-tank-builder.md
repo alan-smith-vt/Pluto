@@ -51,8 +51,11 @@ meant to be checked. Real project numbers live only in the gitignored `configs/*
 > SAP 26: rim U3 −0.02743 ft, wall top −0.02740 ft under NL_HYDRO). Frame axis at the top of the wall, not
 > the centroid: loads and supports both sit on the axis, so hoop tension and bending about
 > the horizontal axis are unaffected; the vertical eccentricity is ignored. Insertion point
-> `8 (top center)`, `StiffTransform=No` (2026-09-04): SAP and the viewer draw the section
-> hanging below the joints, the analysis stays on the joint axis.
+> `8 (top center)`, `Transform=No` (default; `[ringwall] transform = true` for rigid arms
+> joint → centroid): SAP and the viewer draw the section hanging below the joints, the
+> analysis stays on the joint axis. Until 2026-09-08 the column was misspelt
+> `StiffTransform` and SAP silently used `Transform=Yes`; see
+> [[vault/arms/beam-offset-study|beam-offset-study]].
 > **Section.** Rectangular, width C × depth A, concrete `CONC` with E = 57 000 √f'c,
 > ν = 0.2, 0.150 kcf (self-weight in `DEAD`).
 > **Supports.** `gap` (default; `springs` still accepted): the soil gap link above, wall-top

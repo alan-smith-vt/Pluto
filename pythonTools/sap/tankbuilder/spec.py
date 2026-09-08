@@ -89,6 +89,9 @@ class TankSpec:
     ringwall_fc: float = 3000.0           # psi; E = 57000 sqrt(f'c)
     ringwall_unit_weight: float = 0.150   # kip/ft^3
     ringwall_support: str = "gap"         # "gap": soil gap link k = subgrade x width x arc | "fixed"
+    ringwall_transform: bool = False      # SAP "Transform" for the top-centre insertion: False = drawing
+                                          # only (analysis on the wall-top joint line); True = rigid arms
+                                          # joint -> centroid (a horizontal push at the top rolls the ring)
     # [[dents]]  wall imperfections applied to the joint coordinates
     dents: tuple[Dent, ...] = ()
     # [settlement]  ground displacement on the ground joints (plate GROUND + RINGWALL_GROUND)
@@ -242,6 +245,7 @@ CONFIG_MAP = {
         "fc": "ringwall_fc",
         "unit_weight": "ringwall_unit_weight",
         "support": "ringwall_support",
+        "transform": "ringwall_transform",
     },
     "dents": {"angle_deg": "angle_deg", "elevation": "elevation", "depth": "depth",
               "width": "width", "height": "height"},

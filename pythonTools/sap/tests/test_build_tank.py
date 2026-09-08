@@ -334,7 +334,7 @@ def test_ringwall_frames_insert_at_top_centre():
     (name, rows), = insertion_tables(m)
     assert name == "FRAME INSERTION POINT ASSIGNMENTS" and len(rows) == len(rw)
     assert rows[0].startswith(f'   Frame={rw[0]}   CardinalPt="8 (top center)"   Mirror2=No')
-    assert "StiffTransform=No" in rows[0] and "CoordSys=Local" in rows[0]
+    assert "Transform=No" in rows[0] and "CoordSys=Local" in rows[0]
     assert not insertion_tables(capped())            # no ring wall -> no table
 
 

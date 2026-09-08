@@ -41,7 +41,7 @@ class TankModel:
     frame_section: id -> section name; frame_sections: name -> property dict;
     frame_outlines: name -> (y, z) polygon for sections SAP has no shape for
     frame_cardinal: frame -> SAP insertion point (8 = top centre: the ring wall
-    hangs below its joints; drawing only, StiffTransform=No)
+    hangs below its joints; drawing only, Transform=No)
     (written beside the .s2k for the viewer).
     Foundation "gap": ground_joints (fixed, coincident with the baseplate
     joints), ground_of: tank joint -> ground joint, links: id -> (I = ground,
@@ -70,6 +70,7 @@ class TankModel:
         self.frame_sections: dict[str, dict] = {}
         self.frame_outlines: dict[str, list[tuple[float, float]]] = {}
         self.frame_cardinal: dict[int, int] = {}      # frame -> SAP cardinal point (default 10 = centroid)
+        self.frame_transform: dict[int, bool] = {}    # frame -> SAP Transform flag (default False: drawing only)
         self.cap_joints: dict[str, list[int]] = {}   # interior joints of each cap (rim excluded)
         self.cap_ring: dict[str, dict[int, int]] = {}  # cap -> joint -> ring index (0 = centre)
         self.ground_joints: list[int] = []
@@ -473,7 +474,7 @@ class TankModel:
         the ring can expand and settle with the tank. Frame axis at the top of
         the wall; local 2 is up by SAP default, so t3 = depth. Insertion point
         8 (top centre) so the section draws below the joints, in SAP and in the
-        viewer; StiffTransform=No keeps the analysis on the joint axis."""
+        viewer; Transform=No keeps the analysis on the joint axis."""
         s = self.spec
         self.ringwall_joints = [self.ground_of[j] for j in self.base_joints]
         arc = 2.0 * math.pi * s.radius / s.n_theta
@@ -511,6 +512,7 @@ class TankModel:
             self.frames[fid] = (rw[k], rw[(k + 1) % s.n_theta])
             self.frame_section[fid] = "RINGWALL"
             self.frame_cardinal[fid] = 8            # top centre: section hangs below the joints
+            self.frame_transform[fid] = s.ringwall_transform
 
     @property
     def concrete(self) -> dict | None:
