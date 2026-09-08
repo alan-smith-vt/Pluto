@@ -466,17 +466,30 @@ class TankModel:
 
     def _build_ringwall(self) -> None:
         """Rim load path: tank rim joint -> GAP_CONTACT link (compression only,
-        k = the concrete column under the joint, E A / depth) -> top-of-wall
-        joint (the rim's former ground joint) -> RINGWALL frames -> GAP_SOIL
-        link (compression only, k = subgrade x width x arc) -> fixed ground
-        joint (support "gap"; "fixed" pins the wall top in U3 instead). The
-        wall top keeps a tangential restraint only (local axes as the rim), so
-        the ring can expand and settle with the tank. Frame axis at the top of
-        the wall; local 2 is up by SAP default, so t3 = depth. Insertion point
-        8 (top centre) so the section draws below the joints, in SAP and in the
-        viewer; Transform=No keeps the analysis on the joint axis."""
+        k = the concrete column under the joint, E A / depth) -> wall joint
+        (the rim's former ground joint) -> RINGWALL frames -> GAP_SOIL link
+        (compression only, k = subgrade x width x arc) -> fixed ground joint
+        (support "gap"; "fixed" pins the wall joint in U3 instead). The wall
+        joint keeps a tangential restraint only (local axes as the rim), so
+        the ring can expand and settle with the tank. Local 2 is up by SAP
+        default, so t3 = depth.
+
+        joints = "elevations" (default since 2026-09-08): the wall joint sits
+        at the section centroid, z = -depth/2, and the ground joint at the
+        base, z = -depth; both links have length depth/2 (I below J, so local
+        1 = +Z as for a zero-length link) and the frame needs no insertion
+        point. Nothing is coincident, so the chain can be picked apart in the
+        SAP GUI. joints = "top": all three at the wall top, insertion point 8
+        (top centre) drawing the section below the joints, Transform per
+        [ringwall] transform. Same answers for vertical load and settlement
+        (vault/arms/beam-offset-study)."""
         s = self.spec
         self.ringwall_joints = [self.ground_of[j] for j in self.base_joints]
+        elev = s.ringwall_joints == "elevations"
+        if elev:
+            for wj in self.ringwall_joints:
+                x, y, z = self.joints[wj]
+                self.joints[wj] = (x, y, z - s.ringwall_depth / 2.0)
         arc = 2.0 * math.pi * s.radius / s.n_theta
         # the rim's gap links: soil stiffness -> concrete contact stiffness
         self.ringwall_contact_k = self.concrete["E"] * s.ringwall_width * arc / s.ringwall_depth
@@ -495,7 +508,8 @@ class TankModel:
             ground = self.ids.claim("joint", "ringwall_ground", s.n_theta)
             links = self.ids.claim("link", "ringwall_gap", s.n_theta)
             for wj, gj, lid in zip(self.ringwall_joints, ground, links):
-                self.joints[gj] = self.joints[wj]
+                x, y, z = self.joints[wj]
+                self.joints[gj] = (x, y, z - s.ringwall_depth / 2.0) if elev else (x, y, z)
                 self.thetas[gj] = self.thetas[wj]
                 self.ringwall_ground.append(gj)
                 self.links[lid] = (gj, wj)
@@ -511,8 +525,9 @@ class TankModel:
         for k, fid in enumerate(frames):
             self.frames[fid] = (rw[k], rw[(k + 1) % s.n_theta])
             self.frame_section[fid] = "RINGWALL"
-            self.frame_cardinal[fid] = 8            # top centre: section hangs below the joints
-            self.frame_transform[fid] = s.ringwall_transform
+            if not elev:
+                self.frame_cardinal[fid] = 8        # top centre: section hangs below the joints
+                self.frame_transform[fid] = s.ringwall_transform
 
     @property
     def concrete(self) -> dict | None:
@@ -563,7 +578,7 @@ class TankModel:
             out["GROUND"] = ([], self.plate_ground_joints, [])
         if s.ringwall:
             out["RINGWALL"] = ([], [], list(self.ids.block("frame", "ringwall")))
-            out["RINGWALL_TOP"] = ([], self.ringwall_joints, [])
+            out["RINGWALL_AXIS" if s.ringwall_joints == "elevations" else "RINGWALL_TOP"] = ([], self.ringwall_joints, [])
             if self.ringwall_ground:
                 out["RINGWALL_GROUND"] = ([], self.ringwall_ground, [])
         for n in range(len(s.dents)):

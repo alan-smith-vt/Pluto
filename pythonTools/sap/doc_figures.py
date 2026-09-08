@@ -285,17 +285,26 @@ def fig_beam_nodes(m: TankModel) -> str:
     f.line(jx, jy + 5, jx, y1 - 5, stroke=STEEL, w=2)
     gap_symbol(jx, jy + 30)
     left(jx, jy + 30, "GAP_CONTACT")
-    f.dot(jx, y1, 5, fill="#ffffff", stroke=STEEL)
-    right(jx + 30, y1, "wall top", "RINGWALL_TOP", STEEL)
-    # ring wall body below the top joint
+    elev = m.spec.ringwall_joints == "elevations"
     cw, ch = 48, 130
     f.add(f'<rect x="{jx - cw / 2}" y="{y1}" width="{cw}" height="{ch}" fill="{CONC}" stroke="{INK}" stroke-width="1"/>')
-    f.line(jx, y1, jx, y1 + ch / 2, stroke=STEEL, w=1.2, dash="2 4")
-    f.dot(jx, y1 + ch / 2, 3, fill="none", stroke=STEEL)
-    left(jx - cw / 2, y1 + ch / 2, "centroid", MUTED)
-    left(jx - cw / 2, y1 + ch / 2 + 16, "offset", MUTED)
-    f.text(jx + cw / 2 + 12, y1 + ch / 2 + 4, "RINGWALL", fill=MUTED, size=11)
-    f.text(jx + cw / 2 + 12, y1 + ch / 2 + 18, "frame", fill=MUTED, size=11)
+    if elev:
+        # wall joint at the centroid: the contact link runs down into the wall
+        f.line(jx, y1, jx, y1 + ch / 2 - 5, stroke=STEEL, w=2)
+        f.dot(jx, y1 + ch / 2, 5, fill="#ffffff", stroke=STEEL)
+        right(jx + cw / 2 + 6, y1 + ch / 2, "wall axis", "RINGWALL_AXIS", STEEL)
+        f.text(jx + cw / 2 + 12, y1 + ch / 2 + 36, "RINGWALL", fill=MUTED, size=11)
+        f.text(jx + cw / 2 + 12, y1 + ch / 2 + 50, "frame", fill=MUTED, size=11)
+        f.line(jx, y1 + ch / 2 + 5, jx, y1 + ch, stroke=STEEL, w=2)
+    else:
+        f.dot(jx, y1, 5, fill="#ffffff", stroke=STEEL)
+        right(jx + 30, y1, "wall top", "RINGWALL_TOP", STEEL)
+        f.line(jx, y1, jx, y1 + ch / 2, stroke=STEEL, w=1.2, dash="2 4")
+        f.dot(jx, y1 + ch / 2, 3, fill="none", stroke=STEEL)
+        left(jx - cw / 2, y1 + ch / 2, "centroid", MUTED)
+        left(jx - cw / 2, y1 + ch / 2 + 16, "offset", MUTED)
+        f.text(jx + cw / 2 + 12, y1 + ch / 2 + 4, "RINGWALL", fill=MUTED, size=11)
+        f.text(jx + cw / 2 + 12, y1 + ch / 2 + 18, "frame", fill=MUTED, size=11)
     # soil gap link under the base
     y2 = y1 + ch + 70
     f.line(jx, y1 + ch, jx, y2 - 5, stroke=STEEL, w=2)
@@ -307,9 +316,9 @@ def fig_beam_nodes(m: TankModel) -> str:
     right(jx, y2, "ground", "RINGWALL_GROUND", STEEL, dy=32)
     support(jx, y2 + 8)
     f.text(jx - 30, y2 + 16, "fixed", fill=MUTED, size=11, anchor="end")
-    f.text(600, 470, "three joints coincident", fill=MUTED, size=11)
+    f.text(600, 470, "joints at top, centroid, base" if elev else "three joints coincident", fill=MUTED, size=11)
     f.text(600, 486, "both gaps compression only", fill=MUTED, size=11)
-    f.text(600, 502, "drawn apart", fill=MUTED, size=11)
+    f.text(600, 502, "links have length" if elev else "drawn apart", fill=MUTED, size=11)
     return f.done()
 
 

@@ -328,7 +328,7 @@ def test_eave_ring_section_properties():
 
 def test_ringwall_frames_insert_at_top_centre():
     from tankbuilder.s2k import insertion_tables
-    m = walled()
+    m = walled(ringwall_joints="top")
     rw = list(m.ids.block("frame", "ringwall"))
     assert all(m.frame_cardinal[f] == 8 for f in rw) and set(m.frame_cardinal) == set(rw)
     (name, rows), = insertion_tables(m)
@@ -336,6 +336,23 @@ def test_ringwall_frames_insert_at_top_centre():
     assert rows[0].startswith(f'   Frame={rw[0]}   CardinalPt="8 (top center)"   Mirror2=No')
     assert "Transform=No" in rows[0] and "CoordSys=Local" in rows[0]
     assert not insertion_tables(capped())            # no ring wall -> no table
+    assert not insertion_tables(walled())            # "elevations": wall joint at the centroid, cardinal 10
+
+
+def test_ringwall_joints_at_true_elevations():
+    """Default layout since 2026-09-08: rim at the wall top, wall joint at -depth/2,
+    ground joint at -depth, links with length (I below J), group RINGWALL_AXIS."""
+    m = walled()
+    for rim, w, g in zip(m.base_joints, m.ringwall_joints, m.ringwall_ground):
+        x, y, z = m.joints[rim]
+        assert m.joints[w] == (x, y, z - 1.5) and m.joints[g] == (x, y, z - 3.0)
+    assert not m.frame_cardinal and not m.frame_transform
+    g = m.groups()
+    assert g["RINGWALL_AXIS"] == ([], m.ringwall_joints, []) and "RINGWALL_TOP" not in g
+    top = walled(ringwall_joints="top")
+    assert all(top.joints[w] == top.joints[r] == top.joints[gj]
+               for r, w, gj in zip(top.base_joints, top.ringwall_joints, top.ringwall_ground))
+    assert top.groups()["RINGWALL_TOP"] == ([], top.ringwall_joints, [])
 
 
 def test_outlines_sidecar_written_beside_the_s2k(tmp_path):
@@ -471,7 +488,7 @@ def test_ringwall_frames_close_on_the_rims_ground_joints():
     rim = {m.links[l][1]: l for l in m.links if m.links[l][1] in base}
     assert len(rim) == 8 and all(m.link_prop[l] == "GAP_CONTACT" for l in rim.values())
     assert [m.links[rim[j]][0] for j in m.base_joints] == rw
-    assert len(m.ringwall_ground) == 8 and all(m.joints[g] == m.joints[w] for g, w in zip(m.ringwall_ground, rw))
+    assert len(m.ringwall_ground) == 8 and all(m.joints[g][:2] == m.joints[w][:2] for g, w in zip(m.ringwall_ground, rw))
     soil = {m.links[l][1]: l for l in m.ids.block("link", "ringwall_gap")}
     assert [m.links[soil[w]][0] for w in rw] == m.ringwall_ground
     assert all(m.link_prop[l] == "GAP_SOIL" for l in soil.values())
@@ -505,7 +522,7 @@ def test_ringwall_tables():
     assert float(gap["GAP_SOIL"]["TRANSK"]) == pytest.approx(m.ringwall_soil_k)
     assert float(gap["GAP_CONTACT"]["TRANSK"]) == pytest.approx(m.ringwall_contact_k)
     g = m.groups()
-    assert g["RINGWALL"] == ([], [], list(range(9, 17))) and g["RINGWALL_TOP"] == ([], m.ringwall_joints, [])
+    assert g["RINGWALL"] == ([], [], list(range(9, 17))) and g["RINGWALL_AXIS"] == ([], m.ringwall_joints, [])
     assert g["RINGWALL_GROUND"] == ([], m.ringwall_ground, []) and g["GROUND"] == ([], m.plate_ground_joints, [])
     fixed_m = walled(ringwall_support="fixed")
     fixed = parse_s2k(s2k_text(fixed_m))

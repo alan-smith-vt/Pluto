@@ -48,13 +48,15 @@ meant to be checked. Real project numbers live only in the gitignored `configs/*
 > subgrade × width × arc) → fixed ground joint (`RINGWALL_GROUND`, where settlements go).
 > Pictures: [[vault/arms/ring-wall-load-path|ring-wall-load-path]].
 > The tank mates with the wall as it settles and the two move down together (verified on
-> SAP 26: rim U3 −0.02743 ft, wall top −0.02740 ft under NL_HYDRO). Frame axis at the top of the wall, not
-> the centroid: loads and supports both sit on the axis, so hoop tension and bending about
-> the horizontal axis are unaffected; the vertical eccentricity is ignored. Insertion point
-> `8 (top center)`, `Transform=No` (default; `[ringwall] transform = true` for rigid arms
-> joint → centroid): SAP and the viewer draw the section hanging below the joints, the
-> analysis stays on the joint axis. Until 2026-09-08 the column was misspelt
-> `StiffTransform` and SAP silently used `Transform=Yes`; see
+> SAP 26: rim U3 −0.02743 ft, wall −0.02740 ft under NL_HYDRO). **Joints** (`joints`,
+> 2026-09-08): `"elevations"` (default) puts the rim joint at the wall top, the wall
+> frame joint at the centroid (z = −A/2) and the ground joint at the base (z = −A), the two
+> links with length A/2 (I below J, local 1 = +Z), cardinal point 10 and no insertion
+> table — nothing coincident, group `RINGWALL_AXIS`. `"top"` is the earlier layout: all
+> three joints at the wall top, insertion point `8 (top center)` drawing the section
+> hanging below, `transform = false | true` for SAP's `Transform` (rigid arms joint →
+> centroid; the column was misspelt `StiffTransform` until 2026-09-08, so those runs had
+> Yes), group `RINGWALL_TOP`. Same vertical answers either way:
 > [[vault/arms/beam-offset-study|beam-offset-study]].
 > **Section.** Rectangular, width C × depth A, concrete `CONC` with E = 57 000 √f'c,
 > ν = 0.2, 0.150 kcf (self-weight in `DEAD`).

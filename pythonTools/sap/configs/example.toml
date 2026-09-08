@@ -55,6 +55,9 @@ depth       = 3.0       # ft, vertical
 fc          = 3000.0    # psi
 unit_weight = 0.150     # kip/ft^3
 support     = "gap"     # "gap": soil gap link under the wall, k = subgrade_modulus x width x arc | "fixed"
+joints      = "elevations"  # rim joint at the wall top, wall joint at the centroid (-depth/2), ground joint at the
+                        # base (-depth), links with length; nothing coincident. "top": all three at the wall top,
+                        # insertion point 8 (section drawn hanging below) -- the pre-2026-09-08 layout
 transform   = false     # SAP insertion "Transform": false = section drawn hanging below the wall-top joint,
                         # analysis on the joint line; true = rigid arms joint -> centroid (top push rolls the ring)
 

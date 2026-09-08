@@ -89,6 +89,9 @@ class TankSpec:
     ringwall_fc: float = 3000.0           # psi; E = 57000 sqrt(f'c)
     ringwall_unit_weight: float = 0.150   # kip/ft^3
     ringwall_support: str = "gap"         # "gap": soil gap link k = subgrade x width x arc | "fixed"
+    ringwall_joints: str = "elevations"   # "elevations": rim at the wall top, wall joint at the centroid (-A/2),
+                                          #   ground joint at the base (-A), links with length, cardinal 10 (2026-09-08)
+                                          # "top": all three coincident at the wall top, cardinal 8 (pre-2026-09-08)
     ringwall_transform: bool = False      # SAP "Transform" for the top-centre insertion: False = drawing
                                           # only (analysis on the wall-top joint line); True = rigid arms
                                           # joint -> centroid (a horizontal push at the top rolls the ring)
@@ -183,6 +186,8 @@ class TankSpec:
                 self.ringwall_support = "gap"
             if self.ringwall_support not in ("gap", "fixed"):
                 raise ValueError(f"ringwall.support {self.ringwall_support!r} not recognised (gap | fixed)")
+            if self.ringwall_joints not in ("elevations", "top"):
+                raise ValueError(f"ringwall.joints {self.ringwall_joints!r} not recognised (elevations | top)")
         if self.settlement not in ("none", "trench", "slope"):
             raise ValueError(f"settlement.profile {self.settlement!r} not recognised (none | trench | slope)")
         if self.settlement != "none":
@@ -245,6 +250,7 @@ CONFIG_MAP = {
         "fc": "ringwall_fc",
         "unit_weight": "ringwall_unit_weight",
         "support": "ringwall_support",
+        "joints": "ringwall_joints",
         "transform": "ringwall_transform",
     },
     "dents": {"angle_deg": "angle_deg", "elevation": "elevation", "depth": "depth",

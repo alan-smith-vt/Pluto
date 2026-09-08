@@ -2,34 +2,34 @@
 <rect width="860" height="520" fill="#ffffff"/>
 <defs><marker id="ah-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#1f2328"/></marker><marker id="ah-muted" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#6b7380"/></marker><marker id="ah-steel" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#2f6b9a"/></marker><marker id="ah-rust" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#b4472b"/></marker><marker id="ah-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#2e7d4f"/></marker><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6" stroke="#1f2328" stroke-width=".8" stroke-opacity=".45"/></pattern></defs>
 <text x="16" y="24" font-size="13" font-weight="bold" fill="#1f2328">SHELL LOCAL AXES</text>
-<line x1="80.0" y1="422.7" x2="539.3" y2="422.7" stroke="#1f2328" stroke-width="3.0"/>
-<line x1="539.3" y1="422.7" x2="539.3" y2="162.8" stroke="#1f2328" stroke-width="3.0"/>
-<path d="M80.0 91.5 L91.5 91.6 L103.0 91.7 L114.4 91.9 L125.9 92.2 L137.4 92.5 L148.9 93.0 L160.4 93.5 L171.9 94.2 L183.3 94.9 L194.8 95.7 L206.3 96.6 L217.8 97.5 L229.3 98.6 L240.7 99.7 L252.2 100.9 L263.7 102.3 L275.2 103.7 L286.7 105.1 L298.1 106.7 L309.6 108.4 L321.1 110.2 L332.6 112.0 L344.1 114.0 L355.6 116.0 L367.0 118.1 L378.5 120.4 L390.0 122.7 L401.5 125.1 L413.0 127.7 L424.4 130.3 L435.9 133.1 L447.4 135.9 L458.9 138.9 L470.4 141.9 L481.9 145.1 L493.3 148.4 L504.8 151.8 L516.3 155.4 L527.8 159.0 L539.3 162.8" fill="none" stroke="#1f2328" stroke-width="3.0"/>
-<line x1="80.0" y1="434.6" x2="80.0" y2="75.8" stroke="#6b7380" stroke-width="0.8" stroke-dasharray="8 4 2 4"/>
-<line x1="539.3" y1="292.8" x2="539.3" y2="248.8" stroke="#b4472b" stroke-width="2" marker-end="url(#ah-rust)"/>
-<text x="548.3" y="242.8" fill="#b4472b" text-anchor="middle" font-size="12" font-weight="bold">1</text>
-<line x1="539.3" y1="292.8" x2="583.3" y2="292.8" stroke="#2f6b9a" stroke-width="2" marker-end="url(#ah-steel)"/>
-<text x="593.3" y="305.8" fill="#2f6b9a" text-anchor="middle" font-size="12" font-weight="bold">3</text>
-<circle cx="539.3" cy="292.8" r="6" fill="none" stroke="#2e7d4f" stroke-width="2"/>
-<circle cx="539.3" cy="292.8" r="2" fill="#2e7d4f"/>
-<text x="527.9" y="308.1" fill="#2e7d4f" text-anchor="middle" font-size="12" font-weight="bold">2</text>
-<text x="613.3" y="296.8" fill="#6b7380" text-anchor="start" font-size="12">wall</text>
-<line x1="286.7" y1="422.7" x2="330.7" y2="422.7" stroke="#b4472b" stroke-width="2" marker-end="url(#ah-rust)"/>
-<text x="340.7" y="435.7" fill="#b4472b" text-anchor="middle" font-size="12" font-weight="bold">1</text>
-<line x1="286.7" y1="422.7" x2="286.7" y2="378.7" stroke="#2f6b9a" stroke-width="2" marker-end="url(#ah-steel)"/>
-<text x="295.7" y="372.7" fill="#2f6b9a" text-anchor="middle" font-size="12" font-weight="bold">3</text>
-<circle cx="286.7" cy="422.7" r="6" fill="none" stroke="#2e7d4f" stroke-width="2"/>
-<circle cx="286.7" cy="422.7" r="2" fill="#2e7d4f"/>
-<text x="275.4" y="438.1" fill="#2e7d4f" text-anchor="middle" font-size="12" font-weight="bold">2</text>
-<text x="286.7" y="446.7" fill="#6b7380" text-anchor="middle" font-size="12">baseplate</text>
-<line x1="332.6" y1="112.0" x2="289.2" y2="104.8" stroke="#b4472b" stroke-width="2" marker-end="url(#ah-rust)"/>
-<text x="280.8" y="98.3" fill="#b4472b" text-anchor="middle" font-size="12" font-weight="bold">1</text>
-<line x1="332.6" y1="112.0" x2="339.8" y2="68.6" stroke="#2f6b9a" stroke-width="2" marker-end="url(#ah-steel)"/>
-<text x="350.3" y="64.2" fill="#2f6b9a" text-anchor="middle" font-size="12" font-weight="bold">3</text>
-<circle cx="332.6" cy="112.0" r="6" fill="none" stroke="#2e7d4f" stroke-width="2"/>
-<circle cx="332.6" cy="112.0" r="2" fill="#2e7d4f"/>
-<text x="341.9" y="129.0" fill="#2e7d4f" text-anchor="middle" font-size="12" font-weight="bold">2</text>
-<text x="356.6" y="146.0" fill="#6b7380" text-anchor="start" font-size="12">roof</text>
+<line x1="80.0" y1="429.4" x2="539.3" y2="429.4" stroke="#1f2328" stroke-width="3.0"/>
+<line x1="539.3" y1="429.4" x2="539.3" y2="158.4" stroke="#1f2328" stroke-width="3.0"/>
+<path d="M80.0 87.1 L91.5 87.1 L103.0 87.3 L114.4 87.5 L125.9 87.7 L137.4 88.1 L148.9 88.5 L160.4 89.0 L171.9 89.6 L183.3 90.3 L194.8 91.1 L206.3 91.9 L217.8 92.9 L229.3 93.9 L240.7 95.0 L252.2 96.2 L263.7 97.4 L275.2 98.8 L286.7 100.2 L298.1 101.8 L309.6 103.4 L321.1 105.1 L332.6 106.9 L344.1 108.8 L355.6 110.8 L367.0 112.9 L378.5 115.1 L390.0 117.4 L401.5 119.9 L413.0 122.4 L424.4 125.0 L435.9 127.8 L447.4 130.7 L458.9 133.6 L470.4 136.8 L481.9 140.0 L493.3 143.4 L504.8 146.9 L516.3 150.6 L527.8 154.4 L539.3 158.4" fill="none" stroke="#1f2328" stroke-width="3.0"/>
+<line x1="80.0" y1="437.5" x2="80.0" y2="73.5" stroke="#6b7380" stroke-width="0.8" stroke-dasharray="8 4 2 4"/>
+<line x1="539.3" y1="293.9" x2="539.3" y2="249.9" stroke="#b4472b" stroke-width="2" marker-end="url(#ah-rust)"/>
+<text x="548.3" y="243.9" fill="#b4472b" text-anchor="middle" font-size="12" font-weight="bold">1</text>
+<line x1="539.3" y1="293.9" x2="583.3" y2="293.9" stroke="#2f6b9a" stroke-width="2" marker-end="url(#ah-steel)"/>
+<text x="593.3" y="306.9" fill="#2f6b9a" text-anchor="middle" font-size="12" font-weight="bold">3</text>
+<circle cx="539.3" cy="293.9" r="6" fill="none" stroke="#2e7d4f" stroke-width="2"/>
+<circle cx="539.3" cy="293.9" r="2" fill="#2e7d4f"/>
+<text x="527.9" y="309.2" fill="#2e7d4f" text-anchor="middle" font-size="12" font-weight="bold">2</text>
+<text x="613.3" y="297.9" fill="#6b7380" text-anchor="start" font-size="12">wall</text>
+<line x1="286.7" y1="429.4" x2="330.7" y2="429.4" stroke="#b4472b" stroke-width="2" marker-end="url(#ah-rust)"/>
+<text x="340.7" y="442.4" fill="#b4472b" text-anchor="middle" font-size="12" font-weight="bold">1</text>
+<line x1="286.7" y1="429.4" x2="286.7" y2="385.4" stroke="#2f6b9a" stroke-width="2" marker-end="url(#ah-steel)"/>
+<text x="295.7" y="379.4" fill="#2f6b9a" text-anchor="middle" font-size="12" font-weight="bold">3</text>
+<circle cx="286.7" cy="429.4" r="6" fill="none" stroke="#2e7d4f" stroke-width="2"/>
+<circle cx="286.7" cy="429.4" r="2" fill="#2e7d4f"/>
+<text x="275.4" y="444.7" fill="#2e7d4f" text-anchor="middle" font-size="12" font-weight="bold">2</text>
+<text x="286.7" y="453.4" fill="#6b7380" text-anchor="middle" font-size="12">baseplate</text>
+<line x1="332.6" y1="106.9" x2="289.2" y2="99.9" stroke="#b4472b" stroke-width="2" marker-end="url(#ah-rust)"/>
+<text x="280.7" y="93.4" fill="#b4472b" text-anchor="middle" font-size="12" font-weight="bold">1</text>
+<line x1="332.6" y1="106.9" x2="339.6" y2="63.5" stroke="#2f6b9a" stroke-width="2" marker-end="url(#ah-steel)"/>
+<text x="350.1" y="59.0" fill="#2f6b9a" text-anchor="middle" font-size="12" font-weight="bold">3</text>
+<circle cx="332.6" cy="106.9" r="6" fill="none" stroke="#2e7d4f" stroke-width="2"/>
+<circle cx="332.6" cy="106.9" r="2" fill="#2e7d4f"/>
+<text x="342.0" y="123.9" fill="#2e7d4f" text-anchor="middle" font-size="12" font-weight="bold">2</text>
+<text x="356.6" y="140.9" fill="#6b7380" text-anchor="start" font-size="12">roof</text>
 <text x="720.0" y="120.0" fill="#b4472b" text-anchor="start" font-size="12" font-weight="bold">1</text>
 <text x="738.0" y="120.0" fill="#1f2328" text-anchor="start" font-size="12">merid</text>
 <text x="720.0" y="142.0" fill="#2e7d4f" text-anchor="start" font-size="12" font-weight="bold">2</text>
