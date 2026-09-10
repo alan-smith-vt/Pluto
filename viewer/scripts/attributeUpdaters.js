@@ -204,6 +204,73 @@ var FEAAttributes = (function () {
         });
     }
 
+    // Element-mean smoothing (2026-09-10) -- the value each element
+    // carries is the mean of its own corner values (the element centroid
+    // value for a bilinear recovery; what equilibrium constrains), and a
+    // node shows the mean of the element means around it, per normal
+    // group. Unlike coincident-node averaging this never lets one corner's
+    // extrapolation overshoot survive: at a shell edge under a steep
+    // boundary layer the corner values swing about the element mean while
+    // the mean stays on the statics, so this view is the one to read a
+    // force profile from. Same caches as the node-averaged updater
+    // (nodeAvgCache / cornerAvgCache), so range and point queries work
+    // unchanged.
+    function updateCornerValsElemAveraged(buildResult, model, lcData, compIndex, stride) {
+        var h = model.header;
+        var cc = stride || h.cornerComponents;
+        var mc = h.maxCorners;
+        var nElem = h.nElements;
+        var nNodes = h.nNodes;
+        var normalGroups = buildResult.normalGroups;
+        var elemNCount = buildResult.elemNCount;
+
+        var elemMean = new Float32Array(nElem);
+        for (var e = 0; e < nElem; e++) {
+            var nc = elemNCount[e];
+            var sum = 0, cnt = 0;
+            for (var k = 0; k < nc; k++) {
+                var v = lcData[e * mc * cc + k * cc + compIndex];
+                if (v === v) { sum += v; cnt++; }
+            }
+            elemMean[e] = cnt > 0 ? sum / cnt : NaN;
+        }
+
+        var cornerAvg = new Float32Array(nElem * 4);
+        for (var i = 0; i < cornerAvg.length; i++) cornerAvg[i] = NaN;
+        var nodeAvg = new Float32Array(nNodes);
+        for (var n0 = 0; n0 < nNodes; n0++) nodeAvg[n0] = NaN;
+
+        for (var n = 0; n < nNodes; n++) {
+            var groups = normalGroups[n];
+            var firstGroupAvg = NaN;
+            for (var g = 0; g < groups.length; g++) {
+                var grp = groups[g];
+                var s2 = 0, c2 = 0;
+                for (var j = 0; j < grp.length; j++) {
+                    var m = elemMean[grp[j].e];
+                    if (m === m) { s2 += m; c2++; }
+                }
+                var avg = c2 > 0 ? s2 / c2 : NaN;
+                if (g === 0) firstGroupAvg = avg;
+                for (var j2 = 0; j2 < grp.length; j2++) {
+                    var entry2 = grp[j2];
+                    cornerAvg[entry2.e * 4 + entry2.k] = avg;
+                }
+            }
+            nodeAvg[n] = firstGroupAvg;
+        }
+        buildResult.nodeAvgCache = nodeAvg;
+        buildResult.cornerAvgCache = cornerAvg;
+        buildResult.elemMeanCache = elemMean;
+
+        fanOutCornerVals(buildResult, function (e2, nc2, out) {
+            out[0] = cornerAvg[e2 * 4];
+            out[1] = cornerAvg[e2 * 4 + 1];
+            out[2] = cornerAvg[e2 * 4 + 2];
+            out[3] = cornerAvg[e2 * 4 + 3];
+        });
+    }
+
     // Min/max of the per-node averages cached by the smoothed updater.
     function computeRangeAveraged(buildResult) {
         var avg = buildResult.nodeAvgCache;
@@ -517,6 +584,7 @@ var FEAAttributes = (function () {
         updateBeamDispVecs: updateBeamDispVecs,
         updateCornerVals: updateCornerVals,
         updateCornerValsNodeAveraged: updateCornerValsNodeAveraged,
+        updateCornerValsElemAveraged: updateCornerValsElemAveraged,
         updateCornerValsFromSlotArray: updateCornerValsFromSlotArray,
         updateCornerValsFromSlotCategories: updateCornerValsFromSlotCategories,
         updateDispVecs: updateDispVecs,

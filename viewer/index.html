@@ -109,8 +109,12 @@
             <span class="fea-label" style="width:auto;">Edges</span>
         </div>
         <div class="fea-row">
-            <input type="checkbox" id="feaSmooth" class="fea-check" checked>
-            <span class="fea-label" style="width:auto;">Smooth (coincident-node averaging)</span>
+            <span class="fea-label">Smooth</span>
+            <select id="feaSmooth" class="fea-select" title="none: raw corner values, discontinuous across elements. Node averaging: mean of the corner values meeting at a node. Element means: each element's mean of its own corners, averaged at the node -- the value equilibrium constrains; use it to read a force profile at a shell edge, where corner extrapolation overshoots.">
+                <option value="node" selected>Node averaging</option>
+                <option value="elem">Element means</option>
+                <option value="none">None (raw corners)</option>
+            </select>
         </div>
         <div class="fea-row">
             <input type="checkbox" id="feaAbs" class="fea-check">

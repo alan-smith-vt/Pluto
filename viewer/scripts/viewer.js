@@ -48,7 +48,8 @@ var envGlobalDsrLC = null;      // Uint16Array  -- winning LC
 var currentEnvelope = null;     // 'min' | 'max' | 'abs' | 'dsr' | null
 var dsrCategorical = false;     // Global DSR shown as controlling-check map
 var dsrIndices = [];            // meta indices of kind:'dsr' components
-var smoothing = true;           // coincident-node averaging (default on)
+var smoothing = true;           // any smoothing on (default on)
+var smoothMode = 'node';        // 'node' = coincident-node averaging | 'elem' = element means at nodes (2026-09-10)
 var absValue = false;           // display |value| (shader-side, post-interp)
 
 var alarmEnabled = false;       // flag values >= alarmThreshold in alarmColor
@@ -1091,7 +1092,8 @@ function applyComponentAndRange() {
         if (!feaModel.strData) return;
         var nStr = strengthComponents().length;
         if (smoothing) {
-            FEAAttributes.updateCornerValsNodeAveraged(
+            (smoothMode === 'elem' ? FEAAttributes.updateCornerValsElemAveraged
+                                   : FEAAttributes.updateCornerValsNodeAveraged)(
                 feaBuild, feaModel, feaModel.strData, currentStr, nStr);
         } else {
             FEAAttributes.updateCornerVals(
@@ -1101,7 +1103,9 @@ function applyComponentAndRange() {
         }
     } else if (smoothing) {
         if (!feaLCData) return;
-        FEAAttributes.updateCornerValsNodeAveraged(feaBuild, feaModel, feaLCData, currentComp);
+        (smoothMode === 'elem' ? FEAAttributes.updateCornerValsElemAveraged
+                               : FEAAttributes.updateCornerValsNodeAveraged)(
+            feaBuild, feaModel, feaLCData, currentComp);
     } else {
         if (!feaLCData) return;
         FEAAttributes.updateCornerVals(feaBuild, feaModel, feaLCData, currentComp);
@@ -1207,7 +1211,7 @@ function updateViewCaption() {
     } else if (!inCatMode() && absValue) {
         // abs on the (already >= 0) DSR value is a no-op; don't advertise it
     }
-    if (smoothing) parts.push('smoothed');
+    if (smoothing) parts.push(smoothMode === 'elem' ? 'element means' : 'smoothed');
     // The colorscale title stays about the FIELD only -- deformation
     // state (an exaggeration of geometry, not of values) shows in the
     // canvas caption but not above the legend.
@@ -2179,7 +2183,8 @@ elEdges.addEventListener('change', function () {
 });
 
 elSmooth.addEventListener('change', function () {
-    smoothing = this.checked;
+    smoothMode = this.value;
+    smoothing = smoothMode !== 'none';
     applyComponentAndRange();
 });
 
