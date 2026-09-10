@@ -4,7 +4,7 @@ status: current
 created: 2026-09-03
 ---
 
-*↑ [[vault/Pluto Home|Home]] › [[vault/audits/Audits map|Audits map]]*
+*↑ [[vault/Pluto|Home]] › [[vault/audits/Audits map|Audits map]]*
 
 Quick read-only audit of `../SapViewer` (2026-09-03) ahead of folding it into Pluto.
 

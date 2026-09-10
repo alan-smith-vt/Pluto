@@ -4,7 +4,7 @@ status: current
 created: 2026-09-08
 ---
 
-*↑ [[vault/Pluto Home|Home]] › [[vault/arms/Arms map|Arms map]]*
+*↑ [[vault/Pluto|Home]] › [[vault/arms/Arms map|Arms map]]*
 
 What `run_sap.py` pulls out of SAP2000 over the OAPI, what `SapToPluto` turns into viewer
 components, and what SAP holds that never leaves it. The pipeline is `Results.*` calls in

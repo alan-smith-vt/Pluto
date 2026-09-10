@@ -2,7 +2,7 @@
   "_note": "Restore source for .obsidian/graph.json (Obsidian closed first): colorGroups -> colorGroups, search -> the graph filter (hides handoffs, archive, READMEs, code folders).",
   "colorGroups": [
     {
-      "query": "path:vault/Pluto Home.md",
+      "query": "path:vault/Pluto.md",
       "color": {
         "a": 1,
         "rgb": 13934615

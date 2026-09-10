@@ -1,6 +1,6 @@
 # Viewer map
 
-*↑ [[vault/Pluto Home|Home]]*
+*↑ [[vault/Pluto|Home]]*
 
 Hub for `vault/viewer/` — the Three.js viewer in `viewer/` (plain JS, no build step). It
 reads v4 and v3 through `viewer/scripts/format/pluto.js`, renders per-corner shell fields

@@ -1,6 +1,6 @@
 # Format map
 
-*↑ [[vault/Pluto Home|Home]]*
+*↑ [[vault/Pluto|Home]]*
 
 Hub for `vault/format/` — the common model every arm converges on and the viewer consumes.
 Rules that never move: the binary is results + geometry, write-once, C#-written in

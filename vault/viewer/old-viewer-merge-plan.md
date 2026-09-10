@@ -19,7 +19,7 @@ created: 2026-09-01
 
 # Old viewer → new viewer merge plan
 
-*↑ [[vault/Pluto Home|Home]] › [[vault/viewer/Viewer map|Viewer map]]*
+*↑ [[vault/Pluto|Home]] › [[vault/viewer/Viewer map|Viewer map]]*
 
 Source: `archive/ViewerSource/` (the pre-Pluto
 viewer, transcribed 2026-09-01, no `// sanitized` markers — appears intact).
