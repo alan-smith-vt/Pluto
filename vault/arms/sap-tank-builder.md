@@ -131,6 +131,27 @@ meant to be checked. Real project numbers live only in the gitignored `configs/*
 > foot; rim → ring wall 132.6 kip, pad 40 kip through that one ring. Study and figures:
 > the Notes vault, `<project notes>/Tank Base Support Study.md`
 > (`base_support_figures.py` draws them from a results dump + `Results.LinkForce`).
+> **Baseplate overhang** (`[baseplate] overhang`, ft beyond the shell mid-surface, 2026-09-10):
+> one ring of quads from the rim out to R + overhang, joints at z = 0 as ring n_r + 1 of the
+> plate (radius appended to `cap_radii_of`, tributary areas re-cut to the plate edge), section
+> BASEPLATE, no fluid face, group `PLATE_OVERHANG`. They are plate joints like any other, so
+> the foundation gives them a link and `plate_bearing` puts them on the concrete; the arm
+> chain now runs per side of the axis joint (inward rings and the outward ring each start
+> from it). Validation: overhang must not pass the ring wall's outer face. TANK-A: the
+> drawings give 9 in from the ring wall inner face (r = 33.0 ft) to the plate edge, i.e.
+> 0.125 ft beyond the shell, run as `TANK-A-overhang` (bearing + overhang).
+> **Sand cushion** (`[ringwall] cushion_modulus` ksf + `cushion_thickness` ft, needs
+> `plate_bearing`, 2026-09-10): the plate joints over the ring wall bear through the
+> cushion instead of the concrete column, k = E / t × the joint's own tributary area, one
+> link property per plate ring (`GAP_BEAR_Rnn`), and the shell-line `GAP_CONTACT` gets the
+> same treatment. TANK-A at E = 1500 ksf / 2 in: 1.7 to 12 kip/ft per joint against 0.34
+> for the pad spring beside them (5 to 36 ×, was 2000 ×). Run as `TANK-A-cushion`
+> (overhang + cushion). Motivation and results: the Notes base support study.
+> **Ring wall subgrade** (`[ringwall] subgrade_modulus` kcf, 2026-09-10; 0 = the foundation
+> value): the soil gap link under the ring wall takes its own modulus, the pad springs keep
+> `[foundation] subgrade_modulus`. Motivation: the sensitivity runs (`-ks85`, `-ks42`) showed a
+> single value cannot settle the pad and the ring wall differently under product. Run as
+> `TANK-A-rw340` (overhang + ring wall soil at 340 against the pad's 170).
 > First `run_sap.py` attempt failed at `OpenFile` (returned 1) and SAP went down; the arms
 > were overlapping collinear frames then and the user's GUI session held the instance —
 > the chained rebuild in a fresh instance imported cleanly, cause not isolated.

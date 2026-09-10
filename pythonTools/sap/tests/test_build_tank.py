@@ -803,3 +803,81 @@ def test_plate_bearing_needs_elevations():
         TankModel(TankSpec(radius=30.0, height=40.0, baseplate=True, roof=True, roof_crown_radius=48.0,
                            foundation="gap", ringwall=True, ringwall_joints="top", edge_length=3.0,
                            ringwall_plate_bearing=True))
+# --- baseplate overhang -----------------------------------------------------------
+
+def test_overhang_ring_outside_the_shell_bears_on_the_ring_wall():
+    spec = TankSpec(radius=30.0, height=40.0, baseplate=True, baseplate_n_r=5, roof=True,
+                    roof_crown_radius=48.0, foundation="gap", ringwall=True, ringwall_width=1.5,
+                    ringwall_depth=3.0, edge_length=3.0, edge_size=0.25, edge_growth=1.5,
+                    ringwall_plate_bearing=True, baseplate_overhang=0.125)
+    m = TankModel(spec)
+    assert len(m.overhang_joints) == 36 and all(m.joints[j][2] == 0.0 for j in m.overhang_joints)
+    assert all(abs(math.hypot(*m.joints[j][:2]) - 30.125) < 1e-9 for j in m.overhang_joints)
+    oh = list(m.ids.block("area", "baseplate_overhang"))
+    assert len(oh) == 36 and all(m.area_section[a] == "BASEPLATE" and a not in m.area_face for a in oh)
+    assert set(oh) <= set(m.baseplate_areas)
+    total = sum(m.baseplate_tributary_area(j) for j in m.baseplate_joints)
+    assert abs(total - math.pi * 30.125 ** 2) < 1e-9
+    # the overhang joints are on the concrete: GAP_BEARING, arms start at the axis and go outward
+    assert set(m.overhang_joints) <= set(m.bearing_joints)
+    axis = set(m.ringwall_joints)
+    arms = [m.frames[f] for f in m.ids.block("frame", "ringwall_arm")]
+    out_arms = [(i, j) for i, j in arms if math.hypot(*m.joints[j][:2]) > 30.0 + 1e-9]
+    assert len(out_arms) == 36 and all(i in axis for i, _ in out_arms)
+    in_arms = [(i, j) for i, j in arms if math.hypot(*m.joints[j][:2]) < 30.0 - 1e-9]
+    assert sum(1 for i, _ in in_arms if i in axis) == 36 and len(in_arms) == 2 * 36
+    g = m.groups()
+    assert len(g["PLATE_OVERHANG"][0]) == 36 and "END TABLE DATA" in s2k_text(m)
+
+
+@pytest.mark.parametrize("raw, msg", [
+    ({"baseplate": {"enabled": True, "overhang": -1}}, "overhang must be >= 0"),
+    ({"baseplate": {"enabled": True, "overhang": 1.0}, "foundation": {"mode": "gap"},
+      "ringwall": {"enabled": True, "width": 1.0}}, "past the ring wall"),
+])
+def test_overhang_config_validation(raw, msg):
+    with pytest.raises(ValueError, match=msg):
+        spec_from_dict(raw)
+# --- sand cushion on the ring wall ------------------------------------------------
+
+def test_cushion_gives_each_ring_its_own_stiffness_and_softens_the_rim():
+    kw = dict(radius=30.0, height=40.0, baseplate=True, baseplate_n_r=5, roof=True,
+              roof_crown_radius=48.0, foundation="gap", ringwall=True, ringwall_width=1.5,
+              ringwall_depth=3.0, edge_length=3.0, edge_size=0.25, edge_growth=1.5,
+              ringwall_plate_bearing=True, baseplate_overhang=0.125)
+    hard = TankModel(TankSpec(**kw))
+    soft = TankModel(TankSpec(**kw, ringwall_cushion_modulus=1500.0, ringwall_cushion_thickness=1.0 / 6.0))
+    names = {soft.link_prop[l] for l, (i, j) in soft.links.items() if j in set(soft.bearing_joints)}
+    assert all(n.startswith("GAP_BEAR_R") for n in names) and len(names) == 3   # two inner rings + overhang
+    per_area = 1500.0 / (1.0 / 6.0)
+    for n in names:
+        pr = soft.link_props[n]
+        assert abs(pr["k"] - per_area * pr["tributary_area"]) < 1e-9
+    rim_trib = soft.baseplate_tributary_area(soft.base_joints[0])
+    assert abs(soft.link_props["GAP_CONTACT"]["k"] - per_area * rim_trib) < 1e-9
+    assert soft.link_props["GAP_CONTACT"]["k"] < hard.link_props["GAP_CONTACT"]["k"] / 10
+    assert "GAP_BEARING" not in soft.link_props and "GAP_BEARING" in hard.link_props
+    assert "END TABLE DATA" in s2k_text(soft)
+
+
+@pytest.mark.parametrize("raw, msg", [
+    ({"foundation": {"mode": "gap"}, "baseplate": {"enabled": True}, "ringwall": {"enabled": True, "cushion_modulus": 1500.0}},
+     "positive cushion_thickness"),
+    ({"foundation": {"mode": "gap"}, "baseplate": {"enabled": True},
+      "ringwall": {"enabled": True, "cushion_modulus": 1500.0, "cushion_thickness": 0.1}}, "plate_bearing = true"),
+])
+def test_cushion_config_validation(raw, msg):
+    with pytest.raises(ValueError, match=msg):
+        spec_from_dict(raw)
+def test_ringwall_subgrade_overrides_the_soil_link_only():
+    kw = dict(radius=30.0, height=40.0, baseplate=True, roof=True, roof_crown_radius=48.0,
+              foundation="gap", subgrade_modulus=100.0, ringwall=True, ringwall_width=1.0, ringwall_depth=3.0)
+    same = TankModel(TankSpec(**kw))
+    twice = TankModel(TankSpec(**kw, ringwall_subgrade=200.0))
+    assert abs(twice.ringwall_soil_k - 2 * same.ringwall_soil_k) < 1e-9
+    assert twice.link_props["GAP_SOIL"]["k"] == twice.ringwall_soil_k
+    pad = [n for n in twice.link_props if n.startswith("GAP_R")]
+    assert all(twice.link_props[n]["k"] == same.link_props[n]["k"] for n in pad)
+    with pytest.raises(ValueError, match="subgrade_modulus must be >= 0"):
+        spec_from_dict({"foundation": {"mode": "gap"}, "baseplate": {"enabled": True},
+                        "ringwall": {"enabled": True, "subgrade_modulus": -1}})

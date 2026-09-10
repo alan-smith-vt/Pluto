@@ -73,6 +73,9 @@ class TankSpec:
     baseplate: bool = False
     baseplate_thickness: float = 0.03125  # ft (3/8 in)
     baseplate_n_r: int = 8                # radial rings of elements (rim .. centre fan)
+    baseplate_overhang: float = 0.0       # ft the plate projects beyond the shell mid-surface (2026-09-10):
+                                          # one ring of quads outside the rim, no fluid on it; its joints
+                                          # sit over the ring wall and take the plate_bearing chain
     # [roof]  spherical cap on the top ring, crown radius >= tank radius, dead load only
     roof: bool = False
     roof_crown_radius: float = 48.0       # ft (0.8 D for the default tank)
@@ -99,11 +102,16 @@ class TankSpec:
     ringwall_fc: float = 3000.0           # psi; E = 57000 sqrt(f'c)
     ringwall_unit_weight: float = 0.150   # kip/ft^3
     ringwall_support: str = "gap"         # "gap": soil gap link k = subgrade x width x arc | "fixed"
+    ringwall_subgrade: float = 0.0        # kip/ft^3 under the ring wall (2026-09-10); 0 = foundation.subgrade_modulus
     ringwall_joints: str = "elevations"   # "elevations": rim at the wall top, wall joint at the centroid (-A/2),
                                           #   ground joint at the base (-A), links with length, cardinal 10 (2026-09-08)
                                           # "top": all three coincident at the wall top, cardinal 8 (pre-2026-09-08)
     ringwall_plate_bearing: bool = False  # 2026-09-10: plate joints over the ring wall width (r >= R - C/2) bear on the
                                           # concrete through GAP_BEARING links + rigid RINGWALL_ARM frames instead of pad springs
+    ringwall_cushion_modulus: float = 0.0   # 2026-09-10: sand cushion between plate and ring wall, E (ksf); 0 = hard
+                                            # concrete contact. With it, every plate joint over the ring wall (rim
+                                            # included) bears through k = E / thickness x its tributary area
+    ringwall_cushion_thickness: float = 0.0 # ft
     ringwall_transform: bool = False      # SAP "Transform" for the top-centre insertion: False = drawing
                                           # only (analysis on the wall-top joint line); True = rigid arms
                                           # joint -> centroid (a horizontal push at the top rolls the ring)
@@ -179,6 +187,10 @@ class TankSpec:
         if self.baseplate:
             if self.baseplate_thickness <= 0 or self.baseplate_n_r < 1:
                 raise ValueError("baseplate.thickness must be positive and baseplate.n_r at least 1")
+            if self.baseplate_overhang < 0:
+                raise ValueError("baseplate.overhang must be >= 0")
+            if self.baseplate_overhang > 0 and self.ringwall and self.baseplate_overhang > self.ringwall_width / 2.0:
+                raise ValueError("baseplate.overhang runs past the ring wall's outer face")
         if self.roof:
             if self.roof_thickness <= 0 or self.roof_n_r < 1:
                 raise ValueError("roof.thickness must be positive and roof.n_r at least 1")
@@ -207,6 +219,15 @@ class TankSpec:
                 raise ValueError(f"ringwall.support {self.ringwall_support!r} not recognised (gap | fixed)")
             if self.ringwall_joints not in ("elevations", "top"):
                 raise ValueError(f"ringwall.joints {self.ringwall_joints!r} not recognised (elevations | top)")
+            if self.ringwall_subgrade < 0:
+                raise ValueError("ringwall.subgrade_modulus must be >= 0 (0 = foundation.subgrade_modulus)")
+            if self.ringwall_cushion_modulus < 0 or self.ringwall_cushion_thickness < 0:
+                raise ValueError("ringwall.cushion_modulus and cushion_thickness must be >= 0")
+            if self.ringwall_cushion_modulus > 0:
+                if self.ringwall_cushion_thickness <= 0:
+                    raise ValueError("ringwall.cushion_modulus needs a positive cushion_thickness")
+                if not self.ringwall_plate_bearing:
+                    raise ValueError("ringwall.cushion_modulus needs ringwall.plate_bearing = true")
         if self.settlement not in ("none", "trench", "slope"):
             raise ValueError(f"settlement.profile {self.settlement!r} not recognised (none | trench | slope)")
         if self.settlement != "none":
@@ -252,6 +273,7 @@ CONFIG_MAP = {
         "enabled": "baseplate",
         "thickness": "baseplate_thickness",
         "n_r": "baseplate_n_r",
+        "overhang": "baseplate_overhang",
     },
     "roof": {
         "enabled": "roof",
@@ -270,9 +292,12 @@ CONFIG_MAP = {
         "fc": "ringwall_fc",
         "unit_weight": "ringwall_unit_weight",
         "support": "ringwall_support",
+        "subgrade_modulus": "ringwall_subgrade",
         "joints": "ringwall_joints",
         "transform": "ringwall_transform",
         "plate_bearing": "ringwall_plate_bearing",
+        "cushion_modulus": "ringwall_cushion_modulus",
+        "cushion_thickness": "ringwall_cushion_thickness",
     },
     "dents": {"angle_deg": "angle_deg", "elevation": "elevation", "depth": "depth",
               "width": "width", "height": "height"},
