@@ -6,9 +6,9 @@ created: 2026-09-10
 
 # Pluto Home
 
-*↑ [Pluto — tool note in the Notes vault](obsidian://open?vault=Notes&file=Tools%2FPluto)* · when this repo sits inside the Notes vault the same note is [[Pluto]]
+*↑ [Pluto — tool note in the Notes vault](obsidian://open?vault=Notes&file=Tools%2FPluto)*
 
-This stub exists so the repo works as a standalone vault. The full description of Pluto (what it solves, how to run it, limits, projects, code-folder descriptions, conventions) lives in the Notes vault's tool note; the link above opens it in that vault. Read [[vault/handoffs/handoff|handoff]] first for current state.
+This stub exists so the repo works as a standalone vault. The full description of Pluto (what it solves, how to run it, limits, projects, code-folder descriptions, conventions) lives in the Notes vault's tool note; the link above opens it in that vault (it also works when this repo sits inside Notes, where the same note is `Tools/Pluto.md`). Read [[vault/handoffs/handoff|handoff]] first for current state.
 
 ## Maps
 
