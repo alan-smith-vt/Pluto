@@ -85,6 +85,56 @@ meant to be checked. Real project numbers live only in the gitignored `configs/*
 >    design), least work, but SAP designs beams/columns, not rings in tension, so it
 >    does not replace 2.
 
+> [!info]- Edge refinement (built 2026-09-10)
+> `[mesh] edge_size / edge_length / edge_growth / refine` grade the mesh **meridionally**
+> at the shell edges: rows from `edge_size` at the edge growing by `edge_growth` per
+> element until the coarse size is reached (the band is at most `edge_length`), then the
+> uniform rows; `refine` names the edges (`wall_base`, `wall_top`, `roof_rim`,
+> `plate_rim`, default all four), `edge_length = 0` (default) is the old uniform mesh and
+> keeps the golden byte-identical. Circumferential size stays `n_theta`: the edge
+> response is axisymmetric, so 3 in × 35 in quads are fine and no transition triangles
+> are needed (`graded_sizes` in `model.py`; cap rings come from `cap_radii`, and
+> `baseplate_tributary_area` uses the real ring radii, so the gap-link stiffnesses
+> follow). TANK-A at 0.25 ft / ×1.5 / 4 ft: 37 wall rows, 16 cap rings, 4968 shells,
+> SAP 26 runs the five cases in 112 s.
+>
+> **What it showed** (`pythonTools/sap/edge_profile.py <config> [--case] [--band]`:
+> corner means per mesh ring at each edge, with the closed-form N_z beside the wall F11):
+> - Corner F11 at the wall base and top is a recovery artefact either way: the element
+>   means match N_z to 0.5 % on both meshes (fine base element −0.754 vs −0.754), while
+>   the corners swing with ν × the hoop gradient through the boundary layer. Read
+>   element means or link sums for a force, never a corner at an edge.
+> - The **plate-on-soil edge band** (λ = (4D/k)^¼ ≈ 0.7 ft) is invisible to 2.8 ft plate
+>   rings and resolved by 0.25 ft ones. With it resolved, under `NL_DEAD` the shell
+>   weight splits: 74.7 kip through the rim contact links into the ring wall and 97 kip
+>   into the plate's outer three rings of soil springs (coarse mesh: 159.8 kip all into
+>   the ring wall). The rim settles 0.0050 ft (coarse 0.0069), the plate bends down to
+>   it over ~1.2 ft and rotates the wall foot: base M11 −0.138 kip-ft/ft (±3.3 ksi face
+>   stress in the 1/2 in plate) and a hoop tension band of +3.5 kip/ft at 0.6 ft. The
+>   split is governed by the equal 170 kcf subgrade under ring wall and pad and by the
+>   linear springs, so it is a modelling assumption to settle, not a mesh question.
+> - Wall top and eave: converged. F11 at the top −0.295 vs −0.287; ring P 5.23 kip
+>   (coarse 5.07); roof rim F22 7.2 kip/ft.
+> - `NL_HYDRO` base: M11 +0.58 at the base and −0.32 at 1.2 ft, i.e. the resolved plate
+>   restrains the foot rotation more than the coarse model's 0.148 (pinned 0, fixed 1.33).
+> Link forces are still OAPI-only (`Results.LinkForce`, recipe in `offset_study.py`).
+>
+> **Plate bearing on the ring wall** (`[ringwall] plate_bearing = true`, 2026-09-10, needs
+> `joints = "elevations"`). The plate joints over the ring wall width (r ≥ R − C/2, rim
+> excluded) lose their `GAP_Rnn` pad link and ground joint and get: an arm joint under
+> them on the centroid line (z = −A/2), a `RINGWALL_ARM` frame of the ring wall section
+> from the spoke's axis joint, chained outer → inner so arms never overlap, and a
+> `GAP_BEARING` contact link (I = arm, J = plate, k = E_c × tributary area / A). Groups
+> `PLATE_BEARING` (joints) and `RINGWALL_ARM` (joints + frames). Run as `TANK-A-bearing`
+> (fine mesh, settlement off, SAP 26, 37 s): every `GAP_BEARING` reads 0 under `NL_DEAD`,
+> the plate lifts off the concrete and bridges from the pad ring at r = 32.44 to the wall
+> foot; rim → ring wall 132.6 kip, pad 40 kip through that one ring. Study and figures:
+> the Notes vault, `<project notes>/Tank Base Support Study.md`
+> (`base_support_figures.py` draws them from a results dump + `Results.LinkForce`).
+> First `run_sap.py` attempt failed at `OpenFile` (returned 1) and SAP went down; the arms
+> were overlapping collinear frames then and the user's GUI session held the instance —
+> the chained rebuild in a fresh instance imported cleanly, cause not isolated.
+
 > [!info]- Ports (plan)
 > A nozzle is geometry: a hole in the shell, a reinforcing pad, a stub. The regular
 > cylindrical mesher cannot do it; it needs a local unstructured step: remove the shells

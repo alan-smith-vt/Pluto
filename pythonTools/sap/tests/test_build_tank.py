@@ -721,3 +721,85 @@ def test_course_names_pad_to_course_count():
                            courses=tuple(Course(1.0, 0.02) for _ in range(120))))
     names = list(m.groups())
     assert names[1] == "COURSE_001" and names[120] == "COURSE_120"
+# --- edge refinement -------------------------------------------------------------
+
+def test_graded_sizes_sum_and_grow():
+    from tankbuilder.model import graded_sizes
+    s = graded_sizes(9.0, 1.0, 0.25, 1.5, 4.0, True, False)
+    assert abs(sum(s) - 9.0) < 1e-12
+    assert s[:4] == [0.25, 0.375, 0.5625, 0.84375] and max(s) <= 1.0 + 1e-12
+    both = graded_sizes(9.0, 1.0, 0.25, 1.5, 4.0, True, True)
+    assert both[:4] == both[::-1][:4] and abs(sum(both) - 9.0) < 1e-12
+    with pytest.raises(ValueError, match="does not fit"):
+        graded_sizes(1.0, 1.0, 0.25, 1.5, 4.0, True, True)
+
+
+def test_refined_edges_grade_wall_and_caps_and_keep_tributary_total():
+    spec = TankSpec(radius=30.0, height=40.0, courses=(Course(20.0, 0.02), Course(20.0, 0.015)),
+                    n_theta=36, n_z=20, baseplate=True, baseplate_n_r=5, roof=True,
+                    roof_crown_radius=48.0, roof_n_r=5, foundation="gap",
+                    edge_length=4.0, edge_size=0.25, edge_growth=1.5)
+    m = TankModel(spec)
+    dz = [b - a for a, b in zip(m.z_levels, m.z_levels[1:])]
+    assert dz[:2] == [0.25, 0.375] and dz[-2:] == [0.375, 0.25] and m.z_levels[-1] == 40.0
+    assert all(c == 0 for c in m.row_course[:len(dz) // 2]) and m.row_course.count(0) + m.row_course.count(1) == len(dz)
+    for cap in ("baseplate", "roof"):
+        r = m.cap_radii_of[cap]
+        assert r[0] == 0.0 and r[-1] == 30.0 and abs((r[-1] - r[-2]) - 0.25) < 1e-12
+    total = sum(m.baseplate_tributary_area(j) for j in m.baseplate_joints)
+    assert abs(total - math.pi * 30.0 ** 2) < 1e-9
+    # off by default: the uniform mesh is unchanged
+    plain = TankModel(TankSpec(radius=30.0, height=40.0, baseplate=True, roof=True, roof_crown_radius=48.0))
+    assert len(set(round(b - a, 9) for a, b in zip(plain.z_levels, plain.z_levels[1:]))) == 1
+
+
+@pytest.mark.parametrize("raw, msg", [
+    ({"mesh": {"refine": ["wall_base", "lid"]}}, "unknown edge"),
+    ({"mesh": {"edge_growth": 0.5}}, "edge_growth >= 1"),
+])
+def test_refine_config_validation(raw, msg):
+    with pytest.raises(ValueError, match=msg):
+        spec_from_dict(raw)
+# --- plate bearing on the ring wall ----------------------------------------------
+
+def test_plate_bearing_moves_rim_band_joints_onto_the_ring_wall():
+    spec = TankSpec(radius=30.0, height=40.0, baseplate=True, baseplate_n_r=5, roof=True,
+                    roof_crown_radius=48.0, foundation="gap", ringwall=True, ringwall_width=1.0,
+                    ringwall_depth=3.0, edge_length=3.0, edge_size=0.25, edge_growth=1.5,
+                    ringwall_plate_bearing=True)
+    m = TankModel(spec)
+    radii = m.cap_radii_of["baseplate"]
+    inner = {j for j in m.baseplate_interior_joints if radii[m.cap_ring["baseplate"][j]] >= 29.5 - 1e-6}
+    assert set(m.bearing_joints) == inner and len(inner) == 36   # one graded ring (r = 29.75) inside C/2
+    for pj, aj in zip(m.bearing_joints, m.bearing_arm_joints):
+        assert pj not in m.ground_of and m.joints[aj][2] == -1.5
+        assert m.joints[aj][:2] == m.joints[pj][:2]
+    links = [(i, j) for l, (i, j) in m.links.items() if m.link_prop[l] == "GAP_BEARING"]
+    assert len(links) == len(inner) and all(j in inner for _, j in links)
+    arms = [m.frames[f] for f in m.ids.block("frame", "ringwall_arm")]
+    assert all(i in set(m.ringwall_joints) for i, _ in arms) and len(arms) == len(inner)
+    # two rings inside C/2 chain end to end on each spoke: axis -> outer arm -> inner arm
+    spec2 = TankSpec(radius=30.0, height=40.0, baseplate=True, baseplate_n_r=5, roof=True,
+                     roof_crown_radius=48.0, foundation="gap", ringwall=True, ringwall_width=1.5,
+                     ringwall_depth=3.0, edge_length=3.0, edge_size=0.25, edge_growth=1.5,
+                     ringwall_plate_bearing=True)
+    m2 = TankModel(spec2)
+    arms2 = [m2.frames[f] for f in m2.ids.block("frame", "ringwall_arm")]
+    assert len(arms2) == 2 * 36
+    axis = set(m2.ringwall_joints)
+    starts_at_axis = [ij for ij in arms2 if ij[0] in axis]
+    chained = [ij for ij in arms2 if ij[0] in set(m2.bearing_arm_joints)]
+    assert len(starts_at_axis) == 36 and len(chained) == 36
+    assert all(math.hypot(*m2.joints[i][:2]) > math.hypot(*m2.joints[j][:2]) for i, j in arms2)
+    assert "GAP_BEARING" in m.link_props and m.link_props["GAP_BEARING"]["k"] > 0
+    assert len(m.ground_joints) == len(m.baseplate_joints) - len(inner)
+    g = m.groups()
+    assert set(g["PLATE_BEARING"][1]) == inner and len(g["RINGWALL_ARM"][2]) == len(inner)
+    assert "END TABLE DATA" in s2k_text(m)
+
+
+def test_plate_bearing_needs_elevations():
+    with pytest.raises(ValueError, match="elevations"):
+        TankModel(TankSpec(radius=30.0, height=40.0, baseplate=True, roof=True, roof_crown_radius=48.0,
+                           foundation="gap", ringwall=True, ringwall_joints="top", edge_length=3.0,
+                           ringwall_plate_bearing=True))

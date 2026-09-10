@@ -29,7 +29,7 @@ length at each element corner, plus a stress recovery at the top and bottom face
 | S11, S22, S12 membrane stresses | derived, `F / t` | — | kind **stress**: `S11 (merid membrane)`, `S22 (circ membrane)`, `S12 (IP shear membrane)`, ksi | thickness from `AREA SECTION PROPERTIES` |
 | S11, S22, S12, SMax, SMin, SVM at the **top and bottom faces** (membrane ± bending) | `AreaStressShell` | yes, `ELEMENT STRESSES - AREA SHELLS` (2026-09-08) | stress: `S11 top (merid)` … `SVM top (von Mises)`, `S11 bot` … `SVM bot`, ksi | SAP's own recovery; checked: mean of the faces = the membrane value to 1e-7. SAngle per face and S13 / S23 / SMaxAvg written, not shown |
 | joint forces of shells (`AreaJointForceShell`) | — | no | no | corner nodal forces; useful for reactions on a cut |
-| stress / force **averaging at joints** | viewer | — | nodal smoothing toggle | smoothing hides the real force step at a thickness change; turn it off to read course boundaries |
+| stress / force **averaging at joints** | viewer | — | Smooth: node averaging / element means / none | node averaging hides the real force step at a thickness change (turn it off to read course boundaries) and keeps a corner's extrapolation spike at a shell edge; **element means** (2026-09-10) shows the per-element mean the equilibrium constrains, e.g. wall F11 monotonic to the base under NL_DEAD where the corner values spike |
 
 Every shell row carries `Joint` (the corner), so the viewer paints per corner, not one
 value per element. Values are the **final state** of each case: `sap_api` asks for

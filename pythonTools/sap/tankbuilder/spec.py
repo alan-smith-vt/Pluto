@@ -9,6 +9,7 @@ from pathlib import Path
 # --- constants (kip, ft, F) -------------------------------------------------
 
 GAMMA_WATER = 0.0624  # kip/ft^3
+EDGES = ("wall_base", "wall_top", "roof_rim", "plate_rim")   # [mesh] refine choices
 G_ACCEL = 32.174  # ft/s^2
 STEEL = dict(
     name="A36",
@@ -54,6 +55,15 @@ class TankSpec:
     # [mesh]
     n_theta: int = 36  # radial (circumferential) divisions
     n_z: int = 20  # vertical divisions, in total; shared out to the courses by height
+    # [mesh] edge refinement (2026-09-10): rows / rings graded from edge_size at a
+    # shell edge, growing by edge_growth per element, out to edge_length, then the
+    # coarse size. Meridional only: the response at these edges is axisymmetric, so
+    # the circumferential size stays n_theta (long thin quads, no transition triangles).
+    # edge_length = 0 turns it off. refine names the edges that get it.
+    edge_size: float = 0.25        # ft, first element at a refined edge
+    edge_length: float = 0.0       # ft, extent of the graded band (0 = uniform mesh)
+    edge_growth: float = 1.5       # size ratio element to element, away from the edge
+    refine_edges: tuple[str, ...] = ("wall_base", "wall_top", "roof_rim", "plate_rim")
     # [fluid]
     fill_fraction: float = 1.0  # 1.0 = filled to the top of the wall
     fluid_weight: float = GAMMA_WATER
@@ -92,6 +102,8 @@ class TankSpec:
     ringwall_joints: str = "elevations"   # "elevations": rim at the wall top, wall joint at the centroid (-A/2),
                                           #   ground joint at the base (-A), links with length, cardinal 10 (2026-09-08)
                                           # "top": all three coincident at the wall top, cardinal 8 (pre-2026-09-08)
+    ringwall_plate_bearing: bool = False  # 2026-09-10: plate joints over the ring wall width (r >= R - C/2) bear on the
+                                          # concrete through GAP_BEARING links + rigid RINGWALL_ARM frames instead of pad springs
     ringwall_transform: bool = False      # SAP "Transform" for the top-centre insertion: False = drawing
                                           # only (analysis on the wall-top joint line); True = rigid arms
                                           # joint -> centroid (a horizontal push at the top rolls the ring)
@@ -142,6 +154,13 @@ class TankSpec:
             raise ValueError("mesh.n_theta must be at least 3")
         if self.n_z < 1:
             raise ValueError("mesh.n_z must be at least 1")
+        if isinstance(self.refine_edges, list):
+            self.refine_edges = tuple(self.refine_edges)
+        bad = set(self.refine_edges) - set(EDGES)
+        if bad:
+            raise ValueError(f"mesh.refine: unknown edge(s) {sorted(bad)} (choose from {', '.join(EDGES)})")
+        if self.edge_length < 0 or self.edge_size <= 0 or self.edge_growth < 1.0:
+            raise ValueError("mesh.edge_length must be >= 0, edge_size > 0 and edge_growth >= 1")
         if self.radius <= 0 or self.height <= 0 or self.thickness <= 0:
             raise ValueError("geometry.radius/height/thickness must be positive")
         if self.courses is not None:
@@ -222,7 +241,8 @@ class TankSpec:
 CONFIG_MAP = {
     "geometry": {"radius": "radius", "height": "height", "thickness": "thickness"},
     "courses": {"height": "height", "thickness": "thickness", "divisions": "divisions"},
-    "mesh": {"n_theta": "n_theta", "n_z": "n_z"},
+    "mesh": {"n_theta": "n_theta", "n_z": "n_z", "edge_size": "edge_size",
+             "edge_length": "edge_length", "edge_growth": "edge_growth", "refine": "refine_edges"},
     "fluid": {
         "fill_fraction": "fill_fraction",
         "unit_weight": "fluid_weight",
@@ -252,6 +272,7 @@ CONFIG_MAP = {
         "support": "ringwall_support",
         "joints": "ringwall_joints",
         "transform": "ringwall_transform",
+        "plate_bearing": "ringwall_plate_bearing",
     },
     "dents": {"angle_deg": "angle_deg", "elevation": "elevation", "depth": "depth",
               "width": "width", "height": "height"},

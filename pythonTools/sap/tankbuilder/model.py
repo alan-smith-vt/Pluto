@@ -8,6 +8,30 @@ from .section import eave_ring_outline, eave_ring_section
 from .spec import TankSpec
 
 
+def graded_sizes(length: float, coarse: float, edge: float, growth: float,
+                 band: float, at_start: bool, at_end: bool) -> list[float]:
+    """Element sizes along a segment of `length`, in order from its start.
+
+    At a refined end the sizes run edge, edge*growth, edge*growth^2 ... (capped
+    at `coarse`) until the band is covered; the interior is filled with rows
+    as close to `coarse` as fit. The sizes sum to `length` exactly.
+    """
+    def ramp() -> list[float]:
+        out, total, s = [], 0.0, edge
+        while total < band - 1e-9 and s < coarse - 1e-9:
+            out.append(s)
+            total += s
+            s = min(s * growth, coarse)
+        return out
+    head = ramp() if at_start else []
+    tail = ramp() if at_end else []
+    interior = length - sum(head) - sum(tail)
+    if interior <= 0.0:
+        raise ValueError(f"edge refinement ({band:g} ft bands) does not fit in a {length:g} ft segment")
+    n = max(1, round(interior / coarse))
+    return head + [interior / n] * n + tail[::-1]
+
+
 class IdAllocator:
     """Hands out contiguous id blocks per SAP object type (joints, areas,
     frames, links), each numbered from 1. Every part of the model (wall,
@@ -73,6 +97,7 @@ class TankModel:
         self.frame_transform: dict[int, bool] = {}    # frame -> SAP Transform flag (default False: drawing only)
         self.cap_joints: dict[str, list[int]] = {}   # interior joints of each cap (rim excluded)
         self.cap_ring: dict[str, dict[int, int]] = {}  # cap -> joint -> ring index (0 = centre)
+        self.cap_radii_of: dict[str, list[float]] = {}  # cap -> ring radii, centre .. rim
         self.ground_joints: list[int] = []
         self.ground_of: dict[int, int] = {}
         self.links: dict[int, tuple[int, int]] = {}
@@ -83,6 +108,8 @@ class TankModel:
         self.ringwall_soil_k: float = 0.0
         self.ringwall_contact_k: float = 0.0
         self.dent_joints: dict[int, dict[int, float]] = {}
+        self.bearing_joints: list[int] = []           # plate joints over the ring wall width, on GAP_BEARING links
+        self.bearing_arm_joints: list[int] = []       # their support joints on the ring wall centroid line
         self.settlements: dict[int, float] = {}       # ground joint -> dz (ft, negative = down)
         self.area_local_angle: dict[int, float] = {}  # area -> local-axis rotation (deg) about local 3
         self._build_levels()
@@ -118,11 +145,23 @@ class TankModel:
         self.z_levels: list[float] = [0.0]
         self.row_course: list[int] = []
         z0 = 0.0
+        last = len(s.plate_courses) - 1
         for c_idx, (course, n) in enumerate(zip(s.plate_courses, s.course_divisions())):
             dz = course.height / n
-            for k in range(1, n + 1):
-                self.z_levels.append(z0 + k * dz)
-                self.row_course.append(c_idx)
+            at_base = c_idx == 0 and self.refines("wall_base")
+            at_top = c_idx == last and self.refines("wall_top")
+            if at_base or at_top:
+                sizes = graded_sizes(course.height, dz, s.edge_size, s.edge_growth,
+                                     s.edge_length, at_base, at_top)
+                z = z0
+                for h in sizes:
+                    z += h
+                    self.z_levels.append(z)
+                    self.row_course.append(c_idx)
+            else:
+                for k in range(1, n + 1):
+                    self.z_levels.append(z0 + k * dz)
+                    self.row_course.append(c_idx)
             z0 += course.height
         self.z_levels[-1] = s.height   # exact top, no accumulated rounding
         # one section per distinct thickness, in bottom-up order of first use
@@ -133,6 +172,26 @@ class TankModel:
                 name = "WALL_T%d" % (len(self.sections) + 1)
                 self.sections[name] = course.thickness
             self.course_section.append(name)
+
+    def refines(self, edge: str) -> bool:
+        """Is this shell edge graded ([mesh] edge_length > 0 and named in refine)?"""
+        s = self.spec
+        return s.edge_length > 0.0 and edge in s.refine_edges
+
+    def cap_radii(self, n_r: int, edge: str) -> list[float]:
+        """Ring radii of a polar cap, centre (0) to rim (R): R k / n_r, or graded
+        at the rim from edge_size out to edge_length when that edge is refined."""
+        s = self.spec
+        if not self.refines(edge):
+            return [s.radius * k / n_r for k in range(n_r + 1)]
+        sizes = graded_sizes(s.radius, s.radius / n_r, s.edge_size, s.edge_growth,
+                             s.edge_length, False, True)
+        radii, r = [0.0], 0.0
+        for h in sizes:
+            r += h
+            radii.append(r)
+        radii[-1] = s.radius
+        return radii
 
     # --- wall -----------------------------------------------------------------
 
@@ -233,19 +292,22 @@ class TankModel:
 
     # --- polar caps (baseplate, roof) ------------------------------------------
 
-    def _polar_cap(self, name: str, rim: list[int], n_r: int, z_of_r, section: str,
+    def _polar_cap(self, name: str, rim: list[int], radii: list[float], z_of_r, section: str,
                    face: str | None) -> None:
         """Mesh a disc inside an existing rim ring of n_theta joints.
 
-        n_r rings of elements: quads between concentric rings k = n_r (the rim)
-        .. 1, and a fan of triangles from ring 1 to a centre joint. Ring k sits
-        at r = R*k/n_r; z_of_r(r) gives its height. Element corners run inner ->
-        outer -> outer+1 -> inner+1, so local 3 = r x theta = UP (the wet face
-        of the baseplate is then "Top"). Interior joints and areas claim their
-        own id blocks; the rim joints are shared with the wall.
+        radii[k] is the radius of ring k, 0 (centre) .. n_r (the rim, = R):
+        quads between concentric rings k = n_r .. 1, and a fan of triangles
+        from ring 1 to a centre joint; z_of_r(r) gives each ring's height.
+        Element corners run inner -> outer -> outer+1 -> inner+1, so local 3 =
+        r x theta = UP (the wet face of the baseplate is then "Top"). Interior
+        joints and areas claim their own id blocks; the rim joints are shared
+        with the wall.
         """
         s = self.spec
         n = s.n_theta
+        n_r = len(radii) - 1
+        self.cap_radii_of[name] = list(radii)
         dtheta = 2.0 * math.pi / n
         joints = self.ids.claim("joint", name, (n_r - 1) * n + 1)
         areas = self.ids.claim("area", name, n_r * n)
@@ -262,7 +324,7 @@ class TankModel:
         self.joints[centre] = (0.0, 0.0, z_of_r(0.0))
         self.thetas[centre] = 0.0
         for k in range(1, n_r):
-            r = s.radius * k / n_r
+            r = radii[k]
             z = z_of_r(r)
             for i in range(n):
                 theta = i * dtheta
@@ -289,7 +351,7 @@ class TankModel:
     def _build_baseplate(self) -> None:
         s = self.spec
         self.sections["BASEPLATE"] = s.baseplate_thickness
-        self._polar_cap("baseplate", self.base_joints, s.baseplate_n_r,
+        self._polar_cap("baseplate", self.base_joints, self.cap_radii(s.baseplate_n_r, "plate_rim"),
                         lambda r: 0.0, "BASEPLATE", "Top")
 
     def roof_z(self, r: float) -> float:
@@ -306,7 +368,7 @@ class TankModel:
     def _build_roof(self) -> None:
         s = self.spec
         self.sections["ROOF"] = s.roof_thickness
-        self._polar_cap("roof", self.top_joints, s.roof_n_r, self.roof_z, "ROOF", None)
+        self._polar_cap("roof", self.top_joints, self.cap_radii(s.roof_n_r, "roof_rim"), self.roof_z, "ROOF", None)
         if s.roof_ring:
             # compression ring at the eave: an angle on the wall top plus a flat
             # bar on its horizontal leg (an L) -- SAP has no such shape, so a General
@@ -344,13 +406,13 @@ class TankModel:
         annulus slice for an interior ring, half an annulus slice at the rim.
         Sums to pi R^2 over the plate."""
         s = self.spec
-        n_r, n = s.baseplate_n_r, s.n_theta
-        dr = s.radius / n_r
+        n = s.n_theta
+        radii = self.cap_radii_of["baseplate"]
         k = self.cap_ring["baseplate"][jid]
         if k == 0:
-            return math.pi * (dr / 2.0) ** 2
-        r_in = (k - 0.5) * dr
-        r_out = min((k + 0.5) * dr, s.radius)
+            return math.pi * (radii[1] / 2.0) ** 2
+        r_in = (radii[k - 1] + radii[k]) / 2.0
+        r_out = (radii[k] + radii[k + 1]) / 2.0 if k + 1 < len(radii) else s.radius
         return math.pi * (r_out * r_out - r_in * r_in) / n
 
     # --- foundation: ground joints + compression-only gap links ------------------
@@ -528,6 +590,67 @@ class TankModel:
             if not elev:
                 self.frame_cardinal[fid] = 8        # top centre: section hangs below the joints
                 self.frame_transform[fid] = s.ringwall_transform
+        if s.ringwall_plate_bearing:
+            self._build_plate_bearing()
+
+    def _build_plate_bearing(self) -> None:
+        """Plate joints that lie over the ring wall width (r >= R - C/2, rim excluded)
+        sit on concrete, not on the pad. Each loses its GAP_Rnn pad link and its
+        ground joint, and gets instead: an arm joint on the ring wall centroid line
+        under it (z = -A/2), a rigid-ish RINGWALL_ARM frame (the ring wall section
+        itself) from the spoke's ring wall axis joint radially in to the arm joint,
+        and a GAP_BEARING contact link (I = arm joint, J = plate joint, length A/2,
+        local 1 = +Z) with k = E_c x tributary area / depth. The arms on one
+        spoke are chained end to end (axis joint -> outermost arm joint -> next
+        inward), never overlapping. Needs joints = "elevations" (the arm sits at
+        the centroid elevation)."""
+        s = self.spec
+        if s.ringwall_joints != "elevations":
+            raise ValueError("ringwall.plate_bearing needs ringwall.joints = 'elevations'")
+        r_in = s.radius - s.ringwall_width / 2.0 - 1e-6
+        radii = self.cap_radii_of["baseplate"]
+        ring_of = self.cap_ring["baseplate"]
+        rim = set(self.base_joints)
+        bearing = [j for j in self.baseplate_interior_joints
+                   if j not in rim and radii[ring_of[j]] >= r_in]
+        # outermost ring first on every spoke, so each arm starts where the previous ended
+        bearing.sort(key=lambda j: (round(self.thetas[j], 9), -ring_of[j]))
+        if not bearing:
+            return
+        by_theta = {round(self.thetas[j], 9): j for j in self.ringwall_joints}
+        arm_from: dict[float, int] = dict(by_theta)     # spoke -> joint the next arm starts from
+        arm_joints = self.ids.claim("joint", "bearing_arm", len(bearing))
+        links = self.ids.claim("link", "bearing", len(bearing))
+        frames = self.ids.claim("frame", "ringwall_arm", len(bearing))
+        old_props = set()
+        for pj, aj, lid, fid in zip(bearing, arm_joints, links, frames):
+            # drop the pad link and its ground joint
+            gj = self.ground_of.pop(pj)
+            old = [l for l, (i, j) in self.links.items() if j == pj]
+            for l in old:
+                old_props.add(self.link_prop.pop(l))
+                del self.links[l]
+            self.ground_joints.remove(gj)
+            del self.joints[gj]
+            self.thetas.pop(gj, None)
+            # arm joint under the plate joint, on the centroid line
+            x, y, _ = self.joints[pj]
+            self.joints[aj] = (x, y, -s.ringwall_depth / 2.0)
+            self.thetas[aj] = self.thetas[pj]
+            th = round(self.thetas[pj], 9)
+            self.frames[fid] = (arm_from[th], aj)
+            arm_from[th] = aj
+            self.frame_section[fid] = "RINGWALL"
+            self.links[lid] = (aj, pj)
+            self.link_prop[lid] = "GAP_BEARING"
+        for name in old_props:
+            if name not in self.link_prop.values():
+                del self.link_props[name]
+        trib = sum(self.baseplate_tributary_area(j) for j in bearing) / len(bearing)
+        self.link_props["GAP_BEARING"] = {
+            "k": self.concrete["E"] * trib / s.ringwall_depth, "ring": None, "tributary_area": trib}
+        self.bearing_joints = bearing
+        self.bearing_arm_joints = list(arm_joints)
 
     @property
     def concrete(self) -> dict | None:
@@ -581,6 +704,9 @@ class TankModel:
             out["RINGWALL_AXIS" if s.ringwall_joints == "elevations" else "RINGWALL_TOP"] = ([], self.ringwall_joints, [])
             if self.ringwall_ground:
                 out["RINGWALL_GROUND"] = ([], self.ringwall_ground, [])
+            if self.bearing_joints:
+                out["PLATE_BEARING"] = ([], self.bearing_joints, [])
+                out["RINGWALL_ARM"] = ([], self.bearing_arm_joints, list(self.ids.block("frame", "ringwall_arm")))
         for n in range(len(s.dents)):
             out[f"DENT_{n + 1:02d}"] = (self.dent_areas(n), [], [])
         return out
