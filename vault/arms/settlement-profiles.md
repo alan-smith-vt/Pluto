@@ -43,8 +43,10 @@ the model itself:
   what SAP did with it is `results.s2k` (`JOINT DISPLACEMENTS`, case `NL_SETTLE`).
 - `<model>/<name>.settlement.svg` — plan heatmap of dz on the ground joints with the
   tank and ring wall outline and the profile axis, plus an elevation across the profile:
-  the applied curve and every joint at its own distance. Copied to
-  `vault/arms/assets/settlement-<name>.svg`. `run_sap.py` regenerates both on every build.
+  the applied curve and every joint at its own distance. `run_sap.py` regenerates both
+  beside the model on every build; the vault copy `vault/arms/assets/settlement-<name>.svg`
+  is on demand only, `settlement_audit.py <config> --vault-svg` (2026-09-10: runs used to
+  overwrite it), as are the model diagrams, `run_sap.py --figures` or `doc_figures.py <config>`.
 
 Project runs on the real tank (slope, open-top variant, trench; findings and figures) are recorded in the
 Notes vault: [Tank Settlement Runs](obsidian://open?vault=Notes&file=<project notes>/Tank%20Settlement%20Runs). Project configs and models live at `<project dir>`.

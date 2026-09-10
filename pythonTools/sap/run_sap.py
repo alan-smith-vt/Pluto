@@ -5,6 +5,7 @@
     python run_sap.py configs/example.toml --no-build   # reuse the existing .s2k
     python run_sap.py configs/example.toml --no-run     # results already in SAP
     python run_sap.py configs/example.toml --no-viewer  # stop after the .bin
+    python run_sap.py configs/example.toml --figures    # also redraw the vault's model diagrams
 
 Steps (each skippable):
   build    tankbuilder writes <models>/<name>/<name>.s2k from the config
@@ -54,20 +55,22 @@ def spec_model_id(cfg: Path) -> str:
 
 
 def step_audit(cfg: Path, s2k: Path) -> None:
-    """Settlement audit beside the model (CSV + SVG) and into the vault, when a profile is set."""
-    from settlement_audit import write_audit, VAULT_ASSETS
-    import shutil
+    """Settlement audit beside the model (CSV + SVG), when a profile is set. Nothing is
+    written into the vault: `settlement_audit.py <config> --vault-svg` does that on demand
+    (2026-09-10; every run used to overwrite vault/arms/assets/settlement-<name>.svg)."""
+    from settlement_audit import write_audit
     spec, _ = load_config(cfg)
     if spec.settlement == "none":
         return
     csv_path, svg_path = write_audit(TankModel(spec), s2k.parent, s2k.stem)
-    VAULT_ASSETS.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(svg_path, VAULT_ASSETS / f"settlement-{s2k.stem}.svg")
-    print(f"[audit]   {csv_path.name}, {svg_path.name} -> vault/arms/assets/settlement-{s2k.stem}.svg")
+    print(f"[audit]   {csv_path.name}, {svg_path.name}  (beside the model; --vault-svg on settlement_audit.py to publish)")
 
 
 def step_figures(cfg: Path) -> None:
-    """The vault's model diagrams (loads, shell local axes, beam nodes) follow the config too."""
+    """The vault's model diagrams (loads, shell local axes, beam nodes) drawn from this
+    config. Only on --figures (2026-09-10): every run used to overwrite them, so a
+    benchmark variant without a plate or ring wall replaced the documentation pictures.
+    Standalone: `doc_figures.py <config> [-o dir]`."""
     import doc_figures
     spec, _ = load_config(cfg)
     m = TankModel(spec)
@@ -193,6 +196,8 @@ def main(argv=None) -> int:
     p.add_argument("--no-export", action="store_true", help="stop after results.s2k")
     p.add_argument("--no-viewer", action="store_true", help="stop after the .bin")
     p.add_argument("--no-cylindrical", action="store_true", help="skip Translation R / T")
+    p.add_argument("--figures", action="store_true",
+                   help="also redraw the vault's model diagrams (vault/arms/assets/tank-*.svg) from this config")
     p.add_argument("--port", type=int, default=8765)
     a = p.parse_args(argv)
 
@@ -203,7 +208,8 @@ def main(argv=None) -> int:
     else:
         s2k, model_id = step_build(a.config)
     step_audit(a.config, s2k)
-    step_figures(a.config)
+    if a.figures:
+        step_figures(a.config)
 
     sap = step_run(s2k, run=not a.no_run, cfg=a.config)
     results = step_results(sap, s2k)

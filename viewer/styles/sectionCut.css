@@ -4,15 +4,10 @@
    ============================================================ */
 
 /* Panel top, shared with the height budget below so the two can't
-   drift apart. 252px clears the view-cube canvas above it. */
-:root { --sc-top: 252px; }
-
-/* Too little height to sit under the cube: take its space instead. The
-   panel is opaque and stacks above the cube, so the overlap is only
-   visible while the panel is open. */
-@media (max-height: 720px) {
-    :root { --sc-top: 14px; }
-}
+   drift apart. The tab stack anchors at the top of the right edge
+   (2026-09-10; it used to sit under the view cube at 252px); an open
+   panel is opaque and stacks above the cube (z 16 > 13). */
+:root { --sc-top: 14px; }
 
 #scPanel {
     position: fixed;

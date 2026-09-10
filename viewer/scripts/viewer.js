@@ -49,7 +49,7 @@ var currentEnvelope = null;     // 'min' | 'max' | 'abs' | 'dsr' | null
 var dsrCategorical = false;     // Global DSR shown as controlling-check map
 var dsrIndices = [];            // meta indices of kind:'dsr' components
 var smoothing = true;           // any smoothing on (default on)
-var smoothMode = 'node';        // 'node' = coincident-node averaging | 'elem' = element means at nodes (2026-09-10)
+var smoothMode = 'elem';        // 'elem' = element means at nodes (default since 2026-09-10) | 'node' = coincident-node averaging
 var absValue = false;           // display |value| (shader-side, post-interp)
 
 var alarmEnabled = false;       // flag values >= alarmThreshold in alarmColor

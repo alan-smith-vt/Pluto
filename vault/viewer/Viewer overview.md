@@ -47,9 +47,9 @@ the same strided math, and colored by the same shader. Beams are a second domain
 - **Display transforms**: |value| toggle (abs applied after
   interpolation, so interior zero crossings are exact), overstress
   alarm color with an x-ray **Flash** pulse to reveal obscured flagged
-  regions, smoothing: coincident-node averaging, or **element means** (each element's mean
-  of its own corners, averaged at the node; 2026-09-10) for reading a force profile at a
-  shell edge where the corner extrapolation overshoots.
+  regions, smoothing: **element means** (default since 2026-09-10: each element's mean of its
+  own corners, averaged at the node, so a force profile at a shell edge reads without the
+  corner extrapolation overshoot), coincident-node averaging, or none.
 - **Navigation**: find element/node by real ID (moves the orbit focus
   and flashes the target on top of everything -- no zoom),
   orthographic projection + axis triad, load-case stepping (arrow

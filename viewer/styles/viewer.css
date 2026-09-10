@@ -161,6 +161,14 @@ input[type=file].fea-file::file-selector-button {
     border-radius: 6px;
     padding: 10px 14px 12px;
     pointer-events: auto;
+    transition: right .15s ease-out;
+}
+/* An open flyout (section cuts / predicates / groups) is 268px of body plus
+   its 30px tab down the right edge and can run to the bottom of the window,
+   where it would sit over the readout. Step the readout left of the flyout
+   while any of the three is open (2026-09-10). */
+body:has(#scPanel:not(.collapsed), #pdPanel:not(.collapsed), #grPanel:not(.collapsed)) #roPanel {
+    right: calc(14px + 298px);
 }
 .ro-row {
     display: flex;
