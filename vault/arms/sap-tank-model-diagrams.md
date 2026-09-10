@@ -4,7 +4,7 @@ status: current
 created: 2026-09-04
 ---
 
-*↑ [[vault/Home|Home]] › [[vault/arms/Arms map|Arms map]]*
+*↑ [[vault/Pluto Home|Home]] › [[vault/arms/Arms map|Arms map]]*
 
 Pictures of the SAP tank model, generated from the config by
 `pythonTools/sap/doc_figures.py configs/TANK-A.toml` (rerun after a builder change).

@@ -6,7 +6,7 @@ created: 2026-08-25
 
 # RawViewerWriter — structure and usage
 
-*↑ [[vault/Home|Home]] › [[vault/format/Format map|Format map]]*
+*↑ [[vault/Pluto Home|Home]] › [[vault/format/Format map|Format map]]*
 
 `scripts/lib/writers/RawViewerWriter.cs` is the **production writer** for the Pluto v4 binary
 ([[vault/format/v4-schema|v4-schema]]). It is called by the STAAD post-processing scripts

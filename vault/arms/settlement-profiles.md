@@ -4,7 +4,7 @@ status: current
 created: 2026-09-04
 ---
 
-*↑ [[vault/Home|Home]] › [[vault/arms/Arms map|Arms map]]*
+*↑ [[vault/Pluto Home|Home]] › [[vault/arms/Arms map|Arms map]]*
 
 Settlement is a **ground displacement** on the fixed ground joints (plate `GROUND` +
 `RINGWALL_GROUND`), load pattern `SETTLE`, nonlinear case `NL_SETTLE` continuing from
