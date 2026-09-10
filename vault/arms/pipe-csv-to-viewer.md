@@ -6,7 +6,7 @@ created: 2026-08-27
 
 # Pipe CSV → viewer — usage
 
-*↑ [[Pluto|Home]] › [[vault/arms/Arms map|Arms map]]*
+*↑ [[vault/Pluto Home|Home]] › [[vault/arms/Arms map|Arms map]]*
 
 The SP3D piping arm end to end, as run in the production environment (everything under `C:\Temp`, PowerShell 5.1, C# 5 via `Add-Type`). Source files: `scripts/arms/PipeCsvReader.cs` (CSV → beams) and `scripts/arms/PipeToPluto.cs` (beams → `.bin` + `.features.json`), plus `scripts/lib/writers/RawViewerWriter.cs`, `scripts/lib/sidecar/FeaturesSidecar.cs` and the rest of `scripts/lib/` (the writer needs `Types.cs`, which needs the lib). Since 2026-09-03 the exporters are part of the single `Config.ps1` Add-Type batch — dot-source it and everything is loaded; the old production-box `Stubs.cs` is retired.
 

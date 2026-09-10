@@ -12,7 +12,7 @@ everything a user defines), and one generic **viewer** consumes it.
                       └──▶  Viewer arm  (generic point of convergence)
 ```
 
-**Documentation lives in the Obsidian vault — start at the Notes vault (`Tools/Pluto.md`).**
+**Documentation lives in the Obsidian vault — start at `vault/Pluto Home.md`, whose up-link opens the full tool note in the Notes vault.**
 The current state and next task are in `vault/handoffs/handoff.md`.
 
 ## Repo layout

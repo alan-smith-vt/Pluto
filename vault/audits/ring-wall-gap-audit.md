@@ -4,7 +4,7 @@ status: current
 created: 2026-09-08
 ---
 
-*↑ [[Pluto|Home]] › [[vault/audits/Audits map|Audits map]]*
+*↑ [[vault/Pluto Home|Home]] › [[vault/audits/Audits map|Audits map]]*
 
 How to check the two gap-link families around the concrete ring wall inside the SAP2000 26
 GUI, what each check should show, and what the model facts are. The load path itself is

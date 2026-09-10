@@ -7,7 +7,7 @@ supersedes: "[[vault/format/v3-schema|v3-schema]]"
 
 # Binary format v4
 
-*↑ [[Pluto|Home]] › [[vault/format/Format map|Format map]]*
+*↑ [[vault/Pluto Home|Home]] › [[vault/format/Format map|Format map]]*
 
 Goal: one file that carries **multiple element families** (shells today, beams next,
 solids/springs later) behind a **block directory** so readers skip what they don't know

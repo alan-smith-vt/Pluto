@@ -4,7 +4,7 @@ status: current
 created: 2026-09-04
 ---
 
-*↑ [[Pluto|Home]] › [[vault/arms/Arms map|Arms map]]*
+*↑ [[vault/Pluto Home|Home]] › [[vault/arms/Arms map|Arms map]]*
 
 Settlement is a **ground displacement** on the fixed ground joints (plate `GROUND` +
 `RINGWALL_GROUND`), load pattern `SETTLE`, nonlinear case `NL_SETTLE` continuing from
@@ -47,8 +47,7 @@ the model itself:
   `vault/arms/assets/settlement-<name>.svg`. `run_sap.py` regenerates both on every build.
 
 Project runs on the real tank (slope, open-top variant, trench; findings and figures) are recorded in the
-Notes vault, `<project notes>/Tank Settlement Runs.md` ([[Tank Settlement Runs]] when this repo
-sits inside the Notes vault). Project configs and models live at `<project dir>`.
+Notes vault: [Tank Settlement Runs](obsidian://open?vault=Notes&file=<project notes>/Tank%20Settlement%20Runs). Project configs and models live at `<project dir>`.
 
 ![[vault/arms/assets/settlement-example.svg|900]]
 

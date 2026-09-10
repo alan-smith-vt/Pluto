@@ -6,7 +6,7 @@ created: 2026-09-01
 
 # Steel CSV → viewer — usage
 
-*↑ [[Pluto|Home]] › [[vault/arms/Arms map|Arms map]]*
+*↑ [[vault/Pluto Home|Home]] › [[vault/arms/Arms map|Arms map]]*
 
 W-shape members from the production-side SQL dump to a Pluto v4 beam-only file. One
 self-contained bridge: `scripts/arms/SteelToPluto.cs` (CSV → members →

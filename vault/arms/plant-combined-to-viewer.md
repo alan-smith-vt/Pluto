@@ -6,7 +6,7 @@ created: 2026-09-02
 
 # Combined plant → viewer — the whole workflow
 
-*↑ [[Pluto|Home]] › [[vault/arms/Arms map|Arms map]]*
+*↑ [[vault/Pluto Home|Home]] › [[vault/arms/Arms map|Arms map]]*
 
 Pipes and W-shape steel in ONE `.bin` + `.features.json`: shared node table
 (coincident points merge across disciplines), one recenter frame, white steel,
