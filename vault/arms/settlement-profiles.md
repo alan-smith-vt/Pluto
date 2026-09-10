@@ -46,36 +46,9 @@ the model itself:
   the applied curve and every joint at its own distance. Copied to
   `vault/arms/assets/settlement-<name>.svg`. `run_sap.py` regenerates both on every build.
 
-![[vault/arms/assets/settlement-TANK-A.svg|900]]
-
-TANK-A, 2026-09-04, **slope** 0.5 ft at the edge, hinge along +X (the figure above; 432 of
-865 ground joints moved; kept as `models/TANK-A-roof-slope/` with config
-`configs/TANK-A-roof-slope.toml`, since `models/TANK-A/` is overwritten by every run). SAP 26, `NL_SETTLE`: ground joints match the CSV to 5e-7 ft. The
-plate follows the ground everywhere. The **ring wall does not**: it bridges the hinge as a
-stiff ring — wall top −0.139 ft at the hinge azimuths (soil there compressed 1.7 in, ~87
-kip per joint at the linear 624 kip/ft), soil gap open on 38 of 72 spokes on the flat
-side, `RINGWALL` M3 up to ±217 kip-ft, V2 ±58 kip, P −36…+29 kip. The **tank rim lifts off
-the ring wall on 54 of 72 spokes**, by up to 0.08 ft (1 in) at 90° and 270°, bearing only
-near the hinge. Two things to weigh before trusting the magnitudes: the soil is a linear
-spring (no bearing limit), and the concrete's vertical compliance lives in `GAP_CONTACT`.
-
-**Why the lift-off (checked the same day):** the same slope on an open-top variant (roof
-and eave ring off; config `configs/TANK-A-noroof-slope.toml`, record in
-`models/TANK-A-noroof-slope/` with its .s2k, results.s2k, .bin + sidecar and audit — both
-local, gitignored like every model) closes every contact gap — 0 of 72 spokes lifted, the rim
-folds with the ground (best-fit-plane residual ±0.1 ft), the ring wall presses only 0.07
-ft into the soil at the hinge. So the dome + eave ring are what hold the rim planar; the
-tank then tilts as a rigid drum on its best-fit plane and the deviation of the fold from
-that plane (0.10 ft at ±90°) appears as the gap. Physically plausible for a fixed-roof
-tank; the roof's stiffness in that mode (3/8 in plate, no rafters, full connection at the
-eave) is the thing to scrutinise if the result matters.
-
-Earlier the same day, **trench** 0.5 ft × 10 ft then × 30 ft along +X: 259 / 583 joints
-moved; the plate sagged fully into the trench, every gap closed again. **SAP 26 run:** `JOINT LOADS - GROUND DISPLACEMENT` accepted; every
-ground joint's `NL_SETTLE` U3 equals the CSV to 5e-7 ft. The plate followed the trench
-(centre joint U3 −0.5255 ft = ground −0.5 plus the ~0.02 ft soil compression it already had
-under NL_HYDRO; outside the trench −0.0185 ft, unchanged), i.e. the thin baseplate under
-2.5 kip/ft² of product simply sags into a 10 ft trench — the gaps close again.
+Project runs on the real tank (slope, open-top variant, trench; findings and figures) are recorded in the
+Notes vault, `<project notes>/Tank Settlement Runs.md` ([[Tank Settlement Runs]] when this repo
+sits inside the Notes vault). Project configs and models live at `<project dir>`.
 
 ![[vault/arms/assets/settlement-example.svg|900]]
 

@@ -7,7 +7,7 @@ created: 2026-09-04
 *↑ [[Pluto|Home]] › [[vault/arms/Arms map|Arms map]]*
 
 Pictures of the SAP tank model, generated from the config by
-`pythonTools/sap/doc_figures.py configs/TANK-A.toml` (rerun after a builder change).
+`pythonTools/sap/doc_figures.py "<project dir>"` (rerun after a builder change).
 Colour rule: **bold** = joint, `CAPS` grey = SAP group, `CAPS` blue = link property,
 lowercase grey = part.
 Details: [[vault/arms/sap-tank-builder|sap-tank-builder]], [[vault/arms/ring-wall-load-path|ring-wall-load-path]],

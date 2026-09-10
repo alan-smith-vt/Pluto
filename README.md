@@ -32,3 +32,5 @@ archive/           superseded code (old viewer, v3 writer) -- reference only
 Open `viewer/index.html`. A synthetic demo loads; use the file picker to open a real
 `.bin` (drop its `.features.json` alongside for groups). `viewer/inspector.html` dumps a
 file field by field.
+
+**Project data is not in this repo.** Real tank configs and SAP models live under `<project dir>` and `...\models` and are passed to the scripts by path; `[output] dir` in a config, or the default `../models` beside it, decides where a model lands. Project findings and drawings are notes in the Notes vault, not here.

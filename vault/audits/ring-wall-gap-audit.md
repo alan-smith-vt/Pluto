@@ -10,7 +10,7 @@ How to check the two gap-link families around the concrete ring wall inside the 
 GUI, what each check should show, and what the model facts are. The load path itself is
 drawn in [[vault/arms/ring-wall-load-path|ring-wall-load-path]]; the side-by-side proof
 that the insertion-point offset is drawing-only is
-[[vault/arms/beam-offset-study|beam-offset-study]]. Model: `pythonTools/sap/models/TANK-A-ringwallC/TANK-A-ringwallC.sdb`
+[[vault/arms/beam-offset-study|beam-offset-study]]. Model: `<project dir>`
 (the 2026-09-08 build with the chain at true elevations; `models/TANK-A` is the earlier
 coincident layout, same ids). Open the `.sdb`, or File › Import › SAP2000 .s2k. Units kip, ft.
 
