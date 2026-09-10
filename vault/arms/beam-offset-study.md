@@ -4,7 +4,7 @@ status: current
 created: 2026-09-08
 ---
 
-*↑ [[vault/Pluto|Home]] › [[vault/arms/Arms map|Arms map]]*
+*↑ [[Pluto|Home]] › [[vault/arms/Arms map|Arms map]]*
 
 The ring wall's support chain — **tank joint → contact gap → wall joint → soil gap →
 ground joint**, three coincident joints and two compression-only links per spoke — built

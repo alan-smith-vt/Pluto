@@ -1,6 +1,6 @@
 # Decisions map
 
-*↑ [[vault/Pluto|Home]]*
+*↑ [[Pluto|Home]]*
 
 Hub for `vault/decisions/` — one dated note per design decision. Nothing lives here yet;
 decisions so far are recorded inline: the v4 format decisions log in

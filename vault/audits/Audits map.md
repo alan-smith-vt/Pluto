@@ -6,7 +6,7 @@ created: 2026-09-03
 
 # Audits map
 
-*↑ [[vault/Pluto|Home]]*
+*↑ [[Pluto|Home]]*
 
 Hub for `vault/audits/` — read-only assessments made before a merge or port. Raw agent
 output (per-file JSON, compiler records, journals) sits in `audits/raw/` and is not linked.

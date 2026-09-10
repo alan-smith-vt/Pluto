@@ -1,6 +1,6 @@
 # Arms map
 
-*↑ [[vault/Pluto|Home]]*
+*↑ [[Pluto|Home]]*
 
 Hub for `vault/arms/` — one usage note per import/export arm. The C# for each lives in
 `scripts/arms/` and loads with the lib through `scripts/lib/Config.ps1` (one Add-Type batch,

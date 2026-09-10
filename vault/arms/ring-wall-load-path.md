@@ -4,7 +4,7 @@ status: current
 created: 2026-09-04
 ---
 
-*↑ [[vault/Pluto|Home]] › [[vault/arms/Arms map|Arms map]]*
+*↑ [[Pluto|Home]] › [[vault/arms/Arms map|Arms map]]*
 
 Why the concrete ring wall showed no hoop force, what was rebuilt on 2026-09-04, and how
 the rim load path now runs. Model details live in

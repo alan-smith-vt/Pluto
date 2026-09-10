@@ -6,7 +6,7 @@ created: 2026-08-25
 
 # Features sidecar (`*.features.json`)
 
-*↑ [[vault/Pluto|Home]] › [[vault/format/Format map|Format map]]*
+*↑ [[Pluto|Home]] › [[vault/format/Format map|Format map]]*
 
 Everything a user **defines** in the viewer — predicates, section cuts, supports, springs,
 whatever comes next — lives in one JSON file beside the model, never in the binary

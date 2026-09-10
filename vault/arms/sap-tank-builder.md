@@ -6,7 +6,7 @@ created: 2026-09-03
 
 # SAP tank builder — features, plans, checks
 
-*↑ [[vault/Pluto|Home]] › [[vault/arms/Arms map|Arms map]]*
+*↑ [[Pluto|Home]] › [[vault/arms/Arms map|Arms map]]*
 
 `pythonTools/sap/tankbuilder` generates a SAP2000 tank model from a TOML config
 (kip, ft, F), `run_sap.py` runs it and hands the results to

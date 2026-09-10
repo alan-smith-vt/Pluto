@@ -6,7 +6,7 @@ created: 2026-08-26
 
 # Viewer overview
 
-*↑ [[vault/Pluto|Home]] › [[vault/viewer/Viewer map|Viewer map]]*
+*↑ [[Pluto|Home]] › [[vault/viewer/Viewer map|Viewer map]]*
 
 ## What it is
 

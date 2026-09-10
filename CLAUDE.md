@@ -15,11 +15,11 @@ Repo root is the Obsidian vault; documentation lives under `vault/` only.
 
 ## Vault structure
 
-- Hierarchy: `vault/Pluto` → a **map** per folder (`Arms map`, `Format map`, `Viewer map`,
+- Hierarchy: `Pluto` (the Notes tool note, `Tools/Pluto.md` in the Notes vault) → a **map** per folder (`Arms map`, `Format map`, `Viewer map`,
   `Audits map`, `Decisions map`, `Handoff log`) → notes. Maps carry one described line per
   note — **update the folder's map when a note is born or renamed.**
 - **Breadcrumb** is the first line after the frontmatter of every note:
-  `*↑ [[vault/Pluto|Home]] › [[vault/<folder>/<Map>|<Map>]]*`; maps carry `*↑ [[vault/Pluto|Home]]*`.
+  `*↑ [[Pluto|Home]] › [[vault/<folder>/<Map>|<Map>]]*`; maps carry `*↑ [[Pluto|Home]]*`.
 - Links are **path-qualified** (`[[vault/format/v4-schema|v4-schema]]`) and basenames are
   unique (no `index.md`). Frontmatter: `title`, `status` (current | draft | archived), `created`.
 - Long notes fold `##` sections into collapsed callouts (`> [!info]- Title`).
