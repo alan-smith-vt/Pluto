@@ -197,6 +197,12 @@ archived viewer's management layer) and round-trips them.
   march (a Z march stops at the baseplate and near the crown; an X cut placed where X is
   the wall normal marches nowhere). Stations are recomputed from the mesh on load, never
   stored. An item with no `axis` (a foreign direction) reads as sloped, amber.
+- `crop: { axis: "x"|"y"|"z", width, depth? }` (2026-09-10) is the item's crop box for
+  the viewer's "Crop box" isolate mode: elements whose centroid lies within `halfWidth` of
+  `point` along the cut direction, within `width / 2` along the crop axis and, when `depth`
+  is given, within `depth / 2` along the third direction (cut direction × crop axis) are
+  kept, on any panel; beams are kept when both end joints lie in the box. Which isolate
+  mode is showing (off / this wall or slab / crop box) is view state, not stored.
 - `groups[]` carries per-group visibility; collapsed/expanded is view state only.
 - Unknown keys on an item survive a round trip (kept on the runtime object's `_raw`).
 - The archived viewer's standalone `section_cuts.json` (`{version, groups, cuts:[{point

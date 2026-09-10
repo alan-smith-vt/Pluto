@@ -175,22 +175,26 @@ var FEABeams = (function () {
         var s = 1e4;   // 0.1 mm-ish in ft; coincident joints round identically
         return Math.round(nodes[n * 3] * s) + ',' + Math.round(nodes[n * 3 + 1] * s) + ',' + Math.round(nodes[n * 3 + 2] * s);
     }
-    function writeVis(nodeKeep) {
+    // nodeKeep: kept shell nodes (beams follow by coincident position). boxTest
+    // (2026-09-10, crop box): a point test on x, y, z; when given, a beam is kept
+    // when BOTH its end joints lie in the box, whether or not they are shell
+    // nodes (ring wall axis and arm joints are not).
+    function writeVis(nodeKeep, boxTest) {
         if (!build || !view) return;
         var attr = build.geometry.getAttribute('elemVis');
         var arr = attr.array, elems = view.elems, REC = view.elemRecordU32;
+        var nodes = view.nodes;
         var keptPos = null;
-        if (nodeKeep) {
-            var nodes = view.nodes;
+        if (nodeKeep && !boxTest) {
             keptPos = {};
             for (var n = 0; n < nodeKeep.length; n++) if (nodeKeep[n]) keptPos[posKey(nodes, n)] = 1;
         }
+        function inBox(n) { return boxTest(nodes[n * 3], nodes[n * 3 + 1], nodes[n * 3 + 2]); }
         for (var e = 0; e < build.nElem; e++) {
             var vis = 1;
-            if (nodeKeep) {
-                var n0 = elems[e * REC + 1], n1 = elems[e * REC + 2];
-                vis = (keptPos[posKey(view.nodes, n0)] && keptPos[posKey(view.nodes, n1)]) ? 1 : 0;
-            }
+            var n0 = elems[e * REC + 1], n1 = elems[e * REC + 2];
+            if (boxTest) vis = (inBox(n0) && inBox(n1)) ? 1 : 0;
+            else if (nodeKeep) vis = (keptPos[posKey(nodes, n0)] && keptPos[posKey(nodes, n1)]) ? 1 : 0;
             arr.fill(vis, build.vertStart[e], build.vertStart[e] + build.vertCount[e]);
         }
         attr.needsUpdate = true;

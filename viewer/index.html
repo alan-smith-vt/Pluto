@@ -268,9 +268,25 @@
                    title="Marker thickness multiplier">
         </div>
         <div class="fea-row">
-            <input type="checkbox" id="scIsolate" class="fea-check">
-            <span class="fea-label" style="width:auto;"
-                  title="Hide every element except the connected wall / slab the cut was placed on">Isolate this wall / slab</span>
+            <span class="fea-label">Isolate</span>
+            <select id="scIsolate" class="fea-select"
+                    title="Off: show everything. Wall / slab: hide every element except the connected panel the cut sits on. Crop box: keep only elements within the cut's length along its direction and within the width along the secondary axis, whatever panel they belong to -- a slab through the model around the cut">
+                <option value="off" selected>Off</option>
+                <option value="panel">This wall / slab</option>
+                <option value="crop">Crop box</option>
+            </select>
+        </div>
+        <div class="fea-row" id="scCropRow" hidden>
+            <span class="fea-label">Crop</span>
+            <select id="scCropAxis" class="fea-select" style="flex:0 0 58px;" title="Secondary axis of the crop box (the cut direction is the primary)">
+                <option value="x">X</option>
+                <option value="y" selected>Y</option>
+                <option value="z">Z</option>
+            </select>
+            <input type="text" id="scCropWidth" class="fea-input num" value="4"
+                   title="Crop width along the secondary axis, model units, centred on the cut">
+            <input type="text" id="scCropDepth" class="fea-input num" value="0"
+                   title="Crop depth along the third direction (perpendicular to the cut direction and the secondary axis), model units, centred on the cut; 0 = unbounded">
         </div>
         <canvas id="scPlot" width="240" height="150"></canvas>
         <div id="scStats">&mdash;</div>

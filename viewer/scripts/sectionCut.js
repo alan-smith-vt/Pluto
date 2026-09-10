@@ -34,6 +34,12 @@
 // (a Z march stops at the baseplate and near the crown). Stations are
 // recomputed from the mesh on load, never stored. An item with neither key,
 // or whose direction matches no axis, reads as "sloped" (amber).
+// `crop: { axis: "x"|"y"|"z", width, depth? }` (2026-09-10) is the crop box
+// for the "Crop box" isolate mode: elements are kept when their centroid lies
+// within length/2 of the centre along the cut direction, within width/2 along
+// the crop axis, and (depth > 0) within depth/2 along the third direction,
+// dir x axis; on any panel. Beams are kept when both ends lie in the box.
+// Which isolate mode is showing is view state.
 // Unknown keys on an item survive a round trip (kept on item._raw).
 // The archived viewer's standalone section_cuts.json ({version, groups,
 // cuts:[{point, axis, length(in)}]}) imports through a shim.
@@ -71,7 +77,6 @@ var FEASectionCut = (function () {
     var samples = null;             // { t:[], v:[], hit:[], area, effLen } for the active cut
     var isolated = null;            // Uint8Array[nElem] keep-flags, or null
     var probeRay = new THREE.Raycaster();
-    var lastScale = -1;
     var suppressSync = false;       // while loading from the envelope
 
     // ---- DOM ---------------------------------------------------
@@ -92,7 +97,11 @@ var FEASectionCut = (function () {
     var elPosY  = document.getElementById('scPosY');
     var elPosZ  = document.getElementById('scPosZ');
     var elUnits = document.getElementById('scUnits');
-    var elIso   = document.getElementById('scIsolate');
+    var elIso   = document.getElementById('scIsolate');       // select: off | panel | crop (was a checkbox until 2026-09-10)
+    var elCropRow   = document.getElementById('scCropRow');
+    var elCropAxis  = document.getElementById('scCropAxis');
+    var elCropWidth = document.getElementById('scCropWidth');
+    var elCropDepth = document.getElementById('scCropDepth');
     var elMarker    = document.getElementById('scMarker');
     var elColorMode = document.getElementById('scColorMode');
     var elColor     = document.getElementById('scColor');
@@ -166,15 +175,37 @@ var FEASectionCut = (function () {
         var v = parseFloat(this.value);
         if (!(isFinite(v) && v > 0)) { this.value = '1'; }
         else if (v > 20) { this.value = '20'; }
-        lastScale = -1;           // force updateScale past its no-op guard
+        forceRescale();
         updateScale();
     });
-    on(elIso, 'change', function () {
+    function isoMode() { return elIso ? (elIso.value || 'off') : 'off'; }
+    function refreshIsolation() {
+        if (elCropRow) elCropRow.hidden = isoMode() !== 'crop';
         applyIsolation();
         cuts.forEach(function (c) { c.samples = null; });   // isolation scopes what every probe may hit
         resample();
         updateVisuals();
         drawPlot();
+    }
+    on(elIso, 'change', refreshIsolation);
+    on(elCropAxis, 'change', function () {
+        var c = active();
+        if (c) { c.crop = c.crop || {}; c.crop.axis = this.value; afterMutation(c); }
+        if (isoMode() === 'crop') refreshIsolation();
+    });
+    on(elCropWidth, 'change', function () {
+        var v = parseFloat(this.value);
+        if (!(isFinite(v) && v > 0)) { this.value = '4'; v = 4; }
+        var c = active();
+        if (c) { c.crop = c.crop || {}; c.crop.width = v; afterMutation(c); }
+        if (isoMode() === 'crop') refreshIsolation();
+    });
+    on(elCropDepth, 'change', function () {
+        var v = parseFloat(this.value);
+        if (!(isFinite(v) && v >= 0)) { this.value = '0'; v = 0; }
+        var c = active();
+        if (c) { c.crop = c.crop || {}; c.crop.depth = v; afterMutation(c); }
+        if (isoMode() === 'crop') refreshIsolation();
     });
 
     function setArmed(onOff) {
@@ -294,6 +325,7 @@ var FEASectionCut = (function () {
             elem: -1,
             visual: null,
             visParts: [],
+            crop: fields.crop ? { axis: fields.crop.axis, width: fields.crop.width, depth: fields.crop.depth > 0 ? fields.crop.depth : 0 } : null,
             _raw: fields._raw || null
         };
         c.axis = fields.axis || axisOf(c.dir);
@@ -329,10 +361,14 @@ var FEASectionCut = (function () {
         if (dir.lengthSq() < 1e-12) dir = hasAxis ? AXIS_DIR[raw.axis].clone() : new THREE.Vector3(1, 0, 0);
         dir.normalize();
         var half = isFinite(bounds.halfWidth) && bounds.halfWidth > 0 ? bounds.halfWidth : 0;
+        var crop = null;
+        if (raw.crop && AXIS_DIR[raw.crop.axis] && isFinite(raw.crop.width) && raw.crop.width > 0)
+            crop = { axis: raw.crop.axis, width: +raw.crop.width, depth: (isFinite(raw.crop.depth) && raw.crop.depth > 0) ? +raw.crop.depth : 0 };
         return makeCut({
             id: raw.id, name: raw.name, group: raw.group, visible: raw.visible,
             center: point, normal: up, dir: dir, length: half * 2 || defLength || 1,
-            axis: hasAxis ? raw.axis : null, sloped: hasAxis && !!(raw.sloped || raw.wrap), wrap: hasAxis && !!raw.wrap, _raw: raw
+            axis: hasAxis ? raw.axis : null, sloped: hasAxis && !!(raw.sloped || raw.wrap), wrap: hasAxis && !!raw.wrap,
+            crop: crop, _raw: raw
         });
     }
 
@@ -355,6 +391,10 @@ var FEASectionCut = (function () {
         if (c.axis && AXIS_DIR[c.axis]) raw.axis = c.axis; else delete raw.axis;
         if (c.sloped && AXIS_DIR[c.axis]) raw.sloped = true; else delete raw.sloped;
         if (c.wrap && AXIS_DIR[c.axis]) raw.wrap = true; else delete raw.wrap;
+        if (c.crop && AXIS_DIR[c.crop.axis] && c.crop.width > 0) {
+            raw.crop = { axis: c.crop.axis, width: c.crop.width };
+            if (c.crop.depth > 0) raw.crop.depth = c.crop.depth;
+        } else delete raw.crop;
         c._raw = raw;
         return raw;
     }
@@ -532,7 +572,7 @@ var FEASectionCut = (function () {
     // and, while isolating, when it belongs to the isolated panel too.
     function faceUsable(c, faceIndex) {
         var e = feaBuild.triToElem[faceIndex];
-        if (isolated) return !!isolated[e];
+        if (isolated) return !!isolated[e] && (isoMode() !== 'crop' || normalMatches(c, e));
         return normalMatches(c, e);
     }
 
@@ -595,7 +635,7 @@ var FEASectionCut = (function () {
 
     // Write the keep-set into the mesh + edge elemVis attributes; a
     // null set means "show everything". Beams and node markers follow.
-    function writeVis(keep) {
+    function writeVis(keep, boxTest) {
         if (!mesh || !feaBuild) return;
         var nElem = feaBuild.elemNCount.length;
         var attr = mesh.geometry.getAttribute('elemVis');
@@ -613,7 +653,14 @@ var FEASectionCut = (function () {
         attr.needsUpdate = true;
         if (edgeAttr) edgeAttr.needsUpdate = true;
         var nodeKeep = null;
-        if (keep) {
+        if (keep && boxTest) {
+            // crop: every shell node inside the box, not only nodes of kept elements
+            nodeKeep = new Uint8Array(feaModel.header.nNodes);
+            for (var n4 = 0; n4 < nodeKeep.length; n4++) {
+                var p4 = nodeVec(n4);
+                if (boxTest(p4.x, p4.y, p4.z)) nodeKeep[n4] = 1;
+            }
+        } else if (keep) {
             nodeKeep = new Uint8Array(feaModel.header.nNodes);
             for (var e3 = 0; e3 < nElem; e3++) {
                 if (!keep[e3]) continue;
@@ -621,16 +668,63 @@ var FEASectionCut = (function () {
                 for (var k3 = 0; k3 < nc3; k3++) nodeKeep[feaBuild.elemCorners[e3 * 4 + k3]] = 1;
             }
         }
-        if (window.FEABeams && FEABeams.writeVis) FEABeams.writeVis(nodeKeep);
+        // beams: with a box, kept by their own end positions (ring wall and arm joints
+        // are not shell nodes); otherwise by the kept shell nodes as before
+        if (window.FEABeams && FEABeams.writeVis) FEABeams.writeVis(nodeKeep, keep ? boxTest : null);
         if (window.FEAFeatures && FEAFeatures.writeVis) FEAFeatures.writeVis(nodeKeep);
         requestRender();
+    }
+
+    // Crop box: keep every element whose centroid lies within length/2 of the
+    // cut centre along the cut direction and within width/2 along the crop
+    // axis; unbounded along the third direction. Any panel qualifies -- this
+    // is a slab through the model around the cut, for looking at junctions.
+    // The box: |d.dir| <= length/2, |d.sec| <= width/2, and when depth > 0
+    // |d.third| <= depth/2 with third = dir x sec (falls back to the panel
+    // normal if the cut runs along the crop axis). Returns a point test.
+    function cropBox(c) {
+        var crop = cropOf(c);
+        var sec = AXIS_DIR[crop.axis];
+        var third = new THREE.Vector3().crossVectors(c.dir, sec);
+        if (third.lengthSq() < 1e-9) third = c.normal.clone();
+        third.normalize();
+        var halfL = c.length / 2, halfW = crop.width / 2, halfD = crop.depth > 0 ? crop.depth / 2 : Infinity;
+        var d = new THREE.Vector3();
+        return function (x, y, z) {
+            d.set(x, y, z).sub(c.center);
+            return Math.abs(d.dot(c.dir)) <= halfL && Math.abs(d.dot(sec)) <= halfW && Math.abs(d.dot(third)) <= halfD;
+        };
+    }
+    function computeCropElems(c) {
+        var inBox = cropBox(c);
+        var nElem = feaBuild.elemNCount.length;
+        var keep = new Uint8Array(nElem);
+        var d = new THREE.Vector3();
+        for (var e = 0; e < nElem; e++) {
+            var nc = feaBuild.elemNCount[e];
+            d.set(0, 0, 0);
+            for (var k = 0; k < nc; k++) d.add(nodeVec(feaBuild.elemCorners[e * 4 + k]));
+            d.multiplyScalar(1 / nc);
+            if (inBox(d.x, d.y, d.z)) keep[e] = 1;
+        }
+        return keep;
+    }
+    function cropOf(c) {
+        var axis = (c.crop && AXIS_DIR[c.crop.axis]) ? c.crop.axis : (elCropAxis ? elCropAxis.value : 'y');
+        var width = (c.crop && c.crop.width > 0) ? c.crop.width : (elCropWidth ? parseFloat(elCropWidth.value) : 4);
+        if (!(isFinite(width) && width > 0)) width = 4;
+        var depth = (c.crop && c.crop.depth > 0) ? c.crop.depth : (elCropDepth ? parseFloat(elCropDepth.value) : 0);
+        if (!(isFinite(depth) && depth > 0)) depth = 0;
+        return { axis: axis, width: width, depth: depth };
     }
 
     function applyIsolation() {
         if (!mesh || !feaBuild) return;
         var c = active();
-        isolated = (elIso && elIso.checked && c) ? computeIsolatedElems(c) : null;
-        writeVis(isolated);
+        var mode = isoMode();
+        isolated = (c && mode === 'panel') ? computeIsolatedElems(c)
+                 : (c && mode === 'crop') ? computeCropElems(c) : null;
+        writeVis(isolated, (c && mode === 'crop' && isolated) ? cropBox(c) : null);
     }
 
     // Element-plane normal of the picked face (orientation is
@@ -743,6 +837,7 @@ var FEASectionCut = (function () {
         });
         c.visual = null;
         c.visParts = [];
+        c._lastScale = null;      // new parts start at scale 1: make updateScale re-apply
     }
 
     // Every marker part is a cylinder or sphere rather than a THREE
@@ -908,9 +1003,14 @@ var FEASectionCut = (function () {
             scene.add(group);
             c.visual = group;
         });
-        lastScale = -1;
+        forceRescale();
         updateScale();
         requestRender();
+    }
+
+    // Drop every cut's cached scale so the next updateScale re-applies it.
+    function forceRescale() {
+        cuts.forEach(function (c) { c._lastScale = null; });
     }
 
     // Distance-based marker size, same law as viewer.js orbScale() but
@@ -1192,6 +1292,14 @@ var FEASectionCut = (function () {
         if (elPosY) elPosY.value = has ? fmtPos(c.center.y) : '';
         if (elPosZ) elPosZ.value = has ? fmtPos(c.center.z) : '';
         if (elLen) elLen.value = has ? String(c.length) : (defLength ? String(defLength) : '');
+        if (has && c.crop) {
+            if (elCropAxis && AXIS_DIR[c.crop.axis]) elCropAxis.value = c.crop.axis;
+            if (elCropWidth && c.crop.width > 0) elCropWidth.value = String(c.crop.width);
+            if (elCropDepth) elCropDepth.value = c.crop.depth > 0 ? String(c.crop.depth) : '0';
+        }
+        if (elCropAxis) elCropAxis.disabled = !has;
+        if (elCropWidth) elCropWidth.disabled = !has;
+        if (elCropDepth) elCropDepth.disabled = !has;
         syncAxisButtons();
         syncColorSwatch();
     }
@@ -1323,6 +1431,8 @@ var FEASectionCut = (function () {
         _delete: deleteCut,
         _importLegacy: importLegacy,
         _makeCut: makeCut,
+        _computeCropElems: computeCropElems,
+        _cropBox: cropBox,
         _setSloped: setSloped,
         _setMode: setMode,
         _march: march,

@@ -117,3 +117,40 @@ assert(FEASectionCut._groups().some(g => g.name === 'Old'), 'legacy group regist
 
 console.log(fails ? fails + ' FAILED' : 'ALL SECTION-CUT TESTS PASSED');
 process.exitCode = fails ? 1 : 0;
+
+// crop box (2026-09-10): round trip and the keep test on a tiny synthetic mesh
+{
+  const it = { id: 'c-crop', name: 'Foot', visible: true, axis: 'z',
+    plane: { point: [33, 0, 0], normal: [0, 1, 0] }, bounds: { up: [1, 0, 0], halfWidth: 2 },
+    crop: { axis: 'y', width: 4 } };
+  const cc = FEASectionCut._itemToCut(it);
+  assert(cc.crop && cc.crop.axis === 'y' && cc.crop.width === 4, 'crop field read from the item');
+  const out = FEASectionCut._cutToItem(cc);
+  assert(out.crop && out.crop.axis === 'y' && out.crop.width === 4, 'crop field written back');
+  cc.crop = null;
+  assert(!('crop' in FEASectionCut._cutToItem(cc)), 'no crop -> key removed');
+  // 4 single-node "elements" (tris with one node repeated) at known centroids; dir = z, crop y
+  const pts = [[33, 0, 0], [33, 1.5, 0.5], [33, 3, 0], [33, 0, 5]];
+  global.feaBuild = { elemNCount: Uint8Array.from([3, 3, 3, 3]), elemCorners: Int32Array.from([0, 0, 0, -1, 1, 1, 1, -1, 2, 2, 2, -1, 3, 3, 3, -1]) };
+  global.nodeVec = (i) => new THREE.Vector3(pts[i][0], pts[i][1], pts[i][2]);
+  const c2 = FEASectionCut._itemToCut({ id: 'c-k', name: 'k', axis: 'z', plane: { point: [33, 0, 0], normal: [0, 1, 0] },
+    bounds: { up: [1, 0, 0], halfWidth: 2 }, crop: { axis: 'y', width: 4 } });
+  assert(near(Math.abs(c2.dir.z), 1), 'probe direction is z');
+  const keep = FEASectionCut._computeCropElems(c2);
+  assert(keep[0] === 1 && keep[1] === 1, 'elements inside length/2 along z and width/2 along y are kept');
+  assert(keep[2] === 0, 'element 3 ft off in y (width 4 -> half 2) is dropped');
+  assert(keep[3] === 0, 'element 5 ft along z (length 4 -> half 2) is dropped');
+  // depth: third direction = dir x sec = z x y = -x; a point 3 ft off in x is dropped once depth = 4
+  const c3 = FEASectionCut._itemToCut({ id: 'c-d', name: 'd', axis: 'z', plane: { point: [33, 0, 0], normal: [0, 1, 0] },
+    bounds: { up: [1, 0, 0], halfWidth: 2 }, crop: { axis: 'y', width: 4, depth: 4 } });
+  const box = FEASectionCut._cropBox(c3);
+  assert(box(33, 0, 1) && box(34.9, 1.9, -1.9), 'points inside length, width and depth are in the box');
+  assert(!box(36.5, 0, 0), 'a point 3.5 ft off along the third direction is out when depth = 4');
+  assert(FEASectionCut._cutToItem(c3).crop.depth === 4, 'depth written to the item');
+  const c4 = FEASectionCut._itemToCut({ id: 'c-e', name: 'e', axis: 'z', plane: { point: [33, 0, 0], normal: [0, 1, 0] },
+    bounds: { up: [1, 0, 0], halfWidth: 2 }, crop: { axis: 'y', width: 4 } });
+  assert(FEASectionCut._cropBox(c4)(300, 0, 0), 'no depth -> unbounded along the third direction');
+  assert(!('depth' in FEASectionCut._cutToItem(c4).crop), 'depth 0 is not written');
+}
+if (fails) { console.error(fails + ' failure(s)'); process.exit(1); }
+console.log('crop tests passed');
