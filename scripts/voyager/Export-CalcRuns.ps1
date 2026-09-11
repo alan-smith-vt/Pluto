@@ -27,7 +27,7 @@ param(
     [int]    $TailWords  = 40,
     [int]    $ExtraPages = 3,          # pages read past the one holding the header (table may spill over)
     [int]    $MaxPages   = 10,         # hard cap on pages read per PDF; 0 = none (table sits near page 7)
-    [string[]] $ExcludeDir = @('Archive', 'Superseded', 'Old'),   # folder names skipped at any depth (case-insensitive, exact name)
+    [string[]] $ExcludeDir = @('Archive', 'Superseded', 'Old'),   # skip a PDF if any folder name under -PdfRoot contains one of these (case-insensitive)
     [switch] $Recurse,
     [switch] $ReuseCache,
     [switch] $StageLocal,              # copy each PDF to a local temp file before reading (network folders: the
@@ -42,7 +42,7 @@ $rootLen = (Resolve-Path $PdfRoot).Path.TrimEnd('\').Length
 $pdfs = Get-ChildItem -Path $PdfRoot -Filter *.pdf -File -Recurse:$Recurse | Where-Object {
     $rel = $_.DirectoryName.Substring($rootLen) -split '\\'
     $hit = $false
-    foreach ($x in $ExcludeDir) { if ($x -and ($rel -contains $x)) { $hit = $true; break } }
+    foreach ($x in $ExcludeDir) { if ($x -and ($rel -like "*$x*")) { $hit = $true; break } }
     $_.Name -notlike '~$*' -and -not $hit
 }
 Write-Host "$($pdfs.Count) PDFs under $PdfRoot (excluding folders named: $($ExcludeDir -join ', '))"
