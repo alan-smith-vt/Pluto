@@ -12,6 +12,7 @@ PowerShell 5.1, C# 5). Every arm writes the same pair: `<outBase>.bin` (v4) +
 - [[vault/arms/plant-combined-to-viewer|plant-combined-to-viewer]] — **start here for the combined workflow**: pipes + steel + bbox fallback → one `CombinedToPluto` file, end to end.
 - [[vault/arms/pipe-csv-to-viewer|pipe-csv-to-viewer]] — SP3D piping: v4 CSV → `PipeCsvReader` (room filter, sizing, progress bar) → `PipeToPluto` → viewer. Pipe-size groups; `PartOid` labels.
 - [[vault/arms/steel-csv-to-viewer|steel-csv-to-viewer]] — W-shape members: row-per-member CSV with dims, local-Y vector and SP3D cardinal point → `SteelToPluto` I-sections. Section-name groups.
+- [[vault/arms/calc-room-map|calc-room-map]] — calc PDFs → run names (Windows PDF IFilter, no packages) → rooms via the v4.2 pipe CSV → room-to-calc CSV. Code in `scripts/voyager/`, the transfer crate for Voyager code (Voyager itself never leaves the D: machine).
 
 ## Solvers
 

@@ -1,0 +1,35 @@
+---
+title: Calc PDFs → room map (usage)
+status: current
+created: 2026-09-11
+---
+
+# Calc PDFs → room map — usage
+
+*↑ [[vault/Pluto Home|Home]] › [[vault/arms/Arms map|Arms map]]*
+
+Which pipe-stress calc PDFs are relevant to each room. Chain: calc PDF → run names listed under "Lines covered in this system:" → room(s) of each run from the v4.2 pipe CSV → room → calcs. Not a viewer arm: CSV in, CSV out. Design and verification record live in the Voyager vault (`40-join-paths/Calc to Room Map.md`); the code ships here because Voyager never leaves the D: machine.
+
+Code: `scripts/voyager/Export-CalcRuns.ps1`, `Join-CalcRooms.ps1`, `PdfText.cs`. PowerShell 5.1, no packages: PDF text comes from the Windows PDF IFilter through ~100 lines of COM interop compiled by `Add-Type`.
+
+## Run
+
+```powershell
+# 1. calc PDFs -> File,Run   (text cached in C:\Temp\calc_text; -ReuseCache to re-parse only)
+.\scripts\voyager\Export-CalcRuns.ps1 -PdfRoot '<calc folder>' -Recurse -Out C:\Temp\calc_runs.csv
+
+# 2. join to the v4.2 pipe CSV (RunName, Room)
+.\scripts\voyager\Join-CalcRooms.ps1 -CalcRuns C:\Temp\calc_runs.csv -PipeCsv C:\Temp\pipe_v4_sized.csv -Out C:\Temp\room_calcs.csv
+```
+
+Outputs: `room_calcs.csv` (Room, File, Runs), `room_calcs_by_run.csv` (long), `room_calcs_unmatched.csv` (calc runs absent from the model), `calc_runs_noheader.txt` (PDFs without the header — scanned or worded differently).
+
+## Knobs
+
+- `-RunPattern` (default `^F-[A-Za-z0-9][A-Za-z0-9\-_/.]*$`): widen if run names carry other characters.
+- `-TailWords 40`: the filter returns each page as one run of words with no line breaks, so the table end is detected as 40 consecutive non-run tokens (page headers/footers interleave the table; a true gap is longer).
+- Rooms `a/b/c` on straddling runs are split on `/`; a calc covers every room any listed run touches.
+
+## Status
+
+Verified 2026-09-11 on synthetic text and three local report PDFs under PS 5.1 and 7. Not yet run on the real calcs.
