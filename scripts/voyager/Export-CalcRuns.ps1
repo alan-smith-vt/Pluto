@@ -27,6 +27,7 @@ param(
     [int]    $TailWords  = 40,
     [int]    $ExtraPages = 3,          # pages read past the one holding the header (table may spill over)
     [int]    $MaxPages   = 10,         # hard cap on pages read per PDF; 0 = none (table sits near page 7)
+    [string[]] $ExcludeDir = @('Archive', 'Superseded', 'Old'),   # folder names skipped at any depth (case-insensitive, exact name)
     [switch] $Recurse,
     [switch] $ReuseCache,
     [switch] $StageLocal,              # copy each PDF to a local temp file before reading (network folders: the
@@ -37,8 +38,14 @@ param(
 $ErrorActionPreference = 'Stop'
 if (-not ('Voyager.PdfText' -as [type])) { Add-Type -Path (Join-Path $PSScriptRoot 'PdfText.cs') }
 New-Item -ItemType Directory -Force $TextCache | Out-Null
-$pdfs = Get-ChildItem -Path $PdfRoot -Filter *.pdf -File -Recurse:$Recurse | Where-Object Name -notlike '~$*'
-Write-Host "$($pdfs.Count) PDFs under $PdfRoot"
+$rootLen = (Resolve-Path $PdfRoot).Path.TrimEnd('\').Length
+$pdfs = Get-ChildItem -Path $PdfRoot -Filter *.pdf -File -Recurse:$Recurse | Where-Object {
+    $rel = $_.DirectoryName.Substring($rootLen) -split '\\'
+    $hit = $false
+    foreach ($x in $ExcludeDir) { if ($x -and ($rel -contains $x)) { $hit = $true; break } }
+    $_.Name -notlike '~$*' -and -not $hit
+}
+Write-Host "$($pdfs.Count) PDFs under $PdfRoot (excluding folders named: $($ExcludeDir -join ', '))"
 
 function Get-PdfText([System.IO.FileInfo] $pdf) {
     $txt = Join-Path $TextCache ($pdf.BaseName + '.txt')
