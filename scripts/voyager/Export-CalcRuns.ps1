@@ -27,6 +27,8 @@ param(
     [int]    $TailWords  = 40,
     [int]    $ExtraPages = 3,          # pages read past the one holding the header (table may spill over)
     [int]    $MaxPages   = 10,         # hard cap on pages read per PDF; 0 = none (table sits near page 7)
+    [string]   $TopDirLike  = 'PACKAGE',               # only descend into first-level folders whose name contains this ('' = all)
+    [string]   $NameLike    = '*Calculation Report*',  # only PDFs whose file name matches this wildcard
     [string[]] $ExcludeDir = @('Archive', 'Superseded', 'Old'),   # skip a PDF if any folder name under -PdfRoot contains one of these (case-insensitive)
     [switch] $Recurse,
     [switch] $ReuseCache,
@@ -39,13 +41,14 @@ $ErrorActionPreference = 'Stop'
 if (-not ('Voyager.PdfText' -as [type])) { Add-Type -Path (Join-Path $PSScriptRoot 'PdfText.cs') }
 New-Item -ItemType Directory -Force $TextCache | Out-Null
 $rootLen = (Resolve-Path $PdfRoot).Path.TrimEnd('\').Length
-$pdfs = Get-ChildItem -Path $PdfRoot -Filter *.pdf -File -Recurse:$Recurse | Where-Object {
+$tops = if ($TopDirLike) { Get-ChildItem -Path $PdfRoot -Directory | Where-Object Name -like "*$TopDirLike*" } else { Get-Item $PdfRoot }
+$pdfs = $tops | Get-ChildItem -Filter *.pdf -File -Recurse:$Recurse | Where-Object {
     $rel = $_.DirectoryName.Substring($rootLen) -split '\\'
     $hit = $false
     foreach ($x in $ExcludeDir) { if ($x -and ($rel -like "*$x*")) { $hit = $true; break } }
-    $_.Name -notlike '~$*' -and -not $hit
+    $_.Name -like $NameLike -and $_.Name -notlike '~$*' -and -not $hit
 }
-Write-Host "$($pdfs.Count) PDFs under $PdfRoot (excluding folders named: $($ExcludeDir -join ', '))"
+Write-Host "$(@($tops).Count) top folders like '*$TopDirLike*'; $(@($pdfs).Count) PDFs named '$NameLike' (excluding folders like: $($ExcludeDir -join ', '))"
 
 function Get-PdfText([System.IO.FileInfo] $pdf) {
     $txt = Join-Path $TextCache ($pdf.BaseName + '.txt')
