@@ -22,11 +22,11 @@ param(
     [Parameter(Mandatory)] [string] $PdfRoot,
     [string] $Out        = 'C:\Temp\calc_runs.csv',
     [string] $TextCache  = 'C:\Temp\calc_text',
-    [string] $Header     = 'Lines covered in this system:',
+    [string] $Header     = '  Lines covered in this system:',   # two leading spaces: how the filter renders the line break before it
     [string] $RunPattern = '^F-',      # names carry odd characters (a " was seen); the tail rule bounds the search, not the pattern
     [int]    $TailWords  = 40,
     [int]    $ExtraPages = 3,          # pages read past the one holding the header (table may spill over)
-    [int]    $MaxPages   = 0,          # hard cap on pages read per PDF; 0 = none
+    [int]    $MaxPages   = 10,         # hard cap on pages read per PDF; 0 = none (table sits near page 7)
     [switch] $Recurse,
     [switch] $ReuseCache,
     [switch] $StageLocal,              # copy each PDF to a local temp file before reading (network folders: the
