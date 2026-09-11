@@ -32,6 +32,26 @@ def graded_sizes(length: float, coarse: float, edge: float, growth: float,
     return head + [interior / n] * n + tail[::-1]
 
 
+def ellipe(k: float, n: int = 2000) -> float:
+    """Complete elliptic integral of the second kind E(k) = int_0^{pi/2} sqrt(1 - k^2 sin^2 t) dt,
+    Simpson's rule (E(0) = pi/2, E(1) = 1). No SciPy on the development side."""
+    k2 = min(max(k, 0.0), 1.0) ** 2
+    h = (math.pi / 2.0) / n
+    total = 0.0
+    for i in range(n + 1):
+        t = i * h
+        f = math.sqrt(max(0.0, 1.0 - k2 * math.sin(t) ** 2))
+        total += f * (1 if i in (0, n) else (4 if i % 2 else 2))
+    return total * h / 3.0
+
+
+def boussinesq_dish(rho: float) -> float:
+    """Settlement of a flexible, uniformly loaded circle on an elastic half-space at r/a = rho,
+    relative to the centre: w(r) / w(0) = (2 / pi) E(r / a) inside the circle (1 at the centre,
+    2/pi = 0.637 at the edge; Bowles 5e Eq. 5-16 shape factor I_s = 1 / 0.64)."""
+    return 2.0 / math.pi * ellipe(min(rho, 1.0))
+
+
 class IdAllocator:
     """Hands out contiguous id blocks per SAP object type (joints, areas,
     frames, links), each numbered from 1. Every part of the model (wall,
@@ -111,6 +131,8 @@ class TankModel:
         self.bearing_joints: list[int] = []           # plate joints over the ring wall width, on GAP_BEARING links
         self.overhang_joints: list[int] = []          # plate edge ring beyond the shell ([baseplate] overhang)
         self.bearing_arm_joints: list[int] = []       # their support joints on the ring wall centroid line
+        self.soil_face_joints: list[int] = []         # [ringwall] soil_links = "faces": joints at the faces on the centroid line
+        self._arm_from: dict[tuple, int] = {}         # (spoke theta, outer side?) -> last arm joint on that side
         self.settlements: dict[int, float] = {}       # ground joint -> dz (ft, negative = down)
         self.area_local_angle: dict[int, float] = {}  # area -> local-axis rotation (deg) about local 3
         self._build_levels()
@@ -185,8 +207,16 @@ class TankModel:
         s = self.spec
         if not self.refines(edge):
             return [s.radius * k / n_r for k in range(n_r + 1)]
-        sizes = graded_sizes(s.radius, s.radius / n_r, s.edge_size, s.edge_growth,
-                             s.edge_length, False, True)
+        if edge == "plate_rim" and self.refines("concrete_edge"):
+            # two segments: 0 -> concrete inner face, graded at its outer end; then the
+            # plate over the concrete to the shell at edge_size (2026-09-11)
+            r_c = s.radius - s.ringwall_width / 2.0
+            sizes = graded_sizes(r_c, s.radius / n_r, s.edge_size, s.edge_growth, s.edge_length, False, True)
+            n_over = max(2, round((s.radius - r_c) / s.edge_size))
+            sizes += [(s.radius - r_c) / n_over] * n_over
+        else:
+            sizes = graded_sizes(s.radius, s.radius / n_r, s.edge_size, s.edge_growth,
+                                 s.edge_length, False, True)
         radii, r = [0.0], 0.0
         for h in sizes:
             r += h
@@ -440,20 +470,39 @@ class TankModel:
         return self.baseplate_interior_joints + (self.base_joints if self.spec.baseplate else [])
 
     def baseplate_tributary_area(self, jid: int) -> float:
-        """Plan area carried by one baseplate joint, ft^2: the centre disc, an
-        annulus slice for an interior ring, half an annulus slice at the rim.
-        Sums to pi R^2 over the plate."""
+        """Plan area carried by one baseplate joint, ft^2: an annulus slice between
+        the ring bisectors for an interior ring, half a slice at the rim, and at the
+        centre the consistent share of the triangle fan (a third of each triangle,
+        n/3 x r1^2 sin(2 pi/n) / 2), since that is the load SAP puts on the joint;
+        ring 1 gives up the difference so the areas still sum to pi R^2 (2026-09-11:
+        the bisector disc, pi (r1/2)^2, left the centre spring 1.33 x too soft)."""
         s = self.spec
         n = s.n_theta
         radii = self.cap_radii_of["baseplate"]
         k = self.cap_ring["baseplate"][jid]
+        fan = n * 0.5 * radii[1] ** 2 * math.sin(2.0 * math.pi / n) / 3.0
         if k == 0:
-            return math.pi * (radii[1] / 2.0) ** 2
+            return fan
         r_in = (radii[k - 1] + radii[k]) / 2.0
         r_out = (radii[k] + radii[k + 1]) / 2.0 if k + 1 < len(radii) else radii[-1]
-        return math.pi * (r_out * r_out - r_in * r_in) / n
+        area = math.pi * (r_out * r_out - r_in * r_in) / n
+        if k == 1:
+            area -= (fan - math.pi * (radii[1] / 2.0) ** 2) / n
+        return area
 
     # --- foundation: ground joints + compression-only gap links ------------------
+
+    def pad_zone_factor(self, ring: int) -> float:
+        """Multiplier on the pad subgrade modulus for plate ring k ([foundation] zone):
+        1 everywhere for "none"; zone_factor inside the rim band for "step"; the inverse
+        of the Boussinesq dish, pi / (2 E(r/R)), for "boussinesq" (1.0 centre, 1.571 rim)."""
+        s = self.spec
+        if s.pad_zone == "none":
+            return 1.0
+        r = self.cap_radii_of["baseplate"][ring]
+        if s.pad_zone == "step":
+            return s.pad_zone_factor if r >= s.radius - s.pad_zone_width - 1e-6 else 1.0
+        return 1.0 / boussinesq_dish(r / s.radius)
 
     def _build_foundation(self) -> None:
         """Gap support: one fixed ground joint coincident with every baseplate
@@ -474,8 +523,9 @@ class TankModel:
             name = f"GAP_R{k:0{width}d}"
             if name not in self.link_props:
                 self.link_props[name] = {
-                    "k": s.subgrade_modulus * self.baseplate_tributary_area(tj),
+                    "k": s.subgrade_modulus * self.pad_zone_factor(k) * self.baseplate_tributary_area(tj),
                     "ring": k, "tributary_area": self.baseplate_tributary_area(tj),
+                    "zone_factor": self.pad_zone_factor(k),
                 }
             self.links[lid] = (gj, tj)
             self.link_prop[lid] = name
@@ -631,6 +681,62 @@ class TankModel:
                 self.frame_transform[fid] = s.ringwall_transform
         if s.ringwall_plate_bearing:
             self._build_plate_bearing()
+        if s.ringwall_soil_links == "faces":
+            self._build_soil_faces()
+
+    def _build_soil_faces(self) -> None:
+        """Replace the one GAP_SOIL link under each axis joint with two at the ring wall's
+        inner and outer faces, k/2 each, so the ring has the rotational bearing stiffness of
+        its width (k C^2 / 4 per spoke). The face joints sit on the centroid line, z = -A/2,
+        and continue the RINGWALL_ARM chain on their side (an existing arm joint at a face
+        is reused); each gets a fixed ground joint at z = -A below it. Needs joints =
+        "elevations" and plate_bearing (the chain), checked in the spec."""
+        s = self.spec
+        n = s.n_theta
+        r_in, r_out = s.radius - s.ringwall_width / 2.0, s.radius + s.ringwall_width / 2.0
+        # drop the centroid soil links and their ground joints
+        old = [l for l, (i, j) in self.links.items() if j in set(self.ringwall_joints) and self.link_prop[l] == "GAP_SOIL"]
+        for l in old:
+            gi, _ = self.links.pop(l)
+            del self.link_prop[l]
+            self.ringwall_ground.remove(gi)
+            del self.joints[gi]
+            self.thetas.pop(gi, None)
+        self.link_props["GAP_SOIL"]["k"] = self.ringwall_soil_k / 2.0
+        self.link_props["GAP_SOIL"]["tributary_area"] /= 2.0
+        r_arm = {j: math.hypot(*self.joints[j][:2]) for j in self.bearing_arm_joints}
+        at_face = {(round(self.thetas[j], 9), round(r_arm[j], 6)): j for j in self.bearing_arm_joints}
+        by_theta = {round(self.thetas[j], 9): j for j in self.ringwall_joints}
+        new_joints = self.ids.claim("joint", "soil_face", 2 * n)
+        ground = self.ids.claim("joint", "soil_face_ground", 2 * n)
+        links = self.ids.claim("link", "soil_face", 2 * n)
+        frames = self.ids.claim("frame", "soil_face_arm", 2 * n)
+        nj, ng, nl, nf = iter(new_joints), iter(ground), iter(links), iter(frames)
+        for wj in self.ringwall_joints:
+            th = round(self.thetas[wj], 9)
+            theta = self.thetas[wj]
+            for r_face, outer in ((r_in, False), (r_out, True)):
+                fj = at_face.get((th, round(r_face, 6)))
+                if fj is None:
+                    fj = next(nj)
+                    self.joints[fj] = (r_face * math.cos(theta), r_face * math.sin(theta), -s.ringwall_depth / 2.0)
+                    self.thetas[fj] = theta
+                    fid = next(nf)
+                    self.frames[fid] = (self._arm_from.get((th, outer), by_theta[th]), fj)
+                    self.frame_section[fid] = "RINGWALL"
+                    self._arm_from[(th, outer)] = fj
+                    self.bearing_arm_joints.append(fj)
+                self.soil_face_joints.append(fj)
+                gj = next(ng)
+                self.joints[gj] = (r_face * math.cos(theta), r_face * math.sin(theta), -s.ringwall_depth)
+                self.thetas[gj] = theta
+                self.ringwall_ground.append(gj)
+                lid = next(nl)
+                self.links[lid] = (gj, fj)
+                self.link_prop[lid] = "GAP_SOIL"
+        # unused ids (a face joint reused an arm joint) are simply never written
+        used_frames = [f for f in frames if f in self.frames]
+        self.ids.blocks[("frame", "soil_face_arm")] = range(frames.start, frames.start + len(used_frames))
 
     def _build_plate_bearing(self) -> None:
         """Plate joints that lie over the ring wall width (r >= R - C/2, rim excluded)
@@ -682,6 +788,7 @@ class TankModel:
             side = (th, radii[ring_of[pj]] > s.radius)
             self.frames[fid] = (arm_from.get(side, by_theta[th]), aj)
             arm_from[side] = aj
+            self._arm_from = arm_from
             self.frame_section[fid] = "RINGWALL"
             self.links[lid] = (aj, pj)
             self.link_prop[lid] = "GAP_BEARING"
@@ -768,7 +875,12 @@ class TankModel:
                 out["PLATE_OVERHANG"] = (list(self.ids.block("area", "baseplate_overhang")), self.overhang_joints, [])
             if self.bearing_joints:
                 out["PLATE_BEARING"] = ([], self.bearing_joints, [])
-                out["RINGWALL_ARM"] = ([], self.bearing_arm_joints, list(self.ids.block("frame", "ringwall_arm")))
+                arm_frames = list(self.ids.block("frame", "ringwall_arm"))
+                if ("frame", "soil_face_arm") in self.ids.blocks:
+                    arm_frames += list(self.ids.block("frame", "soil_face_arm"))
+                out["RINGWALL_ARM"] = ([], self.bearing_arm_joints, arm_frames)
+            if self.soil_face_joints:
+                out["RINGWALL_SOIL_FACES"] = ([], self.soil_face_joints, [])
         for n in range(len(s.dents)):
             out[f"DENT_{n + 1:02d}"] = (self.dent_areas(n), [], [])
         return out

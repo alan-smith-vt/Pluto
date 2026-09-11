@@ -9,7 +9,7 @@ from pathlib import Path
 # --- constants (kip, ft, F) -------------------------------------------------
 
 GAMMA_WATER = 0.0624  # kip/ft^3
-EDGES = ("wall_base", "wall_top", "roof_rim", "plate_rim")   # [mesh] refine choices
+EDGES = ("wall_base", "wall_top", "roof_rim", "plate_rim", "concrete_edge")   # [mesh] refine choices
 G_ACCEL = 32.174  # ft/s^2
 STEEL = dict(
     name="A36",
@@ -64,6 +64,9 @@ class TankSpec:
     edge_length: float = 0.0       # ft, extent of the graded band (0 = uniform mesh)
     edge_growth: float = 1.5       # size ratio element to element, away from the edge
     refine_edges: tuple[str, ...] = ("wall_base", "wall_top", "roof_rim", "plate_rim")
+    # "concrete_edge" (2026-09-11): the baseplate rings are graded inward from the ring
+    # wall's inner face (r = R - C/2) as well, and the plate over the concrete is meshed at
+    # edge_size; needs a ring wall. Resolves the plate bending over the concrete corner.
     # [fluid]
     fill_fraction: float = 1.0  # 1.0 = filled to the top of the wall
     fluid_weight: float = GAMMA_WATER
@@ -93,6 +96,20 @@ class TankSpec:
     #            static cases NL_DEAD -> NL_HYDRO.
     foundation: str = "fixed"
     subgrade_modulus: float = 170.0       # kip/ft^3 (compacted sand, guess)
+    # [foundation] pad spring zoning (2026-09-11; Bowles, Foundation Analysis and Design 5e,
+    # 10-5 and 10-12): a Winkler bed under a uniform load settles flat, a half-space does
+    # not, so the pad springs are stiffened toward the rim to stand in for the coupling.
+    #   "none":       every plate ring at subgrade_modulus
+    #   "step":       rings at r >= R - zone_width get zone_factor x subgrade_modulus
+    #                 (Bowles' two-zone / "double the edge springs", the tank-base case)
+    #   "boussinesq": ring factor = w(0) / w(r) of a flexible uniformly loaded circle on an
+    #                 elastic half-space, pi / (2 E(r/R)), 1 at the centre to pi/2 = 1.571
+    #                 at the rim, so a uniform pressure settles the plate in the Boussinesq
+    #                 dish (edge = 2/pi = 0.64 x centre) -- Bowles' zoned-ks option
+    # Pad springs only: the ring wall soil link keeps [ringwall] subgrade_modulus.
+    pad_zone: str = "none"
+    pad_zone_width: float = 0.0           # ft, radial band from the shell inward ("step")
+    pad_zone_factor: float = 2.0          # multiplier on subgrade_modulus in the band ("step")
     # [ringwall]  concrete ring under the shell (needs foundation "gap"). Load path:
     # rim joint -> contact gap link -> wall top joint (frame axis) -> frames -> soil gap
     # link -> fixed ground joint. "fixed" pins the wall top in U3 instead of the soil link.
@@ -103,6 +120,12 @@ class TankSpec:
     ringwall_unit_weight: float = 0.150   # kip/ft^3
     ringwall_support: str = "gap"         # "gap": soil gap link k = subgrade x width x arc | "fixed"
     ringwall_subgrade: float = 0.0        # kip/ft^3 under the ring wall (2026-09-10); 0 = foundation.subgrade_modulus
+    ringwall_soil_links: str = "centroid" # 2026-09-11: "centroid" = one GAP_SOIL link under the axis joint (no
+                                          #   rotational bearing stiffness, the ring rolls on a point); "faces" = two
+                                          #   links at the inner and outer faces, k/2 each, on joints tied to the
+                                          #   axis by RINGWALL_ARM frames: same vertical stiffness, rotational
+                                          #   stiffness k C^2/4 per spoke (= ks C^3/12 per unit length). Needs
+                                          #   joints = "elevations" and plate_bearing.
     ringwall_joints: str = "elevations"   # "elevations": rim at the wall top, wall joint at the centroid (-A/2),
                                           #   ground joint at the base (-A), links with length, cardinal 10 (2026-09-08)
                                           # "top": all three coincident at the wall top, cardinal 8 (pre-2026-09-08)
@@ -167,6 +190,8 @@ class TankSpec:
         bad = set(self.refine_edges) - set(EDGES)
         if bad:
             raise ValueError(f"mesh.refine: unknown edge(s) {sorted(bad)} (choose from {', '.join(EDGES)})")
+        if "concrete_edge" in self.refine_edges and self.edge_length > 0 and not (self.ringwall and self.baseplate):
+            raise ValueError("mesh.refine 'concrete_edge' needs a baseplate and a ring wall")
         if self.edge_length < 0 or self.edge_size <= 0 or self.edge_growth < 1.0:
             raise ValueError("mesh.edge_length must be >= 0, edge_size > 0 and edge_growth >= 1")
         if self.radius <= 0 or self.height <= 0 or self.thickness <= 0:
@@ -208,6 +233,12 @@ class TankSpec:
                 raise ValueError("foundation.mode = 'gap' needs baseplate.enabled = true")
             if self.subgrade_modulus <= 0:
                 raise ValueError("foundation.subgrade_modulus must be positive")
+        if self.pad_zone not in ("none", "step", "boussinesq"):
+            raise ValueError(f"foundation.zone {self.pad_zone!r} not recognised (none | step | boussinesq)")
+        if self.pad_zone != "none" and self.foundation != "gap":
+            raise ValueError("foundation.zone needs foundation.mode = 'gap' (it scales the pad springs)")
+        if self.pad_zone == "step" and (self.pad_zone_width <= 0 or self.pad_zone_factor <= 0):
+            raise ValueError("foundation.zone = 'step' needs a positive zone_width and zone_factor")
         if self.ringwall:
             if self.foundation != "gap":
                 raise ValueError("ringwall.enabled needs foundation.mode = 'gap' (its joints are the rim's ground joints)")
@@ -221,6 +252,11 @@ class TankSpec:
                 raise ValueError(f"ringwall.joints {self.ringwall_joints!r} not recognised (elevations | top)")
             if self.ringwall_subgrade < 0:
                 raise ValueError("ringwall.subgrade_modulus must be >= 0 (0 = foundation.subgrade_modulus)")
+            if self.ringwall_soil_links not in ("centroid", "faces"):
+                raise ValueError(f"ringwall.soil_links {self.ringwall_soil_links!r} not recognised (centroid | faces)")
+            if self.ringwall_soil_links == "faces" and not (self.ringwall_joints == "elevations" and self.ringwall_plate_bearing
+                                                            and self.ringwall_support == "gap"):
+                raise ValueError("ringwall.soil_links = 'faces' needs joints = 'elevations', plate_bearing = true and support = 'gap'")
             if self.ringwall_cushion_modulus < 0 or self.ringwall_cushion_thickness < 0:
                 raise ValueError("ringwall.cushion_modulus and cushion_thickness must be >= 0")
             if self.ringwall_cushion_modulus > 0:
@@ -284,7 +320,8 @@ CONFIG_MAP = {
         "ring_leg": "roof_ring_leg",
         "ring_thickness": "roof_ring_thickness",
     },
-    "foundation": {"mode": "foundation", "subgrade_modulus": "subgrade_modulus"},
+    "foundation": {"mode": "foundation", "subgrade_modulus": "subgrade_modulus",
+                   "zone": "pad_zone", "zone_width": "pad_zone_width", "zone_factor": "pad_zone_factor"},
     "ringwall": {
         "enabled": "ringwall",
         "width": "ringwall_width",
@@ -293,6 +330,7 @@ CONFIG_MAP = {
         "unit_weight": "ringwall_unit_weight",
         "support": "ringwall_support",
         "subgrade_modulus": "ringwall_subgrade",
+        "soil_links": "ringwall_soil_links",
         "joints": "ringwall_joints",
         "transform": "ringwall_transform",
         "plate_bearing": "ringwall_plate_bearing",

@@ -5015,8 +5015,8 @@ TABLE:  "LINK PROPERTY DEFINITIONS 01 - GENERAL"
    Link=GAP_SOIL   LinkType=Gap   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   Color=Magenta
 
 TABLE:  "LINK PROPERTY DEFINITIONS 05 - GAP"
-   Link=GAP_R00   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=1963.49541   TransCE=0   TransK=1963.49541   Open=0
-   Link=GAP_R01   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=436.332313   TransCE=0   TransK=436.332313   Open=0
+   Link=GAP_R00   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=2604.72267   TransCE=0   TransK=2604.72267   Open=0
+   Link=GAP_R01   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=418.520445   TransCE=0   TransK=418.520445   Open=0
    Link=GAP_R02   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=872.664626   TransCE=0   TransK=872.664626   Open=0
    Link=GAP_R03   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=1308.99694   TransCE=0   TransK=1308.99694   Open=0
    Link=GAP_R04   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=1745.32925   TransCE=0   TransK=1745.32925   Open=0

@@ -152,6 +152,42 @@ meant to be checked. Real project numbers live only in the gitignored `configs/*
 > `[foundation] subgrade_modulus`. Motivation: the sensitivity runs (`-ks85`, `-ks42`) showed a
 > single value cannot settle the pad and the ring wall differently under product. Run as
 > `TANK-A-rw340` (overhang + ring wall soil at 340 against the pad's 170).
+> **Pad spring zoning** (`[foundation] zone = "none" | "step" | "boussinesq"`, `zone_width` ft,
+> `zone_factor`, 2026-09-11): scales the pad subgrade by plate ring. `step` = Bowles' doubled
+> edge springs (Foundation Analysis and Design 5e, 10-5 and 10-12): rings at r >= R - width at
+> factor x ks. `boussinesq` = the inverse of the flexible-circle half-space dish, pi / (2 E(r/R))
+> (`model.ellipe`, `boussinesq_dish`), 1.0 at the centre to 1.571 at the rim, so a uniform pressure
+> settles the plate in the elastic dish (edge 0.64 x centre) instead of flat. Pad springs only;
+> the ring wall soil link keeps `[ringwall] subgrade_modulus`. Factor stored per `GAP_Rnn` as
+> `zone_factor`. Calibration runs on a stripped base (stub wall 0.25 x 0.001 ft, no roof,
+> weightless ring wall, fluid weight scaled to 3.14 ksf on the plate): `TANK-A-cal-uniform`,
+> `-cal-step2` (3.4 ft band at 2 x, ring wall 340), `-cal-bouss` (ring wall 267);
+> `pad_zone_study.py <configs> --out <dir>` prints the dish per ring against Boussinesq and draws
+> `pad-zone-calibration.svg`. Findings: the Notes base support study. Live models with it:
+> `TANK-A-bq` (overhang + graded pad, ring wall 170) and `-bq-rw267 / -rw340 / -rw850 /
+> -rw1700 / -rw4250` (ring wall soil 1.57 to 25 × the pad); `ringwall_sweep.py <configs>
+> [--out <dir>]` tabulates the wall foot, the plate over the concrete edge and the load split per
+> model and draws `ringwall-sweep.svg`. `foot_section_figure.py <config>[=label] ... --out <dir>` draws the
+> wall foot section (sand, ring wall, wall to scale) with the deflected plate, V13 and M11 of
+> several models overlaid on one radius axis (`foot-section-<case>.svg`, `--name` to override).
+> **Ring wall face links** (`[ringwall] soil_links = "faces"`, 2026-09-11; needs `joints =
+> "elevations"`, `plate_bearing`, `support = "gap"`): the one `GAP_SOIL` link under the axis joint
+> becomes two at the inner and outer faces (r = R ∓ C/2, z = −A/2), k/2 each, on joints that
+> continue the `RINGWALL_ARM` chain on each side (an arm joint already at a face is reused; the
+> new frames are block `soil_face_arm`, group `RINGWALL_SOIL_FACES` holds the face joints, the
+> ground joints join `RINGWALL_GROUND`). Same vertical stiffness, rotational bearing stiffness
+> k C²/4 per spoke; the point spring let the ring roll freely (0.028° at 25 × pad, halved with
+> faces). **Concrete-edge refinement** (`[mesh] refine` entry `"concrete_edge"`, needs a ring
+> wall): the plate rings are graded inward from the concrete's inner face (edge_size, growth,
+> edge_length as for the rim) and the plate over the concrete is meshed at about edge_size.
+> Runs: `TANK-A-bq-rw4250-f` (both), `-f-ks85`, `-f-ks42` (pad softened, ring wall held):
+> concrete-edge plate stress 12 / 22 / 36 ksi. Notes base support study. The graded pad needs the ring wall soil at ≥ 1.57 × pad
+> with it, or the rim band out-stiffens the concrete's support.
+> **Centre tributary area** (2026-09-11): the centre joint's spring uses the consistent share of
+> its triangle fan (a third of each triangle) instead of the bisector disc, ring 1 gives up the
+> difference, the areas still sum to pi R². The disc had left the centre spring 1.33 × too soft
+> (one joint; a dimple at the centre of every settlement plot). Golden regenerated (two link
+> values).
 > First `run_sap.py` attempt failed at `OpenFile` (returned 1) and SAP went down; the arms
 > were overlapping collinear frames then and the user's GUI session held the instance —
 > the chained rebuild in a fresh instance imported cleanly, cause not isolated.

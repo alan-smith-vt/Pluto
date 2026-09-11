@@ -434,12 +434,69 @@ def test_tributary_areas_sum_to_the_plate():
     total = sum(m.baseplate_tributary_area(j) for j in m.baseplate_joints)
     assert total == pytest.approx(math.pi * 100.0)
     dr = 10.0 / 3
-    assert m.baseplate_tributary_area(m.ids.block("joint", "baseplate").start) == pytest.approx(math.pi * (dr / 2) ** 2)
+    fan = 8 * 0.5 * dr * dr * math.sin(2 * math.pi / 8) / 3          # consistent share of the centre fan
+    assert m.baseplate_tributary_area(m.ids.block("joint", "baseplate").start) == pytest.approx(fan)
+    ring1 = m.baseplate_tributary_area(m.ids.block("joint", "baseplate").start + 1)
+    assert ring1 == pytest.approx(math.pi * ((1.5 * dr) ** 2 - (dr / 2) ** 2) / 8 - (fan - math.pi * (dr / 2) ** 2) / 8)
     assert m.baseplate_tributary_area(m.base_joints[0]) == pytest.approx(math.pi * (100 - (10 - dr / 2) ** 2) / 8)
     props = m.link_props
     assert list(props) == ["GAP_R00", "GAP_R01", "GAP_R02", "GAP_R03"]
     assert props["GAP_R03"]["k"] == pytest.approx(100.0 * m.baseplate_tributary_area(m.base_joints[0]))
     assert not capped().links and not capped().ground_joints
+
+
+def test_pad_zone_step_and_boussinesq():
+    from tankbuilder.model import boussinesq_dish, ellipe
+    assert ellipe(0.0) == pytest.approx(math.pi / 2) and ellipe(1.0) == pytest.approx(1.0, abs=1e-6)
+    assert boussinesq_dish(0.0) == pytest.approx(1.0) and boussinesq_dish(1.0) == pytest.approx(2 / math.pi)
+    # step: R 10, rings at 0, 3.33, 6.67, 10; a 4 ft band catches rings 2 and 3 only
+    m = capped(foundation="gap", subgrade_modulus=100.0, pad_zone="step", pad_zone_width=4.0, pad_zone_factor=2.0)
+    assert [m.pad_zone_factor(k) for k in range(4)] == [1.0, 1.0, 2.0, 2.0]
+    assert m.link_props["GAP_R02"]["k"] == pytest.approx(200.0 * m.baseplate_tributary_area(m.ids.block("joint", "baseplate").start + 1 + 8))
+    assert m.link_props["GAP_R01"]["zone_factor"] == 1.0 and m.link_props["GAP_R03"]["zone_factor"] == 2.0
+    # boussinesq: 1 at the centre, pi/2 at the rim, monotonic between
+    b = capped(foundation="gap", subgrade_modulus=100.0, pad_zone="boussinesq")
+    f = [b.pad_zone_factor(k) for k in range(4)]
+    assert f[0] == pytest.approx(1.0) and f[3] == pytest.approx(math.pi / 2) and f == sorted(f)
+    assert gapped().link_props["GAP_R03"]["zone_factor"] == 1.0
+    with pytest.raises(ValueError, match="zone"):
+        TankSpec(baseplate=True, pad_zone="step").validate()
+    with pytest.raises(ValueError, match="zone_width"):
+        TankSpec(baseplate=True, foundation="gap", pad_zone="step").validate()
+
+
+def test_ringwall_soil_faces_and_concrete_edge_refinement():
+    base = dict(foundation="gap", subgrade_modulus=100.0, ringwall=True, ringwall_width=1.0, ringwall_depth=3.0,
+                ringwall_joints="elevations", ringwall_plate_bearing=True, baseplate_overhang=0.25,
+                edge_size=0.25, edge_length=1.0, refine_edges=("plate_rim", "concrete_edge"))
+    m = capped(**base, ringwall_soil_links="faces")
+    n = m.spec.n_theta
+    radii = m.cap_radii_of["baseplate"]
+    r_c = 10.0 - 0.5
+    assert any(abs(r - r_c) < 1e-9 for r in radii)                      # a ring on the concrete inner face
+    over = [b - a for a, b in zip(radii, radii[1:]) if a >= r_c - 1e-9 and b <= 10.0 + 1e-9]
+    assert all(abs(h - 0.25) < 1e-9 for h in over)                       # plate over the concrete at edge_size
+    assert radii[-1] == pytest.approx(10.25)                            # overhang ring appended after
+    # two soil links per spoke at the faces, k/2 each, no link under the axis joint
+    soil = [l for l in m.links if m.link_prop[l] == "GAP_SOIL"]
+    assert len(soil) == 2 * n and len(m.ringwall_ground) == 2 * n
+    assert not any(m.links[l][1] in set(m.ringwall_joints) for l in soil)
+    assert m.link_props["GAP_SOIL"]["k"] == pytest.approx(m.ringwall_soil_k / 2.0)
+    faces = {round(math.hypot(*m.joints[m.links[l][1]][:2]), 6) for l in soil}
+    assert faces == {9.5, 10.5}
+    for l in soil:
+        gj, fj = m.links[l]
+        assert m.joints[gj][2] == pytest.approx(-3.0) and m.joints[fj][2] == pytest.approx(-1.5)
+    # the inner face joint is the existing bearing arm joint at r = 9.5; the outer one is new and chained
+    inner = [m.links[l][1] for l in soil if abs(math.hypot(*m.joints[m.links[l][1]][:2]) - 9.5) < 1e-6]
+    assert set(inner) <= set(m.ids.block("joint", "bearing_arm"))
+    assert len(m.ids.block("frame", "soil_face_arm")) == n
+    assert "RINGWALL_SOIL_FACES" in m.groups()
+    t = parse_s2k(s2k_text(m))
+    rest = {r["JOINT"]: r for r in t["JOINT RESTRAINT ASSIGNMENTS"]}
+    assert all(rest[str(g)]["U3"] == "Yes" for g in m.ringwall_ground)
+    with pytest.raises(ValueError, match="faces"):
+        capped(foundation="gap", subgrade_modulus=100.0, ringwall=True, ringwall_soil_links="faces")
 
 
 def test_gap_tables_restraints_and_cases():
