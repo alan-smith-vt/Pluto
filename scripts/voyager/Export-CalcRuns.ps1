@@ -15,7 +15,7 @@
     interleave when the table spans pages; a real gap is longer than that).
 
 .EXAMPLE
-  .\Export-CalcRuns.ps1 -PdfRoot 'X:\Calcs' -Recurse -Out C:\Temp\calc_runs.csv
+  .\Export-CalcRuns.ps1 -PdfRoot 'X:\Calcs' -Recurse -StageLocal -Out C:\Temp\calc_runs.csv
 #>
 [CmdletBinding()]
 param(
@@ -28,7 +28,10 @@ param(
     [int]    $ExtraPages = 3,          # pages read past the one holding the header (table may spill over)
     [int]    $MaxPages   = 0,          # hard cap on pages read per PDF; 0 = none
     [switch] $Recurse,
-    [switch] $ReuseCache
+    [switch] $ReuseCache,
+    [switch] $StageLocal,              # copy each PDF to a local temp file before reading (network folders: the
+                                       # filter seeks all over the file; one sequential copy beats hundreds of SMB reads)
+    [string] $StageDir = (Join-Path $env:TEMP 'calc_stage')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -40,7 +43,14 @@ Write-Host "$($pdfs.Count) PDFs under $PdfRoot"
 function Get-PdfText([System.IO.FileInfo] $pdf) {
     $txt = Join-Path $TextCache ($pdf.BaseName + '.txt')
     if ($ReuseCache -and (Test-Path $txt)) { return [IO.File]::ReadAllText($txt) }
-    $text = [Voyager.PdfText]::Extract($pdf.FullName, $Header, $ExtraPages, $MaxPages)
+    $src = $pdf.FullName
+    if ($StageLocal) {
+        New-Item -ItemType Directory -Force $StageDir | Out-Null
+        $src = Join-Path $StageDir $pdf.Name
+        Copy-Item $pdf.FullName $src -Force
+    }
+    try   { $text = [Voyager.PdfText]::Extract($src, $Header, $ExtraPages, $MaxPages) }
+    finally { if ($StageLocal) { Remove-Item $src -Force -ErrorAction SilentlyContinue } }
     [IO.File]::WriteAllText($txt, $text)
     return $text
 }
