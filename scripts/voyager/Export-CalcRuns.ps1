@@ -81,10 +81,9 @@ function Get-RunNames([string] $text) {
 $rows = New-Object System.Collections.Generic.List[object]
 $noHeader = New-Object System.Collections.Generic.List[string]
 $failed = New-Object System.Collections.Generic.List[string]
-$n = 0
+$pb = New-Object Voyager.Progress (@($pdfs).Count), 'Scraping calcs'
 foreach ($pdf in $pdfs) {
-    $n++
-    Write-Progress -Activity 'Scraping calcs' -Status $pdf.Name -PercentComplete (100 * $n / $pdfs.Count)
+    $pb.Tick($pdf.Name)
     try { $text = Get-PdfText $pdf }
     catch { Write-Warning "$($pdf.Name): $($_.Exception.Message)"; $failed.Add($pdf.FullName); continue }
     if ($text -notmatch [regex]::Escape($Header)) { $noHeader.Add($pdf.FullName); continue }
@@ -93,6 +92,7 @@ foreach ($pdf in $pdfs) {
     }
 }
 
+$pb.Finish()
 $rows | Export-Csv $Out -NoTypeInformation
 $outDir = Split-Path $Out
 $noHeader | Set-Content (Join-Path $outDir 'calc_runs_noheader.txt')

@@ -41,6 +41,58 @@ namespace Voyager
         void GetSizeMax(out ulong pcbSize);
     }
 
+    // Console progress bar (carriage-return redraw, rate + ETA). Port of Pluto's scripts/lib/Types.cs ProgressBar
+    // so the scraper has no dependency on the Pluto lib. Not Write-Progress: that one is slow and hides the console.
+    public class Progress
+    {
+        readonly int total, width;
+        readonly System.Diagnostics.Stopwatch sw = System.Diagnostics.Stopwatch.StartNew();
+        int current, lastLen;
+        double lastDraw;
+
+        public Progress(int total, string title) : this(total, title, 40) { }
+        public Progress(int total, string title, int width)
+        {
+            this.total = total; this.width = width;
+            if (!string.IsNullOrEmpty(title)) Console.WriteLine(title);
+        }
+
+        static string Fmt(double s)
+        {
+            if (double.IsInfinity(s) || double.IsNaN(s)) return "?";
+            var t = TimeSpan.FromSeconds(s);
+            if (t.TotalHours >= 1) return string.Format("{0}:{1:D2}:{2:D2}", (int)t.TotalHours, t.Minutes, t.Seconds);
+            if (t.TotalMinutes >= 1) return string.Format("{0}:{1:D2}", (int)t.TotalMinutes, t.Seconds);
+            return string.Format("{0}s", (int)t.TotalSeconds);
+        }
+
+        public void Tick(string label)
+        {
+            current++;
+            double el = sw.Elapsed.TotalSeconds;
+            if (el - lastDraw < 0.1 && current != total) return;
+            lastDraw = el;
+            double pct = total > 0 ? (double)current / total : 1;
+            int filled = (int)(pct * width);
+            double rate = current / Math.Max(el, 1e-9);
+            string line = string.Format("\r[{0}{1}] {2}/{3} ({4:F0}%) {5:F1}/s ETA {6}  {7}",
+                new string('#', filled), new string('-', width - filled), current, total, pct * 100, rate,
+                Fmt((total - current) / rate), label ?? "");
+            int max = 200; try { max = Console.BufferWidth - 1; } catch (Exception) { }   // no console when redirected
+            if (max > 0 && line.Length > max) line = line.Substring(0, max);
+            Console.Write(line.PadRight(lastLen));
+            lastLen = line.Length;
+        }
+
+        public void Finish()
+        {
+            double el = sw.Elapsed.TotalSeconds;
+            string line = string.Format("\r[{0}] {1}/{1} (100%) {2:F1}/s {3} total",
+                new string('#', width), total, total / Math.Max(el, 1e-9), Fmt(el));
+            Console.WriteLine(line.PadRight(lastLen));
+        }
+    }
+
     public static class PdfText
     {
         // Windows built-in PDF filter (Windows.Data.Pdf.dll). Resolved 2026-09-11 from
