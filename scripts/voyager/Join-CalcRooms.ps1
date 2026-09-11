@@ -3,8 +3,8 @@
   Join calc->run (from Export-CalcRuns.ps1) with run->room (from the v4.2 pipe CSV).
 
 .DESCRIPTION
-  Room on the pipe CSV is the run UDF dispid 2 and may hold several rooms as 'a/b/c'
-  (see Pipe Extraction v1, boundary-straddling runs). Split on '/', trim, one row per room.
+  Room on the pipe CSV is the run UDF dispid 2. Used verbatim (trimmed) - the multi-room
+  'a/b/c' values are not consistent enough to split, so one row per distinct raw value.
 
   Outputs:
     <Out>                 Room, File, Runs            (one row per room x calc; Runs = matched run names, ';'-joined)
@@ -29,7 +29,7 @@ $runRooms = @{}
 foreach ($r in (Import-Csv $PipeCsv)) {
     $name = $r.$RunCol; if (-not $name) { continue }
     if (-not $runRooms.ContainsKey($name)) { $runRooms[$name] = New-Object System.Collections.Generic.HashSet[string] }
-    foreach ($room in ($r.$RoomCol -split '/')) { $t = $room.Trim(); if ($t) { [void]$runRooms[$name].Add($t) } }
+    $t = "$($r.$RoomCol)".Trim(); if ($t) { [void]$runRooms[$name].Add($t) }
 }
 Write-Host "$($runRooms.Count) distinct runs in pipe CSV"
 
