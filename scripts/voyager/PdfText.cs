@@ -75,7 +75,13 @@ namespace Voyager
         const int CHUNK_TEXT = 1;
         const uint IFILTER_INIT_APPLY_INDEX_ATTRIBUTES = 0x10;
 
-        public static string Extract(string path)
+        // Whole document.
+        public static string Extract(string path) { return Extract(path, null, 0, 0); }
+
+        // Early stop: the filter streams roughly one chunk per page. Stop after the chunk containing
+        // stopMarker plus extraChunks more (a table can spill onto the next page), or at maxChunks
+        // (0 = no cap). A 1000-page calc with the table on page 7 then costs ~10 chunks, not 1000.
+        public static string Extract(string path, string stopMarker, int extraChunks, int maxChunks)
         {
             IStream stm;
             IFilter f = Open(path, out stm);
@@ -87,13 +93,16 @@ namespace Voyager
 
                 var sb = new StringBuilder();
                 var buf = new StringBuilder(65536);
+                var chunk = new StringBuilder();
                 STAT_CHUNK st;
-                while (true)
+                int chunks = 0, remaining = -1;
+                while (remaining != 0 && (maxChunks <= 0 || chunks < maxChunks))
                 {
                     hr = f.GetChunk(out st);
                     if (hr == FILTER_E_END_OF_CHUNKS || hr == FILTER_E_NO_MORE_CHUNKS) break;
                     if (hr != 0) continue;                       // skip unreadable chunk
                     if ((st.flags & CHUNK_TEXT) == 0) continue;  // value chunks (metadata)
+                    chunk.Length = 0;
                     while (true)
                     {
                         uint n = (uint)buf.Capacity;
@@ -101,10 +110,15 @@ namespace Voyager
                         hr = f.GetText(ref n, buf);
                         if (hr == FILTER_E_NO_MORE_TEXT || hr == FILTER_E_NO_TEXT) break;
                         if (hr != 0 && hr != 0x41709 /*FILTER_S_LAST_TEXT*/) break;
-                        sb.Append(buf.ToString(0, (int)n));
+                        chunk.Append(buf.ToString(0, (int)n));
                         if (hr == 0x41709) break;
                     }
-                    sb.Append('\n');
+                    sb.Append(chunk).Append('\n');
+                    chunks++;
+                    if (remaining > 0) remaining--;
+                    else if (remaining < 0 && stopMarker != null
+                             && chunk.ToString().IndexOf(stopMarker, StringComparison.OrdinalIgnoreCase) >= 0)
+                        remaining = extraChunks;
                 }
                 return sb.ToString();
             }

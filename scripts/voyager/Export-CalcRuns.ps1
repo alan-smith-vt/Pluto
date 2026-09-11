@@ -6,6 +6,8 @@
   Text comes from the Windows PDF IFilter (what Windows Search uses) via PdfText.cs,
   compiled in-session with Add-Type. No packages, no SDK. PowerShell 5.1 or 7.
   Each PDF's text is cached as <TextCache>\<name>.txt; -ReuseCache re-parses without re-reading PDFs.
+  Reading stops -ExtraPages after the page holding the header (calcs run to 1000 pages; the table
+  is near page 7), so the cache holds only the front of each PDF.
 
   The filter returns each page as one run of words, no line breaks. Parsing rule:
     find "Lines covered in this system:" -> collect every following token matching -RunPattern;
@@ -21,8 +23,10 @@ param(
     [string] $Out        = 'C:\Temp\calc_runs.csv',
     [string] $TextCache  = 'C:\Temp\calc_text',
     [string] $Header     = 'Lines covered in this system:',
-    [string] $RunPattern = '^F-[A-Za-z0-9][A-Za-z0-9\-_/.]*$',
+    [string] $RunPattern = '^F-',      # names carry odd characters (a " was seen); the tail rule bounds the search, not the pattern
     [int]    $TailWords  = 40,
+    [int]    $ExtraPages = 3,          # pages read past the one holding the header (table may spill over)
+    [int]    $MaxPages   = 0,          # hard cap on pages read per PDF; 0 = none
     [switch] $Recurse,
     [switch] $ReuseCache
 )
@@ -36,7 +40,7 @@ Write-Host "$($pdfs.Count) PDFs under $PdfRoot"
 function Get-PdfText([System.IO.FileInfo] $pdf) {
     $txt = Join-Path $TextCache ($pdf.BaseName + '.txt')
     if ($ReuseCache -and (Test-Path $txt)) { return [IO.File]::ReadAllText($txt) }
-    $text = [Voyager.PdfText]::Extract($pdf.FullName)
+    $text = [Voyager.PdfText]::Extract($pdf.FullName, $Header, $ExtraPages, $MaxPages)
     [IO.File]::WriteAllText($txt, $text)
     return $text
 }

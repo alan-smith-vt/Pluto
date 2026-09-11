@@ -26,8 +26,9 @@ Outputs: `room_calcs.csv` (Room, File, Runs), `room_calcs_by_run.csv` (long), `r
 
 ## Knobs
 
-- `-RunPattern` (default `^F-[A-Za-z0-9][A-Za-z0-9\-_/.]*$`): widen if run names carry other characters.
+- `-RunPattern` (default `^F-`): deliberately loose; names carry odd characters (a `"` was seen). The tail rule bounds the search, not the pattern.
 - `-TailWords 40`: the filter returns each page as one run of words with no line breaks, so the table end is detected as 40 consecutive non-run tokens (page headers/footers interleave the table; a true gap is longer).
+- `-ExtraPages 3` / `-MaxPages 0`: reading stops 3 pages after the one holding the header (calcs run to ~1000 pages; the table is near page 7). `-MaxPages` is a hard cap.
 - Rooms `a/b/c` on straddling runs are split on `/`; a calc covers every room any listed run touches.
 
 ## Status
