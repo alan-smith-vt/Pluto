@@ -395,34 +395,51 @@ public class SapSurvey
                 ji.Duct.Add(idx);
             }
         }
-        // Non-group frames: connected pieces over their joints; a piece is grounded if any joint is restrained.
+        // Non-group frames: connected pieces over their joints, never through a group joint (each frame end
+        // at a group joint is its own node), so support found through the duct itself does not count.
+        // A piece is grounded if one of its own (non-group) joints is restrained.
         Dictionary<string, int> oj = new Dictionary<string, int>();
-        foreach (List<string> ends in new List<string>[] { otherI, otherJ })
-            foreach (string p in ends) if (!oj.ContainsKey(p)) oj[p] = oj.Count;
+        string[] nodeI = new string[otherI.Count], nodeJ = new string[otherI.Count];
+        for (int i = 0; i < otherI.Count; i++)
+        {
+            nodeI[i] = joints.ContainsKey(otherI[i]) ? otherI[i] + "#" + i + "#I" : otherI[i];
+            nodeJ[i] = joints.ContainsKey(otherJ[i]) ? otherJ[i] + "#" + i + "#J" : otherJ[i];
+            if (!oj.ContainsKey(nodeI[i])) oj[nodeI[i]] = oj.Count;
+            if (!oj.ContainsKey(nodeJ[i])) oj[nodeJ[i]] = oj.Count;
+        }
         int[] op = new int[oj.Count];
         for (int i = 0; i < op.Length; i++) op[i] = i;
-        for (int i = 0; i < otherI.Count; i++) Union(op, oj[otherI[i]], oj[otherJ[i]]);
+        for (int i = 0; i < otherI.Count; i++) Union(op, oj[nodeI[i]], oj[nodeJ[i]]);
         HashSet<int> grounded = new HashSet<int>();
-        Dictionary<int, int> ductTouches = new Dictionary<int, int>();
         foreach (KeyValuePair<string, int> kv in oj)
         {
-            int root = Find(op, kv.Value);
+            if (kv.Key.IndexOf('#') >= 0) continue;
             bool[] r = new bool[6];
             Model.PointObj.GetRestraint(kv.Key, ref r);
-            foreach (bool b in r) if (b) grounded.Add(root);
-            if (joints.ContainsKey(kv.Key)) ductTouches[root] = (ductTouches.ContainsKey(root) ? ductTouches[root] : 0) + 1;
+            foreach (bool b in r) if (b) { grounded.Add(Find(op, kv.Value)); break; }
+        }
+        Dictionary<int, HashSet<string>> ductTouches = new Dictionary<int, HashSet<string>>();
+        for (int i = 0; i < otherI.Count; i++)
+        {
+            int root = Find(op, oj[nodeI[i]]);
+            if (!ductTouches.ContainsKey(root)) ductTouches[root] = new HashSet<string>();
+            if (joints.ContainsKey(otherI[i])) ductTouches[root].Add(otherI[i]);
+            if (joints.ContainsKey(otherJ[i])) ductTouches[root].Add(otherJ[i]);
         }
         for (int i = 0; i < otherI.Count; i++)
-            foreach (string p in new string[] { otherI[i], otherJ[i] })
+            for (int e = 0; e < 2; e++)
             {
+                string p = e == 0 ? otherI[i] : otherJ[i];
                 JointInfo ji;
                 if (!joints.TryGetValue(p, out ji)) continue;
-                int root = Find(op, oj[p]);
+                int root = Find(op, oj[e == 0 ? nodeI[i] : nodeJ[i]]);
+                bool g = grounded.Contains(root);
                 ji.Other++;
-                if (grounded.Contains(root)) ji.OtherGrounded = true;
-                if (ductTouches[root] >= 2) ji.OtherBrace = true;
-                if (("|" + ji.OtherSections + "|").IndexOf("|" + otherSec[i] + "|", StringComparison.Ordinal) < 0)
-                    ji.OtherSections = ji.OtherSections.Length == 0 ? otherSec[i] : ji.OtherSections + "|" + otherSec[i];
+                if (g) ji.OtherGrounded = true;
+                if (ductTouches[root].Count >= 2) ji.OtherBrace = true;
+                string tag = otherSec[i] + (g ? "(grounded)" : ductTouches[root].Count >= 2 ? "(brace)" : "(free)");
+                if (("|" + ji.OtherSections + "|").IndexOf("|" + tag + "|", StringComparison.Ordinal) < 0)
+                    ji.OtherSections = ji.OtherSections.Length == 0 ? tag : ji.OtherSections + "|" + tag;
             }
         int nl = 0; string[] links = null;
         Model.LinkObj.GetNameList(ref nl, ref links);
