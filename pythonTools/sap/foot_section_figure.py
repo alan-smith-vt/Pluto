@@ -20,9 +20,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from doc_figures import CONC, INK, MUTED, SOIL, Fig  # noqa: E402
+from study_palette import profile_colour  # noqa: E402
 from tankbuilder import TankModel, load_config, parse_s2k  # noqa: E402
-
-PALETTE = ["#2f6b9a", "#3f8f7a", "#8a9a2e", "#d08a1f", "#b4472b", "#6a2c8a"]
 
 
 def model_profile(cfg: Path, case: str, band: float) -> dict:
@@ -56,7 +55,7 @@ def model_profile(cfg: Path, case: str, band: float) -> dict:
     ks_rw = spec.ringwall_subgrade or spec.subgrade_modulus
     return {
         "name": s2k.stem, "ratio": ks_rw / spec.subgrade_modulus, "R": R, "C": spec.ringwall_width,
-        "A": spec.ringwall_depth, "tp": spec.baseplate_thickness,
+        "A": spec.ringwall_depth, "tp": spec.baseplate_thickness, "ks": spec.subgrade_modulus,
         "r": rings,
         "U3": [sum(u[r]) / len(u[r]) for r in rings],
         "V13": [sum(acc[r]["V13"]) / len(acc[r]["V13"]) for r in rings],
@@ -70,6 +69,7 @@ def fig(profiles: list[dict], labels: list[str], case: str, band: float, scale: 
     p0 = profiles[0]
     R, C, A = p0["R"], p0["C"], p0["A"]
     r0, r1 = R - band, R + C / 2 + 0.3
+    colours = [profile_colour(p) for p in profiles]      # one colour per run, shared across the study figures
     f = Fig(1000, 900, f"WALL FOOT SECTION — baseplate deflection, transverse shear and moment, {case}",
             "Three stacked panels on one radius axis through the wall foot: the deflected baseplate over the sand pad, ring wall and wall for six ring wall soil stiffnesses, then the plate transverse shear V13 and the meridional moment M11 against radius.")
     X0, X1 = 150, 940
@@ -87,7 +87,7 @@ def fig(profiles: list[dict], labels: list[str], case: str, band: float, scale: 
     f.line(f.X(R), y0, f.X(R), f.Y(zmax), stroke=INK, w=3)
     f.text(f.X(R) + 6, f.Y(zmax) + 14, "wall", size=10)
     f.text(f.X(R - C / 2) - 6, y0 - 6, "undeformed plate", fill=MUTED, size=9, anchor="end")
-    for (p, lab, col) in zip(profiles, labels, PALETTE):
+    for (p, lab, col) in zip(profiles, labels, colours):
         pts = [(r, u * scale) for r, u in zip(p["r"], p["U3"])]
         f.path("M" + " L".join(f"{f.X(r):.1f} {f.Y(z):.1f}" for r, z in pts), stroke=col, w=2)
         for r, z in pts:
@@ -122,7 +122,7 @@ def fig(profiles: list[dict], labels: list[str], case: str, band: float, scale: 
         f.text(X0, y_top - 24, subtitle, size=10, fill=MUTED)
     # legend
     lx, ly = X0 + 20, y_top + 8
-    for (p, lab, col) in zip(profiles, labels, PALETTE):
+    for (p, lab, col) in zip(profiles, labels, colours):
         f.line(lx, ly, lx + 26, ly, stroke=col, w=2.4)
         f.text(lx + 32, ly + 4, lab, size=10, fill=col)
         ly += 14
@@ -144,7 +144,7 @@ def fig(profiles: list[dict], labels: list[str], case: str, band: float, scale: 
         if peak_ticks:
             # one tick per curve at its extreme, with a light dotted lead line out to the peak point
             peaks = []
-            for (p, lab, col) in zip(profiles, labels, PALETTE):
+            for (p, lab, col) in zip(profiles, labels, colours):
                 r_pk, v_pk = max(zip(p["r"], p[key]), key=lambda t: abs(t[1]))
                 f.line(X0, f.Y(v_pk), f.X(r_pk), f.Y(v_pk), stroke=col, w=.7, dash="1 3")
                 f.line(X0 - 4, f.Y(v_pk), X0, f.Y(v_pk), stroke=col, w=1.2)
@@ -162,7 +162,7 @@ def fig(profiles: list[dict], labels: list[str], case: str, band: float, scale: 
                 if abs(y_lab - y_true) > 0.5:
                     f.line(X0 - 6, y_true, X0 - 12, y_lab, stroke=col, w=.6)
                 f.text(X0 - 14, y_lab + 3, txt, anchor="end", size=8, fill=col)
-        for (p, lab, col) in zip(profiles, labels, PALETTE):
+        for (p, lab, col) in zip(profiles, labels, colours):
             pts = list(zip(p["r"], p[key]))
             f.path("M" + " L".join(f"{f.X(r):.1f} {f.Y(v):.1f}" for r, v in pts), stroke=col, w=1.8)
             for r, v in pts:

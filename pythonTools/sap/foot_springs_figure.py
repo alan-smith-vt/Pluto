@@ -17,7 +17,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from base_support_figures import spring  # noqa: E402
-from doc_figures import CONC, GREEN, INK, MUTED, RUST, SOIL, STEEL, Fig  # noqa: E402
+from doc_figures import CONC, GREEN, INK, MUTED, SOIL, Fig  # noqa: E402
+from study_palette import run_colour  # noqa: E402
 from tankbuilder import TankModel, load_config, parse_s2k  # noqa: E402
 
 DEF_SCALE = 40.0   # displacement exaggeration for the deformed-shape overlay
@@ -54,8 +55,9 @@ def deformed_shape(m: TankModel, s2k: Path, case: str = "NL_HYDRO"):
     return plate, wall, rw
 
 
-def panel(f: Fig, m: TankModel, x0: float, x1: float, title: str, final: bool, shape=None) -> None:
+def panel(f: Fig, m: TankModel, x0: float, x1: float, title: str, final: bool, shape=None, run: str = "") -> None:
     s = m.spec
+    STEEL = RUST = run_colour(run)          # this panel's run colour: pad springs and the deformed shape
     R, C, A = s.radius, s.ringwall_width, s.ringwall_depth
     r0 = 30.6
     f.map(r0, R + C / 2 + 0.35, -A - 1.5, 2.6, x0, x1, 400, 60)
@@ -134,8 +136,8 @@ def main(argv=None) -> int:
     sh1 = deformed_shape(m1, s2k1) if (s2k1.parent / "results.s2k").exists() else None
     f = Fig(1000, 560, "SOIL SPRINGS AT THE WALL FOOT — as first modelled (left) and the final configuration (right)",
             "Two sections through the wall foot side by side. Left: flat pad springs, one soil spring under the ring wall centroid, the plate over the concrete on rigid contact rings. Right: pad springs graded by the Boussinesq factor toward the rim, a graded plate mesh at the concrete edge, and two soil springs at the ring wall faces at half stiffness each.")
-    panel(f, m0, 40, 470, "AS FIRST MODELLED: flat pad, point spring under the ring wall", False, sh0)
-    panel(f, m1, 540, 970, "FINAL: graded pad (× k_s at each ring), face springs, refined edge", True, sh1)
+    panel(f, m0, 40, 470, "AS FIRST MODELLED: flat pad, point spring under the ring wall", False, sh0, s2k0.stem)
+    panel(f, m1, 540, 970, "FINAL: graded pad (× k_s at each ring), face springs, refined edge", True, sh1, s2k1.stem)
     f.text(40, 470, "Both: pad springs k = k_s × tributary area, compression only, to fixed ground; plate joints over the concrete on GAP_BEARING contact links", fill=MUTED, size=10)
     f.text(40, 484, "(E_c × area / depth, ≈ 2000 × a pad spring) carried on rigid RINGWALL_ARM frames from the ring wall beam at its centroid; the shell line on GAP_CONTACT.", fill=MUTED, size=10)
     f.text(40, 504, "Left: dead load lifts the plate off the concrete between the rings; product settles pad and ring wall equally on equal springs, and the ring rolls toward the load.", fill=MUTED, size=10)

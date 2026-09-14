@@ -13,7 +13,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from doc_figures import CONC, INK, MUTED, SOIL, Fig  # noqa: E402
-from foot_section_figure import PALETTE, model_profile  # noqa: E402
+from foot_section_figure import model_profile  # noqa: E402
+from study_palette import profile_colour  # noqa: E402
 
 
 def main(argv=None) -> int:
@@ -53,7 +54,8 @@ def main(argv=None) -> int:
         f.text(f.X(r), y_bot + 16, str(r), anchor="middle", size=10, fill=MUTED)
     f.text((X0 + X1) / 2, y_bot + 32, "radius, ft", anchor="middle", size=10, fill=MUTED)
     ly = y_top + 26
-    for pr, lab, col in zip(profiles, labels, PALETTE):
+    for pr, lab in zip(profiles, labels):
+        col = profile_colour(pr)
         pts = list(zip(pr["r"], pr["U3"]))
         f.path("M" + " L".join(f"{f.X(r):.1f} {f.Y(u * 12):.1f}" for r, u in pts), stroke=col, w=1.8)
         for r, u in pts:

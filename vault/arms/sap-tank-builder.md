@@ -170,6 +170,10 @@ meant to be checked. Real project numbers live only in the gitignored `configs/*
 > model and draws `ringwall-sweep.svg`. `foot_section_figure.py <config>[=label] ... --out <dir>` draws the
 > wall foot section (sand, ring wall, wall to scale) with the deflected plate, V13 and M11 of
 > several models overlaid on one radius axis (`foot-section-<case>.svg`, `--name` to override).
+> Series colours in the study figures come from `study_palette.py` (one colour per run by model
+> name: original blue, graded teal, 16 × rim amber, pad 42.5 purple, sweeps on gradients between),
+> so a run keeps its colour across `pad_zone_study`, `dish_figure`, `foot_section_figure` and
+> `foot_springs_figure`.
 > **Ring wall face links** (`[ringwall] soil_links = "faces"`, 2026-09-11; needs `joints =
 > "elevations"`, `plate_bearing`, `support = "gap"`): the one `GAP_SOIL` link under the axis joint
 > becomes two at the inner and outer faces (r = R ∓ C/2, z = −A/2), k/2 each, on joints that
