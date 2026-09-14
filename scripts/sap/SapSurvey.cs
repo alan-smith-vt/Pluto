@@ -1,0 +1,465 @@
+// Read-only survey of an open SAP2000 model, plus an axis probe on a known cantilever.
+// C# 5, compiled by Add-Type under Windows PowerShell 5.1 against SAP2000v1.dll.
+// Survey never edits, runs or saves the attached model. AxisProbe builds its own model.
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Text;
+using SAP2000v1;
+
+public class SapSurvey
+{
+    const string ProgId = "CSI.SAP2000.API.SapObject";
+    static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+
+    public cOAPI Sap;
+    public cSapModel Model;
+    public bool Started;
+    public List<string> Warnings = new List<string>();
+
+    public static SapSurvey AttachOrStart(string exePath, bool attachOnly)
+    {
+        SapSurvey s = new SapSurvey();
+        try { s.Sap = (cOAPI)Marshal.GetActiveObject(ProgId); }
+        catch (COMException)
+        {
+            if (attachOnly) throw new Exception("No running SAP2000 to attach to: open the model in SAP first.");
+            cHelper helper = new Helper();
+            s.Sap = helper.CreateObject(exePath);
+            Check(s.Sap.ApplicationStart(), "ApplicationStart");
+            s.Sap.Visible();
+            s.Started = true;
+        }
+        s.Model = s.Sap.SapModel;
+        return s;
+    }
+
+    // Open a saved model (PowerShell cannot reach SapModel.File itself). run = analyse it first,
+    // which writes analysis files next to the model; the survey itself never needs that.
+    public void OpenModel(string path, bool run)
+    {
+        Check(Model.File.OpenFile(path), "OpenFile " + path);
+        if (run) Check(Model.Analyze.RunAnalysis(), "RunAnalysis");
+    }
+
+    public string Version() { string v = ""; double n = 0; Check(Model.GetVersion(ref v, ref n), "GetVersion"); return v; }
+
+    // ---------------------------------------------------------------- survey
+
+    // Writes summary.txt, materials.tsv, sections.tsv, frames.tsv, links.tsv, patterns.tsv,
+    // cases.tsv, combos.tsv, groups.tsv, and (if results exist) forces-sample.tsv.
+    public void Survey(string outDir, int sampleFrames)
+    {
+        Directory.CreateDirectory(outDir);
+        // Report in kip-in so section dimensions match the Mathcad inputs directly.
+        eUnits units = Model.GetPresentUnits();
+        Check(Model.SetPresentUnits(eUnits.kip_in_F), "SetPresentUnits");
+        try
+        {
+            StringBuilder sum = new StringBuilder();
+            sum.AppendLine("SapSurvey " + DateTime.Now.ToString("yyyy-MM-dd HH:mm", Inv));
+            sum.AppendLine("SAP version      " + Version());
+            sum.AppendLine("model file       " + Path.GetFileName(Model.GetModelFilename(true)));
+            sum.AppendLine("model units      " + units + "   (tables below are kip, in)");
+            sum.AppendLine("model locked     " + Model.GetModelIsLocked() + "   (true = analysed results may exist)");
+
+            sum.AppendLine(Materials(Path.Combine(outDir, "materials.tsv")));
+            sum.AppendLine(Sections(Path.Combine(outDir, "sections.tsv")));
+            sum.AppendLine(Frames(Path.Combine(outDir, "frames.tsv")));
+            sum.AppendLine(Links(Path.Combine(outDir, "links.tsv")));
+            sum.AppendLine(Joints());
+            sum.AppendLine(Patterns(Path.Combine(outDir, "patterns.tsv")));
+            sum.AppendLine(Cases(Path.Combine(outDir, "cases.tsv")));
+            sum.AppendLine(Combos(Path.Combine(outDir, "combos.tsv")));
+            sum.AppendLine(Groups(Path.Combine(outDir, "groups.tsv")));
+            sum.AppendLine(ForceSample(Path.Combine(outDir, "forces-sample.tsv"), sampleFrames));
+            sum.AppendLine();
+            sum.AppendLine("warnings: " + Warnings.Count);
+            foreach (string w in Warnings) sum.AppendLine("  " + w);
+            File.WriteAllText(Path.Combine(outDir, "summary.txt"), sum.ToString());
+        }
+        finally { Model.SetPresentUnits(units); }
+    }
+
+    string Materials(string path)
+    {
+        int n = 0; string[] names = null;
+        Model.PropMaterial.GetNameList(ref n, ref names);
+        List<string> rows = new List<string>();
+        rows.Add("Material\tType\tE_ksi\tmu\tAlpha\tFy_ksi\tFu_ksi");
+        for (int i = 0; i < n; i++)
+        {
+            eMatType type = eMatType.Steel; int color = 0; string notes = "", guid = "";
+            Model.PropMaterial.GetMaterial(names[i], ref type, ref color, ref notes, ref guid);
+            double e = 0, u = 0, a = 0, temp = 0;
+            string fy = "", fu = "";
+            if (Model.PropMaterial.GetMPIsotropic(names[i], ref e, ref u, ref a, ref temp) != 0) Warn("GetMPIsotropic " + names[i]);
+            if (type == eMatType.Steel)
+            {
+                double dfy = 0, dfu = 0, efy = 0, efu = 0, h = 0, sm = 0, sr = 0, fs = 0;
+                int sst = 0, hys = 0;
+                if (Model.PropMaterial.GetOSteel_1(names[i], ref dfy, ref dfu, ref efy, ref efu, ref sst, ref hys, ref h, ref sm, ref sr, ref fs, 0) == 0)
+                { fy = G(dfy); fu = G(dfu); }
+            }
+            rows.Add(Tab(names[i], type, G(e), G(u), G(a), fy, fu));
+        }
+        Write(path, rows);
+        return "materials        " + n;
+    }
+
+    string Sections(string path)
+    {
+        int n = 0; string[] names = null;
+        Model.PropFrame.GetNameList(ref n, ref names);
+        List<string> rows = new List<string>();
+        rows.Add("Section\tType\tMaterial\tt3_in\tt2_in\ttf_in\ttw_in\tA_in2\tAs2_in2\tAs3_in2\tJ_in4\tI22_in4\tI33_in4\tS22_in3\tS33_in3\tr22_in\tr33_in");
+        Dictionary<string, int> byType = new Dictionary<string, int>();
+        for (int i = 0; i < n; i++)
+        {
+            eFramePropType type = eFramePropType.I;
+            Model.PropFrame.GetTypeOAPI(names[i], ref type);
+            string key = type.ToString();
+            byType[key] = (byType.ContainsKey(key) ? byType[key] : 0) + 1;
+            string mat = "";
+            Model.PropFrame.GetMaterial(names[i], ref mat);
+            string t3 = "", t2 = "", tf = "", tw = "";
+            string file = "", m = "", notes = "", guid = ""; int color = 0;
+            double d3 = 0, d2 = 0, df = 0, dw = 0;
+            if (type == eFramePropType.Box && Model.PropFrame.GetTube(names[i], ref file, ref m, ref d3, ref d2, ref df, ref dw, ref color, ref notes, ref guid) == 0)
+            { t3 = G(d3); t2 = G(d2); tf = G(df); tw = G(dw); }
+            else if (type == eFramePropType.Rectangular && Model.PropFrame.GetRectangle(names[i], ref file, ref m, ref d3, ref d2, ref color, ref notes, ref guid) == 0)
+            { t3 = G(d3); t2 = G(d2); }
+            double A = 0, As2 = 0, As3 = 0, J = 0, I22 = 0, I33 = 0, S22 = 0, S33 = 0, Z22 = 0, Z33 = 0, r22 = 0, r33 = 0;
+            if (Model.PropFrame.GetSectProps(names[i], ref A, ref As2, ref As3, ref J, ref I22, ref I33, ref S22, ref S33, ref Z22, ref Z33, ref r22, ref r33) != 0)
+                Warn("GetSectProps " + names[i]);
+            rows.Add(Tab(names[i], type, mat, t3, t2, tf, tw, G(A), G(As2), G(As3), G(J), G(I22), G(I33), G(S22), G(S33), G(r22), G(r33)));
+        }
+        Write(path, rows);
+        List<string> parts = new List<string>();
+        foreach (KeyValuePair<string, int> kv in byType) parts.Add(kv.Key + "=" + kv.Value);
+        return "frame sections   " + n + "   by type: " + string.Join(", ", parts);
+    }
+
+    // One row per frame object: ends, length, section, local axes as global unit vectors, releases.
+    string Frames(string path)
+    {
+        int n = 0; string[] names = null;
+        Model.FrameObj.GetNameList(ref n, ref names);
+        List<string> rows = new List<string>();
+        rows.Add("Frame\tJointI\tJointJ\tLength_in\tSection\tAngle_deg\tAdvancedAxes\tL1x\tL1y\tL1z\tL2x\tL2y\tL2z\tL3x\tL3y\tL3z\tReleaseI\tReleaseJ");
+        int advanced = 0, rotated = 0, released = 0, vertical = 0;
+        for (int i = 0; i < n; i++)
+        {
+            string pi = "", pj = "";
+            Model.FrameObj.GetPoints(names[i], ref pi, ref pj);
+            double xi = 0, yi = 0, zi = 0, xj = 0, yj = 0, zj = 0;
+            Model.PointObj.GetCoordCartesian(pi, ref xi, ref yi, ref zi, "Global");
+            Model.PointObj.GetCoordCartesian(pj, ref xj, ref yj, ref zj, "Global");
+            double len = Math.Sqrt((xj - xi) * (xj - xi) + (yj - yi) * (yj - yi) + (zj - zi) * (zj - zi));
+            string sec = "", auto = "";
+            Model.FrameObj.GetSection(names[i], ref sec, ref auto);
+            double ang = 0; bool adv = false;
+            Model.FrameObj.GetLocalAxes(names[i], ref ang, ref adv);
+            if (adv) advanced++;
+            if (Math.Abs(ang) > 1e-9) rotated++;
+            // Transformation matrix is row-major (global = T * local): its COLUMNS are local 1/2/3 in global.
+            double[] tm = new double[9];
+            if (Model.FrameObj.GetTransformationMatrix(names[i], ref tm, true) != 0) Warn("GetTransformationMatrix " + names[i]);
+            if (len > 0 && Math.Abs(zj - zi) / len > 0.999) vertical++;
+            bool[] ii = new bool[6], jj = new bool[6]; double[] si = new double[6], sj = new double[6];
+            Model.FrameObj.GetReleases(names[i], ref ii, ref jj, ref si, ref sj);
+            string ri = Rel(ii), rj = Rel(jj);
+            if (ri != "-" || rj != "-") released++;
+            rows.Add(Tab(names[i], pi, pj, G(len), sec, G(ang), adv,
+                G(tm[0]), G(tm[3]), G(tm[6]), G(tm[1]), G(tm[4]), G(tm[7]), G(tm[2]), G(tm[5]), G(tm[8]), ri, rj));
+        }
+        Write(path, rows);
+        return F("frames           {0}   angle<>0: {1}   advanced axes: {2}   with end releases: {3}   vertical: {4}", n, rotated, advanced, released, vertical);
+    }
+
+    static string Rel(bool[] r)
+    {
+        string[] dof = { "P", "V2", "V3", "T", "M2", "M3" };
+        List<string> on = new List<string>();
+        for (int k = 0; k < 6 && k < r.Length; k++) if (r[k]) on.Add(dof[k]);
+        return on.Count == 0 ? "-" : string.Join("+", on);
+    }
+
+    string Links(string path)
+    {
+        int n = 0; string[] names = null;
+        Model.LinkObj.GetNameList(ref n, ref names);
+        List<string> rows = new List<string>();
+        rows.Add("Link\tJointI\tJointJ\tProperty");
+        Dictionary<string, int> byProp = new Dictionary<string, int>();
+        for (int i = 0; i < n; i++)
+        {
+            string pi = "", pj = "", prop = "";
+            Model.LinkObj.GetPoints(names[i], ref pi, ref pj);
+            Model.LinkObj.GetProperty(names[i], ref prop);
+            byProp[prop] = (byProp.ContainsKey(prop) ? byProp[prop] : 0) + 1;
+            rows.Add(Tab(names[i], pi, pj, prop));
+        }
+        Write(path, rows);
+        List<string> parts = new List<string>();
+        foreach (KeyValuePair<string, int> kv in byProp) parts.Add(kv.Key + "=" + kv.Value);
+        return "links            " + n + (parts.Count > 0 ? "   by property: " + string.Join(", ", parts) : "");
+    }
+
+    string Joints()
+    {
+        int n = 0; string[] names = null;
+        Model.PointObj.GetNameList(ref n, ref names);
+        int restrained = 0, springs = 0, constrained = 0;
+        for (int i = 0; i < n; i++)
+        {
+            bool[] r = new bool[6];
+            Model.PointObj.GetRestraint(names[i], ref r);
+            foreach (bool b in r) if (b) { restrained++; break; }
+            double[] k = new double[6];
+            if (Model.PointObj.GetSpring(names[i], ref k) == 0) foreach (double v in k) if (v != 0) { springs++; break; }
+            int nc = 0; string[] pn = null, cn = null;
+            if (Model.PointObj.GetConstraint(names[i], ref nc, ref pn, ref cn, eItemType.Objects) == 0 && nc > 0) constrained++;
+        }
+        return F("joints           {0}   restrained: {1}   with springs: {2}   in constraints: {3}", n, restrained, springs, constrained);
+    }
+
+    string Patterns(string path)
+    {
+        int n = 0; string[] names = null;
+        Model.LoadPatterns.GetNameList(ref n, ref names);
+        List<string> rows = new List<string>();
+        rows.Add("Pattern\tType\tSelfWtMult");
+        for (int i = 0; i < n; i++)
+        {
+            eLoadPatternType t = eLoadPatternType.Dead; double sw = 0;
+            Model.LoadPatterns.GetLoadType(names[i], ref t);
+            Model.LoadPatterns.GetSelfWTMultiplier(names[i], ref sw);
+            rows.Add(Tab(names[i], t, G(sw)));
+        }
+        Write(path, rows);
+        return "load patterns    " + n;
+    }
+
+    string Cases(string path)
+    {
+        int n = 0; string[] names = null;
+        Model.LoadCases.GetNameList(ref n, ref names);
+        List<string> rows = new List<string>();
+        rows.Add("Case\tType\tSubType\tRunFlag");
+        int nonlinear = 0;
+        for (int i = 0; i < n; i++)
+        {
+            eLoadCaseType t = eLoadCaseType.LinearStatic; int sub = 0;
+            Model.LoadCases.GetTypeOAPI(names[i], ref t, ref sub);
+            string tn = t.ToString();
+            if (tn.IndexOf("Nonlinear", StringComparison.OrdinalIgnoreCase) >= 0) nonlinear++;
+            rows.Add(Tab(names[i], tn, sub, ""));
+        }
+        Write(path, rows);
+        return "load cases       " + n + "   nonlinear: " + nonlinear;
+    }
+
+    string Combos(string path)
+    {
+        int n = 0; string[] names = null;
+        Model.RespCombo.GetNameList(ref n, ref names);
+        List<string> rows = new List<string>();
+        rows.Add("Combo\tComboType\tItemType\tItem\tScale");
+        string[] ctype = { "LinearAdditive", "Envelope", "AbsoluteAdditive", "SRSS", "RangeAdditive" };
+        for (int i = 0; i < n; i++)
+        {
+            int t = 0;
+            Model.RespCombo.GetTypeOAPI(names[i], ref t);
+            int m = 0; eCNameType[] it = null; string[] items = null; double[] sf = null;
+            Model.RespCombo.GetCaseList(names[i], ref m, ref it, ref items, ref sf);
+            string tn = t >= 0 && t < ctype.Length ? ctype[t] : t.ToString(Inv);
+            if (m == 0) rows.Add(Tab(names[i], tn, "", "", ""));
+            for (int k = 0; k < m; k++) rows.Add(Tab(names[i], tn, it[k], items[k], G(sf[k])));
+        }
+        Write(path, rows);
+        return "combinations     " + n;
+    }
+
+    string Groups(string path)
+    {
+        int n = 0; string[] names = null;
+        Model.GroupDef.GetNameList(ref n, ref names);
+        List<string> rows = new List<string>();
+        rows.Add("Group\tFrames\tJoints\tLinks");
+        for (int i = 0; i < n; i++)
+        {
+            int m = 0; int[] types = null; string[] objs = null;
+            Model.GroupDef.GetAssignments(names[i], ref m, ref types, ref objs);
+            int fr = 0, jo = 0, li = 0;
+            for (int k = 0; k < m; k++) { if (types[k] == 2) fr++; else if (types[k] == 1) jo++; else if (types[k] == 7) li++; }
+            rows.Add(Tab(names[i], fr, jo, li));
+        }
+        Write(path, rows);
+        return "groups           " + n;
+    }
+
+    // Frame forces for the first few frames, every case and combo, if the model has results.
+    string ForceSample(string path, int sampleFrames)
+    {
+        int n = 0; string[] frames = null;
+        Model.FrameObj.GetNameList(ref n, ref frames);
+        if (!Model.GetModelIsLocked() || n == 0 || sampleFrames <= 0) return "force sample     skipped (model not analysed or -SampleFrames 0)";
+        Model.Results.Setup.DeselectAllCasesAndCombosForOutput();
+        int nc = 0; string[] cases = null;
+        Model.LoadCases.GetNameList(ref nc, ref cases);
+        for (int i = 0; i < nc; i++) Model.Results.Setup.SetCaseSelectedForOutput(cases[i]);
+        int nb = 0; string[] combos = null;
+        Model.RespCombo.GetNameList(ref nb, ref combos);
+        for (int i = 0; i < nb; i++) Model.Results.Setup.SetComboSelectedForOutput(combos[i]);
+        List<string> rows = new List<string>();
+        rows.Add("Frame\tStation_in\tOutputCase\tStepType\tP_kip\tV2_kip\tV3_kip\tT_kipin\tM2_kipin\tM3_kipin");
+        for (int f = 0; f < Math.Min(sampleFrames, n); f++)
+        {
+            int r = 0;
+            string[] obj = null, elm = null, cas = null, step = null;
+            double[] objSta = null, elmSta = null, stepNum = null, p = null, v2 = null, v3 = null, t = null, m2 = null, m3 = null;
+            if (Model.Results.FrameForce(frames[f], eItemTypeElm.ObjectElm, ref r, ref obj, ref objSta, ref elm, ref elmSta,
+                  ref cas, ref step, ref stepNum, ref p, ref v2, ref v3, ref t, ref m2, ref m3) != 0) { Warn("FrameForce " + frames[f]); continue; }
+            for (int i = 0; i < r; i++)
+                rows.Add(Tab(obj[i], G(objSta[i]), cas[i], step[i], G(p[i]), G(v2[i]), G(v3[i]), G(t[i]), G(m2[i]), G(m3[i])));
+        }
+        Write(path, rows);
+        return "force sample     " + Math.Min(sampleFrames, n) + " frames, " + (rows.Count - 1) + " rows";
+    }
+
+    // ---------------------------------------------------------------- axis probe
+
+    // Two 120 in cantilevers along global X, fixed at x = 0, Box/Tube 24 in (t3) x 12 in (t2), 0.25 in walls.
+    // Frame 1: default local axes. Frame 2: local axis angle 90. Four load patterns at each tip:
+    // AX = +10 kip global X, GY = +1 kip global Y, GZ = +1 kip global Z, TX = +10 kip-in about global X.
+    // Output: fixed-end forces per frame and case, tip deflection vs P L^3 / 3 E I22 and I33.
+    public static void WriteProbeS2k(string path, string version)
+    {
+        List<string> L = new List<string>();
+        L.Add("File generated by SapSurvey.cs (Pluto) - axis probe"); L.Add("");
+        L.Add("TABLE:  \"PROGRAM CONTROL\"");
+        L.Add("   ProgramName=SAP2000   Version=" + version + "   CurrUnits=\"Kip, in, F\"   MergeTol=0.001"); L.Add("");
+        L.Add("TABLE:  \"MATERIAL PROPERTIES 01 - GENERAL\"");
+        L.Add("   Material=STEEL   Type=Steel   SymType=Isotropic   TempDepend=No   Color=Cyan"); L.Add("");
+        L.Add("TABLE:  \"MATERIAL PROPERTIES 02 - BASIC MECHANICAL PROPERTIES\"");
+        L.Add("   Material=STEEL   UnitWeight=0   UnitMass=0   E1=29000   G12=11153.85   U12=0.3   A1=6.5e-06"); L.Add("");
+        L.Add("TABLE:  \"FRAME SECTION PROPERTIES 01 - GENERAL\"");
+        L.Add("   SectionName=DUCT   Material=STEEL   Shape=Box/Tube   t3=24   t2=12   tf=0.25   tw=0.25   Color=Yellow"); L.Add("");
+        L.Add("TABLE:  \"JOINT COORDINATES\"");
+        L.Add("   Joint=1   CoordSys=GLOBAL   CoordType=Cartesian   XorR=0     Y=0     Z=0");
+        L.Add("   Joint=2   CoordSys=GLOBAL   CoordType=Cartesian   XorR=120   Y=0     Z=0");
+        L.Add("   Joint=3   CoordSys=GLOBAL   CoordType=Cartesian   XorR=0     Y=100   Z=0");
+        L.Add("   Joint=4   CoordSys=GLOBAL   CoordType=Cartesian   XorR=120   Y=100   Z=0"); L.Add("");
+        L.Add("TABLE:  \"CONNECTIVITY - FRAME\"");
+        L.Add("   Frame=1   JointI=1   JointJ=2   IsCurved=No");
+        L.Add("   Frame=2   JointI=3   JointJ=4   IsCurved=No"); L.Add("");
+        L.Add("TABLE:  \"FRAME SECTION ASSIGNMENTS\"");
+        L.Add("   Frame=1   SectionType=Box/Tube   AutoSelect=N.A.   AnalSect=DUCT   DesignSect=DUCT   MatProp=Default");
+        L.Add("   Frame=2   SectionType=Box/Tube   AutoSelect=N.A.   AnalSect=DUCT   DesignSect=DUCT   MatProp=Default"); L.Add("");
+        L.Add("TABLE:  \"FRAME LOCAL AXES ASSIGNMENTS 1 - TYPICAL\"");
+        L.Add("   Frame=2   Angle=90   AdvanceAxes=No"); L.Add("");
+        L.Add("TABLE:  \"JOINT RESTRAINT ASSIGNMENTS\"");
+        L.Add("   Joint=1   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes");
+        L.Add("   Joint=3   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes"); L.Add("");
+        L.Add("TABLE:  \"LOAD PATTERN DEFINITIONS\"");
+        foreach (string p in new string[] { "AX", "GY", "GZ", "TX" })
+            L.Add("   LoadPat=" + p + "   DesignType=Other   SelfWtMult=0");
+        L.Add("");
+        L.Add("TABLE:  \"JOINT LOADS - FORCE\"");
+        foreach (string j in new string[] { "2", "4" })
+        {
+            L.Add("   Joint=" + j + "   LoadPat=AX   CoordSys=GLOBAL   F1=10   F2=0   F3=0   M1=0    M2=0   M3=0");
+            L.Add("   Joint=" + j + "   LoadPat=GY   CoordSys=GLOBAL   F1=0    F2=1   F3=0   M1=0    M2=0   M3=0");
+            L.Add("   Joint=" + j + "   LoadPat=GZ   CoordSys=GLOBAL   F1=0    F2=0   F3=1   M1=0    M2=0   M3=0");
+            L.Add("   Joint=" + j + "   LoadPat=TX   CoordSys=GLOBAL   F1=0    F2=0   F3=0   M1=10   M2=0   M3=0");
+        }
+        L.Add("");
+        L.Add("TABLE:  \"LOAD CASE DEFINITIONS\"");
+        foreach (string p in new string[] { "AX", "GY", "GZ", "TX" })
+            L.Add("   Case=" + p + "   Type=LinStatic   InitialCond=Zero");
+        L.Add("");
+        L.Add("TABLE:  \"CASE - STATIC 1 - LOAD ASSIGNMENTS\"");
+        foreach (string p in new string[] { "AX", "GY", "GZ", "TX" })
+            L.Add("   Case=" + p + "   LoadType=\"Load pattern\"   LoadName=" + p + "   LoadSF=1");
+        L.Add("");
+        L.Add("END TABLE DATA"); L.Add("");
+        File.WriteAllText(path, string.Join("\r\n", L));
+    }
+
+    public string RunProbe(string s2k)
+    {
+        Check(Model.File.OpenFile(s2k), "OpenFile " + s2k);
+        Check(Model.SetPresentUnits(eUnits.kip_in_F), "SetPresentUnits");
+        Check(Model.File.Save(Path.ChangeExtension(s2k, ".sdb")), "Save");
+        Check(Model.Analyze.RunAnalysis(), "RunAnalysis");
+
+        double A = 0, As2 = 0, As3 = 0, J = 0, I22 = 0, I33 = 0, S22 = 0, S33 = 0, Z22 = 0, Z33 = 0, r22 = 0, r33 = 0;
+        Check(Model.PropFrame.GetSectProps("DUCT", ref A, ref As2, ref As3, ref J, ref I22, ref I33, ref S22, ref S33, ref Z22, ref Z33, ref r22, ref r33), "GetSectProps");
+        StringBuilder sb = new StringBuilder();
+        sb.AppendLine("AXIS PROBE   SAP " + Version() + "   units kip, in");
+        sb.AppendLine("section DUCT  Box/Tube t3=24 t2=12 tf=tw=0.25");
+        sb.AppendLine(F("  A={0:0.###}  I22={1:0.#}  I33={2:0.#}  S22={3:0.#}  S33={4:0.#}  As2={5:0.###}  As3={6:0.###}", A, I22, I33, S22, S33, As2, As3));
+        sb.AppendLine("  (I33 > I22 means t3 = depth measured along local 2, bending M3 about local 3)");
+        sb.AppendLine();
+
+        foreach (string fr in new string[] { "1", "2" })
+        {
+            double[] tm = new double[9];
+            Model.FrameObj.GetTransformationMatrix(fr, ref tm, true);
+            sb.AppendLine(F("frame {0}: local1=({1:0},{2:0},{3:0}) local2=({4:0},{5:0},{6:0}) local3=({7:0},{8:0},{9:0})  [global X,Y,Z]",
+                fr, tm[0], tm[3], tm[6], tm[1], tm[4], tm[7], tm[2], tm[5], tm[8]));
+        }
+        sb.AppendLine();
+        sb.AppendLine("frame  case   station    P        V2       V3       T        M2        M3      tipU1    tipU2    tipU3");
+        string[] tips = { "2", "4" };
+        string[] frs = { "1", "2" };
+        foreach (string cs in new string[] { "AX", "GY", "GZ", "TX" })
+        {
+            Model.Results.Setup.DeselectAllCasesAndCombosForOutput();
+            Model.Results.Setup.SetCaseSelectedForOutput(cs);
+            for (int f = 0; f < 2; f++)
+            {
+                int r = 0;
+                string[] obj = null, elm = null, cas = null, step = null;
+                double[] objSta = null, elmSta = null, stepNum = null, p = null, v2 = null, v3 = null, t = null, m2 = null, m3 = null;
+                Check(Model.Results.FrameForce(frs[f], eItemTypeElm.ObjectElm, ref r, ref obj, ref objSta, ref elm, ref elmSta,
+                      ref cas, ref step, ref stepNum, ref p, ref v2, ref v3, ref t, ref m2, ref m3), "FrameForce");
+                int k = 0;   // station 0 = fixed end
+                for (int i = 0; i < r; i++) if (objSta[i] < objSta[k]) k = i;
+                int nj = 0;
+                string[] jo = null, je = null, jc = null, js = null;
+                double[] jsn = null, u1 = null, u2 = null, u3 = null, q1 = null, q2 = null, q3 = null;
+                Model.Results.JointDispl(tips[f], eItemTypeElm.ObjectElm, ref nj, ref jo, ref je, ref jc, ref js, ref jsn, ref u1, ref u2, ref u3, ref q1, ref q2, ref q3);
+                sb.AppendLine(F("{0,-6} {1,-5} {2,7:0.0} {3,8:0.###} {4,8:0.###} {5,8:0.###} {6,8:0.###} {7,9:0.###} {8,9:0.###} {9,8:0.#####} {10,8:0.#####} {11,8:0.#####}",
+                    frs[f], cs, objSta[k], p[k], v2[k], v3[k], t[k], m2[k], m3[k],
+                    nj > 0 ? u1[0] : double.NaN, nj > 0 ? u2[0] : double.NaN, nj > 0 ? u3[0] : double.NaN));
+            }
+        }
+        sb.AppendLine();
+        sb.AppendLine(F("hand check, 1 kip tip load, L = 120 in, E = 29000:  PL^3/3EI22 = {0:0.#####} in   PL^3/3EI33 = {1:0.#####} in   (plus shear deformation)",
+            1728000.0 / (3 * 29000 * I22), 1728000.0 / (3 * 29000 * I33)));
+        sb.AppendLine("joint displacements are in joint local axes = global unless the joint was rotated.");
+        sb.AppendLine("expected (SAP 26.3.0, 2026-09-14): frame 1 local2=(0,0,1) local3=(0,-1,0); GZ on frame 1 -> V2=+1, M3=+120, tipU3 ~0.0152 (I33);");
+        sb.AppendLine("  GY on frame 1 -> V3=-1, M2=-120, tipU2 ~0.0434 (I22); AX -> P=+10 (tension positive); TX -> T=+10.");
+        return sb.ToString();
+    }
+
+    public void Close() { if (Started) Sap.ApplicationExit(false); }
+
+    // ---------------------------------------------------------------- helpers
+
+    void Warn(string w) { if (Warnings.Count < 50) Warnings.Add(w); }
+    static string G(double v) { return v.ToString("G6", Inv); }
+    static string F(string fmt, params object[] args) { return string.Format(Inv, fmt, args); }
+    static string Tab(params object[] cells)
+    {
+        string[] s = new string[cells.Length];
+        for (int i = 0; i < cells.Length; i++) s[i] = Convert.ToString(cells[i], Inv);
+        return string.Join("\t", s);
+    }
+    static void Write(string path, List<string> rows) { File.WriteAllText(path, string.Join("\r\n", rows) + "\r\n"); }
+    static void Check(int ret, string what) { if (ret != 0) throw new Exception(what + " returned " + ret); }
+}
