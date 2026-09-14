@@ -41,23 +41,26 @@ def polygon_properties(pts: list[tuple[float, float]]) -> dict:
     return dict(A=a, cy=cy, cz=cz, Iyy=iyy, Izz=izz, Iyz=iyz)
 
 
-def eave_ring_section(leg: float, t: float) -> dict:
-    """General-section fields for the eave ring: horizontal plate 2t thick
-    (open-section J = sum b t^3 / 3), AS2 = the down leg (shear along local 2
-    = vertical), AS3 = the horizontal plate. Properties are taken in SAP's
-    own axes (local 3 = -viewer y, see eave_ring_outline), which only flips
-    the sign of I23."""
-    j = leg * (2 * t) ** 3 / 3.0 + (leg - t) * t ** 3 / 3.0
-    sap_axes = [(-y, z) for y, z in eave_ring_outline(leg, t)]
-    return general_section(sap_axes, j, (leg - t) * t, 2 * leg * t)
+def eave_ring_section(leg: float, t: float, bar: bool = False) -> dict:
+    """General-section fields for the eave ring (open-section J = sum b t^3 / 3),
+    AS2 = the down leg (shear along local 2 = vertical), AS3 = the horizontal
+    plate (t thick for the single angle, 2t with the flat bar). Properties are
+    taken in SAP's own axes (local 3 = -viewer y, see eave_ring_outline), which
+    only flips the sign of I23."""
+    tp = 2 * t if bar else t
+    j = leg * tp ** 3 / 3.0 + (leg - t) * t ** 3 / 3.0
+    sap_axes = [(-y, z) for y, z in eave_ring_outline(leg, t, bar)]
+    return general_section(sap_axes, j, (leg - t) * t, leg * tp)
 
 
-def eave_ring_outline(leg: float, t: float) -> list[tuple[float, float]]:
-    """Eave compression ring: an equal-leg angle on top of the wall, its
+def eave_ring_outline(leg: float, t: float, bar: bool = False) -> list[tuple[float, float]]:
+    """Eave compression ring: one equal-leg angle on top of the wall, its
     horizontal leg running OUTWARD and its other leg hanging down flush on
-    the outside of the shell, plus a flat bar of the same leg width on top of
-    the horizontal leg (the second angle with its upstanding leg removed),
-    so the horizontal plate is 2t thick. An L, not a Z (2026-09-04).
+    the outside of the shell (the single bottom L, 2026-09-14). With bar=True
+    a flat bar of the same leg width sits on the horizontal leg (the second
+    angle of the original pair with its upstanding leg removed), so the
+    horizontal plate is 2t thick; that was the section of every model up to
+    2026-09-14.
 
     Viewer section frame (y, z): z = up, y = up x member axis = INTO the tank
     for the counter-clockwise ring, so outward is -y. The outline is anchored
@@ -66,7 +69,8 @@ def eave_ring_outline(leg: float, t: float) -> list[tuple[float, float]]:
     is centroidal regardless; the small eccentricity to the joint is ignored).
     SAP's local 3 is -y. Points run counter-clockwise."""
     L = leg
-    return [(0.0, t - L), (0.0, 2 * t), (-L, 2 * t), (-L, 0.0), (-t, 0.0), (-t, t - L)]
+    tp = 2 * t if bar else t
+    return [(0.0, t - L), (0.0, tp), (-L, tp), (-L, 0.0), (-t, 0.0), (-t, t - L)]
 
 
 def general_section(pts: list[tuple[float, float]], j: float, as2: float, as3: float) -> dict:

@@ -293,15 +293,27 @@ def test_roof_ring_frames_close_the_eave():
     assert [i for i, _ in fr] == m.top_joints and fr[-1][1] == m.top_joints[0]
     assert set(m.frame_section.values()) == {"ROOF_RING"}
     sec = m.frame_sections["ROOF_RING"]
-    assert sec["Shape"] == "General" and sec["t3"] == pytest.approx(0.28125) and sec["t2"] == pytest.approx(0.25)
-    assert sec["Area"] == pytest.approx(3 * 0.25 * 0.03125 - 0.03125 ** 2)
+    assert sec["Shape"] == "General" and sec["t3"] == pytest.approx(0.25) and sec["t2"] == pytest.approx(0.25)
+    assert sec["Area"] == pytest.approx(2 * 0.25 * 0.03125 - 0.03125 ** 2)
+    bar = capped(roof_ring_bar=True).frame_sections["ROOF_RING"]
+    assert bar["t3"] == pytest.approx(0.28125) and bar["Area"] == pytest.approx(3 * 0.25 * 0.03125 - 0.03125 ** 2)
     assert not capped(roof_ring=False).frames
     assert "ROOF_RING" in m.frame_outlines
 
 
 def test_eave_ring_section_properties():
     leg, t = 0.25, 0.03125
-    pts = eave_ring_outline(leg, t)
+    # single angle (default): a plain L, t thick everywhere
+    single = polygon_properties(eave_ring_outline(leg, t))
+    assert single["A"] == pytest.approx(2 * leg * t - t * t)
+    zs1 = [z for _, z in eave_ring_outline(leg, t)]
+    assert max(zs1) == pytest.approx(t) and min(zs1) == pytest.approx(t - leg)
+    g1 = eave_ring_section(leg, t)
+    assert g1["t3"] == pytest.approx(leg) and g1["AS3"] == pytest.approx(leg * t)
+    assert g1["TorsConst"] == pytest.approx(leg * t ** 3 / 3 + (leg - t) * t ** 3 / 3)
+    assert g1["I33"] < eave_ring_section(leg, t, bar=True)["I33"]
+    # with the flat bar: the pre-2026-09-14 section, 2t horizontal plate
+    pts = eave_ring_outline(leg, t, bar=True)
     p = polygon_properties(pts)
     assert len(pts) == 6
     assert p["A"] == pytest.approx(3 * leg * t - t * t)
@@ -315,7 +327,7 @@ def test_eave_ring_section_properties():
     plate = leg * (2 * t) ** 3 / 12 + 2 * leg * t * (t - p["cz"]) ** 2
     down = t * (leg - t) ** 3 / 12 + t * (leg - t) * ((t - leg) / 2 - p["cz"]) ** 2
     assert p["Iyy"] == pytest.approx(plate + down, rel=1e-9)
-    g = eave_ring_section(leg, t)
+    g = eave_ring_section(leg, t, bar=True)
     assert g["t3"] == pytest.approx(leg + t) and g["t2"] == pytest.approx(leg)
     assert g["I33"] == pytest.approx(p["Iyy"]) and g["I22"] == pytest.approx(p["Izz"])
     assert g["S33"] == pytest.approx(p["Iyy"] / max(abs(max(zs) - p["cz"]), abs(min(zs) - p["cz"])))

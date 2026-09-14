@@ -39,7 +39,8 @@ enabled      = true
 crown_radius = 48.0     # ft, spherical radius (>= geometry.radius); 0.8 D here
 thickness    = 0.0208333
 n_r          = 6
-ring          = true    # eave compression ring: (2) equal-leg angles back to back as a Z
+ring          = true    # eave compression ring: one equal-leg angle, horizontal leg out, other leg down the shell
+# ring_bar    = true    # add a flat bar on the horizontal leg (2t plate): the pre-2026-09-14 two-angle section
 ring_leg      = 0.25    # ft = 3 in
 ring_thickness = 0.03125 # ft = 3/8 in
 

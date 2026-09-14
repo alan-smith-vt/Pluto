@@ -28,9 +28,10 @@ meant to be checked. Real project numbers live only in the gitignored `configs/*
 > - **Baseplate** `[baseplate]` — polar cap on the base ring (quad rings + centre fan),
 >   local 3 up, full head on face `Top`.
 > - **Roof** `[roof]` — spherical cap on the top ring from a crown radius; eave ring
->   `ROOF_RING` = an equal angle on the wall top (horizontal leg outward, other leg down
->   flush outside the shell) plus a flat bar on the horizontal leg, so the plate is 2t
->   thick (an L; the second angle's upstanding lip was dropped 2026-09-04): SAP `General`
+>   `ROOF_RING` = one equal angle on the wall top (horizontal leg outward, other leg down
+>   flush outside the shell; the single bottom L, 2026-09-14). `ring_bar = true` adds a flat bar
+>   on the horizontal leg, plate 2t thick, the section of every model before 2026-09-14 (the
+>   second angle's upstanding lip had been dropped 2026-09-04); those configs carry it explicitly: SAP `General`
 >   section from `section.py`, viewer outline via `<model>.outlines.txt`.
 > - **Support layer** `[foundation] mode = "gap"` — fixed `GROUND` joint coincident with
 >   every baseplate joint, zero-length compression-only Gap link (I = ground, J = tank),

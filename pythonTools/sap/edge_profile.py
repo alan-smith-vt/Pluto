@@ -50,7 +50,7 @@ def wall_expected(model, z):
         rise = model.roof_rise
         w_roof = 2.0 * math.pi * s.roof_crown_radius * rise * s.roof_thickness * s.mat_unit_weight
         if s.roof_ring:
-            w_roof += eave_ring_section(s.roof_ring_leg, s.roof_ring_thickness)["Area"] * s.mat_unit_weight * circ
+            w_roof += eave_ring_section(s.roof_ring_leg, s.roof_ring_thickness, s.roof_ring_bar)["Area"] * s.mat_unit_weight * circ
     above = 0.0
     z0 = 0.0
     for c in s.plate_courses:

@@ -433,13 +433,13 @@ class TankModel:
         self.sections["ROOF"] = s.roof_thickness
         self._polar_cap("roof", self.top_joints, self.cap_radii(s.roof_n_r, "roof_rim"), self.roof_z, "ROOF", None)
         if s.roof_ring:
-            # compression ring at the eave: an angle on the wall top plus a flat
-            # bar on its horizontal leg (an L) -- SAP has no such shape, so a General
-            # section carries the computed properties and the outline goes to
-            # the viewer via the .outlines.txt sidecar.
-            outline = eave_ring_outline(s.roof_ring_leg, s.roof_ring_thickness)
+            # compression ring at the eave: one angle on the wall top, horizontal
+            # leg out (ring_bar adds a flat bar on that leg). Written as a General
+            # section with the computed properties, anchored at the shell line; the
+            # outline goes to the viewer via the .outlines.txt sidecar.
+            outline = eave_ring_outline(s.roof_ring_leg, s.roof_ring_thickness, s.roof_ring_bar)
             self.frame_outlines["ROOF_RING"] = outline
-            self.frame_sections["ROOF_RING"] = eave_ring_section(s.roof_ring_leg, s.roof_ring_thickness)
+            self.frame_sections["ROOF_RING"] = eave_ring_section(s.roof_ring_leg, s.roof_ring_thickness, s.roof_ring_bar)
             top = self.top_joints
             frames = self.ids.claim("frame", "roof_ring", s.n_theta)
             for k, fid in enumerate(frames):

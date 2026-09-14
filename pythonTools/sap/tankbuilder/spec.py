@@ -84,7 +84,8 @@ class TankSpec:
     roof_crown_radius: float = 48.0       # ft (0.8 D for the default tank)
     roof_thickness: float = 0.03125       # ft (3/8 in)
     roof_n_r: int = 8
-    roof_ring: bool = True                # eave compression ring: angle + flat bar (L, 2t horizontal plate)
+    roof_ring: bool = True                # eave compression ring: one angle, horizontal leg out, other leg down the shell
+    roof_ring_bar: bool = False           # + a flat bar on the horizontal leg (2t plate); the pre-2026-09-14 section
     roof_ring_leg: float = 0.25           # ft (3 in)
     roof_ring_thickness: float = 0.03125  # ft (3/8 in)
     # [foundation]  what holds the baseplate down/up.
@@ -317,6 +318,7 @@ CONFIG_MAP = {
         "thickness": "roof_thickness",
         "n_r": "roof_n_r",
         "ring": "roof_ring",
+        "ring_bar": "roof_ring_bar",
         "ring_leg": "roof_ring_leg",
         "ring_thickness": "roof_ring_thickness",
     },
