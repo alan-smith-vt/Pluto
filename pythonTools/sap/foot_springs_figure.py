@@ -24,7 +24,7 @@ DEF_SCALE = 40.0   # displacement exaggeration for the deformed-shape overlay
 
 
 def deformed_shape(m: TankModel, s2k: Path, case: str = "NL_HYDRO"):
-    """(r, z) of the theta = 0 spoke after loading, relative to the ring wall axis settlement:
+    """(r, z) of the theta = 0 spoke after loading, absolute displacements:
     plate rings from r = 30 ft to the toe, then the wall from the base up to 2.4 ft. Base ring
     joints report in local axes (U2 = radial outward); everything else in global (U1 = x = radial
     at theta = 0). Returns (plate_pts, wall_pts, ring wall settlement ft)."""
@@ -42,7 +42,7 @@ def deformed_shape(m: TankModel, s2k: Path, case: str = "NL_HYDRO"):
         if r < 30.0:
             continue
         u = float(d[j]["U2"]) if j in base else float(d[j]["U1"])
-        plate.append((r + u * DEF_SCALE, (float(d[j]["U3"]) - rw) * DEF_SCALE))
+        plate.append((r + u * DEF_SCALE, float(d[j]["U3"]) * DEF_SCALE))
     plate.sort()
     wall = []
     for ring, z in enumerate(m.z_levels):
@@ -50,7 +50,7 @@ def deformed_shape(m: TankModel, s2k: Path, case: str = "NL_HYDRO"):
             break
         j = m.joint_id(ring, 0)
         u = float(d[j]["U2"]) if j in base else float(d[j]["U1"])
-        wall.append((s.radius + u * DEF_SCALE, z + (float(d[j]["U3"]) - rw) * DEF_SCALE))
+        wall.append((s.radius + u * DEF_SCALE, z + float(d[j]["U3"]) * DEF_SCALE))
     return plate, wall, rw
 
 
@@ -110,14 +110,14 @@ def panel(f: Fig, m: TankModel, x0: float, x1: float, title: str, final: bool, s
         f.text(f.X(R), yb + 24, "→ the ring rolls freely on a point", anchor="middle", size=9, fill=GREEN)
     # concrete inner edge marker
     f.text(f.X(R - C / 2), y0 - 16, "33.0", anchor="middle", size=8, fill=INK)
-    # deformed shape overlay, NL_HYDRO, relative to the ring wall settlement
+    # deformed shape overlay, NL_HYDRO, absolute
     if shape:
         plate, wall, rw = shape
         f.path("M" + " L".join(f"{f.X(r):.1f} {f.Y(z):.1f}" for r, z in plate), stroke=RUST, w=2.2, dash="6 3")
         f.path("M" + " L".join(f"{f.X(r):.1f} {f.Y(z):.1f}" for r, z in wall), stroke=RUST, w=2.2, dash="6 3")
         f.text(f.X(s.radius) - 10, f.Y(1.9), f"deformed, × {DEF_SCALE:g}", fill=RUST, size=9, anchor="end")
-        f.text(f.X(s.radius) - 10, f.Y(1.9) + 12, "NL_HYDRO, relative to the", fill=RUST, size=8, anchor="end")
-        f.text(f.X(s.radius) - 10, f.Y(1.9) + 22, f"ring wall (settles {-rw * 12:.2f} in)", fill=RUST, size=8, anchor="end")
+        f.text(f.X(s.radius) - 10, f.Y(1.9) + 12, "NL_HYDRO, absolute;", fill=RUST, size=8, anchor="end")
+        f.text(f.X(s.radius) - 10, f.Y(1.9) + 22, f"ring wall settles {-rw * 12:.2f} in", fill=RUST, size=8, anchor="end")
 
 
 def main(argv=None) -> int:
@@ -140,7 +140,7 @@ def main(argv=None) -> int:
     f.text(40, 484, "(E_c × area / depth, ≈ 2000 × a pad spring) carried on rigid RINGWALL_ARM frames from the ring wall beam at its centroid; the shell line on GAP_CONTACT.", fill=MUTED, size=10)
     f.text(40, 504, "Left: dead load lifts the plate off the concrete between the rings; product settles pad and ring wall equally on equal springs, and the ring rolls toward the load.", fill=MUTED, size=10)
     f.text(40, 518, f"Right: pad k_s rises from 1.0× at the centre to {math.pi / 2:.2f}× at the rim; ring wall soil ≥ 1.57 × pad (the rim of the dish); plate rings at 32.38, 32.75, 33.0 at the concrete edge.", fill=MUTED, size=10)
-    f.text(40, 538, f"Section at one spoke; springs at the plate rings, radii in ft. Dashed: deformed plate and wall under product, × {DEF_SCALE:g}, relative to the ring wall; the foot rolls outward.", fill=MUTED, size=10)
+    f.text(40, 538, f"Section at one spoke; springs at the plate rings, radii in ft. Dashed: deformed plate and wall under product, × {DEF_SCALE:g}, absolute; the foot rolls outward.", fill=MUTED, size=10)
     a.out.mkdir(parents=True, exist_ok=True)
     out = a.out / f"{a.name}.svg"
     out.write_bytes(f.done().encode("utf-8"))
