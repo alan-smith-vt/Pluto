@@ -3,6 +3,8 @@
 #     powershell.exe -NonInteractive -File scripts\sap\Run-SapSurvey.ps1 -Survey [-OutDir C:\Temp\sapsurvey] [-SampleFrames 5] [-ModelPath X.sdb]
 #   First-pass expansion-joint candidates from the DUCT group's connectivity (read-only):
 #     powershell.exe -NonInteractive -File scripts\sap\Run-SapSurvey.ps1 -Candidates [-Group DUCT] [-AngleTol 5] [-OutDir ...] [-ModelPath X.sdb]
+#   Frame forces of a group for every combo, kip-in, from existing results (input of scripts\duct\Run-DuctDcr.ps1 -Evaluate):
+#     .\Run-SapSurvey.ps1 -Forces -Group "DUCT_ALL" [-IncludeCases] -OutDir C:\Temp\sapforces
 #   Axis probe (builds its own two-cantilever model; close your model first, or run in a second SAP):
 #     powershell.exe -NonInteractive -File scripts\sap\Run-SapSurvey.ps1 -Probe [-OutDir C:\Temp\sapsurvey]
 #   -SapDir "C:\Program Files\Computers and Structures\SAP2000 22" picks the install (default: newest, or $env:PLUTO_SAP_DIR).
@@ -10,6 +12,8 @@ param(
     [switch]$Survey,
     [switch]$Probe,
     [switch]$Candidates,
+    [switch]$Forces,             # export frame forces of -Group for every combo (reads existing results)
+    [switch]$IncludeCases,       # -Forces: load cases too, not only combos
     [string]$Group = "DUCT",     # -Candidates: the frame group holding the duct
     [double]$AngleTol = 5,       # -Candidates: max bend (deg) at a joint still called inline
     [string]$OutDir = (Join-Path $env:TEMP "sapsurvey"),
@@ -19,7 +23,7 @@ param(
     [string]$SapDir = $env:PLUTO_SAP_DIR
 )
 $ErrorActionPreference = "Stop"
-if (-not ($Survey -or $Probe -or $Candidates)) { throw "Pass -Survey, -Candidates and/or -Probe." }
+if (-not ($Survey -or $Probe -or $Candidates -or $Forces)) { throw "Pass -Survey, -Candidates, -Forces and/or -Probe." }
 
 if (-not $SapDir) {
     $SapDir = Get-ChildItem "C:\Program Files\Computers and Structures" -Directory -Filter "SAP2000 *" |
@@ -41,6 +45,15 @@ if ($Survey) {
     }
     try { $sap.Survey($OutDir, $SampleFrames) } finally { $sap.Close() }   # Close only exits a SAP this script started
     Get-Content (Join-Path $OutDir "summary.txt")
+}
+if ($Forces) {
+    if ($ModelPath) {
+        $sap = [SapSurvey]::AttachOrStart($exe, $false)
+        $sap.OpenModel($ModelPath, $false)
+    } else {
+        $sap = [SapSurvey]::AttachOrStart($exe, $true)
+    }
+    try { $sap.ExportForces($OutDir, $Group, [bool]$IncludeCases) } finally { $sap.Close() }
 }
 if ($Candidates) {
     if ($ModelPath) {

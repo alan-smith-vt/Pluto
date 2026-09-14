@@ -330,6 +330,64 @@ public class SapSurvey
         return "force sample     " + Math.Min(sampleFrames, n) + " frames, " + (rows.Count - 1) + " rows";
     }
 
+    // ---------------------------------------------------------------- forces export
+
+    // Frame forces of every frame in `group` for every response combination (and load case if includeCases),
+    // kip-in, one row per frame / station / output case / step -> forces.tsv, the input of Run-DuctDcr.ps1 -Evaluate.
+    // Reads existing results only: the model must already be analysed.
+    public string ExportForces(string outDir, string group, bool includeCases)
+    {
+        Directory.CreateDirectory(outDir);
+        if (!Model.GetModelIsLocked()) throw new Exception("model has no results: run the analysis in SAP first");
+        eUnits units = Model.GetPresentUnits();
+        Check(Model.SetPresentUnits(eUnits.kip_in_F), "SetPresentUnits");
+        try
+        {
+            int m = 0; int[] types = null; string[] objs = null;
+            Check(Model.GroupDef.GetAssignments(group, ref m, ref types, ref objs), "GroupDef.GetAssignments " + group);
+            List<string> frames = new List<string>();
+            for (int k = 0; k < m; k++) if (types[k] == 2) frames.Add(objs[k]);
+            if (frames.Count == 0) throw new Exception("group " + group + " has no frames");
+
+            Check(Model.Results.Setup.DeselectAllCasesAndCombosForOutput(), "Deselect");
+            int nb = 0; string[] combos = null;
+            Model.RespCombo.GetNameList(ref nb, ref combos);
+            for (int i = 0; i < nb; i++) Model.Results.Setup.SetComboSelectedForOutput(combos[i]);
+            int nc = 0; string[] cases = null;
+            if (includeCases)
+            {
+                Model.LoadCases.GetNameList(ref nc, ref cases);
+                for (int i = 0; i < nc; i++) Model.Results.Setup.SetCaseSelectedForOutput(cases[i]);
+            }
+
+            int rows = 0;
+            string path = Path.Combine(outDir, "forces.tsv");
+            using (StreamWriter w = new StreamWriter(path))
+            {
+                w.Write("Frame\tSection\tStation_in\tOutputCase\tStepType\tP_kip\tV2_kip\tV3_kip\tT_kipin\tM2_kipin\tM3_kipin\r\n");
+                foreach (string fr in frames)
+                {
+                    string sec = "", auto = "";
+                    Model.FrameObj.GetSection(fr, ref sec, ref auto);
+                    int r = 0;
+                    string[] obj = null, elm = null, cas = null, step = null;
+                    double[] objSta = null, elmSta = null, stepNum = null, p = null, v2 = null, v3 = null, t = null, m2 = null, m3 = null;
+                    if (Model.Results.FrameForce(fr, eItemTypeElm.ObjectElm, ref r, ref obj, ref objSta, ref elm, ref elmSta,
+                          ref cas, ref step, ref stepNum, ref p, ref v2, ref v3, ref t, ref m2, ref m3) != 0) { Warn("FrameForce " + fr); continue; }
+                    for (int i = 0; i < r; i++)
+                        w.Write(Tab(fr, sec, R(objSta[i]), cas[i], step[i], R(p[i]), R(v2[i]), R(v3[i]), R(t[i]), R(m2[i]), R(m3[i])) + "\r\n");
+                    rows += r;
+                }
+            }
+            string msg = F("forces.tsv: group {0}, {1} frames, {2} combos{3}, {4} rows", group, frames.Count, nb, includeCases ? F(" + {0} cases", nc) : "", rows);
+            if (Warnings.Count > 0) msg += "\r\nwarnings: " + string.Join("; ", Warnings.ToArray());
+            return msg;
+        }
+        finally { Model.SetPresentUnits(units); }
+    }
+
+    static string R(double v) { return v.ToString("R", Inv); }   // round-trip precision for force export
+
     // ---------------------------------------------------------------- candidate joints
 
     // First-pass expansion-joint candidates from connectivity alone. Classifies every joint on a
@@ -359,7 +417,7 @@ public class SapSurvey
         public List<int> Duct = new List<int>();   // indices into the group frame list
         public int Other, Links;
         public bool OtherGrounded, OtherBrace;
-        public string OtherSections = "";
+        public string OtherSections = "", GroundedVia = "";
         public bool Restrained, Loaded;
         public string Class = "", Sections = "";
         public double Angle;
@@ -378,14 +436,14 @@ public class SapSurvey
         Model.FrameObj.GetNameList(ref n, ref frames);
         List<string> gFrame = new List<string>(), gI = new List<string>(), gJ = new List<string>(), gSec = new List<string>();
         Dictionary<string, JointInfo> joints = new Dictionary<string, JointInfo>();
-        List<string> otherI = new List<string>(), otherJ = new List<string>(), otherSec = new List<string>();
+        List<string> otherI = new List<string>(), otherJ = new List<string>(), otherSec = new List<string>(), frameNameOther = new List<string>();
         for (int i = 0; i < n; i++)
         {
             string pi = "", pj = "";
             Model.FrameObj.GetPoints(frames[i], ref pi, ref pj);
             string sec = "", auto = "";
             Model.FrameObj.GetSection(frames[i], ref sec, ref auto);
-            if (!inGroup.Contains(frames[i])) { otherI.Add(pi); otherJ.Add(pj); otherSec.Add(sec); continue; }
+            if (!inGroup.Contains(frames[i])) { otherI.Add(pi); otherJ.Add(pj); otherSec.Add(sec); frameNameOther.Add(frames[i]); continue; }
             int idx = gFrame.Count;
             gFrame.Add(frames[i]); gI.Add(pi); gJ.Add(pj); gSec.Add(sec);
             foreach (string p in new string[] { pi, pj })
@@ -411,12 +469,23 @@ public class SapSurvey
         for (int i = 0; i < op.Length; i++) op[i] = i;
         for (int i = 0; i < otherI.Count; i++) Union(op, oj[nodeI[i]], oj[nodeJ[i]]);
         HashSet<int> grounded = new HashSet<int>();
+        Dictionary<int, string> groundJoint = new Dictionary<int, string>();   // one restrained joint per grounded piece, with its DOFs
         foreach (KeyValuePair<string, int> kv in oj)
         {
             if (kv.Key.IndexOf('#') >= 0) continue;
             bool[] r = new bool[6];
             Model.PointObj.GetRestraint(kv.Key, ref r);
-            foreach (bool b in r) if (b) { grounded.Add(Find(op, kv.Value)); break; }
+            string dofs = Rel(r).Replace("P", "U1").Replace("V2", "U2").Replace("V3", "U3").Replace("T", "R1").Replace("M2", "R2").Replace("M3", "R3");
+            if (dofs == "-") continue;
+            int root = Find(op, kv.Value);
+            grounded.Add(root);
+            if (!groundJoint.ContainsKey(root)) groundJoint[root] = kv.Key + "[" + dofs + "]";
+        }
+        Dictionary<int, int> pieceFrames = new Dictionary<int, int>();
+        for (int i = 0; i < otherI.Count; i++)
+        {
+            int root = Find(op, oj[nodeI[i]]);
+            pieceFrames[root] = (pieceFrames.ContainsKey(root) ? pieceFrames[root] : 0) + 1;
         }
         Dictionary<int, HashSet<string>> ductTouches = new Dictionary<int, HashSet<string>>();
         for (int i = 0; i < otherI.Count; i++)
@@ -438,6 +507,11 @@ public class SapSurvey
                 if (g) ji.OtherGrounded = true;
                 if (ductTouches[root].Count >= 2) ji.OtherBrace = true;
                 string tag = otherSec[i] + (g ? "(grounded)" : ductTouches[root].Count >= 2 ? "(brace)" : "(free)");
+                if (g)
+                {
+                    string via = otherSec[i] + ": frame " + frameNameOther[i] + " -> restrained joint " + groundJoint[root] + " (" + pieceFrames[root] + " frames in piece)";
+                    if (ji.GroundedVia.IndexOf(via, StringComparison.Ordinal) < 0) ji.GroundedVia = ji.GroundedVia.Length == 0 ? via : ji.GroundedVia + " | " + via;
+                }
                 if (("|" + ji.OtherSections + "|").IndexOf("|" + tag + "|", StringComparison.Ordinal) < 0)
                     ji.OtherSections = ji.OtherSections.Length == 0 ? tag : ji.OtherSections + "|" + tag;
             }
@@ -527,14 +601,14 @@ public class SapSurvey
         List<JointInfo> sorted = new List<JointInfo>(joints.Values);
         sorted.Sort(delegate(JointInfo p, JointInfo q) { return p.Span != q.Span ? p.Span.CompareTo(q.Span) : string.CompareOrdinal(p.Name, q.Name); });
         List<string> all = new List<string>(), cand = new List<string>();
-        string head = "Joint\tClass\tSpan\tX_in\tY_in\tZ_in\tDuctFrames\tOtherFrames\tLinks\tRestrained\tJointLoad\tAngle_deg\tSections\tOtherSections";
+        string head = "Joint\tClass\tSpan\tX_in\tY_in\tZ_in\tDuctFrames\tOtherFrames\tLinks\tRestrained\tJointLoad\tAngle_deg\tSections\tOtherSections\tGroundedVia";
         all.Add(head); cand.Add(head);
         string[] classes = { "inline", "elbow", "tee", "end", "support", "attach", "brace" };
         int[] count = new int[classes.Length];
         foreach (JointInfo ji in sorted)
         {
             string row = Tab(ji.Name, ji.Class, ji.Span < 0 ? "" : ji.Span.ToString(Inv), G(ji.X), G(ji.Y), G(ji.Z), ji.Duct.Count, ji.Other, ji.Links,
-                ji.Restrained, ji.Loaded, ji.Duct.Count == 2 ? ji.Angle.ToString("0.#", Inv) : "", ji.Sections, ji.OtherSections);
+                ji.Restrained, ji.Loaded, ji.Duct.Count == 2 ? ji.Angle.ToString("0.#", Inv) : "", ji.Sections, ji.OtherSections, ji.GroundedVia);
             all.Add(row);
             if (ji.Class == "inline" && !ji.Loaded) cand.Add(row);
             count[Array.IndexOf(classes, ji.Class)]++;
