@@ -330,6 +330,231 @@ public class SapSurvey
         return "force sample     " + Math.Min(sampleFrames, n) + " frames, " + (rows.Count - 1) + " rows";
     }
 
+    // ---------------------------------------------------------------- candidate joints
+
+    // First-pass expansion-joint candidates from connectivity alone. Classifies every joint on a
+    // frame of `group`:
+    //   end      1 group frame
+    //   tee      3+ group frames
+    //   support  restrained, or a link, or touched by non-group frames that lead to a restraint (support steel)
+    //   attach   touched only by non-group frames that reach no restraint (mass stubs, hangers-on);
+    //            brace if that non-group piece touches 2+ group joints. Excluded, but does not split spans.
+    //   elbow    2 group frames meeting at more than angleTolDeg
+    //   inline   2 group frames, straight within angleTolDeg  -> candidate
+    // Spans: group frames joined through non-support joints; a span is one piece between supports.
+    // Writes duct-joints.tsv (every group joint), candidates.tsv (inline, not loaded), spans.tsv.
+    public string Candidates(string outDir, string group, double angleTolDeg)
+    {
+        Directory.CreateDirectory(outDir);
+        eUnits units = Model.GetPresentUnits();
+        Check(Model.SetPresentUnits(eUnits.kip_in_F), "SetPresentUnits");
+        try { return CandidatesIn(outDir, group, angleTolDeg); }
+        finally { Model.SetPresentUnits(units); }
+    }
+
+    class JointInfo
+    {
+        public string Name;
+        public double X, Y, Z;
+        public List<int> Duct = new List<int>();   // indices into the group frame list
+        public int Other, Links;
+        public bool OtherGrounded, OtherBrace;
+        public string OtherSections = "";
+        public bool Restrained, Loaded;
+        public string Class = "", Sections = "";
+        public double Angle;
+        public int Span = -1;
+    }
+
+    string CandidatesIn(string outDir, string group, double angleTolDeg)
+    {
+        int m = 0; int[] types = null; string[] objs = null;
+        Check(Model.GroupDef.GetAssignments(group, ref m, ref types, ref objs), "GroupDef.GetAssignments " + group);
+        HashSet<string> inGroup = new HashSet<string>();
+        for (int k = 0; k < m; k++) if (types[k] == 2) inGroup.Add(objs[k]);
+        if (inGroup.Count == 0) throw new Exception("group " + group + " has no frames");
+
+        int n = 0; string[] frames = null;
+        Model.FrameObj.GetNameList(ref n, ref frames);
+        List<string> gFrame = new List<string>(), gI = new List<string>(), gJ = new List<string>(), gSec = new List<string>();
+        Dictionary<string, JointInfo> joints = new Dictionary<string, JointInfo>();
+        List<string> otherI = new List<string>(), otherJ = new List<string>(), otherSec = new List<string>();
+        for (int i = 0; i < n; i++)
+        {
+            string pi = "", pj = "";
+            Model.FrameObj.GetPoints(frames[i], ref pi, ref pj);
+            string sec = "", auto = "";
+            Model.FrameObj.GetSection(frames[i], ref sec, ref auto);
+            if (!inGroup.Contains(frames[i])) { otherI.Add(pi); otherJ.Add(pj); otherSec.Add(sec); continue; }
+            int idx = gFrame.Count;
+            gFrame.Add(frames[i]); gI.Add(pi); gJ.Add(pj); gSec.Add(sec);
+            foreach (string p in new string[] { pi, pj })
+            {
+                JointInfo ji;
+                if (!joints.TryGetValue(p, out ji)) { ji = new JointInfo(); ji.Name = p; joints[p] = ji; }
+                ji.Duct.Add(idx);
+            }
+        }
+        // Non-group frames: connected pieces over their joints; a piece is grounded if any joint is restrained.
+        Dictionary<string, int> oj = new Dictionary<string, int>();
+        foreach (List<string> ends in new List<string>[] { otherI, otherJ })
+            foreach (string p in ends) if (!oj.ContainsKey(p)) oj[p] = oj.Count;
+        int[] op = new int[oj.Count];
+        for (int i = 0; i < op.Length; i++) op[i] = i;
+        for (int i = 0; i < otherI.Count; i++) Union(op, oj[otherI[i]], oj[otherJ[i]]);
+        HashSet<int> grounded = new HashSet<int>();
+        Dictionary<int, int> ductTouches = new Dictionary<int, int>();
+        foreach (KeyValuePair<string, int> kv in oj)
+        {
+            int root = Find(op, kv.Value);
+            bool[] r = new bool[6];
+            Model.PointObj.GetRestraint(kv.Key, ref r);
+            foreach (bool b in r) if (b) grounded.Add(root);
+            if (joints.ContainsKey(kv.Key)) ductTouches[root] = (ductTouches.ContainsKey(root) ? ductTouches[root] : 0) + 1;
+        }
+        for (int i = 0; i < otherI.Count; i++)
+            foreach (string p in new string[] { otherI[i], otherJ[i] })
+            {
+                JointInfo ji;
+                if (!joints.TryGetValue(p, out ji)) continue;
+                int root = Find(op, oj[p]);
+                ji.Other++;
+                if (grounded.Contains(root)) ji.OtherGrounded = true;
+                if (ductTouches[root] >= 2) ji.OtherBrace = true;
+                if (("|" + ji.OtherSections + "|").IndexOf("|" + otherSec[i] + "|", StringComparison.Ordinal) < 0)
+                    ji.OtherSections = ji.OtherSections.Length == 0 ? otherSec[i] : ji.OtherSections + "|" + otherSec[i];
+            }
+        int nl = 0; string[] links = null;
+        Model.LinkObj.GetNameList(ref nl, ref links);
+        for (int i = 0; i < nl; i++)
+        {
+            string pi = "", pj = "";
+            Model.LinkObj.GetPoints(links[i], ref pi, ref pj);
+            JointInfo ji;
+            if (joints.TryGetValue(pi, out ji)) ji.Links++;
+            if (pj != pi && joints.TryGetValue(pj, out ji)) ji.Links++;
+        }
+
+        foreach (JointInfo ji in joints.Values)
+        {
+            Model.PointObj.GetCoordCartesian(ji.Name, ref ji.X, ref ji.Y, ref ji.Z, "Global");
+            bool[] r = new bool[6];
+            Model.PointObj.GetRestraint(ji.Name, ref r);
+            foreach (bool b in r) if (b) ji.Restrained = true;
+            int nf = 0; string[] pn = null, lp = null, cs = null; int[] st = null;
+            double[] f1 = null, f2 = null, f3 = null, m1 = null, m2 = null, m3 = null;
+            if (Model.PointObj.GetLoadForce(ji.Name, ref nf, ref pn, ref lp, ref st, ref cs, ref f1, ref f2, ref f3, ref m1, ref m2, ref m3, eItemType.Objects) == 0 && nf > 0)
+                ji.Loaded = true;
+        }
+
+        // Angle between the two frames at degree-2 joints, and the sections either side.
+        foreach (JointInfo ji in joints.Values)
+        {
+            List<string> secs = new List<string>();
+            foreach (int f in ji.Duct) if (!secs.Contains(gSec[f])) secs.Add(gSec[f]);
+            ji.Sections = string.Join("|", secs.ToArray());
+            if (ji.Duct.Count == 2)
+            {
+                double[] u = Away(joints, gI, gJ, ji, ji.Duct[0]), v = Away(joints, gI, gJ, ji, ji.Duct[1]);
+                double dot = -(u[0] * v[0] + u[1] * v[1] + u[2] * v[2]);   // straight run: the two away-vectors are opposite
+                ji.Angle = Math.Acos(Math.Max(-1, Math.Min(1, dot))) * 180 / Math.PI;
+            }
+            if (ji.Restrained || ji.OtherGrounded || ji.Links > 0) ji.Class = "support";
+            else if (ji.Other > 0) ji.Class = ji.OtherBrace ? "brace" : "attach";
+            else if (ji.Duct.Count == 1) ji.Class = "end";
+            else if (ji.Duct.Count >= 3) ji.Class = "tee";
+            else if (ji.Angle > angleTolDeg) ji.Class = "elbow";
+            else ji.Class = "inline";
+        }
+
+        // Spans: union group frames across every non-support joint.
+        int[] parent = new int[gFrame.Count];
+        for (int i = 0; i < parent.Length; i++) parent[i] = i;
+        foreach (JointInfo ji in joints.Values)
+            if (ji.Class != "support")
+                for (int k = 1; k < ji.Duct.Count; k++) Union(parent, ji.Duct[0], ji.Duct[k]);
+        Dictionary<int, int> spanId = new Dictionary<int, int>();
+        int[] frameSpan = new int[gFrame.Count];
+        for (int i = 0; i < gFrame.Count; i++)
+        {
+            int root = Find(parent, i);
+            if (!spanId.ContainsKey(root)) spanId[root] = spanId.Count + 1;
+            frameSpan[i] = spanId[root];
+        }
+        int ns = spanId.Count;
+        int[] spFrames = new int[ns + 1], spInline = new int[ns + 1], spElbow = new int[ns + 1], spTee = new int[ns + 1], spEnd = new int[ns + 1], spSupport = new int[ns + 1], spAttach = new int[ns + 1];
+        double[] spLen = new double[ns + 1];
+        for (int i = 0; i < gFrame.Count; i++)
+        {
+            spFrames[frameSpan[i]]++;
+            JointInfo a = joints[gI[i]], b = joints[gJ[i]];
+            spLen[frameSpan[i]] += Math.Sqrt((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y) + (a.Z - b.Z) * (a.Z - b.Z));
+        }
+        foreach (JointInfo ji in joints.Values)
+        {
+            if (ji.Class == "support")
+            {
+                HashSet<int> touched = new HashSet<int>();
+                foreach (int f in ji.Duct) touched.Add(frameSpan[f]);
+                foreach (int s in touched) spSupport[s]++;
+                continue;
+            }
+            ji.Span = frameSpan[ji.Duct[0]];
+            if (ji.Class == "inline") spInline[ji.Span]++;
+            else if (ji.Class == "elbow") spElbow[ji.Span]++;
+            else if (ji.Class == "tee") spTee[ji.Span]++;
+            else if (ji.Class == "end") spEnd[ji.Span]++;
+            else spAttach[ji.Span]++;
+        }
+
+        List<JointInfo> sorted = new List<JointInfo>(joints.Values);
+        sorted.Sort(delegate(JointInfo p, JointInfo q) { return p.Span != q.Span ? p.Span.CompareTo(q.Span) : string.CompareOrdinal(p.Name, q.Name); });
+        List<string> all = new List<string>(), cand = new List<string>();
+        string head = "Joint\tClass\tSpan\tX_in\tY_in\tZ_in\tDuctFrames\tOtherFrames\tLinks\tRestrained\tJointLoad\tAngle_deg\tSections\tOtherSections";
+        all.Add(head); cand.Add(head);
+        string[] classes = { "inline", "elbow", "tee", "end", "support", "attach", "brace" };
+        int[] count = new int[classes.Length];
+        foreach (JointInfo ji in sorted)
+        {
+            string row = Tab(ji.Name, ji.Class, ji.Span < 0 ? "" : ji.Span.ToString(Inv), G(ji.X), G(ji.Y), G(ji.Z), ji.Duct.Count, ji.Other, ji.Links,
+                ji.Restrained, ji.Loaded, ji.Duct.Count == 2 ? ji.Angle.ToString("0.#", Inv) : "", ji.Sections, ji.OtherSections);
+            all.Add(row);
+            if (ji.Class == "inline" && !ji.Loaded) cand.Add(row);
+            count[Array.IndexOf(classes, ji.Class)]++;
+        }
+        Write(Path.Combine(outDir, "duct-joints.tsv"), all);
+        Write(Path.Combine(outDir, "candidates.tsv"), cand);
+
+        List<string> sp = new List<string>();
+        sp.Add("Span\tFrames\tLength_ft\tSupportJoints\tInline\tElbows\tTees\tEnds\tAttachOrBrace");
+        int free = 0, oneSupport = 0;
+        for (int s = 1; s <= ns; s++)
+        {
+            sp.Add(Tab(s, spFrames[s], G(spLen[s] / 12), spSupport[s], spInline[s], spElbow[s], spTee[s], spEnd[s], spAttach[s]));
+            if (spSupport[s] == 0) free++; else if (spSupport[s] == 1) oneSupport++;
+        }
+        Write(Path.Combine(outDir, "spans.tsv"), sp);
+
+        StringBuilder sb = new StringBuilder();
+        sb.AppendLine(F("candidates for group {0}: {1} frames, {2} joints   (angle tolerance {3} deg)", group, gFrame.Count, joints.Count, angleTolDeg));
+        sb.AppendLine(F("  inline {0}   elbow {1}   tee {2}   end {3}   support {4}   attach {5}   brace {6}", count[0], count[1], count[2], count[3], count[4], count[5], count[6]));
+        sb.AppendLine(F("  candidates.tsv: {0} (inline, no joint load)", cand.Count - 1));
+        sb.AppendLine(F("  spans {0}   with no support joint {1}   with one support joint {2}", ns, free, oneSupport));
+        File.WriteAllText(Path.Combine(outDir, "candidates-summary.txt"), sb.ToString());
+        return sb.ToString();
+    }
+
+    // Unit vector from joint ji along group frame f.
+    static double[] Away(Dictionary<string, JointInfo> joints, List<string> gI, List<string> gJ, JointInfo ji, int f)
+    {
+        JointInfo o = joints[gI[f] == ji.Name ? gJ[f] : gI[f]];
+        double dx = o.X - ji.X, dy = o.Y - ji.Y, dz = o.Z - ji.Z, l = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+        return l > 0 ? new double[] { dx / l, dy / l, dz / l } : new double[] { 0, 0, 0 };
+    }
+
+    static int Find(int[] p, int i) { while (p[i] != i) { p[i] = p[p[i]]; i = p[i]; } return i; }
+    static void Union(int[] p, int a, int b) { a = Find(p, a); b = Find(p, b); if (a != b) p[a] = b; }
+
     // ---------------------------------------------------------------- axis probe
 
     // Two 120 in cantilevers along global X, fixed at x = 0, Box/Tube 24 in (t3) x 12 in (t2), 0.25 in walls.
