@@ -13,3 +13,6 @@ Thumbs.db
 /.obsidian/*.json
 
 .pdf
+
+# production-side settings (copy of duct-config.example.psd1)
+scripts/duct/duct-config.psd1
