@@ -139,8 +139,7 @@ public class SapRelease
             }
         }
         Check(M.File.Save(savePath), "Save " + savePath);
-        Check(M.Analyze.SetRunCaseFlag("", true, true), "SetRunCaseFlag");
-        Check(M.Analyze.RunAnalysis(), "RunAnalysis");
+        RunLinearStaticOnly();
 
         List<string> rows = new List<string>();
         rows.Add("Link\tCandidate\tMaster\tOther\tkt_kip_in\tkr_kipin_rad\tPatterns");
@@ -190,8 +189,7 @@ public class SapRelease
         Check(M.SetPresentUnits(eUnits.kip_in_F), "SetPresentUnits");
         foreach (string c in candidates) { string[] frames; Disconnect(c, out frames); }
         Check(M.File.Save(savePath), "Save " + savePath);
-        Check(M.Analyze.SetRunCaseFlag("", true, true), "SetRunCaseFlag");
-        Check(M.Analyze.RunAnalysis(), "RunAnalysis");
+        RunLinearStaticOnly();
         string msg = S.ExportForces(outDir, group, true);
         StringBuilder sb = new StringBuilder();
         sb.AppendLine(F("direct model {0}: {1} candidate(s) disconnected", Path.GetFileName(savePath), candidates.Length));
@@ -200,8 +198,27 @@ public class SapRelease
         return sb.ToString();
     }
 
-    // ---------------------------------------------------------------- synthetic test model (SAP 26 here)
+    // Run every linear static case (the load vectors, the cases behind the combos, the unit pairs) and
+    // nothing else: the modal case alone can take longer than all of them on the real model.
+    void RunLinearStaticOnly()
+    {
+        Check(M.Analyze.SetRunCaseFlag("", false, true), "SetRunCaseFlag all off");
+        int n = 0; string[] names = null;
+        M.LoadCases.GetNameList(ref n, ref names);
+        int on = 0;
+        for (int i = 0; i < n; i++)
+        {
+            eLoadCaseType t = eLoadCaseType.LinearStatic; int sub = 0;
+            M.LoadCases.GetTypeOAPI(names[i], ref t, ref sub);
+            if (t != eLoadCaseType.LinearStatic) continue;
+            Check(M.Analyze.SetRunCaseFlag(names[i], true, false), "SetRunCaseFlag " + names[i]);
+            on++;
+        }
+        Log.Add(F("running {0} linear static cases of {1} (modal and other cases skipped)", on, n));
+        Check(M.Analyze.RunAnalysis(), "RunAnalysis");
+    }
 
+    // ---------------------------------------------------------------- synthetic test model (SAP 26 here)
     // A duct for testing the release: a straight run along X (0..480 in, 60 in frames) into an elbow up
     // (480, 0, 0..240). Fixed at x = 0, U2+U3 at x = 240 and 480, pinned at the top. Box 20 x 10 x 0.06,
     // E 28000. Cases as the HVAC model names them: dead (self weight), Steel_Loading (joint loads),
@@ -252,7 +269,7 @@ public class SapRelease
         Check(M.RespCombo.Add("20 BLC 7D", 0), "RespCombo.Add 20");
         AddToCombo("20 BLC 7D", eCNameType.LoadCase, "1 DEAD", 1); AddToCombo("20 BLC 7D", eCNameType.LoadCase, "Steel_Loading", 1); AddToCombo("20 BLC 7D", eCNameType.LoadCase, "7 Thermal", 0.7);
         Check(M.File.Save(savePath), "Save " + savePath);
-        Check(M.Analyze.RunAnalysis(), "RunAnalysis");
+        RunLinearStaticOnly();
         return F("test model {0}: {1} frames, candidates at x = 60..180, 300..420 (joints {2} {3}), riser z = 60..180 (joint {4})",
             savePath, frames.Count, JointAt(120, 0, 0), JointAt(360, 0, 0), JointAt(480, 0, 120));
     }
