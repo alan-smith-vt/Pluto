@@ -15,7 +15,9 @@ public static class DuctEvaluate
     // endsOnly: only each frame's first and last station (the Excel workflow checks the two ends).
     // Frame envelope (Excel): max axial + max M2 + max M3 over every evaluated row of the frame, each max taken separately.
     // noShear: V2 / V3 DCRs are still written but left out of the governing value and the counts.
-    // comboList (optional): output case names that replace duct-combos.csv, all with limit state lsForList.
+    // comboList (optional): output cases that replace duct-combos.csv, all with limit state lsForList. Each entry is matched
+    // against the names in the forces file ignoring case and repeated / edge spaces; failing that, it may be the start of
+    // exactly one name followed by a space or colon ("18" or "18 BLC 7B" finds "18 BLC 7B: D + EL + ...").
     // duct-materials.csv: TablesDir's copy if present, else the one beside this script (materialsFallback).
     public static string Run(string forcesPath, string tablesDir, string outDir, double limit, bool endsOnly,
         bool noShear, string[] comboList, string lsForList, string materialsFallback)
@@ -25,11 +27,20 @@ public static class DuctEvaluate
         if (!File.Exists(matPath)) matPath = materialsFallback;
         Dictionary<string, DuctMaterial> mats = DuctTables.Materials(matPath);
         Dictionary<string, DuctSection> secs = DuctTables.Sections(Path.Combine(tablesDir, "duct-sections.csv"), mats);
+        List<string> caseNames;
+        Dictionary<string, double[]> ranges = Prescan(forcesPath, out caseNames);
         Dictionary<string, string> combos;
+        List<string> comboReport = new List<string>();
         if (comboList != null && comboList.Length > 0)
         {
-            combos = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (string k in comboList) combos[k.Trim()] = lsForList;
+            combos = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (string k in comboList)
+            {
+                if (Norm(k).Length == 0) continue;
+                string hit = MatchCase(k, caseNames);
+                if (hit == null) comboReport.Add(F("  requested \"{0}\" -> NOT FOUND or ambiguous", k));
+                else { combos[hit] = lsForList; comboReport.Add(F("  requested \"{0}\" -> \"{1}\"", k, hit)); }
+            }
         }
         else combos = DuctTables.Combos(Path.Combine(tablesDir, "duct-combos.csv"));
         Dictionary<string, DuctCapacity> caps = new Dictionary<string, DuctCapacity>(StringComparer.OrdinalIgnoreCase);
@@ -40,7 +51,7 @@ public static class DuctEvaluate
         Dictionary<string, double> worstVal = new Dictionary<string, double>();
         Dictionary<string, HashSet<string>> overByCombo = new Dictionary<string, HashSet<string>>();
         Dictionary<string, double[]> env = new Dictionary<string, double[]>();          // frame -> max axial, max M_a, max M_b
-        Dictionary<string, double[]> ends = endsOnly ? StationRange(forcesPath) : null;
+        Dictionary<string, double[]> ends = endsOnly ? ranges : null;
         int rowsIn = 0, rowsOut = 0;
 
         using (StreamReader rd = new StreamReader(forcesPath))
@@ -110,29 +121,52 @@ public static class DuctEvaluate
         sb.AppendLine(F("materials {0}   shear {1}", matPath, noShear ? "excluded from governing" : "included"));
         sb.AppendLine(F("frames over limit {0}   sum of excess (per frame, governing) {1:0.###}", over, excess));
         sb.AppendLine(F("frames over limit on the envelope (max axial + max M2 + max M3) {0}", overEnv));
+        if (comboReport.Count > 0) { sb.AppendLine("combo matching:"); foreach (string s in comboReport) sb.AppendLine(s); }
         sb.AppendLine("frames over limit by output case / combo:");
         List<string> cs = new List<string>(combos.Keys);
         cs.Sort(StringComparer.OrdinalIgnoreCase);
         foreach (string k in cs) sb.AppendLine(F("  {0,-30} LS {1}  {2}", k, combos[k], overByCombo.ContainsKey(k) ? overByCombo[k].Count : 0));
-        if (skippedCombo.Count > 0) sb.AppendLine("output cases in forces but not in duct-combos.csv (skipped): " + string.Join(", ", Sorted(skippedCombo)));
+        if (skippedCombo.Count > 0)
+        {
+            sb.AppendLine("output cases in forces but not checked (one per line, between the bars):");
+            foreach (string s in Sorted(skippedCombo)) sb.AppendLine("  |" + s + "|");
+        }
         if (missingSec.Count > 0) sb.AppendLine("sections in forces but not in duct-sections.csv (skipped): " + string.Join(", ", Sorted(missingSec)));
         File.WriteAllText(Path.Combine(outDir, "dcr-summary.txt"), sb.ToString());
         return sb.ToString();
     }
 
-    // Frame -> {min, max} station over the whole forces file.
-    static Dictionary<string, double[]> StationRange(string forcesPath)
+    static string Norm(string s) { return string.Join(" ", s.Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant(); }
+
+    static string MatchCase(string want, List<string> names)
     {
+        string w = Norm(want);
+        foreach (string n in names) if (Norm(n) == w) return n;
+        string hit = null; int count = 0;
+        foreach (string n in names)
+        {
+            string nn = Norm(n);
+            if (nn.Length > w.Length && nn.StartsWith(w, StringComparison.Ordinal) && (nn[w.Length] == ' ' || nn[w.Length] == ':' || w.EndsWith(":"))) { hit = n; count++; }
+        }
+        return count == 1 ? hit : null;
+    }
+
+    // Frame -> {min, max} station over the whole forces file; distinct output case names in file order.
+    static Dictionary<string, double[]> Prescan(string forcesPath, out List<string> caseNames)
+    {
+        caseNames = new List<string>();
+        HashSet<string> seen = new HashSet<string>();
         Dictionary<string, double[]> d = new Dictionary<string, double[]>();
         using (StreamReader rd = new StreamReader(forcesPath))
         {
             string[] h = rd.ReadLine().Split('\t');
-            int iF = Col(h, "Frame"), iSta = Col(h, "Station_in");
+            int iF = Col(h, "Frame"), iSta = Col(h, "Station_in"), iC = Col(h, "OutputCase");
             string line;
             while ((line = rd.ReadLine()) != null)
             {
                 if (line.Length == 0) continue;
                 string[] c = line.Split('\t');
+                if (seen.Add(c[iC])) caseNames.Add(c[iC]);
                 double sta = N(c[iSta]);
                 double[] rg;
                 if (!d.TryGetValue(c[iF], out rg)) d[c[iF]] = new double[] { sta, sta };
