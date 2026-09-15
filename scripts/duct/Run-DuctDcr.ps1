@@ -2,7 +2,7 @@
 #   Set-ExecutionPolicy -Scope Process Bypass
 #   .\Run-DuctDcr.ps1 -Check                                                  # reproduce the Mathcad template results
 #   .\Run-DuctDcr.ps1 -Skeleton -SectionsTsv C:\Temp\sapsurvey\sections.tsv [-ForcesTsv ...\forces.tsv] [-Material CARBON] [-CarbonSections A,B] [-CapacitiesCsv standard-capacities.csv] -OutCsv duct-sections.csv
-#   .\Run-DuctDcr.ps1 -Evaluate -ForcesTsv C:\Temp\sapforces\forces.tsv -TablesDir C:\Temp\ducttables -OutDir C:\Temp\ductdcr [-Limit 1.0] [-EndsOnly] [-NoShear] [-Combos DEAD,COMB18 | -ComboFile names.txt] [-ComboLS C]
+#   .\Run-DuctDcr.ps1 -Evaluate -ForcesTsv C:\Temp\sapforces\forces.tsv -TablesDir C:\Temp\ducttables -OutDir C:\Temp\ductdcr [-Limit 1.0] [-EndsOnly] [-NoShear] [-Combos DEAD,COMB18 [-ComboLS C]]
 # TablesDir holds duct-sections.csv, and optionally duct-combos.csv (replaced by -Combos) and duct-materials.csv
 # (default: the one beside this script). Layout: Notes vault, Projects/<project>/HVAC Member Table.md.
 param(
@@ -21,13 +21,11 @@ param(
     [switch]$EndsOnly,
     [switch]$NoShear,
     [string[]]$Combos,
-    [string]$ComboFile,          # one output case per line (names may contain commas)
     [string]$ComboLS = "C"
 )
 $ErrorActionPreference = "Stop"
 # -File passes "a,b" as one string: split list parameters on commas.
 if ($Combos) { $Combos = @($Combos | ForEach-Object { $_ -split "," } | Where-Object { $_.Trim() }) }
-if ($ComboFile) { $Combos = @([IO.File]::ReadAllLines((Resolve-Path $ComboFile).Path) | Where-Object { $_.Trim() }) }
 if ($CarbonSections) { $CarbonSections = @($CarbonSections | ForEach-Object { $_ -split "," } | Where-Object { $_.Trim() }) }
 if (-not ($Check -or $Skeleton -or $Evaluate)) { throw "Pass -Check, -Skeleton or -Evaluate." }
 

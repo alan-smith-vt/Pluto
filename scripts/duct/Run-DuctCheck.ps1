@@ -8,7 +8,7 @@
 # ==================== EDIT HERE ====================
 $WorkDir       = "C:\Temp\ductcheck"             # everything is written under here
 $Group         = "DUCT_ALL"                      # SAP frame group to check
-$Combos        = @("1 DEAD", "18", "19", "20")   # full SAP names, or the start of one ("18" finds "18 BLC 7B: D + ..."); dcr-summary.txt shows the matches
+$Combos        = @("DEAD", "COMB18", "COMB19", "COMB20")   # output case / combo names exactly as SAP lists them
 $ComboLS       = "C"                             # A or B = no increase; anything else = 1.5 x allowables
 $Material      = "304L"                          # material of every section (row name in duct-materials.csv) ...
 $CarbonSections = @()                            # ... except these section names, which get CARBON
@@ -55,10 +55,8 @@ if ($RebuildSections -or -not (Test-Path $secCsv)) {
     Step "duct-sections.csv" $a
 }
 
-$comboFile = Join-Path $tables "combo-list.txt"
-[IO.File]::WriteAllLines($comboFile, [string[]]$Combos)
 $a = @($dcr, "-Evaluate", "-ForcesTsv", (Join-Path $sapOut "forces.tsv"), "-TablesDir", $tables, "-OutDir", $dcrOut,
-       "-Limit", $Limit, "-ComboFile", $comboFile, "-ComboLS", $ComboLS)
+       "-Limit", $Limit, "-Combos", ($Combos -join ","), "-ComboLS", $ComboLS)
 if ($EndsOnly) { $a += "-EndsOnly" }
 if ($NoShear) { $a += "-NoShear" }
 Step "DCRs" $a
