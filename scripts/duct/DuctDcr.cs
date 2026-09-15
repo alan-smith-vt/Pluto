@@ -12,6 +12,7 @@ public class DuctMaterial
     public bool Stainless;                       // picks the F_n formula and the shear constants
     public double E, Mu, Fy, Fu;                  // ksi, -, ksi, ksi
     public double EtaF = 1.0, EtaE = 1.0;         // temperature reductions (yield, modulus)
+    public double FyLambda = double.NaN;          // Fy in lambda_c only (NaN = Fy); the Excel workflow uses 33 for 304L
     public double OmegaT = 1, OmegaC = 1, OmegaF = 1, OmegaV = 1;
     public double Alpha = 1, Beta0 = 1, Beta1 = 1, Beta2 = 1;   // stainless global buckling coefficients
 }
@@ -24,6 +25,10 @@ public class DuctSection
     public bool StiffA, StiffB;
     public double HA, HB;                         // in: web stiffener depth, a / b direction
     public double K = 1.0, LFt = 10.0;            // effective length factor, span (ft)
+    // Allowable overrides (ksi, before the stress increase), e.g. the Excel "standard capacities" sheet. NaN = computed.
+    public double SigTOverride = double.NaN, SigM2Override = double.NaN, SigM3Override = double.NaN;
+    public double SigV2Override = double.NaN, SigV3Override = double.NaN;
+    public double RAOverride = double.NaN, RBOverride = double.NaN;   // in: SAP r22 / r33 (exact box) instead of the thin-wall r
 }
 
 // Shear constants of the web shear capacity, per direction: lambda limit, c, p in
@@ -42,7 +47,7 @@ public class DuctCapacity
     public DuctSection Section;
     public double Ag, Awa, Awb, Ia, Ib, Ra, Rb, LambdaMax, Sa, Sb;
     public double AEffA, BEffB, Ae, Iae, Ibe, Sae, Sbe;
-    public double SigTAll, Fcre, LambdaC, Fn, SigCAll, SigMAll;
+    public double SigTAll, Fcre, LambdaC, Fn, SigCAll, SigMAll, SigMaAll, SigMbAll;
     public double Kva, Fcra, Vya, Vcra, LambdaVa, Vna, SigVaAll;
     public double Kvb, Fcrb, Vyb, Vcrb, LambdaVb, Vnb, SigVbAll;
 
@@ -65,8 +70,8 @@ public class DuctCapacity
         c.Awb = s.HB * t;
         c.Ia = 2 * a * t * Sq(b / 2) + 2 * t * b * b * b / 12;
         c.Ib = 2 * b * t * Sq(a / 2) + 2 * t * a * a * a / 12;
-        c.Ra = Math.Sqrt(c.Ia / c.Ag);
-        c.Rb = Math.Sqrt(c.Ib / c.Ag);
+        c.Ra = double.IsNaN(s.RAOverride) ? Math.Sqrt(c.Ia / c.Ag) : s.RAOverride;
+        c.Rb = double.IsNaN(s.RBOverride) ? Math.Sqrt(c.Ib / c.Ag) : s.RBOverride;
         c.LambdaMax = Math.Max(s.K * L / c.Ra, s.K * L / c.Rb);
         c.Sa = 2 * c.Ia / b;
         c.Sb = 2 * c.Ib / a;
@@ -83,7 +88,7 @@ public class DuctCapacity
         // Tension, compression, bending allowables
         c.SigTAll = m.EtaF * m.Fy / m.OmegaT;
         c.Fcre = Math.PI * Math.PI * m.E / Sq(c.LambdaMax);
-        c.LambdaC = Math.Sqrt(m.Fy / c.Fcre);
+        c.LambdaC = Math.Sqrt((double.IsNaN(m.FyLambda) ? m.Fy : m.FyLambda) / c.Fcre);
         if (!m.Stainless)
             c.Fn = c.LambdaC <= 1.5 ? Math.Pow(0.658, Sq(c.LambdaC)) * m.Fy : 0.877 / Sq(c.LambdaC) * m.Fy;
         else if (c.LambdaC <= m.Beta0)
@@ -98,6 +103,14 @@ public class DuctCapacity
         // Shear, each direction
         Shear(m, a, s.HA, t, c.Awa, s.StiffA, ruleA, out c.Vya, out c.Kva, out c.Fcra, out c.Vcra, out c.LambdaVa, out c.Vna, out c.SigVaAll);
         Shear(m, b, s.HB, t, c.Awb, s.StiffB, ruleB, out c.Vyb, out c.Kvb, out c.Fcrb, out c.Vcrb, out c.LambdaVb, out c.Vnb, out c.SigVbAll);
+
+        // Overrides (a = M2 / V2, b = M3 / V3); compression is always computed.
+        c.SigMaAll = c.SigMAll; c.SigMbAll = c.SigMAll;
+        if (!double.IsNaN(s.SigTOverride)) c.SigTAll = s.SigTOverride;
+        if (!double.IsNaN(s.SigM2Override)) c.SigMaAll = s.SigM2Override;
+        if (!double.IsNaN(s.SigM3Override)) c.SigMbAll = s.SigM3Override;
+        if (!double.IsNaN(s.SigV2Override)) c.SigVaAll = s.SigV2Override;
+        if (!double.IsNaN(s.SigV3Override)) c.SigVbAll = s.SigV3Override;
         return c;
     }
 
@@ -136,8 +149,8 @@ public class DuctDcr
         double sigVa = Va / (2 * c.Awa), sigVb = Vb / (2 * c.Awb);
         d.DcrT = sigT / (f * c.SigTAll);
         d.DcrC = sigC / (f * c.SigCAll);
-        d.DcrMa = sigMa / (f * c.SigMAll);
-        d.DcrMb = sigMb / (f * c.SigMAll);
+        d.DcrMa = sigMa / (f * c.SigMaAll);
+        d.DcrMb = sigMb / (f * c.SigMbAll);
         d.DcrVa = sigVa / (f * c.SigVaAll);
         d.DcrVb = sigVb / (f * c.SigVbAll);
         d.Combined = Math.Max(d.DcrT, d.DcrC) + d.DcrMa + d.DcrMb;
@@ -186,6 +199,7 @@ public static class DuctTables
             m.E = Num(r, "E_ksi", double.NaN); m.Mu = Num(r, "mu", double.NaN);
             m.Fy = Num(r, "Fy_ksi", double.NaN); m.Fu = Num(r, "Fu_ksi", double.NaN);
             m.EtaF = Num(r, "eta_f", 1); m.EtaE = Num(r, "eta_e", 1);
+            m.FyLambda = Num(r, "Fy_lambda_ksi", double.NaN);
             m.OmegaT = Num(r, "Omega_t", double.NaN); m.OmegaC = Num(r, "Omega_c", double.NaN);
             m.OmegaF = Num(r, "Omega_f", double.NaN); m.OmegaV = Num(r, "Omega_v", double.NaN);
             m.Alpha = Num(r, "alpha", 1); m.Beta0 = Num(r, "beta0", 1); m.Beta1 = Num(r, "beta1", 1); m.Beta2 = Num(r, "beta2", 1);
@@ -207,6 +221,10 @@ public static class DuctTables
             s.StiffA = Yes(r, "stiff_a"); s.StiffB = Yes(r, "stiff_b");
             s.HA = Num(r, "h_a_in", s.A); s.HB = Num(r, "h_b_in", s.B);   // blank h = full wall length
             s.K = Num(r, "K", 1.0); s.LFt = Num(r, "L_ft", 10.0);
+            s.SigTOverride = Num(r, "sig_t_ksi", double.NaN); s.SigM2Override = Num(r, "sig_m2_ksi", double.NaN);
+            s.SigM3Override = Num(r, "sig_m3_ksi", double.NaN); s.SigV2Override = Num(r, "sig_v2_ksi", double.NaN);
+            s.SigV3Override = Num(r, "sig_v3_ksi", double.NaN);
+            s.RAOverride = Num(r, "r_a_in", double.NaN); s.RBOverride = Num(r, "r_b_in", double.NaN);
             d[s.Name] = s;
         }
         return d;

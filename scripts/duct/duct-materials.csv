@@ -1,0 +1,3 @@
+Material,Sheet,E_ksi,mu,Fy_ksi,Fu_ksi,Fy_lambda_ksi,eta_f,eta_e,Omega_t,Omega_c,Omega_f,Omega_v,alpha,beta0,beta1,beta2
+304L,Stainless,28000,0.3,30,70,33,1,1,1.5,1.8,4.5,2.167,1.13,0.24,0.41,0.69
+CARBON,Carbon,29000,0.3,33,,,1,1,1.5,1.8,4.5,2.167,,,,
