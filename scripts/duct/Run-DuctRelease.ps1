@@ -30,9 +30,9 @@ if ($Release) {
     $vec = Split-List $Vectors; $seis = Split-List $Seismic; $set = Split-List $Candidates
     if ($vec.Count -eq 0) { throw "-Vectors is required" }
     Write-Host "reading $LinkDir ..."
-    $rel = [DuctRelease]::Load((Resolve-Path $LinkDir).Path)
-    Write-Host ("  {0} station rows x {1} output cases, {2} link(s)" -f $rel.Base.Keys.Count, $rel.Base.CaseKeys.Count, $rel.Links.Count)
     $setArg = $null; if ($set.Count -gt 0) { $setArg = [string[]]$set }
+    $rel = [DuctRelease]::Load((Resolve-Path $LinkDir).Path, $setArg)   # only the set's unit pairs are read
+    Write-Host ("  {0} station rows x {1} output cases, {2} link(s)" -f $rel.Base.Keys.Count, $rel.Base.CaseKeys.Count, $rel.Links.Count)
     $res = $rel.Release($setArg, [string[]]$vec, $Dead, $Steel, [string[]]$seis, $Combo18)
     Write-Host $res.Text
     [IO.File]::WriteAllText((Join-Path $OutDir "release.txt"), $res.Text)

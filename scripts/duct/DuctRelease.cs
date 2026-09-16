@@ -17,7 +17,10 @@ public class ForceTable
     public List<string> CaseKeys = new List<string>();             // case \t step, first-seen order
     public Dictionary<string, double[][]> Rows = new Dictionary<string, double[][]>(StringComparer.Ordinal);   // caseKey -> [station][6]
 
-    public static ForceTable Read(string path)
+    public static ForceTable Read(string path) { return Read(path, null); }
+    // skipCases: output case names left out (the unit pairs of links that are not being released; an
+    // all-candidate link model has thousands of them and the whole file would not fit in memory).
+    public static ForceTable Read(string path, HashSet<string> skipCases)
     {
         ForceTable t = new ForceTable();
         List<KeyValuePair<string, KeyValuePair<int, double[]>>> pending = new List<KeyValuePair<string, KeyValuePair<int, double[]>>>();
@@ -31,6 +34,7 @@ public class ForceTable
             {
                 if (line.Length == 0) continue;
                 string[] c = line.Split('\t');
+                if (skipCases != null && skipCases.Contains(c[iC])) continue;
                 string key = c[iF] + "\t" + c[iS] + "\t" + c[iSta];
                 int idx;
                 if (!t.Index.TryGetValue(key, out idx)) { idx = t.Keys.Count; t.Index[key] = idx; t.Keys.Add(key); }
@@ -102,10 +106,11 @@ public class DuctRelease
     public List<LinkInfo> Links = new List<LinkInfo>();
     Dictionary<string, double[]> disp = new Dictionary<string, double[]>(StringComparer.Ordinal);   // link \t side \t caseKey -> 6
 
-    public static DuctRelease Load(string linkDir)
+    public static DuctRelease Load(string linkDir) { return Load(linkDir, null); }
+    // set (link or candidate names, null = all): only these links' unit pairs and displacements are read.
+    public static DuctRelease Load(string linkDir, string[] set)
     {
         DuctRelease r = new DuctRelease();
-        r.Base = ForceTable.Read(Path.Combine(linkDir, "forces.tsv"));
         using (StreamReader reader = new StreamReader(Path.Combine(linkDir, "links.tsv")))
         {
             string[] h = reader.ReadLine().Split('\t');
@@ -122,6 +127,18 @@ public class DuctRelease
                 r.Links.Add(l);
             }
         }
+        HashSet<string> skip = null, keepLink = null;
+        if (set != null)
+        {
+            skip = new HashSet<string>(StringComparer.Ordinal); keepLink = new HashSet<string>(StringComparer.Ordinal);
+            foreach (LinkInfo l in r.Links)
+            {
+                if (Array.IndexOf(set, l.Name) >= 0 || Array.IndexOf(set, l.Candidate) >= 0) keepLink.Add(l.Name);
+                else foreach (string p in l.Patterns) skip.Add(p);
+            }
+            r.Links.RemoveAll(delegate(LinkInfo l) { return !keepLink.Contains(l.Name); });
+        }
+        r.Base = ForceTable.Read(Path.Combine(linkDir, "forces.tsv"), skip);
         using (StreamReader reader = new StreamReader(Path.Combine(linkDir, "linkdisp.tsv")))
         {
             string[] h = reader.ReadLine().Split('\t');
@@ -132,6 +149,8 @@ public class DuctRelease
             {
                 if (line.Length == 0) continue;
                 string[] c = line.Split('\t');
+                if (keepLink != null && !keepLink.Contains(c[iL])) continue;
+                if (skip != null && skip.Contains(c[iC])) continue;
                 double[] v = new double[6];
                 for (int k = 0; k < 6; k++) v[k] = N(c[iv[k]]);
                 r.disp[c[iL] + "\t" + c[iSide] + "\t" + c[iC] + "\t" + c[iStep]] = v;
