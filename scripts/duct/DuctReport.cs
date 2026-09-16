@@ -151,7 +151,7 @@ public static class DuctReport
     }
 
     // Top frames by connected envelope: bars connected (grey) / released (blue) / direct (thin red mark).
-    static string DcrBars(Dictionary<string, double> con, Dictionary<string, double> rel, Dictionary<string, double> dir, double limit, int top)
+    public static string DcrBars(Dictionary<string, double> con, Dictionary<string, double> rel, Dictionary<string, double> dir, double limit, int top)
     {
         Dictionary<string, double> order = con.Count > 0 ? con : rel;
         List<string> frames = new List<string>(order.Keys);

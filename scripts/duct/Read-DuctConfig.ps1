@@ -9,6 +9,10 @@ function Read-DuctConfig([string]$Path) {
     foreach ($k in "WorkDir", "Group", "Cases", "Dcr", "Release") { if (-not $c.ContainsKey($k)) { throw "config $Path has no '$k' entry" } }
     foreach ($k in "Dead", "Steel", "Seismic", "Combo18", "Combo19", "Combo20") { if (-not $c.Cases.ContainsKey($k)) { throw "config Cases has no '$k'" } }
     if (-not $c.ContainsKey("SapDir")) { $c.SapDir = "" }
+    # Optimize block: older configs have none; every key has a default.
+    if (-not $c.ContainsKey("Optimize")) { $c.Optimize = @{} }
+    $defaults = @{ Candidates = "auto"; MaxCandidates = 20; MaxJoints = 10; OnePerSpan = $true; Swap = $true; Removal = $true; MaxEvaluations = 0; SingularPivot = 1e-8 }
+    foreach ($k in $defaults.Keys) { if (-not $c.Optimize.ContainsKey($k)) { $c.Optimize[$k] = $defaults[$k] } }
     $c.Path = (Resolve-Path $Path).Path
     return $c
 }

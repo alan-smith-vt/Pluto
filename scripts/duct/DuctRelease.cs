@@ -304,7 +304,7 @@ public class DuctRelease
     }
 
     // ---- dense LU with partial pivoting ----
-    static bool Lu(double[,] a, out double[,] lu, out int[] perm, out double pivotRatio)
+    public static bool Lu(double[,] a, out double[,] lu, out int[] perm, out double pivotRatio)
     {
         int n = a.GetLength(0);
         lu = (double[,])a.Clone(); perm = new int[n];
@@ -327,7 +327,7 @@ public class DuctRelease
         pivotRatio = pmax > 0 ? pmin / pmax : 0;
         return pivotRatio > 1e-13;
     }
-    static double[] Solve(double[,] lu, int[] perm, double[] b)
+    public static double[] Solve(double[,] lu, int[] perm, double[] b)
     {
         int n = b.Length; double[] y = new double[n], x = new double[n];
         for (int i = 0; i < n; i++) { double s = b[perm[i]]; for (int k = 0; k < i; k++) s -= lu[i, k] * y[k]; y[i] = s; }

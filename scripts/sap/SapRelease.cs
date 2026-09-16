@@ -220,7 +220,8 @@ public class SapRelease
 
     // ---------------------------------------------------------------- synthetic test model (SAP 26 here)
     // A duct for testing the release: a straight run along X (0..480 in, 60 in frames) into an elbow up
-    // (480, 0, 0..240). Fixed at x = 0, U2+U3 at x = 240 and 480, pinned at the top. Box 20 x 10 x 0.06,
+    // (480, 0, 0..240). Fixed at x = 0, U2+U3 at x = 240 and 480, fixed at the top (a pinned top made every
+// riser release a mechanism, rotation about the riser axis, since 2026-09-16 the optimizer needs a stable one). Box 20 x 10 x 0.06,
     // E 28000. Cases as the HVAC model names them: dead (self weight), Steel_Loading (joint loads),
     // three seismic (uniform frame loads), 7 Thermal (+100 F). Combos: 8 SRSS = SRSS(seismic);
     // 18 = dead + steel + 8 SRSS; 19 = dead + steel + thermal; 20 = dead + steel + 0.7 thermal. Group DUCT_ALL.
@@ -254,7 +255,7 @@ public class SapRelease
         Restrain(0, 0, 0, new bool[] { true, true, true, true, true, true });
         Restrain(240, 0, 0, new bool[] { false, true, true, false, false, false });
         Restrain(480, 0, 0, new bool[] { false, true, true, false, false, false });
-        Restrain(480, 0, 240, new bool[] { true, true, true, false, false, false });
+        Restrain(480, 0, 240, new bool[] { true, true, true, true, true, true });
         double[] steel = { 0, 0, -0.5, 0, 0, 0 };
         foreach (double x in new double[] { 120, 360 }) Check(M.PointObj.SetLoadForce(JointAt(x, 0, 0), "Steel_Loading", ref steel, true, "Global", eItemType.Objects), "SetLoadForce");
         double[] steelY = { 0, 0.3, 0, 0, 0, 0 };

@@ -34,4 +34,18 @@
         Candidates      = @('1234')   # joint names to release (Run-ReleaseCheck.ps1: one or a few; validation)
         StiffnessFactor = 1000        # stiff link k = factor x the stiffer adjoining frame (EA/L, 4EI/L)
     }
+
+    # ---- expansion-joint optimizer (Run-Optimizer.ps1) ----
+    Optimize = @{
+        Candidates     = 'auto'       # 'auto' = every inline, unloaded joint of the group whose span has 2+ support joints;
+                                      # or @('12', '34', ...); or the path of a file with one joint per line (the author's list)
+        MaxCandidates  = 20           # 0 = all; else an evenly spread sample of that many (trial runs: every candidate is a stiff
+                                      # link + 6 unit-pair cases in ONE SAP run, so start small and read the report)
+        MaxJoints      = 10           # greedy stops here, or earlier when every frame is within the limit
+        OnePerSpan     = $true        # never two joints in one span between supports (two would leave a floating piece)
+        Swap           = $true        # after greedy: try replacing each chosen joint by every unused candidate
+        Removal        = $true        # then: drop any joint whose absence does not worsen the score
+        MaxEvaluations = 0            # 0 = no cap on the number of sets scored
+        SingularPivot  = 1e-8         # a set whose release system has a pivot ratio below this is a mechanism (the report histograms them)
+    }
 }
