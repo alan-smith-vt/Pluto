@@ -22,6 +22,9 @@ out radial-outward in global, SAP Z-up axes preserved.
 
 ## 1. Export from SAP2000
 
+> Manual route. For the model SAP already holds, `pythonTools/sap/export_model.py` does all of
+> this over the OAPI at the analysis mesh — [[vault/arms/sap-export-model|sap-export-model]] (2026-09-15).
+
 - **Model**: File → Export → SAP2000 `.s2k` Text File. Tick the model tables (all is
   fine). `JOINT COORDINATES`, `CONNECTIVITY - AREA`, `PROGRAM CONTROL` are required;
   `AREA SECTION ASSIGNMENTS` / `AREA SECTION PROPERTIES`, `JOINT RESTRAINT ASSIGNMENTS`,
