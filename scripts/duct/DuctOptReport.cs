@@ -145,7 +145,7 @@ public static class DuctOptReport
         {
             int legendStart = sb.Length;
             sb.Append("<h2>Maps</h2><p><small>Frames coloured by DCR envelope: green &le; 0.5, yellow 1.0, red 1.5, dark red 3+; grey = not scored. ")
-              .Append("Candidates: hollow grey = named but not in the link model (excluded or not sampled), blue = tried, red ring = chosen. Supports, piping-drawing symbols in black: triangle under the joint = rest (vertical held), bars across the duct either side = line stop (held along the duct), bars along the duct either side = guide (held across it), arcs around the joint = rotation held; an anchor shows all of them. Supports on a duct running into / out of the view are hover only. Purple bar across the duct (ring on a riser) on the released map = expansion joint. A held direction pointing out of the view is not drawn; hover a support for its exact restraints. A frame running into / out of the view is a thick dot in its DCR colour, open grey square = support not sub-classed (survey older than the support classes). Hover for names and values.</small></p>");
+              .Append("Candidates: hollow grey = named but not in the link model (excluded or not sampled), blue = tried, red ring = chosen. Supports, piping-drawing symbols in black: triangle under the joint = rest (vertical held), bars across the duct either side = line stop (held along the duct), bars along the duct either side = guide (held across it), arcs around the joint = rotation held; an anchor shows all of them. Supports on a duct running into / out of the view are hover only. Purple bar across the duct (ring on a riser) on the released map = expansion joint. A held direction pointing out of the view is not drawn; hover a support for its exact restraints. A frame running into / out of the view is a thick dot in its DCR colour, open grey square = support not sub-classed (survey older than the support classes). Hover for names and values. Maps: wheel to zoom, drag to pan, double-click to reset.</small></p>");
             string legend = sb.ToString(legendStart + "<h2>Maps</h2>".Length, sb.Length - legendStart - "<h2>Maps</h2>".Length);
             WriteReleasedMap(Path.Combine(Path.GetDirectoryName(path), "released-map.html"), title, legend, xyz, segs, envFinal, chosen, supports);
             foreach (int proj in new int[] { 0, 1 })
@@ -167,7 +167,7 @@ public static class DuctOptReport
         sb.Append(Timing(evals));
         sb.Append("</div>");
         sb.Append("<h2>Log</h2><pre>").Append(H(optText)).Append("</pre>");
-        sb.Append("</body></html>");
+        sb.Append(ZoomScript).Append("</body></html>");
         File.WriteAllText(path, sb.ToString());
     }
 
@@ -427,12 +427,24 @@ public static class DuctOptReport
 
     // proj 0 = plan (X, Y), 1 = elevation (X, Z). values: frame -> DCR (null = geometry only).
     // selected: candidates-selected.tsv (named), cands: candidates-used.tsv (in the link model), chosen: chosen.tsv.
+    // Wheel = zoom about the cursor, drag = pan, double-click = reset; everything inside the map scales with it.
+    const string ZoomScript = "<script>document.querySelectorAll('svg.zoommap').forEach(function(svg){"
+        + "var v0=svg.getAttribute('viewBox').split(' ').map(Number),v=v0.slice(),drag=null;"
+        + "function set(){svg.setAttribute('viewBox',v.join(' '));}"
+        + "function pt(e){var r=svg.getBoundingClientRect();return [v[0]+(e.clientX-r.left)/r.width*v[2],v[1]+(e.clientY-r.top)/r.height*v[3]];}"
+        + "svg.addEventListener('wheel',function(e){e.preventDefault();var p=pt(e),f=e.deltaY<0?0.8:1.25;if(v[2]*f>v0[2]*2)f=v0[2]*2/v[2];v=[p[0]-(p[0]-v[0])*f,p[1]-(p[1]-v[1])*f,v[2]*f,v[3]*f];set();},{passive:false});"
+        + "svg.addEventListener('mousedown',function(e){drag=[e.clientX,e.clientY,v[0],v[1]];svg.style.cursor='grabbing';});"
+        + "window.addEventListener('mousemove',function(e){if(!drag)return;var r=svg.getBoundingClientRect();v[0]=drag[2]-(e.clientX-drag[0])/r.width*v[2];v[1]=drag[3]-(e.clientY-drag[1])/r.height*v[3];set();});"
+        + "window.addEventListener('mouseup',function(){drag=null;svg.style.cursor='';});"
+        + "svg.addEventListener('dblclick',function(){v=v0.slice();set();});"
+        + "});</script>";
+
     // Standalone page: the released DCR map, plan and elevation, full width.
     static void WriteReleasedMap(string path, string title, string legend, Dictionary<string, double[]> xyz, List<string[]> segs, Dictionary<string, double> envFinal, List<Row> chosen, List<Row> supports)
     {
         StringBuilder sb = new StringBuilder();
         sb.Append("<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>").Append(H(title)).Append(": released map</title><style>")
-          .Append("body{font:14px/1.45 Segoe UI,Arial,sans-serif;margin:24px;color:#222}h1{font-size:20px}h3{font-size:14px;margin:16px 0 4px}.card{border:1px solid #ddd;padding:8px;background:#fff;display:inline-block}small{color:#666}svg text{font-family:Segoe UI,Arial}")
+          .Append("body{font:14px/1.45 Segoe UI,Arial,sans-serif;margin:24px;color:#222}h1{font-size:20px}h3{font-size:14px;margin:16px 0 4px}.card{border:1px solid #ddd;padding:8px;background:#fff;display:inline-block}small{color:#666}svg text{font-family:Segoe UI,Arial}svg.zoommap{cursor:grab;max-width:100%;height:auto}")
           .Append("</style></head><body><h1>").Append(H(title)).Append(": chosen set released</h1><p><small>").Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm", Inv)).Append("</small></p>")
           .Append(legend);
         foreach (int proj in new int[] { 0, 1 })
@@ -440,7 +452,7 @@ public static class DuctOptReport
             sb.Append("<h3>").Append(proj == 0 ? "Plan (X right, Y up)" : "Elevation (X right, Z up)").Append("</h3>");
             sb.Append(Map("chosen set released: DCR envelope", proj, xyz, segs, envFinal, null, null, chosen, supports, 1300));
         }
-        sb.Append("</body></html>");
+        sb.Append("<p><small>Wheel to zoom, drag to pan, double-click to reset.</small></p>").Append(ZoomScript).Append("</body></html>");
         File.WriteAllText(path, sb.ToString());
     }
 
@@ -458,7 +470,8 @@ public static class DuctOptReport
         double sc = Math.Min((W - 2 * m) / du, (Hh - 2 * m) / dv);
         double ox = m + ((W - 2 * m) - du * sc) / 2, oy = m + ((Hh - 2 * m) - dv * sc) / 2;
         StringBuilder s = new StringBuilder();
-        s.Append("<div class=\"card\"><svg width=\"").Append(W).Append("\" height=\"").Append(Hh + 20).Append("\" font-size=\"10\">");
+        double k = W / 440.0;   // symbol and line scale: the same look at any map width
+        s.Append(F("<div class=\"card\"><svg class=\"zoommap\" width=\"{0}\" height=\"{1}\" viewBox=\"0 0 {0} {1}\" font-size=\"10\">", W, Hh + 20));
         s.Append(F("<text x=\"4\" y=\"12\" font-size=\"12\" font-weight=\"bold\">{0}</text>", H(title)));
         s.Append(F("<g transform=\"translate(0,20)\"><rect x=\"0\" y=\"0\" width=\"{0}\" height=\"{1}\" fill=\"#fafafa\" stroke=\"#ddd\"/>", W, Hh));
         foreach (string[] sg in segs)
@@ -469,11 +482,11 @@ public static class DuctOptReport
             double x1 = ox + (a[iu] - ulo) * sc, y1 = Hh - oy - (a[iv] - vlo) * sc, x2 = ox + (b[iu] - ulo) * sc, y2 = Hh - oy - (b[iv] - vlo) * sc;
             if (Math.Abs(x2 - x1) + Math.Abs(y2 - y1) < 0.5)   // runs into / out of the view: a thick dot in the frame's colour
             {
-                s.Append(F("<circle cx=\"{0:0.#}\" cy=\"{1:0.#}\" r=\"{2}\" fill=\"{3}\"><title>frame {4} (out of plane){5}</title></circle>", x1, y1, values == null ? 2.5 : 3.5, col, H(sg[0]), double.IsNaN(v) ? "" : ": DCR " + G(v)));
+                s.Append(F("<circle cx=\"{0:0.#}\" cy=\"{1:0.#}\" r=\"{2}\" fill=\"{3}\"><title>frame {4} (out of plane){5}</title></circle>", x1, y1, (values == null ? 2.5 : 3.5) * k, col, H(sg[0]), double.IsNaN(v) ? "" : ": DCR " + G(v)));
                 continue;
             }
             s.Append(F("<line x1=\"{0:0.#}\" y1=\"{1:0.#}\" x2=\"{2:0.#}\" y2=\"{3:0.#}\" stroke=\"{4}\" stroke-width=\"{5}\" stroke-linecap=\"round\"><title>frame {6}{7}</title></line>",
-                ox + (a[iu] - ulo) * sc, Hh - oy - (a[iv] - vlo) * sc, ox + (b[iu] - ulo) * sc, Hh - oy - (b[iv] - vlo) * sc, col, values == null ? 1.5 : 2.5, H(sg[0]), double.IsNaN(v) ? "" : ": DCR " + G(v)));
+                ox + (a[iu] - ulo) * sc, Hh - oy - (a[iv] - vlo) * sc, ox + (b[iu] - ulo) * sc, Hh - oy - (b[iv] - vlo) * sc, col, (values == null ? 1.5 : 2.5) * k, H(sg[0]), double.IsNaN(v) ? "" : ": DCR " + G(v)));
         }
         HashSet<string> drawnAt = new HashSet<string>();
         if (supports != null)
@@ -483,7 +496,8 @@ public static class DuctOptReport
                 double cx = ox + (p[iu] - ulo) * sc, cy = Hh - oy - (p[iv] - vlo) * sc;
                 if (!drawnAt.Add(F("{0:0}|{1:0}", cx, cy))) continue;   // supports stacked along a riser: the first one only
                 string kind = r.C["Support"], tip = F("<title>joint {0}: {1}{2}</title>", H(r.C["Joint"]), kind.Length == 0 ? "support" : kind, r.C["Restrains"].Length == 0 ? "" : " (" + H(r.C["Restrains"]) + ")");
-                s.Append(SupportSymbol(r.C["Joint"], p, cx, cy, iu, iv, xyz, segs, kind, r.C["Restrains"], tip));
+                s.Append(F("<g transform=\"translate({0:0.##},{1:0.##}) scale({2:0.###}) translate({3:0.##},{4:0.##})\">", cx, cy, k, -cx, -cy))
+                 .Append(SupportSymbol(r.C["Joint"], p, cx, cy, iu, iv, xyz, segs, kind, r.C["Restrains"], tip)).Append("</g>");
             }
         if (selected != null)
         {
@@ -512,9 +526,9 @@ public static class DuctOptReport
                     string jt = F("<title>expansion joint {0} (greedy step {1})</title>", H(r.C["Joint"]), H(r.C["AddedAtStep"]));
                     double[] sd = ScreenDir(r.C["Joint"], p, iu, iv, xyz, segs);
                     if (sd == null)   // duct runs out of the view: a ring around its dot
-                        s.Append(F("<circle cx=\"{0:0.#}\" cy=\"{1:0.#}\" r=\"5\" fill=\"none\" stroke=\"{2}\" stroke-width=\"2\">{3}</circle>", cx, cy, JointColour, jt));
+                        s.Append(F("<circle cx=\"{0:0.#}\" cy=\"{1:0.#}\" r=\"{4:0.#}\" fill=\"none\" stroke=\"{2}\" stroke-width=\"{5:0.#}\">{3}</circle>", cx, cy, JointColour, jt, 5 * k, 2 * k));
                     else
-                        s.Append(F("<line x1=\"{0:0.#}\" y1=\"{1:0.#}\" x2=\"{2:0.#}\" y2=\"{3:0.#}\" stroke=\"{4}\" stroke-width=\"2.2\">{5}</line>", cx - sd[1] * 6, cy + sd[0] * 6, cx + sd[1] * 6, cy - sd[0] * 6, JointColour, jt));
+                        s.Append(F("<line x1=\"{0:0.#}\" y1=\"{1:0.#}\" x2=\"{2:0.#}\" y2=\"{3:0.#}\" stroke=\"{4}\" stroke-width=\"{6:0.#}\">{5}</line>", cx - sd[1] * 6 * k, cy + sd[0] * 6 * k, cx + sd[1] * 6 * k, cy - sd[0] * 6 * k, JointColour, jt, 2.2 * k));
                     continue;
                 }
                 s.Append(F("<circle cx=\"{0:0.#}\" cy=\"{1:0.#}\" r=\"7\" fill=\"none\" stroke=\"{2}\" stroke-width=\"2.5\"><title>chosen: joint {3} (greedy step {4})</title></circle><text x=\"{5:0.#}\" y=\"{6:0.#}\" fill=\"{2}\" font-weight=\"bold\">{3}</text>", cx, cy, Red, H(r.C["Joint"]), H(r.C["AddedAtStep"]), cx + 8, cy - 6));
