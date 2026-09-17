@@ -144,7 +144,7 @@ public static class DuctOptReport
         if (segs.Count > 0)
         {
             sb.Append("<h2>Maps</h2><p><small>Frames coloured by DCR envelope: green &le; 0.5, yellow 1.0, red 1.5, dark red 3+; grey = not scored. ")
-              .Append("Candidates: hollow grey = named but not in the link model (excluded or not sampled), blue = tried, red ring = chosen. Supports: open black square = anchor, grey triangle with its point on the joint = pinned (translations held), short black tick across the duct = guide (a direction free; hover for which; a small ring where the duct runs out of the view), open grey square = support not sub-classed (survey older than the support classes). Hover for names and values.</small></p>");
+              .Append("Candidates: hollow grey = named but not in the link model (excluded or not sampled), blue = tried, red ring = chosen. Supports, piping-drawing symbols coloured by the axis held (X red, Y green, Z blue): blue triangle under the joint = rest (vertical held), bars across the duct either side = line stop (held along the duct), bars along the duct either side = guide (held across it), arcs around the joint = rotation held; an anchor shows all of them. A held direction pointing out of the view is not drawn; hover a support for its exact restraints. A frame running into / out of the view is a thick dot in its DCR colour, open grey square = support not sub-classed (survey older than the support classes). Hover for names and values.</small></p>");
             foreach (int proj in new int[] { 0, 1 })
             {
                 sb.Append("<h3>").Append(proj == 0 ? "Plan (X right, Y up)" : "Elevation (X right, Z up)").Append("</h3><div class=\"row\">");
@@ -442,6 +442,12 @@ public static class DuctOptReport
             double[] a = xyz[sg[1]], b = xyz[sg[2]];
             double v = double.NaN; if (values != null) values.TryGetValue(sg[0], out v); if (values != null && !values.ContainsKey(sg[0])) v = double.NaN;
             string col = values == null ? "#b0b0b0" : Ramp(v);
+            double x1 = ox + (a[iu] - ulo) * sc, y1 = Hh - oy - (a[iv] - vlo) * sc, x2 = ox + (b[iu] - ulo) * sc, y2 = Hh - oy - (b[iv] - vlo) * sc;
+            if (Math.Abs(x2 - x1) + Math.Abs(y2 - y1) < 0.5)   // runs into / out of the view: a thick dot in the frame's colour
+            {
+                s.Append(F("<circle cx=\"{0:0.#}\" cy=\"{1:0.#}\" r=\"{2}\" fill=\"{3}\"><title>frame {4} (out of plane){5}</title></circle>", x1, y1, values == null ? 2.5 : 3.5, col, H(sg[0]), double.IsNaN(v) ? "" : ": DCR " + G(v)));
+                continue;
+            }
             s.Append(F("<line x1=\"{0:0.#}\" y1=\"{1:0.#}\" x2=\"{2:0.#}\" y2=\"{3:0.#}\" stroke=\"{4}\" stroke-width=\"{5}\" stroke-linecap=\"round\"><title>frame {6}{7}</title></line>",
                 ox + (a[iu] - ulo) * sc, Hh - oy - (a[iv] - vlo) * sc, ox + (b[iu] - ulo) * sc, Hh - oy - (b[iv] - vlo) * sc, col, values == null ? 1.5 : 2.5, H(sg[0]), double.IsNaN(v) ? "" : ": DCR " + G(v)));
         }
@@ -451,26 +457,7 @@ public static class DuctOptReport
                 double[] p; if (!xyz.TryGetValue(r.C["Joint"], out p)) continue;
                 double cx = ox + (p[iu] - ulo) * sc, cy = Hh - oy - (p[iv] - vlo) * sc;
                 string kind = r.C["Support"], tip = F("<title>joint {0}: {1}{2}</title>", H(r.C["Joint"]), kind.Length == 0 ? "support" : kind, r.C["Restrains"].Length == 0 ? "" : " (" + H(r.C["Restrains"]) + ")");
-                if (kind == "guide")
-                {
-                    // short black tick across the duct: perpendicular to the first frame at the joint that shows in this view
-                    double dx = 0, dy = 0;
-                    foreach (string[] sg in segs)
-                    {
-                        if (sg[1] != r.C["Joint"] && sg[2] != r.C["Joint"]) continue;
-                        double[] q = xyz[sg[1] == r.C["Joint"] ? sg[2] : sg[1]];
-                        double ex = (q[iu] - p[iu]) * sc, ey = -(q[iv] - p[iv]) * sc, len = Math.Sqrt(ex * ex + ey * ey);
-                        if (len > 0.5) { dx = ex / len; dy = ey / len; break; }
-                    }
-                    if (dx == 0 && dy == 0)   // duct runs out of the view plane: a small ring
-                        s.Append(F("<circle cx=\"{0:0.#}\" cy=\"{1:0.#}\" r=\"3\" fill=\"none\" stroke=\"#000\" stroke-width=\"1.2\">{2}</circle>", cx, cy, tip));
-                    else
-                        s.Append(F("<line x1=\"{0:0.#}\" y1=\"{1:0.#}\" x2=\"{2:0.#}\" y2=\"{3:0.#}\" stroke=\"#000\" stroke-width=\"1.5\">{4}</line>", cx - dy * 5, cy + dx * 5, cx + dy * 5, cy - dx * 5, tip));
-                }
-                else if (kind == "pinned")   // apex on the joint, body below
-                    s.Append(F("<path d=\"M{0:0.#},{1:0.#} l4,7 l-8,0 z\" fill=\"#444\" fill-opacity=\"0.6\">{2}</path>", cx, cy, tip));
-                else   // anchor (or unclassed): open square, faint fill, the duct shows through
-                    s.Append(F("<rect x=\"{0:0.#}\" y=\"{1:0.#}\" width=\"8\" height=\"8\" fill=\"{2}\" fill-opacity=\"0.15\" stroke=\"{2}\" stroke-width=\"1.3\">{3}</rect>", cx - 4, cy - 4, kind == "anchor" ? "#000" : "#999", tip));
+                s.Append(SupportSymbol(r.C["Joint"], p, cx, cy, iu, iv, xyz, segs, kind, r.C["Restrains"], tip));
             }
         if (selected != null)
         {
@@ -499,6 +486,121 @@ public static class DuctOptReport
         s.Append("</g></svg></div>");
         return s.ToString();
     }
+
+    // ------------------------------------------------------------------ support symbols (piping-drawing convention)
+
+    // Restrains text from the survey ("U all but X; R none", "U Y", "U (0.71,0.71,0); R all") -> held(direction) tests.
+    class Held
+    {
+        public string Mode = "none";   // all | none | one (held along D) | but (held except along D)
+        public double[] D;
+        public bool Holds(double[] d)
+        {
+            if (Mode == "all") return true;
+            if (Mode == "none" || D == null) return false;
+            double dot = Math.Abs(d[0] * D[0] + d[1] * D[1] + d[2] * D[2]);
+            return Mode == "one" ? dot > 0.7 : Math.Sqrt(Math.Max(0, 1 - dot * dot)) > 0.7;
+        }
+    }
+    static Held ParseHeld(string restrains, string prefix)
+    {
+        Held h = new Held();
+        foreach (string part in restrains.Split(';'))
+        {
+            string t = part.Trim();
+            if (!t.StartsWith(prefix + " ", StringComparison.Ordinal)) continue;
+            t = t.Substring(prefix.Length + 1).Trim();
+            if (t == "all" || t == "none") { h.Mode = t; return h; }
+            if (t.StartsWith("all but ", StringComparison.Ordinal)) { h.Mode = "but"; t = t.Substring(8).Trim(); } else h.Mode = "one";
+            h.D = Dir(t);
+            if (h.D == null) h.Mode = "none";
+        }
+        return h;
+    }
+    static double[] Dir(string t)
+    {
+        if (t == "X") return new double[] { 1, 0, 0 };
+        if (t == "Y") return new double[] { 0, 1, 0 };
+        if (t == "Z") return new double[] { 0, 0, 1 };
+        string[] c = t.Trim('(', ')').Split(',');
+        double a, b, e;
+        if (c.Length == 3 && double.TryParse(c[0], NumberStyles.Float, Inv, out a) && double.TryParse(c[1], NumberStyles.Float, Inv, out b) && double.TryParse(c[2], NumberStyles.Float, Inv, out e))
+        {
+            double l = Math.Sqrt(a * a + b * b + e * e);
+            if (l > 0) return new double[] { a / l, b / l, e / l };
+        }
+        return null;
+    }
+    const string AxisX = "#e41a1c", AxisY = "#2ca02c", AxisZ = "#1f77b4";
+    static string AxisColour(double[] d)
+    {
+        double ax = Math.Abs(d[0]), ay = Math.Abs(d[1]), az = Math.Abs(d[2]);
+        return az >= ax && az >= ay ? AxisZ : ax >= ay ? AxisX : AxisY;
+    }
+
+    // Piping-drawing support symbol at a joint, in the view's screen space:
+    //   vertical translation held (rest)     -> triangle under the joint, blue
+    //   held along the duct (line stop)      -> two bars across the duct, either side of the joint
+    //   held across the duct, horizontal     -> two bars along the duct, either side (guide); a direction that points
+    //                                           out of the view is not drawn
+    //   rotation held about X / Y / Z        -> arc segments around the joint in the axis colour
+    // Colours: the global axis nearest the held direction (X red, Y green, Z blue). Unclassed supports: grey square.
+    static string SupportSymbol(string joint, double[] p, double cx, double cy, int iu, int iv, Dictionary<string, double[]> xyz, List<string[]> segs, string kind, string restrains, string tip)
+    {
+        StringBuilder s = new StringBuilder();
+        s.Append("<g>").Append(tip);
+        if (kind.Length == 0 || restrains.Length == 0)
+        {
+            s.Append(F("<rect x=\"{0:0.#}\" y=\"{1:0.#}\" width=\"8\" height=\"8\" fill=\"#999\" fill-opacity=\"0.15\" stroke=\"#999\" stroke-width=\"1.3\"/>", cx - 4, cy - 4));
+            return s.Append("</g>").ToString();
+        }
+        Held U = ParseHeld(restrains, "U"), R = ParseHeld(restrains, "R");
+        // duct axis in 3D: the first frame at the joint
+        double[] a = null;
+        foreach (string[] sg in segs)
+        {
+            if (sg[1] != joint && sg[2] != joint) continue;
+            double[] q = xyz[sg[1] == joint ? sg[2] : sg[1]];
+            double ex = q[0] - p[0], ey = q[1] - p[1], ez = q[2] - p[2], l = Math.Sqrt(ex * ex + ey * ey + ez * ez);
+            if (l > 1e-9) { a = new double[] { ex / l, ey / l, ez / l }; break; }
+        }
+        if (a == null) a = new double[] { 1, 0, 0 };
+        // three test directions: along the duct, horizontal across it, and the third
+        double[] h = Math.Abs(a[2]) > 0.9 ? new double[] { 1, 0, 0 } : Unit(new double[] { -a[1], a[0], 0 });
+        double[] v = Unit(new double[] { a[1] * h[2] - a[2] * h[1], a[2] * h[0] - a[0] * h[2], a[0] * h[1] - a[1] * h[0] });
+        const double g = 3.8, half = 3.4, w = 1.3, axialOff = 4.8;
+        bool rest = false;
+        foreach (double[] d in new double[][] { a, h, v })
+        {
+            if (!U.Holds(d)) continue;
+            if (Math.Abs(d[2]) > 0.7) { rest = true; continue; }
+            double px = d[iu], py = -d[iv], pl = Math.Sqrt(px * px + py * py);
+            if (pl < 0.3) continue;   // points out of the view
+            px /= pl; py /= pl;
+            bool axial = d == a;
+            double off = axial ? axialOff : g;
+            string col = AxisColour(d);
+            foreach (int sgn in new int[] { -1, 1 })
+            {
+                double bx = cx + sgn * px * off, by = cy + sgn * py * off;   // bar centre, bar runs perpendicular to (px, py)
+                s.Append(F("<line x1=\"{0:0.#}\" y1=\"{1:0.#}\" x2=\"{2:0.#}\" y2=\"{3:0.#}\" stroke=\"{4}\" stroke-width=\"{5}\"/>", bx - py * half, by + px * half, bx + py * half, by - px * half, col, w));
+            }
+        }
+        if (rest)
+            s.Append(F("<path d=\"M{0:0.#},{1:0.#} l2.8,4.2 l-5.6,0 z\" fill=\"{2}\"/>", cx, cy + g + 1, AxisZ));
+        double[][] axes = { new double[] { 1, 0, 0 }, new double[] { 0, 1, 0 }, new double[] { 0, 0, 1 } };
+        string[] cols = { AxisX, AxisY, AxisZ };
+        const double rr = 7.2;
+        for (int k = 0; k < 3; k++)
+        {
+            if (!R.Holds(axes[k])) continue;
+            double a0 = (200 + k * 55) * Math.PI / 180, a1 = (240 + k * 55) * Math.PI / 180;
+            s.Append(F("<path d=\"M{0:0.#},{1:0.#} A{2},{2} 0 0 1 {3:0.#},{4:0.#}\" fill=\"none\" stroke=\"{5}\" stroke-width=\"{6}\"/>", cx + rr * Math.Cos(a0), cy + rr * Math.Sin(a0), rr, cx + rr * Math.Cos(a1), cy + rr * Math.Sin(a1), cols[k], w));
+        }
+        s.Append(F("<circle cx=\"{0:0.#}\" cy=\"{1:0.#}\" r=\"6\" fill=\"#000\" fill-opacity=\"0\"/>", cx, cy));   // hover target
+        return s.Append("</g>").ToString();
+    }
+    static double[] Unit(double[] d) { double l = Math.Sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]); return l > 0 ? new double[] { d[0] / l, d[1] / l, d[2] / l } : d; }
 
     static string H(string s) { return (s ?? "").Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;").Replace("\"", "&quot;"); }
     static string G(double v) { return double.IsNaN(v) ? "" : v.ToString("G4", Inv); }

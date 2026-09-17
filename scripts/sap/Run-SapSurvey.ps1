@@ -7,6 +7,8 @@
 #     .\Run-SapSurvey.ps1 -Forces -Group "DUCT_ALL" [-IncludeCases] -OutDir C:\Temp\sapforces
 #   Axis probe (builds its own two-cantilever model; close your model first, or run in a second SAP):
 #     powershell.exe -NonInteractive -File scripts\sap\Run-SapSurvey.ps1 -Probe [-OutDir C:\Temp\sapsurvey]
+#   -OutDir default: with -Candidates and a scripts\duct\duct-config.psd1, <WorkDir>\optimize\connected (where
+#   Run-Optimizer.ps1 reads it); otherwise $env:TEMP\sapsurvey.
 #   -SapDir "C:\Program Files\Computers and Structures\SAP2000 22" picks the install (default: newest, or $env:PLUTO_SAP_DIR).
 param(
     [switch]$Survey,
@@ -16,7 +18,7 @@ param(
     [switch]$IncludeCases,       # -Forces: load cases too, not only combos
     [string]$Group = "DUCT",     # -Candidates: the frame group holding the duct
     [double]$AngleTol = 5,       # -Candidates: max bend (deg) at a joint still called inline
-    [string]$OutDir = (Join-Path $env:TEMP "sapsurvey"),
+    [string]$OutDir,
     [int]$SampleFrames = 5,
     [string]$ModelPath,          # -Survey only: open this .sdb instead of attaching to the model already open
 
@@ -29,6 +31,15 @@ if (-not $SapDir) {
     $SapDir = Get-ChildItem "C:\Program Files\Computers and Structures" -Directory -Filter "SAP2000 *" |
         Sort-Object { [int]($_.Name -replace '\D', '') } | Select-Object -Last 1 -ExpandProperty FullName
 }
+if (-not $OutDir) {
+    $OutDir = Join-Path $env:TEMP "sapsurvey"
+    $ductConfig = Join-Path (Split-Path $PSScriptRoot) "duct\duct-config.psd1"
+    if ($Candidates -and (Test-Path $ductConfig)) {
+        . (Join-Path (Split-Path $PSScriptRoot) "duct\Read-DuctConfig.ps1")
+        $OutDir = Join-Path (Read-DuctConfig $ductConfig).WorkDir "optimize\connected"
+    }
+}
+Write-Host "output: $OutDir"
 $dll = Join-Path $SapDir "SAP2000v1.dll"
 [void][System.Reflection.Assembly]::LoadFrom($dll)
 Add-Type -Path (Join-Path $PSScriptRoot "SapSurvey.cs") -ReferencedAssemblies $dll, "System.Runtime.InteropServices", "netstandard"
