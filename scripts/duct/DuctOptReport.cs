@@ -144,7 +144,7 @@ public static class DuctOptReport
         if (segs.Count > 0)
         {
             sb.Append("<h2>Maps</h2><p><small>Frames coloured by DCR envelope: green &le; 0.5, yellow 1.0, red 1.5, dark red 3+; grey = not scored. ")
-              .Append("Candidates: hollow grey = named but not in the link model (excluded or not sampled), blue = tried, red ring = chosen. Supports: black square = anchor, dark triangle = pinned (translations held), orange diamond = guide (a direction free; hover for which), grey square = support not sub-classed (survey older than the support classes). Hover for names and values.</small></p>");
+              .Append("Candidates: hollow grey = named but not in the link model (excluded or not sampled), blue = tried, red ring = chosen. Supports: open black square = anchor, grey triangle with its point on the joint = pinned (translations held), short black tick across the duct = guide (a direction free; hover for which; a small ring where the duct runs out of the view), open grey square = support not sub-classed (survey older than the support classes). Hover for names and values.</small></p>");
             foreach (int proj in new int[] { 0, 1 })
             {
                 sb.Append("<h3>").Append(proj == 0 ? "Plan (X right, Y up)" : "Elevation (X right, Z up)").Append("</h3><div class=\"row\">");
@@ -452,11 +452,25 @@ public static class DuctOptReport
                 double cx = ox + (p[iu] - ulo) * sc, cy = Hh - oy - (p[iv] - vlo) * sc;
                 string kind = r.C["Support"], tip = F("<title>joint {0}: {1}{2}</title>", H(r.C["Joint"]), kind.Length == 0 ? "support" : kind, r.C["Restrains"].Length == 0 ? "" : " (" + H(r.C["Restrains"]) + ")");
                 if (kind == "guide")
-                    s.Append(F("<path d=\"M{0:0.#},{1:0.#} l4,4 l-4,4 l-4,-4 z\" fill=\"{2}\" stroke=\"#333\" stroke-width=\"0.5\">{3}</path>", cx, cy - 4, Orange, tip));
-                else if (kind == "pinned")
-                    s.Append(F("<path d=\"M{0:0.#},{1:0.#} l4,7 l-8,0 z\" fill=\"#444\">{2}</path>", cx, cy - 3.5, tip));
-                else
-                    s.Append(F("<rect x=\"{0:0.#}\" y=\"{1:0.#}\" width=\"7\" height=\"7\" fill=\"{2}\">{3}</rect>", cx - 3.5, cy - 3.5, kind == "anchor" ? "#111" : "#999", tip));
+                {
+                    // short black tick across the duct: perpendicular to the first frame at the joint that shows in this view
+                    double dx = 0, dy = 0;
+                    foreach (string[] sg in segs)
+                    {
+                        if (sg[1] != r.C["Joint"] && sg[2] != r.C["Joint"]) continue;
+                        double[] q = xyz[sg[1] == r.C["Joint"] ? sg[2] : sg[1]];
+                        double ex = (q[iu] - p[iu]) * sc, ey = -(q[iv] - p[iv]) * sc, len = Math.Sqrt(ex * ex + ey * ey);
+                        if (len > 0.5) { dx = ex / len; dy = ey / len; break; }
+                    }
+                    if (dx == 0 && dy == 0)   // duct runs out of the view plane: a small ring
+                        s.Append(F("<circle cx=\"{0:0.#}\" cy=\"{1:0.#}\" r=\"3\" fill=\"none\" stroke=\"#000\" stroke-width=\"1.2\">{2}</circle>", cx, cy, tip));
+                    else
+                        s.Append(F("<line x1=\"{0:0.#}\" y1=\"{1:0.#}\" x2=\"{2:0.#}\" y2=\"{3:0.#}\" stroke=\"#000\" stroke-width=\"1.5\">{4}</line>", cx - dy * 5, cy + dx * 5, cx + dy * 5, cy - dx * 5, tip));
+                }
+                else if (kind == "pinned")   // apex on the joint, body below
+                    s.Append(F("<path d=\"M{0:0.#},{1:0.#} l4,7 l-8,0 z\" fill=\"#444\" fill-opacity=\"0.6\">{2}</path>", cx, cy, tip));
+                else   // anchor (or unclassed): open square, faint fill, the duct shows through
+                    s.Append(F("<rect x=\"{0:0.#}\" y=\"{1:0.#}\" width=\"8\" height=\"8\" fill=\"{2}\" fill-opacity=\"0.15\" stroke=\"{2}\" stroke-width=\"1.3\">{3}</rect>", cx - 4, cy - 4, kind == "anchor" ? "#000" : "#999", tip));
             }
         if (selected != null)
         {
