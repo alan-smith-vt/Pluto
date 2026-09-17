@@ -1,6 +1,6 @@
 {
   "collapse-filter": false,
-  "search": "-path:vault/handoffs -path:archive -file:README -path:pythonTools -path:scripts -path:.claude",
+  "search": "-path:archive -file:README -path:pythonTools -path:scripts -path:.claude",
   "showTags": false,
   "showAttachments": false,
   "hideUnresolved": false,
@@ -19,20 +19,6 @@
       "color": {
         "a": 1,
         "rgb": 13934615
-      }
-    },
-    {
-      "query": "file:\"Handoff log\"",
-      "color": {
-        "a": 1,
-        "rgb": 13934615
-      }
-    },
-    {
-      "query": "path:vault/handoffs",
-      "color": {
-        "a": 1,
-        "rgb": 14695484
       }
     },
     {

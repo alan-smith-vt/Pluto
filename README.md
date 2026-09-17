@@ -13,7 +13,7 @@ everything a user defines), and one generic **viewer** consumes it.
 ```
 
 **Documentation lives in the Obsidian vault — start at `vault/Pluto Home.md`, whose up-link opens the full tool note in the Notes vault.**
-The current state and next task are in `vault/handoffs/handoff.md`.
+The current state and next task are in the Notes vault handoff (`Tools/Pluto Handoffs/`).
 
 ## Repo layout
 
@@ -33,4 +33,4 @@ Open `viewer/index.html`. A synthetic demo loads; use the file picker to open a 
 `.bin` (drop its `.features.json` alongside for groups). `viewer/inspector.html` dumps a
 file field by field.
 
-**Project data is not in this repo.** Real tank configs and SAP models live under `<project dir>` and `...\models` and are passed to the scripts by path; `[output] dir` in a config, or the default `../models` beside it, decides where a model lands. Project findings and drawings are notes in the Notes vault, not here.
+**Project data is not in this repo.** Real tank configs and SAP models live in a local project folder outside the repo and are passed to the scripts by path; `[output] dir` in a config, or the default `../models` beside it, decides where a model lands. Project findings and drawings are notes in the Notes vault, not here.

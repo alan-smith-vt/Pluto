@@ -116,5 +116,5 @@ Drop the `.bin` and `.features.json` together on the viewer's file picker → ti
 
 - [[vault/format/raw-viewer-writer|raw-viewer-writer]] — the binary writer and bridges section
 - [[vault/format/features-sidecar|features-sidecar]] — groups JSON
-- [[vault/handoffs/handoff|handoff]] — current state and constraints
+- the current handoff (Notes vault, `Tools/Pluto Handoffs`) — current state and constraints
 - SQL_Tutor `vault/40-join-paths/Pipe Extraction v1.md` (query) and `Beam Export - Pipe CSV to Beams.md` (design rationale)

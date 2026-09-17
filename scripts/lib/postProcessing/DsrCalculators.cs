@@ -1,7 +1,7 @@
 // STUB -- the production file was exported as a `// sanitized` husk (2026-09-01 audit).
 // This file only restores the compile surface consumed by pipeline.cs and Types.cs so
 // the single Add-Type batch in Config.ps1 succeeds. Re-hydrate the real bodies from the
-// production environment (see vault/audits/scripts-sanitized-audit.md, re-hydration checklist).
+// production environment (see the sanitized-lib audit in the Notes vault, re-hydration checklist).
 // C# 5 only (Add-Type under PowerShell 5.1, warnings-as-errors).
 using System;
 using System.Collections.Generic;

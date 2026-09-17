@@ -12,7 +12,7 @@ created: 2026-09-01
 > predicate handoff in `features.js`, spec amended in
 > [[vault/format/features-sidecar|features-sidecar]]. 8 headless engine tests pass.
 > Awaiting user browser check; then Phase B.
-> Audit reconciliation (Phase C input): [[vault/audits/scripts-sanitized-audit|scripts-sanitized-audit]]
+> Audit reconciliation (Phase C input): the sanitized-lib audit (Notes vault)
 > adds two port candidates this plan missed — the v3 `RawViewerWriter.cs` carries real
 > `StressNames`/`DispNames`/`BuildComponents` that the repo v4 writer stubs as TODO, and
 > the old exporter's symmetric-clip contract (absMax envelope appended as last LC).
@@ -123,7 +123,7 @@ audit pending) consumes the definitions.
 
 When the sanitized-scripts audit lands: diff its ViewerSource feature inventory against
 this plan (anything missed), reconcile with `vault/viewer/Viewer overview.md`, update
-[[vault/handoffs/handoff|handoff]]. Candidates already visible: nothing else — shell features all
+the current handoff (Notes vault, `Tools/Pluto Handoffs`). Candidates already visible: nothing else — shell features all
 have v4 equivalents.
 
 ## Verification

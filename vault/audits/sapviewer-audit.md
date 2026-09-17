@@ -12,7 +12,7 @@ Quick read-only audit of `../SapViewer` (2026-09-03) ahead of folding it into Pl
 (usage: [[vault/arms/sap-s2k-to-viewer|sap-s2k-to-viewer]]); Python archived to
 `pythonTools/sap/`. The UI redesign (`sample/`, `docs/ui/`) was **not** carried over by
 user decision (existing Pluto UI preferred). Items 3-5 below are therefore closed.
-Companion: [[vault/handoffs/handoff|handoff]], [[vault/format/v3-schema|v3-schema]].
+Companion: the current handoff (Notes vault, `Tools/Pluto Handoffs`), [[vault/format/v3-schema|v3-schema]].
 
 ## What it is
 
