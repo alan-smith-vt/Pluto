@@ -27,8 +27,8 @@ Repo root is the Obsidian vault; documentation lives under `vault/` only.
   b, c… for a second session the same day; updating today's is fine) plus a line in
   `Handoff log`. `vault/handoffs/handoff.md` is a short **current-state** note, not a log:
   refresh it at session end, keep history out of it.
-- Graph colour groups: `vault/_meta/graph-colors.json` is the restore source for the
-  PC-local `.obsidian/graph.json`.
+- Graph colour groups + the handoff-hiding filter: `.obsidian/graph.json` is tracked (the only
+  tracked `.obsidian` file); `vault/_meta/graph-colors.json` is its restore source.
 
 ## Working conventions
 

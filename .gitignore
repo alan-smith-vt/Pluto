@@ -11,6 +11,8 @@ Thumbs.db
 **/.obsidian/
 !/.obsidian/
 /.obsidian/*.json
+# graph settings follow the clone (colour groups + the filter hiding handoffs; vault/_meta/graph-colors.json is the source)
+!/.obsidian/graph.json
 
 .pdf
 
