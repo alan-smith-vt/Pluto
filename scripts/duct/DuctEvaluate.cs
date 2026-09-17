@@ -39,9 +39,10 @@ public static class DuctEvaluate
         Dictionary<string, string[]> worst = new Dictionary<string, string[]>();      // frame -> row of its governing station
         Dictionary<string, double> worstVal = new Dictionary<string, double>();
         Dictionary<string, HashSet<string>> overByCombo = new Dictionary<string, HashSet<string>>();
-        Dictionary<string, double[]> env = new Dictionary<string, double[]>();          // frame -> max axial, max M_a, max M_b
+        Dictionary<string, double[]> env = new Dictionary<string, double[]>();          // frame -> max axial, max M_a, max M_b, max V_a, max V_b
         Dictionary<string, double[]> ends = endsOnly ? StationRange(forcesPath) : null;
         int rowsIn = 0, rowsOut = 0;
+        HashSet<string> usedSec = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         using (StreamReader rd = new StreamReader(forcesPath))
         using (StreamWriter st = new StreamWriter(Path.Combine(outDir, "dcr-stations.tsv")))
@@ -75,8 +76,10 @@ public static class DuctEvaluate
                 st.Write(string.Join("\t", row) + "\r\n");
                 rowsOut++;
                 double[] e;
-                if (!env.TryGetValue(c[iF], out e)) { e = new double[3]; env[c[iF]] = e; }
+                if (!env.TryGetValue(c[iF], out e)) { e = new double[5]; env[c[iF]] = e; }
                 e[0] = Math.Max(e[0], Math.Max(d.DcrT, d.DcrC)); e[1] = Math.Max(e[1], d.DcrMa); e[2] = Math.Max(e[2], d.DcrMb);
+                e[3] = Math.Max(e[3], d.DcrVa); e[4] = Math.Max(e[4], d.DcrVb);
+                usedSec.Add(c[iS]);
                 double prev;
                 if (!worstVal.TryGetValue(c[iF], out prev) || d.Governing > prev) { worstVal[c[iF]] = d.Governing; worst[c[iF]] = row; }
                 if (d.Governing > limit)
@@ -90,19 +93,33 @@ public static class DuctEvaluate
         List<string> frames = new List<string>(worst.Keys);
         frames.Sort(delegate(string x, string y) { return worstVal[y].CompareTo(worstVal[x]); });
         List<string> fr = new List<string>();
-        fr.Add("Frame\tSection\tStation_in\tOutputCase\tStepType\tLS\tDCR_t\tDCR_c\tDCR_ma\tDCR_mb\tDCR_va\tDCR_vb\tDCR_combined\tDCR_governing\tControls\tEnv_axial\tEnv_ma\tEnv_mb\tDCR_envelope");
-        double excess = 0; int over = 0, overEnv = 0;
+        fr.Add("Frame\tSection\tStation_in\tOutputCase\tStepType\tLS\tDCR_t\tDCR_c\tDCR_ma\tDCR_mb\tDCR_va\tDCR_vb\tDCR_combined\tDCR_governing\tControls\tEnv_axial\tEnv_ma\tEnv_mb\tDCR_envelope\tEnv_va\tEnv_vb\tDCR_shear");
+        double excess = 0; int over = 0, overEnv = 0, overShear = 0; double maxShear = 0;
         foreach (string f in frames)
         {
             string[] r = worst[f];
             string controls = Controls(r, noShear);
             double[] e = env[f];
             double envSum = e[0] + e[1] + e[2];
-            fr.Add(string.Join("\t", r) + "\t" + controls + "\t" + G(e[0]) + "\t" + G(e[1]) + "\t" + G(e[2]) + "\t" + G(envSum));
+            double shear = Math.Max(e[3], e[4]);
+            fr.Add(string.Join("\t", r) + "\t" + controls + "\t" + G(e[0]) + "\t" + G(e[1]) + "\t" + G(e[2]) + "\t" + G(envSum) + "\t" + G(e[3]) + "\t" + G(e[4]) + "\t" + G(shear));
+            if (shear > limit) overShear++;
+            maxShear = Math.Max(maxShear, shear);
             if (worstVal[f] > limit) { over++; excess += worstVal[f] - limit; }
             if (envSum > limit) overEnv++;
         }
         File.WriteAllText(Path.Combine(outDir, "dcr-frames.tsv"), string.Join("\r\n", fr) + "\r\n");
+        List<string> sc = new List<string>();
+        sc.Add("Section\tMaterial\ta_in\tb_in\tt_in\tStiffSpacing_in\tOmega_v\th_a_in\th_a_over_t\tkv_a\tFcr_a_ksi\tlambda_va\tVn_a_web_kip\tVall_a_kip\th_b_in\th_b_over_t\tkv_b\tFcr_b_ksi\tlambda_vb\tVn_b_web_kip\tVall_b_kip");
+        List<string> secNames = new List<string>(usedSec);
+        secNames.Sort(StringComparer.OrdinalIgnoreCase);
+        foreach (string k in secNames)
+        {
+            DuctCapacity q = caps[k]; DuctSection s = q.Section;
+            sc.Add(string.Join("\t", new string[] { s.Name, s.Material.Name, G(s.A), G(s.B), G(s.T), double.IsNaN(s.StiffSpacing) ? "sheet" : G(s.StiffSpacing), G(s.Material.OmegaV),
+                G(q.HVa), G(q.HVa / s.T), G(q.Kva), G(q.Fcra), G(q.LambdaVa), G(q.Vna), G(q.VAllA), G(q.HVb), G(q.HVb / s.T), G(q.Kvb), G(q.Fcrb), G(q.LambdaVb), G(q.Vnb), G(q.VAllB) }));
+        }
+        File.WriteAllText(Path.Combine(outDir, "shear-capacity.tsv"), string.Join("\r\n", sc) + "\r\n");
 
         StringBuilder sb = new StringBuilder();
         sb.AppendLine("DuctEvaluate " + DateTime.Now.ToString("yyyy-MM-dd HH:mm", Inv));
@@ -110,6 +127,7 @@ public static class DuctEvaluate
         sb.AppendLine(F("materials {0}   shear {1}", matPath, noShear ? "excluded from governing" : "included"));
         sb.AppendLine(F("frames over limit {0}   sum of excess (per frame, governing) {1:0.###}", over, excess));
         sb.AppendLine(F("frames over limit on the envelope (max axial + max M2 + max M3) {0}", overEnv));
+        sb.AppendLine(F("shear (reported separately, max of V2 / V3 DCR): frames over limit {0}, max {1:0.###}; capacities in shear-capacity.tsv", overShear, maxShear));
         sb.AppendLine("frames over limit by output case / combo:");
         List<string> cs = new List<string>(combos.Keys);
         cs.Sort(StringComparer.OrdinalIgnoreCase);
@@ -203,6 +221,11 @@ public static class DuctEvaluate
     // carbonSections (optional): section names that get material "CARBON" instead of material.
     public static string Skeleton(string sectionsTsv, string forcesPath, string material, string outCsv, string capacitiesCsv, string[] carbonSections)
     {
+        return Skeleton(sectionsTsv, forcesPath, material, outCsv, capacitiesCsv, carbonSections, double.NaN);
+    }
+    // stiffSpacing: transverse stiffener spacing (in) for every section, NaN = blank (the sheet's shear as written).
+    public static string Skeleton(string sectionsTsv, string forcesPath, string material, string outCsv, string capacitiesCsv, string[] carbonSections, double stiffSpacing)
+    {
         HashSet<string> carbon = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (carbonSections != null) foreach (string k in carbonSections) carbon.Add(k.Trim());
         Dictionary<string, Dictionary<string, string>> capRows = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
@@ -222,7 +245,7 @@ public static class DuctEvaluate
             }
         }
         List<string> rows = new List<string>();
-        rows.Add("Section,Material,a_in,b_in,t_in,stiff_a,stiff_b,h_a_in,h_b_in,K,L_ft,sig_t_ksi,sig_m2_ksi,sig_m3_ksi,sig_v2_ksi,sig_v3_ksi,r_a_in,r_b_in,Notes");
+        rows.Add("Section,Material,a_in,b_in,t_in,stiff_a,stiff_b,h_a_in,h_b_in,K,L_ft,sig_t_ksi,sig_m2_ksi,sig_m3_ksi,sig_v2_ksi,sig_v3_ksi,r_a_in,r_b_in,stiff_spacing_in,Notes");
         int n = 0, skipped = 0;
         foreach (Dictionary<string, string> r in DuctTables.ReadCsv(sectionsTsv))
         {
@@ -233,7 +256,7 @@ public static class DuctEvaluate
             Dictionary<string, string> cr;
             if (capRows.TryGetValue(r["Section"], out cr)) { st = cr["Tension"]; sm = cr["Bending"]; sv2 = cr["Shear2"]; sv3 = cr["Shear3"]; }
             else if (capRows.Count > 0) noCap.Add(r["Section"]);
-            rows.Add(string.Join(",", new string[] { r["Section"], carbon.Contains(r["Section"]) ? "CARBON" : material, r["t3_in"], r["t2_in"], r["tf_in"], "yes", "yes", r["t2_in"], r["t3_in"], "1.0", "10", st, sm, sm, sv2, sv3, r["r22_in"], r["r33_in"], note }));
+            rows.Add(string.Join(",", new string[] { r["Section"], carbon.Contains(r["Section"]) ? "CARBON" : material, r["t3_in"], r["t2_in"], r["tf_in"], "yes", "yes", r["t2_in"], r["t3_in"], "1.0", "10", st, sm, sm, sv2, sv3, r["r22_in"], r["r33_in"], double.IsNaN(stiffSpacing) ? "" : G(stiffSpacing), note }));
             n++;
         }
         File.WriteAllText(outCsv, string.Join("\r\n", rows) + "\r\n");

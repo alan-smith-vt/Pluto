@@ -502,25 +502,30 @@ public class DuctOptimize
         OptEval baseEval = Record("base", 0, "", set, cur, sw.Elapsed.TotalMilliseconds); baseEval.Accepted = true; Steps.Add(baseEval);
         Say(F("base (nothing released): {0}   [{1} candidates allowed of {2}]", Sc(cur), Allowed(), Cands.Count));
         string stop = "";
+        // A cut added to a mechanism leaves a mechanism, so a candidate that made the set singular is skipped for the
+        // rest of the greedy pass (the set only grows); one singular on its own is skipped by every phase.
+        HashSet<int> deadGreedy = new HashSet<int>(), deadAlone = new HashSet<int>();
         // greedy forward
         for (int step = 1; step <= maxJoints; step++)
         {
             if (cur.Excess <= 0) { stop = "every frame within the limit"; break; }
             if (maxEvals > 0 && Evals.Count >= maxEvals) { stop = "evaluation cap reached"; break; }
             Stopwatch ss = Stopwatch.StartNew();
-            OptEval best = null; int tried = 0, singular = 0;
+            OptEval best = null; int tried = 0, singular = 0, skipped = 0;
             for (int c = 0; c < Cands.Count; c++)
             {
                 if (Cands[c].Excluded != null || Array.IndexOf(set, c) >= 0) continue;
                 if (onePerSpan && !SpanFree(c, set, -1)) continue;
+                if (deadGreedy.Contains(c)) { skipped++; continue; }
                 OptEval e = Try("greedy", step, Cands[c].Joint, With(set, c));
-                tried++; if (e.Score.Singular) singular++;
+                tried++;
+                if (e.Score.Singular) { singular++; deadGreedy.Add(c); if (set.Length == 0) deadAlone.Add(c); }
                 if (best == null || Better(e.Score, best.Score)) best = e;
             }
             if (best == null) { stop = "no candidate left to try"; break; }
             if (!Better(best.Score, cur)) { stop = F("step {0}: no candidate improves the score", step); break; }
             best.Accepted = true; set = best.Set; cur = best.Score; Steps.Add(best);
-            Say(F("greedy {0}: + joint {1} (span {2})  ->  {3}   [{4} tried, {5} singular, {6:0.0} s]", step, best.Trial, Cands[best.Set[best.Set.Length - 1]].Span, Sc(cur), tried, singular, ss.Elapsed.TotalSeconds));
+            Say(F("greedy {0}: + joint {1} (span {2})  ->  {3}   [{4} tried, {5} singular, {6} skipped as known mechanisms, {7:0.0} s]", step, best.Trial, Cands[best.Set[best.Set.Length - 1]].Span, Sc(cur), tried, singular, skipped, ss.Elapsed.TotalSeconds));
         }
         if (stop.Length == 0) stop = F("{0} joints reached", maxJoints);
         Say("greedy stopped: " + stop);
@@ -538,6 +543,7 @@ public class DuctOptimize
                     {
                         if (Cands[c].Excluded != null || Array.IndexOf(set, c) >= 0) continue;
                         if (onePerSpan && !SpanFree(c, set, pos)) continue;
+                        if (deadAlone.Contains(c)) continue;
                         OptEval e = Try("swap", pass, Cands[set[pos]].Joint + ">" + Cands[c].Joint, Replaced(set, pos, c));
                         if (best == null || Better(e.Score, best.Score)) best = e;
                     }

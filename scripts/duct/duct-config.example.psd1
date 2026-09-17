@@ -25,7 +25,8 @@
         Material       = '304L'       # row of duct-materials.csv for every section ...
         CarbonSections = @()          # ... except these, which get CARBON, e.g. @('DUCT_6x6')
         EndsOnly       = $true        # the two frame ends only
-        NoShear        = $true        # V2 / V3 left out of the governing DCR
+        NoShear        = $true        # V2 / V3 left out of the governing DCR (and the optimizer score); the report shows shear separately
+        StiffenerSpacingIn = 24       # transverse stiffeners (in) for the shear check; delete = the sheet's shear as written
         Limit          = 1.0
     }
 

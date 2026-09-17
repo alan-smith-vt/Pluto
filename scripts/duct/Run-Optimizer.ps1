@@ -60,6 +60,7 @@ $check = (Get-CheckCombos $C) -join ","
 $secCsv = Join-Path $dirs.tables "duct-sections.csv"
 $a = @($dcr, "-Skeleton", "-SectionsTsv", (Join-Path $dirs.connected "sections.tsv"), "-ForcesTsv", (Join-Path $dirs.connected "forces.tsv"), "-Material", $C.Dcr.Material, "-OutCsv", $secCsv)
 if (@($C.Dcr.CarbonSections).Count -gt 0) { $a += @("-CarbonSections", (@($C.Dcr.CarbonSections) -join ",")) }
+if ($C.Dcr.StiffenerSpacingIn) { $a += @("-StiffenerSpacing", $C.Dcr.StiffenerSpacingIn) }
 Invoke-Step "4a duct-sections.csv" $a
 function Invoke-Dcr([string]$title, [string]$forcesDir, [string]$outDir) {
     $a = @($dcr, "-Evaluate", "-ForcesTsv", (Join-Path $forcesDir "forces.tsv"), "-TablesDir", $dirs.tables, "-OutDir", $outDir, "-Limit", $C.Dcr.Limit, "-Combos", $check, "-ComboLS", $C.Dcr.ComboLS)

@@ -99,19 +99,60 @@ public static class DuctOptReport
         sb.Append("</div>");
         sb.Append(DuctReport.DcrBars(dCon.Count > 0 ? dCon : envBase, envFinal, dDir, limit, 25));
 
+        // ---- shear (not in the score: reported beside it)
+        Dictionary<string, double> sCon = DuctReport.DcrColumn(dcrConnected, "DCR_shear"), sFin = DuctReport.DcrColumn(dcrFinal, "DCR_shear"), sDir = DuctReport.DcrColumn(dcrDirect, "DCR_shear");
+        List<Row> shearCap = new List<Row>();   // written by DuctEvaluate beside dcr-frames.tsv
+        foreach (string dp in new string[] { dcrFinal, dcrConnected })
+            if (shearCap.Count == 0 && !string.IsNullOrEmpty(dp)) shearCap = Tsv(Path.Combine(Path.GetDirectoryName(dp), "shear-capacity.tsv"));
+        if (sCon.Count > 0 || sFin.Count > 0)
+        {
+            sb.Append("<h2>Shear</h2><p><small>Shear DCR per frame = max over the scored stations and cases of V2 and V3 DCRs, with the same 1.5 stress increase. ")
+              .Append("Not part of the optimizer score (config Dcr.NoShear); shown to compare with the shear calc. ")
+              .Append("With a stiffener spacing: webs of V2 are the two walls of depth a = t3, of V3 the two walls of depth b = t2; k<sub>v</sub> from spacing / depth (4 + 5.34/(s/h)&sup2; if s/h &le; 1, else 5.34 + 4/(s/h)&sup2;); F<sub>cr</sub> = &pi;&sup2;Ek<sub>v</sub>/(12(1&minus;&mu;&sup2;)(h/t)&sup2;); V<sub>n</sub> per web from the sheet's rule; allowable = 2V<sub>n</sub>/&Omega;<sub>v</sub>. ")
+              .Append("\"sheet\" = the Mathcad sheet as written (h = h_a / h_b, one web).</small></p>");
+            sb.Append("<table><tr><th>shear DCR</th><th>frames</th><th>over ").Append(G(limit)).Append("</th><th>sum of excess</th><th>max</th></tr>");
+            EnvRow(sb, "connected model", sCon, limit);
+            EnvRow(sb, "chosen set released", sFin, limit);
+            EnvRow(sb, "chosen set, direct SAP disconnect", sDir, limit);
+            sb.Append("</table>");
+            if (shearCap.Count > 0)
+            {
+                string[] cols = { "Section", "Material", "a_in", "b_in", "t_in", "StiffSpacing_in", "Omega_v", "h_a_over_t", "kv_a", "Fcr_a_ksi", "lambda_va", "Vn_a_web_kip", "Vall_a_kip", "h_b_over_t", "kv_b", "Fcr_b_ksi", "lambda_vb", "Vn_b_web_kip", "Vall_b_kip" };
+                string[] heads = { "section", "material", "a (in)", "b (in)", "t (in)", "stiffeners (in)", "&Omega;<sub>v</sub>", "V2: h/t", "k<sub>v</sub>", "F<sub>cr</sub> (ksi)", "&lambda;<sub>v</sub>", "V<sub>n</sub> per web (kip)", "V2 allowable (kip)", "V3: h/t", "k<sub>v</sub>", "F<sub>cr</sub> (ksi)", "&lambda;<sub>v</sub>", "V<sub>n</sub> per web (kip)", "V3 allowable (kip)" };
+                sb.Append("<h3>Shear capacity per section (allowable before the 1.5 increase)</h3><table><tr>");
+                foreach (string hd in heads) sb.Append("<th>").Append(hd).Append("</th>");
+                sb.Append("</tr>");
+                foreach (Row r in shearCap)
+                {
+                    sb.Append("<tr>");
+                    for (int i = 0; i < cols.Length; i++)
+                    {
+                        string v = r.C.ContainsKey(cols[i]) ? r.C[cols[i]] : "";
+                        double x; bool num = i >= 2 && double.TryParse(v, NumberStyles.Float, Inv, out x);
+                        sb.Append("<td>").Append(num ? G(double.Parse(v, NumberStyles.Float, Inv)) : H(v)).Append("</td>");
+                    }
+                    sb.Append("</tr>");
+                }
+                sb.Append("</table>");
+            }
+            sb.Append(DuctReport.DcrBars(sCon.Count > 0 ? sCon : sFin, sFin, sDir, limit, 25, "shear DCR"));
+        }
+
         // ---- maps
-        Dictionary<string, double[]> xyz; List<string[]> segs;
-        LoadGeometry(connectedDir, out xyz, out segs);
+        Dictionary<string, double[]> xyz; List<string[]> segs; List<Row> supports;
+        LoadGeometry(connectedDir, out xyz, out segs, out supports);
         if (segs.Count > 0)
         {
             sb.Append("<h2>Maps</h2><p><small>Frames coloured by DCR envelope: green &le; 0.5, yellow 1.0, red 1.5, dark red 3+; grey = not scored. ")
-              .Append("Candidates: hollow grey = named but not in the link model (excluded or not sampled), blue = tried, red ring = chosen. Hover for names and values.</small></p>");
+              .Append("Candidates: hollow grey = named but not in the link model (excluded or not sampled), blue = tried, red ring = chosen. Supports: black square = anchor, dark triangle = pinned (translations held), orange diamond = guide (a direction free; hover for which), grey square = support not sub-classed (survey older than the support classes). Hover for names and values.</small></p>");
             foreach (int proj in new int[] { 0, 1 })
             {
                 sb.Append("<h3>").Append(proj == 0 ? "Plan (X right, Y up)" : "Elevation (X right, Z up)").Append("</h3><div class=\"row\">");
-                sb.Append(Map(proj == 0 ? "connected: DCR envelope" : "connected: DCR envelope", proj, xyz, segs, dCon.Count > 0 ? dCon : envBase, null, null, null));
-                sb.Append(Map("chosen set released: DCR envelope", proj, xyz, segs, envFinal, null, null, null));
-                sb.Append(Map("candidates: named / tried / chosen", proj, xyz, segs, null, selected, cands, chosen));
+                sb.Append(Map(proj == 0 ? "connected: DCR envelope" : "connected: DCR envelope", proj, xyz, segs, dCon.Count > 0 ? dCon : envBase, null, null, null, supports));
+                sb.Append(Map("chosen set released: DCR envelope", proj, xyz, segs, envFinal, null, null, null, supports));
+                sb.Append(Map("candidates: named / tried / chosen", proj, xyz, segs, null, selected, cands, chosen, supports));
+                Dictionary<string, double> shearMap = DuctReport.DcrColumn(dcrFinal, "DCR_shear");
+                if (shearMap.Count > 0) sb.Append(Map("chosen set released: shear DCR", proj, xyz, segs, shearMap, null, null, null, supports));
                 sb.Append("</div>");
             }
         }
@@ -348,13 +389,23 @@ public static class DuctOptReport
 
     // ------------------------------------------------------------------ maps
 
-    static void LoadGeometry(string connectedDir, out Dictionary<string, double[]> xyz, out List<string[]> segs)
+    // supports: support joints of the connected survey (Class = support); Support / Restrains are empty for a survey
+    // made before supports were sub-classed.
+    static void LoadGeometry(string connectedDir, out Dictionary<string, double[]> xyz, out List<string[]> segs, out List<Row> supports)
     {
-        xyz = new Dictionary<string, double[]>(StringComparer.Ordinal); segs = new List<string[]>();
+        xyz = new Dictionary<string, double[]>(StringComparer.Ordinal); segs = new List<string[]>(); supports = new List<Row>();
         if (string.IsNullOrEmpty(connectedDir)) return;
         string jp = Path.Combine(connectedDir, "duct-joints.tsv"), fp = Path.Combine(connectedDir, "frames.tsv");
         if (!File.Exists(jp) || !File.Exists(fp)) return;
-        foreach (Row r in Tsv(jp)) xyz[r.C["Joint"]] = new double[] { r.Num("X_in"), r.Num("Y_in"), r.Num("Z_in") };
+        foreach (Row r in Tsv(jp))
+        {
+            xyz[r.C["Joint"]] = new double[] { r.Num("X_in"), r.Num("Y_in"), r.Num("Z_in") };
+            if (r.C["Class"] == "support")
+            {
+                if (!r.C.ContainsKey("Support")) { r.C["Support"] = ""; r.C["Restrains"] = ""; }
+                supports.Add(r);
+            }
+        }
         foreach (Row r in Tsv(fp)) if (xyz.ContainsKey(r.C["JointI"]) && xyz.ContainsKey(r.C["JointJ"])) segs.Add(new string[] { r.C["Frame"], r.C["JointI"], r.C["JointJ"] });
     }
 
@@ -373,7 +424,7 @@ public static class DuctOptReport
 
     // proj 0 = plan (X, Y), 1 = elevation (X, Z). values: frame -> DCR (null = geometry only).
     // selected: candidates-selected.tsv (named), cands: candidates-used.tsv (in the link model), chosen: chosen.tsv.
-    static string Map(string title, int proj, Dictionary<string, double[]> xyz, List<string[]> segs, Dictionary<string, double> values, List<Row> selected, List<Row> cands, List<Row> chosen)
+    static string Map(string title, int proj, Dictionary<string, double[]> xyz, List<string[]> segs, Dictionary<string, double> values, List<Row> selected, List<Row> cands, List<Row> chosen, List<Row> supports)
     {
         int iu = 0, iv = proj == 0 ? 1 : 2;
         double ulo = double.MaxValue, uhi = double.MinValue, vlo = double.MaxValue, vhi = double.MinValue;
@@ -394,6 +445,19 @@ public static class DuctOptReport
             s.Append(F("<line x1=\"{0:0.#}\" y1=\"{1:0.#}\" x2=\"{2:0.#}\" y2=\"{3:0.#}\" stroke=\"{4}\" stroke-width=\"{5}\" stroke-linecap=\"round\"><title>frame {6}{7}</title></line>",
                 ox + (a[iu] - ulo) * sc, Hh - oy - (a[iv] - vlo) * sc, ox + (b[iu] - ulo) * sc, Hh - oy - (b[iv] - vlo) * sc, col, values == null ? 1.5 : 2.5, H(sg[0]), double.IsNaN(v) ? "" : ": DCR " + G(v)));
         }
+        if (supports != null)
+            foreach (Row r in supports)
+            {
+                double[] p; if (!xyz.TryGetValue(r.C["Joint"], out p)) continue;
+                double cx = ox + (p[iu] - ulo) * sc, cy = Hh - oy - (p[iv] - vlo) * sc;
+                string kind = r.C["Support"], tip = F("<title>joint {0}: {1}{2}</title>", H(r.C["Joint"]), kind.Length == 0 ? "support" : kind, r.C["Restrains"].Length == 0 ? "" : " (" + H(r.C["Restrains"]) + ")");
+                if (kind == "guide")
+                    s.Append(F("<path d=\"M{0:0.#},{1:0.#} l4,4 l-4,4 l-4,-4 z\" fill=\"{2}\" stroke=\"#333\" stroke-width=\"0.5\">{3}</path>", cx, cy - 4, Orange, tip));
+                else if (kind == "pinned")
+                    s.Append(F("<path d=\"M{0:0.#},{1:0.#} l4,7 l-8,0 z\" fill=\"#444\">{2}</path>", cx, cy - 3.5, tip));
+                else
+                    s.Append(F("<rect x=\"{0:0.#}\" y=\"{1:0.#}\" width=\"7\" height=\"7\" fill=\"{2}\">{3}</rect>", cx - 3.5, cy - 3.5, kind == "anchor" ? "#111" : "#999", tip));
+            }
         if (selected != null)
         {
             HashSet<string> inModel = new HashSet<string>(StringComparer.Ordinal);

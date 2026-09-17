@@ -394,12 +394,17 @@ public class SapSurvey
     // frame of `group`:
     //   end      1 group frame
     //   tee      3+ group frames
-    //   support  restrained, or a link, or touched by non-group frames that lead to a restraint (support steel)
+    //   support  restrained, or a link, or touched by non-group frames that lead to a restraint (support steel,
+    //            "lollipops"). Sub-classed by what it restrains at the duct joint (column Support): the lollipop's
+    //            end releases at the duct end are read, its unreleased local DOFs (+ joint restraints) give the
+    //            restrained directions. anchor = 3 translations + 3 rotations, pinned = 3 translations,
+    //            guide = fewer than 3 translations (a direction left free). Links count as anchors.
     //   attach   touched only by non-group frames that reach no restraint (mass stubs, hangers-on);
     //            brace if that non-group piece touches 2+ group joints. Excluded, but does not split spans.
     //   elbow    2 group frames meeting at more than angleTolDeg
     //   inline   2 group frames, straight within angleTolDeg  -> candidate
-    // Spans: group frames joined through non-support joints; a span is one piece between supports.
+    // Spans: group frames joined through non-support joints and guides; a span is one piece between anchors /
+    // pinned supports (a guide does not stop movement along its free direction, so it does not end a span).
     // Writes duct-joints.tsv (every group joint), candidates.tsv (inline, not loaded), spans.tsv.
     public string Candidates(string outDir, string group, double angleTolDeg)
     {
@@ -422,6 +427,9 @@ public class SapSurvey
         public string Class = "", Sections = "";
         public double Angle;
         public int Span = -1;
+        public List<double[]> TDirs = new List<double[]>(), RDirs = new List<double[]>();   // restrained directions (global unit vectors)
+        public string Support = "", Restrains = "";
+        public bool SplitsSpan { get { return Class == "support" && Support != "guide"; } }
     }
 
     string CandidatesIn(string outDir, string group, double angleTolDeg)
@@ -504,7 +512,22 @@ public class SapSurvey
                 int root = Find(op, oj[e == 0 ? nodeI[i] : nodeJ[i]]);
                 bool g = grounded.Contains(root);
                 ji.Other++;
-                if (g) ji.OtherGrounded = true;
+                if (g)
+                {
+                    ji.OtherGrounded = true;
+                    // what this lollipop holds at the duct joint: its unreleased local DOFs at this end
+                    bool[] ri = new bool[6], rj = new bool[6]; double[] si = new double[6], sj = new double[6];
+                    Model.FrameObj.GetReleases(frameNameOther[i], ref ri, ref rj, ref si, ref sj);
+                    bool[] rel = e == 0 ? ri : rj;
+                    double[] tm = new double[9];
+                    if (Model.FrameObj.GetTransformationMatrix(frameNameOther[i], ref tm, true) != 0) Warn("GetTransformationMatrix " + frameNameOther[i]);
+                    for (int k = 0; k < 3; k++)
+                    {
+                        double[] axis = { tm[k], tm[3 + k], tm[6 + k] };   // column k = local k+1 in global
+                        if (!rel[k]) ji.TDirs.Add(axis);
+                        if (!rel[3 + k]) ji.RDirs.Add(axis);
+                    }
+                }
                 if (ductTouches[root].Count >= 2) ji.OtherBrace = true;
                 string tag = otherSec[i] + (g ? "(grounded)" : ductTouches[root].Count >= 2 ? "(brace)" : "(free)");
                 if (g)
@@ -532,6 +555,12 @@ public class SapSurvey
             bool[] r = new bool[6];
             Model.PointObj.GetRestraint(ji.Name, ref r);
             foreach (bool b in r) if (b) ji.Restrained = true;
+            for (int k = 0; k < 3; k++)
+            {
+                double[] axis = { k == 0 ? 1 : 0, k == 1 ? 1 : 0, k == 2 ? 1 : 0 };
+                if (r[k]) ji.TDirs.Add(axis);
+                if (r[3 + k]) ji.RDirs.Add(axis);
+            }
             int nf = 0; string[] pn = null, lp = null, cs = null; int[] st = null;
             double[] f1 = null, f2 = null, f3 = null, m1 = null, m2 = null, m3 = null;
             if (Model.PointObj.GetLoadForce(ji.Name, ref nf, ref pn, ref lp, ref st, ref cs, ref f1, ref f2, ref f3, ref m1, ref m2, ref m3, eItemType.Objects) == 0 && nf > 0)
@@ -550,7 +579,17 @@ public class SapSurvey
                 double dot = -(u[0] * v[0] + u[1] * v[1] + u[2] * v[2]);   // straight run: the two away-vectors are opposite
                 ji.Angle = Math.Acos(Math.Max(-1, Math.Min(1, dot))) * 180 / Math.PI;
             }
-            if (ji.Restrained || ji.OtherGrounded || ji.Links > 0) ji.Class = "support";
+            if (ji.Restrained || ji.OtherGrounded || ji.Links > 0)
+            {
+                ji.Class = "support";
+                List<double[]> tb = Basis(ji.TDirs), rb = Basis(ji.RDirs);
+                if (ji.Links > 0) { ji.Support = "anchor"; ji.Restrains = "link (taken as fixed)"; }
+                else
+                {
+                    ji.Support = tb.Count < 3 ? "guide" : rb.Count < 3 ? "pinned" : "anchor";
+                    ji.Restrains = "U " + Held(tb) + "; R " + Held(rb);
+                }
+            }
             else if (ji.Other > 0) ji.Class = ji.OtherBrace ? "brace" : "attach";
             else if (ji.Duct.Count == 1) ji.Class = "end";
             else if (ji.Duct.Count >= 3) ji.Class = "tee";
@@ -562,7 +601,7 @@ public class SapSurvey
         int[] parent = new int[gFrame.Count];
         for (int i = 0; i < parent.Length; i++) parent[i] = i;
         foreach (JointInfo ji in joints.Values)
-            if (ji.Class != "support")
+            if (!ji.SplitsSpan)
                 for (int k = 1; k < ji.Duct.Count; k++) Union(parent, ji.Duct[0], ji.Duct[k]);
         Dictionary<int, int> spanId = new Dictionary<int, int>();
         int[] frameSpan = new int[gFrame.Count];
@@ -573,7 +612,7 @@ public class SapSurvey
             frameSpan[i] = spanId[root];
         }
         int ns = spanId.Count;
-        int[] spFrames = new int[ns + 1], spInline = new int[ns + 1], spElbow = new int[ns + 1], spTee = new int[ns + 1], spEnd = new int[ns + 1], spSupport = new int[ns + 1], spAttach = new int[ns + 1];
+        int[] spFrames = new int[ns + 1], spInline = new int[ns + 1], spElbow = new int[ns + 1], spTee = new int[ns + 1], spEnd = new int[ns + 1], spSupport = new int[ns + 1], spGuide = new int[ns + 1], spAttach = new int[ns + 1];
         double[] spLen = new double[ns + 1];
         for (int i = 0; i < gFrame.Count; i++)
         {
@@ -583,7 +622,7 @@ public class SapSurvey
         }
         foreach (JointInfo ji in joints.Values)
         {
-            if (ji.Class == "support")
+            if (ji.SplitsSpan)
             {
                 HashSet<int> touched = new HashSet<int>();
                 foreach (int f in ji.Duct) touched.Add(frameSpan[f]);
@@ -591,6 +630,7 @@ public class SapSurvey
                 continue;
             }
             ji.Span = frameSpan[ji.Duct[0]];
+            if (ji.Class == "support") { spGuide[ji.Span]++; continue; }
             if (ji.Class == "inline") spInline[ji.Span]++;
             else if (ji.Class == "elbow") spElbow[ji.Span]++;
             else if (ji.Class == "tee") spTee[ji.Span]++;
@@ -601,27 +641,29 @@ public class SapSurvey
         List<JointInfo> sorted = new List<JointInfo>(joints.Values);
         sorted.Sort(delegate(JointInfo p, JointInfo q) { return p.Span != q.Span ? p.Span.CompareTo(q.Span) : string.CompareOrdinal(p.Name, q.Name); });
         List<string> all = new List<string>(), cand = new List<string>();
-        string head = "Joint\tClass\tSpan\tX_in\tY_in\tZ_in\tDuctFrames\tOtherFrames\tLinks\tRestrained\tJointLoad\tAngle_deg\tSections\tOtherSections\tGroundedVia";
+        string head = "Joint\tClass\tSpan\tX_in\tY_in\tZ_in\tDuctFrames\tOtherFrames\tLinks\tRestrained\tJointLoad\tAngle_deg\tSections\tOtherSections\tGroundedVia\tSupport\tRestrains";
         all.Add(head); cand.Add(head);
         string[] classes = { "inline", "elbow", "tee", "end", "support", "attach", "brace" };
         int[] count = new int[classes.Length];
+        int anchors = 0, pinned = 0, guides = 0;
         foreach (JointInfo ji in sorted)
         {
             string row = Tab(ji.Name, ji.Class, ji.Span < 0 ? "" : ji.Span.ToString(Inv), G(ji.X), G(ji.Y), G(ji.Z), ji.Duct.Count, ji.Other, ji.Links,
-                ji.Restrained, ji.Loaded, ji.Duct.Count == 2 ? ji.Angle.ToString("0.#", Inv) : "", ji.Sections, ji.OtherSections, ji.GroundedVia);
+                ji.Restrained, ji.Loaded, ji.Duct.Count == 2 ? ji.Angle.ToString("0.#", Inv) : "", ji.Sections, ji.OtherSections, ji.GroundedVia, ji.Support, ji.Restrains);
             all.Add(row);
             if (ji.Class == "inline" && !ji.Loaded) cand.Add(row);
             count[Array.IndexOf(classes, ji.Class)]++;
+            if (ji.Support == "anchor") anchors++; else if (ji.Support == "pinned") pinned++; else if (ji.Support == "guide") guides++;
         }
         Write(Path.Combine(outDir, "duct-joints.tsv"), all);
         Write(Path.Combine(outDir, "candidates.tsv"), cand);
 
         List<string> sp = new List<string>();
-        sp.Add("Span\tFrames\tLength_ft\tSupportJoints\tInline\tElbows\tTees\tEnds\tAttachOrBrace");
+        sp.Add("Span\tFrames\tLength_ft\tSupportJoints\tGuides\tInline\tElbows\tTees\tEnds\tAttachOrBrace");
         int free = 0, oneSupport = 0;
         for (int s = 1; s <= ns; s++)
         {
-            sp.Add(Tab(s, spFrames[s], G(spLen[s] / 12), spSupport[s], spInline[s], spElbow[s], spTee[s], spEnd[s], spAttach[s]));
+            sp.Add(Tab(s, spFrames[s], G(spLen[s] / 12), spSupport[s], spGuide[s], spInline[s], spElbow[s], spTee[s], spEnd[s], spAttach[s]));
             if (spSupport[s] == 0) free++; else if (spSupport[s] == 1) oneSupport++;
         }
         Write(Path.Combine(outDir, "spans.tsv"), sp);
@@ -629,6 +671,7 @@ public class SapSurvey
         StringBuilder sb = new StringBuilder();
         sb.AppendLine(F("candidates for group {0}: {1} frames, {2} joints   (angle tolerance {3} deg)", group, gFrame.Count, joints.Count, angleTolDeg));
         sb.AppendLine(F("  inline {0}   elbow {1}   tee {2}   end {3}   support {4}   attach {5}   brace {6}", count[0], count[1], count[2], count[3], count[4], count[5], count[6]));
+        sb.AppendLine(F("  supports: anchor {0}   pinned {1}   guide {2}   (spans end at anchors and pinned supports only)", anchors, pinned, guides));
         sb.AppendLine(F("  candidates.tsv: {0} (inline, no joint load)", cand.Count - 1));
         sb.AppendLine(F("  spans {0}   with no support joint {1}   with one support joint {2}", ns, free, oneSupport));
         File.WriteAllText(Path.Combine(outDir, "candidates-summary.txt"), sb.ToString());
@@ -641,6 +684,36 @@ public class SapSurvey
         JointInfo o = joints[gI[f] == ji.Name ? gJ[f] : gI[f]];
         double dx = o.X - ji.X, dy = o.Y - ji.Y, dz = o.Z - ji.Z, l = Math.Sqrt(dx * dx + dy * dy + dz * dz);
         return l > 0 ? new double[] { dx / l, dy / l, dz / l } : new double[] { 0, 0, 0 };
+    }
+
+    // Orthonormal basis of the span of dirs (Gram-Schmidt; a direction within ~3 deg of the span adds nothing).
+    static List<double[]> Basis(List<double[]> dirs)
+    {
+        List<double[]> b = new List<double[]>();
+        foreach (double[] d in dirs)
+        {
+            double[] v = (double[])d.Clone();
+            foreach (double[] u in b) { double dot = v[0] * u[0] + v[1] * u[1] + v[2] * u[2]; for (int k = 0; k < 3; k++) v[k] -= dot * u[k]; }
+            double len = Math.Sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+            if (len > 0.05) { for (int k = 0; k < 3; k++) v[k] /= len; b.Add(v); }
+            if (b.Count == 3) break;
+        }
+        return b;
+    }
+    // "all", "none", "X" (the one held direction) or "all but Z" (one free direction).
+    static string Held(List<double[]> b)
+    {
+        if (b.Count == 3) return "all";
+        if (b.Count == 0) return "none";
+        if (b.Count == 1) return Dir(b[0]);
+        double[] u = b[0], v = b[1];
+        return "all but " + Dir(new double[] { u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0] });
+    }
+    static string Dir(double[] v)
+    {
+        string[] ax = { "X", "Y", "Z" };
+        for (int k = 0; k < 3; k++) if (Math.Abs(v[k]) > 0.995) return ax[k];
+        return F("({0:0.##},{1:0.##},{2:0.##})", v[0], v[1], v[2]);
     }
 
     static int Find(int[] p, int i) { while (p[i] != i) { p[i] = p[p[i]]; i = p[i]; } return i; }

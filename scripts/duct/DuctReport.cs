@@ -11,14 +11,18 @@ public static class DuctReport
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
     // Frame -> DCR_envelope from a DuctEvaluate dcr-frames.tsv (null path = absent).
-    public static Dictionary<string, double> DcrEnvelope(string dcrFramesPath)
+    public static Dictionary<string, double> DcrEnvelope(string dcrFramesPath) { return DcrColumn(dcrFramesPath, "DCR_envelope"); }
+
+    // Frame -> any numeric column of a dcr-frames.tsv; empty if the file or the column (older runs) is missing.
+    public static Dictionary<string, double> DcrColumn(string dcrFramesPath, string column)
     {
         Dictionary<string, double> d = new Dictionary<string, double>(StringComparer.Ordinal);
         if (string.IsNullOrEmpty(dcrFramesPath) || !File.Exists(dcrFramesPath)) return d;
         using (StreamReader reader = new StreamReader(dcrFramesPath))
         {
             string[] h = reader.ReadLine().Split('\t');
-            int iF = ForceTable.Col(h, "Frame"), iE = ForceTable.Col(h, "DCR_envelope");
+            if (Array.IndexOf(h, column) < 0) return d;
+            int iF = ForceTable.Col(h, "Frame"), iE = ForceTable.Col(h, column);
             string line;
             while ((line = reader.ReadLine()) != null)
             {
@@ -153,6 +157,10 @@ public static class DuctReport
     // Top frames by connected envelope: bars connected (grey) / released (blue) / direct (thin red mark).
     public static string DcrBars(Dictionary<string, double> con, Dictionary<string, double> rel, Dictionary<string, double> dir, double limit, int top)
     {
+        return DcrBars(con, rel, dir, limit, top, "envelope");
+    }
+    public static string DcrBars(Dictionary<string, double> con, Dictionary<string, double> rel, Dictionary<string, double> dir, double limit, int top, string what)
+    {
         Dictionary<string, double> order = con.Count > 0 ? con : rel;
         List<string> frames = new List<string>(order.Keys);
         frames.Sort(delegate(string x, string y) { return order[y].CompareTo(order[x]); });
@@ -162,7 +170,7 @@ public static class DuctReport
         hi *= 1.05;
         int rowH = 16, W = 600, m = 70, Hh = frames.Count * rowH + 10;
         StringBuilder s = new StringBuilder();
-        s.Append("<h3 style=\"font-size:14px\">Top ").Append(frames.Count).Append(" frames by connected envelope: grey = connected, blue = released, red mark = direct</h3>");
+        s.Append("<h3 style=\"font-size:14px\">Top ").Append(frames.Count).Append(" frames by connected ").Append(H(what)).Append(": grey = connected, blue = released, red mark = direct</h3>");
         s.Append("<svg width=\"").Append(W + m + 60).Append("\" height=\"").Append(Hh + 20).Append("\" font-size=\"10\" font-family=\"Segoe UI,Arial\">");
         double lx = m + limit / hi * W;
         s.Append(F("<line x1=\"{0:0.#}\" y1=\"0\" x2=\"{0:0.#}\" y2=\"{1}\" stroke=\"#999\" stroke-dasharray=\"3 3\"/>", lx, Hh));

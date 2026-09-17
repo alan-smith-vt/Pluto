@@ -29,6 +29,10 @@ public class DuctSection
     public double SigTOverride = double.NaN, SigM2Override = double.NaN, SigM3Override = double.NaN;
     public double SigV2Override = double.NaN, SigV3Override = double.NaN;
     public double RAOverride = double.NaN, RBOverride = double.NaN;   // in: SAP r22 / r33 (exact box) instead of the thin-wall r
+    // Transverse stiffener spacing (in). NaN = the sheet's shear as written (h_a / h_b, one web). A number = web shear
+    // with stiffeners at this spacing: webs of V_a are the two walls of depth a (V2 acts along t3), of V_b the two
+    // walls of depth b; k_v from spacing / depth; capacity of both webs.
+    public double StiffSpacing = double.NaN;
 }
 
 // Shear constants of the web shear capacity, per direction: lambda limit, c, p in
@@ -50,6 +54,8 @@ public class DuctCapacity
     public double SigTAll, Fcre, LambdaC, Fn, SigCAll, SigMAll, SigMaAll, SigMbAll;
     public double Kva, Fcra, Vya, Vcra, LambdaVa, Vna, SigVaAll;
     public double Kvb, Fcrb, Vyb, Vcrb, LambdaVb, Vnb, SigVbAll;
+    public double HVa = double.NaN, HVb = double.NaN;    // web depth used in shear (in)
+    public double VAllA, VAllB;                          // allowable shear of the section, kip, before the stress increase
 
     // Carbon sheet as written: direction a DSM (0.776/0.15/0.4), direction b Winter (0.673/0.22/0.5).
     // Stainless sheet: Winter both ways. Pass explicit rules to override once the sheet owner answers.
@@ -101,8 +107,21 @@ public class DuctCapacity
         c.SigMAll = m.Fy / m.OmegaF;
 
         // Shear, each direction
-        Shear(m, a, s.HA, t, c.Awa, s.StiffA, ruleA, out c.Vya, out c.Kva, out c.Fcra, out c.Vcra, out c.LambdaVa, out c.Vna, out c.SigVaAll);
-        Shear(m, b, s.HB, t, c.Awb, s.StiffB, ruleB, out c.Vyb, out c.Kvb, out c.Fcrb, out c.Vcrb, out c.LambdaVb, out c.Vnb, out c.SigVbAll);
+        if (double.IsNaN(s.StiffSpacing))
+        {
+            c.HVa = s.HA; c.HVb = s.HB;
+            Shear(m, a, s.HA, t, c.Awa, s.StiffA, ruleA, out c.Vya, out c.Kva, out c.Fcra, out c.Vcra, out c.LambdaVa, out c.Vna, out c.SigVaAll);
+            Shear(m, b, s.HB, t, c.Awb, s.StiffB, ruleB, out c.Vyb, out c.Kvb, out c.Fcrb, out c.Vcrb, out c.LambdaVb, out c.Vnb, out c.SigVbAll);
+        }
+        else
+        {
+            // Shear(side, h): k_v uses side / h, so side = the stiffener spacing and h = the web depth. The demand is
+            // V / (2 A_w); sig_all = V_n / A_w / Omega_v makes the DCR V Omega_v / (2 V_n): both webs resist.
+            c.HVa = a; c.HVb = b; c.Awa = a * t; c.Awb = b * t;
+            Shear(m, s.StiffSpacing, a, t, c.Awa, true, ruleA, out c.Vya, out c.Kva, out c.Fcra, out c.Vcra, out c.LambdaVa, out c.Vna, out c.SigVaAll);
+            Shear(m, s.StiffSpacing, b, t, c.Awb, true, ruleB, out c.Vyb, out c.Kvb, out c.Fcrb, out c.Vcrb, out c.LambdaVb, out c.Vnb, out c.SigVbAll);
+            c.SigVaAll *= 2; c.SigVbAll *= 2;
+        }
 
         // Overrides (a = M2 / V2, b = M3 / V3); compression is always computed.
         c.SigMaAll = c.SigMAll; c.SigMbAll = c.SigMAll;
@@ -111,6 +130,7 @@ public class DuctCapacity
         if (!double.IsNaN(s.SigM3Override)) c.SigMbAll = s.SigM3Override;
         if (!double.IsNaN(s.SigV2Override)) c.SigVaAll = s.SigV2Override;
         if (!double.IsNaN(s.SigV3Override)) c.SigVbAll = s.SigV3Override;
+        c.VAllA = c.SigVaAll * 2 * c.Awa; c.VAllB = c.SigVbAll * 2 * c.Awb;   // V at DCR 1 (demand stress = V / (2 A_w))
         return c;
     }
 
@@ -225,6 +245,7 @@ public static class DuctTables
             s.SigM3Override = Num(r, "sig_m3_ksi", double.NaN); s.SigV2Override = Num(r, "sig_v2_ksi", double.NaN);
             s.SigV3Override = Num(r, "sig_v3_ksi", double.NaN);
             s.RAOverride = Num(r, "r_a_in", double.NaN); s.RBOverride = Num(r, "r_b_in", double.NaN);
+            s.StiffSpacing = Num(r, "stiff_spacing_in", double.NaN);
             d[s.Name] = s;
         }
         return d;
