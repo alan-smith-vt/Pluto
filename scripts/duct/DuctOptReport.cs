@@ -143,8 +143,11 @@ public static class DuctOptReport
         LoadGeometry(connectedDir, out xyz, out segs, out supports);
         if (segs.Count > 0)
         {
+            int legendStart = sb.Length;
             sb.Append("<h2>Maps</h2><p><small>Frames coloured by DCR envelope: green &le; 0.5, yellow 1.0, red 1.5, dark red 3+; grey = not scored. ")
               .Append("Candidates: hollow grey = named but not in the link model (excluded or not sampled), blue = tried, red ring = chosen. Supports, piping-drawing symbols in black: triangle under the joint = rest (vertical held), bars across the duct either side = line stop (held along the duct), bars along the duct either side = guide (held across it), arcs around the joint = rotation held; an anchor shows all of them. Supports on a duct running into / out of the view are hover only. Purple bar across the duct (ring on a riser) on the released map = expansion joint. A held direction pointing out of the view is not drawn; hover a support for its exact restraints. A frame running into / out of the view is a thick dot in its DCR colour, open grey square = support not sub-classed (survey older than the support classes). Hover for names and values.</small></p>");
+            string legend = sb.ToString(legendStart + "<h2>Maps</h2>".Length, sb.Length - legendStart - "<h2>Maps</h2>".Length);
+            WriteReleasedMap(Path.Combine(Path.GetDirectoryName(path), "released-map.html"), title, legend, xyz, segs, envFinal, chosen, supports);
             foreach (int proj in new int[] { 0, 1 })
             {
                 sb.Append("<h3>").Append(proj == 0 ? "Plan (X right, Y up)" : "Elevation (X right, Z up)").Append("</h3><div class=\"row\">");
@@ -424,13 +427,34 @@ public static class DuctOptReport
 
     // proj 0 = plan (X, Y), 1 = elevation (X, Z). values: frame -> DCR (null = geometry only).
     // selected: candidates-selected.tsv (named), cands: candidates-used.tsv (in the link model), chosen: chosen.tsv.
+    // Standalone page: the released DCR map, plan and elevation, full width.
+    static void WriteReleasedMap(string path, string title, string legend, Dictionary<string, double[]> xyz, List<string[]> segs, Dictionary<string, double> envFinal, List<Row> chosen, List<Row> supports)
+    {
+        StringBuilder sb = new StringBuilder();
+        sb.Append("<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>").Append(H(title)).Append(": released map</title><style>")
+          .Append("body{font:14px/1.45 Segoe UI,Arial,sans-serif;margin:24px;color:#222}h1{font-size:20px}h3{font-size:14px;margin:16px 0 4px}.card{border:1px solid #ddd;padding:8px;background:#fff;display:inline-block}small{color:#666}svg text{font-family:Segoe UI,Arial}")
+          .Append("</style></head><body><h1>").Append(H(title)).Append(": chosen set released</h1><p><small>").Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm", Inv)).Append("</small></p>")
+          .Append(legend);
+        foreach (int proj in new int[] { 0, 1 })
+        {
+            sb.Append("<h3>").Append(proj == 0 ? "Plan (X right, Y up)" : "Elevation (X right, Z up)").Append("</h3>");
+            sb.Append(Map("chosen set released: DCR envelope", proj, xyz, segs, envFinal, null, null, chosen, supports, 1300));
+        }
+        sb.Append("</body></html>");
+        File.WriteAllText(path, sb.ToString());
+    }
+
     static string Map(string title, int proj, Dictionary<string, double[]> xyz, List<string[]> segs, Dictionary<string, double> values, List<Row> selected, List<Row> cands, List<Row> chosen, List<Row> supports)
+    {
+        return Map(title, proj, xyz, segs, values, selected, cands, chosen, supports, 440);
+    }
+    static string Map(string title, int proj, Dictionary<string, double[]> xyz, List<string[]> segs, Dictionary<string, double> values, List<Row> selected, List<Row> cands, List<Row> chosen, List<Row> supports, int width)
     {
         int iu = 0, iv = proj == 0 ? 1 : 2;
         double ulo = double.MaxValue, uhi = double.MinValue, vlo = double.MaxValue, vhi = double.MinValue;
         foreach (double[] p in xyz.Values) { ulo = Math.Min(ulo, p[iu]); uhi = Math.Max(uhi, p[iu]); vlo = Math.Min(vlo, p[iv]); vhi = Math.Max(vhi, p[iv]); }
         double du = Math.Max(uhi - ulo, 1), dv = Math.Max(vhi - vlo, 1);
-        int W = 440, m = 14; int Hh = (int)Math.Max(140, Math.Min(480, W * dv / du));
+        int W = width, m = 14; int Hh = (int)Math.Max(140, Math.Min(480 * width / 440, W * dv / du));
         double sc = Math.Min((W - 2 * m) / du, (Hh - 2 * m) / dv);
         double ox = m + ((W - 2 * m) - du * sc) / 2, oy = m + ((Hh - 2 * m) - dv * sc) / 2;
         StringBuilder s = new StringBuilder();
