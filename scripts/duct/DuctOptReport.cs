@@ -433,9 +433,9 @@ public static class DuctOptReport
         + "function set(){svg.setAttribute('viewBox',v.join(' '));}"
         + "function pt(e){var r=svg.getBoundingClientRect();return [v[0]+(e.clientX-r.left)/r.width*v[2],v[1]+(e.clientY-r.top)/r.height*v[3]];}"
         + "svg.addEventListener('wheel',function(e){e.preventDefault();var p=pt(e),f=e.deltaY<0?0.8:1.25;if(v[2]*f>v0[2]*2)f=v0[2]*2/v[2];v=[p[0]-(p[0]-v[0])*f,p[1]-(p[1]-v[1])*f,v[2]*f,v[3]*f];set();},{passive:false});"
-        + "svg.addEventListener('mousedown',function(e){drag=[e.clientX,e.clientY,v[0],v[1]];svg.style.cursor='grabbing';});"
+        + "svg.addEventListener('mousedown',function(e){drag=[e.clientX,e.clientY,v[0],v[1]];});"
         + "window.addEventListener('mousemove',function(e){if(!drag)return;var r=svg.getBoundingClientRect();v[0]=drag[2]-(e.clientX-drag[0])/r.width*v[2];v[1]=drag[3]-(e.clientY-drag[1])/r.height*v[3];set();});"
-        + "window.addEventListener('mouseup',function(){drag=null;svg.style.cursor='';});"
+        + "window.addEventListener('mouseup',function(){drag=null;});"
         + "svg.addEventListener('dblclick',function(){v=v0.slice();set();});"
         + "});</script>";
 
@@ -444,7 +444,7 @@ public static class DuctOptReport
     {
         StringBuilder sb = new StringBuilder();
         sb.Append("<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>").Append(H(title)).Append(": released map</title><style>")
-          .Append("body{font:14px/1.45 Segoe UI,Arial,sans-serif;margin:24px;color:#222}h1{font-size:20px}h3{font-size:14px;margin:16px 0 4px}.card{border:1px solid #ddd;padding:8px;background:#fff;display:inline-block}small{color:#666}svg text{font-family:Segoe UI,Arial}svg.zoommap{cursor:grab;max-width:100%;height:auto}")
+          .Append("body{font:14px/1.45 Segoe UI,Arial,sans-serif;margin:24px;color:#222}h1{font-size:20px}h3{font-size:14px;margin:16px 0 4px}.card{border:1px solid #ddd;padding:8px;background:#fff;display:inline-block}small{color:#666}svg text{font-family:Segoe UI,Arial}svg.zoommap{max-width:100%;height:auto}")
           .Append("</style></head><body><h1>").Append(H(title)).Append(": chosen set released</h1><p><small>").Append(DateTime.Now.ToString("yyyy-MM-dd HH:mm", Inv)).Append("</small></p>")
           .Append(legend);
         foreach (int proj in new int[] { 0, 1 })
