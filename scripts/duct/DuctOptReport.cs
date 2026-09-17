@@ -144,12 +144,12 @@ public static class DuctOptReport
         if (segs.Count > 0)
         {
             sb.Append("<h2>Maps</h2><p><small>Frames coloured by DCR envelope: green &le; 0.5, yellow 1.0, red 1.5, dark red 3+; grey = not scored. ")
-              .Append("Candidates: hollow grey = named but not in the link model (excluded or not sampled), blue = tried, red ring = chosen. Supports, piping-drawing symbols in black: triangle under the joint = rest (vertical held), bars across the duct either side = line stop (held along the duct), bars along the duct either side = guide (held across it), arcs around the joint = rotation held; an anchor shows all of them, except on a duct running into / out of the view (hover only). A held direction pointing out of the view is not drawn; hover a support for its exact restraints. A frame running into / out of the view is a thick dot in its DCR colour, open grey square = support not sub-classed (survey older than the support classes). Hover for names and values.</small></p>");
+              .Append("Candidates: hollow grey = named but not in the link model (excluded or not sampled), blue = tried, red ring = chosen. Supports, piping-drawing symbols in black: triangle under the joint = rest (vertical held), bars across the duct either side = line stop (held along the duct), bars along the duct either side = guide (held across it), arcs around the joint = rotation held; an anchor shows all of them. Supports on a duct running into / out of the view are hover only. Purple bar across the duct (ring on a riser) on the released map = expansion joint. A held direction pointing out of the view is not drawn; hover a support for its exact restraints. A frame running into / out of the view is a thick dot in its DCR colour, open grey square = support not sub-classed (survey older than the support classes). Hover for names and values.</small></p>");
             foreach (int proj in new int[] { 0, 1 })
             {
                 sb.Append("<h3>").Append(proj == 0 ? "Plan (X right, Y up)" : "Elevation (X right, Z up)").Append("</h3><div class=\"row\">");
                 sb.Append(Map(proj == 0 ? "connected: DCR envelope" : "connected: DCR envelope", proj, xyz, segs, dCon.Count > 0 ? dCon : envBase, null, null, null, supports));
-                sb.Append(Map("chosen set released: DCR envelope", proj, xyz, segs, envFinal, null, null, null, supports));
+                sb.Append(Map("chosen set released: DCR envelope", proj, xyz, segs, envFinal, null, null, chosen, supports));
                 sb.Append(Map("candidates: named / tried / chosen", proj, xyz, segs, null, selected, cands, chosen, supports));
                 Dictionary<string, double> shearMap = DuctReport.DcrColumn(dcrFinal, "DCR_shear");
                 if (shearMap.Count > 0) sb.Append(Map("chosen set released: shear DCR", proj, xyz, segs, shearMap, null, null, null, supports));
@@ -451,11 +451,13 @@ public static class DuctOptReport
             s.Append(F("<line x1=\"{0:0.#}\" y1=\"{1:0.#}\" x2=\"{2:0.#}\" y2=\"{3:0.#}\" stroke=\"{4}\" stroke-width=\"{5}\" stroke-linecap=\"round\"><title>frame {6}{7}</title></line>",
                 ox + (a[iu] - ulo) * sc, Hh - oy - (a[iv] - vlo) * sc, ox + (b[iu] - ulo) * sc, Hh - oy - (b[iv] - vlo) * sc, col, values == null ? 1.5 : 2.5, H(sg[0]), double.IsNaN(v) ? "" : ": DCR " + G(v)));
         }
+        HashSet<string> drawnAt = new HashSet<string>();
         if (supports != null)
             foreach (Row r in supports)
             {
                 double[] p; if (!xyz.TryGetValue(r.C["Joint"], out p)) continue;
                 double cx = ox + (p[iu] - ulo) * sc, cy = Hh - oy - (p[iv] - vlo) * sc;
+                if (!drawnAt.Add(F("{0:0}|{1:0}", cx, cy))) continue;   // supports stacked along a riser: the first one only
                 string kind = r.C["Support"], tip = F("<title>joint {0}: {1}{2}</title>", H(r.C["Joint"]), kind.Length == 0 ? "support" : kind, r.C["Restrains"].Length == 0 ? "" : " (" + H(r.C["Restrains"]) + ")");
                 s.Append(SupportSymbol(r.C["Joint"], p, cx, cy, iu, iv, xyz, segs, kind, r.C["Restrains"], tip));
             }
@@ -481,6 +483,16 @@ public static class DuctOptReport
             {
                 double[] p; if (!xyz.TryGetValue(r.C["Joint"], out p)) continue;
                 double cx = ox + (p[iu] - ulo) * sc, cy = Hh - oy - (p[iv] - vlo) * sc;
+                if (values != null)
+                {
+                    string jt = F("<title>expansion joint {0} (greedy step {1})</title>", H(r.C["Joint"]), H(r.C["AddedAtStep"]));
+                    double[] sd = ScreenDir(r.C["Joint"], p, iu, iv, xyz, segs);
+                    if (sd == null)   // duct runs out of the view: a ring around its dot
+                        s.Append(F("<circle cx=\"{0:0.#}\" cy=\"{1:0.#}\" r=\"5\" fill=\"none\" stroke=\"{2}\" stroke-width=\"2\">{3}</circle>", cx, cy, JointColour, jt));
+                    else
+                        s.Append(F("<line x1=\"{0:0.#}\" y1=\"{1:0.#}\" x2=\"{2:0.#}\" y2=\"{3:0.#}\" stroke=\"{4}\" stroke-width=\"2.2\">{5}</line>", cx - sd[1] * 6, cy + sd[0] * 6, cx + sd[1] * 6, cy - sd[0] * 6, JointColour, jt));
+                    continue;
+                }
                 s.Append(F("<circle cx=\"{0:0.#}\" cy=\"{1:0.#}\" r=\"7\" fill=\"none\" stroke=\"{2}\" stroke-width=\"2.5\"><title>chosen: joint {3} (greedy step {4})</title></circle><text x=\"{5:0.#}\" y=\"{6:0.#}\" fill=\"{2}\" font-weight=\"bold\">{3}</text>", cx, cy, Red, H(r.C["Joint"]), H(r.C["AddedAtStep"]), cx + 8, cy - 6));
             }
         s.Append("</g></svg></div>");
@@ -532,6 +544,21 @@ public static class DuctOptReport
         return null;
     }
     const string SymbolColour = "#000";
+    const string JointColour = "#7b2cbf";   // expansion joints: purple, clear of the DCR ramp and the black supports
+
+    // Unit screen direction of the first frame at the joint that shows in this view; null if every frame there runs out of it.
+    static double[] ScreenDir(string joint, double[] p, int iu, int iv, Dictionary<string, double[]> xyz, List<string[]> segs)
+    {
+        foreach (string[] sg in segs)
+        {
+            if (sg[1] != joint && sg[2] != joint) continue;
+            double[] q = xyz[sg[1] == joint ? sg[2] : sg[1]];
+            double ex = q[iu] - p[iu], ey = -(q[iv] - p[iv]), el = Math.Sqrt(ex * ex + ey * ey);
+            double tl = Math.Sqrt((q[0] - p[0]) * (q[0] - p[0]) + (q[1] - p[1]) * (q[1] - p[1]) + (q[2] - p[2]) * (q[2] - p[2]));
+            if (tl > 0 && el / tl > 0.3) return new double[] { ex / el, ey / el };
+        }
+        return null;
+    }
 
     // Piping-drawing support symbol at a joint, in the view's screen space:
     //   vertical translation held (rest)     -> triangle under the joint, blue
@@ -561,7 +588,7 @@ public static class DuctOptReport
             if (l > 1e-9) { a = new double[] { ex / l, ey / l, ez / l }; break; }
         }
         if (a == null) a = new double[] { 1, 0, 0 };
-        if (kind == "anchor" && Math.Sqrt(a[iu] * a[iu] + a[iv] * a[iv]) < 0.3)
+        if (Math.Sqrt(a[iu] * a[iu] + a[iv] * a[iv]) < 0.3)   // duct runs into / out of the view: its dot only, stacked supports hide
         {
             s.Append(F("<circle cx=\"{0:0.#}\" cy=\"{1:0.#}\" r=\"5\" fill=\"#000\" fill-opacity=\"0\"/>", cx, cy));
             return s.Append("</g>").ToString();
