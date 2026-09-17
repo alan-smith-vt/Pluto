@@ -144,7 +144,7 @@ public static class DuctOptReport
         if (segs.Count > 0)
         {
             sb.Append("<h2>Maps</h2><p><small>Frames coloured by DCR envelope: green &le; 0.5, yellow 1.0, red 1.5, dark red 3+; grey = not scored. ")
-              .Append("Candidates: hollow grey = named but not in the link model (excluded or not sampled), blue = tried, red ring = chosen. Supports, piping-drawing symbols coloured by the axis held (X red, Y green, Z blue): blue triangle under the joint = rest (vertical held), bars across the duct either side = line stop (held along the duct), bars along the duct either side = guide (held across it), arcs around the joint = rotation held; an anchor shows all of them. A held direction pointing out of the view is not drawn; hover a support for its exact restraints. A frame running into / out of the view is a thick dot in its DCR colour, open grey square = support not sub-classed (survey older than the support classes). Hover for names and values.</small></p>");
+              .Append("Candidates: hollow grey = named but not in the link model (excluded or not sampled), blue = tried, red ring = chosen. Supports, piping-drawing symbols in black: triangle under the joint = rest (vertical held), bars across the duct either side = line stop (held along the duct), bars along the duct either side = guide (held across it), arcs around the joint = rotation held; an anchor shows all of them, except on a duct running into / out of the view (hover only). A held direction pointing out of the view is not drawn; hover a support for its exact restraints. A frame running into / out of the view is a thick dot in its DCR colour, open grey square = support not sub-classed (survey older than the support classes). Hover for names and values.</small></p>");
             foreach (int proj in new int[] { 0, 1 })
             {
                 sb.Append("<h3>").Append(proj == 0 ? "Plan (X right, Y up)" : "Elevation (X right, Z up)").Append("</h3><div class=\"row\">");
@@ -531,12 +531,7 @@ public static class DuctOptReport
         }
         return null;
     }
-    const string AxisX = "#e41a1c", AxisY = "#2ca02c", AxisZ = "#1f77b4";
-    static string AxisColour(double[] d)
-    {
-        double ax = Math.Abs(d[0]), ay = Math.Abs(d[1]), az = Math.Abs(d[2]);
-        return az >= ax && az >= ay ? AxisZ : ax >= ay ? AxisX : AxisY;
-    }
+    const string SymbolColour = "#000";
 
     // Piping-drawing support symbol at a joint, in the view's screen space:
     //   vertical translation held (rest)     -> triangle under the joint, blue
@@ -544,7 +539,8 @@ public static class DuctOptReport
     //   held across the duct, horizontal     -> two bars along the duct, either side (guide); a direction that points
     //                                           out of the view is not drawn
     //   rotation held about X / Y / Z        -> arc segments around the joint in the axis colour
-    // Colours: the global axis nearest the held direction (X red, Y green, Z blue). Unclassed supports: grey square.
+    // All black: shape and position carry the state. Unclassed supports: grey square. An anchor on a duct running into /
+    // out of the view draws nothing but its hover target (those stack at every riser in plan).
     static string SupportSymbol(string joint, double[] p, double cx, double cy, int iu, int iv, Dictionary<string, double[]> xyz, List<string[]> segs, string kind, string restrains, string tip)
     {
         StringBuilder s = new StringBuilder();
@@ -565,10 +561,15 @@ public static class DuctOptReport
             if (l > 1e-9) { a = new double[] { ex / l, ey / l, ez / l }; break; }
         }
         if (a == null) a = new double[] { 1, 0, 0 };
+        if (kind == "anchor" && Math.Sqrt(a[iu] * a[iu] + a[iv] * a[iv]) < 0.3)
+        {
+            s.Append(F("<circle cx=\"{0:0.#}\" cy=\"{1:0.#}\" r=\"5\" fill=\"#000\" fill-opacity=\"0\"/>", cx, cy));
+            return s.Append("</g>").ToString();
+        }
         // three test directions: along the duct, horizontal across it, and the third
         double[] h = Math.Abs(a[2]) > 0.9 ? new double[] { 1, 0, 0 } : Unit(new double[] { -a[1], a[0], 0 });
         double[] v = Unit(new double[] { a[1] * h[2] - a[2] * h[1], a[2] * h[0] - a[0] * h[2], a[0] * h[1] - a[1] * h[0] });
-        const double g = 3.8, half = 3.4, w = 1.3, axialOff = 4.8;
+        const double g = 1.9, half = 1.7, w = 0.65, axialOff = 2.4;
         bool rest = false;
         foreach (double[] d in new double[][] { a, h, v })
         {
@@ -579,7 +580,7 @@ public static class DuctOptReport
             px /= pl; py /= pl;
             bool axial = d == a;
             double off = axial ? axialOff : g;
-            string col = AxisColour(d);
+            string col = SymbolColour;
             foreach (int sgn in new int[] { -1, 1 })
             {
                 double bx = cx + sgn * px * off, by = cy + sgn * py * off;   // bar centre, bar runs perpendicular to (px, py)
@@ -587,15 +588,14 @@ public static class DuctOptReport
             }
         }
         if (rest)
-            s.Append(F("<path d=\"M{0:0.#},{1:0.#} l2.8,4.2 l-5.6,0 z\" fill=\"{2}\"/>", cx, cy + g + 1, AxisZ));
+            s.Append(F("<path d=\"M{0:0.#},{1:0.#} l1.4,2.1 l-2.8,0 z\" fill=\"{2}\"/>", cx, cy + g + 0.5, SymbolColour));
         double[][] axes = { new double[] { 1, 0, 0 }, new double[] { 0, 1, 0 }, new double[] { 0, 0, 1 } };
-        string[] cols = { AxisX, AxisY, AxisZ };
-        const double rr = 7.2;
+        const double rr = 3.6;
         for (int k = 0; k < 3; k++)
         {
             if (!R.Holds(axes[k])) continue;
             double a0 = (200 + k * 55) * Math.PI / 180, a1 = (240 + k * 55) * Math.PI / 180;
-            s.Append(F("<path d=\"M{0:0.#},{1:0.#} A{2},{2} 0 0 1 {3:0.#},{4:0.#}\" fill=\"none\" stroke=\"{5}\" stroke-width=\"{6}\"/>", cx + rr * Math.Cos(a0), cy + rr * Math.Sin(a0), rr, cx + rr * Math.Cos(a1), cy + rr * Math.Sin(a1), cols[k], w));
+            s.Append(F("<path d=\"M{0:0.#},{1:0.#} A{2},{2} 0 0 1 {3:0.#},{4:0.#}\" fill=\"none\" stroke=\"{5}\" stroke-width=\"{6}\"/>", cx + rr * Math.Cos(a0), cy + rr * Math.Sin(a0), rr, cx + rr * Math.Cos(a1), cy + rr * Math.Sin(a1), SymbolColour, w));
         }
         s.Append(F("<circle cx=\"{0:0.#}\" cy=\"{1:0.#}\" r=\"6\" fill=\"#000\" fill-opacity=\"0\"/>", cx, cy));   // hover target
         return s.Append("</g>").ToString();
