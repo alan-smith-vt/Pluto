@@ -1,7 +1,7 @@
 # Expansion-joint optimizer on the model open in SAP2000 (HVAC), end to end, with an HTML report.
 # Windows PowerShell 5.1. Settings come from duct-config.psd1 beside this script (Optimize block; copy duct-config.example.psd1).
 #   Set-ExecutionPolicy -Scope Process Bypass
-#   .\Run-Optimizer.ps1 [-Config X.psd1] [-MaxCandidates 20] [-MaxJoints 10] [-SkipSap] [-NoValidate] [-TestModel]
+#   .\Run-Optimizer.ps1 [-Config X.psd1] [-MaxCandidates 20] [-MaxJoints 10] [-SkipSap] [-SkipSearch] [-NoValidate] [-TestModel]
 # With the analysed model open in SAP:
 #   1 connected : survey + forces + candidate joints of the untouched model     -> WorkDir\optimize\connected
 #   2 select    : candidate list for the link model (config Optimize.Candidates, MaxCandidates = a spread sample) -> ...\opt\selected.txt
@@ -11,13 +11,16 @@
 #   6 direct    : save-as, the chosen joints disconnected, run, export (validation; -NoValidate skips)  -> ...\direct (direct.sdb)
 #   7 release   : the chosen set by superposition, compared with 6; DCRs of both                        -> ...\final, dcr-final, dcr-direct
 #   8 report    : ...\opt\optimizer-report.html
-# -SkipSap reuses the exports of a previous run (steps 4, 5, 7 without the direct comparison, 8). -MaxCandidates / -MaxJoints
-# override the config for a trial. -TestModel builds the synthetic duct in SAP first (SAP 26 here).
+# -SkipSap reuses the exports of a previous run (steps 4, 5, 7 without the direct comparison, 8).
+# -SkipSearch (with -SkipSap) also reuses opt\chosen.txt: steps 7-8 only, minutes. The direct run is compared only if it was
+# made for the same joint set (direct\set.txt, written by step 6).
+# -MaxCandidates / -MaxJoints override the config for a trial. -TestModel builds the synthetic duct in SAP first (SAP 26 here).
 param(
     [string]$Config,
     [int]$MaxCandidates = -1,
     [int]$MaxJoints = -1,
     [switch]$SkipSap,
+    [switch]$SkipSearch,
     [switch]$NoValidate,
     [switch]$TestModel
 )
@@ -71,15 +74,23 @@ $a = @($optScript, "-Optimize", "-LinkDir", $dirs.link, "-ConnectedDir", $dirs.c
     "-Vectors", $vectors, "-Dead", $C.Cases.Dead, "-Steel", $C.Cases.Steel, "-Seismic", ($C.Cases.Seismic -join ","),
     "-MaxJoints", $O.MaxJoints, "-OnePerSpan", $O.OnePerSpan, "-Swap", $O.Swap, "-Removal", $O.Removal, "-MaxEvaluations", $O.MaxEvaluations, "-SingularPivot", $O.SingularPivot, "-ComboLS", $C.Dcr.ComboLS, "-Limit", $C.Dcr.Limit)
 if ($C.Dcr.EndsOnly) { $a += "-EndsOnly" }
-Invoke-Step "5 optimize" $a
+if ($SkipSearch) {
+    if (-not $SkipSap) { throw "-SkipSearch needs -SkipSap (the search reuses the link model of the previous run)" }
+    if (-not (Test-Path (Join-Path $dirs.opt "chosen.txt"))) { throw "missing $($dirs.opt)\chosen.txt: run the search first" }
+    Write-Host "== 5 optimize: skipped, reusing opt\chosen.txt" -ForegroundColor Cyan
+} else { Invoke-Step "5 optimize" $a }
 $chosen = ([string](Get-Content (Join-Path $dirs.opt "chosen.txt") -Raw)).Trim()
 if (-not $chosen) { Write-Host "no joint chosen: nothing to validate" -ForegroundColor Yellow }
 
 $validate = $chosen -and -not $NoValidate -and -not $SkipSap
 if ($validate) {
     Invoke-Step "6 direct model: the chosen joints disconnected, run, export" (@($sapRel, "-DirectModel", "-Candidates", $chosen, "-SavePath", (Join-Path $root "direct.sdb"), "-OutDir", $dirs.direct, "-Group", $C.Group) + $sapArg)
+    [IO.File]::WriteAllText((Join-Path $dirs.direct "set.txt"), $chosen)
 }
-$haveDirect = (Test-Path (Join-Path $dirs.direct "forces.tsv")) -and ($validate -or $SkipSap)
+# a direct run counts only if it was made for this joint set (an older run of another set is ignored)
+$directSet = Join-Path $dirs.direct "set.txt"
+$haveDirect = $chosen -and (Test-Path (Join-Path $dirs.direct "forces.tsv")) -and (Test-Path $directSet) -and (([string](Get-Content $directSet -Raw)).Trim() -eq $chosen)
+if ($chosen -and -not $haveDirect -and (Test-Path (Join-Path $dirs.direct "forces.tsv"))) { Write-Host "direct\forces.tsv is from another joint set: not compared" -ForegroundColor Yellow }
 if ($chosen) {
     $a = @($relScript, "-Release", "-LinkDir", $dirs.link, "-OutDir", $dirs.final, "-Candidates", $chosen,
         "-Vectors", $vectors, "-Dead", $C.Cases.Dead, "-Steel", $C.Cases.Steel, "-Seismic", ($C.Cases.Seismic -join ","), "-Combo18", $C.Cases.Combo18,
