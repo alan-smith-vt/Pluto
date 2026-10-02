@@ -49,9 +49,12 @@ python offset_study.py --run            # beam
 python offset_study.py --ring --run     # ring
 ```
 
-`--run` imports over the OAPI, **sets and echoes the insertion point per scheme**
-(`FrameObj.SetInsertionPoint` / `GetInsertionPoint`, because of the column story below),
-echoes `PropLink.GetGap`, runs, and prints + writes CSV: frame force envelopes, minimum
+`--run` goes through `scripts/sap/Run-Sap.ps1` ([[vault/arms/sap-controller|sap-controller]]):
+imports, **echoes the insertion point per scheme and the GAP link properties** read back
+from SAP's input tables (because of the column story below), runs, and prints + writes CSV.
+Until 2026-10-02 it also *set* the insertion point over the OAPI; the read-back shows the
+import leaves Transform = Yes on the centroid schemes A and C, where it has no effect (the
+2026-10-02 rerun matches the old CSV to 1e-15). The CSV covers: frame force envelopes, minimum
 wall U3, wall rolling rotation, tank sway, minimum soil link P and the number of open soil
 gaps.
 

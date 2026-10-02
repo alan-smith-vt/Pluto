@@ -158,7 +158,7 @@ groups are still the quickest way to select a whole family.
 - **Linear cases mislead**: `DEAD` / `HYDRO` exist only as references; the two-way
   effective stiffness makes them see tension in the gaps. Report `NL_*` only.
 - **No link output in `results.s2k`**: link forces are GUI-only today. Adding
-  `Results.LinkForce` to `sap_api.results_s2k` is a small step if the audit table is
+  `Results.LinkForce` is in `results.s2k` since 2026-10-02 (`SapSession.WriteResultsS2k`), useful if the audit table is
   wanted per build.
 - The concrete column stiffness sits in `GAP_CONTACT` (E·C·arc/A); the wall frames
   themselves carry only the ring bending/hoop. Swapping that compliance into the soil

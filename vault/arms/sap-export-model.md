@@ -9,8 +9,9 @@ created: 2026-09-15
 *↑ [[vault/Pluto Home|Home]] › [[vault/arms/Arms map|Arms map]]*
 
 Any model SAP2000 holds → `<outBase>.bin` + `<outBase>.features.json`, with no config and no
-manual `.s2k` export. `pythonTools/sap/export_model.py`; the OAPI driver is
-[[vault/arms/sap-tank-builder|sap-tank-builder]]'s `tankbuilder/sap_api.py`, the arm is
+manual `.s2k` export. The work is C#: `scripts/sap/Run-Sap.ps1 -Export <base>` (`SapExport.cs`,
+[[vault/arms/sap-controller|sap-controller]]), which the production machine runs directly;
+`pythonTools/sap/export_model.py` is a thin wrapper with the same switches (2026-10-02, was the Python port's home). The arm is
 [[vault/arms/sap-s2k-to-viewer|sap-s2k-to-viewer]]'s `SapToPluto`. Written 2026-09-15 for the
 <project> tank (Notes vault), an auto-meshed prestressed concrete tank.
 

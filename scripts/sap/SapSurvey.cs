@@ -9,30 +9,13 @@ using System.Runtime.InteropServices;
 using System.Text;
 using SAP2000v1;
 
-public class SapSurvey
+public class SapSurvey : SapSession
 {
-    const string ProgId = "CSI.SAP2000.API.SapObject";
-    static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
-
-    public cOAPI Sap;
-    public cSapModel Model;
-    public bool Started;
-    public List<string> Warnings = new List<string>();
-
-    public static SapSurvey AttachOrStart(string exePath, bool attachOnly)
+    // Session (attach / start, Version, Close, Check, F, R) is SapSession's.
+    public static new SapSurvey AttachOrStart(string exePath, bool attachOnly)
     {
         SapSurvey s = new SapSurvey();
-        try { s.Sap = (cOAPI)Marshal.GetActiveObject(ProgId); }
-        catch (COMException)
-        {
-            if (attachOnly) throw new Exception("No running SAP2000 to attach to: open the model in SAP first.");
-            cHelper helper = new Helper();
-            s.Sap = helper.CreateObject(exePath);
-            Check(s.Sap.ApplicationStart(), "ApplicationStart");
-            s.Sap.Visible();
-            s.Started = true;
-        }
-        s.Model = s.Sap.SapModel;
+        s.Attach(exePath, attachOnly);
         return s;
     }
 
@@ -44,7 +27,6 @@ public class SapSurvey
         if (run) Check(Model.Analyze.RunAnalysis(), "RunAnalysis");
     }
 
-    public string Version() { string v = ""; double n = 0; Check(Model.GetVersion(ref v, ref n), "GetVersion"); return v; }
 
     // ---------------------------------------------------------------- survey
 
@@ -386,7 +368,6 @@ public class SapSurvey
         finally { Model.SetPresentUnits(units); }
     }
 
-    static string R(double v) { return v.ToString("R", Inv); }   // round-trip precision for force export
 
     // ---------------------------------------------------------------- candidate joints
 
@@ -836,13 +817,10 @@ public class SapSurvey
         return sb.ToString();
     }
 
-    public void Close() { if (Started) Sap.ApplicationExit(false); }
-
     // ---------------------------------------------------------------- helpers
 
-    void Warn(string w) { if (Warnings.Count < 50) Warnings.Add(w); }
+    new void Warn(string w) { if (Warnings.Count < 50) Warnings.Add(w); }
     static string G(double v) { return v.ToString("G6", Inv); }
-    static string F(string fmt, params object[] args) { return string.Format(Inv, fmt, args); }
     static string Tab(params object[] cells)
     {
         string[] s = new string[cells.Length];
@@ -850,5 +828,4 @@ public class SapSurvey
         return string.Join("\t", s);
     }
     static void Write(string path, List<string> rows) { File.WriteAllText(path, string.Join("\r\n", rows) + "\r\n"); }
-    static void Check(int ret, string what) { if (ret != 0) throw new Exception(what + " returned " + ret); }
 }

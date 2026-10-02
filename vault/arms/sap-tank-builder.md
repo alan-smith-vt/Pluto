@@ -118,7 +118,7 @@ meant to be checked. Real project numbers live only in the gitignored `configs/*
 >   (coarse 5.07); roof rim F22 7.2 kip/ft.
 > - `NL_HYDRO` base: M11 +0.58 at the base and −0.32 at 1.2 ft, i.e. the resolved plate
 >   restrains the foot rotation more than the coarse model's 0.148 (pinned 0, fixed 1.33).
-> Link forces are still OAPI-only (`Results.LinkForce`, recipe in `offset_study.py`).
+> Link forces are in `results.s2k` since 2026-10-02 (`ELEMENT FORCES - LINKS`), not yet in the viewer.
 >
 > **Plate bearing on the ring wall** (`[ringwall] plate_bearing = true`, 2026-09-10, needs
 > `joints = "elevations"`). The plate joints over the ring wall width (r ≥ R − C/2, rim

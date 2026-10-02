@@ -8,7 +8,7 @@ created: 2026-09-08
 
 What `run_sap.py` pulls out of SAP2000 over the OAPI, what `SapToPluto` turns into viewer
 components, and what SAP holds that never leaves it. The pipeline is `Results.*` calls in
-`pythonTools/sap/tankbuilder/sap_api.py` → `results.s2k` (three tables) →
+`scripts/sap/SapSession.cs` (`WriteResultsS2k`, via `Run-Sap.ps1`) → `results.s2k` →
 `scripts/arms/SapToPluto.cs` → the v4 binary. Table-level mapping of the model side is in
 [[vault/arms/sap-s2k-to-viewer|sap-s2k-to-viewer]]; this note is the results side only.
 Units in the tank runs: kip, ft, with derived stresses reported in ksi.
@@ -32,7 +32,7 @@ length at each element corner, plus a stress recovery at the top and bottom face
 | stress / force **averaging at joints** | viewer | — | Smooth: node averaging / element means / none | node averaging hides the real force step at a thickness change (turn it off to read course boundaries) and keeps a corner's extrapolation spike at a shell edge; **element means** (2026-09-10) shows the per-element mean the equilibrium constrains, e.g. wall F11 monotonic to the base under NL_DEAD where the corner values spike |
 
 Every shell row carries `Joint` (the corner), so the viewer paints per corner, not one
-value per element. Values are the **final state** of each case: `sap_api` asks for
+value per element. Values are the **final state** of each case: the controller asks for
 nonlinear static output **step-by-step** (`Results.Setup.SetOptionNLStatic(2)`), which
 with Final State saved is one `Step` row per corner. SAP's default, envelopes, returns a
 `Max` and a `Min` row per corner and **zeroes every principal and von Mises field** on
@@ -61,7 +61,7 @@ never affected.
 
 | SAP2000 quantity | OAPI source | in `results.s2k` | in the viewer | notes |
 |---|---|---|---|---|
-| P, V2, V3, T, M2, M3 per link | `LinkForce` | **no** | no | the compression-only bearing under the plate and the ring wall; GUI only today (`Display › Show Forces/Stresses › Links`); `offset_study.py` pulls it over the OAPI and shows the call works |
+| P, V2, V3, T, M2, M3 per link | `LinkForce` | **yes**, `ELEMENT FORCES - LINKS` (2026-10-02; object-name exports only, not the mesh export) | no | the compression-only bearing under the plate and the ring wall; `offset_study.py` reads it from `results.s2k` |
 | link deformations (gap opening) | `LinkDeformation` | no | no | positive = open; the direct lift-off readout |
 
 ## Cases

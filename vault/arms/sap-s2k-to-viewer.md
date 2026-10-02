@@ -22,8 +22,8 @@ out radial-outward in global, SAP Z-up axes preserved.
 
 ## 1. Export from SAP2000
 
-> Manual route. For the model SAP already holds, `pythonTools/sap/export_model.py` does all of
-> this over the OAPI at the analysis mesh — [[vault/arms/sap-export-model|sap-export-model]] (2026-09-15).
+> Manual route. For the model SAP already holds, `scripts/sap/Run-Sap.ps1 -Export` (or the
+> wrapper `pythonTools/sap/export_model.py`) does all of this over the OAPI at the analysis mesh — [[vault/arms/sap-export-model|sap-export-model]] (2026-09-15).
 
 - **Model**: File → Export → SAP2000 `.s2k` Text File. Tick the model tables (all is
   fine). `JOINT COORDINATES`, `CONNECTIVITY - AREA`, `PROGRAM CONTROL` are required;
@@ -86,8 +86,8 @@ python run_sap.py configs/example.toml --no-run   # SAP already holds the analys
 python run_sap.py configs/example.toml --no-viewer
 ```
 
-Drives SAP2000 through its OAPI (COM, `comtypes` — `pip install comtypes`; `pywin32`
-cannot bind SAP's interfaces). Attaches to the running SAP2000 or starts one;
+Drives SAP2000 through the C# controller, `scripts/sap/Run-Sap.ps1`
+([[vault/arms/sap-controller|sap-controller]]; until 2026-10-02 it used Python `comtypes`). Attaches to the running SAP2000 or starts one;
 `File.OpenFile` imports the `.s2k` (SAP accepts our GROUPS tables: 24 groups on the
 example), saves the `.sdb`, `RunAnalysis`, then `Results.JointDispl` +
 `Results.AreaForceShell` (full doubles — the `DatabaseTables` display tables are rounded)
@@ -95,7 +95,7 @@ are written as `results.s2k` in SAP's own table format, `SapToPluto` runs under 
 a local server on the repo root opens `viewer/index.html?bin=…&features=…` (the viewer
 fetches both; 2026-09-03 addition). Everything lands in `models/<name>/` (gitignored).
 `Results.JointDispl` reports in joint **local** axes, same as the table export, so the
-arm's local→global rotation is still right. Module: `tankbuilder/sap_api.py`. Verified
+arm's local→global rotation is still right. Python side: `tankbuilder/sap_cli.py`. Verified
 end to end on the example 2026-09-03 (5 s import, 2 s run).
 
 ## 5. Tank generator (`build_tank.py`) — Python by design

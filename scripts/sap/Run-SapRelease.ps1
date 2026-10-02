@@ -23,14 +23,8 @@ if (-not $SavePath) { throw "-SavePath is required" }
 $cands = @()
 if ($Candidates) { $cands = @($Candidates -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
 
-if (-not $SapDir) {
-    $SapDir = Get-ChildItem "C:\Program Files\Computers and Structures" -Directory -Filter "SAP2000 *" |
-        Sort-Object { [int]($_.Name -replace '\D', '') } | Select-Object -Last 1 -ExpandProperty FullName
-}
-$dll = Join-Path $SapDir "SAP2000v1.dll"
-[void][System.Reflection.Assembly]::LoadFrom($dll)
-Add-Type -Path (Join-Path $PSScriptRoot "SapSurvey.cs"), (Join-Path $PSScriptRoot "SapRelease.cs") -ReferencedAssemblies $dll, "System.Runtime.InteropServices", "netstandard"
-$exe = Join-Path $SapDir "SAP2000.exe"
+. (Join-Path $PSScriptRoot "Import-SapApi.ps1")   # SAP classes, $SapDir, $SapExe
+$exe = $SapExe
 $null = New-Item -ItemType Directory -Force (Split-Path $SavePath)
 
 if ($TestModel) {

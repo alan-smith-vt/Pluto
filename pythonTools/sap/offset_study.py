@@ -46,6 +46,7 @@ sys.path.insert(0, str(HERE))
 
 from tankbuilder.s2k import S2KWriter, _row, program_control  # noqa: E402
 from tankbuilder.spec import G_ACCEL  # noqa: E402
+from tankbuilder import parse_s2k  # noqa: E402
 
 # --- section, soil, loads (kip, ft): the TANK-A ring wall numbers ---------------------
 WIDTH = 1.25          # ft, C
@@ -254,64 +255,56 @@ class Study:
 
 
 # --- SAP run + comparison -----------------------------------------------------------
+# Through scripts/sap/Run-Sap.ps1 (the C# controller): one call imports, reads back the
+# insertion point and gap tables, runs, and writes results.s2k (joints, frames, links).
 
-_LINK_FIELDS = ["Obj", "Elm", "PointElm", "LoadCase", "StepType", "StepNum",
-                "P", "V2", "V3", "T", "M2", "M3"]
-
-
-def link_forces(sap) -> dict[tuple[str, str], float]:
-    """(link, case) -> P along local 1 (negative = compression)."""
-    sap._select_all_cases()
-    r = sap.model.Results.LinkForce("ALL", 2)
-    n = r[0]
-    cols = r[1:1 + len(_LINK_FIELDS)]
-    out = {}
-    for i in range(n):
-        row = {f: cols[k][i] for k, f in enumerate(_LINK_FIELDS)}
-        out[(str(row["Obj"]), row["LoadCase"])] = row["P"]
-    return out
+TABLES = "Frame Insertion Point Assignments;Link Property Definitions 05 - Gap"
 
 
-def check_insertion(study: Study, sap) -> None:
-    """Enforce and echo the insertion point per scheme over the OAPI (SetInsertionPoint /
-    GetInsertionPoint): the .s2k column is `Transform`, and a misspelt column silently
-    leaves SAP's default, Transform = Yes (found 2026-09-08)."""
-    for key, label, card, xform, *_ in SCHEMES:
-        for f in study.frames_of[key]:
-            sap.model.FrameObj.SetInsertionPoint(str(f), card, False, xform, [0.0] * 3, [0.0] * 3, "Local")
-        r = sap.model.FrameObj.GetInsertionPoint(str(study.frames_of[key][0]))
-        print(f"[insert]  {key}_{label}: cardinal {r[0]}, transform {r[2]}   (asked {card}, {xform})")
-
-
-def check_link_props(sap) -> None:
-    """Print what SAP made of the GAP tables (PropLink.GetGap): DOF flags and stiffnesses."""
+def echo_tables(study: Study, tables: Path) -> None:
+    """What SAP made of the import: the insertion point per scheme (the .s2k column is
+    `Transform`, and a misspelt column silently leaves SAP's default, Transform = Yes,
+    found 2026-09-08) and the GAP link properties (DOF, stiffness, * = nonlinear gap)."""
+    t = parse_s2k(tables.read_text())
+    ins = {r["FRAME"]: r for r in t.get("FRAME INSERTION POINT ASSIGNMENTS", [])}
+    gaps = t.get("LINK PROPERTY DEFINITIONS 05 - GAP", [])
     for name in ("GAP_CONTACT", "GAP_SOIL"):
-        r = sap.model.PropLink.GetGap(name)
-        dof, fixed, nonlin, ke, ce, k, dis = r[0], r[1], r[2], r[3], r[4], r[5], r[6]
-        active = [f"{d}{'*' if nonlin[i] else ''}={ke[i]:g}" for i, d in enumerate(("U1", "U2", "U3", "R1", "R2", "R3")) if dof[i]]
+        rows = [r for r in gaps if r.get("LINK") == name]
+        active = [f"{r.get('DOF')}{'*' if r.get('NONLINEAR') == 'Yes' else ''}={r.get('TRANSKE', r.get('ROTKE', '?'))}"
+                  for r in rows]
         print(f"[props]   {name}: " + ", ".join(active) + "   (* = nonlinear gap)")
+    for key, label, card, xform, *_ in SCHEMES:
+        r = ins.get(str(study.frames_of[key][0]), {})
+        print(f"[insert]  {key}_{label}: cardinal {r.get('CARDINALPT', '?')}, transform {r.get('TRANSFORM', '?')}"
+              f"   (asked {card}, {xform})")
 
 
-def compare(study: Study, sap) -> list[dict]:
-    disp = {}
-    for d in sap.joint_displacements():
-        disp[(str(d["Joint"]), d["OutputCase"])] = d
-    frames = sap.frame_forces()
-    link_p = link_forces(sap)
+def _f(r: dict, k: str) -> float:
+    return float(r[k])
+
+
+def compare(study: Study, results: Path) -> list[dict]:
+    t = parse_s2k(results.read_text())
+    disp = {(r["JOINT"], r["OUTPUTCASE"]): r for r in t["JOINT DISPLACEMENTS"]}
+    frames = t["ELEMENT FORCES - FRAMES"]
+    link_p = {}
+    for r in t.get("ELEMENT FORCES - LINKS", []):   # two rows per link (I, J): the J end, as before
+        link_p[(r["LINK"], r["OUTPUTCASE"])] = _f(r, "P")
+    cases = list(dict.fromkeys(r["OUTPUTCASE"] for r in frames))
     rows = []
-    for case in sap.load_cases():
+    for case in cases:
         for key, label, *_ in SCHEMES:
             fs = {str(f) for f in study.frames_of[key]}
-            ff = [r for r in frames if r["OutputCase"] == case and str(r["Frame"]) in fs]
+            ff = [r for r in frames if r["OUTPUTCASE"] == case and r["FRAME"] in fs]
             wall = [disp[(str(j), case)] for j in study.wall[key]]
             tank = [disp[(str(j), case)] for j in study.tank[key]]
             soil = [link_p[(str(l), case)] for l in study.soil_links[key]]
             row = {"case": case, "scheme": f"{key}_{label}"}
             for c in ("P", "V2", "V3", "T", "M2", "M3"):
-                row[f"{c}_max_abs"] = max(abs(r[c]) for r in ff)
-            row["wall_U3_min"] = min(d["U3"] for d in wall)
-            row["wall_roll_max"] = max(math.hypot(d["R1"], d["R2"]) for d in wall)
-            row["tank_sway_max"] = max(math.hypot(d["U1"], d["U2"]) for d in tank)
+                row[f"{c}_max_abs"] = max(abs(_f(r, c)) for r in ff)
+            row["wall_U3_min"] = min(_f(d, "U3") for d in wall)
+            row["wall_roll_max"] = max(math.hypot(_f(d, "R1"), _f(d, "R2")) for d in wall)
+            row["tank_sway_max"] = max(math.hypot(_f(d, "U1"), _f(d, "U2")) for d in tank)
             row["soil_P_min"] = min(soil)
             row["soil_open"] = sum(1 for p in soil if p == 0.0)
             rows.append(row)
@@ -335,17 +328,12 @@ def main(argv=None) -> int:
           f"soil U1 {lp['GAP_SOIL']['U1']:.4g}, lat {lp['GAP_SOIL']['U2']:.4g}, rot {lp['GAP_SOIL']['R2']:.4g})")
     if not a.run:
         return 0
-    from tankbuilder.sap_api import SapSession
-    sap = SapSession.attach_or_start()
-    print(f"[sap]     SAP2000 {sap.version}")
-    sap.open(out)
-    j, _, f = sap.counts()
-    print(f"[open]    {j} joints, {f} frames, groups: {', '.join(sap.groups())}")
-    check_link_props(sap)
-    check_insertion(study, sap)
-    secs = sap.run()
-    print(f"[run]     {', '.join(sap.load_cases())}  ({secs:.1f}s)")
-    rows = compare(study, sap)
+    from tankbuilder.sap_cli import run_sap_ps
+    results, tables = out.with_suffix(".results.s2k"), out.with_suffix(".tables.s2k")
+    run_sap_ps(open=out, tables=TABLES, tables_out=tables, run=True, results=results,
+               keep_open=True, log=out.with_suffix(".run-sap.log"))
+    echo_tables(study, tables)
+    rows = compare(study, results)
     csv_path = out.with_suffix(".csv")
     with csv_path.open("w", newline="") as fh:
         wr = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))

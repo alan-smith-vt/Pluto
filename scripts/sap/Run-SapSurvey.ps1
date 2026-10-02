@@ -27,10 +27,6 @@ param(
 $ErrorActionPreference = "Stop"
 if (-not ($Survey -or $Probe -or $Candidates -or $Forces)) { throw "Pass -Survey, -Candidates, -Forces and/or -Probe." }
 
-if (-not $SapDir) {
-    $SapDir = Get-ChildItem "C:\Program Files\Computers and Structures" -Directory -Filter "SAP2000 *" |
-        Sort-Object { [int]($_.Name -replace '\D', '') } | Select-Object -Last 1 -ExpandProperty FullName
-}
 if (-not $OutDir) {
     $OutDir = Join-Path $env:TEMP "sapsurvey"
     $ductConfig = Join-Path (Split-Path $PSScriptRoot) "duct\duct-config.psd1"
@@ -40,12 +36,10 @@ if (-not $OutDir) {
     }
 }
 Write-Host "output: $OutDir"
-$dll = Join-Path $SapDir "SAP2000v1.dll"
-[void][System.Reflection.Assembly]::LoadFrom($dll)
-Add-Type -Path (Join-Path $PSScriptRoot "SapSurvey.cs") -ReferencedAssemblies $dll, "System.Runtime.InteropServices", "netstandard"
+. (Join-Path $PSScriptRoot "Import-SapApi.ps1")   # SAP classes, $SapDir, $SapExe
 
 $null = New-Item -ItemType Directory -Force $OutDir
-$exe = Join-Path $SapDir "SAP2000.exe"
+$exe = $SapExe
 
 if ($Survey) {
     if ($ModelPath) {

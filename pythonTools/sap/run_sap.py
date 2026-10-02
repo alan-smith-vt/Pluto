@@ -9,9 +9,10 @@
 
 Steps (each skippable):
   build    tankbuilder writes <models>/<name>/<name>.s2k from the config
-  run      attach to the running SAP2000 (or start one), OpenFile the .s2k,
-           Save the .sdb, RunAnalysis
-  results  Results.JointDispl + Results.AreaForceShell (full precision) ->
+  run      scripts/sap/Run-Sap.ps1 (the C# SAP controller; Python never calls the OAPI):
+           attach to the running SAP2000 (or start one, left open), OpenFile the .s2k,
+           Save the .sdb, read back the shell local axes, RunAnalysis
+  results  same call: joint, shell, frame and link results (full precision) ->
            <models>/<name>/results.s2k
   export   scripts/arms/SapToPluto.cs via Windows PowerShell 5.1 (Config.ps1)
            -> <name>.bin + <name>.features.json beside the model
@@ -83,10 +84,11 @@ def step_figures(cfg: Path) -> None:
     print(f"[figures] {', '.join(names)} -> vault/arms/assets")
 
 
-def step_axes_check(sap, cfg: Path) -> None:
+def step_axes_check(axes_tsv: Path, cfg: Path) -> None:
     """After import: does SAP's local 1 match the meridional direction the builder
     intended, on every shell? Reports the count and the worst angle; a failure here
-    means the F11 / S11 = meridional labels are lying on those elements."""
+    means the F11 / S11 = meridional labels are lying on those elements. axes_tsv is
+    Run-Sap.ps1 -AreaAxes output (Area, L1x, L1y, L1z in global)."""
     import math
     spec, _ = load_config(cfg)
     model = TankModel(spec)
@@ -94,8 +96,12 @@ def step_axes_check(sap, cfg: Path) -> None:
         return
     worst, bad, n = 0.0, [], 0
     try:
+        local1 = {}
+        for line in axes_tsv.read_text().splitlines()[1:]:
+            a, x, y, z = line.split("	")
+            local1[int(a)] = (float(x), float(y), float(z))
         for a in sorted(model.areas):
-            v = sap.area_local_1(a)
+            v = local1[a]
             e = model.meridional_direction(a)
             dot = abs(v[0] * e[0] + v[1] * e[1] + v[2] * e[2])
             ang = math.degrees(math.acos(max(-1.0, min(1.0, dot))))
@@ -103,7 +109,7 @@ def step_axes_check(sap, cfg: Path) -> None:
             worst = max(worst, ang)
             if ang > 1.0:
                 bad.append((a, ang))
-    except Exception as exc:   # OAPI signature differences: report, do not stop the run
+    except Exception as exc:   # missing / unreadable axes file: report, do not stop the run
         print(f"[axes]    could not read area local axes back ({exc}); labels unverified")
         return
     if bad:
@@ -113,23 +119,16 @@ def step_axes_check(sap, cfg: Path) -> None:
         print(f"[axes]    local 1 = meridional on all {n} shells (worst {worst:.3f} deg)")
 
 
-def step_run(s2k: Path, run: bool, cfg: Path = None):
-    from tankbuilder.sap_api import SapSession
-    sap = SapSession.attach_or_start()
-    print(f"[sap]     SAP2000 {sap.version} ({'started ' + str(SapSession.find_exe()) if sap.started else 'attached to the running instance'})")
-    if run:
-        sap.open(s2k)
-        j, a, _ = sap.counts()
-        print(f"[open]    {j} joints, {a} areas, groups: {', '.join(sap.groups())}  ({sap.open_seconds:.0f}s)")
-        step_axes_check(sap, cfg)
-        secs = sap.run()
-        print(f"[run]     cases {', '.join(sap.load_cases())}  ({secs:.1f}s)")
-    return sap
-
-
-def step_results(sap, s2k: Path) -> Path:
+def step_sap(s2k: Path, run: bool, cfg: Path) -> Path:
+    """One Run-Sap.ps1 call: open + axes + run (unless --no-run: SAP already holds the
+    analysed model), then results.s2k. A SAP it starts is left open, as before."""
+    from tankbuilder.sap_cli import run_sap_ps
     res = s2k.parent / "results.s2k"
-    res.write_text(sap.results_s2k())
+    axes = s2k.parent / "area-local1.tsv"
+    run_sap_ps(open=s2k if run else None, area_axes=axes if run else None, run=run,
+               results=res, keep_open=True, log=s2k.parent / "run-sap.log")
+    if run:
+        step_axes_check(axes, cfg)
     print(f"[results] {res}  ({res.stat().st_size // 1024} kB)")
     return res
 
@@ -211,8 +210,7 @@ def main(argv=None) -> int:
     if a.figures:
         step_figures(a.config)
 
-    sap = step_run(s2k, run=not a.no_run, cfg=a.config)
-    results = step_results(sap, s2k)
+    results = step_sap(s2k, run=not a.no_run, cfg=a.config)
     if a.no_export:
         return 0
     bin_path, features = step_export(s2k, results, model_id, cylindrical=not a.no_cylindrical)

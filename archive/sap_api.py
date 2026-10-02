@@ -1,3 +1,5 @@
+# RETIRED 2026-10-02: Python no longer drives SAP2000. Replaced by scripts/sap/SapSession.cs (+ SapExport.cs)
+# and scripts/sap/Run-Sap.ps1; Python calls the runner via pythonTools/sap/tankbuilder/sap_cli.py. Kept for reference.
 """SAP2000 OAPI driver (COM via comtypes): attach or start, open, run, results.
 
 Only this module talks to SAP. Everything it returns is plain Python, and the

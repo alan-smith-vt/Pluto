@@ -17,7 +17,11 @@ Repo root is the Obsidian vault; tool documentation lives under `vault/`.
   (`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`, never `pwsh`).
 - Binary = results / geometry, C#-written, write-once. User-defined things go in the sidecar.
 - Python only under `pythonTools/` (development side). Nothing in `scripts/` may need it.
-  SAP2000 is driven over its OAPI with `comtypes` (`pythonTools/sap/tankbuilder/sap_api.py`).
+- **SAP2000 has one controller: the C# in `scripts/sap/` (`SapSession.cs` and the classes on it).**
+  Python never calls the OAPI. It runs `scripts/sap/Run-Sap.ps1` via `pythonTools/sap/tankbuilder/sap_cli.py`.
+  Before writing any SAP code, check the capability table in `vault/arms/sap-controller.md`;
+  extend the C# (a method plus a runner switch) rather than writing a second driver. The old
+  Python `sap_api.py` is retired in `archive/` (2026-10-02).
 - Files are CRLF; edit bytes-safely. Never edit `.obsidian/` while Obsidian is running.
 
 ## Vault structure
