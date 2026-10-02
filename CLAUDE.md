@@ -1,7 +1,7 @@
 # Pluto — agent instructions
 
 Read the current handoff first: `Tools/Pluto Handoffs/Pluto Handoff.md` in the Notes vault (this repo
-normally sits at `Notes/repos/Pluto`, so `../../Tools/Pluto Handoffs/`). Current state, file map, next task.
+normally sits at `D:\Repos\Pluto`, beside the vault at `D:\Notes`). Current state, file map, next task.
 Repo root is the Obsidian vault; tool documentation lives under `vault/`.
 
 ## Hard constraints

@@ -89,11 +89,24 @@ def section_tables(model: TankModel) -> list[tuple[str, list[str]]]:
         # NOTE: not yet verified against the v25 importer (first frames in this
         # generator, 2026-09-03) -- if it rejects the table, the field names are
         # the suspect, not the values.
+        # Modifiers (AMod ... WMod) are columns of this table in SAP 26; written only
+        # on sections that carry them, so unmodified rows stay as they were.
         out.append(("FRAME SECTION PROPERTIES 01 - GENERAL", [
             _row(SectionName=name, Material=props.get("Material", s.mat_name),
-                 **{k: v for k, v in props.items() if k != "Material"}, Color="Yellow")
+                 **{k: v for k, v in props.items() if k not in ("Material", "modifiers")},
+                 Color="Yellow", **_modifier_columns(props.get("modifiers")))
             for name, props in model.frame_sections.items()]))
     return out
+
+
+
+def _modifier_columns(mods: dict | None) -> dict:
+    if not mods:
+        return {}
+    cols = {"AMod": 1, "A2Mod": 1, "A3Mod": 1, "JMod": 1, "I2Mod": 1, "I3Mod": 1,
+            "MMod": 1, "WMod": 1}
+    cols.update(mods)
+    return cols
 
 
 def link_tables(model: TankModel) -> list[tuple[str, list[str]]]:

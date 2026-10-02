@@ -684,6 +684,15 @@ class TankModel:
         if s.ringwall_soil_links == "faces":
             self._build_soil_faces()
 
+
+    def _arm_section(self) -> str:
+        """The bearing / face arms are stiff connectors inside the ring wall, not more
+        concrete: the ring wall section with no weight or mass (as RINGWALL they added
+        63 kip, 30 % of the concrete, on TANK-A)."""
+        self.frame_sections.setdefault("RINGWALL_ARM", dict(self.frame_sections["RINGWALL"],
+                                                            modifiers={"MMod": 0, "WMod": 0}))
+        return "RINGWALL_ARM"
+
     def _build_soil_faces(self) -> None:
         """Replace the one GAP_SOIL link under each axis joint with two at the ring wall's
         inner and outer faces, k/2 each, so the ring has the rotational bearing stiffness of
@@ -723,7 +732,7 @@ class TankModel:
                     self.thetas[fj] = theta
                     fid = next(nf)
                     self.frames[fid] = (self._arm_from.get((th, outer), by_theta[th]), fj)
-                    self.frame_section[fid] = "RINGWALL"
+                    self.frame_section[fid] = self._arm_section()
                     self._arm_from[(th, outer)] = fj
                     self.bearing_arm_joints.append(fj)
                 self.soil_face_joints.append(fj)
@@ -789,7 +798,7 @@ class TankModel:
             self.frames[fid] = (arm_from.get(side, by_theta[th]), aj)
             arm_from[side] = aj
             self._arm_from = arm_from
-            self.frame_section[fid] = "RINGWALL"
+            self.frame_section[fid] = self._arm_section()
             self.links[lid] = (aj, pj)
             self.link_prop[lid] = "GAP_BEARING"
         for name in old_props:
