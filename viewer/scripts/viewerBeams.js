@@ -137,6 +137,9 @@ var FEABeams = (function () {
         } else {
             elRange.textContent = lcData ? 'neutral (no beam data in this view)' : 'no beam results';
         }
+        // A model without a shell field (frame-only SAP models) shows the beam field in the
+        // legend and caption (viewer.js beamLegend).
+        if (typeof drawLegend === 'function') { drawLegend(); updateViewCaption(); }
         needsRender = true;
     }
 
@@ -279,6 +282,12 @@ var FEABeams = (function () {
         pick: pick,
         writeVis: writeVis,
         fillReadout: fillReadout,
+        // The coloured beam field ({name, unit, min, max}), or null when beams draw neutral.
+        legend: function () {
+            if (!material || material.uniforms.uNeutral.value) return null;
+            var c = view.meta.components[comp];
+            return { name: c.name, unit: c.unit, min: range.min, max: range.max };
+        },
         mesh: function () { return beamMesh; },
         view: function () { return view; },
         build: function () { return build; }

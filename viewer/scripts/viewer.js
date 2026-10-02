@@ -1196,10 +1196,23 @@ function viewSourceLabel() {
     return lcFullName(currentLC);
 }
 
+// The legend / caption follow the BEAM field when there is no shell field to show
+// (frame-only models, 2026-10-02): {name, unit, min, max} or null.
+function beamLegend() {
+    if (!window.FEABeams || !FEABeams.legend || inDsrMode()) return null;
+    var hasShells = feaModel && feaModel.header && feaModel.header.nElements > 0;
+    if (hasShells && activeComponent()) return null;
+    return FEABeams.legend();
+}
+
 function updateViewCaption() {
     if (!feaModel) { elViewCaption.textContent = '—'; elLegendTitle.textContent = '—'; return; }
     var parts = [viewSourceLabel()];
-    if (!inDsrMode()) {
+    var bl = beamLegend();
+    if (bl) {
+        var bname = bl.name + (bl.unit ? ' [' + bl.unit + ']' : '');
+        parts.push((absValue ? '|' + bname + '|' : bname) + ' · beams');
+    } else if (!inDsrMode()) {
         var c = activeComponent();
         if (!c) {
             parts.push(feaSet && feaSet.nLC === 0 ? 'geometry only' : 'no component');
@@ -1211,7 +1224,7 @@ function updateViewCaption() {
     } else if (!inCatMode() && absValue) {
         // abs on the (already >= 0) DSR value is a no-op; don't advertise it
     }
-    if (smoothing) parts.push(smoothMode === 'elem' ? 'element means' : 'smoothed');
+    if (smoothing && !bl) parts.push(smoothMode === 'elem' ? 'element means' : 'smoothed');
     // The colorscale title stays about the FIELD only -- deformation
     // state (an exaggeration of geometry, not of values) shows in the
     // canvas caption but not above the legend.
@@ -1488,9 +1501,11 @@ function drawLegend() {
     var anchors = FEAShaders.colormaps[colormapName] || FEAShaders.colormaps.viridis;
     // Above the alarm threshold (mapped into legend space), draw the alarm
     // color so the legend matches what's on the mesh.
+    var bl = beamLegend();
+    var lo = bl ? bl.min : vMin, hi = bl ? bl.max : vMax;
     var alarmActive = alarmEnabled && alarmThreshold > 0;
     var tAlarm = alarmActive
-        ? (alarmThreshold - vMin) / Math.max(vMax - vMin, 1e-6)
+        ? (alarmThreshold - lo) / Math.max(hi - lo, 1e-6)
         : Infinity;
     var aRGB = 'rgb(' + alarmColor[0] + ',' + alarmColor[1] + ',' + alarmColor[2] + ')';
     // Orientation follows the canvas aspect: wide = horizontal bar with min
@@ -1518,9 +1533,9 @@ function drawLegend() {
     }
     elLegendMax.textContent = alarmActive && tAlarm <= 1
         ? '≥ ' + fmt(alarmThreshold, 4)
-        : fmt(vMax, 4);
-    elLegendMid.textContent = fmt((vMin + vMax) / 2, 4);
-    elLegendMin.textContent = fmt(vMin, 4);
+        : fmt(hi, 4);
+    elLegendMid.textContent = fmt((lo + hi) / 2, 4);
+    elLegendMin.textContent = fmt(lo, 4);
 }
 
 // ================================================================
@@ -1576,6 +1591,29 @@ function roPosText(p) {
     var z = p.z + (o ? o[2] : 0) + (r ? r[2] : 0);
     return x.toFixed(2) + ', ' + y.toFixed(2) + ', ' + z.toFixed(2);
 }
+
+// Collapsible readout: the header toggles (remembered); collapsed, the value sits
+// beside the title (2026-10-02).
+(function () {
+    var panel = document.getElementById('roPanel'), head = document.getElementById('roHead');
+    var mini = document.getElementById('roMini'), tog = document.getElementById('roTog');
+    if (!panel || !head) return;
+    var collapsed = true;
+    try { collapsed = localStorage.getItem('pluto.roCollapsed') !== '0'; } catch (e) {}
+    function apply() {
+        panel.classList.toggle('collapsed', collapsed);
+        tog.innerHTML = collapsed ? '&#9656;' : '&#9662;';
+    }
+    head.addEventListener('click', function () {
+        collapsed = !collapsed;
+        try { localStorage.setItem('pluto.roCollapsed', collapsed ? '1' : '0'); } catch (e) {}
+        apply();
+    });
+    var val = document.getElementById('roValue');
+    function mirror() { mini.textContent = val.textContent === '—' ? '' : val.textContent; }
+    if (val && window.MutationObserver) new MutationObserver(mirror).observe(val, { childList: true, characterData: true, subtree: true });
+    apply();
+})();
 
 function clearReadout() {
     elRoValue.textContent = '—';

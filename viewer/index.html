@@ -380,8 +380,8 @@
 
 <!-- Hover / pin readout, anchored bottom-right on the canvas (moved out of
      the left panel 2026-09-03). Same element ids; viewer.js is unchanged. -->
-<div id="roPanel">
-    <div class="fea-sub">Readout</div>
+<div id="roPanel" class="collapsed">
+    <div class="fea-sub ro-head" id="roHead" title="Show / hide the readout">Readout <span id="roMini" class="ro-mini"></span><span class="ro-tog" id="roTog">&#9656;</span></div>
     <div id="roMode" class="fea-hint" style="margin:-2px 0 8px;">hover = live &middot; click to pin &middot; ctrl+click = focus</div>
     <div id="roValue" class="ro-value">&mdash;</div>
     <div class="ro-row"><span class="ro-key">Component</span><span id="roComp" class="ro-val">&mdash;</span></div>

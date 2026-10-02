@@ -170,6 +170,15 @@ input[type=file].fea-file::file-selector-button {
 body:has(#scPanel:not(.collapsed), #pdPanel:not(.collapsed), #grPanel:not(.collapsed)) #roPanel {
     right: calc(14px + 298px);
 }
+/* Collapsible readout (2026-10-02): the header toggles; collapsed shows only the
+   header with the current value beside the title. */
+.ro-head { cursor: pointer; user-select: none; display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.ro-mini { font-family: 'Consolas', monospace; color: #fff; font-size: 12px; flex: 1; text-align: right; }
+.ro-tog { color: #8888aa; font-size: 10px; }
+#roPanel.collapsed { padding: 6px 12px; width: auto; min-width: 180px; }
+#roPanel.collapsed .ro-head { margin-bottom: 0; }
+#roPanel.collapsed > :not(.ro-head) { display: none !important; }
+#roPanel:not(.collapsed) .ro-mini { display: none; }
 .ro-row {
     display: flex;
     gap: 6px;
