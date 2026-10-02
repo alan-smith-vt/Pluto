@@ -131,6 +131,7 @@ try {
         Say "test" ("max |V2| {0} kip, max |M3| {1} kip-ft (expected 5, 50): {2}" -f $v, $m, $(if ($out.selfTest) { "OK" } else { "FAILED" }))
         if (-not $out.selfTest) { throw "self test failed" }
     }
+    foreach ($w in $sap.Warnings) { Say "warn" $w }
 } finally {
     if (-not $KeepOpen) { $sap.Close() }
 }

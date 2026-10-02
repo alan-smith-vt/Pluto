@@ -16,5 +16,5 @@ if (-not ("SapSession" -as [type])) {
     [void][System.Reflection.Assembly]::LoadFrom($sapDll)   # so the Add-Type'd code resolves it at run time
     $sapCs = Get-ChildItem -Path $PSScriptRoot -Filter "Sap*.cs" | Select-Object -ExpandProperty FullName
     # netstandard: SAP 26's dll targets it; harmless for SAP 22
-    Add-Type -Path $sapCs -ReferencedAssemblies $sapDll, "System.Runtime.InteropServices", "netstandard"
+    Add-Type -Path $sapCs -ReferencedAssemblies $sapDll, "System.Runtime.InteropServices", "netstandard" -ErrorAction Stop
 }

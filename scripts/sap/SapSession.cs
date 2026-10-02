@@ -177,13 +177,34 @@ public class SapSession
         return n;
     }
 
+    // DatabaseTables is bound late: the SAP 22 interop on the production machine has no
+    // cSapModel.DatabaseTables, and one missing member stops every Sap*.cs from compiling (2026-10-02).
+    // Without it, TableRows returns nothing and HasDatabaseTables says so.
+    object dbTables; bool dbChecked;
+    public bool HasDatabaseTables { get { return DbTables() != null; } }
+    object DbTables()
+    {
+        if (dbChecked) return dbTables;
+        dbChecked = true;
+        System.Reflection.PropertyInfo p = typeof(cSapModel).GetProperty("DatabaseTables");
+        if (p != null) dbTables = p.GetValue(Model, null);
+        if (dbTables == null) Warn("this SAP2000 API has no DatabaseTables: input tables (section properties, insertion points, coordinate systems) are not read back");
+        return dbTables;
+    }
+
     // Rows of a DatabaseTables input table (rounded to the display format: input tables only, never
     // results). Empty tables come back with null field names (stale buffers), hence the guard.
     public List<Dictionary<string, string>> TableRows(string table)
     {
         List<Dictionary<string, string>> rows = new List<Dictionary<string, string>>();
-        string[] keys = new string[0], fields = null, data = null; int ver = 0, nrec = 0;
-        if (Model.DatabaseTables.GetTableForDisplayArray(table, ref keys, "", ref ver, ref fields, ref nrec, ref data) != 0) return rows;
+        object db = DbTables();
+        if (db == null) return rows;
+        Type it = typeof(cSapModel).Assembly.GetType("SAP2000v1.cDatabaseTables");
+        System.Reflection.MethodInfo mi = it == null ? null : it.GetMethod("GetTableForDisplayArray");
+        if (mi == null) return rows;
+        object[] a = { table, new string[0], "", 0, null, 0, null };
+        if ((int)mi.Invoke(db, a) != 0) return rows;
+        string[] fields = (string[])a[4], data = (string[])a[6]; int nrec = (int)a[5];
         if (nrec == 0 || fields == null || fields.Length == 0) return rows;
         foreach (string f in fields) if (f == null) return rows;
         int nf = fields.Length;

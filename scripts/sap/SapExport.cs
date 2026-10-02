@@ -159,7 +159,9 @@ public class SapExport
         for (int i = 0; i < mesh.Lines.Count; i++)
             rows.Add(Row("Frame", Id(i + 1), "SectionType", "N.A.", "AutoSelect", "N.A.", "AnalSect", mesh.Lines[i].Section, "DesignSect", "N.A.", "MatProp", "Default"));
         Table(L, "FRAME SECTION ASSIGNMENTS", rows);
-        Table(L, "FRAME SECTION PROPERTIES 01 - GENERAL", Rows(s.TableRows("Frame Section Properties 01 - General")));
+        List<string> fsp = Rows(s.TableRows("Frame Section Properties 01 - General"));
+        if (fsp.Count == 0) fsp = FrameSectionRows(s);   // no DatabaseTables (SAP 22): the shapes SapToPluto draws
+        Table(L, "FRAME SECTION PROPERTIES 01 - GENERAL", fsp);
 
         rows = new List<string>();
         foreach (Dictionary<string, string> r in s.TableRows("Frame Insertion Point Assignments"))
@@ -170,12 +172,22 @@ public class SapExport
         }
         Table(L, "FRAME INSERTION POINT ASSIGNMENTS", rows);
 
+        // Restraints from the point objects (works without DatabaseTables).
         rows = new List<string>();
-        foreach (Dictionary<string, string> r in s.TableRows("Joint Restraint Assignments"))
         {
-            string j; if (!r.TryGetValue("Joint", out j)) continue;
-            int i = mesh.PointOfObj(m, j);
-            if (i > 0) { r["Joint"] = Id(i); rows.Add(Row(r)); }
+            int n = 0; string[] pts = null;
+            m.PointObj.GetNameList(ref n, ref pts);
+            string[] dof = { "U1", "U2", "U3", "R1", "R2", "R3" };
+            for (int k = 0; k < n; k++)
+            {
+                bool[] r = new bool[6];
+                if (m.PointObj.GetRestraint(pts[k], ref r) != 0 || Array.IndexOf(r, true) < 0) continue;
+                int i = mesh.PointOfObj(m, pts[k]);
+                if (i <= 0) continue;
+                List<string> kv = new List<string> { "Joint", Id(i) };
+                for (int d = 0; d < 6; d++) { kv.Add(dof[d]); kv.Add(r[d] ? "Yes" : "No"); }
+                rows.Add(Row(kv.ToArray()));
+            }
         }
         Table(L, "JOINT RESTRAINT ASSIGNMENTS", rows);
         rows = new List<string>();
@@ -200,6 +212,35 @@ public class SapExport
         Table(L, "GROUPS 2 - ASSIGNMENTS", rows);
         L.Add("END TABLE DATA");
         return string.Join("\n", L.ToArray()) + "\n";
+    }
+
+    // FRAME SECTION PROPERTIES 01 rows from PropFrame for the shapes SapToPluto draws (Box/Tube, Pipe,
+    // Rectangular, I, Angle, Channel, Tee); any other type gets its name only (RECT placeholder).
+    public static List<string> FrameSectionRows(SapSession s)
+    {
+        cSapModel m = s.Model;
+        List<string> rows = new List<string>();
+        int n = 0; string[] names = null;
+        m.PropFrame.GetNameList(ref n, ref names);
+        for (int i = 0; i < n; i++)
+        {
+            eFramePropType type = eFramePropType.I;
+            m.PropFrame.GetTypeOAPI(names[i], ref type);
+            string file = "", mat = "", notes = "", guid = ""; int color = 0;
+            double t3 = 0, t2 = 0, tf = 0, tw = 0, t2b = 0, tfb = 0;
+            string shape = null;
+            if (type == eFramePropType.Box && m.PropFrame.GetTube(names[i], ref file, ref mat, ref t3, ref t2, ref tf, ref tw, ref color, ref notes, ref guid) == 0) shape = "Box/Tube";
+            else if (type == eFramePropType.Pipe && m.PropFrame.GetPipe(names[i], ref file, ref mat, ref t3, ref tw, ref color, ref notes, ref guid) == 0) shape = "Pipe";
+            else if (type == eFramePropType.Rectangular && m.PropFrame.GetRectangle(names[i], ref file, ref mat, ref t3, ref t2, ref color, ref notes, ref guid) == 0) shape = "Rectangular";
+            else if (type == eFramePropType.I && m.PropFrame.GetISection(names[i], ref file, ref mat, ref t3, ref t2, ref tf, ref tw, ref t2b, ref tfb, ref color, ref notes, ref guid) == 0) shape = "I/Wide Flange";
+            else if (type == eFramePropType.Angle && m.PropFrame.GetAngle(names[i], ref file, ref mat, ref t3, ref t2, ref tf, ref tw, ref color, ref notes, ref guid) == 0) shape = "Angle";
+            else if (type == eFramePropType.Channel && m.PropFrame.GetChannel(names[i], ref file, ref mat, ref t3, ref t2, ref tf, ref tw, ref color, ref notes, ref guid) == 0) shape = "Channel";
+            else if (type == eFramePropType.T && m.PropFrame.GetTee(names[i], ref file, ref mat, ref t3, ref t2, ref tf, ref tw, ref color, ref notes, ref guid) == 0) shape = "Tee";
+            if (shape == null) { rows.Add(Row("SectionName", names[i], "Shape", type.ToString())); continue; }
+            rows.Add(Row("SectionName", names[i], "Material", mat, "Shape", shape, "t3", SapSession.R(t3), "t2", SapSession.R(t2),
+                "tf", SapSession.R(tf), "tw", SapSession.R(tw)));
+        }
+        return rows;
     }
 
     public static string LabelsCsv(Mesh mesh)
