@@ -48,7 +48,7 @@ $pipes = $pex.Build('C:\Temp\pipe_v4.csv', '<room>', 'C:\Temp\pipe_parts_bbox.cs
 $pex.Summary()
 ```
 
-- `'<room>'` → `$null` for the whole plant. Multi-room values match by token,
+- `'<room>'` → `$null` for the whole plant. Several rooms: `'R1, R2; R3'` (`,` or `;`, 2026-10-02), any match keeps the row. Multi-room values match by token,
   including prefix-elided ones (`A-123/321` = A-123 and A-321).
 - Third argument = bbox CSV path (not a flag). Omit it (or pass `$null`) and
   behaviour is byte-identical to the pre-fallback builder.

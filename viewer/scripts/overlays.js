@@ -1,0 +1,311 @@
+// ================================================================
+// overlays.js  --  extra models drawn beside the loaded one (model rail, stage 1).
+// Design: vault/viewer/model-rail.md
+//
+// The loaded model (viewer.js feaModel) is the PRIMARY: it owns the field,
+// load cases, legend, groups tab, section cuts and predicates. Overlays are
+// other files (e.g. plant steel + pipes over a SAP duct model) drawn as
+// reference geometry:
+//   - beams only for now (a file with shells draws its beams and says so)
+//   - coloured by the overlay's OWN sidecar groups (every element group,
+//     envelope order, later wins; no group = neutral grey), or ghosted
+//   - placed at true world coordinates: each file's exporter recenter
+//     (sidecar units.worldOffset) and the viewer recenter are added back,
+//     lengths converted to the primary's unit
+//   - pickable: the readout names the overlay, the member label and group
+// Each overlay keeps its own sidecar (bound by its own geometryHash); nothing
+// is merged. Not yet (stage 2/3): making an overlay the active model (its
+// groups in the Groups tab, Save, field), section cuts / predicates across
+// models.
+// ================================================================
+
+var FEAOverlays = (function () {
+
+    var list = [];            // overlay records, in load order
+    var primaryVisible = true;
+    var GHOST_ALPHA = 0.22;
+    var UNIT_M = { m: 1, mm: 0.001, cm: 0.01, in: 0.0254, inch: 0.0254, ft: 0.3048, feet: 0.3048 };
+
+    var elRail = document.getElementById('modelRail');
+    var elAdd = document.getElementById('ovAdd');
+    var elFile = document.getElementById('ovFile');
+
+    function unitOf(unified) {
+        var u = unified && unified.units && unified.units.length;
+        return u ? String(u).toLowerCase() : '';
+    }
+    // The exporter recenter: model.units.worldOffset per the sidecar spec (vault/format/
+    // features-sidecar); top-level units.worldOffset accepted too.
+    function parseOffset(env) {
+        var u = env && ((env.model && env.model.units) || env.units);
+        var s = u && u.worldOffset;
+        if (!s) return [0, 0, 0];
+        var p = String(s).trim().split(/\s+/).map(Number);
+        return (p.length === 3 && p.every(isFinite)) ? p : [0, 0, 0];
+    }
+
+    // World position of the primary scene origin, in primary file units.
+    function primaryOrigin() {
+        var o = parseOffset(window.FEAFeatures && FEAFeatures.envelope ? FEAFeatures.envelope() : null);
+        var r = (typeof viewRecenter !== 'undefined') ? viewRecenter : null;
+        return [(o ? o[0] : 0) + (r ? r[0] : 0), (o ? o[1] : 0) + (r ? r[1] : 0), (o ? o[2] : 0) + (r ? r[2] : 0)];
+    }
+
+    // Overlay -> primary length factor (1 with a warning when a unit is unknown).
+    function unitScale(ov) {
+        var pu = (typeof feaModel !== 'undefined' && feaModel && feaModel.unified) ? unitOf(feaModel.unified) : '';
+        var a = UNIT_M[ov.unit], b = UNIT_M[pu];
+        ov.unitNote = '';
+        if (!a || !b) {
+            ov.unitNote = 'units ' + (ov.unit || '?') + ' / ' + (pu || '?') + ': not converted';
+            return 1;
+        }
+        return a / b;
+    }
+
+    function reposition() {
+        var po = primaryOrigin();
+        list.forEach(function (ov) {
+            var s = unitScale(ov);
+            ov.mesh.scale.setScalar(s);
+            // world(ov units) = local + localOrigin + worldOffset; scene = world * s - primary origin
+            ov.mesh.position.set(
+                (ov.localOrigin[0] + ov.offset[0]) * s - po[0],
+                (ov.localOrigin[1] + ov.offset[1]) * s - po[1],
+                (ov.localOrigin[2] + ov.offset[2]) * s - po[2]);
+        });
+        render();
+        if (typeof needsRender !== 'undefined') needsRender = true;
+    }
+
+    // Element groups of the overlay's sidecar -> per-element category + palette.
+    function resolveGroups(ov) {
+        var n = ov.view.header.nElements;
+        var cat = new Float32Array(n); cat.fill(-1);
+        ov.groupOfElem = new Int32Array(n); ov.groupOfElem.fill(-1);
+        ov.groups = [];
+        var items = (ov.envelope && ov.envelope.groups && Array.isArray(ov.envelope.groups.items)) ? ov.envelope.groups.items : [];
+        if (!items.length) return { cat: cat, rgb: [[200, 200, 200]] };
+        var idx = new Map();
+        var ids = ov.view.elemIds;
+        for (var e = 0; e < n; e++) idx.set(ids[e], e);
+        var beamDomains = {};
+        ov.unified.domains.forEach(function (d) { if (d.family === 'beam') beamDomains[d.name] = 1; });
+        var rgb = [];
+        items.forEach(function (g, gi) {
+            rgb.push(g.color ? hexToRgb(g.color) : FEAShaders.categoryColor(gi));
+            var count = 0;
+            (Array.isArray(g.members) ? g.members : []).forEach(function (m) {
+                var d = m.domain || '';
+                if (!(d === 'beams' || d === 'beam' || beamDomains[d])) return;
+                (m.ids || []).forEach(function (id) {
+                    var i = idx.get(id);
+                    if (i === undefined) return;
+                    cat[i] = gi; ov.groupOfElem[i] = gi; count++;
+                });
+            });
+            ov.groups.push({ name: g.name || ('Group ' + (gi + 1)), count: count });
+        });
+        return { cat: cat, rgb: rgb };
+    }
+    function hexToRgb(h) {
+        var m = /^#?([0-9a-f]{6})$/i.exec(String(h || ''));
+        if (!m) return [200, 200, 200];
+        var v = parseInt(m[1], 16);
+        return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+    }
+
+    function applyLook(ov) {
+        var u = ov.material.uniforms;
+        u.uGroupMode.value = ov.hasGroups ? 1 : 0;
+        u.uXray.value = ov.ghost ? GHOST_ALPHA : 0;
+        ov.material.transparent = ov.ghost;
+        ov.material.depthWrite = !ov.ghost;
+        ov.mesh.visible = ov.visible;
+        if (typeof needsRender !== 'undefined') needsRender = true;
+    }
+
+    // binFile: Blob/File of the .bin; jsonFile: its features sidecar (optional).
+    async function add(binFile, jsonFile, name) {
+        if (typeof feaModel === 'undefined' || !feaModel) { log('Load a model first; overlays are placed relative to it.'); return null; }
+        var unified = await PlutoFormat.load(binFile, log);
+        var view = PlutoFormat.beamView(unified);
+        if (!view || view.header.nElements === 0) { log('Overlay ' + name + ': no beams (overlays draw beams only for now).'); return null; }
+        var envelope = null;
+        if (jsonFile) {
+            try { envelope = JSON.parse(await jsonFile.text()); }
+            catch (err) { log('Overlay ' + name + ': features file unreadable (' + err.message + ').'); }
+        }
+        var ov = {
+            name: name, unified: unified, view: view, envelope: envelope,
+            unit: unitOf(unified), offset: parseOffset(envelope),
+            visible: true, ghost: false, hasGroups: false
+        };
+        var want = envelope && envelope.model && envelope.model.geometryHash;
+        if (want && unified.geometryHash && want !== unified.geometryHash) log('Overlay ' + name + ': ⚠ features geometryHash differs from the file.');
+
+        // Local frame: subtract the bbox centre (whole units) so float32 stays small.
+        var xyz = unified.nodes, nn = unified.nNodes;
+        var mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
+        for (var i = 0; i < nn * 3; i++) { var a = i % 3; if (xyz[i] < mn[a]) mn[a] = xyz[i]; if (xyz[i] > mx[a]) mx[a] = xyz[i]; }
+        ov.localOrigin = [Math.round((mn[0] + mx[0]) / 2), Math.round((mn[1] + mx[1]) / 2), Math.round((mn[2] + mx[2]) / 2)];
+        for (var j = 0; j < nn * 3; j++) xyz[j] -= ov.localOrigin[j % 3];
+
+        ov.build = FEABeamGeometry.build(view);
+        var gr = resolveGroups(ov);
+        ov.hasGroups = ov.groups.length > 0;
+        FEAAttributes.updateCatIdx(ov.build.geometry, null, ov.build, gr.cat);
+        ov.palette = FEAShaders.makePaletteTexture(gr.rgb);
+        ov.material = new THREE.ShaderMaterial({
+            uniforms: {
+                colormap: { value: ov.palette },
+                vMin: { value: 0 }, vMax: { value: 1 },
+                alarmThreshold: { value: 0 }, alarmColor: { value: new THREE.Vector3(1, 0, 1) },
+                uAbs: { value: 0 }, uNeutral: { value: 1 },
+                neutralColor: { value: new THREE.Vector3(0.62, 0.64, 0.68) },   // grey: reads as "not the model"
+                dispScale: { value: 0 },
+                uGroupMode: { value: 0 }, groupPalette: { value: ov.palette }, uGroupCount: { value: Math.max(gr.rgb.length, 1) },
+                uXray: { value: 0 }
+            },
+            vertexShader: FEAShaders.beamVertex,
+            fragmentShader: FEAShaders.beamFragment,
+            side: THREE.DoubleSide
+        });
+        ov.mesh = new THREE.Mesh(ov.build.geometry, ov.material);
+        ov.mesh.renderOrder = 2;          // after the primary, so a ghost blends over it
+        scene.add(ov.mesh);
+        list.push(ov);
+        applyLook(ov);
+        reposition();
+        log('Overlay ' + name + ': ' + view.header.nElements + ' beams, ' + ov.groups.length + ' groups, units ' + (ov.unit || '?') +
+            (ov.unitNote ? ' (' + ov.unitNote + ')' : '') + '.');
+        return ov;
+    }
+
+    function remove(ov) {
+        var i = list.indexOf(ov);
+        if (i < 0) return;
+        scene.remove(ov.mesh);
+        ov.build.geometry.dispose(); ov.material.dispose(); ov.palette.dispose();
+        list.splice(i, 1);
+        render();
+        if (typeof needsRender !== 'undefined') needsRender = true;
+    }
+
+    function setPrimaryVisible(on) {
+        primaryVisible = on;
+        if (typeof mesh !== 'undefined' && mesh) mesh.visible = on;
+        if (typeof feaEdges !== 'undefined' && feaEdges) feaEdges.visible = on;
+        var bm = window.FEABeams && FEABeams.mesh();
+        if (bm) bm.visible = on && (document.getElementById('beamShow') ? document.getElementById('beamShow').checked : true);
+        if (typeof needsRender !== 'undefined') needsRender = true;
+    }
+
+    // Nearest visible overlay member under the ray: { overlay, elem, point, distance }.
+    function pick(raycaster) {
+        var best = null;
+        list.forEach(function (ov) {
+            if (!ov.visible) return;
+            var hits = raycaster.intersectObject(ov.mesh);
+            for (var i = 0; i < hits.length; i++) {
+                if (hits[i].faceIndex == null) continue;
+                if (!best || hits[i].distance < best.distance)
+                    best = { overlay: ov, elem: ov.build.triToElem[hits[i].faceIndex], point: hits[i].point, distance: hits[i].distance };
+                break;
+            }
+        });
+        return best;
+    }
+
+    function fillReadout(hit) {
+        var ov = hit.overlay, e = hit.elem, v = ov.view;
+        var lbl = v.labels ? v.labels.get(e) : '';
+        var g = ov.groupOfElem[e] >= 0 ? ov.groups[ov.groupOfElem[e]].name : 'no group';
+        var sec = v.sections && ov.build.sectionOf ? v.sections[ov.build.sectionOf[e]] : null;
+        elRoValue.textContent = g;
+        elRoValue.className = 'ro-value';
+        elRoComp.textContent = 'overlay ' + ov.name + (sec && sec.name ? ' · ' + sec.name : '');
+        elRoElem.textContent = v.elemIds[e] + (lbl ? ' [' + lbl + ']' : '') + '  (overlay beam)';
+        elRoNode.textContent = '—';
+        elRoCorners.textContent = '—';
+        elRoUV.textContent = '—';
+        elRoPos.textContent = roPosText(hit.point);
+        if (elRoControllingRow) elRoControllingRow.style.display = 'none';
+        lastQuery = null;
+    }
+
+    // ---- rail ----------------------------------------------------------
+    function render() {
+        if (!elRail) return;
+        elRail.innerHTML = '';
+        var hasPrimary = typeof feaModel !== 'undefined' && !!feaModel;
+        if (!hasPrimary) { elRail.innerHTML = '<div class="fea-hint">no model loaded</div>'; return; }
+        elRail.appendChild(row(window.feaPrimaryName || 'model', 'active · field, groups, cuts', primaryVisible,
+            function (on) { setPrimaryVisible(on); }, null, null, true));
+        list.forEach(function (ov) {
+            var info = ov.view.header.nElements + ' beams · ' + (ov.groups.length ? ov.groups.length + ' groups' : 'no groups') +
+                (ov.unitNote ? ' · ' + ov.unitNote : '');
+            elRail.appendChild(row(ov.name, info, ov.visible,
+                function (on) { ov.visible = on; applyLook(ov); },
+                function (on) { ov.ghost = on; applyLook(ov); }, function () { remove(ov); }, false, ov.ghost));
+        });
+    }
+
+    function row(name, info, visible, onVis, onGhost, onRemove, active, ghost) {
+        var r = document.createElement('div');
+        r.className = 'rail-row' + (active ? ' active' : '');
+        var eye = document.createElement('input');
+        eye.type = 'checkbox'; eye.className = 'fea-check'; eye.checked = visible; eye.title = 'Show / hide';
+        eye.addEventListener('change', function () { onVis(eye.checked); });
+        r.appendChild(eye);
+        var txt = document.createElement('div');
+        txt.className = 'rail-text';
+        var nm = document.createElement('div'); nm.className = 'rail-name'; nm.textContent = name; nm.title = name;
+        var sub = document.createElement('div'); sub.className = 'rail-info'; sub.textContent = info;
+        txt.appendChild(nm); txt.appendChild(sub);
+        r.appendChild(txt);
+        if (onGhost) {
+            var gh = document.createElement('label'); gh.className = 'rail-ghost'; gh.title = 'Translucent';
+            var gc = document.createElement('input'); gc.type = 'checkbox'; gc.className = 'fea-check'; gc.checked = !!ghost;
+            gc.addEventListener('change', function () { onGhost(gc.checked); });
+            gh.appendChild(gc); gh.appendChild(document.createTextNode('ghost'));
+            r.appendChild(gh);
+        }
+        if (onRemove) {
+            var x = document.createElement('button'); x.className = 'fea-btn rail-x'; x.textContent = '×'; x.title = 'Remove overlay';
+            x.addEventListener('click', onRemove);
+            r.appendChild(x);
+        }
+        return r;
+    }
+
+    // ---- file picking: .bin files + their sidecars, paired by base name ----
+    function baseName(n) { return String(n).replace(/\.features\.json$/i, '').replace(/\.(bin|json)$/i, ''); }
+    async function addFiles(files) {
+        var bins = [], jsons = {};
+        Array.prototype.forEach.call(files, function (f) {
+            if (/\.json$/i.test(f.name)) jsons[baseName(f.name)] = f; else bins.push(f);
+        });
+        for (var i = 0; i < bins.length; i++) {
+            try { await add(bins[i], jsons[baseName(bins[i].name)] || null, baseName(bins[i].name)); }
+            catch (err) { log('Overlay ' + bins[i].name + ' failed: ' + err.message); }
+        }
+        render();
+    }
+    if (elAdd && elFile) {
+        elAdd.addEventListener('click', function () { elFile.value = ''; elFile.click(); });
+        elFile.addEventListener('change', function () { addFiles(elFile.files); });
+    }
+
+    return {
+        add: add,
+        addFiles: addFiles,
+        pick: pick,
+        fillReadout: fillReadout,
+        reposition: reposition,
+        render: render,
+        list: function () { return list; },
+        // a new primary keeps its own visibility; overlays stay and are re-placed
+        onPrimaryLoaded: function () { primaryVisible = true; reposition(); }
+    };
+})();

@@ -100,6 +100,7 @@ var FEAFeatures = (function () {
         try { obj = JSON.parse(text); }
         catch (err) { log('Features: ' + file.name + ' is not valid JSON (' + err.message + ').'); return; }
         setEnvelope(obj, file.name);
+        if (window.FEAOverlays) FEAOverlays.reposition();   // the primary's worldOffset may have changed
     }
 
     function setEnvelope(obj, name) {

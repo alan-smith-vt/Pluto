@@ -300,9 +300,22 @@ public class PipeCsvReader
     // A-321. A short token is expanded two ways against the FIRST token and
     // matches on either: prefix up to the last '-' + token ("A-" + "321"),
     // and tail replacement (first token with its last N chars swapped).
+    // filter: one room, or several separated by ',' or ';' ("R1, R2; R3"): a row is kept when it
+    // matches any of them (2026-10-02). '/' is not a separator here: it joins rooms in the ROW value.
     internal static bool RoomMatch(string rowRoom, string filter)
     {
         if (rowRoom == null) return false;
+        if (filter.IndexOf(',') >= 0 || filter.IndexOf(';') >= 0)
+        {
+            foreach (string f in filter.Split(new[] { ',', ';' }))
+                if (f.Trim().Length > 0 && RoomMatchOne(rowRoom, f.Trim())) return true;
+            return false;
+        }
+        return RoomMatchOne(rowRoom, filter);
+    }
+
+    static bool RoomMatchOne(string rowRoom, string filter)
+    {
         if (Eq(rowRoom.Trim(), filter)) return true;
         var toks = rowRoom.Split(new[] { '/', ',', ';' });
         string first = toks.Length > 0 ? toks[0].Trim() : "";

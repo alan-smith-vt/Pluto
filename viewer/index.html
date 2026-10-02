@@ -33,6 +33,13 @@
         </div>
         <div class="fea-hint" id="featName">no features file</div>
         <div class="fea-hint" id="featHint"></div>
+        <div class="fea-sub" style="margin-top:8px;">Models</div>
+        <div id="modelRail"><div class="fea-hint">no model loaded</div></div>
+        <div class="fea-row" style="margin-top:4px;">
+            <button id="ovAdd" class="fea-btn"
+                    title="Add another model as an overlay (.bin + its .features.json together): drawn at its true coordinates, coloured by its own groups, pickable">Add overlay…</button>
+            <input type="file" id="ovFile" multiple style="display:none;" accept=".bin,.json,application/octet-stream,application/json">
+        </div>
         <div class="fea-row" style="margin-top:6px;">
             <button id="btnDemo" class="fea-btn">Load Demo Model</button>
             <button id="btnFit" class="fea-btn">Fit View</button>
@@ -414,6 +421,7 @@
 <script src="scripts/sampleModel.js"></script>
 <script src="scripts/viewer.js"></script>
 <script src="scripts/viewerBeams.js"></script>
+<script src="scripts/overlays.js"></script>
 <script src="scripts/features.js"></script>
 <script src="scripts/sectionCut.js"></script>
 <script src="scripts/predicates.js"></script>

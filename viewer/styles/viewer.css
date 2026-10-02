@@ -146,6 +146,16 @@ input[type=file].fea-file::file-selector-button {
     margin-top: 3px;
 }
 
+/* === Model rail (Model section): the loaded model + overlays, 2026-10-02 === */
+.rail-row { display: flex; align-items: center; gap: 6px; padding: 3px 4px; border-radius: 4px; margin-bottom: 2px; }
+.rail-row.active { background: rgba(110, 130, 255, 0.14); }
+.rail-text { flex: 1; min-width: 0; }
+.rail-name { font-size: 11px; color: #ddd; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-row.active .rail-name { color: #fff; font-weight: 600; }
+.rail-info { font-size: 9px; color: #8888aa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-ghost { font-size: 9px; color: #8888aa; display: flex; align-items: center; gap: 2px; }
+.rail-x { flex: 0 0 22px; padding: 0; }
+
 /* === Readout (bottom-right overlay) === */
 #roPanel {
     position: fixed;

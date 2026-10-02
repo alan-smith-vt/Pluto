@@ -514,6 +514,8 @@ async function loadModels(entriesIn) {
         disposeCurrentModel();
         feaModel = model;
         feaSet = FEAModelSet.build(accepted);
+        window.feaPrimaryName = accepted.map(function (a) { return a.name; }).join(' + ');
+        if (window.FEAOverlays) FEAOverlays.onPrimaryLoaded();
         feaBuild = build;
 
         dsrIndices = [];
@@ -1579,8 +1581,12 @@ function feaPick(clientX, clientY) {
         }
     }
     var beamHit = window.FEABeams ? FEABeams.pick(feaRaycaster) : null;
-    if (beamHit && (!shellHit || beamHit.distance < shellHit.distance)) return beamHit;
-    return shellHit;
+    var hit = shellHit;
+    if (beamHit && (!hit || beamHit.distance < hit.distance)) hit = beamHit;
+    // overlays (model rail): nearest visible member wins
+    var ovHit = window.FEAOverlays ? FEAOverlays.pick(feaRaycaster) : null;
+    if (ovHit && (!hit || ovHit.distance < hit.distance)) hit = ovHit;
+    return hit;
 }
 
 // Picked point -> readout text, adding the exporter's recenter offset (sidecar
@@ -1641,6 +1647,7 @@ function showReadout(clientX, clientY) {
 
     var hit = feaPick(clientX, clientY);
     if (!hit) { clearReadout(); return null; }
+    if (hit.overlay) { FEAOverlays.fillReadout(hit); return hit; }
     if (hit.beam) { FEABeams.fillReadout(hit); return hit; }
     var q = FEAQuery.query({
         model: feaModel, buildResult: feaBuild,
@@ -2322,6 +2329,16 @@ updateViewCaption();
         }).then(function (blob) {
             return FEAFeatures.loadFile(new File([blob], base(fUrl), { type: 'application/json' }));
         });
+    }).then(async function () {
+        // overlays: &ov=<bin url>[,<features url>] (repeatable)
+        var ovs = q.getAll('ov');
+        for (var i = 0; i < ovs.length && window.FEAOverlays; i++) {
+            var parts = ovs[i].split(',');
+            var bin = await (await fetch(parts[0])).blob();
+            var js = parts[1] ? new File([await (await fetch(parts[1])).blob()], base(parts[1])) : null;
+            await FEAOverlays.add(bin, js, trimExt(base(parts[0])));
+        }
+        if (ovs.length && window.FEAOverlays) FEAOverlays.render();
     }).catch(function (err) {
         log('URL load failed: ' + err.message);
         loadDemo();
