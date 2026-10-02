@@ -179,6 +179,7 @@ var FEAOverlays = (function () {
         reposition();
         log('Overlay ' + name + ': ' + view.header.nElements + ' beams, ' + ov.groups.length + ' groups, units ' + (ov.unit || '?') +
             (ov.unitNote ? ' (' + ov.unitNote + ')' : '') + '.');
+        reportPlacement(ov);                 // last, so it is the line the status shows
         return ov;
     }
 
@@ -234,24 +235,97 @@ var FEAOverlays = (function () {
         lastQuery = null;
     }
 
+    // ---- where things are ------------------------------------------------
+    // Scene-space box of an object (empty Box3 when nothing to measure).
+    function sceneBox(obj) {
+        var b = new THREE.Box3();
+        if (!obj || !obj.geometry) return b;
+        obj.updateMatrixWorld(true);
+        b.setFromObject(obj);
+        return b;
+    }
+    function primaryBox() {
+        var b = new THREE.Box3();
+        if (typeof mesh !== 'undefined' && mesh && feaModel && feaModel.header && feaModel.header.nElements > 0) b.union(sceneBox(mesh));
+        var bm = window.FEABeams && FEABeams.mesh();
+        if (bm) b.union(sceneBox(bm));
+        return b;
+    }
+    // Box centre in WORLD coordinates (primary units): scene + primary origin.
+    function worldCentre(box) {
+        if (box.isEmpty()) return null;
+        var c = box.getCenter(new THREE.Vector3()), po = primaryOrigin();
+        return [c.x + po[0], c.y + po[1], c.z + po[2]];
+    }
+    function fmtXYZ(v) { return v ? v.map(function (x) { return Math.round(x).toLocaleString('en-US'); }).join(', ') : '—'; }
+    function primaryUnit() { return (typeof feaModel !== 'undefined' && feaModel && feaModel.unified) ? (unitOf(feaModel.unified) || '?') : '?'; }
+
+    // Frame the camera on a scene box (also resets near/far to it, so a far-away
+    // overlay is not clipped by the main model's far plane).
+    function zoomToBox(box) {
+        if (box.isEmpty()) return;
+        var sph = box.getBoundingSphere(new THREE.Sphere()), rr = sph.radius || 1;
+        controls.target.copy(sph.center);
+        var dir = camera.position.clone().sub(sph.center);
+        if (dir.lengthSq() < 1e-12) dir.set(0.5, 0.45, 0.9);
+        camera.position.copy(sph.center).add(dir.normalize().multiplyScalar(rr * 2.6));
+        frameCamera(rr);
+        controls.update();
+        if (typeof needsRender !== 'undefined') needsRender = true;
+    }
+    function fitAll() {
+        var b = new THREE.Box3();
+        if (primaryVisible) b.union(primaryBox());
+        list.forEach(function (ov) { if (ov.visible) b.union(sceneBox(ov.mesh)); });
+        zoomToBox(b);
+    }
+
+    // One log line per overlay: where it is, where the main model is, how far apart.
+    function reportPlacement(ov) {
+        var pb = primaryBox(), ob = sceneBox(ov.mesh);
+        var pc = worldCentre(pb), oc = worldCentre(ob), u = primaryUnit();
+        var off = ov.offset.some(function (x) { return x !== 0; }) ? fmtXYZ(ov.offset) + ' ' + (ov.unit || '?')
+            : (ov.envelope ? 'none in its features file' : 'none (no features file loaded)');
+        var msg = 'Overlay ' + ov.name + ': centre ' + fmtXYZ(oc) + ' ' + u + ' (exporter offset ' + off + '); main model centre ' + fmtXYZ(pc) + ' ' + u;
+        if (pc && oc && !pb.isEmpty()) {
+            var d = Math.sqrt(Math.pow(oc[0] - pc[0], 2) + Math.pow(oc[1] - pc[1], 2) + Math.pow(oc[2] - pc[2], 2));
+            var size = pb.getSize(new THREE.Vector3()).length() || 1;
+            msg += '; ' + Math.round(d).toLocaleString('en-US') + ' ' + u + ' apart (' + (d / size).toFixed(1) + ' x the main model size)';
+            if (d > 10 * size) msg += ' -- far apart: check that both files use the same coordinate system and units';
+        }
+        log(msg + '.');
+    }
+
     // ---- rail ----------------------------------------------------------
     function render() {
         if (!elRail) return;
         elRail.innerHTML = '';
         var hasPrimary = typeof feaModel !== 'undefined' && !!feaModel;
         if (!hasPrimary) { elRail.innerHTML = '<div class="fea-hint">no model loaded</div>'; return; }
-        elRail.appendChild(row(window.feaPrimaryName || 'model', 'active · field, groups, cuts', primaryVisible,
-            function (on) { setPrimaryVisible(on); }, null, null, true));
+        var u = primaryUnit();
+        var pBox = primaryBox();
+        elRail.appendChild(row(window.feaPrimaryName || 'model',
+            'active · centre ' + fmtXYZ(worldCentre(pBox)) + ' ' + u, primaryVisible,
+            function (on) { setPrimaryVisible(on); }, null, null, true, false, function () { zoomToBox(primaryBox()); }));
         list.forEach(function (ov) {
+            var off = ov.offset.some(function (x) { return x !== 0; }) ? 'offset ' + fmtXYZ(ov.offset) + ' ' + (ov.unit || '?') : 'NO offset';
             var info = ov.view.header.nElements + ' beams · ' + (ov.groups.length ? ov.groups.length + ' groups' : 'no groups') +
-                (ov.unitNote ? ' · ' + ov.unitNote : '');
+                ' · centre ' + fmtXYZ(worldCentre(sceneBox(ov.mesh))) + ' ' + u + ' · ' + off + (ov.unitNote ? ' · ' + ov.unitNote : '');
             elRail.appendChild(row(ov.name, info, ov.visible,
                 function (on) { ov.visible = on; applyLook(ov); },
-                function (on) { ov.ghost = on; applyLook(ov); }, function () { remove(ov); }, false, ov.ghost));
+                function (on) { ov.ghost = on; applyLook(ov); }, function () { remove(ov); }, false, ov.ghost,
+                function () { zoomToBox(sceneBox(ov.mesh)); }));
         });
+        if (list.length) {
+            var fa = document.createElement('button'); fa.className = 'fea-btn'; fa.textContent = 'Fit all models';
+            fa.title = 'Frame every visible model (sets the camera range to all of them)';
+            fa.addEventListener('click', fitAll);
+            var wrap = document.createElement('div'); wrap.className = 'fea-row'; wrap.style.marginTop = '4px';
+            wrap.appendChild(fa); elRail.appendChild(wrap);
+        }
     }
 
-    function row(name, info, visible, onVis, onGhost, onRemove, active, ghost) {
+    function row(name, info, visible, onVis, onGhost, onRemove, active, ghost, onZoom) {
         var r = document.createElement('div');
         r.className = 'rail-row' + (active ? ' active' : '');
         var eye = document.createElement('input');
@@ -261,7 +335,7 @@ var FEAOverlays = (function () {
         var txt = document.createElement('div');
         txt.className = 'rail-text';
         var nm = document.createElement('div'); nm.className = 'rail-name'; nm.textContent = name; nm.title = name;
-        var sub = document.createElement('div'); sub.className = 'rail-info'; sub.textContent = info;
+        var sub = document.createElement('div'); sub.className = 'rail-info'; sub.textContent = info; sub.title = info;
         txt.appendChild(nm); txt.appendChild(sub);
         r.appendChild(txt);
         if (onGhost) {
@@ -270,6 +344,11 @@ var FEAOverlays = (function () {
             gc.addEventListener('change', function () { onGhost(gc.checked); });
             gh.appendChild(gc); gh.appendChild(document.createTextNode('ghost'));
             r.appendChild(gh);
+        }
+        if (onZoom) {
+            var z = document.createElement('button'); z.className = 'fea-btn rail-x'; z.innerHTML = '&#8982;'; z.title = 'Zoom to this model';
+            z.addEventListener('click', onZoom);
+            r.appendChild(z);
         }
         if (onRemove) {
             var x = document.createElement('button'); x.className = 'fea-btn rail-x'; x.textContent = '×'; x.title = 'Remove overlay';
@@ -304,6 +383,7 @@ var FEAOverlays = (function () {
         fillReadout: fillReadout,
         reposition: reposition,
         render: render,
+        fitAll: fitAll,
         list: function () { return list; },
         // a new primary keeps its own visibility; overlays stay and are re-placed
         onPrimaryLoaded: function () { primaryVisible = true; reposition(); }

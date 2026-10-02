@@ -152,7 +152,7 @@ input[type=file].fea-file::file-selector-button {
 .rail-text { flex: 1; min-width: 0; }
 .rail-name { font-size: 11px; color: #ddd; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rail-row.active .rail-name { color: #fff; font-weight: 600; }
-.rail-info { font-size: 9px; color: #8888aa; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rail-info { font-size: 9px; color: #8888aa; overflow-wrap: anywhere; }
 .rail-ghost { font-size: 9px; color: #8888aa; display: flex; align-items: center; gap: 2px; }
 .rail-x { flex: 0 0 22px; padding: 0; }
 
