@@ -451,7 +451,9 @@ var viewRecenter = null;    // [x, y, z] subtracted from every node, or null
 function recenterModel(model) {
     viewRecenter = null;
     var xyz = model && model.nodes;
-    var n = model ? model.nNodes : 0;
+    // a v4 domain view carries the count in header.nNodes (model.nNodes was undefined there,
+    // so v4 files were never recentered: SAP models at survey coordinates flickered, 2026-10-02)
+    var n = model ? (model.header ? model.header.nNodes : model.nNodes) : 0;
     if (!xyz || !n) return;
     var mn = [Infinity, Infinity, Infinity], mx = [-Infinity, -Infinity, -Infinity];
     for (var i = 0; i < n * 3; i++) {
