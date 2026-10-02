@@ -23,6 +23,14 @@ Several files in one scene, e.g. plant steel and pipes over a SAP duct model. Th
   - For each file: world = local + its exporter recenter (`model.units.worldOffset`) + any viewer recenter.
   - Lengths are converted to the main model's unit (m / mm / cm / in / ft). An unknown unit is flagged on the row and left unconverted.
   - Overlay geometry is built about its own bbox centre and placed by `mesh.position`, so float32 stays small.
+- **Where things are (2026-10-02):**
+  - Each row shows its world centre; overlays also show their exporter offset, or "NO offset".
+  - Per-row zoom-to (which also resets near/far, so a distant overlay is not clipped) and "Fit all models".
+  - The status line reports the overlay's and the main model's centres and their distance, and flags "far apart".
+- **Plan rotation (2026-10-02):** each overlay has `rot 0/90/180/270` about Z, applied in world coordinates. It is remembered per overlay name in the browser.
+  - When the centres are far apart, the status tries all four and names the one that brings them together.
+  - **Found on the first real overlay:** the SAP duct model's axes are the plant's turned 90°. SAP (x, y) = plant (y, −x), so the plant overlay needs **rot 270**.
+  - With a rotation or unit change, the readout also gives the point in the overlay's own coordinates.
 - **Picking:** the nearest visible member across all models wins. The readout names the overlay, member label, section and group, and gives World xyz in true coordinates.
 - **Checked** on the synthetic duct shifted to survey coordinates (963000, 662000), with a synthetic plant steel file from `CombinedToPluto` in inches:
   - Placement matches by hand: s0 at survey x 963060 lands at scene −180 under the 963240 recenter.

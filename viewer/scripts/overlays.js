@@ -63,17 +63,27 @@ var FEAOverlays = (function () {
         return a / b;
     }
 
+    // Overlay world point (overlay units, its own axes) -> primary world (primary units, primary
+    // axes): scale, then rotate rotZ degrees about the vertical (Z) axis through the origin.
+    // Used when the two files' plan axes differ (e.g. a SAP model with X = plant north).
+    function toPrimaryWorld(ov, w, s) {
+        var t = ov.rotZ * Math.PI / 180, c = Math.round(Math.cos(t) * 1e12) / 1e12, sn = Math.round(Math.sin(t) * 1e12) / 1e12;
+        var x = w[0] * s, y = w[1] * s;
+        return [c * x - sn * y, sn * x + c * y, w[2] * s];
+    }
+
+    function placeOne(ov, po) {
+        var s = unitScale(ov);
+        ov.mesh.scale.setScalar(s);
+        ov.mesh.rotation.set(0, 0, ov.rotZ * Math.PI / 180);
+        // world(ov) = local + localOrigin + worldOffset; scene = R (world * s) - primary origin
+        var w = toPrimaryWorld(ov, [ov.localOrigin[0] + ov.offset[0], ov.localOrigin[1] + ov.offset[1], ov.localOrigin[2] + ov.offset[2]], s);
+        ov.mesh.position.set(w[0] - po[0], w[1] - po[1], w[2] - po[2]);
+    }
+
     function reposition() {
         var po = primaryOrigin();
-        list.forEach(function (ov) {
-            var s = unitScale(ov);
-            ov.mesh.scale.setScalar(s);
-            // world(ov units) = local + localOrigin + worldOffset; scene = world * s - primary origin
-            ov.mesh.position.set(
-                (ov.localOrigin[0] + ov.offset[0]) * s - po[0],
-                (ov.localOrigin[1] + ov.offset[1]) * s - po[1],
-                (ov.localOrigin[2] + ov.offset[2]) * s - po[2]);
-        });
+        list.forEach(function (ov) { placeOne(ov, po); });
         render();
         if (typeof needsRender !== 'undefined') needsRender = true;
     }
@@ -139,8 +149,9 @@ var FEAOverlays = (function () {
         var ov = {
             name: name, unified: unified, view: view, envelope: envelope,
             unit: unitOf(unified), offset: parseOffset(envelope),
-            visible: true, ghost: false, hasGroups: false
+            visible: true, ghost: false, hasGroups: false, rotZ: 0
         };
+        try { ov.rotZ = Number(localStorage.getItem('pluto.ovRot.' + name)) || 0; } catch (e0) {}   // remembered per overlay name
         var want = envelope && envelope.model && envelope.model.geometryHash;
         if (want && unified.geometryHash && want !== unified.geometryHash) log('Overlay ' + name + ': ⚠ features geometryHash differs from the file.');
 
@@ -230,7 +241,7 @@ var FEAOverlays = (function () {
         elRoNode.textContent = '—';
         elRoCorners.textContent = '—';
         elRoUV.textContent = '—';
-        elRoPos.textContent = roPosText(hit.point);
+        elRoPos.textContent = roPosText(hit.point) + nativeText(ov, hit.point);
         if (elRoControllingRow) elRoControllingRow.style.display = 'none';
         lastQuery = null;
     }
@@ -280,6 +291,22 @@ var FEAOverlays = (function () {
         zoomToBox(b);
     }
 
+    // Which plan rotation (0/90/180/270) puts this overlay's centre nearest the main model's.
+    function bestRotation(ov) {
+        var pb = primaryBox();
+        if (pb.isEmpty()) return null;
+        var keep = ov.rotZ, po = primaryOrigin(), best = null;
+        var pc = pb.getCenter(new THREE.Vector3());
+        [0, 90, 180, 270].forEach(function (a) {
+            ov.rotZ = a; placeOne(ov, po);
+            var oc = sceneBox(ov.mesh).getCenter(new THREE.Vector3());
+            var d = oc.distanceTo(pc);
+            if (!best || d < best.d) best = { rot: a, d: d };
+        });
+        ov.rotZ = keep; placeOne(ov, po);
+        return best;
+    }
+
     // One log line per overlay: where it is, where the main model is, how far apart.
     function reportPlacement(ov) {
         var pb = primaryBox(), ob = sceneBox(ov.mesh);
@@ -291,9 +318,25 @@ var FEAOverlays = (function () {
             var d = Math.sqrt(Math.pow(oc[0] - pc[0], 2) + Math.pow(oc[1] - pc[1], 2) + Math.pow(oc[2] - pc[2], 2));
             var size = pb.getSize(new THREE.Vector3()).length() || 1;
             msg += '; ' + Math.round(d).toLocaleString('en-US') + ' ' + u + ' apart (' + (d / size).toFixed(1) + ' x the main model size)';
-            if (d > 10 * size) msg += ' -- far apart: check that both files use the same coordinate system and units';
+            if (d > 10 * size) {
+                var b = bestRotation(ov);
+                if (b && b.rot !== ov.rotZ && b.d < 10 * size)
+                    msg += ' -- far apart; rotated ' + b.rot + '\u00b0 about Z it lands ' + Math.round(b.d).toLocaleString('en-US') + ' ' + u +
+                        ' from it: set "rot" on its row to ' + b.rot;
+                else msg += ' -- far apart: check that both files use the same coordinate system and units';
+            }
         }
         log(msg + '.');
+    }
+
+    // The picked point in the overlay's OWN coordinates (its units and axes), when rotated or scaled.
+    function nativeText(ov, p) {
+        if (!ov.rotZ && unitScale(ov) === 1) return '';
+        var po = primaryOrigin(), s = unitScale(ov);
+        var x = p.x + po[0], y = p.y + po[1], z = p.z + po[2];
+        var t = -ov.rotZ * Math.PI / 180, c = Math.cos(t), sn = Math.sin(t);
+        var nx = (c * x - sn * y) / s, ny = (sn * x + c * y) / s, nz = z / s;
+        return '  (' + ov.name + ': ' + nx.toFixed(2) + ', ' + ny.toFixed(2) + ', ' + nz.toFixed(2) + ' ' + (ov.unit || '') + ')';
     }
 
     // ---- rail ----------------------------------------------------------
@@ -314,7 +357,12 @@ var FEAOverlays = (function () {
             elRail.appendChild(row(ov.name, info, ov.visible,
                 function (on) { ov.visible = on; applyLook(ov); },
                 function (on) { ov.ghost = on; applyLook(ov); }, function () { remove(ov); }, false, ov.ghost,
-                function () { zoomToBox(sceneBox(ov.mesh)); }));
+                function () { zoomToBox(sceneBox(ov.mesh)); },
+                { value: ov.rotZ, set: function (a) {
+                    ov.rotZ = a;
+                    try { localStorage.setItem('pluto.ovRot.' + ov.name, String(a)); } catch (e1) {}
+                    reposition(); reportPlacement(ov);
+                } }));
         });
         if (list.length) {
             var fa = document.createElement('button'); fa.className = 'fea-btn'; fa.textContent = 'Fit all models';
@@ -325,7 +373,7 @@ var FEAOverlays = (function () {
         }
     }
 
-    function row(name, info, visible, onVis, onGhost, onRemove, active, ghost, onZoom) {
+    function row(name, info, visible, onVis, onGhost, onRemove, active, ghost, onZoom, rot) {
         var r = document.createElement('div');
         r.className = 'rail-row' + (active ? ' active' : '');
         var eye = document.createElement('input');
@@ -344,6 +392,16 @@ var FEAOverlays = (function () {
             gc.addEventListener('change', function () { onGhost(gc.checked); });
             gh.appendChild(gc); gh.appendChild(document.createTextNode('ghost'));
             r.appendChild(gh);
+        }
+        if (rot) {
+            var sel = document.createElement('select'); sel.className = 'fea-select rail-rot';
+            sel.title = 'Rotate this overlay about the vertical (Z) axis, degrees counter-clockwise, when its plan axes differ from the main model\'s';
+            [0, 90, 180, 270].forEach(function (a) {
+                var o = document.createElement('option'); o.value = String(a); o.textContent = 'rot ' + a + '\u00b0'; sel.appendChild(o);
+            });
+            sel.value = String(rot.value);
+            sel.addEventListener('change', function () { rot.set(Number(sel.value)); });
+            r.appendChild(sel);
         }
         if (onZoom) {
             var z = document.createElement('button'); z.className = 'fea-btn rail-x'; z.innerHTML = '&#8982;'; z.title = 'Zoom to this model';
