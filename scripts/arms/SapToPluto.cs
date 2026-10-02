@@ -259,7 +259,7 @@ public class SapToPluto
         Dictionary<int, Node> nodes = geo.NodeDict;
         Dictionary<int, Element> elements = geo.ElementDict;
         if (nodes.Count == 0) throw new Exception("SapToPluto: no JOINT COORDINATES rows in " + modelS2k);
-        if (elements.Count == 0) throw new Exception("SapToPluto: no CONNECTIVITY - AREA rows in " + modelS2k);
+        // frame-only models (ducts, steel) are fine: the shell domain is then empty (2026-10-02)
         res.Nodes = nodes.Count; res.Elements = elements.Count;
 
         // ---- frames -> beam domain ----
@@ -328,6 +328,7 @@ public class SapToPluto
             m.OffsetAy = m.OffsetBy = dy; m.OffsetAz = m.OffsetBz = dz;
         }
         res.Frames = beams.Count; res.FrameSections = sectionDefs.Count;
+        if (elements.Count == 0 && beams.Count == 0) throw new Exception("SapToPluto: no CONNECTIVITY - AREA or CONNECTIVITY - FRAME rows in " + modelS2k);
 
         // ---- load cases (first-seen order across both result tables) ----
         List<Dictionary<string, string>> forceRows = results.GetTable("ELEMENT FORCES - AREA SHELLS");

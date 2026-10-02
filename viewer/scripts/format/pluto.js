@@ -105,6 +105,7 @@ var PlutoFormat = (function () {
     // ---- generic slot-field readers (unified model) --------------------
     async function readDomainLC(model, dom, lc) {
         var f = dom.fields;
+        if (!f && !dom.nElem) return new Float32Array(0);   // empty domain (e.g. no shells in a frame-only SAP model)
         if (!f) throw new Error('Domain "' + dom.name + '" has no field block.');
         if (lc < 0 || lc >= f.nLC) throw new Error('LC index out of range: ' + lc);
         var buf = await readRange(model.file, f.offset + lc * f.planeStride, f.planeStride);
@@ -113,6 +114,7 @@ var PlutoFormat = (function () {
 
     async function readDomainElementRecord(model, dom, lc, elem) {
         var f = dom.fields;
+        if (!f && !dom.nElem) return new Float32Array(0);   // empty domain (e.g. no shells in a frame-only SAP model)
         if (!f) throw new Error('Domain "' + dom.name + '" has no field block.');
         if (lc < 0 || lc >= f.nLC) throw new Error('LC index out of range: ' + lc);
         if (elem < 0 || elem >= dom.nElem) throw new Error('Element index out of range: ' + elem);
