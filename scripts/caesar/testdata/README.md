@@ -4,9 +4,9 @@ The reference fixture for the CAESAR II arm. It is a small made-up job, built fo
 
 | file | what |
 |---|---|
-| `generic.cii` | CAESAR II neutral file of the test job |
-| `generic.xlsx` | CAESAR II output written to Excel, one report per tab (displacements, restraints, restraint summary, ...) |
-| `generic-coords.*` | optional: CAESAR's node coordinate report, used to check the rebuilt geometry |
+| `SAMPLE CAESAR II MODEL.CII` | the neutral file: CAESAR II 15.01, English units, Y up, 125 elements, 13 bends, 3 reducers, 11 rigids, 2 expansion joints, 112 restraints |
+| `Sample Caesar II ouputs.xlsx` | CAESAR II output written to Excel, one report per tab. For each of the 6 load cases: Displacements, Local Element Forces and B31.1 Stresses. Also the Restraint Summary and Code Compliance. |
+| `Sample Caesar model inputs echo.xlsx` | the input echo, including CAESAR's COORDINATE REPORT. The reader checks its rebuilt node positions against it. |
 
 ## Contents of the job
 
