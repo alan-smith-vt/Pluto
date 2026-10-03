@@ -88,6 +88,13 @@ w.AppendDisplacements(disps);             // ALSO fans node displacements onto b
   never sees solver conventions. Offsets are in section-local (y, z).
 - `SectionDef` factories: `Rect, IShape, Box, Pipe, Angle, Channel, Tee, Poly`. Codes per
   schema §6.
+- **Taper** (2026-10-03): `BeamMember.SectionIndexB` (-1 = straight, the default) gives end B its own
+  section and is written to `ELEM` slot 4 as `SectionIndexB + 1` ([[vault/decisions/2026-10-03-beam-taper|decision]]).
+  A value equal to `SectionIndex` is written as straight, so a file without tapers is byte-identical to
+  the previous writer (checked for shell-only, shell + beam and beam-only, geometry-only and results).
+  Out-of-range values throw with the beam id.
+- **Up axis** (2026-10-03): `w.UpAxis = "Y"` or `"Z"` adds `upAxis` to META (null = not emitted). Set it
+  before `Write()`. META is not hashed, so the hash is unchanged.
 
 ## Labels
 

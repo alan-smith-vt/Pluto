@@ -33,6 +33,17 @@ using System.Text;
 // source system's oid), shown by the viewer in the hover readout only.
 // Set them with SetNodeLabels / SetShellLabels / SetBeamLabels BEFORE Write().
 // Categories (class, run, room, ...) are NOT labels -- they are sidecar groups.
+//
+// ELEM records are 6 x u32. Shells: {nCorners, c0, c1, c2, c3, 0}.
+// Beams: {2, nodeA, nodeB, sectionA, sectionB+1, 0} -- slot 4 is the TAPER
+// slot: BeamMember.SectionIndexB + 1 for a member whose end-B section
+// differs, 0 = straight (end B = section A). Straight members therefore write
+// exactly the pre-taper bytes and geometryHash; a tapered member changes the
+// hash (ELEM is hashed), which is correct -- the geometry differs.
+//
+// META "upAxis" (optional, "Y" | "Z"): set UpAxis before Write(); left null
+// it is not emitted and META is byte-identical to a writer without it.
+//
 // The directory is fixed-size and written in Write() with final counts,
 // so no APPEND flag is needed: every plane exists (as NaN) from the start
 // and Append* writes in place. That is exactly the v3 strategy.
@@ -66,12 +77,18 @@ public class RawViewerWriter
     // LocalY: unit vector of the section's local y axis in world coordinates
     // (resolve roll angles / K-nodes before handing it over). Offsets in
     // section-local (y, z) at each end. ReleaseMask is a display hint.
+    // SectionIndexB: end-B section for a TAPERED member (reducer, valve
+    // bow-tie half); -1 = straight (end B uses SectionIndex). Written to ELEM
+    // u32 slot 4 as SectionIndexB + 1 only when it differs from SectionIndex,
+    // else 0 -- so straight members write the same bytes (and geometryHash)
+    // as before slot 4 existed, and viewers that ignore slot 4 draw end A's size.
     public class BeamMember
     {
         public int Id;
         public int NodeA;
         public int NodeB;
-        public int SectionIndex;       // index into the sections list
+        public int SectionIndex;       // index into the sections list (end A)
+        public int SectionIndexB = -1; // end-B section index, -1 = straight
         public double[] LocalY = { 0, 0, 1 };
         public double OffsetAy, OffsetAz, OffsetBy, OffsetBz;
         public uint ReleaseMask;
@@ -298,6 +315,7 @@ public class RawViewerWriter
     private readonly Dictionary<string, string> units;
 
     private Dictionary<int, string> nodeLabels, shellLabels, beamLabels;   // optional, by real id
+    private string upAxis;                                                 // optional META hint, null = omitted
     private List<Block> blocks;
     private long dirOffset;
     private long fieldOffsetShell, fieldOffsetBeam, strengthOffset;
@@ -408,6 +426,8 @@ public class RawViewerWriter
                 beamIdToIndex[bm.Id] = b;
                 if (bm.SectionIndex < 0 || bm.SectionIndex >= sections.Count)
                     throw new Exception(string.Format("RawViewerWriter: beam {0} references section {1} of {2}.", bm.Id, bm.SectionIndex, sections.Count));
+                if (bm.SectionIndexB != -1 && (bm.SectionIndexB < 0 || bm.SectionIndexB >= sections.Count))
+                    throw new Exception(string.Format("RawViewerWriter: beam {0} end-B section {1} of {2} (use -1 for a straight member).", bm.Id, bm.SectionIndexB, sections.Count));
                 AddTarget(nodeToBeamEnds, bm.NodeA, b, 0);
                 AddTarget(nodeToBeamEnds, bm.NodeB, b, 1);
             }
@@ -556,7 +576,9 @@ public class RawViewerWriter
             int ia, ib;
             if (!nodeIdToIndex.TryGetValue(bm.NodeA, out ia) || !nodeIdToIndex.TryGetValue(bm.NodeB, out ib))
                 throw new Exception(string.Format("RawViewerWriter: beam {0} references a node not in the node table.", bm.Id));
-            uint[] rec = { BEAM_SLOTS, (uint)ia, (uint)ib, (uint)bm.SectionIndex, 0, 0 };
+            // slot 4: end-B section + 1 for a taper, 0 = straight (pre-taper bytes)
+            uint secB = (bm.SectionIndexB >= 0 && bm.SectionIndexB != bm.SectionIndex) ? (uint)(bm.SectionIndexB + 1) : 0u;
+            uint[] rec = { BEAM_SLOTS, (uint)ia, (uint)ib, (uint)bm.SectionIndex, secB, 0 };
             Buffer.BlockCopy(rec, 0, buf, b * ELEM_RECORD_U32 * 4, ELEM_RECORD_U32 * 4);
         }
         return buf;
@@ -660,6 +682,22 @@ public class RawViewerWriter
     }
 
     public string GeometryHash { get { return geometryHash; } }
+
+    // Optional per-file up-axis hint for the viewer: null (default) = not
+    // emitted, so META is byte-identical to a writer without it; "Y" or "Z"
+    // emits "upAxis":"Y" / "Z" in META. Set it BEFORE Write(), like labels.
+    // META is not hashed, so it never changes geometryHash.
+    public string UpAxis
+    {
+        get { return upAxis; }
+        set
+        {
+            if (value != null && value != "Y" && value != "Z")
+                throw new Exception("RawViewerWriter: UpAxis must be null, \"Y\" or \"Z\" (got \"" + value + "\").");
+            upAxis = value;
+            Layout();
+        }
+    }
 
     // ---- phase 1: write everything, NaN-fill every field block ----------
     // writeFields:false produces a GEOMETRY-ONLY profile (same hash): the
@@ -955,6 +993,7 @@ public class RawViewerWriter
             }
             sb.Append("}");
         }
+        if (upAxis != null) { sb.Append(",\"upAxis\":"); AppendJsonString(sb, upAxis); }
 
         sb.Append(",\"loadCases\":[");
         for (int i = 0; i < fieldLcIds.Length; i++)

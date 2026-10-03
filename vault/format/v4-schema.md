@@ -117,7 +117,12 @@ NaN-pad without knowing the family.
 
 **shell** — `u32[6]`: `nNodes (3|4), n0, n1, n2, n3, reserved`. Slot k = corner k.
 
-**beam** — `u32[6]`: `nStations, n0, n1, sectionIdx, reserved, reserved`.
+**beam** — `u32[6]`: `nStations, n0, n1, sectionIdx, sectionIdxB + 1, reserved`.
+Slot 4 tapers the member (2026-10-03, reducers): `0` means straight (end B uses `sectionIdx`),
+otherwise end B uses section `slot4 − 1`. Old files carry 0, and a reader that ignores the slot
+draws end A's section, so the change is backward compatible both ways. The slot is inside `ELEM`,
+so a tapered member changes `geometryHash`; a straight one does not. The viewer tapers when both
+outlines have the same point count (e.g. PIPE → PIPE) and otherwise draws end A's section.
 Slot k = station k, evenly spaced from n0 (t=0) to n1 (t=1). `nStations ≥ 2`.
 **First implementation: `nStations = 2`, `maxSlots = 2`** (end A, end B). The format
 allows more; the viewer interpolates linearly between whatever stations exist.
@@ -153,6 +158,10 @@ Local x = n0→n1; local z = x × y; reader re-orthogonalises y against x.
 - `sections` is a human-readable mirror of `SECT` (names live here); `SECT` is
   authoritative for geometry.
 - `modelId`: importer-assigned, free text, stable across re-runs of the same model.
+- `upAxis` (optional, 2026-10-03): `"Y"` or `"Z"`, the model's vertical axis as the source
+  solver defines it (CAESAR II models are Y-up by default). The viewer applies it at load
+  without overwriting the user's saved Z-up preference; when it is absent the preference
+  rules. META is not hashed, so `upAxis` never changes `geometryHash`.
 - `geometryHash`: SHA-256 over the raw bytes of `NODE NDID ELEM ELID SECT BPRP`, in that
   order, each domain's blocks in domain order. Excludes `META` and all field blocks, so a
   geometry-only export and the full-results export of the same run hash identical. This is
@@ -265,3 +274,5 @@ a domain argument; `planeStride = nElem * maxSlots * nComp * 4`.
 - 2026-08-25 — Features (predicates, section cuts, supports, …) live in a JSON sidecar, never in the binary → [[vault/format/features-sidecar|features-sidecar]].
 - 2026-08-25 — `LABL` block added (identity strings); categories stay in the sidecar.
 - 2026-08-25 — All C# (writers, exporters) must be C# 5 / Add-Type PS 5.1 compatible.
+- 2026-10-03 — Beam `ELEM` slot 4 = `sectionIdxB + 1` (tapered members, 0 = straight) and optional META `upAxis` → [[vault/decisions/2026-10-03-beam-taper|2026-10-03-beam-taper]].
+- 2026-10-03 — Restraints imported from a solver model go in the sidecar `supports` section; their loads go in the binary as beam components of kind `restraint` → [[vault/decisions/2026-10-03-imported-restraints|2026-10-03-imported-restraints]].
