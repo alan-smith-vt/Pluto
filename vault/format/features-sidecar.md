@@ -102,7 +102,9 @@ Viewer behaviour (`viewer/scripts/features.js`, **Groups tab** on the right edge
   lower in the list. Drag rows to reorder (mutates `groups.items` order); All / None /
   Invert; Export writes the whole sidecar with order, colours and `hidden` flags.
 - Node groups (`nodeIds` members) paint too (2026-09-04): their nodes are drawn as square
-  points in the group colour while Color by groups is on (depth-tested). **One marker per
+  points in the group colour (depth-tested). Since 2026-10-03 the markers show whenever a node
+  group is enabled, **independent of Color by groups**, which now drives element painting only,
+  so restraint locations can sit on top of a field contour. **One marker per
   node**, coloured by the last enabled group that lists it — the same precedence as
   elements, so a node in two groups is one square in the lower group's colour and the
   upper group's row reports it as shadowed. Only **distinct** nodes at the same position

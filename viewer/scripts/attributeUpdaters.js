@@ -544,9 +544,42 @@ var FEAAttributes = (function () {
                 if (v > hi) hi = v;
             }
         }
-        if (lo === Infinity) return { min: 0, max: 1 };
+        // empty: no finite value of this component in the plane (the LC has no
+        // beam results) -- the caller draws neutral rather than the no-data colour.
+        if (lo === Infinity) return { min: 0, max: 1, empty: true };
         if (lo === hi) { lo -= 0.5; hi += 0.5; }
-        return { min: lo, max: hi };
+        return { min: lo, max: hi, empty: false };
+    }
+
+    // ---- deformed-shape gate (pure; viewer.js deformAvailable) ----------
+    // s = { model, shellElems, shellDisp, beamDisp, envelope, haveLC }:
+    //   shellElems  shell element count (0 for a beam-only file's stand-in)
+    //   shellDisp   the shell view has a displacement vector
+    //   beamDisp    the beam domain has a displacement vector + field block
+    // Returns { ok, shells, beams, hint }: ok = the deformed shape can be
+    // shown; shells / beams = which updaters to run. Beams may deform alone
+    // only when there are no shells: in a shell+beam file whose shells carry
+    // no displacement, moving the beams alone would pull them off the plates.
+    function deformStatus(s) {
+        var out = { ok: false, shells: false, beams: false, hint: '' };
+        if (!s || !s.model) return out;
+        var noShells = !(s.shellElems > 0);
+        var source = s.shellDisp || (s.beamDisp && noShells);
+        if (!source) {
+            out.hint = (s.beamDisp && !noShells)
+                ? 'The beams carry displacements but the shells do not: deforming the beams alone would pull them off the plates.'
+                : 'No displacement vector in this file (metadata displacementVector / Translation X-Y-Z names).';
+            return out;
+        }
+        if (s.envelope) {
+            out.hint = 'Envelopes mix LCs per corner \u2014 no coherent displacement field to deform by. Pick a load case.';
+            return out;
+        }
+        if (!s.haveLC) return out;
+        out.ok = true;
+        out.shells = !!s.shellDisp && !noShells;
+        out.beams = !!s.beamDisp;
+        return out;
     }
 
     // Per-vertex end displacement (end A for t<0.5 else end B).
@@ -581,6 +614,7 @@ var FEAAttributes = (function () {
         updateCatIdx: updateCatIdx,
         updateBeamEndVals: updateBeamEndVals,
         computeBeamRange: computeBeamRange,
+        deformStatus: deformStatus,
         updateBeamDispVecs: updateBeamDispVecs,
         updateCornerVals: updateCornerVals,
         updateCornerValsNodeAveraged: updateCornerValsNodeAveraged,

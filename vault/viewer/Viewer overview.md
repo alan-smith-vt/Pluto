@@ -100,6 +100,27 @@ Three.js r128 and OrbitControls are vendored under `lib/`.
 
 ## Recent additions (newest first)
 
+Pipe-stress groundwork (2026-10-03, branch `pipestress`, for the CAESAR II arm):
+- **Tapered beams.** `ELEM` slot 4 gives end B its own section
+  ([[vault/decisions/2026-10-03-beam-taper|decision]]). Ring B and cap B come from that section
+  when both outlines have the same point count; otherwise end A is used and the mismatch is counted.
+  The readout shows `A → B`. The demo has one tapered column. Test: `viewer/tests/test_beamtaper.js`.
+- **Deformed shape for files without shells.** The gate (`FEAAttributes.deformStatus`) allows
+  deformation when the shells have a displacement vector, or when the beams have one and there are no
+  shells. A shell + beam file whose shells lack one stays locked, with a hint. Test:
+  `viewer/tests/test_deform.js`.
+- **Beam-only files.** The shell-only controls (Type, Component, Smooth, Edges, envelopes) are hidden
+  (`body.beam-only`), the Beams panel opens, and the main Min/Max drive the beam range. In shell +
+  beam files the manual range stays on the shells.
+- **Display settings reach beams.** `syncAuxLayers()` runs on colormap, alarm, range and component
+  changes. It also calls a future `FEASupports.recolor()`.
+- **Load cases with no beam data** draw the beams neutral and say "no beam results in this LC",
+  instead of painting them the dark no-data colour.
+- **Node-group markers** show whenever a node group is enabled, without Color by groups. Restraint
+  locations can sit over a contour.
+- **Up axis.** META `upAxis` sets the view at load without saving it. The user's Z-up preference
+  returns with the next file that has none.
+
 Files (2026-09-04, `files.js`): one "Choose files…" for .bin + .json (File System Access
 API on Chrome / Edge, hidden `<input type=file>` otherwise), one "Save features" (Ctrl+S)
 that writes the sidecar back in place through the kept handle, or downloads; legacy

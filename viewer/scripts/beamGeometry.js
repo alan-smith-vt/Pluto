@@ -19,6 +19,17 @@
 // against X, Z = X x Y. Section offsets (BPRP idx 3..6) shift each
 // end's ring in (Y, Z). Hollow shapes (BOX, PIPE) render their OUTER
 // outline only for now.
+//
+// Tapered members (2026-10-03, v4-schema ELEM slot 4): slot 4 holds
+// sectionIdxB + 1, 0 = straight. When 0 < slot4 <= sections.length the
+// ring and cap at end B come from that section's outline (a reducer is a
+// cone between two PIPE circles). The A and B outlines must have the
+// same point count for the side quads to pair up; when they do not
+// (PIPE -> I) the member falls back to end A's outline and is counted
+// in build().taperMismatch (logged once per build). sectionOfB[e] is the
+// DECLARED end-B section (== sectionOf[e] for a straight member), so
+// readouts can show "A -> B" either way. Slot 4 = 0 builds exactly the
+// geometry of a straight member (same vertex order, same values).
 // ================================================================
 
 var FEABeamGeometry = (function () {
@@ -117,17 +128,33 @@ var FEABeamGeometry = (function () {
         // First pass: count.
         var vertStart = new Int32Array(nElem), vertCount = new Int32Array(nElem);
         var sectionOf = new Int32Array(nElem);
-        var totalVerts = 0;
+        var sectionOfB = new Int32Array(nElem);   // declared end-B section (== sectionOf when straight)
+        var geomB = new Int32Array(nElem);        // section whose outline builds end B
+        var totalVerts = 0, nTaper = 0, taperMismatch = 0;
         for (var e = 0; e < nElem; e++) {
             var si = elems[e * REC + 3];
             if (!(si < sections.length)) si = -1;
             sectionOf[e] = si;
+            var sb = REC > 4 ? elems[e * REC + 4] : 0;
+            var sib = (sb > 0 && sb <= sections.length) ? sb - 1 : si;
+            sectionOfB[e] = sib;
             var sg = secGeom(si);
             var m = sg.pts.length;
-            var nv = m * 6 + sg.caps.length * 3 * 2;
+            var sgB = sg;
+            if (sib !== si) {
+                var cand = secGeom(sib);
+                if (cand.pts.length === m) { sgB = cand; nTaper++; }
+                else taperMismatch++;
+            }
+            geomB[e] = sgB === sg ? si : sib;
+            var nv = m * 6 + sg.caps.length * 3 + sgB.caps.length * 3;
             vertStart[e] = totalVerts;
             vertCount[e] = nv;
             totalVerts += nv;
+        }
+        if (taperMismatch > 0 && typeof log === 'function') {
+            log('Beams: ' + taperMismatch + ' tapered member(s) have end sections with different outline ' +
+                'point counts (e.g. PIPE -> I); drawn straight at end A\'s section.');
         }
         var totalTris = totalVerts / 3;
 
@@ -187,21 +214,31 @@ var FEABeamGeometry = (function () {
             axisB.set([cB.x, cB.y, cB.z], e2 * 3);
 
             var sg = secGeom(sectionOf[e2]);
-            var pts = sg.pts, m = pts.length;
+            var sgB = secGeom(geomB[e2]);          // same object as sg for a straight member
+            var pts = sg.pts, ptsB = sgB.pts, m = pts.length;
             ringA.length = 0; ringB.length = 0;
             for (var i = 0; i < m; i++) {
                 ringA.push(cA.clone().addScaledVector(Y, pts[i][0]).addScaledVector(Z, pts[i][1]));
-                ringB.push(cB.clone().addScaledVector(Y, pts[i][0]).addScaledVector(Z, pts[i][1]));
+                ringB.push(cB.clone().addScaledVector(Y, ptsB[i][0]).addScaledVector(Z, ptsB[i][1]));
             }
             for (var k = 0; k < m; k++) {
                 var k2 = (k + 1) % m;
                 tri(ringA[k], ringB[k], ringB[k2], 0, 1, 1, e2);
                 tri(ringA[k], ringB[k2], ringA[k2], 0, 1, 0, e2);
             }
-            for (var c = 0; c < sg.caps.length; c++) {
-                var f = sg.caps[c];
-                tri(ringA[f[0]], ringA[f[2]], ringA[f[1]], 0, 0, 0, e2);   // A cap faces -X
-                tri(ringB[f[0]], ringB[f[1]], ringB[f[2]], 1, 1, 1, e2);   // B cap faces +X
+            // Caps per end, interleaved A,B as before (a taper's two outlines
+            // may triangulate into different counts).
+            var nCap = Math.max(sg.caps.length, sgB.caps.length);
+            for (var c = 0; c < nCap; c++) {
+                var f;
+                if (c < sg.caps.length) {
+                    f = sg.caps[c];
+                    tri(ringA[f[0]], ringA[f[2]], ringA[f[1]], 0, 0, 0, e2);   // A cap faces -X
+                }
+                if (c < sgB.caps.length) {
+                    f = sgB.caps[c];
+                    tri(ringB[f[0]], ringB[f[1]], ringB[f[2]], 1, 1, 1, e2);   // B cap faces +X
+                }
             }
         }
 
@@ -223,6 +260,9 @@ var FEABeamGeometry = (function () {
             vertCount: vertCount,
             triToElem: triToElem,
             sectionOf: sectionOf,
+            sectionOfB: sectionOfB,
+            nTaper: nTaper,
+            taperMismatch: taperMismatch,
             axisA: axisA,
             axisB: axisB,
             frames: frames,
@@ -240,5 +280,18 @@ var FEABeamGeometry = (function () {
         return Math.max(0, Math.min(1, t));
     }
 
-    return { build: build, outline: outline, axisParam: axisParam };
+    // Readout text for a member's section: "NAME TYPE", or "A -> B TYPE"
+    // ("NAME_A TYPE_A -> NAME_B TYPE_B" when the types differ) for a taper.
+    function sectionText(build, sections, e) {
+        var secs = sections || [];
+        var a = secs[build.sectionOf[e]];
+        var bi = build.sectionOfB ? build.sectionOfB[e] : build.sectionOf[e];
+        if (bi === build.sectionOf[e]) return a ? a.name + ' ' + a.type : 'no section';
+        var b = secs[bi];
+        var an = a ? a.name : 'no section', bn = b ? b.name : 'no section';
+        if (a && b && a.type === b.type) return an + ' \u2192 ' + bn + ' ' + a.type;
+        return an + (a ? ' ' + a.type : '') + ' \u2192 ' + bn + (b ? ' ' + b.type : '');
+    }
+
+    return { build: build, outline: outline, axisParam: axisParam, sectionText: sectionText };
 })();

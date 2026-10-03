@@ -7,7 +7,11 @@
 // selection and auto range (their quantities are not the shell
 // quantities), share the active colormap / abs / alarm settings, and
 // draw neutral grey in views that have no beam data yet (envelopes,
-// design strengths, Global DSR).
+// design strengths, Global DSR) and in a load case whose plane holds
+// no finite value of the selected component ("no beam results in this
+// LC" -- e.g. a reaction-only case). viewer.js syncAuxLayers() drives
+// sync() on every display-setting change and hands in the manual
+// Min/Max when the beams own the range (beam-only files).
 // ================================================================
 
 var FEABeams = (function () {
@@ -20,6 +24,8 @@ var FEABeams = (function () {
     var lcLoaded = -1;
     var comp = 0;
     var range = { min: 0, max: 1 };
+    var manualRange = null;   // {min, max} from the main Min/Max (viewer.js syncAuxLayers), or null = auto
+    var emptyPlane = false;   // the selected component has no finite value in the resident LC plane
     var visible = true;
     var xray = false;
     var XRAY_ALPHA = 0.10;    // per-wall brightness; 2 pipes coincident = 4 walls = obvious glow
@@ -75,6 +81,9 @@ var FEABeams = (function () {
 
         // UI
         elSection.style.display = '';
+        // Beam-only file: the Beams panel is where the field is chosen, so it opens.
+        var sv = shellView;
+        if (sv.header && sv.header.nElements === 0) elSection.open = true;
         elCount.textContent = view.header.nElements + ' beams · ' +
             (view.sections ? view.sections.length : 0) + ' sections';
         elComp.innerHTML = '';
@@ -100,6 +109,7 @@ var FEABeams = (function () {
         }
         beamMesh = null; material = null; build = null; view = null;
         lcData = null; lcLoaded = -1; dispLoaded = -1;
+        manualRange = null; emptyPlane = false;
         if (elSection) elSection.style.display = 'none';
     }
 
@@ -118,22 +128,32 @@ var FEABeams = (function () {
     function sync() {
         if (!material) return;
         var neutral = neutralMode() || !lcData;
+        var r = null;
+        emptyPlane = false;
+        if (!neutral) {
+            r = FEAAttributes.computeBeamRange(view, lcData, comp);
+            // A plane with no finite value of this component (a load case that only
+            // another report covers) draws neutral, not in the dark no-data colour.
+            if (r.empty) { emptyPlane = true; neutral = true; }
+        }
         material.uniforms.uNeutral.value = neutral ? 1 : 0;
         material.uniforms.colormap.value = texScalar;
         material.uniforms.uAbs.value = absValue ? 1 : 0;
         material.uniforms.alarmThreshold.value = alarmEnabled ? alarmThreshold : 0;
         material.uniforms.alarmColor.value.set(
             alarmColor[0] / 255, alarmColor[1] / 255, alarmColor[2] / 255);
+        var c = view.meta.components[comp];
         if (!neutral) {
             FEAAttributes.updateBeamEndVals(build, view, lcData, comp);
-            var r = FEAAttributes.computeBeamRange(view, lcData, comp);
             if (absValue) r = absTransformRange(r);
+            if (manualRange) r = { min: manualRange.min, max: manualRange.max, empty: false };
             range = r;
             material.uniforms.vMin.value = r.min;
             material.uniforms.vMax.value = r.max;
-            var c = view.meta.components[comp];
             elRange.textContent = c.name + ': ' + fmt(r.min, 4) + ' … ' + fmt(r.max, 4) +
-                (c.unit ? ' ' + c.unit : '');
+                (c.unit ? ' ' + c.unit : '') + (manualRange ? ' (manual range)' : '');
+        } else if (emptyPlane) {
+            elRange.textContent = c.name + ': no beam results in this LC';
         } else {
             elRange.textContent = lcData ? 'neutral (no beam data in this view)' : 'no beam results';
         }
@@ -157,6 +177,12 @@ var FEABeams = (function () {
 
     function setDispScale(v) {
         if (material) material.uniforms.dispScale.value = v;
+    }
+
+    // True when the beam domain can drive the deformed shape: it has a
+    // displacement vector and a field block.
+    function hasDisp() {
+        return !!(view && view.meta.dispVector && view.domain.fields);
     }
 
     // Returns peak |disp| among beam ends (0 when unavailable).
@@ -227,9 +253,9 @@ var FEABeams = (function () {
         var REC = view.elemRecordU32;
         var n0 = view.elems[e * REC + 1], n1 = view.elems[e * REC + 2];
         var t = FEABeamGeometry.axisParam(build, e, hit.point);
-        var sec = view.sections[build.sectionOf[e]];
+        var secText = FEABeamGeometry.sectionText(build, view.sections, e);
         var c = view.meta.components[comp];
-        var neutral = neutralMode() || !lcData;
+        var neutral = neutralMode() || !lcData || emptyPlane;
         var v = NaN;
         if (!neutral) {
             var cc = view.header.cornerComponents, ms = view.header.maxCorners;
@@ -240,12 +266,13 @@ var FEABeams = (function () {
         lastQuery = null;                       // shell calc card does not apply
         elRoValue.textContent = neutral ? '—' : (v === v ? fmt(v, 6) + (c.unit ? ' ' + c.unit : '') : 'no data');
         elRoValue.className = 'ro-value' + (v === v ? '' : ' ro-nodata');
-        elRoComp.textContent = neutral ? 'beam (neutral view)' :
+        elRoComp.textContent = emptyPlane ? c.name + ' (beam): no beam results in this LC' :
+            neutral ? 'beam (neutral view)' :
             c.name + (c.unit ? ' [' + c.unit + ']' : '') + ' (beam ' + c.kind + ')';
         var grp = window.FEAFeatures ? FEAFeatures.groupOf('beam', e) : null;
         var lbl = view.labels ? view.labels.get(e) : '';
         elRoElem.textContent = view.elemIds[e] + (lbl ? ' [' + lbl + ']' : '') + '  (beam idx ' + e + ', ' +
-            (sec ? sec.name + ' ' + sec.type : 'no section') + (grp ? ', group: ' + grp : '') + ')';
+            secText + (grp ? ', group: ' + grp : '') + ')';
         var nn = t < 0.5 ? n0 : n1;
         var nlbl = view.nodeLabels ? view.nodeLabels.get(nn) : '';
         elRoNode.textContent = view.nodeIds[nn] + (nlbl ? ' [' + nlbl + ']' : '');
@@ -268,7 +295,11 @@ var FEABeams = (function () {
     });
     if (elComp) elComp.addEventListener('change', function () {
         comp = parseInt(this.value, 10) || 0;
-        sync();
+        // Through viewer.js, so that where the beams own the range (beam-only files) the main
+        // Min/Max follow the NEW component before Auto can be unticked (a stale range there
+        // would freeze this component at the previous one's range and unit).
+        if (typeof syncAuxLayers === 'function') syncAuxLayers();
+        else sync();
         if (view) log('Beam component: ' + view.meta.components[comp].name);
     });
 
@@ -279,14 +310,24 @@ var FEABeams = (function () {
         sync: sync,
         setDispScale: setDispScale,
         refreshDispVecs: refreshDispVecs,
+        hasDisp: hasDisp,
+        // Manual colour range from the main Min/Max ({min, max}) or null for auto;
+        // takes effect on the next sync() (viewer.js syncAuxLayers calls both).
+        setManualRange: function (r) {
+            manualRange = (r && r.max > r.min) ? { min: r.min, max: r.max } : null;
+        },
         pick: pick,
         writeVis: writeVis,
         fillReadout: fillReadout,
         // The coloured beam field ({name, unit, min, max}), or null when beams draw neutral.
+        // A load case with no beam values for the component gives {..., empty: true}
+        // (min/max NaN) so the legend can say so instead of falling back to the shells.
         legend: function () {
-            if (!material || material.uniforms.uNeutral.value) return null;
+            if (!material) return null;
             var c = view.meta.components[comp];
-            return { name: c.name, unit: c.unit, min: range.min, max: range.max };
+            if (emptyPlane) return { name: c.name, unit: c.unit, min: NaN, max: NaN, empty: true };
+            if (material.uniforms.uNeutral.value) return null;
+            return { name: c.name, unit: c.unit, min: range.min, max: range.max, empty: false };
         },
         mesh: function () { return beamMesh; },
         view: function () { return view; },

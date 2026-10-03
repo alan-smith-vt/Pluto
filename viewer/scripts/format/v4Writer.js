@@ -11,6 +11,8 @@
 //   w.addBlock('ELEM', 0, u32.buffer, { count: nElem });
 //   w.addBlock('FLDS', 0, f32.buffer, { count: nLC });
 //   w.setMeta(obj);                 // written as the META block
+//   FEAv4Writer.encodeBeamElems([{n0, n1, sec, secB?}])  -> beam ELEM u32s
+//                                   // (secB: end-B section of a taper, slot 4 = secB+1)
 //   var blob = w.toBlob();
 //
 // Layout produced: header | blocks in insertion order (8-byte aligned)
@@ -140,5 +142,25 @@ var FEAv4Writer = (function () {
         return buf;
     }
 
-    return { create: create, encodeSections: encodeSections };
+    // Encode beam members into ELEM records (schema §4.2, u32[6] each):
+    //   {2, n0, n1, sectionIdx, secB + 1 | 0, 0}
+    // beams: [{ n0, n1, sec, secB? }] -- secB (optional) is the end-B section
+    // index of a tapered member (a reducer); absent / negative / equal to sec
+    // writes 0 = straight, so straight members encode exactly as before.
+    function encodeBeamElems(beams) {
+        var REC = FEAv4.ELEM_RECORD_U32;
+        var out = new Uint32Array(beams.length * REC);
+        beams.forEach(function (bm, i) {
+            out[i * REC] = 2;
+            out[i * REC + 1] = bm.n0;
+            out[i * REC + 2] = bm.n1;
+            out[i * REC + 3] = bm.sec;
+            var tb = (typeof bm.secB === 'number' && bm.secB >= 0 && bm.secB !== bm.sec);
+            out[i * REC + 4] = tb ? bm.secB + 1 : 0;
+            out[i * REC + 5] = 0;
+        });
+        return out;
+    }
+
+    return { create: create, encodeSections: encodeSections, encodeBeamElems: encodeBeamElems };
 })();

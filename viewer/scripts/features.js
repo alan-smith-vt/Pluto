@@ -13,19 +13,23 @@
 // Node groups (2026-09-04): `nodeIds` members resolve to a per-node
 // category the same way and are drawn as a point layer (nodeMarkers, one
 // THREE.Points, square screen-space markers, vertex colours from the
-// palette) while the switch is on; the section-cut isolate hides markers
-// off the kept panel via writeVis. Markers sit on the undeformed node
-// positions (no displacement scale). Unlike elements, node groups do NOT
-// shadow each other: every enabled group draws all its nodes, and where
-// two markers would land on the same spot (a node in two groups, or
-// coincident joints such as a plate joint over its ground joint) the
-// later group's marker is nudged aside by a small world-space step per
-// occupant, so both show. Rows report how many were nudged. groupOf()
-// for nodes still answers last-enabled-wins. The Groups tab lists element groups
-// and node groups on two sub-tabs (Elements | Nodes). EVERY group starts
-// unticked unless the sidecar item says `hidden: false`; ticking writes the
-// flag so Export remembers it. (Orbs on top were tried and rejected the
-// same day -- too much clutter.)
+// palette); the section-cut isolate hides markers off the kept panel via
+// writeVis. Markers sit on the undeformed node positions (no displacement
+// scale). Node groups shadow each other like elements do: the LAST enabled
+// group listing a node wins it, and the node gets ONE marker in that
+// group's colour (the shadowed group's row reports the count). Only
+// DISTINCT nodes at the same position (coincident joints such as a plate
+// joint over its ground joint) are nudged apart by a small world-space
+// step per occupant, so both show; rows report how many were nudged.
+// Since 2026-10-03 the markers draw whenever any enabled group has node
+// members, independent of the "Color by groups" switch, which only
+// controls element painting (uGroupMode on shells / beams): restraint
+// locations can show on top of a displacement contour. groupOf() for
+// nodes answers whenever markers are drawn. The Groups tab lists element
+// groups and node groups on two sub-tabs (Elements | Nodes). EVERY group
+// starts unticked unless the sidecar item says `hidden: false`; ticking
+// writes the flag so Export remembers it. (Orbs on top were tried and
+// rejected the same day -- too much clutter.)
 //
 // Precedence: an element in several groups takes the LAST enabled group
 // that lists it (envelope order) -- so "all W shapes grey" first, then
@@ -371,13 +375,13 @@ var FEAFeatures = (function () {
     // Section-cut isolate hook (sectionCut.js): null = show every painted node.
     function writeVis(nodeKeep) {
         nodeKeepMask = nodeKeep || null;
-        rebuildMarkers(enabled && !!resolved);
+        rebuildMarkers(!!resolved);
         renderList(enabled && !!resolved);      // painted / nudged counts follow the isolate
         needsRender = true;
     }
 
     function sync() {
-        var on = enabled && !!resolved;
+        var on = enabled && !!resolved;         // element painting (Color by groups)
         if (feaBuild && resolved) {
             FEAAttributes.updateCatIdx(feaBuild.geometry, feaBuild.elemNCount, null, resolved.shell);
         }
@@ -387,7 +391,9 @@ var FEAFeatures = (function () {
         }
         applyUniforms(feaMaterial, on);
         if (window.FEABeams && FEABeams.mesh()) applyUniforms(FEABeams.mesh().material, on);
-        rebuildMarkers(on);
+        // Node markers follow the enabled node groups alone (buildMarkerData
+        // reads only enabled groups' nodes), not the element-painting switch.
+        rebuildMarkers(!!resolved);
         if (elToggle) elToggle.checked = enabled;
         drawLegend(on);
         if (typeof updateViewCaption === 'function') updateViewCaption();
@@ -520,7 +526,7 @@ var FEAFeatures = (function () {
             if (nNodeRows === 0) elNodeList.innerHTML = '<div class="gr-empty">No node groups</div>';
             var nh = document.createElement('div');
             nh.className = 'gr-ungrouped';
-            nh.innerHTML = '<span>points at the nodes' + (on ? '' : ' (colouring off)') + '</span>';
+            nh.innerHTML = '<span>points at the nodes (drawn whenever a node group is ticked)</span>';
             elNodeList.appendChild(nh);
         }
     }
@@ -560,7 +566,8 @@ var FEAFeatures = (function () {
 
     // Group name for a (family, element index), or null.
     function groupOf(family, e) {
-        if (!resolved || !enabled) return null;
+        if (!resolved) return null;
+        if (!enabled && family !== 'node') return null;   // node markers draw without the switch
         var arr = resolved[family === 'node' ? 'nodes' : family];
         if (!arr || e < 0 || e >= arr.length) return null;
         var gi = arr[e];
@@ -654,6 +661,7 @@ var FEAFeatures = (function () {
         _groupList: function () { return groupList; },
         _resolved: function () { return resolved; },
         _markers: function () { return markerData; },
+        _nodeMarkers: function () { return nodeMarkers; },
         _moveGroup: moveGroup,
         _setEnabled: function (on) { enabled = !!on; sync(); }
     };

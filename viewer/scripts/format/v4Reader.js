@@ -5,7 +5,7 @@
 //
 // Produces the UNIFIED in-memory model (schema §10):
 //   { version, file, nNodes, nodes(Float64Array), nodeIds, loadCases,
-//     sections, meta, domains:[{ name, family, maxSlots, components,
+//     sections, meta, upAxis ('Y'|'Z'|null from META.upAxis), domains:[{ name, family, maxSlots, components,
 //     constComponents, dispVector, nElem, elemRecordU32, elems,
 //     elemIds, fields:{offset,nLC,planeStride}|null,
 //     constFields:{offset,nComp}|null, beamProps|null }] }
@@ -374,9 +374,17 @@ var FEAv4 = (function () {
             modelId: meta.modelId || null,
             geometryHash: meta.geometryHash || null,
             units: meta.units || null,
+            upAxis: normalizeUpAxis(meta.upAxis),     // 'Y' | 'Z' | null (view hint, viewer.js applyFileUpAxis)
             domains: domains,
             directory: dir.entries
         };
+    }
+
+    // META.upAxis (optional): the model's vertical axis, 'Y' or 'Z' (any case).
+    // Anything else reads as no hint.
+    function normalizeUpAxis(v) {
+        var a = typeof v === 'string' ? v.trim().toUpperCase() : '';
+        return (a === 'Y' || a === 'Z') ? a : null;
     }
 
     return {
@@ -393,6 +401,7 @@ var FEAv4 = (function () {
         u32ToTag: u32ToTag,
         readRange: readRange,
         loadModel: loadModel,
-        resolveDispVector: resolveDispVector
+        resolveDispVector: resolveDispVector,
+        normalizeUpAxis: normalizeUpAxis
     };
 })();

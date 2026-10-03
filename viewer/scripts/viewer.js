@@ -29,6 +29,7 @@ var flashMesh = null;       // alarm-region x-ray overlay (shares mesh geometry)
 var colormapName = 'turbo';
 var autoRange = true;
 var vMin = 0, vMax = 1;
+var auxRangeStale = false;      // beams own the range but the Min/Max hold no beam range yet (empty LC plane)
 var feaRaycaster = new THREE.Raycaster();
 var pinned = false;
 var pointerDown = null;
@@ -67,6 +68,8 @@ var deform = { enabled: false, scale: 100, animating: false, speed: 0.5 };
 var deformMaxDisp = 0;          // largest |disp| in current LC (for auto-scale)
 var deformLCLoaded = -1;        // which LC the dispVec attribute holds
 var deformScaleAuto = true;     // scale untouched by the user -> compute on enable
+var zUp = false;                // world up axis currently shown (Z when true, else Y)
+var userZUp = false;            // the user's saved preference (pluto.zUp); a file's META.upAxis never changes it
 
 var viewCube = null;            // top-right orientation gizmo (viewCube.js)
 var focusOrb = null;            // red sphere at controls.target
@@ -231,7 +234,8 @@ function lcFullName(i) {
     // World up axis: Y (STAAD) or Z (plant / SP3D). Remembered per browser.
     var savedUp = null;
     try { savedUp = localStorage.getItem('pluto.zUp'); } catch (e) {}
-    if (savedUp === '1') setZUp(true, true);
+    userZUp = savedUp === '1';
+    if (userZUp) setZUp(true, true, true);
 })();
 
 // Browser zoom changes window.devicePixelRatio; the renderer's pixel
@@ -254,8 +258,11 @@ function makeControls(cam, keepTarget) {
     return c;
 }
 
-var zUp = false;
-function setZUp(on, silent) {
+// zUp / userZUp are declared with the globals at the top: initThree() above
+// sets them from localStorage, and a `var x = false` here would reset them.
+// noPersist: a per-file hint (META.upAxis, applyFileUpAxis) -- the view
+// follows it but the saved preference stays as the user left it.
+function setZUp(on, silent, noPersist) {
     zUp = !!on;
     var up = zUp ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
     perspCam.up.copy(up);
@@ -273,9 +280,21 @@ function setZUp(on, silent) {
     controls.update();
     if (viewCube) viewCube.setMainControls(controls, zUp ? 'z' : 'y');
     if (elZUp) elZUp.checked = zUp;
-    try { localStorage.setItem('pluto.zUp', zUp ? '1' : '0'); } catch (e) {}
+    if (!noPersist) {
+        userZUp = zUp;
+        try { localStorage.setItem('pluto.zUp', zUp ? '1' : '0'); } catch (e) {}
+    }
     if (!silent) log('World up axis: ' + (zUp ? 'Z' : 'Y') + '.');
     needsRender = true;
+}
+
+// Per-file up axis (META.upAxis 'Y' | 'Z', surfaced as model.upAxis by the
+// reader): applied to the view at load without persisting; a file with no
+// hint gets the user's saved preference back.
+function applyFileUpAxis(axis) {
+    var want = axis === 'Z' ? true : axis === 'Y' ? false : userZUp;
+    if (want !== zUp) setZUp(want, true, true);
+    if (axis === 'Y' || axis === 'Z') log('Up axis from the file: ' + axis + ' (view only; the Z-up preference is unchanged).');
 }
 
 function handleResize() {
@@ -622,6 +641,11 @@ async function loadModels(entriesIn) {
         scene.add(focusOrb);
 
         if (window.FEABeams) FEABeams.onModelLoaded(model);
+        // Beam-only file (CAESAR / frame-only exports): the shell-only controls are
+        // inert, so they hide and the Beams panel carries the field (viewer.css).
+        document.body.classList.toggle('beam-only',
+            model.header.nElements === 0 && !!(window.FEABeams && FEABeams.view()));
+        applyFileUpAxis(model.unified ? model.unified.upAxis : null);
         if (window.FEAPredicates) FEAPredicates.onModelLoaded();   // before features: groups may resolve via predicates
         if (window.FEAFeatures) FEAFeatures.onModelLoaded();
         if (window.FEASectionCut && FEASectionCut.onModelLoaded) FEASectionCut.onModelLoaded();
@@ -688,6 +712,7 @@ function disposeCurrentModel() {
         focusOrb = null;
     }
     clearHighlight();
+    document.body.classList.remove('beam-only');
     if (window.FEABeams) FEABeams.onModelCleared();
     if (window.FEAFeatures) FEAFeatures.onModelCleared();
     if (window.FEASectionCut) FEASectionCut.onModelCleared();
@@ -867,7 +892,7 @@ async function selectLC(lc) {
         // Geometry-only profile: nothing to slice; beams draw neutral.
         feaLCData = null;
         updateDeformAvailability();
-        if (window.FEABeams) FEABeams.sync();
+        syncAuxLayers();
         if (window.FEAFeatures) FEAFeatures.sync();
         updateViewCaption();
         log('Geometry-only model: no load cases (features / groups still work).');
@@ -1168,9 +1193,56 @@ function applyComponentAndRange() {
         var c = activeComponent();
         elRoComp.textContent = c ? c.name + (c.unit ? ' [' + c.unit + ']' : '') + ' (' + c.kind + ')' : '—';
     }
-    if (window.FEABeams) FEABeams.sync();
+    syncAuxLayers();
     if (window.FEAFeatures) FEAFeatures.sync();
     if (window.FEASectionCut) FEASectionCut.refresh();
+    needsRender = true;
+}
+
+// The beams own the colour range (and the main Min/Max boxes) when there is
+// no shell field on screen: a beam-only file, or shells with no component.
+function beamsOwnRange() {
+    if (!window.FEABeams || !FEABeams.view() || inDsrMode()) return false;
+    var hasShells = feaModel && feaModel.header && feaModel.header.nElements > 0;
+    return !(hasShells && activeComponent());
+}
+
+// One place where every display setting reaches the layers drawn beside the
+// shell mesh (beams now, a supports layer later): colormap, abs, alarm and
+// manual range changes, and every applyComponentAndRange. In a file where
+// the beams own the range, the main Min/Max follow / drive the beam range;
+// otherwise beams keep their own auto range (a different quantity).
+// A load case with no beam values for the component leaves the boxes blank
+// (auxRangeStale) instead of the shell default 0 / 1; Auto unticked there
+// freezes at the next populated load case's range, or at what the user types.
+function syncAuxLayers() {
+    if (window.FEABeams && FEABeams.view()) {
+        var own = beamsOwnRange();
+        if (!own) auxRangeStale = false;
+        var manual = own && !autoRange && !inCatMode() && !auxRangeStale;
+        FEABeams.setManualRange(manual ? { min: vMin, max: vMax } : null);
+        FEABeams.sync();
+        if (own && (autoRange || auxRangeStale) && !inCatMode()) {
+            var bl = FEABeams.legend();
+            if (bl && !bl.empty) {
+                vMin = bl.min; vMax = bl.max;
+                elMin.value = fmt(vMin, 4);
+                elMax.value = fmt(vMax, 4);
+                if (auxRangeStale && !autoRange) {
+                    FEABeams.setManualRange({ min: vMin, max: vMax });   // same as the auto range: no recolour
+                    FEABeams.sync();
+                }
+                auxRangeStale = false;
+            } else if (bl && bl.empty) {
+                auxRangeStale = true;
+                elMin.value = '';
+                elMax.value = '';
+            }
+        }
+    } else {
+        auxRangeStale = false;
+    }
+    if (window.FEASupports && FEASupports.recolor) FEASupports.recolor();
     needsRender = true;
 }
 
@@ -1215,7 +1287,8 @@ function updateViewCaption() {
     var bl = beamLegend();
     if (bl) {
         var bname = bl.name + (bl.unit ? ' [' + bl.unit + ']' : '');
-        parts.push((absValue ? '|' + bname + '|' : bname) + ' · beams');
+        parts.push((absValue ? '|' + bname + '|' : bname) + ' · beams' +
+            (bl.empty ? ': no beam results in this LC' : ''));
     } else if (!inDsrMode()) {
         var c = activeComponent();
         if (!c) {
@@ -1228,7 +1301,9 @@ function updateViewCaption() {
     } else if (!inCatMode() && absValue) {
         // abs on the (already >= 0) DSR value is a no-op; don't advertise it
     }
-    if (smoothing && !bl) parts.push(smoothMode === 'elem' ? 'element means' : 'smoothed');
+    // smoothing is a shell setting: no suffix for a file without shells (beam-only)
+    var shellsDrawn = feaModel.header && feaModel.header.nElements > 0;
+    if (smoothing && !bl && shellsDrawn) parts.push(smoothMode === 'elem' ? 'element means' : 'smoothed');
     // The colorscale title stays about the FIELD only -- deformation
     // state (an exaggeration of geometry, not of values) shows in the
     // canvas caption but not above the legend.
@@ -1506,6 +1581,16 @@ function drawLegend() {
     // Above the alarm threshold (mapped into legend space), draw the alarm
     // color so the legend matches what's on the mesh.
     var bl = beamLegend();
+    if (bl && bl.empty) {
+        // The selected beam component has no value in this load case: the
+        // beams draw neutral, so the bar is neutral too and says why.
+        ctx.fillStyle = 'rgb(90,90,96)';
+        ctx.fillRect(0, 0, w, h);
+        elLegendMax.textContent = '';
+        elLegendMid.textContent = 'no beam results in this LC';
+        elLegendMin.textContent = '';
+        return;
+    }
     var lo = bl ? bl.min : vMin, hi = bl ? bl.max : vMax;
     var alarmActive = alarmEnabled && alarmThreshold > 0;
     var tAlarm = alarmActive
@@ -1967,28 +2052,42 @@ async function showCalcCard(q) {
 // ================================================================
 // Deformed shape
 // ================================================================
+// Which displacement sources can drive the deformed shape right now
+// (FEAAttributes.deformStatus): the shells' own vector, or -- in a file with
+// no shells (CAESAR / frame-only exports) -- the beam domain's vector alone.
+function deformState() {
+    return FEAAttributes.deformStatus({
+        model: !!feaModel,
+        shellElems: feaModel && feaModel.header ? feaModel.header.nElements : 0,
+        shellDisp: !!(feaModel && feaModel.meta.dispVector),
+        beamDisp: !!(window.FEABeams && FEABeams.hasDisp && FEABeams.hasDisp()),
+        envelope: !!currentEnvelope,
+        haveLC: !!feaLCData
+    });
+}
 function deformAvailable() {
-    return !!(feaModel && feaModel.meta.dispVector && !currentEnvelope && feaLCData);
+    return deformState().ok;
 }
 
 function updateDeformAvailability() {
-    var ok = deformAvailable();
-    elDeformSection.classList.toggle('fea-disabled', !ok);
-    if (!ok && deform.enabled) setDeformEnabled(false);
-    var hint = !feaModel ? '' :
-        !feaModel.meta.dispVector ? 'No displacement vector in this file (metadata displacementVector / Translation X-Y-Z names).' :
-        currentEnvelope ? 'Envelopes mix LCs per corner — no coherent displacement field to deform by. Pick a load case.' :
-        '';
-    if (hint) elDeformSection.title = hint; else elDeformSection.removeAttribute('title');
+    var st = deformState();
+    elDeformSection.classList.toggle('fea-disabled', !st.ok);
+    if (!st.ok && deform.enabled) setDeformEnabled(false);
+    if (st.hint) elDeformSection.title = st.hint; else elDeformSection.removeAttribute('title');
 }
 
-// (Re)write the dispVec attributes from the current LC.
+// (Re)write the dispVec attributes from the current LC. The shell updater
+// runs only when the shells have their own vector (it indexes dispIdx[0]).
 function refreshDispVecs() {
-    if (!deformAvailable()) return;
-    var edgeAttr = feaEdges ? feaEdges.geometry.getAttribute('dispVec') : null;
-    deformMaxDisp = FEAAttributes.updateDispVecs(
-        feaBuild, feaModel, feaLCData, feaModel.meta.dispVector, edgeAttr);
-    if (window.FEABeams) deformMaxDisp = Math.max(deformMaxDisp, FEABeams.refreshDispVecs());
+    var st = deformState();
+    if (!st.ok) return;
+    deformMaxDisp = 0;
+    if (st.shells) {
+        var edgeAttr = feaEdges ? feaEdges.geometry.getAttribute('dispVec') : null;
+        deformMaxDisp = FEAAttributes.updateDispVecs(
+            feaBuild, feaModel, feaLCData, feaModel.meta.dispVector, edgeAttr);
+    }
+    if (st.beams && window.FEABeams) deformMaxDisp = Math.max(deformMaxDisp, FEABeams.refreshDispVecs());
     deformLCLoaded = currentLC;
 }
 
@@ -2194,6 +2293,7 @@ elColormap.addEventListener('change', function () {
         if (!inCatMode()) feaMaterial.uniforms.colormap.value = texScalar;
         if (old) old.dispose();
     }
+    syncAuxLayers();       // beams sample texScalar too; the old one is disposed
     drawLegend();
     needsRender = true;
 });
@@ -2202,6 +2302,7 @@ elAuto.addEventListener('change', function () {
     autoRange = this.checked;
     updateRangeInputsDisabled();
     if (autoRange) applyComponentAndRange();
+    else syncAuxLayers();      // beams that own the range freeze at the current Min/Max
 });
 
 function applyManualRange() {
@@ -2209,16 +2310,19 @@ function applyManualRange() {
     var lo = parseFloat(elMin.value.replace(/,/g, ''));
     var hi = parseFloat(elMax.value.replace(/,/g, ''));
     if (isNaN(lo) || isNaN(hi) || hi <= lo) {
-        elMin.value = fmt(vMin, 4);
-        elMax.value = fmt(vMax, 4);
+        elMin.value = auxRangeStale ? '' : fmt(vMin, 4);
+        elMax.value = auxRangeStale ? '' : fmt(vMax, 4);
         return;
     }
     vMin = lo; vMax = hi;
+    auxRangeStale = false;
     if (feaMaterial) {
         feaMaterial.uniforms.vMin.value = vMin;
         feaMaterial.uniforms.vMax.value = vMax;
     }
+    syncAuxLayers();       // beams take the manual range when they own it
     drawLegend();
+    updateViewCaption();
     needsRender = true;
 }
 elMin.addEventListener('change', applyManualRange);
@@ -2246,6 +2350,7 @@ elAlarm.addEventListener('change', function () {
     if (!alarmEnabled && isDsrView()) dsrAlarmOptOut = true;
     alarmAutoOn = false;
     applyAlarmUniform();
+    syncAuxLayers();
 });
 elAlarmVal.addEventListener('change', function () {
     var t = parseFloat(this.value);
@@ -2253,7 +2358,8 @@ elAlarmVal.addEventListener('change', function () {
         alarmThreshold = t;
         alarmAutoOn = false;    // user took over; don't auto-restore
         applyAlarmUniform();
-        } else {
+        syncAuxLayers();
+    } else {
         this.value = alarmThreshold;
     }
 });

@@ -20,6 +20,9 @@
 //     beam domain samples the SAME displacement function at its nodes,
 //     so plate and frame deform together.
 //   - beam force components vary linearly end A -> end B.
+//   - one column (the first) is a TAPERED member: HSS8 pipe at the top
+//     tapering to a 12.75 OD pipe at the base (ELEM slot 4 = end-B
+//     section + 1), the demo's reducer.
 // ================================================================
 
 var FEASample = (function () {
@@ -290,7 +293,8 @@ var FEASample = (function () {
         var sections = [
             { name: 'W12x26',   typeCode: 2, params: [12.2, 6.5, 0.38, 6.5, 0.38, 0.23] },
             { name: 'HSS8 pipe', typeCode: 4, params: [8.6, 0.5] },
-            { name: 'Girder 6x10', typeCode: 1, params: [6, 10] }
+            { name: 'Girder 6x10', typeCode: 1, params: [6, 10] },
+            { name: 'Pipe 12.75', typeCode: 4, params: [12.75, 0.375] }     // end B of the tapered column
         ];
 
         // beams: { n0, n1, sec, yAxis:[3] }
@@ -308,6 +312,7 @@ var FEASample = (function () {
         cornerNodes.forEach(function (cn, k) {                              // columns (top -> base)
             edge(cn, P.nNodes + k, 1, [1, 0, 0]);
         });
+        beams[beams.length - cornerNodes.length].secB = 3;                  // first column tapers 8.6 -> 12.75 OD
         var midRow = (NY / 2) * nodesX;
         for (var g = 0; g < NX; g++) edge(midRow + g, midRow + g + 1, 2, UP); // girder
         var nBeams = beams.length;
@@ -381,14 +386,10 @@ var FEASample = (function () {
         w.addBlock('FLDS', 0, P.field.buffer, { count: nLC });
         w.addBlock('FLDC', 0, P.strength.buffer, { count: 1 });
 
-        var belems = new Uint32Array(nBeams * REC);
+        var belems = FEAv4Writer.encodeBeamElems(beams);
         var belemIds = new Uint32Array(nBeams);
         var bprp = new Float32Array(nBeams * FEAv4.BPRP_F32);
         beams.forEach(function (bm, bi) {
-            belems[bi * REC] = 2;
-            belems[bi * REC + 1] = bm.n0;
-            belems[bi * REC + 2] = bm.n1;
-            belems[bi * REC + 3] = bm.sec;
             belemIds[bi] = 20000 + bi;
             var o = bi * FEAv4.BPRP_F32;
             bprp[o] = bm.yAxis[0]; bprp[o + 1] = bm.yAxis[1]; bprp[o + 2] = bm.yAxis[2];

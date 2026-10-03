@@ -105,5 +105,49 @@ FEAFeatures._setEnabled(true);
 assert(FEAFeatures.groupOf('shell', 0) === 'WALL', 'groupOf(shell 0) = WALL (winner)');
 assert(FEAFeatures.groupOf('node', 3) === 'RIM' && FEAFeatures.groupOf('node', 0) === 'BASE', 'groupOf(node) reports the node group');
 
+// 6. node markers draw without "Color by groups" (2026-10-03): any enabled node
+// group shows its markers on top of the field contour; the switch only drives
+// element painting (uGroupMode). Minimal THREE / scene stubs to observe the layer.
+{
+  const added = [];
+  global.scene = { add(o) { added.push(o); }, remove(o) { const i = added.indexOf(o); if (i >= 0) added.splice(i, 1); } };
+  global.THREE = {
+    BufferGeometry: function () { this.attrs = {}; this.setAttribute = (n, a) => { this.attrs[n] = a; }; this.dispose = () => {}; },
+    BufferAttribute: function (array, size) { this.array = array; this.itemSize = size; },
+    PointsMaterial: function (o) { Object.assign(this, o); this.dispose = () => {}; },
+    Points: function (g, m) { this.geometry = g; this.material = m; }
+  };
+  const mat = { uniforms: { uGroupMode: { value: 0 }, groupPalette: { value: null }, uGroupCount: { value: 0 } } };
+  global.feaMaterial = mat;
+  FEAFeatures._setEnabled(false);
+  let pts = FEAFeatures._nodeMarkers();
+  assert(pts && added.indexOf(pts) >= 0 && pts.geometry.attrs.position.array.length === 4 * 3,
+    'switch OFF: the 4 node markers of the ticked node groups are drawn');
+  assert(mat.uniforms.uGroupMode.value === 0, 'switch OFF: shells keep the field contour (uGroupMode 0)');
+  assert(FEAFeatures.groupOf('node', 3) === 'RIM' && FEAFeatures.groupOf('shell', 0) === null,
+    'switch OFF: groupOf answers for nodes (markers drawn), not for elements');
+  // precedence is unchanged without the switch: RIM (later) still wins node 3
+  const col = pts.geometry.attrs.color.array;
+  const rim = FEAFeatures._groupList().findIndex(g => g.name === 'RIM');   // index after the reorder above
+  assert(Math.abs(col[2 * 3] - rim / 255) < 1e-6, 'switch OFF: node 3 still one marker in RIM\'s colour (last enabled wins)');
+  FEAFeatures._setEnabled(true);
+  pts = FEAFeatures._nodeMarkers();
+  assert(pts && added.length === 1 && mat.uniforms.uGroupMode.value === 1, 'switch ON: element painting on, one marker layer');
+  // untick every node group: no markers, whatever the switch says
+  const items = FEAFeatures.envelope().groups.items;
+  items.forEach(g => { if (g.members.every(m => m.domain === 'nodes')) g.hidden = true; });
+  FEAFeatures._setEnabled(false);
+  FEAFeatures.refresh();
+  assert(FEAFeatures._nodeMarkers() === null && added.length === 0, 'no node group ticked: no marker layer');
+  assert(mat.uniforms.uGroupMode.value === 0, 'and the field contour stays');
+  // re-tick one node group with the switch off: markers come back alone
+  items.find(g => g.name === 'BASE').hidden = false;
+  FEAFeatures.refresh();
+  pts = FEAFeatures._nodeMarkers();
+  assert(pts && pts.geometry.attrs.position.array.length === 3 * 3 && mat.uniforms.uGroupMode.value === 0,
+    'ticking BASE with the switch off: its 3 markers, contour untouched');
+  delete global.THREE; delete global.scene; global.feaMaterial = null;
+}
+
 console.log(fails ? fails + ' FAILED' : 'ALL GROUP TESTS PASSED');
 process.exitCode = fails ? 1 : 0;

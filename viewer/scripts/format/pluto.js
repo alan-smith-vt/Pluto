@@ -79,6 +79,7 @@ var PlutoFormat = (function () {
             modelId: raw.modelId || null,
             geometryHash: raw.geometryHash || null,
             units: raw.lengthUnit ? { length: raw.lengthUnit } : (raw.units || null),
+            upAxis: FEAv4.normalizeUpAxis(raw.upAxis),
             domains: [domain],
             directory: null
         };

@@ -323,3 +323,10 @@ input[type=range] { accent-color: #6c8cff; }
 #calcCard td.cc-num { text-align: right; white-space: nowrap; }
 #calcCard tr.cc-win td { color: #ffd479; }
 #calcCard .cc-alarm { color: #ff64ff; }
+
+/* Beam-only model (no shell domain, e.g. a pipe-stress export): the shell-only
+   controls are inert, so they hide and a note points at the Beams panel
+   (viewer.js toggles body.beam-only at load). */
+.beam-only-note { display: none; margin-top: 4px; }
+body.beam-only .beam-only-note { display: block; }
+body.beam-only .shell-only { display: none !important; }

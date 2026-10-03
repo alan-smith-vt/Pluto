@@ -234,9 +234,11 @@ var FEAOverlays = (function () {
         var lbl = v.labels ? v.labels.get(e) : '';
         var g = ov.groupOfElem[e] >= 0 ? ov.groups[ov.groupOfElem[e]].name : 'no group';
         var sec = v.sections && ov.build.sectionOf ? v.sections[ov.build.sectionOf[e]] : null;
+        var secB = v.sections && ov.build.sectionOfB ? v.sections[ov.build.sectionOfB[e]] : sec;
+        var secName = sec && sec.name ? sec.name + (secB && secB !== sec && secB.name ? ' \u2192 ' + secB.name : '') : '';
         elRoValue.textContent = g;
         elRoValue.className = 'ro-value';
-        elRoComp.textContent = 'overlay ' + ov.name + (sec && sec.name ? ' · ' + sec.name : '');
+        elRoComp.textContent = 'overlay ' + ov.name + (secName ? ' · ' + secName : '');
         elRoElem.textContent = v.elemIds[e] + (lbl ? ' [' + lbl + ']' : '') + '  (overlay beam)';
         elRoNode.textContent = '—';
         elRoCorners.textContent = '—';

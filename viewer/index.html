@@ -69,15 +69,15 @@
 
     <div class="fea-section">
         <div class="fea-sub">Field</div>
-        <div class="fea-row" id="envComputeRow">
+        <div class="fea-row shell-only" id="envComputeRow">
             <button id="btnComputeEnv" class="fea-btn">Compute envelopes</button>
         </div>
-        <div class="fea-row" id="envButtonsRow" style="display:none;">
+        <div class="fea-row shell-only" id="envButtonsRow" style="display:none;">
             <button id="btnEnvMin" class="fea-btn">Min</button>
             <button id="btnEnvMax" class="fea-btn">Max</button>
             <button id="btnEnvAbs" class="fea-btn">Abs(max)</button>
         </div>
-        <div class="fea-row" id="envDsrRow" style="display:none;">
+        <div class="fea-row shell-only" id="envDsrRow" style="display:none;">
             <button id="btnEnvDsr" class="fea-btn">Global DSR</button>
             <button id="btnEnvCat" class="fea-btn" title="Color by controlling DSR check instead of by value">By check</button>
         </div>
@@ -87,14 +87,16 @@
             <select id="feaLC" class="fea-select" disabled></select>
             <button id="btnLCNext" class="fea-btn fea-step" title="Next load case (right arrow)">&#9654;</button>
         </div>
-        <div class="fea-row">
+        <div class="fea-row shell-only">
             <span class="fea-label">Type</span>
             <select id="feaKind" class="fea-select" disabled title="Filter the component list by field type"></select>
         </div>
-        <div class="fea-row">
+        <div class="fea-row shell-only">
             <span class="fea-label">Component</span>
             <select id="feaComp" class="fea-select" disabled></select>
         </div>
+        <div class="fea-hint beam-only-note">Beam-only model: pick the field in the
+            <b>Beams</b> panel below. Min/Max under Display set the beam colour range.</div>
     </div>
 
     <div class="fea-section">
@@ -112,10 +114,10 @@
             <span class="fea-label">Auto range</span>
             <input type="checkbox" id="feaAuto" class="fea-check" checked>
             <span style="flex:1;"></span>
-            <input type="checkbox" id="feaEdges" class="fea-check" checked>
-            <span class="fea-label" style="width:auto;">Edges</span>
+            <input type="checkbox" id="feaEdges" class="fea-check shell-only" checked>
+            <span class="fea-label shell-only" style="width:auto;">Edges</span>
         </div>
-        <div class="fea-row">
+        <div class="fea-row shell-only">
             <span class="fea-label">Smooth</span>
             <select id="feaSmooth" class="fea-select" title="none: raw corner values, discontinuous across elements. Node averaging: mean of the corner values meeting at a node. Element means: each element's mean of its own corners, averaged at the node -- the value equilibrium constrains; use it to read a force profile at a shell edge, where corner extrapolation overshoots.">
                 <option value="elem" selected>Element means</option>
@@ -153,7 +155,7 @@
             <select id="beamComp" class="fea-select" title="Beam-domain component (separate from the shell component)"></select>
         </div>
         <div class="fea-hint" id="beamRange" style="margin-top:4px;">&mdash;</div>
-        <div class="fea-hint" style="margin-top:2px;">Beams use their own auto range with the active colormap. Envelope / strength / DSR views draw beams neutral.</div>
+        <div class="fea-hint" style="margin-top:2px;">Beams use their own auto range with the active colormap (in a beam-only model the Display Min/Max set it). Envelope / strength / DSR views, and load cases with no beam values for the component, draw beams neutral.</div>
     </details>
 
     <details class="fea-section fea-details" id="deformSection">
