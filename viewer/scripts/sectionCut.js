@@ -672,6 +672,7 @@ var FEASectionCut = (function () {
         // are not shell nodes); otherwise by the kept shell nodes as before
         if (window.FEABeams && FEABeams.writeVis) FEABeams.writeVis(nodeKeep, keep ? boxTest : null);
         if (window.FEAFeatures && FEAFeatures.writeVis) FEAFeatures.writeVis(nodeKeep);
+        if (window.FEASupports && FEASupports.writeVis) FEASupports.writeVis(nodeKeep);
         requestRender();
     }
 

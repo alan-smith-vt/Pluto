@@ -1,4 +1,5 @@
-// Headless readback of a CaesarToPluto export (geometry only, stage 1) through the viewer's own reader.
+// Headless readback of a CaesarToPluto export (geometry, and the Excel results when the export read them)
+// through the viewer's own reader.
 //   node viewer/tests/readback_caesar.js <outBase>                    (reads <outBase>.bin [+ .features.json])
 //   node viewer/tests/readback_caesar.js <outBase> --expect <json>    (the export's RESULT json -- the runner's
 //                                                                       "RESULT {...}" line saved to a file, or
@@ -16,7 +17,12 @@
 // META upAxis / units; labels; the sidecar binds (geometryHash) and its groups: sizes cover
 // every beam once and are shown, component groups follow them (Bend hidden), line groups hidden, SIF/tee
 // node groups hidden, support-combination node groups non-empty, shown and written after every other
-// caesar group (user groups that MergeFrom carried over follow them).
+// caesar group (user groups that MergeFrom carried over follow them). With results (RESULT resultsRead,
+// or load cases in the file): load case names and component count as the RESULT says, displacementVector
+// = DX DY DZ, displacements finite at every beam end with one value per node and |D| = hypot, restraint
+// loads (kind "restraint") only at support nodes and the same node total on every end there, |V| / |M| =
+// hypot of their parts, internal forces at >= 95 % of beam ends. The supports section: one caesar item
+// per support-group node, "<node> <combination>", source / dof / restraint kinds valid, unit directions.
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const V = path.join(__dirname, '..', 'scripts', 'format') + path.sep;
 global.window = global; global.document = { getElementById: () => null };
@@ -51,7 +57,9 @@ const COMPONENTS = ['Valve', 'Flange', 'Flange pair', 'Rigid', 'Rigid link', 'Ex
   assert(m.version === 4, 'v4 file');
   assert(m.domains.length === 1 && m.domains[0].family === 'beam' && m.domains[0].name === 'beams', 'exactly one domain, family beam');
   assert(PlutoFormat.findDomain(m, 'shell') === -1 && PlutoFormat.shellView(m).header.nElements === 0, 'no shell elements');
-  assert(m.loadCases.length === 0 && m.domains[0].fields === null, 'geometry only: no load cases, no field block');
+  const withResults = expect ? !!expect.resultsRead && expect.loadCases.length > 0 : m.loadCases.length > 0;
+  if (!withResults) assert(m.loadCases.length === 0 && m.domains[0].fields === null, 'geometry only: no load cases, no field block');
+  else assert(m.loadCases.length > 0 && m.domains[0].fields !== null, 'results: ' + m.loadCases.length + ' load case(s) and a field block');
   assert(m.upAxis === wantUp && m.meta.upAxis === wantUp, 'META upAxis ' + JSON.stringify(m.meta.upAxis) + ' = ' + wantUp);
   assert(m.units && m.units.length === wantUnit, 'META units.length ' + JSON.stringify(m.units && m.units.length) + ' = ' + wantUnit);
   assert(/^sha256:[0-9a-f]{64}$/.test(m.geometryHash || ''), 'META geometryHash present');
@@ -132,6 +140,101 @@ const COMPONENTS = ['Valve', 'Flange', 'Flange pair', 'Rigid', 'Rigid link', 'Ex
     assert(valveHalves === 2 * ec.valves, 'valve half labels ' + valveHalves + ' = 2 x valves');
   }
   console.log('sample labels: ' + [0, 1, Math.floor(nB / 2), nB - 1].map(e => bv.elemIds[e] + '="' + bv.labels.get(e) + '"').join('  '));
+
+  // beam ends at each node (for node values fanned onto the ends)
+  const endsAt = new Map();
+  for (let e = 0; e < nB; e++) for (let k = 0; k < 2; k++) {
+    const n = el[e * REC + 1 + k];
+    if (!endsAt.has(n)) endsAt.set(n, []);
+    endsAt.get(n).push([e, k]);
+  }
+  const sc = fs.existsSync(base + '.features.json') ? JSON.parse(fs.readFileSync(base + '.features.json', 'utf8')) : null;
+
+  // ---- results (stage 2): load cases, components, per-LC planes ----
+  if (withResults) {
+    const comps = bv.meta.components, CC = comps.length, MS = bv.header.maxCorners;
+    const ci = name => comps.findIndex(c => c.name === name);
+    const kinds = {};
+    comps.forEach(c => { kinds[c.kind] = (kinds[c.kind] || 0) + 1; });
+    console.log('components: ' + comps.map(c => c.name + ':' + c.kind + (c.unit ? '[' + c.unit + ']' : '')).join(', '));
+    assert(MS === 2, 'two stations per beam (end A, end B)');
+    if (expect) {
+      assert(JSON.stringify(m.loadCases.map(l => l.name)) === JSON.stringify(expect.loadCases), 'load case names = RESULT loadCases');
+      assert(CC === ec.components, 'component count = RESULT counts.components (' + ec.components + ')');
+    }
+    const D = ['DX', 'DY', 'DZ', '|D|', 'RX', 'RY', 'RZ'].map(ci);
+    const haveDisp = D.every(i => i >= 0);
+    const dv = bv.meta.dispVector;
+    if (haveDisp) {
+      assert(dv && dv[0] === D[0] && dv[1] === D[1] && dv[2] === D[2], 'displacementVector = DX DY DZ');
+      assert(comps[D[0]].unit === wantUnit && comps[D[4]].unit === 'deg', 'displacements in ' + wantUnit + ', rotations in deg');
+    }
+    if (expect) assert(haveDisp === (ec.dispCases > 0), 'displacement components present iff RESULT dispCases > 0');
+    const R = ['Restraint FX', 'Restraint FY', 'Restraint FZ', 'Restraint |F|', 'Restraint MX', 'Restraint MY', 'Restraint MZ', 'Restraint |M|'].map(ci);
+    const haveRes = R.every(i => i >= 0);
+    if (expect) assert(haveRes === (ec.restraintCases > 0), 'restraint components (kind restraint) present iff RESULT restraintCases > 0');
+    if (haveRes) assert(R.every(i => comps[i].kind === 'restraint'), 'restraint loads are kind "restraint"');
+    const F = ['Shear fy', 'Shear fz', 'Shear |V|', 'Bending my', 'Bending mz', 'Bending |M|'].map(ci);
+    const haveForce = F.every(i => i >= 0);
+    const supportNodes = new Set();
+    if (sc && sc.supports && Array.isArray(sc.supports.items))
+      sc.supports.items.forEach(it => (it.nodeIds || []).forEach(n => { if (nodeIdx.has(n)) supportNodes.add(nodeIdx.get(n)); }));
+
+    const rel = (a, b) => Math.abs(a - b) <= 1e-4 * Math.max(1, Math.abs(a), Math.abs(b));
+    let dispMissing = 0, dispSplit = 0, dispMag = 0, resSplit = 0, resOff = 0, resNodes = 0, forceMag = 0, forceEnds = 0, ends = 0;
+    for (let lc = 0; lc < m.loadCases.length; lc++) {
+      const p = await bv.readLC(lc);
+      const at = (e, k, c) => p[e * MS * CC + k * CC + c];
+      let lcRes = 0;
+      for (const [n, list] of endsAt) {
+        // displacements: finite, one value per node, |D| = hypot
+        if (haveDisp) {
+          const [e0, k0] = list[0];
+          for (const [e, k] of list) {
+            for (const c of D) {
+              const v = at(e, k, c);
+              if (!Number.isFinite(v)) dispMissing++;
+              else if (!rel(v, at(e0, k0, c))) dispSplit++;
+            }
+            if (!rel(at(e, k, D[3]), Math.hypot(at(e, k, D[0]), at(e, k, D[1]), at(e, k, D[2])))) dispMag++;
+          }
+        }
+        // restraint loads: node totals, only at support nodes, the same on every end there
+        if (haveRes) {
+          const vals = list.map(([e, k]) => at(e, k, R[3]));
+          const fin = vals.filter(Number.isFinite);
+          if (fin.length) {
+            lcRes++;
+            if (!supportNodes.has(n)) resOff++;
+            if (fin.length !== vals.length || fin.some(v => !rel(v, fin[0]))) resSplit++;
+          }
+        }
+      }
+      resNodes = Math.max(resNodes, lcRes);
+      // internal forces: |V| = hypot(fy, fz), |M| = hypot(my, mz)
+      if (haveForce) for (let e = 0; e < nB; e++) for (let k = 0; k < 2; k++) {
+        ends++;
+        const v = F.map(c => at(e, k, c));
+        if (!v.every(Number.isFinite)) continue;
+        forceEnds++;
+        if (!rel(v[2], Math.hypot(v[0], v[1])) || !rel(v[5], Math.hypot(v[3], v[4]))) forceMag++;
+      }
+    }
+    if (haveDisp) {
+      if (!expect || ec.dispCasesDropped === 0) assert(dispMissing === 0, 'displacements finite at every beam end in every LC (' + dispMissing + ' missing)');
+      assert(dispSplit === 0, 'one displacement per node: every beam end at a node agrees (' + dispSplit + ' differ)');
+      assert(dispMag === 0, '|D| = hypot(DX, DY, DZ) at every end (' + dispMag + ' not)');
+    }
+    if (haveRes) {
+      assert(resOff === 0, 'restraint loads only at sidecar support nodes (' + resOff + ' elsewhere)');
+      assert(resSplit === 0, 'restraint loads: the same node total on every beam end at the node (' + resSplit + ' not)');
+      if (expect) assert(resNodes === ec.restraintLoadNodes, 'nodes carrying restraint loads = RESULT restraintLoadNodes (' + resNodes + ')');
+    }
+    if (haveForce) {
+      assert(forceMag === 0, 'Shear |V| = hypot(fy, fz) and Bending |M| = hypot(my, mz) (' + forceMag + ' not)');
+      assert(forceEnds >= 0.95 * ends, 'internal forces at ' + (100 * forceEnds / ends).toFixed(1) + ' % of beam ends (>= 95 %)');
+    }
+  }
 
   // ---- sidecar ----
   const scPath = base + '.features.json';
@@ -218,6 +321,45 @@ const COMPONENTS = ['Valve', 'Flange', 'Flange pair', 'Rigid', 'Rigid link', 'Ex
       assert(sup.length === ec.restraintCombos && supNodes.size === ec.restraintNodes, 'support groups / nodes = RESULT restraintCombos / restraintNodes');
       assert(sif.length === ec.sifTeeGroups, 'SIF / tee groups = RESULT counts.sifTeeGroups');
       assert(items.length >= ec.groups, 'sidecar groups >= RESULT counts.groups (user groups merged in)');
+    }
+
+    // supports section (stage 2): one caesar item per support node, "<node> <combination>", that the
+    // viewer's symbol layer draws (kind / direction / axis per restraint); user items may follow
+    const ss = sc.supports;
+    if (ss || (ec && ec.supports > 0)) {
+      assert(ss && ss.version === 1 && Array.isArray(ss.items), 'supports section v1 with items');
+      const its = (ss && Array.isArray(ss.items)) ? ss.items : [];
+      const cz = its.filter(i => (i.tags || []).indexOf('caesar') >= 0);
+      const KINDS = ['anchor', 'translation', 'oneway', 'guide', 'limit', 'rotation', 'hanger', 'imposed', 'other'];
+      const DOFS = ['tx', 'ty', 'tz', 'rx', 'ry', 'rz'];
+      let badItem = 0, badDir = 0, badName = 0;
+      const itemNodes = new Set(), kindCount = {};
+      cz.forEach(i => {
+        const n = (i.nodeIds || [])[0];
+        if (!(Array.isArray(i.nodeIds) && i.nodeIds.length === 1 && nodeIdx.has(n))) { badItem++; return; }
+        itemNodes.add(n);
+        if (!i.source || i.source.exporter !== 'caesar' || i.source.node !== n) badItem++;
+        if (!i.dof || Object.keys(i.dof).some(k => DOFS.indexOf(k) < 0)) badItem++;
+        if (!Array.isArray(i.restraints) || !i.restraints.length || i.restraints.some(r => KINDS.indexOf(r.kind) < 0)) badItem++;
+        (i.restraints || []).forEach(r => {
+          kindCount[r.kind] = (kindCount[r.kind] || 0) + 1;
+          ['direction', 'axis'].forEach(key => {
+            const v = r[key];
+            if (v !== undefined && !(Array.isArray(v) && v.length === 3 && Math.abs(Math.hypot(v[0], v[1], v[2]) - 1) < 1e-6)) badDir++;
+          });
+        });
+        const combo = String(i.name || '').slice(String(n).length + 1);
+        if (String(i.name || '').indexOf(n + ' ') !== 0 || !supNodes.has(n) || supNodes.get(n).indexOf(combo) !== 0) badName++;
+      });
+      assert(new Set(its.map(i => i.id)).size === its.length, 'support ids unique (' + its.length + ' items)');
+      if (ec) assert(cz.length === ec.supports, 'caesar support items = RESULT counts.supports (' + ec.supports + ')');
+      assert(badItem === 0, 'every caesar item: one node of the binary, source {exporter caesar, node}, dof tx..rz, known restraint kinds (' + badItem + ' bad)');
+      assert(badDir === 0, 'restraint direction / axis are unit vectors (' + badDir + ' not)');
+      assert(badName === 0, 'every caesar item is named "<node> <its support group>" (' + badName + ' not)');
+      assert(itemNodes.size === supNodes.size && [...itemNodes].every(n => supNodes.has(n)), 'support items cover exactly the support-group nodes (' + itemNodes.size + ')');
+      if (!merged) assert(cz.length === its.length && its.every(i => i.hidden === undefined), 'fresh export: only caesar items, none hidden');
+      console.log('support items: ' + cz.length + ' caesar, ' + (its.length - cz.length) + ' other; restraints ' +
+        Object.keys(kindCount).map(k => k + ' ' + kindCount[k]).join(', '));
     }
     console.log('groups: ' + names.length + ' caesar (' + sizes.length + ' sizes, ' + comps.length + ' components, ' + lines.length +
       ' lines, ' + sif.length + ' SIF/tee, ' + sup.length + ' supports), ' + (items.length - mine.length) + ' other');

@@ -31,6 +31,11 @@
 // writes the flag so Export remembers it. (Orbs on top were tried and
 // rejected the same day -- too much clutter.)
 //
+// The `supports` section (2026-10-04) is drawn by supports.js, which reads
+// it from envelope() and takes each symbol's colour and visibility from the
+// node groups (nodeGroupAt); sync() hands over through FEASupports.onFeatures.
+// This module never edits the section, so it round-trips verbatim.
+//
 // Precedence: an element in several groups takes the LAST enabled group
 // that lists it (envelope order) -- so "all W shapes grey" first, then
 // "pipes by size" refine on top. The Groups tab (2026-09-03) exposes that:
@@ -201,10 +206,10 @@ var FEAFeatures = (function () {
         if (items.length === 0) return;
 
         var views = { shell: feaModel, beam: window.FEABeams ? FEABeams.view() : null };
-        var out = { shell: null, beam: null, nodes: null, unmatched: 0 };
+        var out = { shell: null, beam: null, nodes: null, nodeListed: null, unmatched: 0 };
         nodeMembers = [];
         var nNodes = (feaModel.header && feaModel.header.nNodes) || (feaModel.nodeIds ? feaModel.nodeIds.length : 0);
-        if (nNodes > 0) { out.nodes = new Float32Array(nNodes); out.nodes.fill(-1); }
+        if (nNodes > 0) { out.nodes = new Float32Array(nNodes); out.nodes.fill(-1); out.nodeListed = new Uint8Array(nNodes); }
         var nmap = nodeIdMap(feaModel);
         Object.keys(views).forEach(function (fam) {
             var v = views[fam];
@@ -243,6 +248,7 @@ var FEAFeatures = (function () {
                         if (ni === undefined) { out.unmatched++; return; }
                         nodeCount++;
                         nodeIdx.push(ni);
+                        if (out.nodeListed) out.nodeListed[ni] = 1;
                         if (!hidden && out.nodes) out.nodes[ni] = gi;
                     });
                     return;
@@ -397,6 +403,8 @@ var FEAFeatures = (function () {
         if (elToggle) elToggle.checked = enabled;
         drawLegend(on);
         if (typeof updateViewCaption === 'function') updateViewCaption();
+        // Support symbols read the `supports` section and colour / show by the node groups.
+        if (window.FEASupports && FEASupports.onFeatures) FEASupports.onFeatures();
         needsRender = true;
     }
 
@@ -574,6 +582,18 @@ var FEAFeatures = (function () {
         return gi >= 0 ? groupList[gi].name : null;
     }
 
+    // Node groups at node index ni, for the support symbols (supports.js):
+    // { listed: any node group lists the node (ticked or not),
+    //   name / rgb: the winning ticked group (last in the list), or null }.
+    function nodeGroupAt(ni) {
+        var out = { listed: false, name: null, rgb: null };
+        if (!resolved || !resolved.nodes || ni < 0 || ni >= resolved.nodes.length) return out;
+        out.listed = !!(resolved.nodeListed && resolved.nodeListed[ni]);
+        var gi = resolved.nodes[ni];
+        if (gi >= 0 && groupList[gi]) { out.name = groupList[gi].name; out.rgb = groupList[gi].rgb; }
+        return out;
+    }
+
     // ---- hooks from viewer.js -------------------------------------------
     function onModelLoaded() {
         if (feaModel) { feaModel._featIdMap = null; feaModel._featNodeIdMap = null; }
@@ -643,6 +663,7 @@ var FEAFeatures = (function () {
         sync: sync,
         writeVis: writeVis,
         groupOf: groupOf,
+        nodeGroupAt: nodeGroupAt,
         isOn: function () { return enabled && !!resolved; },
         envelope: function () { return envelope; },
         // Recenter offset written by the exporter (units.worldOffset, "x y z" in

@@ -641,6 +641,7 @@ async function loadModels(entriesIn) {
         scene.add(focusOrb);
 
         if (window.FEABeams) FEABeams.onModelLoaded(model);
+        if (window.FEASupports) FEASupports.onModelLoaded();   // before features: its sync draws the symbols
         // Beam-only file (CAESAR / frame-only exports): the shell-only controls are
         // inert, so they hide and the Beams panel carries the field (viewer.css).
         document.body.classList.toggle('beam-only',
@@ -714,6 +715,7 @@ function disposeCurrentModel() {
     clearHighlight();
     document.body.classList.remove('beam-only');
     if (window.FEABeams) FEABeams.onModelCleared();
+    if (window.FEASupports) FEASupports.onModelCleared();
     if (window.FEAFeatures) FEAFeatures.onModelCleared();
     if (window.FEASectionCut) FEASectionCut.onModelCleared();
     if (window.FEAPredicates) FEAPredicates.onModelCleared();
@@ -1208,7 +1210,7 @@ function beamsOwnRange() {
 }
 
 // One place where every display setting reaches the layers drawn beside the
-// shell mesh (beams now, a supports layer later): colormap, abs, alarm and
+// shell mesh (beams, and the support symbols' load colouring): colormap, abs, alarm and
 // manual range changes, and every applyComponentAndRange. In a file where
 // the beams own the range, the main Min/Max follow / drive the beam range;
 // otherwise beams keep their own auto range (a different quantity).
@@ -1671,6 +1673,9 @@ function feaPick(clientX, clientY) {
     // overlays (model rail): nearest visible member wins
     var ovHit = window.FEAOverlays ? FEAOverlays.pick(feaRaycaster) : null;
     if (ovHit && (!hit || ovHit.distance < hit.distance)) hit = ovHit;
+    // support symbols (sidecar supports): a symbol in front of the pipe wins
+    var spHit = window.FEASupports ? FEASupports.pick(feaRaycaster) : null;
+    if (spHit && (!hit || spHit.distance < hit.distance)) hit = spHit;
     return hit;
 }
 
@@ -1733,6 +1738,7 @@ function showReadout(clientX, clientY) {
     var hit = feaPick(clientX, clientY);
     if (!hit) { clearReadout(); return null; }
     if (hit.overlay) { FEAOverlays.fillReadout(hit); return hit; }
+    if (hit.support) { FEASupports.fillReadout(hit); return hit; }
     if (hit.beam) { FEABeams.fillReadout(hit); return hit; }
     var q = FEAQuery.query({
         model: feaModel, buildResult: feaBuild,
@@ -1851,7 +1857,8 @@ renderer.domElement.addEventListener('pointerup', function (e) {
             var s = orbScale();
             if (s > 0) feaMarker.scale.setScalar(s);
             setPinned(true);
-            if (lastQuery) {
+            if (hit.support) FEASupports.showPinCard(hit);     // restraints + loads per LC
+            else if (lastQuery) {
                 if (inDsrMode()) showCalcCard(lastQuery);       // includes strengths
                 else showPinCard(lastQuery);
             }
@@ -2088,6 +2095,7 @@ function refreshDispVecs() {
             feaBuild, feaModel, feaLCData, feaModel.meta.dispVector, edgeAttr);
     }
     if (st.beams && window.FEABeams) deformMaxDisp = Math.max(deformMaxDisp, FEABeams.refreshDispVecs());
+    if (st.beams && window.FEASupports) FEASupports.refreshDisp();   // support -> displaced node lines
     deformLCLoaded = currentLC;
 }
 
@@ -2102,6 +2110,7 @@ function setDispUniforms(v) {
     if (feaEdgeMaterial) feaEdgeMaterial.uniforms.dispScale.value = v;
     if (flashMesh) flashMesh.material.uniforms.dispScale.value = v;
     if (window.FEABeams) FEABeams.setDispScale(v);
+    if (window.FEASupports) FEASupports.setDispScale(v);
 }
 
 function setDeformEnabled(on) {

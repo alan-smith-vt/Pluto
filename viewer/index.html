@@ -158,6 +158,27 @@
         <div class="fea-hint" style="margin-top:2px;">Beams use their own auto range with the active colormap (in a beam-only model the Display Min/Max set it). Envelope / strength / DSR views, and load cases with no beam values for the component, draw beams neutral.</div>
     </details>
 
+    <details class="fea-section fea-details" id="supSection" style="display:none;" open>
+        <summary class="fea-sub" style="margin-bottom:0;">Supports</summary>
+        <div class="fea-details-body">
+            <div class="fea-row" style="margin-top:8px;">
+                <label class="fea-label" for="supShow">Show</label>
+                <input type="checkbox" id="supShow" class="fea-check" checked>
+                <span class="fea-hint" id="supCount" style="margin-left:6px;"></span>
+            </div>
+            <div class="fea-row">
+                <label class="fea-label" for="supSize">Size</label>
+                <input type="range" id="supSize" min="0.25" max="4" step="0.05" value="1" style="flex:1;" title="Symbol size, relative to the pipe">
+            </div>
+            <div class="fea-row">
+                <label class="fea-label" for="supColor">Colour</label>
+                <select id="supColor" class="fea-select" title="Support group colour, restraint kind, or a restraint load in the current load case"></select>
+            </div>
+            <div class="fea-hint" id="supRange" style="margin-top:4px;">&mdash;</div>
+            <div class="fea-hint" style="margin-top:2px;">Symbols from the sidecar <em>supports</em>: cube = anchor, arrows = restraint (one arrow = one-way), plates = guide, collars = axial stop / limit, hoop = rotation, rod + can = hanger. A node group unticked in Groups &rsaquo; Nodes hides its supports. Deformed shape: a line runs from each support to its displaced node.</div>
+        </div>
+    </details>
+
     <details class="fea-section fea-details" id="deformSection">
         <summary class="fea-sub" style="margin-bottom:0;">Deformation</summary>
         <div class="fea-details-body">
@@ -423,6 +444,7 @@
 <script src="scripts/sampleModel.js"></script>
 <script src="scripts/viewer.js"></script>
 <script src="scripts/viewerBeams.js"></script>
+<script src="scripts/supports.js"></script>
 <script src="scripts/overlays.js"></script>
 <script src="scripts/features.js"></script>
 <script src="scripts/sectionCut.js"></script>

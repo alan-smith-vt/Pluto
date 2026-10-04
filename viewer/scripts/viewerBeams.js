@@ -11,7 +11,10 @@
 // no finite value of the selected component ("no beam results in this
 // LC" -- e.g. a reaction-only case). viewer.js syncAuxLayers() drives
 // sync() on every display-setting change and hands in the manual
-// Min/Max when the beams own the range (beam-only files).
+// Min/Max when the beams own the range (beam-only files). Components of
+// kind "restraint" (support loads on the beam ends at a support, CAESAR
+// export) stay out of the component list; supports.js colours its
+// symbols with them, reading the resident plane through lcData().
 // ================================================================
 
 var FEABeams = (function () {
@@ -87,13 +90,20 @@ var FEABeams = (function () {
         elCount.textContent = view.header.nElements + ' beams · ' +
             (view.sections ? view.sections.length : 0) + ' sections';
         elComp.innerHTML = '';
-        view.meta.components.forEach(function (c, i) {
+        // Restraint loads (kind "restraint", a node total on the beam ends at a support)
+        // colour the support symbols (supports.js), not the pipe: they leave the list
+        // unless they are all the file has.
+        var comps = view.meta.components;
+        var listed = comps.map(function (c, i) { return i; }).filter(function (i) { return comps[i].kind !== 'restraint'; });
+        if (!listed.length) listed = comps.map(function (c, i) { return i; });
+        listed.forEach(function (i) {
+            var c = comps[i];
             var o = document.createElement('option');
             o.value = String(i);
             o.textContent = c.name + (c.unit ? ' [' + c.unit + ']' : '');
             elComp.appendChild(o);
         });
-        if (comp >= view.meta.components.length) comp = 0;
+        if (listed.indexOf(comp) < 0) comp = listed.length ? listed[0] : 0;
         elComp.value = String(comp);
         elComp.disabled = !view.domain.fields;
         log('Beams: ' + view.header.nElements + ' elements, ' +
@@ -331,6 +341,9 @@ var FEABeams = (function () {
         },
         mesh: function () { return beamMesh; },
         view: function () { return view; },
-        build: function () { return build; }
+        build: function () { return build; },
+        // The resident beam LC plane (supports.js reads restraint loads and node
+        // displacements from it), or null.
+        lcData: function () { return lcData; }
     };
 })();
