@@ -4,26 +4,31 @@
 // vault/decisions/2026-10-03-imported-restraints.md.
 //
 // Each sidecar support item ({id, name, nodeIds, dof, tags, ...}) draws a
-// 3D symbol at each of its nodes, one shape per restraint kind, so the
-// type reads from the shape and the combination from the colour:
-//   anchor        cube around the pipe
-//   translation   two arrows pointing at the pipe from both sides
-//   oneway        one arrow pushing the pipe along `direction`, base plate at its tail
-//   guide         two plates either side of the pipe (four on a vertical pipe)
-//   limit         two stop collars on the pipe, wide apart
-//   rotation      a thin hoop around the rotation axis
-//   hanger        rod and spring can on the `direction` (up) side
-//   imposed       a diamond;  anything else: a ball
-// An axial translation (or one-way stop) would hide inside the pipe, so it
-// draws as stop collars close together. A restraint with a gap leaves a
-// visible space between the symbol and the pipe. Items written by the CAESAR
-// export carry `restraints` (kind, direction, axis, gap, cnode ...); an item
-// with only `dof` (a hand-made one) draws from its dof letters.
+// symbol at each of its nodes in CAESAR II's language (2026-10-04; the first
+// set of cubes, collars, hoops and plates crowded busy nodes): a plate for an
+// anchor, slim arrows pointing at the pipe along the line of action for the rest:
+//   anchor        a square plate through the pipe, square to it (an imposed
+//                 displacement too: it sits on an anchor point)
+//   translation   two arrows, one from each side
+//   oneway        one arrow, from the side it pushes from (+Y: below the pipe)
+//   guide         two arrows across the pipe (four on a riser)
+//   limit         two arrows along the pipe pointing at the node; an axial
+//                 translation the same, and an axial one-way one of them --
+//                 along the pipe they would hide inside it, so they run on its
+//                 top surface
+//   rotation      a double-headed arrow (moment vector) at 3/4 size on one side,
+//                 beyond where a translation arrow on that line ends
+//   hanger        one arrow below the pipe, holding it up
+//   other         a small ball on top of the pipe
+// A restraint with a gap stops short of the pipe by a visible space. Items
+// written by the CAESAR export carry `restraints` (kind, direction, axis, gap,
+// cnode ...); an item with only `dof` (a hand-made one) draws from its dof letters.
 //
 // Sizes follow the pipe: the outer radius of the drawn beams at the node
 // (a flange or valve at the node counts), with a floor from the model span,
-// times the Size slider. One InstancedMesh per primitive shape, headlight
-// shaded, frustumCulled = false.
+// times the Size slider; the arrow tips stay on the pipe surface. One
+// InstancedMesh per primitive (cone, cylinder, box, ball), headlight shaded,
+// frustumCulled = false.
 //
 // Colour (Supports panel): the support's node group (the LAST enabled node
 // group listing the node, as for the markers -- the CAESAR export writes one
@@ -67,7 +72,7 @@ var FEASupports = (function () {
     var loadRange = null;     // {min, max, name, unit} of the load colouring, or null
     var shown = [];           // entry indices drawn
 
-    var PRIMS = ['cone', 'cyl', 'box', 'collar', 'hoop', 'oct', 'ball'];
+    var PRIMS = ['cone', 'cyl', 'box', 'ball'];
     var KIND_RGB = {
         anchor: [229, 57, 53], translation: [3, 155, 229], oneway: [124, 179, 66], guide: [0, 137, 123],
         limit: [251, 140, 0], rotation: [142, 36, 170], hanger: [253, 216, 53], imposed: [216, 27, 96],
@@ -247,84 +252,109 @@ var FEASupports = (function () {
         return unit([nd[b * 3] - nd[a * 3], nd[b * 3 + 1] - nd[a * 3 + 1], nd[b * 3 + 2] - nd[a * 3 + 2]]);
     }
 
-    // Parts of one entry: [{prim, pos, quat, scale: Vector3, kind}]
+    // The model's up direction: the file's META upAxis, else the view's.
+    function modelUp() {
+        var a = view && view.unified ? view.unified.upAxis : null;
+        if (a === 'Z') return Z;
+        if (a === 'Y') return Y;
+        return (typeof zUp !== 'undefined' && zUp) ? Z : Y;
+    }
+
+    // Parts of one entry: [{prim, pos, quat, scale: Vector3, kind}]. CAESAR's symbol language
+    // (2026-10-04, after the first set -- cubes, collars, hoops, plates -- crowded busy nodes):
+    // an anchor is a square plate through the pipe, every other restraint is a slim arrow
+    // pointing at the pipe along the line it acts on.
     function symbolParts(en) {
         var nd = view.nodes, ni = en.ni;
         var P = new THREE.Vector3(nd[ni * 3], nd[ni * 3 + 1], nd[ni * 3 + 2]);
         var R = nodeR && nodeR[ni] > 0 ? nodeR[ni] : span * MIN_UNIT_FRACTION;
         var u = Math.max(R, span * MIN_UNIT_FRACTION) * size;
+        var L = 2.4 * u;                       // arrow length
+        var up = modelUp();
         var out = [];
         function put(prim, pos, quat, sx, sy, sz, kind) {
             out.push({ prim: prim, pos: pos, quat: quat || new THREE.Quaternion(), scale: new THREE.Vector3(sx, sy, sz), kind: kind });
         }
-        // arrow along unit a (pointing at the pipe), tip at `tip`
-        function arrow(tip, a, kind) {
-            var L = 2.4 * u, hl = 0.75 * u, q = quatFrom(Y, a);
-            put('cone', tip.clone().addScaledVector(a, -hl / 2), q, 0.32 * u, hl, 0.32 * u, kind);
-            put('cyl', tip.clone().addScaledVector(a, -hl - (L - hl) / 2), q, 0.11 * u, L - hl, 0.11 * u, kind);
-            return tip.clone().addScaledVector(a, -L);           // tail
+        // An arrow along unit a (pointing at the pipe), tip at `tip`; two heads for a rotation
+        // (the moment-vector convention), drawn at s x the size.
+        function arrow(tip, a, kind, heads, s) {
+            s = s || 1;
+            var len = L * s, hl = 0.7 * u * s, hr = 0.3 * u * s, sr = 0.1 * u * s, q = quatFrom(Y, a);
+            var nh = heads || 1, back = 0;
+            for (var k = 0; k < nh; k++) {
+                put('cone', tip.clone().addScaledVector(a, -hl / 2 - back), q, hr, hl, hr, kind);
+                back += 0.8 * hl;
+            }
+            var headLen = hl + (nh - 1) * 0.8 * hl;
+            put('cyl', tip.clone().addScaledVector(a, -headLen - (len - headLen) / 2), q, sr, len - headLen, sr, kind);
         }
-        function collars(ax, offsets, kind) {
-            var q = quatFrom(Z, ax);
-            offsets.forEach(function (o) { put('collar', P.clone().addScaledVector(ax, o), q, R + 0.3 * u, R + 0.3 * u, R + 0.3 * u, kind); });
+        // The side of the pipe the arrows along it sit on: up, square to the pipe (any normal on a riser).
+        function topOf(ax) {
+            var t = up.clone().addScaledVector(ax, -up.dot(ax));
+            return t.lengthSq() > 1e-6 ? t.normalize() : perp(ax);
         }
-        function plate(n, ax, kind, gapOff) {
-            var c = P.clone().addScaledVector(n, R + gapOff + 0.11 * u);
-            put('box', c, quatFrame(n, ax), 0.22 * u, 1.3 * u, 1.8 * u, kind);
+        // Arrows ALONG the pipe (limit stops, axial restraints) would hide inside it, so they run on its
+        // top surface and point back at the node: sides +1 / -1 along ax, tips `from` off the node.
+        function alongPipe(ax, sides, kind, from, heads, s) {
+            var base = P.clone().addScaledVector(topOf(ax), R + 0.32 * u * (s || 1));   // heads rest on the pipe
+            sides.forEach(function (sgn) {
+                arrow(base.clone().addScaledVector(ax, sgn * from), ax.clone().multiplyScalar(-sgn), kind, heads, s);
+            });
+        }
+        // Arrows ACROSS the pipe along d, tips on its surface (off it by the gap): both sides, or the
+        // one side a one-way pushes from.
+        function across(d, both, kind, gapOff) {
+            arrow(P.clone().addScaledVector(d, -(R + gapOff)), d, kind);
+            if (both) arrow(P.clone().addScaledVector(d, R + gapOff), d.clone().negate(), kind);
+        }
+        function ball(kind) {
+            var t = up.clone();
+            put('ball', P.clone().addScaledVector(t, R + 0.4 * u), null, 0.4 * u, 0.4 * u, 0.4 * u, kind);
         }
         en.rs.forEach(function (r) {
-            var ax = r.axis || nodeAxis(ni) || perp(r.dir || Y);
+            var ax = r.axis || nodeAxis(ni) || perp(r.dir || up);
             var d = r.dir;
             var gapOff = r.gap > 0 ? 0.35 * u : 0;
-            var axial = d && Math.abs(d.dot(ax)) > 0.9;
+            var axial = !!d && Math.abs(d.dot(ax)) > 0.9;
             switch (r.kind) {
-                case 'anchor': {
-                    var s = 2 * R + 0.9 * u;
-                    put('box', P.clone(), quatFrame(perp(ax), ax), s, s, s, r.kind);
+                case 'anchor':
+                case 'imposed': {                   // an imposed displacement sits on an anchor point
+                    var side = 2 * R + 1.6 * u;
+                    put('box', P.clone(), quatFrame(perp(ax), ax), side, side, 0.14 * u, r.kind);
                     break;
                 }
                 case 'translation':
-                    if (!d) { put('ball', P.clone(), null, R + 0.4 * u, R + 0.4 * u, R + 0.4 * u, 'other'); break; }
-                    if (axial) { collars(ax, [-0.45 * u, 0.45 * u], r.kind); break; }
-                    arrow(P.clone().addScaledVector(d, -(R + gapOff)), d, r.kind);
-                    arrow(P.clone().addScaledVector(d, R + gapOff), d.clone().negate(), r.kind);
+                    if (!d) { ball('other'); break; }
+                    if (axial) alongPipe(ax, [1, -1], r.kind, 0.45 * u + gapOff);
+                    else across(d, true, r.kind, gapOff);
                     break;
-                case 'oneway': {
-                    if (!d) { put('ball', P.clone(), null, R + 0.4 * u, R + 0.4 * u, R + 0.4 * u, 'other'); break; }
-                    if (axial) { collars(ax, [-0.45 * u * (d.dot(ax) > 0 ? 1 : -1)], r.kind); break; }
-                    var tail = arrow(P.clone().addScaledVector(d, -(R + gapOff)), d, r.kind);
-                    put('box', tail.addScaledVector(d, -0.06 * u), quatFrame(perp(d), d), 1.1 * u, 1.1 * u, 0.12 * u, r.kind);
+                case 'oneway':
+                    if (!d) { ball('other'); break; }
+                    if (axial) alongPipe(ax, [d.dot(ax) > 0 ? -1 : 1], r.kind, 0.45 * u + gapOff);
+                    else across(d, false, r.kind, gapOff);
                     break;
-                }
                 case 'guide':
-                    if (r.vertical || !d) {
+                    if (r.vertical || !d) {               // a riser: both horizontal directions
                         var g1 = perp(ax), g2 = new THREE.Vector3().crossVectors(ax, g1);
-                        [g1, g1.clone().negate(), g2, g2.clone().negate()].forEach(function (n) { plate(n, ax, r.kind, gapOff); });
-                    } else {
-                        plate(d, ax, r.kind, gapOff);
-                        plate(d.clone().negate(), ax, r.kind, gapOff);
-                    }
+                        across(g1, true, r.kind, gapOff);
+                        across(g2, true, r.kind, gapOff);
+                    } else across(d, true, r.kind, gapOff);
                     break;
                 case 'limit':
-                    collars(d || ax, [-0.9 * u, 0.9 * u], r.kind);
+                    alongPipe(ax, [1, -1], r.kind, 0.45 * u + gapOff);
                     break;
                 case 'rotation': {
-                    var rr = R + 0.9 * u;
-                    put('hoop', P.clone(), quatFrom(Z, d || ax), rr, rr, rr, r.kind);
+                    // a double-headed arrow on one side, beyond where a translation arrow would end
+                    var a = d || ax;
+                    if (Math.abs(a.dot(ax)) > 0.9) alongPipe(ax, [a.dot(ax) > 0 ? 1 : -1], r.kind, 0.45 * u + L + 0.3 * u, 2, 0.75);
+                    else arrow(P.clone().addScaledVector(a, R + L + 0.3 * u), a.clone().negate(), r.kind, 2, 0.75);
                     break;
                 }
-                case 'hanger': {
-                    var up = d || Y;
-                    var q = quatFrom(Y, up);
-                    put('cyl', P.clone().addScaledVector(up, R + 1.1 * u), q, 0.07 * u, 2.2 * u, 0.07 * u, r.kind);
-                    put('cyl', P.clone().addScaledVector(up, R + 2.8 * u), q, 0.45 * u, 1.2 * u, 0.45 * u, r.kind);
-                    break;
-                }
-                case 'imposed':
-                    put('oct', P.clone(), null, R + 0.6 * u, R + 0.6 * u, R + 0.6 * u, r.kind);
+                case 'hanger':                            // an arrow below the pipe, holding it up
+                    across(d || up, false, r.kind, 0);
                     break;
                 default:
-                    put('ball', P.clone(), null, R + 0.4 * u, R + 0.4 * u, R + 0.4 * u, 'other');
+                    ball('other');
             }
         });
         return out;
@@ -333,12 +363,9 @@ var FEASupports = (function () {
     function primGeometry(p) {
         switch (p) {
             case 'cone':   return new THREE.ConeGeometry(1, 1, 14);
-            case 'cyl':    return new THREE.CylinderGeometry(1, 1, 1, 12);
+            case 'cyl':    return new THREE.CylinderGeometry(1, 1, 1, 10);
             case 'box':    return new THREE.BoxGeometry(1, 1, 1);
-            case 'collar': return new THREE.TorusGeometry(1, 0.12, 8, 32);
-            case 'hoop':   return new THREE.TorusGeometry(1, 0.035, 6, 48);
-            case 'oct':    return new THREE.OctahedronGeometry(1);
-            default:       return new THREE.SphereGeometry(1, 16, 10);
+            default:       return new THREE.SphereGeometry(1, 14, 8);
         }
     }
 

@@ -1,6 +1,8 @@
 // Headless tests for supports.js (support symbols from the sidecar `supports`
-// section): sidecar items -> symbol instances per restraint kind, where the
-// arrows / plates / collars sit, colours from the node groups / restraint kind /
+// section, CAESAR's language): sidecar items -> symbol instances per restraint
+// kind, where the anchor plate and the arrows sit and which way they point
+// (across the pipe, along its top surface, double-headed for a rotation, a
+// hanger below the pipe), colours from the node groups / restraint kind /
 // a restraint-load component read from the beam plane, visibility (item hidden,
 // unticked node group, section-cut mask), deflection lines, picking, and the
 // section round-tripping untouched. THREE under vm; no DOM.
@@ -75,6 +77,8 @@ const SUPPORTS = { version: 1, items: [
                  { type: 'X', kind: 'translation', direction: [1, 0, 0], axis: [1, 0, 0], cnode: 2 },
                  { type: 'RX', kind: 'rotation', direction: [1, 0, 0], axis: [1, 0, 0] }] },
   { id: 'user-1', name: 'My shoe', nodeIds: [2], dof: { ty: '+' }, tags: ['user'], note: 'kept verbatim', extra: { a: [1, 2] } },
+  { id: 'h', name: '2 HGR', nodeIds: [2], dof: { ty: 'hanger' }, tags: ['caesar', 'support'],
+    restraints: [{ type: 'HGR', kind: 'hanger', direction: [0, 1, 0], cnode: 0 }] },
   { id: 'e', name: 'hidden one', hidden: true, nodeIds: [1], dof: { ty: 'fixed' }, tags: ['user'] },
   { id: 'f', name: 'off the model', nodeIds: [99], dof: { tx: 'fixed' }, tags: ['user'] }
 ] };
@@ -102,42 +106,53 @@ const instColor = (p, k) => { const c = new THREE.Color(); meshes()[p].mesh.getC
 const ownerName = (p, k) => S._entries()[meshes()[p].owner[k]].name;
 const find = (p, name) => { const m = meshes()[p]; const out = []; for (let k = 0; k < m.owner.length; k++) if (ownerName(p, k) === name) out.push(k); return out; };
 
-// 1. items -> entries -> instances
-assert(S._entries().length === 5, 'five entries: one per item node on the model (the off-model node 99 is skipped)');
-assert(S.count() === 4, 'four drawn: the hidden item is not');
-assert(count('box') === 5, 'boxes: anchor 1 + base plates 2 (two one-way arrows) + guide plates 2 = ' + count('box'));
-assert(count('cone') === 2 && count('cyl') === 2, 'arrows: two one-way arrows (cone + shaft each)');
-assert(count('collar') === 4, 'collars: limit 2 + axial translation 2 = ' + count('collar'));
-assert(count('hoop') === 1, 'one rotation hoop');
-assert(!meshes().oct && !meshes().ball, 'no imposed / unknown symbols');
+// 1. items -> entries -> instances (CAESAR's language: a plate for the anchor, arrows for the rest)
+assert(S._entries().length === 6, 'six entries: one per item node on the model (the off-model node 99 is skipped)');
+assert(S.count() === 5, 'five drawn: the hidden item is not');
+assert(count('box') === 1, 'one box: the anchor plate (no other plates)');
+// arrows: +Y 1, hand-made +Y 1, hanger 1, guide 2, limit 2, axial X 2, RX 1 (two heads)
+assert(count('cone') === 11 && count('cyl') === 10, 'arrows: 10 shafts, 11 heads (the rotation has two): ' + count('cone') + ' / ' + count('cyl'));
+assert(!meshes().ball, 'no unknown-kind ball');
 
-// 2. where they sit (R = 1, u = R x size = 1)
+// tip (local +0.5 y) and back (local -0.5 y) of a cone instance, and the direction it points
+const coneTip = k => instPoint('cone', k, [0, 0.5, 0]);
+const coneDir = k => coneTip(k).sub(instPoint('cone', k, [0, -0.5, 0])).normalize();
+
+// 2. where they sit (R = 1, u = R x size = 1, arrow length 2.4u)
 {
   const k = find('cone', '2 +Y')[0];
-  const tip = instPoint('cone', k, [0, 0.5, 0]), base = instPoint('cone', k, [0, -0.5, 0]);
+  const tip = coneTip(k), dir = coneDir(k);
   assert(near(tip.x, 10) && near(tip.y, -1) && near(tip.z, 0), 'one-way +Y: arrow tip on the pipe bottom (10,-1,0): ' + tip.toArray().map(v => v.toFixed(3)));
-  assert(base.y < tip.y, 'one-way +Y: the arrow points up (pushes the pipe +Y)');
+  assert(near(dir.y, 1), 'one-way +Y: the arrow points up (pushes the pipe +Y), below the pipe');
   const kc = find('cyl', '2 +Y')[0], c = instPoint('cyl', kc, [0, 0, 0]);
-  assert(near(c.x, 10) && c.y < -1.75 && near(c.z, 0), 'one-way +Y: shaft below the head');
+  assert(near(c.x, 10) && near(c.y, -1 - 0.7 - (2.4 - 0.7) / 2) && near(c.z, 0), 'one-way +Y: shaft below the head');
+  const kh = find('cone', '2 HGR')[0];
+  assert(near(coneTip(kh).y, -1) && near(coneDir(kh).y, 1), 'hanger: an arrow below the pipe pointing up at it');
 }
 {
-  const ks = find('box', '3 GUI + LIM + X + RX');
-  const zs = ks.map(k => instPoint('box', k, [0, 0, 0]).z).sort((a, b) => a - b);
-  assert(ks.length === 2 && near(zs[0], -1.11) && near(zs[1], 1.11), 'guide: plates either side across the pipe (z = -/+1.11): ' + zs);
-  const thick = instPoint('box', ks[0], [0.5, 0, 0]).sub(instPoint('box', ks[0], [-0.5, 0, 0]));
-  assert(near(Math.abs(thick.z), 0.22) && near(thick.x, 0) && near(thick.y, 0), 'guide plate: its thickness runs along the guide direction');
-  const len = instPoint('box', ks[0], [0, 0, 0.5]).sub(instPoint('box', ks[0], [0, 0, -0.5]));
-  assert(near(Math.abs(len.x), 1.8), 'guide plate: its length runs along the pipe');
-  const xs = find('collar', '3 GUI + LIM + X + RX').map(k => instPoint('collar', k, [0, 0, 0]).x).sort((a, b) => a - b);
-  assert(xs.length === 4 && near(xs[0], 19.1) && near(xs[1], 19.55) && near(xs[2], 20.45) && near(xs[3], 20.9),
-         'collars on the pipe axis: limit wide (+/-0.9), axial translation close (+/-0.45): ' + xs);
-  const ring = instPoint('collar', 0, [1, 0, 0]).sub(instPoint('collar', 0, [0, 0, 0]));
-  assert(near(ring.x, 0) && near(ring.length(), 1.3), 'collar ring lies square to the pipe, radius R + 0.3u');
+  const name = '3 GUI + LIM + X + RX';
+  const cones = find('cone', name).map(k => ({ tip: coneTip(k), dir: coneDir(k) }));
+  const guide = cones.filter(c => near(Math.abs(c.dir.z), 1));
+  assert(guide.length === 2 && guide.every(c => near(c.tip.x, 20) && near(c.tip.y, 0) && near(Math.abs(c.tip.z), 1) && near(c.dir.z, -Math.sign(c.tip.z))),
+         'guide: two arrows across the pipe, tips on its surface (z = -/+1), pointing at it');
+  const along = cones.filter(c => near(Math.abs(c.dir.x), 1));
+  const tipsX = along.map(c => +c.tip.x.toFixed(4)).sort((a, b) => a - b);
+  // limit (gap 0.25 -> 0.35u off): tips 20 -/+ 0.8; axial X: 20 -/+ 0.45; rotation RX: two heads beyond, on the + side
+  assert(along.length === 6, 'six heads along the pipe: limit 2, axial X 2, rotation 2: ' + along.length);
+  assert(near(tipsX[0], 19.2) && near(tipsX[1], 19.55) && near(tipsX[2], 20.45) && near(tipsX[3], 20.8),
+         'along the pipe: limit stops 0.8 off the node (gap), the axial restraint 0.45: ' + tipsX);
+  assert(along.filter(c => c.tip.x < 21).every(c => near(c.dir.x, c.tip.x < 20 ? 1 : -1)), 'stops point back at the node from both sides');
+  assert(along.filter(c => c.tip.x < 21).every(c => near(c.tip.y, 1.32) && near(c.tip.z, 0)), 'stops run on the top surface (up = Y), heads resting on the pipe');
+  const rot = along.filter(c => c.tip.x > 21).sort((a, b) => a.tip.x - b.tip.x);
+  assert(rot.length === 2 && near(rot[0].tip.x, 20 + 0.45 + 2.4 + 0.3) && near(rot[1].tip.x - rot[0].tip.x, 0.8 * 0.7 * 0.75) && rot.every(c => near(c.dir.x, -1)),
+         'rotation RX: a double-headed arrow at 3/4 size beyond the axial arrows, on the + side: ' + rot.map(c => c.tip.x.toFixed(3)));
 }
 {
   const k = find('box', '1 ANC')[0], m = new THREE.Matrix4(); meshes().box.mesh.getMatrixAt(k, m);
   const p = new THREE.Vector3(), q = new THREE.Quaternion(), s = new THREE.Vector3(); m.decompose(p, q, s);
-  assert(near(p.x, 0) && near(p.y, 0) && near(s.x, 2.9) && near(s.y, 2.9), 'anchor: a 2R + 0.9u cube centred on the node');
+  assert(near(p.x, 0) && near(p.y, 0) && near(s.x, 3.6) && near(s.y, 3.6) && near(s.z, 0.14), 'anchor: a 2R + 1.6u square plate, 0.14u thick, centred on the node');
+  const n = new THREE.Vector3(0, 0, 1).applyQuaternion(q);
+  assert(near(Math.abs(n.x), 1), 'anchor plate square to the pipe: its thin side runs along the pipe axis');
 }
 
 // 3. colours: node group, else restraint kind
@@ -145,7 +160,8 @@ const red = instColor('box', find('box', '1 ANC')[0]);
 assert(near(red[0], 1) && near(red[1], 0) && near(red[2], 0), 'anchor in its node group colour (#ff0000)');
 const green = instColor('cone', find('cone', 'My shoe')[0]);
 assert(near(green[1], 1) && near(green[0], 0), 'a hand-made item at a grouped node takes that group colour');
-const teal = instColor('box', find('box', '3 GUI + LIM + X + RX')[0]);
+const guideCone = find('cone', '3 GUI + LIM + X + RX').filter(k => meshes().cone.kind[k] === 'guide')[0];
+const teal = instColor('cone', guideCone);
 assert(near(teal[0], 0 / 255) && near(teal[1], 137 / 255) && near(teal[2], 123 / 255), 'a node no group lists: the restraint kind colour (guide teal)');
 S._set({ colorMode: 'kind' });
 const kindRed = instColor('box', find('box', '1 ANC')[0]);
@@ -160,7 +176,7 @@ const top = FEAShaders.sampleAnchors(anchors, 1), bot = FEAShaders.sampleAnchors
 const ca = instColor('box', find('box', '1 ANC')[0]), cb = instColor('cone', find('cone', '2 +Y')[0]);
 assert(near(ca[0], top[0] / 255, 1e-3) && near(ca[2], top[2] / 255, 1e-3), 'node 1 (|F| 100) at the top of the colormap');
 assert(near(cb[0], bot[0] / 255, 1e-3) && near(cb[2], bot[2] / 255, 1e-3), 'node 2 (|F| 50) at the bottom');
-const cn = instColor('hoop', 0);
+const cn = instColor('cone', find('cone', '3 GUI + LIM + X + RX')[0]);
 assert(near(cn[0], 0.35) && near(cn[1], 0.35), 'node 3 has no load: neutral grey');
 global.absValue = true; S._set({ colorMode: 'c3' });
 assert(S._loadRange().min === 50 && S._loadRange().max === 100, 'abs value applies to the load colouring (FY -100 / -50 -> 50..100)');
@@ -174,9 +190,9 @@ assert(S._loadRange() === null, 'group colouring has no load range');
 // 5. deflection lines: one per drawn support, node -> displaced node
 {
   const ln = S._lines(), dv = ln.geometry.getAttribute('dispVec').array, pos = ln.geometry.getAttribute('position').array;
-  assert(ln.geometry.getAttribute('position').count === 8, 'four deflection lines (two vertices each)');
+  assert(ln.geometry.getAttribute('position').count === 10, 'five deflection lines (two vertices each)');
   let found = false;
-  for (let i = 0; i < 4; i++) if (pos[i * 6] === 10 && near(dv[i * 6 + 3], 0.1) && near(dv[i * 6 + 4], 0.2) && near(dv[i * 6 + 5], 0.3) && dv[i * 6] === 0) found = true;
+  for (let i = 0; i < 5; i++) if (pos[i * 6] === 10 && near(dv[i * 6 + 3], 0.1) && near(dv[i * 6 + 4], 0.2) && near(dv[i * 6 + 5], 0.3) && dv[i * 6] === 0) found = true;
   assert(found, 'node 2 line: from the node (no displacement) to the node + (0.1, 0.2, 0.3) x scale');
   assert(!ln.visible, 'lines hidden while the deformed shape is off');
   global.deform = { enabled: true }; S.setDispScale(50);
@@ -189,12 +205,12 @@ assert(S._loadRange() === null, 'group colouring has no load range');
   assert(cl && p.length === 6 && p[0] === 20 && p[3] === 10, 'CNODE apart from its node: one line node 3 -> node 2');
 }
 
-// 6. picking: a ray down onto node 1 hits the anchor cube
+// 6. picking: a ray down onto node 1 hits the anchor plate
 {
   scene.updateMatrixWorld(true);
   const rc = new THREE.Raycaster(new THREE.Vector3(0, 10, 0), new THREE.Vector3(0, -1, 0));
   const hit = S.pick(rc);
-  assert(hit && hit.support && S._entries()[hit.entry].name === '1 ANC' && near(hit.distance, 10 - 1.45), 'pick: the anchor cube under the ray, distance 10 - 1.45');
+  assert(hit && hit.support && S._entries()[hit.entry].name === '1 ANC' && near(hit.distance, 10 - 1.8), 'pick: the anchor plate under the ray, distance 10 - 1.8');
   const miss = S.pick(new THREE.Raycaster(new THREE.Vector3(5, 10, 0), new THREE.Vector3(0, -1, 0)));
   assert(!miss, 'pick: nothing between supports');
 }
@@ -203,14 +219,14 @@ assert(S._loadRange() === null, 'group colouring has no load range');
 const e1 = FEAFeatures.envelope();
 e1.groups.items[1].hidden = true;
 FEAFeatures.refresh();
-assert(S.count() === 2 && count('cone') === 0, 'node group "+Y" unticked: both supports at node 2 hide (2 drawn, no arrows)');
+assert(S.count() === 2 && count('cone') === 8, 'node group "+Y" unticked: the three supports at node 2 hide (2 drawn, only node 3\'s 8 heads left)');
 e1.groups.items[1].hidden = false;
 FEAFeatures.refresh();
-assert(S.count() === 4, 'ticked again: 4 drawn');
+assert(S.count() === 5, 'ticked again: 5 drawn');
 S.writeVis(Uint8Array.from([1, 0, 0]));
 assert(S.count() === 1 && count('box') === 1, 'section-cut mask keeping node 1 only: the anchor alone');
 S.writeVis(null);
-assert(S.count() === 4, 'mask cleared: 4 drawn');
+assert(S.count() === 5, 'mask cleared: 5 drawn');
 S._set({ visible: false });
 assert(S.count() === 0 && !S.pick(new THREE.Raycaster(new THREE.Vector3(0, 10, 0), new THREE.Vector3(0, -1, 0))), 'Show off: nothing drawn, nothing picked');
 S._set({ visible: true });
@@ -220,7 +236,7 @@ S._set({ size: 2 });
 {
   const k = find('cone', '2 +Y')[0];
   const tip = instPoint('cone', k, [0, 0.5, 0]), base = instPoint('cone', k, [0, -0.5, 0]);
-  assert(near(tip.y, -1) && near(tip.y - base.y, 1.5), 'size 2: the arrow head doubles (0.75 -> 1.5), the tip stays on the pipe');
+  assert(near(tip.y, -1) && near(tip.y - base.y, 1.4), 'size 2: the arrow head doubles (0.7 -> 1.4), the tip stays on the pipe');
 }
 S._set({ size: 1 });
 

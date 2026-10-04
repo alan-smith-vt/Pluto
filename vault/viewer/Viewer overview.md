@@ -102,11 +102,13 @@ Three.js r128 and OrbitControls are vendored under `lib/`.
 ## Recent additions (newest first)
 
 Support symbols (2026-10-04, branch `pipestress`, CAESAR II arm stage 2):
-- **`supports.js`** draws the sidecar `supports` items as 3D symbols, one shape per restraint kind.
-  Shapes, colour modes and visibility rules are in
+- **`supports.js`** draws the sidecar `supports` items as symbols in CAESAR II's language: a square
+  plate through the pipe for an anchor, slim arrows pointing at the pipe for the rest. A hanger is
+  one arrow below the pipe; a rotation is a double-headed arrow. The first set (cubes, collars,
+  hoops, plates) crowded busy nodes. Symbols, colour modes and visibility rules are in
   [[vault/format/features-sidecar|features-sidecar]] (supports).
-  - It is one InstancedMesh per primitive (cone, cylinder, box, collar, hoop, diamond, ball),
-    headlight-shaded, `frustumCulled = false`.
+  - It is one InstancedMesh per primitive (cone, cylinder, box, ball), headlight-shaded,
+    `frustumCulled = false`.
   - Sizes come from the drawn pipe radius at the node, with a floor from the model span.
 - **Supports panel** (under Beams): Show, Size, Colour. Colour is the node group, the restraint
   kind, or a `restraint` load component in the current load case.

@@ -53,6 +53,14 @@ From C#: `CaesarToPluto.Export(cii, resultsOrNull, outBase, modelId[, CaesarOpti
   - Code: `Code stress`, `Allowable`, `Code ratio`. A load case without a code check (B31.1 OPE) says "no beam results in this LC".
   - SIFs: in-plane, out-plane, torsion, axial.
 - **Deformation:** the deformed shape works at true scale ×1 or auto-scaled. The support symbols stay where the supports are, and a line runs to each displaced node.
+- **Support symbols** follow CAESAR II:
+  - anchor: a square plate through the pipe;
+  - every other restraint: slim arrows pointing at the pipe along its line of action;
+    - two arrows for both directions, one for a one-way;
+    - a rest (`+Y`) or a hanger: an arrow below the pipe;
+    - a guide: arrows across the pipe;
+    - a limit stop: arrows along the top of the pipe;
+    - a rotation: a double-headed arrow.
 - **Supports panel:** Show, Size, Colour.
   - Colour is the support group colour, the restraint kind, or a restraint load (`Restraint FX … |M|`) in the current load case.
   - Hover a symbol for its restraints and `|F|` / `|M|`. Click to pin a card with the loads on the restraint in every load case, and the node displacement.

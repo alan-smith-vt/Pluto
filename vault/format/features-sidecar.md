@@ -251,19 +251,22 @@ or by hand. Decision: [[vault/decisions/2026-10-03-imported-restraints|2026-10-0
   beam components of kind `restraint` (`Restraint FX … |M|`): node totals on every beam end at the
   support, NaN elsewhere ([[vault/format/v4-schema|v4-schema]] §4.1).
 - **Viewer** (`viewer/scripts/supports.js`, `FEASupports`; **Supports** panel under Beams):
-  - **Symbols:** one per restraint kind at each item node.
-    - anchor: a cube around the pipe;
-    - translation: arrows from both sides;
-    - one-way: one arrow and a base plate;
-    - guide: plates either side (four on a vertical pipe);
-    - limit: stop collars wide apart;
-    - an axial translation (it would hide inside the pipe): collars close together;
-    - rotation: a hoop;
-    - hanger: rod and can;
-    - imposed: a diamond;
-    - other: a ball.
-  - **Size and gaps:** sized from the drawn pipe radius at the node, times the Size slider. A
-    restraint with a gap stands off the pipe.
+  - **Symbols** in CAESAR II's language: a plate for an anchor, slim arrows pointing at the pipe
+    along the line of action for the rest. (A first set of cubes, collars, hoops and plates crowded
+    busy nodes and was replaced the same day.)
+    - anchor: a square plate through the pipe, square to it. An imposed displacement draws the
+      same, since it sits on an anchor point.
+    - translation: two arrows, one from each side.
+    - one-way: one arrow, from the side it pushes from (`+Y`: below the pipe).
+    - guide: two arrows across the pipe (four on a riser).
+    - limit: two arrows along the pipe pointing at the node, on its top surface, where they don't
+      hide inside it. An axial translation draws the same, and an axial one-way draws one of them.
+    - rotation: a double-headed arrow (moment vector) at ¾ size on one side, beyond where a
+      translation arrow on that line ends.
+    - hanger: one arrow below the pipe, holding it up.
+    - other: a small ball on top.
+  - **Size and gaps:** sized from the drawn pipe radius at the node, times the Size slider. The
+    arrow tips stay on the pipe, and a restraint with a gap stops short of it.
   - **Colour:**
     - the node's winning node group (the CAESAR export writes one group per restraint combination);
     - or the restraint kind;
