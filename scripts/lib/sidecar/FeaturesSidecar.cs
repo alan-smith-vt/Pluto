@@ -50,6 +50,26 @@ public class FeaturesSidecar
     // Sections we don't model, kept as raw JSON text: name -> json value.
     public readonly Dictionary<string, string> PassThrough = new Dictionary<string, string>();
 
+    // SUPPORTS (2026-10-03): only an exporter that models them sets WriteSupports. Then ToJson writes the
+    // "supports" section and MergeFrom treats a previous one like the groups (exporter items by name keep
+    // their id and hidden flag, user items are kept verbatim). Without it a previous "supports" section
+    // passes through untouched and the output is byte-identical to before.
+    public const int SupportsVersion = 1;
+    public bool WriteSupports;
+    public readonly List<Support> Supports = new List<Support>();
+
+    public class Support
+    {
+        public string Id = Guid.NewGuid().ToString("N");
+        public string Name;
+        public List<uint> NodeIds = new List<uint>();
+        public List<KeyValuePair<string, string>> Dof = new List<KeyValuePair<string, string>>();   // tx ty tz rx ry rz -> fixed | + | - | gap | spring | ...
+        public List<string> Tags = new List<string>();
+        public bool? Hidden;
+        public string ExtraJson;         // raw JSON members written inside the item after the fixed ones, e.g. "\"restraints\": [...]"
+        public string RawJson;           // a user item carried over verbatim from a previous sidecar
+    }
+
     public class Member
     {
         public string Domain;          // domain name from META.domains[].name ("shells", "beams") or family
@@ -90,10 +110,15 @@ public class FeaturesSidecar
         try { root = ser.DeserializeObject(System.IO.File.ReadAllText(previousJsonPath)) as Dictionary<string, object>; }
         catch (Exception) { return "previous sidecar unreadable, not merged"; }
         if (root == null) return "previous sidecar unreadable, not merged";
-        int sections = 0, userGroups = 0, styled = 0;
+        int sections = 0, userGroups = 0, styled = 0, userSupports = 0, supportsStyled = 0;
         foreach (var kv in root)
         {
             if (kv.Key == "format" || kv.Key == "version" || kv.Key == "model" || kv.Key == "groups") continue;
+            if (kv.Key == "supports" && WriteSupports)
+            {
+                MergeSupports(kv.Value as Dictionary<string, object>, exporterTag, ser, ref userSupports, ref supportsStyled);
+                continue;
+            }
             PassThrough[kv.Key] = ser.Serialize(kv.Value);
             sections++;
         }
@@ -127,8 +152,52 @@ public class FeaturesSidecar
                 }
             }
         }
-        return string.Format("merged previous sidecar: {0} section(s) kept, {1} user group(s) kept, {2} exporter group(s) restyled",
-                             sections, userGroups, styled);
+        string text = string.Format("merged previous sidecar: {0} section(s) kept, {1} user group(s) kept, {2} exporter group(s) restyled",
+                                    sections, userGroups, styled);
+        if (WriteSupports) text += string.Format(", {0} user support(s) kept, {1} exporter support(s) restyled", userSupports, supportsStyled);
+        return text;
+    }
+
+    // previous supports: exporter items matched by name keep their id and hidden flag; user items are kept
+    void MergeSupports(Dictionary<string, object> sec, string exporterTag, JavaScriptSerializer ser, ref int userSupports, ref int styled)
+    {
+        var items = sec != null && sec.ContainsKey("items") ? sec["items"] as object[] : null;
+        if (items == null) return;
+        var byName = new Dictionary<string, Support>(StringComparer.OrdinalIgnoreCase);
+        foreach (var s in Supports) if (s.Name != null && !byName.ContainsKey(s.Name)) byName[s.Name] = s;
+        foreach (var it in items)
+        {
+            var d = it as Dictionary<string, object>;
+            if (d == null) continue;
+            bool exporterItem = false;
+            var tags = d.ContainsKey("tags") ? d["tags"] as object[] : null;
+            if (tags != null) foreach (var t in tags) if (string.Equals(t as string, exporterTag, StringComparison.OrdinalIgnoreCase)) exporterItem = true;
+            string name = d.ContainsKey("name") ? d["name"] as string : null;
+            if (exporterItem)
+            {
+                Support mine;
+                if (name == null || !byName.TryGetValue(name, out mine)) continue;      // gone from the model
+                if (d.ContainsKey("hidden") && d["hidden"] is bool) mine.Hidden = (bool)d["hidden"];
+                if (d.ContainsKey("id") && d["id"] is string) mine.Id = (string)d["id"];
+                styled++;
+            }
+            else
+            {
+                Supports.Add(new Support { Name = name, RawJson = ser.Serialize(d) });
+                userSupports++;
+            }
+        }
+    }
+
+    public Support AddSupport(string name, IEnumerable<uint> nodeIds, IEnumerable<KeyValuePair<string, string>> dof,
+                              IEnumerable<string> tags, string extraJson)
+    {
+        var s = new Support { Name = name, ExtraJson = extraJson };
+        if (nodeIds != null) s.NodeIds.AddRange(nodeIds);
+        if (dof != null) s.Dof.AddRange(dof);
+        if (tags != null) s.Tags.AddRange(tags);
+        Supports.Add(s);
+        return s;
     }
 
     // ---- building --------------------------------------------------------
@@ -225,6 +294,28 @@ public class FeaturesSidecar
             sb.Append(i + 1 < Groups.Count ? ",\n" : "\n");
         }
         sb.Append("  ]}");
+        if (WriteSupports)
+        {
+            sb.Append(",\n  \"supports\": {\"version\": ").Append(SupportsVersion).Append(", \"items\": [\n");
+            for (int i = 0; i < Supports.Count; i++)
+            {
+                var s = Supports[i];
+                sb.Append("    ");
+                if (s.RawJson != null) sb.Append(s.RawJson);
+                else
+                {
+                    sb.Append("{\"id\": ").Append(Q(s.Id)).Append(", \"name\": ").Append(Q(s.Name)).Append(", ");
+                    if (s.Hidden.HasValue) sb.Append("\"hidden\": ").Append(s.Hidden.Value ? "true" : "false").Append(", ");
+                    sb.Append("\"nodeIds\": [").Append(string.Join(",", s.NodeIds)).Append("], ");
+                    sb.Append("\"dof\": {").Append(string.Join(", ", s.Dof.Select(kv => Q(kv.Key) + ": " + Q(kv.Value)))).Append("}, ");
+                    sb.Append("\"tags\": [").Append(string.Join(", ", s.Tags.Select(Q))).Append("]");
+                    if (!string.IsNullOrEmpty(s.ExtraJson)) sb.Append(", ").Append(s.ExtraJson);
+                    sb.Append("}");
+                }
+                sb.Append(i + 1 < Supports.Count ? ",\n" : "\n");
+            }
+            sb.Append("  ]}");
+        }
         foreach (var kv in PassThrough)
             sb.Append(",\n  ").Append(Q(kv.Key)).Append(": ").Append(kv.Value);
         sb.Append("\n}\n");
