@@ -213,12 +213,76 @@ archived viewer's management layer) and round-trips them.
 - `halfHeight` and `domains: ["beams"]` are reserved for the C# free-body cut; the viewer
   writes `domains: ["shells"]` and leaves `halfHeight` alone.
 
-### supports / springs (planned)
+### supports (live 2026-10-04)
+
+Where the model is held: one item per support, drawn by the viewer as 3D symbols. Written by
+an exporter that knows the supports (CAESAR II first, [[vault/arms/caesar-to-viewer|caesar-to-viewer]])
+or by hand. Decision: [[vault/decisions/2026-10-03-imported-restraints|2026-10-03-imported-restraints]].
+
 ```json
-{ "id": "…", "name": "Pile 3", "nodeIds": [4021],
-  "dof": { "tx": "fixed", "ty": "fixed", "tz": "spring", "rx": "free", "ry": "free", "rz": "free" },
-  "stiffness": { "tz": 1500 } }
+"supports": { "version": 1, "items": [
+  { "id": "…", "name": "2110 +Y", "nodeIds": [2110],
+    "dof": { "ty": "+" },
+    "tags": ["caesar", "support"],
+    "restraints": [ { "type": "+Y", "kind": "oneway", "direction": [0, 1, 0], "sign": "+", "axis": [0, 0, 1] } ],
+    "source": { "exporter": "caesar", "node": 2110 } },
+  { "id": "…", "name": "Pile 3", "nodeIds": [4021],
+    "dof": { "tx": "fixed", "ty": "fixed", "tz": "spring", "rx": "free", "ry": "free", "rz": "free" },
+    "stiffness": { "tz": 1500 } }
+] }
 ```
+
+- **Item:** `id`, `name`, `nodeIds`, `dof` (keys `tx ty tz rx ry rz`; values `fixed`, `+` / `-`
+  for one-way in the direction it pushes, `gap`, `spring`, `guide`, `limit`, `hanger`, `imposed`,
+  `free`), `tags`, optional `hidden: true` (that item is not drawn). Any other key is kept on a
+  round trip.
+- **`restraints`** (optional, written by an exporter that knows them): one entry per restraint
+  at the node.
+  - `type`: the program's own code (`ANC`, `+Y`, `GUI`, `LIM`, `RX` …).
+  - `kind`: `anchor | translation | oneway | guide | limit | rotation | hanger | imposed | other`.
+  - `direction`: unit vector the restraint acts along. For a one-way it is the way it pushes; for a
+    guide, across the pipe. It is absent for an anchor, and for a guide on a vertical pipe, which
+    carries `vertical: true` instead.
+  - `axis`: the pipe axis at the node.
+  - As the program has them: `gap`, `friction`, `stiffness` (absent = rigid), `cnode`, `tag`. A
+    hanger can have `coldLoad` / `hotLoad`; an imposed displacement has `fixed[6]`.
+  - An item without `restraints` is drawn from its `dof` letters.
+- **Loads are not here.** Results stay in the binary. CAESAR writes the loads on the supports as
+  beam components of kind `restraint` (`Restraint FX … |M|`): node totals on every beam end at the
+  support, NaN elsewhere ([[vault/format/v4-schema|v4-schema]] §4.1).
+- **Viewer** (`viewer/scripts/supports.js`, `FEASupports`; **Supports** panel under Beams):
+  - **Symbols:** one per restraint kind at each item node.
+    - anchor: a cube around the pipe;
+    - translation: arrows from both sides;
+    - one-way: one arrow and a base plate;
+    - guide: plates either side (four on a vertical pipe);
+    - limit: stop collars wide apart;
+    - an axial translation (it would hide inside the pipe): collars close together;
+    - rotation: a hoop;
+    - hanger: rod and can;
+    - imposed: a diamond;
+    - other: a ball.
+  - **Size and gaps:** sized from the drawn pipe radius at the node, times the Size slider. A
+    restraint with a gap stands off the pipe.
+  - **Colour:**
+    - the node's winning node group (the CAESAR export writes one group per restraint combination);
+    - or the restraint kind;
+    - or any `restraint` component in the current load case, through the active colormap over the
+      drawn supports' own range (abs value applies).
+  - **Visibility:** an item `hidden: true`, a node listed only by unticked node groups, the
+    section-cut isolate, or Show off hides the symbol.
+  - **Readout and pin card:** hovering gives the support, its restraints and `|F|` / `|M|` in the
+    current load case. Pinning gives a card with the loads in every load case and the displacement
+    in the current one.
+  - **Deformed shape:** the symbols stay put and a line runs to each displaced node. CNODE
+    restraints whose connected node is apart get a line to it.
+  - The viewer never edits the section, so it round-trips verbatim.
+  - Test: `viewer/tests/test_supports.js`.
+- **C#:** `FeaturesSidecar.AddSupport(name, nodeIds, dof, tags, extraJson)` with
+  `WriteSupports = true`; `extraJson` carries the extension keys. See the merge rules below.
+
+### springs (planned)
+Same envelope, one item per spring: `{ id, name, nodeIds, dof, stiffness }`.
 
 ## Re-export keeps the user's layer (2026-09-04)
 
@@ -230,6 +294,15 @@ exporter's tag (hand-made groups) verbatim; and for exporter groups matched by n
 `merged previous sidecar: …` in its summary. So section cuts, predicates and group styling
 survive `run_sap.py`; only the exporter's own groups are regenerated. A group whose ids
 no longer match the new geometry shows as unmatched in the viewer rather than vanishing.
+
+**Supports (2026-10-04)** follow the same rules, but only for an exporter that writes them
+(`WriteSupports = true`, `CaesarToPluto` with tag `caesar`):
+- exporter items matched by name keep their `id` and `hidden`;
+- items without the tag (hand-made) are kept verbatim;
+- the summary adds `… user support(s) kept, … exporter support(s) restyled`.
+
+Without `WriteSupports` a previous `supports` section passes through untouched, as before, so
+`SapToPluto`'s output is byte-identical.
 
 ## Naming / discovery
 

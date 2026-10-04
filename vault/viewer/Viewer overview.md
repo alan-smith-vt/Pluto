@@ -84,7 +84,8 @@ test file from `sampleModel.js`, then open it back through the picker.
 | `modelSet.js` | multi-model set: geometry validation, global LC index, per-file read routing |
 | `geometryBuilder.js` | duplicate-vertex shell mesh build, tri/quad triangulation |
 | `beamGeometry.js` | extruded cross-section beam mesh (parametric sections), axis param for picking |
-| `viewerBeams.js` | beam-domain display layered on viewer.js: own component/range, neutral in envelope views, pick readout |
+| `viewerBeams.js` | beam-domain display layered on viewer.js: own component/range, neutral in envelope views, pick readout; kind `restraint` stays out of its component list |
+| `supports.js` | support symbols from the sidecar `supports` items (`FEASupports`, Supports panel): one instanced shape per restraint kind, coloured by node group / kind / restraint load, deflection lines, readout + pin card with the loads per load case |
 | `attributeUpdaters.js` | rewrite `cornerVals` on component/LC swap (only per-update path) |
 | `shaders.js` | bilinear vertex/fragment GLSL, colormap LUTs |
 | `pointQuery.js` | raycast → inverse-bilinear → exact field eval |
@@ -100,6 +101,30 @@ Three.js r128 and OrbitControls are vendored under `lib/`.
 
 ## Recent additions (newest first)
 
+Support symbols (2026-10-04, branch `pipestress`, CAESAR II arm stage 2):
+- **`supports.js`** draws the sidecar `supports` items as 3D symbols, one shape per restraint kind.
+  Shapes, colour modes and visibility rules are in
+  [[vault/format/features-sidecar|features-sidecar]] (supports).
+  - It is one InstancedMesh per primitive (cone, cylinder, box, collar, hoop, diamond, ball),
+    headlight-shaded, `frustumCulled = false`.
+  - Sizes come from the drawn pipe radius at the node, with a floor from the model span.
+- **Supports panel** (under Beams): Show, Size, Colour. Colour is the node group, the restraint
+  kind, or a `restraint` load component in the current load case.
+- **Picking:** a symbol in front of the pipe wins the hover. The readout gives the support, its
+  restraints, and `|F|` / `|M|` in this load case. A pin opens a card with the loads on the
+  restraint in every load case (one element-record read per load case) and the node displacement.
+- **Deformed shape:** symbols stay where the supports are; a line (edge shader, same scale and
+  animation as the beams) runs from each support to its displaced node. CNODE restraints whose
+  connected node is apart get a static line.
+- **Hooks:**
+  - `viewer.js`: load / clear, `syncAuxLayers` → `recolor`, `setDispUniforms`, `refreshDispVecs`,
+    `feaPick`, `showReadout`, pin.
+  - `features.js`: `sync` → `onFeatures`; new `nodeGroupAt(ni)` (the winning ticked node group,
+    and whether any node group lists the node).
+  - `sectionCut.js`: `writeVis`.
+  - `viewerBeams.js`: `lcData()`.
+- Test: `viewer/tests/test_supports.js`.
+
 Pipe-stress groundwork (2026-10-03, branch `pipestress`, for the CAESAR II arm):
 - **Tapered beams.** `ELEM` slot 4 gives end B its own section
   ([[vault/decisions/2026-10-03-beam-taper|decision]]). Ring B and cap B come from that section
@@ -113,7 +138,7 @@ Pipe-stress groundwork (2026-10-03, branch `pipestress`, for the CAESAR II arm):
   (`body.beam-only`), the Beams panel opens, and the main Min/Max drive the beam range. In shell +
   beam files the manual range stays on the shells.
 - **Display settings reach beams.** `syncAuxLayers()` runs on colormap, alarm, range and component
-  changes. It also calls a future `FEASupports.recolor()`.
+  changes. It also calls `FEASupports.recolor()` (live since 2026-10-04).
 - **Load cases with no beam data** draw the beams neutral and say "no beam results in this LC",
   instead of painting them the dark no-data colour.
 - **Node-group markers** show whenever a node group is enabled, without Color by groups. Restraint

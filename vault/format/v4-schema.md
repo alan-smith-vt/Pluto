@@ -105,6 +105,9 @@ domains by index. A shells-only file has one domain and is structurally v3.
 - `displacementVector`: optional indices into `components`; same name-matching fallback as v3.
 - `kind` semantics carry over unchanged: `"stress"`, `"displacement"`, `"dsr"`, `"str"`
   (const block), anything else = generic field with default display.
+- `"restraint"` (beams, 2026-10-04): loads on a support, a node total written on every beam end
+  at the support node, NaN elsewhere. The viewer keeps them out of the beam component list and
+  colours the support symbols with them ([[vault/decisions/2026-10-03-imported-restraints|decision]]).
 - **DSR status:** `kind:"dsr"` and the Global-DSR machinery are retained for shells but
   are **de-prioritised**. They must not constrain the domain model; if a conflict arises
   the DSR feature is archived (kept loadable via the v3 shim) rather than the schema bent.

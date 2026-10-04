@@ -10,9 +10,10 @@ created: 2026-10-03
 
 Restraints imported from a solver model (CAESAR II first) are written by the exporter into the sidecar.
 - **Symbols** come from items in the `supports` section ([[vault/format/features-sidecar|features-sidecar]]).
-  - Planned shape: `{id, name, nodeIds, dof, stiffness}`.
-  - Extension keys: `kind`, `direction`, `gap`, `friction`, `cnode`, `tags`, `source`.
-  - Items are built from the model file alone.
+  - Shape: `{id, name, nodeIds, dof, tags}` (the spec's), plus `restraints[]` and `source`.
+  - Each `restraints[]` entry carries `type`, `kind`, `direction`, `axis`, and `gap`, `friction`,
+    `stiffness`, `cnode`, `tag` where the program has them.
+  - Items are built from the model file alone, one per support node.
 - **Type colours and show/hide** come from node groups, one per restraint combination at a node.
 - **Loads on the restraints** per load case are results, so they go in the binary.
   - They are beam components of kind `restraint` (`FX FY FZ |F| MX MY MZ |M|`), written at every beam end that touches a restraint node.
@@ -34,5 +35,10 @@ Restraints imported from a solver model (CAESAR II first) are written by the exp
 
 ## Status
 
-- Stage 1 writes the node groups.
-- The `supports` items, the load components and `supports.js` are stage 2 of the CAESAR arm ([[vault/arms/caesar-to-viewer|caesar-to-viewer]]).
+- Stage 1 (2026-10-03) writes the node groups.
+- Stage 2 (2026-10-04) of the CAESAR arm ([[vault/arms/caesar-to-viewer|caesar-to-viewer]]) is
+  built: the `supports` items, the `restraint` load components and the viewer layer
+  `supports.js`. It is verified on the generic fixture and in the browser; the production-machine
+  check is still to do.
+- Merge on re-export: exporter items keep their `id` and `hidden` flag, hand-made items are kept
+  (`FeaturesSidecar.WriteSupports`).
