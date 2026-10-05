@@ -67,6 +67,7 @@ namespace PlutoNavis
             var clock = new System.Diagnostics.Stopwatch(); string lastCat = null, lastGuid = "", lastFam = ""; int lastTri = 0;
             var lenErr = new List<double>(); var bbErr = new List<double>();
             var segs = new List<Seg>();
+            var propCensus = new SortedDictionary<string, string[]>(StringComparer.Ordinal);   // "cat|tab|prop" -> {count, sample}
             var cl = new List<ClSeg>();                                       // centreline segments, all kept categories
             var clNone = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);   // elements without a line, by category
             var lineVsFit = new List<double>();
@@ -110,6 +111,14 @@ namespace PlutoNavis
                         string cat = KeepCat(cat0);
                         if (cat == null) continue;
                         Dictionary<string, string> p = Props(it);
+                        foreach (KeyValuePair<string, string> kv in p)   // property census per category
+                        {
+                            string key = cat + "|" + kv.Key;
+                            string[] st;
+                            if (!propCensus.TryGetValue(key, out st)) { st = new[] { "0", "" }; propCensus[key] = st; }
+                            st[0] = (int.Parse(st[0], Inv) + 1).ToString(Inv);
+                            if (st[1] == "" && !string.IsNullOrEmpty(kv.Value)) st[1] = kv.Value;
+                        }
                         rows++;
                         int n; byCat.TryGetValue(cat, out n); byCat[cat] = n + 1;
                         if (lastCat != null)
@@ -202,6 +211,15 @@ namespace PlutoNavis
             List<double> endVals, trimErr; int contained;
             Ends(segs, Path.Combine(dir, "duct_ends.csv"), out endVals, out trimErr, out contained);
             string graph = Graph(cl, dir);
+            using (var pw2 = new StreamWriter(Path.Combine(dir, "property-names-by-category.csv"), false, new UTF8Encoding(false)))
+            {
+                pw2.WriteLine("Category,Tab,Property,Count,Sample");
+                foreach (KeyValuePair<string, string[]> kv in propCensus)
+                {
+                    string[] k = kv.Key.Split(new[] { '|' }, 3);
+                    pw2.WriteLine(Csv(new List<string> { k[0], k[1], k.Length > 2 ? k[2] : "", kv.Value[0], kv.Value[1] }));
+                }
+            }
             lineVsFit.Sort();
             lenErr.Sort(); bbErr.Sort(); endVals.Sort(); trimErr.Sort();
             var s = new StringBuilder();
