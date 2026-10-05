@@ -54,7 +54,7 @@ public class DuctsToPluto
 
     class Row
     {
-        public string Guid, Cat, System, SizeText, Name;
+        public string Guid, Cat, System, SizeText, Name, Shape;
         public double W, H, D, T;                 // inches; NaN = unknown
         public double FitA, FitB;                 // fitted cross-section, inches (fallback when no size)
         public double FitLen;                     // fitted length, feet
@@ -125,7 +125,10 @@ public class DuctsToPluto
             string label = r.Guid + " | " + r.System + " | " + (r.SizeText != "" ? r.SizeText : r.Name);
             bool isDuct = r.Cat == "Ducts", isFit = r.Cat == "Duct Fittings";
             bool fab = string.Equals(r.Cat, Fab, StringComparison.OrdinalIgnoreCase);
-            bool fabStraight = fab && r.Name.StartsWith("Straight", StringComparison.OrdinalIgnoreCase);
+            // a straight: named "Straight…", or named by its size (" 74 in x 28 in") with a fit that matches it
+            // (an elbow / transition does not match its own size, and stays a block)
+            bool nameSized = !double.IsNaN(r.NameW) || !double.IsNaN(r.NameD);
+            bool fabStraight = fab && (r.Name.TrimStart().StartsWith("Straight", StringComparison.OrdinalIgnoreCase) || (nameSized && FitTrusted(r)));
             bool linear = isDuct || fabStraight;     // drawn along fitted ends when there is no centreline
             bool rejected = false;
             if (linear || ((isFit || fab) && segs != null))
@@ -236,25 +239,33 @@ public class DuctsToPluto
         double t = double.IsNaN(r.T) || r.T <= 0 ? 0.05 : r.T;      // wall: 0.05 in when absent (drawing only)
         string name; RawViewerWriter.SectionDef def;
         sized = true;
-        if (!double.IsNaN(r.D) && r.D > 0)
+        // Precedence: a rectangular W x H (Size property, then Name) beats a diameter unless the shape says
+        // Round: a 74 x 28 part also carrying a diameter of 12 was drawn as "DUCT 12 dia" (2026-10-05).
+        bool round = r.Shape.IndexOf("round", StringComparison.OrdinalIgnoreCase) >= 0;
+        bool rect = !double.IsNaN(r.W) && !double.IsNaN(r.H) && r.W > 0 && r.H > 0;
+        bool nameRect = !double.IsNaN(r.NameW) && !double.IsNaN(r.NameH) && r.NameW > 0 && r.NameH > 0;
+        bool dia = !double.IsNaN(r.D) && r.D > 0, nameDia = !double.IsNaN(r.NameD) && r.NameD > 0;
+        if (round && (dia || nameDia))
         {
-            name = string.Format(Inv, "DUCT {0:0.##} dia", r.D);
-            def = RawViewerWriter.SectionDef.Pipe(name, (float)(r.D * ft), (float)(Math.Min(t, r.D / 2) * ft));
+            double d = dia ? r.D : r.NameD;
+            name = string.Format(Inv, "DUCT {0:0.##} dia", d);
+            def = RawViewerWriter.SectionDef.Pipe(name, (float)(d * ft), (float)(Math.Min(t, d / 2) * ft));
         }
-        else if (!double.IsNaN(r.W) && !double.IsNaN(r.H) && r.W > 0 && r.H > 0)
+        else if (rect)
         {
             name = string.Format(Inv, "DUCT {0:0.##}x{1:0.##}", r.W, r.H);
             def = RawViewerWriter.SectionDef.Box(name, (float)(r.W * ft), (float)(r.H * ft), (float)(Math.Min(t, Math.Min(r.W, r.H) / 2) * ft));
         }
-        else if (!double.IsNaN(r.NameD) && r.NameD > 0)
-        {
-            name = string.Format(Inv, "DUCT {0:0.##} dia (name)", r.NameD);
-            def = RawViewerWriter.SectionDef.Pipe(name, (float)(r.NameD * ft), (float)(Math.Min(t, r.NameD / 2) * ft));
-        }
-        else if (!double.IsNaN(r.NameW) && !double.IsNaN(r.NameH) && r.NameW > 0 && r.NameH > 0)
+        else if (nameRect)
         {
             name = string.Format(Inv, "DUCT {0:0.##}x{1:0.##} (name)", r.NameW, r.NameH);
             def = RawViewerWriter.SectionDef.Box(name, (float)(r.NameW * ft), (float)(r.NameH * ft), (float)(Math.Min(t, Math.Min(r.NameW, r.NameH) / 2) * ft));
+        }
+        else if (dia || nameDia)
+        {
+            double d = dia ? r.D : r.NameD;
+            name = string.Format(Inv, "DUCT {0:0.##} dia{1}", d, dia ? "" : " (name)");
+            def = RawViewerWriter.SectionDef.Pipe(name, (float)(d * ft), (float)(Math.Min(t, d / 2) * ft));
         }
         else if (!double.IsNaN(r.FitA) && !double.IsNaN(r.FitB) && r.FitA > 0 && r.FitB > 0)
         {
@@ -334,7 +345,7 @@ public class DuctsToPluto
         {
             var r = new Row();
             r.Guid = Get(c, "IfcGUID"); r.Cat = Get(c, "Category"); r.System = Get(c, "SystemName"); r.SizeText = Get(c, "Size");
-            r.Name = Get(c, "Name"); r.FitA = Num(c, "FitA_in"); r.FitB = Num(c, "FitB_in"); r.FitLen = Num(c, "FitLength_ft");
+            r.Name = Get(c, "Name"); r.Shape = Get(c, "Shape"); r.FitA = Num(c, "FitA_in"); r.FitB = Num(c, "FitB_in"); r.FitLen = Num(c, "FitLength_ft");
             NameSize(r.Name, out r.NameW, out r.NameH, out r.NameD);
             r.W = Num(c, "Width_in"); r.H = Num(c, "Height_in"); r.D = Num(c, "Diameter_in"); r.T = Num(c, "WallThk_in");
             double[] mn = { Num(c, "MinX"), Num(c, "MinY"), Num(c, "MinZ") }, mx = { Num(c, "MaxX"), Num(c, "MaxY"), Num(c, "MaxZ") };
