@@ -24,6 +24,13 @@ powershell -ExecutionPolicy Bypass -File scripts\navis\Build-NavisPlugin.ps1
 Then: open any NWD / NWF, ribbon **Tool add-ins 1** → **Pluto Hello**. Expected: a message box with the
 file name and the number of appended models.
 
+## Buttons
+
+| Button | Class | Does |
+|---|---|---|
+| Pluto Hello | `HelloButton` | message box: file name, appended model count (proves the add-in loads) |
+| Pluto Inventory | `InventoryButton` | read-only walk of the open model; every item with an Element-tab `IfcGUID` → `C:\Temp\hvac\inventory\<yyyyMMdd-HHmmss>\`: `items.csv` (id, source file, Revit category / family / type / system / size, bbox in document units), `property-names.csv` (every tab + property seen, count, sample value), `summary.txt` (models, units, counts by source file and category). Cancel from the progress bar writes partial results, flagged |
+
 ## If the button is missing
 
 - Restart Navisworks once more (the tab has been seen to appear only on a later start).
