@@ -28,7 +28,13 @@ $out = Join-Path $PSScriptRoot "bin"
 $null = New-Item -ItemType Directory -Force $out
 $dll = Join-Path $out "PlutoNavis.dll"
 $src = @(Get-ChildItem $PSScriptRoot -Filter *.cs | ForEach-Object FullName)
-& $csc /nologo /target:library /platform:x64 /optimize+ "/out:$dll" "/reference:$api" /reference:System.Windows.Forms.dll $src
+$refs = @("/reference:$api", "/reference:System.Windows.Forms.dll")
+foreach ($com in "Autodesk.Navisworks.ComApi.dll", "Autodesk.Navisworks.Interop.ComApi.dll") {   # triangles (ComApiBridge)
+    $p = Join-Path $NavisRoot $com
+    if (-not (Test-Path $p)) { throw "$com not found in $NavisRoot" }
+    $refs += "/reference:$p"
+}
+& $csc /nologo /target:library /platform:x64 /optimize+ "/out:$dll" $refs $src
 if ($LASTEXITCODE -ne 0) { throw "compile failed" }
 Write-Output "[build] $dll"
 
