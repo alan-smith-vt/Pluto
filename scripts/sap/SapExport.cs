@@ -3,8 +3,11 @@
 // integer labels), with sections, local axes, restraints and groups carried from the objects. Auto-meshed
 // models come out at the mesh SAP analysed (where the results live); unmeshed ones one-to-one with their
 // objects. <base>.labels.csv maps every id back to its element / object name.
-// Not carried: tendons, cables, links, solids (no viewer domain); frame end releases and explicit
-// insertion offsets; reactions and link forces (vault/arms/sap-results-coverage).
+// Frame insertion points, local axes angles and end releases come from the frame objects (no
+// DatabaseTables, so SAP 22 gets them too); a meshed object's I-end releases go on its first element,
+// J-end on its last. Links: connectivity + property (link ids 1..N, joints shared with the mesh).
+// Not carried: tendons, cables, solids (no viewer domain); reactions and link forces of the mesh
+// export (vault/arms/sap-results-coverage).
 // C# 5, Add-Type under PS 5.1 with SapSession.cs (Import-SapApi.ps1). Driven by Run-Sap.ps1 -Export.
 using System;
 using System.Collections.Generic;
@@ -23,8 +26,9 @@ public class SapExport
         public List<double[]> Coords = new List<double[]>();
         public SortedDictionary<int, double[]> PointAxes = new SortedDictionary<int, double[]>();   // id -> (a, b, c) when not all zero
         public List<string> PointNames = new List<string>();
+        public List<string> LinkNames = new List<string>();   // link id - 1 -> link object, filled by ModelS2k
         public class AreaRec { public string Elm, Section, Obj; public int[] Points; public double Angle; }
-        public class LineRec { public string Elm, Section, Obj; public int I, J; }
+        public class LineRec { public string Elm, Section, Obj; public int I, J; public double RdI, RdJ; }   // RdI/RdJ: element ends along the object, 0..1
         public List<AreaRec> Areas = new List<AreaRec>();
         public List<LineRec> Lines = new List<LineRec>();
         public Dictionary<string, List<int>> AreaObj = new Dictionary<string, List<int>>(), LineObj = new Dictionary<string, List<int>>();
@@ -76,7 +80,7 @@ public class SapExport
                 string p1 = "", p2 = "", sect = ""; int ptype = 0; bool sv = false; double rel = 0, tot = 0;
                 m.LineElm.GetPoints(names[i], ref p1, ref p2);
                 m.LineElm.GetProperty(names[i], ref sect, ref ptype, ref sv, ref rel, ref tot);
-                Lines.Add(new LineRec { Elm = names[i], Section = sect, Obj = obj, I = Pid[p1], J = Pid[p2] });
+                Lines.Add(new LineRec { Elm = names[i], Section = sect, Obj = obj, I = Pid[p1], J = Pid[p2], RdI = rdi, RdJ = rdj });
                 Lid[names[i]] = Lines.Count;
                 Add(LineObj, obj, Lines.Count);
             }
@@ -163,14 +167,69 @@ public class SapExport
         if (fsp.Count == 0) fsp = FrameSectionRows(s);   // no DatabaseTables (SAP 22): the shapes SapToPluto draws
         Table(L, "FRAME SECTION PROPERTIES 01 - GENERAL", fsp);
 
+        // Insertion points, local axes and releases from the frame objects (object calls, full precision;
+        // the tables are absent on SAP 22). Only non-default rows are written.
         rows = new List<string>();
-        foreach (Dictionary<string, string> r in s.TableRows("Frame Insertion Point Assignments"))
+        List<string> axRows = new List<string>(), relRows = new List<string>();
+        string[] relDof = { "P", "V2", "V3", "T", "M2", "M3" };
+        foreach (KeyValuePair<string, List<int>> fo in mesh.LineObj)
         {
-            List<int> ids; string f;
-            if (!r.TryGetValue("Frame", out f) || !mesh.LineObj.TryGetValue(f, out ids)) continue;
-            foreach (int i in ids) { r["Frame"] = Id(i); rows.Add(Row(r)); }
+            int cp = 10; bool mir = false, stiff = false; double[] o1 = null, o2 = null; string csys = "";
+            if (m.FrameObj.GetInsertionPoint(fo.Key, ref cp, ref mir, ref stiff, ref o1, ref o2, ref csys) == 0)
+            {
+                if (o1 == null || o1.Length < 3) o1 = new double[3];
+                if (o2 == null || o2.Length < 3) o2 = new double[3];
+                bool off = false;
+                for (int k = 0; k < 3; k++) off |= o1[k] != 0 || o2[k] != 0;
+                if (cp != 10 || mir || off)
+                    foreach (int i in fo.Value)
+                        rows.Add(Row("Frame", Id(i), "CardinalPt", Id(cp), "Mirror2", mir ? "Yes" : "No", "StiffTransform", stiff ? "Yes" : "No",
+                            "CoordSys", csys, "XI", SapSession.R(o1[0]), "YI", SapSession.R(o1[1]), "ZI", SapSession.R(o1[2]),
+                            "XJ", SapSession.R(o2[0]), "YJ", SapSession.R(o2[1]), "ZJ", SapSession.R(o2[2])));
+            }
+            double ang = 0; bool adv = false;
+            if (m.FrameObj.GetLocalAxes(fo.Key, ref ang, ref adv) == 0 && (ang != 0 || adv))
+                foreach (int i in fo.Value) axRows.Add(Row("Frame", Id(i), "Angle", SapSession.R(ang), "AdvanceAxes", adv ? "Yes" : "No"));
+            bool[] ii = new bool[6], jj = new bool[6]; double[] si = new double[6], sj = new double[6];
+            if (m.FrameObj.GetReleases(fo.Key, ref ii, ref jj, ref si, ref sj) == 0 && (Array.IndexOf(ii, true) >= 0 || Array.IndexOf(jj, true) >= 0))
+                foreach (int i in fo.Value)
+                {
+                    Mesh.LineRec ln = mesh.Lines[i - 1];
+                    bool atI = ln.RdI < 1e-9, atJ = ln.RdJ > 1 - 1e-9;   // only the element at that end of the object
+                    if (!atI && !atJ) continue;
+                    List<string> kv = new List<string> { "Frame", Id(i) };
+                    bool partial = false, any = false;
+                    for (int d = 0; d < 6; d++) { bool r = atI && ii[d]; any |= r; partial |= r && si[d] != 0; kv.Add(relDof[d] + "I"); kv.Add(r ? "Yes" : "No"); }
+                    for (int d = 0; d < 6; d++) { bool r = atJ && jj[d]; any |= r; partial |= r && sj[d] != 0; kv.Add(relDof[d] + "J"); kv.Add(r ? "Yes" : "No"); }
+                    kv.Add("PartialFix"); kv.Add(partial ? "Yes" : "No");
+                    if (any) relRows.Add(Row(kv.ToArray()));
+                }
         }
         Table(L, "FRAME INSERTION POINT ASSIGNMENTS", rows);
+        Table(L, "FRAME LOCAL AXES ASSIGNMENTS 1 - TYPICAL", axRows);
+        Table(L, "FRAME RELEASE ASSIGNMENTS 1 - GENERAL", relRows);
+
+        // Links: two-joint links on their two mesh joints, one-joint (grounded) links JointJ = JointI.
+        rows = new List<string>();
+        List<string> lpRows = new List<string>();
+        {
+            int n = 0; string[] lk = null;
+            m.LinkObj.GetNameList(ref n, ref lk);
+            for (int k = 0; k < n; k++)
+            {
+                string p1 = "", p2 = "", prop = "";
+                m.LinkObj.GetPoints(lk[k], ref p1, ref p2);
+                m.LinkObj.GetProperty(lk[k], ref prop);
+                int a = mesh.PointOfObj(m, p1), b = string.IsNullOrEmpty(p2) || p2 == p1 ? a : mesh.PointOfObj(m, p2);
+                if (a <= 0 || b <= 0) continue;
+                mesh.LinkNames.Add(lk[k]);
+                string id = Id(mesh.LinkNames.Count);
+                rows.Add(Row("Link", id, "JointI", Id(a), "JointJ", Id(b)));
+                lpRows.Add(Row("Link", id, "LinkType", a == b ? "One Joint" : "Two Joint", "LinkProp", prop));
+            }
+        }
+        Table(L, "CONNECTIVITY - LINK", rows);
+        Table(L, "LINK PROPERTY ASSIGNMENTS", lpRows);
 
         // Restraints from the point objects (works without DatabaseTables).
         rows = new List<string>();
@@ -249,6 +308,7 @@ public class SapExport
         for (int i = 0; i < mesh.PointNames.Count; i++) sb.Append("joint,").Append(i + 1).Append(",\"").Append(mesh.PointNames[i]).Append("\",\n");
         for (int i = 0; i < mesh.Areas.Count; i++) sb.Append("area,").Append(i + 1).Append(",\"").Append(mesh.Areas[i].Elm).Append("\",\"").Append(mesh.Areas[i].Obj).Append("\"\n");
         for (int i = 0; i < mesh.Lines.Count; i++) sb.Append("frame,").Append(i + 1).Append(",\"").Append(mesh.Lines[i].Elm).Append("\",\"").Append(mesh.Lines[i].Obj).Append("\"\n");
+        for (int i = 0; i < mesh.LinkNames.Count; i++) sb.Append("link,").Append(i + 1).Append(",,\"").Append(mesh.LinkNames[i]).Append("\"\n");
         return sb.ToString();
     }
 

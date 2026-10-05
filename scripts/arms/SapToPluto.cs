@@ -43,7 +43,7 @@ using System.Text;
 //                                 file units) -> POLY outline, wins over Shape.
 //                                 The tank builder writes it for its Z eave ring.
 //                                 Local 2 = SAP default (vertical plane; +X for
-//                                 vertical members); roll angles are NOT read.
+//                                 vertical members), turned by FRAME LOCAL AXES angles.
 //                                 Viewer frame: z = x cross y carries the depth
 //                                 (schema 4.3), so LocalY = local2 cross local1
 //                                 = MINUS SAP local 3.
@@ -105,7 +105,8 @@ public class SapExportResult
     public string BinPath, SidecarPath, SidecarMerge;
     public int Nodes, Elements, LoadCases, ForceRows, ForceRowsUsed, DispRows, DispRowsUsed, Groups;
     public int Frames, FrameSections, FramesUnknownShape, FrameForceRows, FrameForceRowsUsed;
-    public int NodesWithoutDisp;      // model joints with no JOINT DISPLACEMENTS row: results older than the model?
+    public int FramesRotated, FramesAdvancedAxes, FramesOffsetOtherCsys, FramesReleased, Links;
+    public int NodesWithoutDisp;     // model joints with no JOINT DISPLACEMENTS row: results older than the model?
     public string ForceUnit, LengthUnit;
     public List<string> LoadCaseNames = new List<string>();
     public List<string> Warnings = new List<string>();
@@ -124,6 +125,8 @@ public class SapExportResult
             sb.AppendLine(string.Format("  {0} frames -> beams, {1} section(s){2}; frame force rows {3} (used {4})", Frames, FrameSections,
                 FramesUnknownShape > 0 ? string.Format(", {0} with an unknown shape (RECT placeholder)", FramesUnknownShape) : "",
                 FrameForceRows, FrameForceRowsUsed));
+        if (FramesRotated + FramesReleased + Links > 0)
+            sb.AppendLine(string.Format("  {0} frames with a local axes angle, {1} with end releases; {2} links", FramesRotated, FramesReleased, Links));
         sb.AppendLine(string.Format("  {0} groups -> {1}", Groups, SidecarPath));
         if (!string.IsNullOrEmpty(SidecarMerge)) sb.AppendLine("  " + SidecarMerge);
         sb.AppendLine("  bin -> " + BinPath);
@@ -312,21 +315,60 @@ public class SapToPluto
             beamLabels[fid] = f;
             Add(beamsBySection, beamSectionOrder, secName, (uint)fid);
         }
+        // frame local axes angle (2026-10-05): SAP turns local 2 and 3 about local 1,
+        // right-handed; the viewer's LocalY (= -local 3) turns with them. Advanced
+        // axes are not resolved (counted, drawn with the default orientation).
+        foreach (var r in model.GetTable("FRAME LOCAL AXES ASSIGNMENTS 1 - TYPICAL"))
+        {
+            string f, adv;
+            RawViewerWriter.BeamMember m;
+            if (!r.TryGetValue("Frame", out f) || !beams.TryGetValue(Int(f), out m)) continue;
+            if (r.TryGetValue("AdvanceAxes", out adv) && adv.StartsWith("y", StringComparison.OrdinalIgnoreCase)) { res.FramesAdvancedAxes++; continue; }
+            double ang = Num(r, "Angle", 0);
+            if (ang == 0) continue;
+            m.LocalY = RotateAbout(MemberAxis(nodes[m.NodeA], nodes[m.NodeB]), m.LocalY, ang * Math.PI / 180.0);
+            res.FramesRotated++;
+        }
+        if (res.FramesAdvancedAxes > 0)
+            res.Warnings.Add(res.FramesAdvancedAxes + " frame(s) use advanced local axes: drawn with the default orientation");
         // insertion points: a cardinal point other than the centroid shifts the
-        // drawn section off the joint axis (BPRP offsets, both ends alike).
-        // Parametric shapes only -- a POLY outline is anchored by construction.
+        // drawn section off the joint axis (BPRP offsets). Mirror2 flips the
+        // cardinal point across local 2; explicit joint offsets (XI..ZJ, Local or
+        // a global system) add their transverse part per end, the axial part is
+        // dropped. Cardinal offsets apply to parametric shapes only -- a POLY
+        // outline is anchored by construction.
         foreach (var r in model.GetTable("FRAME INSERTION POINT ASSIGNMENTS"))
         {
-            string f, cp, secName;
-            if (!r.TryGetValue("Frame", out f) || !r.TryGetValue("CardinalPt", out cp)) continue;
+            string f, cp, secName, mir, csys;
+            if (!r.TryGetValue("Frame", out f)) continue;
             RawViewerWriter.BeamMember m;
-            if (!beams.TryGetValue(Int(f), out m) || !frameSecOf.TryGetValue(m.Id, out secName)) continue;
+            if (!beams.TryGetValue(Int(f), out m)) continue;
+            double dy = 0, dz = 0;
             Dictionary<string, string> props;
-            if (!frameSecProps.TryGetValue(secName, out props) || outlines.ContainsKey(secName)) continue;
-            double dy, dz;
-            if (!CardinalOffset(LeadingInt(cp), Num(props, "t3", 0), Num(props, "t2", 0), out dy, out dz)) continue;
-            m.OffsetAy = m.OffsetBy = dy; m.OffsetAz = m.OffsetBz = dz;
+            if (r.TryGetValue("CardinalPt", out cp) && frameSecOf.TryGetValue(m.Id, out secName)
+                && frameSecProps.TryGetValue(secName, out props) && !outlines.ContainsKey(secName)
+                && CardinalOffset(LeadingInt(cp), Num(props, "t3", 0), Num(props, "t2", 0), out dy, out dz))
+            {
+                if (r.TryGetValue("Mirror2", out mir) && mir.StartsWith("y", StringComparison.OrdinalIgnoreCase)) dy = -dy;
+            }
+            double[] oi = { Num(r, "XI", 0), Num(r, "YI", 0), Num(r, "ZI", 0) }, oj = { Num(r, "XJ", 0), Num(r, "YJ", 0), Num(r, "ZJ", 0) };
+            double ayi = 0, azi = 0, ayj = 0, azj = 0;
+            if (oi[0] != 0 || oi[1] != 0 || oi[2] != 0 || oj[0] != 0 || oj[1] != 0 || oj[2] != 0)
+            {
+                bool local = r.TryGetValue("CoordSys", out csys) && string.Equals(csys.Trim(), "Local", StringComparison.OrdinalIgnoreCase);
+                if (local) { ayi = -oi[2]; azi = oi[1]; ayj = -oj[2]; azj = oj[1]; }   // viewer y = -local 3, z = local 2
+                else
+                {
+                    double[] t = MemberAxis(nodes[m.NodeA], nodes[m.NodeB]), y = m.LocalY;
+                    double[] z = { t[1] * y[2] - t[2] * y[1], t[2] * y[0] - t[0] * y[2], t[0] * y[1] - t[1] * y[0] };
+                    ayi = Dot(oi, y); azi = Dot(oi, z); ayj = Dot(oj, y); azj = Dot(oj, z);
+                    if (csys != null && !string.Equals(csys.Trim(), "Global", StringComparison.OrdinalIgnoreCase)) res.FramesOffsetOtherCsys++;
+                }
+            }
+            m.OffsetAy = dy + ayi; m.OffsetAz = dz + azi; m.OffsetBy = dy + ayj; m.OffsetBz = dz + azj;
         }
+        if (res.FramesOffsetOtherCsys > 0)
+            res.Warnings.Add(res.FramesOffsetOtherCsys + " frame(s) have joint offsets in a non-global system: read as global");
         res.Frames = beams.Count; res.FrameSections = sectionDefs.Count;
         if (elements.Count == 0 && beams.Count == 0) throw new Exception("SapToPluto: no CONNECTIVITY - AREA or CONNECTIVITY - FRAME rows in " + modelS2k);
 
@@ -707,6 +749,49 @@ public class SapToPluto
         if (axesNodes.Count > 0)
             sc.AddNodeGroup("Local axes assigned", null, axesNodes, new[] { "sap", "localAxes" }, "LOCAL_AXES");
 
+        // frame end releases (one beam group per distinct pattern, "I: M2+M3 / J: -")
+        var byRelease = new Dictionary<string, List<uint>>();
+        var releaseOrder = new List<string>();
+        string[] relDof = { "P", "V2", "V3", "T", "M2", "M3" };
+        foreach (var r in model.GetTable("FRAME RELEASE ASSIGNMENTS 1 - GENERAL"))
+        {
+            string f, v;
+            if (!r.TryGetValue("Frame", out f) || !beams.ContainsKey(Int(f))) continue;
+            var ends = new List<string>();
+            foreach (string end in new[] { "I", "J" })
+            {
+                var on = new List<string>();
+                foreach (string d in relDof) if (r.TryGetValue(d + end, out v) && v.StartsWith("y", StringComparison.OrdinalIgnoreCase)) on.Add(d);
+                ends.Add(end + ": " + (on.Count == 0 ? "-" : string.Join("+", on)));
+            }
+            if (r.TryGetValue("PartialFix", out v) && v.StartsWith("y", StringComparison.OrdinalIgnoreCase)) ends.Add("partial");
+            Add(byRelease, releaseOrder, string.Join(" / ", ends), (uint)Int(f));
+            res.FramesReleased++;
+        }
+        foreach (string p in releaseOrder)
+            sc.AddGroup("Released " + p, null, "beams", byRelease[p], new[] { "sap", "release" }, StaadName("REL_" + p));
+
+        // links: no viewer domain; their joints as one node group per link property
+        var linkJoints = new Dictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
+        var linkOrder = new List<string>();
+        var linkProp = new Dictionary<string, string>();
+        foreach (var r in model.GetTable("LINK PROPERTY ASSIGNMENTS"))
+        {
+            string l, p;
+            if (r.TryGetValue("Link", out l) && r.TryGetValue("LinkProp", out p)) linkProp[l] = p;
+        }
+        foreach (var r in model.GetTable("CONNECTIVITY - LINK"))
+        {
+            string l, ji, jj, p;
+            if (!r.TryGetValue("Link", out l) || !r.TryGetValue("JointI", out ji)) continue;
+            if (!linkProp.TryGetValue(l, out p)) p = "?";
+            Add(linkJoints, linkOrder, p, (uint)Int(ji));
+            if (r.TryGetValue("JointJ", out jj) && jj != ji) linkJoints[p].Add((uint)Int(jj));
+            res.Links++;
+        }
+        foreach (string p in linkOrder)
+            sc.AddNodeGroup("Link joints " + p, null, linkJoints[p].Distinct().ToList(), new[] { "sap", "link" }, StaadName("LINK_" + p));
+
         // SAP groups (GROUPS 2 - ASSIGNMENTS: GroupName, ObjectType, ObjectLabel)
         var grpAreas = new Dictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
         var grpJoints = new Dictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
@@ -945,6 +1030,23 @@ public class SapToPluto
         double n = Math.Sqrt(yx * yx + yy * yy + yz * yz);
         return new double[] { yx / n, yy / n, yz / n };
     }
+
+    static double[] MemberAxis(Node a, Node b)
+    {
+        double dx = b.xyz.X - a.xyz.X, dy = b.xyz.Y - a.xyz.Y, dz = b.xyz.Z - a.xyz.Z;
+        double len = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+        return len < 1e-12 ? new double[] { 1, 0, 0 } : new double[] { dx / len, dy / len, dz / len };
+    }
+
+    // v (perpendicular to the unit axis t) turned right-handed by ang radians about t.
+    static double[] RotateAbout(double[] t, double[] v, double ang)
+    {
+        double c = Math.Cos(ang), s = Math.Sin(ang);
+        double cx = t[1] * v[2] - t[2] * v[1], cy = t[2] * v[0] - t[0] * v[2], cz = t[0] * v[1] - t[1] * v[0];
+        return new double[] { v[0] * c + cx * s, v[1] * c + cy * s, v[2] * c + cz * s };
+    }
+
+    static double Dot(double[] a, double[] b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
 
     // Stress = force/length / thickness, in file units force/length^2; report ksi
     // when the file is Kip with ft or in (144 ksf = 1 ksi), else leave the file units.

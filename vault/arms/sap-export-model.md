@@ -62,9 +62,19 @@ viewer lists 35 cases. `results.s2k` 3.5 GB, `.bin` 413 MB, mesh walk 8 s, readb
 `DatabaseTables.GetTableForDisplayArray` on an empty table returns the *previous* table's
 buffer with `None` field names — guarded in `table_rows`.
 
+## Frame assignments and links (2026-10-05)
+
+Insertion points (cardinal point, Mirror2, joint offsets), local axes angles and end releases
+are read from the frame **objects** (`FrameObj.GetInsertionPoint / GetLocalAxes / GetReleases`),
+not from `DatabaseTables`, so SAP 22 gets them too (until then insertion points were silently
+dropped there and steel hung on its centreline, half a depth off). Only non-default rows are
+written. A meshed object's I-end releases go on its first element, J-end on its last (by the
+element's relative distance along the object). Links: `CONNECTIVITY - LINK` (one-joint links
+have JointJ = JointI) and `LINK PROPERTY ASSIGNMENTS`, link ids 1..N, `link` rows in
+`labels.csv`.
+
 ## Not carried
 
-Tendons, cables, links, solids (no viewer domain); frame end releases and explicit insertion
-offsets (cardinal points are expanded per element); reactions and link forces
+Tendons, cables, solids (no viewer domain); advanced frame local axes (flagged); reactions and link forces
 ([[vault/arms/sap-results-coverage|sap-results-coverage]]). Frame stresses need `Area / S33 / S22`
 on the section row, which `General` sections lack (NaN).
