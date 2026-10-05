@@ -93,9 +93,14 @@ namespace PlutoNavis
                         if (seen % 1000 == 0)   // live log: open started.txt during a run to see where the time goes
                             File.AppendAllText(log, string.Format(Inv, "{0:HH:mm:ss}  {1}/{2}  last category {3}  rows {4}  ducts {5}\r\n",
                                 DateTime.Now, seen, total, lastCat ?? "-", rows, ducts));
+                        // category first (one lookup); every property only for the items kept (insulation and
+                        // the rest would otherwise each pay a full property read)
+                        DataProperty cp = it.PropertyCategories.FindPropertyByDisplayName("Element", "Category");
+                        string cat0 = "";
+                        try { if (cp != null && cp.Value != null) cat0 = cp.Value.ToDisplayString(); } catch (Exception) { }
+                        if (Array.IndexOf(Keep, cat0) < 0) continue;
                         Dictionary<string, string> p = Props(it);
                         string cat = Get(p, "Element|Category");
-                        if (Array.IndexOf(Keep, cat) < 0) continue;
                         rows++;
                         int n; byCat.TryGetValue(cat, out n); byCat[cat] = n + 1;
                         if (lastCat != null) { double sec; catSec.TryGetValue(lastCat, out sec); catSec[lastCat] = sec + clock.Elapsed.TotalSeconds; }
@@ -244,33 +249,41 @@ namespace PlutoNavis
             return Math.Max(Dist(pmin, e1), Dist(pmax, e2));
         }
 
-        // Segment ends within Tol of each other become one node. Writes cl_nodes.csv (Node, X, Y, Z, Degree,
-        // Categories) and cl_segments.csv (Seg, Row, IfcGUID, Category, Node1, Node2, Length_ft); returns
-        // summary lines.
+        // Segment ends become nodes. Within one element, ends merge only when they coincide (1e-6 ft): an
+        // elbow's arc is many short segments, and a 0.02 ft tolerance there collapsed whole arcs into one node
+        // (degree up to 90, 2026-10-05). Across elements, ends within Tol merge (the nearest node that holds
+        // no end of this element). Writes cl_nodes.csv (Node, X, Y, Z, Degree, Categories) and
+        // cl_segments.csv (Seg, Row, IfcGUID, Category, Node1, Node2, Length_ft); returns summary lines.
         static string Graph(List<ClSeg> cl, string dir)
         {
-            const double Tol = 0.02;
+            const double Tol = 0.02, Same = 1e-6;
             var nodes = new List<double[]>(); var degree = new List<int>(); var cats = new List<SortedSet<string>>();
+            var rowsAt = new List<HashSet<int>>();
             var grid = new Dictionary<long, List<int>>();
             var segNodes = new int[cl.Count, 2];
             for (int i = 0; i < cl.Count; i++)
                 for (int e = 0; e < 2; e++)
                 {
                     double[] p = e == 0 ? cl[i].P : cl[i].Q;
-                    int hit = -1;
-                    for (int dx = -1; dx <= 1 && hit < 0; dx++) for (int dy = -1; dy <= 1 && hit < 0; dy++) for (int dz = -1; dz <= 1 && hit < 0; dz++)
+                    int hit = -1; double best = double.MaxValue;
+                    for (int dx = -1; dx <= 1; dx++) for (int dy = -1; dy <= 1; dy++) for (int dz = -1; dz <= 1; dz++)
                     {
                         List<int> l;
                         if (!grid.TryGetValue(Key(p[0] + dx * Tol, p[1] + dy * Tol, p[2] + dz * Tol, Tol), out l)) continue;
-                        foreach (int k in l) if (Dist(nodes[k], p) <= Tol) { hit = k; break; }
+                        foreach (int k in l)
+                        {
+                            double d = Dist(nodes[k], p);
+                            bool ok = d <= Same || (d <= Tol && !rowsAt[k].Contains(cl[i].Row));
+                            if (ok && d < best) { best = d; hit = k; }
+                        }
                     }
                     if (hit < 0)
                     {
-                        hit = nodes.Count; nodes.Add(p); degree.Add(0); cats.Add(new SortedSet<string>());
+                        hit = nodes.Count; nodes.Add(p); degree.Add(0); cats.Add(new SortedSet<string>()); rowsAt.Add(new HashSet<int>());
                         long key = Key(p[0], p[1], p[2], Tol);
                         List<int> l; if (!grid.TryGetValue(key, out l)) { l = new List<int>(); grid[key] = l; } l.Add(hit);
                     }
-                    degree[hit]++; cats[hit].Add(cl[i].Cat);
+                    degree[hit]++; cats[hit].Add(cl[i].Cat); rowsAt[hit].Add(cl[i].Row);
                     segNodes[i, e] = hit;
                 }
             var segByCat = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
