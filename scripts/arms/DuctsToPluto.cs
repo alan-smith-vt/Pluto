@@ -122,11 +122,17 @@ public class DuctsToPluto
                 int sec = SectionFor(r, scale, sections, sectionIndex, out sized);
                 var drawn = new List<int[]>();
                 if (segs != null)
+                {
+                    // symbol fan = THIS element's own segment ends piling up at one node (its degree there,
+                    // not the node's total: a duct end can sit on another element's fan centre and must stay)
+                    var own = new Dictionary<int, int>();
+                    foreach (int[] s in segs) for (int e = 0; e < 2; e++) { int oc; own.TryGetValue(s[e], out oc); own[s[e]] = oc + 1; }
                     foreach (int[] s in segs)
                     {
-                        if (nodeDeg[s[0]] >= FanDegree || nodeDeg[s[1]] >= FanDegree) { res.FanDropped++; continue; }
+                        if (own[s[0]] >= FanDegree || own[s[1]] >= FanDegree) { res.FanDropped++; continue; }
                         drawn.Add(new[] { clNode(s[0]), clNode(s[1]) });
                     }
+                }
                 if (drawn.Count == 0 && isDuct && r.E1 != null) { drawn.Add(new[] { ptNode(r.E1), ptNode(r.E2) }); res.DuctFallback++; }
                 if (drawn.Count == 0 && isDuct) { res.Skipped++; continue; }
                 foreach (int[] d in drawn)
