@@ -9,7 +9,8 @@ using Autodesk.Navisworks.Api.Plugins;
 
 namespace PlutoNavis
 {
-    // Read-only inventory of the open model: every item carrying an Element-tab IfcGUID (Revit elements;
+    // Read-only inventory of the open model: every item carrying an Element-tab IfcGUID, found with the native
+    // Search (one call; the progress bar then counts the items read; started.txt marks the run) (Revit elements;
     // the stable id) -> one row. Writes <OutRoot>\<yyyyMMdd-HHmmss>\ (a new folder per run, never overwritten):
     //   items.csv           IfcGUID, source file, name, class, common Revit properties, geometry flag, bbox
     //   property-names.csv  every (tab, property) seen on those items: count + a sample value, to pick
@@ -38,31 +39,40 @@ namespace PlutoNavis
             string dir = Path.Combine(OutRoot, t0.ToString("yyyyMMdd-HHmmss", Inv));
             Directory.CreateDirectory(dir);
 
-            // pass 1: count, for the progress bar
-            int total = 0;
-            foreach (ModelItem root in doc.Models.RootItems)
-                foreach (ModelItem it in root.DescendantsAndSelf) total++;
+            File.WriteAllText(Path.Combine(dir, "started.txt"), t0.ToString("yyyy-MM-dd HH:mm:ss", Inv) + "\r\n");
 
             var props = new SortedDictionary<string, PropStat>(StringComparer.Ordinal);
             var bySource = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var byCategory = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            int seen = 0, rows = 0, withGeom = 0;
+            int seen = 0, rows = 0, withGeom = 0, total = 0;
+            double searchSec = 0;
             bool cancelled = false;
-            Progress progress = Autodesk.Navisworks.Api.Application.BeginProgress("Pluto inventory");
+            Progress progress = Autodesk.Navisworks.Api.Application.BeginProgress("Pluto inventory: searching for IfcGUID items");
             try
             {
+                progress.Update(0);
+                // Native search (the engine behind Find Items), not a managed walk of every item: a large
+                // federation has millions of SP3D items with no Element tab, and a managed walk of them
+                // took > 5 min before the first row (2026-10-05). Not cancellable while it runs.
+                Search search = new Search();
+                search.Selection.SelectAll();
+                search.Locations = SearchLocations.DescendantsAndSelf;
+                search.SearchConditions.Add(SearchCondition.HasPropertyByDisplayName("Element", "IfcGUID"));
+                ModelItemCollection found = search.FindAll(doc, false);
+                total = found.Count;
+                searchSec = (DateTime.Now - t0).TotalSeconds;
+                File.AppendAllText(Path.Combine(dir, "started.txt"), string.Format(Inv, "search: {0} items in {1:0}s\r\n", total, searchSec));
                 using (var w = new StreamWriter(Path.Combine(dir, "items.csv"), false, new UTF8Encoding(false)))
                 {
                     var head = new List<string> { "IfcGUID", "InstanceGuid", "SourceFile", "DisplayName", "ClassDisplayName" };
                     head.AddRange(ElementCols);
                     head.AddRange(new[] { "HasGeometry", "MinX", "MinY", "MinZ", "MaxX", "MaxY", "MaxZ" });
                     w.WriteLine(Csv(head));
-                    foreach (ModelItem root in doc.Models.RootItems)
                     {
-                        foreach (ModelItem it in root.DescendantsAndSelf)
+                        foreach (ModelItem it in found)
                         {
                             seen++;
-                            if (seen % 2000 == 0 && !progress.Update(total > 0 ? (double)seen / total : 0)) { cancelled = true; break; }
+                            if (seen % 200 == 0 && !progress.Update(total > 0 ? (double)seen / total : 0)) { cancelled = true; break; }
                             string guid = Prop(it, "Element", "IfcGUID");
                             if (string.IsNullOrEmpty(guid)) continue;
                             rows++;
@@ -87,7 +97,6 @@ namespace PlutoNavis
                             else row.AddRange(new[] { N(bb.Min.X), N(bb.Min.Y), N(bb.Min.Z), N(bb.Max.X), N(bb.Max.Y), N(bb.Max.Z) });
                             w.WriteLine(Csv(row));
                         }
-                        if (cancelled) break;
                     }
                 }
             }
@@ -107,8 +116,8 @@ namespace PlutoNavis
             s.AppendLine("Pluto inventory " + t0.ToString("yyyy-MM-dd HH:mm:ss", Inv) + (cancelled ? "  ** CANCELLED: partial **" : ""));
             s.AppendLine("Document: " + (string.IsNullOrEmpty(doc.FileName) ? "(unsaved)" : doc.FileName));
             s.AppendLine("Document units (bounding boxes): " + doc.Units);
-            s.AppendLine(string.Format(Inv, "Items walked {0} of {1}; with IfcGUID {2} (with geometry {3}); {4:0}s",
-                seen, total, rows, withGeom, (DateTime.Now - t0).TotalSeconds));
+            s.AppendLine(string.Format(Inv, "Search found {0} items with IfcGUID in {1:0}s; read {2}, written {3} (with geometry {4}); total {5:0}s",
+                total, searchSec, seen, rows, withGeom, (DateTime.Now - t0).TotalSeconds));
             s.AppendLine();
             s.AppendLine("Models (" + doc.Models.Count + "):");
             foreach (Model m in doc.Models) s.AppendLine("  " + m.FileName + "   [source: " + m.SourceFileName + ", units " + m.Units + "]");
@@ -120,8 +129,8 @@ namespace PlutoNavis
             foreach (KeyValuePair<string, int> kv in byCategory) s.AppendLine(string.Format(Inv, "  {0,8}  {1}", kv.Value, kv.Key == "" ? "(none)" : kv.Key));
             File.WriteAllText(Path.Combine(dir, "summary.txt"), s.ToString(), new UTF8Encoding(false));
 
-            MessageBox.Show(string.Format(Inv, "{0}{1} items with IfcGUID ({2} walked).\n\nWritten to:\n{3}",
-                cancelled ? "CANCELLED, partial results.\n" : "", rows, seen, dir), "Pluto Inventory");
+            MessageBox.Show(string.Format(Inv, "{0}{1} of {2} items with IfcGUID written.\n\nWritten to:\n{3}",
+                cancelled ? "CANCELLED, partial results.\n" : "", rows, total, dir), "Pluto Inventory");
             return 0;
         }
 
