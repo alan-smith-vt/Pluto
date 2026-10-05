@@ -37,7 +37,16 @@ namespace PlutoNavis
     {
         const string OutRoot = @"C:\Temp\hvac\ducts";
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
-        static readonly string[] Keep = { "Ducts", "Duct Fittings", "Duct Accessories" };
+        // Revit categories kept (matched ignoring case; written in this spelling). Fabrication parts are their
+        // own categories: straights and fittings in MEP Fabrication Ductwork (treated like Ducts: triangles,
+        // fit, centrelines), supports in MEP Fabrication Hangers (like accessories: properties + bbox).
+        const string Fab = "MEP Fabrication Ductwork", FabHangers = "MEP Fabrication Hangers";
+        static readonly string[] Keep = { "Ducts", "Duct Fittings", "Duct Accessories", Fab, FabHangers };
+        static string KeepCat(string c)
+        {
+            foreach (string k in Keep) if (string.Equals(k, (c ?? "").Trim(), StringComparison.OrdinalIgnoreCase)) return k;
+            return null;
+        }
         // Accessory geometry is heavy (finely tessellated parts; the triangles must be generated to reach the
         // centreline): a run with it did ~15 % of the items per hour (2026-10-05). Off until accessories matter.
         const bool AccessoryGeometry = false;
@@ -81,7 +90,7 @@ namespace PlutoNavis
                 {
                     pw.WriteLine("DuctIfcGUID,Used,DisplayName,ClassDisplayName,PartIfcGUID,PartCategory,Triangles,FitLength_ft,FitA_in,FitB_in,X1,Y1,Z1,X2,Y2,Z2,Lines,LineTotal_ft,LX1,LY1,LZ1,LX2,LY2,LZ2");
                     w.WriteLine(string.Join(",", new[] {
-                        "IfcGUID", "Category", "Family", "Type", "SystemName", "SystemType", "Shape", "Material",
+                        "IfcGUID", "Category", "Family", "Type", "Name", "SystemName", "SystemType", "Shape", "Material",
                         "Width_in", "Height_in", "Diameter_in", "WallThk_in", "InsulThk_in", "Length_ft", "Size", "Location",
                         "MinX", "MinY", "MinZ", "MaxX", "MaxY", "MaxZ", "OwnGeom", "SkippedGeom", "Triangles",
                         "X1", "Y1", "Z1", "X2", "Y2", "Z2", "FitLength_ft", "FitA_in", "FitB_in",
@@ -98,9 +107,9 @@ namespace PlutoNavis
                         DataProperty cp = it.PropertyCategories.FindPropertyByDisplayName("Element", "Category");
                         string cat0 = "";
                         try { if (cp != null && cp.Value != null) cat0 = cp.Value.ToDisplayString(); } catch (Exception) { }
-                        if (Array.IndexOf(Keep, cat0) < 0) continue;
+                        string cat = KeepCat(cat0);
+                        if (cat == null) continue;
                         Dictionary<string, string> p = Props(it);
-                        string cat = Get(p, "Element|Category");
                         rows++;
                         int n; byCat.TryGetValue(cat, out n); byCat[cat] = n + 1;
                         if (lastCat != null)
@@ -128,7 +137,7 @@ namespace PlutoNavis
                         Collect(it, guid, true, geoms, skipped);
 
                         var cells = new List<string> {
-                            guid, cat, Get(p, "Element|Family"), Get(p, "Element|Type"),
+                            guid, cat, Get(p, "Element|Family"), Get(p, "Element|Type"), it.DisplayName,
                             Get(p, "Element|System Name"), Get(p, "Element|System Type"), Ifc(p, "Shape"), Ifc(p, "Material"),
                             N(wIn), N(hIn), N(dia), N(Len(Ifc(p, "Wall Thickness"), 12)), N(Len(Ifc(p, "Insulation Thickness"), 12)),
                             N(lenFt), size, Ifc(p, "Location") };
@@ -136,8 +145,8 @@ namespace PlutoNavis
                         else cells.AddRange(new[] { "", "", "", "", "", "" });
                         cells.Add(geoms.Count.ToString(Inv)); cells.Add(skipped.Count.ToString(Inv));
 
-                        if (cat == "Duct Accessories" && !AccessoryGeometry) { cells.Add(""); for (int k = 0; k < 13; k++) cells.Add(""); w.WriteLine(Csv(cells)); continue; }
-                        if (cat != "Ducts")
+                        if ((cat == "Duct Accessories" && !AccessoryGeometry) || cat == FabHangers) { cells.Add(""); for (int k = 0; k < 13; k++) cells.Add(""); w.WriteLine(Csv(cells)); continue; }
+                        if (cat != "Ducts" && cat != Fab)
                         {
                             var fl = new List<double>();
                             var ft = new List<double>();
@@ -206,6 +215,7 @@ namespace PlutoNavis
                 s.AppendLine(string.Format(Inv, "  {0,8}  {1}   {2:0}s", kv.Value, kv.Key, sec));
             }
             if (!AccessoryGeometry) s.AppendLine("  (Duct Accessories: properties + bbox only, no geometry / centrelines)");
+            s.AppendLine("  (" + FabHangers + ": properties + bbox only; " + Fab + ": like Ducts)");
             s.AppendLine(string.Format(Inv, "Ducts {0}, fitted from triangles {1}, triangle errors {2}{3}", ducts, fitted, triErrors,
                 firstTriError == null ? "" : " (first: " + firstTriError + ")"));
             s.AppendLine("|fit length - .Length| ft:   " + Stats(lenErr));
