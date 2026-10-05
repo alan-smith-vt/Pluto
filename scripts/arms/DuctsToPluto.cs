@@ -36,14 +36,16 @@ public class DuctsToPluto
         public string BinPath, SidecarPath, GeometryHash;
         public int Nodes, Beams, DuctBeams, DuctFallback, FittingBeams, FittingBlocks, AccessoryBlocks, FanDropped, LooseEnds, Unsized, Skipped;
         public int FabBeams, FabBlocks, HangerBlocks, FabFitRejected;
+        public int FabFromBbox, FabPhantom, FabBridged, FittingsBridged;
         public string Summary()
         {
             return string.Format(CultureInfo.InvariantCulture,
                 "nodes={0} beams={1}: ducts {2} (fitted-end fallback {3}), fitting centreline {4}, fitting blocks {5}, accessory blocks {6}\n" +
-                "fabrication: beams {13}, blocks {14} (fit rejected {16}); hanger blocks {15}\n" +
+                "fabrication: beams {13} (straights from bbox + size {17}), blocks {14} (fit rejected {16}); hanger blocks {15}\n" +
+                "phantoms (contradict their own size, not drawn; <out>.phantoms.txt) {18}; fittings bridged {19} (fabrication {20})\n" +
                 "symbol-fan segments dropped {7}, loose ends {8}, unsized {9}, rows skipped (no geometry) {10}\n{11}\n{12}",
                 Nodes, Beams, DuctBeams, DuctFallback, FittingBeams, FittingBlocks, AccessoryBlocks, FanDropped, LooseEnds, Unsized, Skipped,
-                BinPath, SidecarPath, FabBeams, FabBlocks, HangerBlocks, FabFitRejected);
+                BinPath, SidecarPath, FabBeams, FabBlocks, HangerBlocks, FabFitRejected, FabFromBbox, FabPhantom, FittingsBridged, FabBridged);
         }
     }
 
@@ -99,6 +101,7 @@ public class DuctsToPluto
         var labels = new Dictionary<int, string>();
         var gDucts = new List<uint>(); var gFitCl = new List<uint>(); var gFitBox = new List<uint>(); var gAcc = new List<uint>(); var gUnsized = new List<uint>();
         var gFab = new List<uint>(); var gFabBox = new List<uint>(); var gHang = new List<uint>(); var gFabRej = new List<uint>();
+        var gFitBridge = new List<uint>(); var gFabBridge = new List<uint>();
 
         Func<int, int> clNode = delegate(int id)
         {
@@ -118,12 +121,47 @@ public class DuctsToPluto
             return f;
         };
 
+        var network = new HashSet<int>();          // beams of the duct network (not blocks): loose ends and bridging use them
+        var pending = new List<int>();             // fittings without a centreline: bridged after the loop
+        var phantoms = new List<string>();
+        Func<Row, string> labelOf = delegate(Row r)
+        {
+            return r.Guid + (r.NavisId != "" ? " #" + r.NavisId.Substring(0, Math.Min(8, r.NavisId.Length)) : "")
+                + " | " + r.System + " | " + (r.SizeText != "" ? r.SizeText : r.Name);   // IfcGUID is not unique: short NavisId too
+        };
+        // bbox block: a beam along the bbox's longest axis with a RECT of the other two extents; false when no bbox
+        Func<Row, List<uint>, bool> addBlock = delegate(Row r, List<uint> grp)
+        {
+            if (r.Min == null) return false;
+            double[] ext = { r.Max[0] - r.Min[0], r.Max[1] - r.Min[1], r.Max[2] - r.Min[2] };
+            int ax = ext[0] >= ext[1] && ext[0] >= ext[2] ? 0 : ext[1] >= ext[2] ? 1 : 2;
+            if (ext[ax] < 1e-6) return false;
+            double[] c = { (r.Min[0] + r.Max[0]) / 2, (r.Min[1] + r.Max[1]) / 2, (r.Min[2] + r.Max[2]) / 2 };
+            double[] pa = (double[])c.Clone(), pb = (double[])c.Clone();
+            pa[ax] = r.Min[ax]; pb[ax] = r.Max[ax];
+            // section: local y horizontal -> for a horizontal block y spans the other horizontal extent, z the height
+            double bY, hZ;
+            if (ax == 2) { bY = ext[0]; hZ = ext[1]; }                  // vertical: y = X, z = Z x X = Y
+            else { bY = ext[ax == 0 ? 1 : 0]; hZ = ext[2]; }            // horizontal: y = the other horizontal, z = up
+            string bname = string.Format(Inv, "BLOCK {0:0.##}x{1:0.##}", bY * 12, hZ * 12);
+            int bs;
+            if (!sectionIndex.TryGetValue(bname, out bs))
+            {
+                bs = sections.Count; sectionIndex[bname] = bs;
+                sections.Add(RawViewerWriter.SectionDef.Rect(bname, (float)Math.Max(bY * scale, 1e-3), (float)Math.Max(hZ * scale, 1e-3)));
+            }
+            int bid = nextBeam++;
+            beams[bid] = Beam(bid, ptNode(pa), ptNode(pb), bs, nodes);
+            labels[bid] = labelOf(r);
+            grp.Add((uint)bid);
+            return true;
+        };
+
         for (int i = 0; i < rows.Count; i++)
         {
             Row r = rows[i]; int rowNo = i + 1;
             List<int[]> segs; segsByRow.TryGetValue(rowNo, out segs);
-            string label = r.Guid + (r.NavisId != "" ? " #" + r.NavisId.Substring(0, Math.Min(8, r.NavisId.Length)) : "")
-                + " | " + r.System + " | " + (r.SizeText != "" ? r.SizeText : r.Name);   // IfcGUID is not unique: short NavisId too
+            string label = labelOf(r);
             bool isDuct = r.Cat == "Ducts", isFit = r.Cat == "Duct Fittings";
             bool fab = string.Equals(r.Cat, Fab, StringComparison.OrdinalIgnoreCase);
             // a straight: named "Straight…", or named by its size (" 74 in x 28 in") with a fit that matches it
@@ -131,7 +169,6 @@ public class DuctsToPluto
             bool nameSized = !double.IsNaN(r.NameW) || !double.IsNaN(r.NameD);
             bool fabStraight = fab && (r.Name.TrimStart().StartsWith("Straight", StringComparison.OrdinalIgnoreCase) || (nameSized && FitTrusted(r)));
             bool linear = isDuct || fabStraight;     // drawn along fitted ends when there is no centreline
-            bool rejected = false;
             if (linear || ((isFit || fab) && segs != null))
             {
                 bool sized;
@@ -149,11 +186,26 @@ public class DuctsToPluto
                         drawn.Add(new[] { clNode(s[0]), clNode(s[1]) });
                     }
                 }
-                if (drawn.Count == 0 && fabStraight && !FitTrusted(r))
+                if (drawn.Count == 0 && fabStraight)
                 {
-                    // the fit chose the wrong axis (short wide piece, or not one clean box): block, flagged
-                    rejected = true; res.FabFitRejected++;
-                    goto Block;
+                    // fabrication straight: the run direction from the bbox and the stated size (two extents match
+                    // W x H or D x D, the third is the run); else the fit, if its section matches the stated size;
+                    // else the element contradicts its own size (a phantom, e.g. an invisible 8 in round "Straight"
+                    // sharing its IfcGUID with the real rectangular parts): not drawn, listed
+                    double sa, sb; double[] b1, b2;
+                    if (StatedSize(r, out sa, out sb))
+                    {
+                        if (BboxAxis(r, sa, sb, out b1, out b2)) { drawn.Add(new[] { ptNode(b1), ptNode(b2) }); res.FabFromBbox++; }
+                        else if (r.E1 != null && FitMatches(r, sa, sb)) { drawn.Add(new[] { ptNode(r.E1), ptNode(r.E2) }); res.DuctFallback++; }
+                        else { res.FabPhantom++; phantoms.Add(label + string.Format(Inv, " | stated {0:0.##}x{1:0.##}", sa, sb)); continue; }
+                    }
+                    else if (!FitTrusted(r))
+                    {
+                        // no size anywhere and an implausible fit: block, flagged
+                        res.FabFitRejected++;
+                        if (addBlock(r, gFabRej)) res.FabBlocks++; else res.Skipped++;
+                        continue;
+                    }
                 }
                 if (drawn.Count == 0 && linear && r.E1 != null) { drawn.Add(new[] { ptNode(r.E1), ptNode(r.E2) }); res.DuctFallback++; }
                 if (drawn.Count == 0 && linear) { res.Skipped++; continue; }
@@ -163,41 +215,95 @@ public class DuctsToPluto
                     int id = nextBeam++;
                     beams[id] = Beam(id, d[0], d[1], sec, nodes);
                     labels[id] = label;
+                    network.Add(id);
                     if (!sized) gUnsized.Add((uint)id);
                     else if (isDuct) gDucts.Add((uint)id); else if (fab) gFab.Add((uint)id); else gFitCl.Add((uint)id);
                     if (isDuct) res.DuctBeams++; else if (fab) res.FabBeams++; else res.FittingBeams++;
                 }
                 if (drawn.Count > 0) continue;
-                // a fitting whose lines were all symbol linework: falls through to a bbox block
+                // a fitting whose lines were all symbol linework: bridged below like one without lines
             }
-            // bbox block: fittings without a centreline, accessories, hangers, fabrication parts with a rejected fit
-        Block:
-            if (r.Min == null) { res.Skipped++; continue; }
-            double[] ext = { r.Max[0] - r.Min[0], r.Max[1] - r.Min[1], r.Max[2] - r.Min[2] };
-            int ax = ext[0] >= ext[1] && ext[0] >= ext[2] ? 0 : ext[1] >= ext[2] ? 1 : 2;
-            if (ext[ax] < 1e-6) { res.Skipped++; continue; }
-            double[] c = { (r.Min[0] + r.Max[0]) / 2, (r.Min[1] + r.Max[1]) / 2, (r.Min[2] + r.Max[2]) / 2 };
-            double[] pa = (double[])c.Clone(), pb = (double[])c.Clone();
-            pa[ax] = r.Min[ax]; pb[ax] = r.Max[ax];
-            // section: local y horizontal -> for a horizontal block y spans the other horizontal extent, z the height
-            double bY, hZ;
-            if (ax == 2) { bY = ext[0]; hZ = ext[1]; }                  // vertical: y = X, z = Z x X = Y
-            else { bY = ext[ax == 0 ? 1 : 0]; hZ = ext[2]; }            // horizontal: y = the other horizontal, z = up
-            string bname = string.Format(Inv, "BLOCK {0:0.##}x{1:0.##}", bY * 12, hZ * 12);
-            int bs;
-            if (!sectionIndex.TryGetValue(bname, out bs))
+            if (isFit || fab) { pending.Add(i); continue; }   // fittings without a centreline: bridged after the loop
+            // bbox block: accessories, hangers
+            bool hanger = string.Equals(r.Cat, FabHangers, StringComparison.OrdinalIgnoreCase);
+            if (!addBlock(r, hanger ? gHang : gAcc)) { res.Skipped++; continue; }
+            if (hanger) res.HangerBlocks++; else res.AccessoryBlocks++;
+        }
+
+        // ---- bridging: a fitting without a centreline joins the loose network ends inside its bbox (+0.25 ft)
+        // at the point where their axes meet (elbow corner, tee centre; parallel ends: their midpoint) ----
+        {
+            var deg = new Dictionary<int, int>(); var dirOf = new Dictionary<int, double[]>(); var secOf = new Dictionary<int, int>();
+            foreach (int id in network)
             {
-                bs = sections.Count; sectionIndex[bname] = bs;
-                sections.Add(RawViewerWriter.SectionDef.Rect(bname, (float)Math.Max(bY * scale, 1e-3), (float)Math.Max(hZ * scale, 1e-3)));
+                RawViewerWriter.BeamMember m = beams[id];
+                int dA; deg.TryGetValue(m.NodeA, out dA); deg[m.NodeA] = dA + 1;
+                int dB; deg.TryGetValue(m.NodeB, out dB); deg[m.NodeB] = dB + 1;
             }
-            int bid = nextBeam++;
-            beams[bid] = Beam(bid, ptNode(pa), ptNode(pb), bs, nodes);
-            labels[bid] = label;
-            if (isFit) { gFitBox.Add((uint)bid); res.FittingBlocks++; }
-            else if (fab && rejected) { gFabRej.Add((uint)bid); res.FabBlocks++; }
-            else if (fab) { gFabBox.Add((uint)bid); res.FabBlocks++; }
-            else if (string.Equals(r.Cat, FabHangers, StringComparison.OrdinalIgnoreCase)) { gHang.Add((uint)bid); res.HangerBlocks++; }
-            else { gAcc.Add((uint)bid); res.AccessoryBlocks++; }
+            var looseEnds = new List<int>();
+            foreach (int id in network)
+            {
+                RawViewerWriter.BeamMember m = beams[id];
+                foreach (int e in new[] { m.NodeA, m.NodeB })
+                {
+                    if (deg[e] != 1) continue;
+                    int o = e == m.NodeA ? m.NodeB : m.NodeA;
+                    double[] d = { nodes[e].xyz.X - nodes[o].xyz.X, nodes[e].xyz.Y - nodes[o].xyz.Y, nodes[e].xyz.Z - nodes[o].xyz.Z };
+                    double l = Math.Sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2]);
+                    if (l < 1e-9) continue;
+                    dirOf[e] = new[] { d[0] / l, d[1] / l, d[2] / l };   // outward: from the duct into the fitting
+                    secOf[e] = m.SectionIndex;
+                    looseEnds.Add(e);
+                }
+            }
+            var claimed = new HashSet<int>();
+            double tol = 0.25 * scale;
+            foreach (int i in pending)
+            {
+                Row r = rows[i];
+                bool fab = string.Equals(r.Cat, Fab, StringComparison.OrdinalIgnoreCase);
+                var ends = new List<int>();
+                if (r.Min != null)
+                {
+                    double[] lo2 = { (r.Min[0] - off[0]) * scale - tol, (r.Min[1] - off[1]) * scale - tol, (r.Min[2] - off[2]) * scale - tol };
+                    double[] hi2 = { (r.Max[0] - off[0]) * scale + tol, (r.Max[1] - off[1]) * scale + tol, (r.Max[2] - off[2]) * scale + tol };
+                    foreach (int e in looseEnds)
+                    {
+                        if (claimed.Contains(e)) continue;
+                        Node n = nodes[e];
+                        if (n.xyz.X >= lo2[0] && n.xyz.X <= hi2[0] && n.xyz.Y >= lo2[1] && n.xyz.Y <= hi2[1] && n.xyz.Z >= lo2[2] && n.xyz.Z <= hi2[2]) ends.Add(e);
+                    }
+                }
+                if (ends.Count < 2)
+                {
+                    if (addBlock(r, fab ? gFabBox : gFitBox)) { if (fab) res.FabBlocks++; else res.FittingBlocks++; } else res.Skipped++;
+                    continue;
+                }
+                double[] wp = WorkPoint(ends, dirOf, nodes);
+                if (r.Min != null)   // a meeting point far outside the fitting (near-parallel axes): its bbox centre instead
+                {
+                    double[] cc = { ((r.Min[0] + r.Max[0]) / 2 - off[0]) * scale, ((r.Min[1] + r.Max[1]) / 2 - off[1]) * scale, ((r.Min[2] + r.Max[2]) / 2 - off[2]) * scale };
+                    double reach = 0;
+                    for (int k = 0; k < 3; k++) reach = Math.Max(reach, (r.Max[k] - r.Min[k]) * scale);
+                    double dx = wp[0] - cc[0], dy = wp[1] - cc[1], dz = wp[2] - cc[2];
+                    if (Math.Sqrt(dx * dx + dy * dy + dz * dz) > reach) wp = cc;
+                }
+                int wn = nextNode++;
+                var nn = new Node(); nn.id = wn; nn.xyz.X = (float)wp[0]; nn.xyz.Y = (float)wp[1]; nn.xyz.Z = (float)wp[2];
+                nodes[wn] = nn;
+                bool sized;
+                int sec = SectionFor(r, scale, sections, sectionIndex, out sized);
+                foreach (int e in ends)
+                {
+                    claimed.Add(e);
+                    int id = nextBeam++;
+                    beams[id] = Beam(id, e, wn, sized ? sec : secOf[e], nodes);   // unsized fitting: its duct's section
+                    labels[id] = labelOf(r);
+                    network.Add(id);
+                    (fab ? gFabBridge : gFitBridge).Add((uint)id);
+                }
+                if (fab) res.FabBridged++; else res.FittingsBridged++;
+            }
         }
         if (beams.Count == 0) throw new Exception("DuctsToPluto: no beams built from " + runDir);
 
@@ -220,10 +326,22 @@ public class DuctsToPluto
         if (gFab.Count > 0) sc.AddGroup("Fabrication ductwork", "#5a8fe0", "beams", gFab, new[] { "duct", Fab }, "DUCT_FAB");
         if (gFabBox.Count > 0) sc.AddGroup("Fabrication (bbox)", "#ffc04d", "beams", gFabBox, new[] { "duct", Fab, "bbox" }, "DUCT_FAB_BBOX");
         if (gFabRej.Count > 0) sc.AddGroup("Fabrication (fit rejected)", "#ff7a00", "beams", gFabRej, new[] { "duct", Fab, "bbox", "fitRejected" }, "DUCT_FAB_FIT_REJECTED");
+        if (gFitBridge.Count > 0) sc.AddGroup("Fittings (bridged)", "#2fa88f", "beams", gFitBridge, new[] { "duct", "Duct Fittings", "bridged" }, "DUCT_FITTINGS_BRIDGED");
+        if (gFabBridge.Count > 0) sc.AddGroup("Fabrication fittings (bridged)", "#4a7fd0", "beams", gFabBridge, new[] { "duct", Fab, "bridged" }, "DUCT_FAB_BRIDGED");
         if (gHang.Count > 0) sc.AddGroup("Fabrication hangers", "#e040c0", "beams", gHang, new[] { "duct", FabHangers, "bbox" }, "DUCT_FAB_HANGERS");
         if (gUnsized.Count > 0) sc.AddGroup("Unsized", "#ff3b3b", "beams", gUnsized, new[] { "duct", "unsized" }, "DUCT_UNSIZED");
+        // loose ends: network nodes (ducts, centrelines, bridges; not blocks) with one member after bridging
         var loose = new List<uint>();
-        foreach (KeyValuePair<int, int> kv in clToFile) if (nodeDeg[kv.Key] == 1) loose.Add((uint)kv.Value);
+        {
+            var deg = new Dictionary<int, int>();
+            foreach (int id in network)
+            {
+                int a; deg.TryGetValue(beams[id].NodeA, out a); deg[beams[id].NodeA] = a + 1;
+                int b; deg.TryGetValue(beams[id].NodeB, out b); deg[beams[id].NodeB] = b + 1;
+            }
+            foreach (KeyValuePair<int, int> kv in deg) if (kv.Value == 1) loose.Add((uint)kv.Key);
+        }
+        File.WriteAllLines(outBase + ".phantoms.txt", phantoms.ToArray());
         if (loose.Count > 0) sc.AddNodeGroup("Loose ends", "#ff3b3b", loose, new[] { "duct", "looseEnd" }, "DUCT_LOOSE_ENDS");
         string scPath = outBase + ".features.json";
         File.WriteAllText(scPath, sc.ToJson(), new UTF8Encoding(false));
@@ -299,6 +417,80 @@ public class DuctsToPluto
         if (m.Success) { w = double.Parse(m.Groups[1].Value, Inv); h = double.Parse(m.Groups[2].Value, Inv); return; }
         m = RoundRx.Match(name);
         if (m.Success) d = double.Parse(m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value, Inv);
+    }
+
+    // Stated cross-section (inches), same precedence as SectionFor: round shape -> D x D; rectangular W x H from
+    // the Size property, then the Name; a diameter. False when none.
+    static bool StatedSize(Row r, out double a, out double b)
+    {
+        a = b = double.NaN;
+        bool round = r.Shape.IndexOf("round", StringComparison.OrdinalIgnoreCase) >= 0;
+        double d = !double.IsNaN(r.D) && r.D > 0 ? r.D : r.NameD;
+        if (round && !double.IsNaN(d) && d > 0) { a = b = d; return true; }
+        if (!double.IsNaN(r.W) && !double.IsNaN(r.H) && r.W > 0 && r.H > 0) { a = r.W; b = r.H; return true; }
+        if (!double.IsNaN(r.NameW) && !double.IsNaN(r.NameH) && r.NameW > 0 && r.NameH > 0) { a = r.NameW; b = r.NameH; return true; }
+        if (!double.IsNaN(d) && d > 0) { a = b = d; return true; }
+        return false;
+    }
+
+    // Axis-aligned straight from its bbox: the axis whose two OTHER extents match the stated section (either
+    // order, 2 in); ends at the bbox faces on that axis, through the section centre. Several matches (a part
+    // as long as it is wide): the longest. False when none (skewed, or not this size at all).
+    static bool BboxAxis(Row r, double a, double b, out double[] e1, out double[] e2)
+    {
+        e1 = e2 = null;
+        if (r.Min == null) return false;
+        const double tol = 2;
+        double[] ext = { (r.Max[0] - r.Min[0]) * 12, (r.Max[1] - r.Min[1]) * 12, (r.Max[2] - r.Min[2]) * 12 };
+        int best = -1;
+        for (int k = 0; k < 3; k++)
+        {
+            double o1 = ext[(k + 1) % 3], o2 = ext[(k + 2) % 3];
+            bool ok = (Math.Abs(o1 - a) <= tol && Math.Abs(o2 - b) <= tol) || (Math.Abs(o1 - b) <= tol && Math.Abs(o2 - a) <= tol);
+            if (ok && (best < 0 || ext[k] > ext[best])) best = k;
+        }
+        if (best < 0 || ext[best] < 1e-3) return false;
+        double[] c = { (r.Min[0] + r.Max[0]) / 2, (r.Min[1] + r.Max[1]) / 2, (r.Min[2] + r.Max[2]) / 2 };
+        e1 = (double[])c.Clone(); e2 = (double[])c.Clone();
+        e1[best] = r.Min[best]; e2[best] = r.Max[best];
+        return true;
+    }
+
+    // the fitted section matches the stated one (either orientation, 2 in) and the fit is longer than wide
+    static bool FitMatches(Row r, double a, double b)
+    {
+        if (double.IsNaN(r.FitA) || double.IsNaN(r.FitB) || double.IsNaN(r.FitLen)) return false;
+        const double tol = 2;
+        bool sec = (Math.Abs(r.FitA - a) <= tol && Math.Abs(r.FitB - b) <= tol) || (Math.Abs(r.FitA - b) <= tol && Math.Abs(r.FitB - a) <= tol);
+        return sec && r.FitLen * 12 > 0.5 * Math.Min(a, b);
+    }
+
+    // Meeting point of the duct axes entering a fitting (file units): for each pair of ends, the midpoint of
+    // the closest points of their lines (end + s * outward direction); parallel pairs give the ends' midpoint.
+    // The average over pairs.
+    static double[] WorkPoint(List<int> ends, Dictionary<int, double[]> dirOf, Dictionary<int, Node> nodes)
+    {
+        double sx = 0, sy = 0, sz = 0; int n = 0;
+        for (int i = 0; i < ends.Count; i++)
+            for (int j = i + 1; j < ends.Count; j++)
+            {
+                Node pi = nodes[ends[i]], pj = nodes[ends[j]];
+                double[] p = { pi.xyz.X, pi.xyz.Y, pi.xyz.Z }, q = { pj.xyz.X, pj.xyz.Y, pj.xyz.Z };
+                double[] u = dirOf[ends[i]], v = dirOf[ends[j]];
+                double[] w0 = { p[0] - q[0], p[1] - q[1], p[2] - q[2] };
+                double a = u[0] * u[0] + u[1] * u[1] + u[2] * u[2], b = u[0] * v[0] + u[1] * v[1] + u[2] * v[2], c = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
+                double d = u[0] * w0[0] + u[1] * w0[1] + u[2] * w0[2], e = v[0] * w0[0] + v[1] * w0[1] + v[2] * w0[2];
+                double den = a * c - b * b;
+                double mx, my, mz;
+                if (Math.Abs(den) < 1e-6) { mx = (p[0] + q[0]) / 2; my = (p[1] + q[1]) / 2; mz = (p[2] + q[2]) / 2; }
+                else
+                {
+                    double s = (b * e - c * d) / den, t = (a * e - b * d) / den;
+                    mx = (p[0] + u[0] * s + q[0] + v[0] * t) / 2; my = (p[1] + u[1] * s + q[1] + v[1] * t) / 2; mz = (p[2] + u[2] * s + q[2] + v[2] * t) / 2;
+                }
+                sx += mx; sy += my; sz += mz; n++;
+            }
+        return new[] { sx / n, sy / n, sz / n };
     }
 
     // A fabrication straight's fit is trusted when its section matches the Name size (either orientation,
