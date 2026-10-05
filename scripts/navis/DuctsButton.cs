@@ -35,7 +35,7 @@ namespace PlutoNavis
     [AddInPlugin(AddInLocation.AddIn)]
     public class DuctsButton : AddInPlugin
     {
-        const string OutRoot = @"C:\Temp\hvac\ducts";
+        const string OutRoot = @"C:\Temp\hvac\ducts", FabOutRoot = @"C:\Temp\hvac\fab";
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
         // Revit categories kept (matched ignoring case; written in this spelling). Fabrication parts are their
         // own categories: straights and fittings in MEP Fabrication Ductwork (treated like Ducts: triangles,
@@ -51,12 +51,34 @@ namespace PlutoNavis
         // centreline): a run with it did ~15 % of the items per hour (2026-10-05). Off until accessories matter.
         const bool AccessoryGeometry = false;
 
-        public override int Execute(params string[] parameters)
+        public override int Execute(params string[] parameters) { return Run(false); }
+
+        // Fabrication part type text -> kept category: exact Keep name, else by content ("Hanger" / "Duct").
+        static string FabCat(string type)
         {
+            string k = KeepCat(type);
+            if (k == Fab || k == FabHangers) return k;
+            string t = (type ?? "").ToLowerInvariant();
+            if (t.Contains("hanger")) return FabHangers;
+            if (t.Contains("duct")) return Fab;
+            return null;
+        }
+
+        static string ItemType(ModelItem m)
+        {
+            DataProperty dp = m.PropertyCategories.FindPropertyByDisplayName("Item", "Type");
+            try { return dp != null && dp.Value != null ? dp.Value.ToDisplayString() : ""; } catch (Exception) { return ""; }
+        }
+
+        // fabOnly: the fabrication search and its parts only (the Pluto Fab button; seconds instead of minutes),
+        // written under C:\Temp\hvac\fab\<run>.
+        internal static int Run(bool fabOnly)
+        {
+            string title = fabOnly ? "Pluto Fab" : "Pluto Ducts";
             Document doc = Autodesk.Navisworks.Api.Application.ActiveDocument;
-            if (doc == null || doc.Models.Count == 0) { MessageBox.Show("Open a model first.", "Pluto Ducts"); return 0; }
+            if (doc == null || doc.Models.Count == 0) { MessageBox.Show("Open a model first.", title); return 0; }
             DateTime t0 = DateTime.Now;
-            string dir = Path.Combine(OutRoot, t0.ToString("yyyyMMdd-HHmmss", Inv));
+            string dir = Path.Combine(fabOnly ? FabOutRoot : OutRoot, t0.ToString("yyyyMMdd-HHmmss", Inv));
             Directory.CreateDirectory(dir);
             string log = Path.Combine(dir, "started.txt");
             File.WriteAllText(log, t0.ToString("yyyy-MM-dd HH:mm:ss", Inv) + "\r\n");
@@ -72,38 +94,45 @@ namespace PlutoNavis
             var clNone = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);   // elements without a line, by category
             var lineVsFit = new List<double>();
             double searchSec = 0; bool cancelled = false; string firstTriError = null;
-            Progress progress = Autodesk.Navisworks.Api.Application.BeginProgress("Pluto ducts: searching for IfcGUID items");
+            Progress progress = Autodesk.Navisworks.Api.Application.BeginProgress(title + ": searching");
             try
             {
                 progress.Update(0);
-                Search search = new Search();
-                search.Selection.SelectAll();
-                search.Locations = SearchLocations.DescendantsAndSelf;
-                search.SearchConditions.Add(SearchCondition.HasPropertyByDisplayName("Element", "IfcGUID"));
-                ModelItemCollection found = search.FindAll(doc, false);
-                searchSec = (DateTime.Now - t0).TotalSeconds;
-                File.AppendAllText(log, string.Format(Inv, "search IfcGUID: {0} items in {1:0}s\r\n", found.Count, searchSec));
-                // Fabrication parts carry only the Item tab (no Element tab, no IfcGUID; 2026-10-05): a second
-                // search on Item/Type, keeping the top item of each composite object (its children are its geometry).
+                // the fabrication flag travels with each item (ModelItem wrappers are new objects on every
+                // enumeration, so a set lookup by object never matched: 2026-10-05, 1165 found, 0 rows)
+                var work = new List<ModelItem>(); var isFab = new List<bool>();
+                if (!fabOnly)
+                {
+                    Search search = new Search();
+                    search.Selection.SelectAll();
+                    search.Locations = SearchLocations.DescendantsAndSelf;
+                    search.SearchConditions.Add(SearchCondition.HasPropertyByDisplayName("Element", "IfcGUID"));
+                    ModelItemCollection found = search.FindAll(doc, false);
+                    foreach (ModelItem m in found) { work.Add(m); isFab.Add(false); }
+                    searchSec = (DateTime.Now - t0).TotalSeconds;
+                    File.AppendAllText(log, string.Format(Inv, "search IfcGUID: {0} items in {1:0}s\r\n", found.Count, searchSec));
+                }
+                // Fabrication parts carry only the Item tab (no Element tab, no IfcGUID): a search on Item/Type,
+                // keeping the top item of each composite object (nested = its parent's Item/Type is fabrication too).
                 Search fs = new Search();
                 fs.Selection.SelectAll();
                 fs.Locations = SearchLocations.DescendantsAndSelf;
                 fs.SearchConditions.Add(SearchCondition.HasPropertyByDisplayName("Item", "Type").DisplayStringContains("Fabrication"));
                 ModelItemCollection fabAll = fs.FindAll(doc, false);
-                var fabSet = new HashSet<ModelItem>();
-                foreach (ModelItem m in fabAll) fabSet.Add(m);
-                var work = new List<ModelItem>();
-                foreach (ModelItem m in found) work.Add(m);
                 int fabTop = 0;
+                var fabTypes = new SortedDictionary<string, int>(StringComparer.Ordinal);
                 foreach (ModelItem m in fabAll)
                 {
-                    bool nested = false;
-                    for (ModelItem pa = m.Parent; pa != null && !nested; pa = pa.Parent) nested = fabSet.Contains(pa);
-                    if (!nested) { work.Add(m); fabTop++; }
+                    ModelItem pa = m.Parent;
+                    if (pa != null && ItemType(pa).IndexOf("Fabrication", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+                    work.Add(m); isFab.Add(true); fabTop++;
+                    string ty = ItemType(m); int c; fabTypes.TryGetValue(ty, out c); fabTypes[ty] = c + 1;
                 }
                 total = work.Count;
                 searchSec = (DateTime.Now - t0).TotalSeconds;
                 File.AppendAllText(log, string.Format(Inv, "search Fabrication: {0} items, {1} top-level, total {2:0}s\r\n", fabAll.Count, fabTop, searchSec));
+                foreach (KeyValuePair<string, int> kv in fabTypes)
+                    File.AppendAllText(log, string.Format(Inv, "  fabrication Item/Type '{0}': {1} -> {2}\r\n", kv.Key, kv.Value, FabCat(kv.Key) ?? "(skipped)"));
 
                 using (var w = new StreamWriter(Path.Combine(dir, "ducts.csv"), false, new UTF8Encoding(false)))
                 using (var pw = new StreamWriter(Path.Combine(dir, "duct_parts.csv"), false, new UTF8Encoding(false)))
@@ -114,10 +143,11 @@ namespace PlutoNavis
                         "IfcGUID", "Category", "Family", "Type", "Name", "SystemName", "SystemType", "Shape", "Material",
                         "Width_in", "Height_in", "Diameter_in", "WallThk_in", "InsulThk_in", "Length_ft", "Size", "Location",
                         "MinX", "MinY", "MinZ", "MaxX", "MaxY", "MaxZ", "OwnGeom", "SkippedGeom", "Triangles",
-                        "X1", "Y1", "Z1", "X2", "Y2", "Z2", "FitLength_ft", "FitA_in", "FitB_in", "MeshWall_in",
+                        "X1", "Y1", "Z1", "X2", "Y2", "Z2", "FitLength_ft", "FitA_in", "FitB_in",
                         "LenErr_ft", "SizeErr_in", "TriVsBbox_ft", "Flag" }));
-                    foreach (ModelItem it in work)
+                    for (int wi = 0; wi < work.Count; wi++)
                     {
+                        ModelItem it = work[wi];
                         seen++;
                         if (seen % 200 == 0 && !progress.Update(total > 0 ? (double)seen / total : 0)) { cancelled = true; break; }
                         if (seen % 1000 == 0)   // live log: open started.txt during a run to see where the time goes
@@ -125,11 +155,11 @@ namespace PlutoNavis
                                 DateTime.Now, seen, total, lastCat ?? "-", rows, ducts));
                         // category first (one lookup); every property only for the items kept (insulation and
                         // the rest would otherwise each pay a full property read)
-                        bool fabItem = fabSet.Contains(it);
+                        bool fabItem = isFab[wi];
                         DataProperty cp = it.PropertyCategories.FindPropertyByDisplayName(fabItem ? "Item" : "Element", fabItem ? "Type" : "Category");
                         string cat0 = "";
                         try { if (cp != null && cp.Value != null) cat0 = cp.Value.ToDisplayString(); } catch (Exception) { }
-                        string cat = KeepCat(cat0);
+                        string cat = fabItem ? FabCat(cat0) : KeepCat(cat0);
                         if (cat == null) continue;
                         Dictionary<string, string> p = Props(it);
                         foreach (KeyValuePair<string, string> kv in p)   // property census per category
@@ -179,7 +209,7 @@ namespace PlutoNavis
                         else cells.AddRange(new[] { "", "", "", "", "", "" });
                         cells.Add(geoms.Count.ToString(Inv)); cells.Add(skipped.Count.ToString(Inv));
 
-                        if ((cat == "Duct Accessories" && !AccessoryGeometry) || cat == FabHangers) { cells.Add(""); for (int k = 0; k < 14; k++) cells.Add(""); w.WriteLine(Csv(cells)); continue; }
+                        if ((cat == "Duct Accessories" && !AccessoryGeometry) || cat == FabHangers) { cells.Add(""); for (int k = 0; k < 13; k++) cells.Add(""); w.WriteLine(Csv(cells)); continue; }
                         if (cat != "Ducts" && cat != Fab)
                         {
                             var fl = new List<double>();
@@ -187,7 +217,7 @@ namespace PlutoNavis
                             try { foreach (ModelItem g in geoms) { ft.Clear(); Triangles(g, ft, fl); lastTri += ft.Count / 9; } }
                             catch (Exception ex) { triErrors++; if (firstTriError == null) firstTriError = ex.GetType().Name + ": " + ex.Message; }
                             AddCl(cl, clNone, rows, guid, cat, fl);
-                            cells.Add(""); for (int k = 0; k < 14; k++) cells.Add(""); w.WriteLine(Csv(cells)); continue;
+                            cells.Add(""); for (int k = 0; k < 13; k++) cells.Add(""); w.WriteLine(Csv(cells)); continue;
                         }
                         ducts++;
                         var pts = new List<double>();   // x y z per corner, world: the duct's own geometry only
@@ -203,7 +233,7 @@ namespace PlutoNavis
                         lastTri = nTri;
                         cells.Add(nTri.ToString(Inv));
                         string flag = "";
-                        if (nTri == 0) { for (int k = 0; k < 13; k++) cells.Add(""); cells.Add("no triangles"); w.WriteLine(Csv(cells)); continue; }
+                        if (nTri == 0) { for (int k = 0; k < 12; k++) cells.Add(""); cells.Add("no triangles"); w.WriteLine(Csv(cells)); continue; }
 
                         tri.Write(rows); tri.Write(nTri);
                         foreach (double v in pts) tri.Write((float)v);
@@ -226,7 +256,7 @@ namespace PlutoNavis
                         if (!double.IsNaN(se) && se > 0.5) flag += (flag == "" ? "" : "+") + "section";
                         if (fitLen < Math.Max(fa, fb)) flag += (flag == "" ? "" : "+") + "short";
                         cells.AddRange(new[] { N(e1[0]), N(e1[1]), N(e1[2]), N(e2[0]), N(e2[1]), N(e2[2]), N(fitLen), N(fa * 12), N(fb * 12),
-                            N(MeshWall(pts, e1, e2) * 12), N(le), N(se), N(be), flag });
+                            N(le), N(se), N(be), flag });
                         w.WriteLine(Csv(cells));
                     }
                 }
@@ -248,7 +278,7 @@ namespace PlutoNavis
             lineVsFit.Sort();
             lenErr.Sort(); bbErr.Sort(); endVals.Sort(); trimErr.Sort();
             var s = new StringBuilder();
-            s.AppendLine("Pluto ducts " + t0.ToString("yyyy-MM-dd HH:mm:ss", Inv) + (cancelled ? "  ** CANCELLED: partial **" : ""));
+            s.AppendLine(title + " " + t0.ToString("yyyy-MM-dd HH:mm:ss", Inv) + (cancelled ? "  ** CANCELLED: partial **" : ""));
             s.AppendLine("Document: " + (string.IsNullOrEmpty(doc.FileName) ? "(unsaved)" : doc.FileName) + "   units " + doc.Units);
             s.AppendLine(string.Format(Inv, "Search {0} IfcGUID items in {1:0}s; read {2}; rows {3}; total {4:0}s", total, searchSec, seen, rows, (DateTime.Now - t0).TotalSeconds));
             if (lastCat != null) { double sec; catSec.TryGetValue(lastCat, out sec); catSec[lastCat] = sec + clock.Elapsed.TotalSeconds; }
@@ -275,7 +305,7 @@ namespace PlutoNavis
                 s.AppendLine();
             }
             File.WriteAllText(Path.Combine(dir, "summary.txt"), s.ToString(), new UTF8Encoding(false));
-            MessageBox.Show(s.ToString() + "\nWritten to:\n" + dir, "Pluto Ducts");
+            MessageBox.Show(s.ToString() + "\nWritten to:\n" + dir, title);
             return 0;
         }
 
@@ -661,45 +691,6 @@ namespace PlutoNavis
             e1 = new double[] { ox + a[0] * tmin, oy + a[1] * tmin, oz + a[2] * tmin };
             e2 = new double[] { ox + a[0] * tmax, oy + a[1] * tmax, oz + a[2] * tmax };
             fa = umax - umin; fb = vmax - vmin;
-        }
-
-        // Wall thickness from the mesh, when it models the inner surface too: across the section (two
-        // perpendiculars to the axis), the distinct |offset| levels of the vertices from the section centre;
-        // outer face = largest, inner face = next one in. Thickness = their difference when it is plausible
-        // (0 < t < 1 in) and agrees on both perpendiculars (within 0.01 in) when both have two levels.
-        // NaN when the mesh has outer faces only. Feet.
-        static double MeshWall(List<double> tri, double[] e1, double[] e2)
-        {
-            double len = Dist(e1, e2);
-            if (len <= 0 || tri.Count < 18) return double.NaN;
-            double[] a = Sub(e2, e1, len);
-            double[] u = Math.Abs(a[2]) > 0.99 ? Cross(a, new double[] { 1, 0, 0 }) : Cross(new double[] { 0, 0, 1 }, a);
-            Norm(u);
-            double[] v = Cross(a, u); Norm(v);
-            double[] c = { (e1[0] + e2[0]) / 2, (e1[1] + e2[1]) / 2, (e1[2] + e2[2]) / 2 };
-            var lu = new SortedSet<double>(); var lv = new SortedSet<double>();
-            for (int i = 0; i + 2 < tri.Count; i += 3)
-            {
-                double dx = tri[i] - c[0], dy = tri[i + 1] - c[1], dz = tri[i + 2] - c[2];
-                lu.Add(Math.Round(Math.Abs(dx * u[0] + dy * u[1] + dz * u[2]), 4));
-                lv.Add(Math.Round(Math.Abs(dx * v[0] + dy * v[1] + dz * v[2]), 4));
-            }
-            double tu = Gap(lu), tv = Gap(lv);
-            if (double.IsNaN(tu)) return tv;
-            if (double.IsNaN(tv)) return tu;
-            return Math.Abs(tu - tv) <= 0.01 / 12 ? (tu + tv) / 2 : double.NaN;
-        }
-
-        // outer minus inner level, only when there are exactly two (a hollow box: outer and inner faces; a round
-        // duct or a part with flanges gives many levels and no answer), and plausible as a wall (0 < t < 1 in)
-        static double Gap(SortedSet<double> levels)
-        {
-            if (levels.Count != 2) return double.NaN;
-            double outer = levels.Max; double inner = double.NaN;
-            foreach (double l in levels) if (l < outer - 1e-4) inner = l;   // ascending: ends at the largest below outer
-            if (double.IsNaN(inner)) return double.NaN;
-            double t = outer - inner;
-            return t > 0 && t < 1.0 / 12 ? t : double.NaN;
         }
 
         static double BboxGap(List<double> pts, BoundingBox3D bb)
