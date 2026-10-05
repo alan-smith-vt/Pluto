@@ -16,15 +16,19 @@ namespace PlutoNavis
     // full federation), then every Ducts / Duct Fittings / Duct Accessories element -> one row (Duct
     // Insulations skipped: they wrap the ducts). Writes <OutRoot>\<yyyyMMdd-HHmmss>\:
     //   ducts.csv      id, Revit category / family / type / system, IfcObjectProperties parsed to numbers
-    //                  (sizes in, lengths ft), bbox, child geometry count; for Ducts also the triangle fit:
-    //                  endpoints (best-fit axis through the vertices, extent along it), fitted length and
+    //                  (sizes in, lengths ft), bbox, own / skipped geometry counts; for Ducts also the
+    //                  triangle fit of the OWN geometry (descendants with a different IfcGUID are another
+    //                  element's): endpoints (best-fit axis, extent along it), fitted length and
     //                  cross-section, and checks against .Length / .Size / the bbox
-    //   ducts_tri.bin  triangles of the Ducts, world coordinates (document units): per element
+    //   duct_parts.csv one row per geometry item under each duct: used or skipped, its name / class /
+    //                  own IfcGUID / category, and its own fit (what the pieces under a duct are)
+    //   ducts_tri.bin  own triangles of the Ducts, world coordinates (document units): per element
     //                  int32 row (1-based ducts.csv data row), int32 nTri, nTri * 9 float32 (x y z per corner)
     //   summary.txt    counts, timings, check statistics
     // The triangles come from the COM API (ComApiBridge -> fragments -> GenerateSimplePrimitives, local
-    // vertices times the fragment's local-to-world matrix). TriVsBbox_ft checks that transform: the
-    // triangles' world extent against the item bbox (~0 when right). C# 5 (built by Build-NavisPlugin.ps1).
+    // vertices times the fragment's local-to-world matrix). TriVsBbox_ft: own triangles' world extent vs
+    // the element bbox (0 on the first run with all geometry: transform right; > 0 now when geometry was
+    // skipped, since the bbox includes it). C# 5 (built by Build-NavisPlugin.ps1).
     [Plugin("DuctsButton", "Pluto",
         DisplayName = "Pluto Ducts",
         ToolTip = "Read-only: ducts, fittings, accessories + duct triangles to C:\\Temp\\hvac\\ducts")]
@@ -63,12 +67,14 @@ namespace PlutoNavis
                 File.AppendAllText(log, string.Format(Inv, "search: {0} items in {1:0}s\r\n", total, searchSec));
 
                 using (var w = new StreamWriter(Path.Combine(dir, "ducts.csv"), false, new UTF8Encoding(false)))
+                using (var pw = new StreamWriter(Path.Combine(dir, "duct_parts.csv"), false, new UTF8Encoding(false)))
                 using (var tri = new BinaryWriter(File.Create(Path.Combine(dir, "ducts_tri.bin"))))
                 {
+                    pw.WriteLine("DuctIfcGUID,Used,DisplayName,ClassDisplayName,PartIfcGUID,PartCategory,Triangles,FitLength_ft,FitA_in,FitB_in,X1,Y1,Z1,X2,Y2,Z2");
                     w.WriteLine(string.Join(",", new[] {
                         "IfcGUID", "Category", "Family", "Type", "SystemName", "SystemType", "Shape", "Material",
                         "Width_in", "Height_in", "Diameter_in", "WallThk_in", "InsulThk_in", "Length_ft", "Size", "Location",
-                        "MinX", "MinY", "MinZ", "MaxX", "MaxY", "MaxZ", "GeomChildren", "Triangles",
+                        "MinX", "MinY", "MinZ", "MaxX", "MaxY", "MaxZ", "OwnGeom", "SkippedGeom", "Triangles",
                         "X1", "Y1", "Z1", "X2", "Y2", "Z2", "FitLength_ft", "FitA_in", "FitB_in",
                         "LenErr_ft", "SizeErr_in", "TriVsBbox_ft", "Flag" }));
                     foreach (ModelItem it in found)
@@ -90,22 +96,27 @@ namespace PlutoNavis
                         BoundingBox3D bb = it.BoundingBox();
                         bool hasBb = bb != null && !bb.IsEmpty;
 
-                        var geoms = new List<ModelItem>();
-                        foreach (ModelItem d in it.DescendantsAndSelf) if (d.HasGeometry) geoms.Add(d);
+                        string guid = Get(p, "Element|IfcGUID");
+                        var geoms = new List<ModelItem>(); var skipped = new List<ModelItem>();
+                        Collect(it, guid, true, geoms, skipped);
 
                         var cells = new List<string> {
-                            Get(p, "Element|IfcGUID"), cat, Get(p, "Element|Family"), Get(p, "Element|Type"),
+                            guid, cat, Get(p, "Element|Family"), Get(p, "Element|Type"),
                             Get(p, "Element|System Name"), Get(p, "Element|System Type"), Ifc(p, "Shape"), Ifc(p, "Material"),
                             N(wIn), N(hIn), N(dia), N(Len(Ifc(p, "Wall Thickness"), 12)), N(Len(Ifc(p, "Insulation Thickness"), 12)),
                             N(lenFt), size, Ifc(p, "Location") };
                         if (hasBb) cells.AddRange(new[] { N(bb.Min.X), N(bb.Min.Y), N(bb.Min.Z), N(bb.Max.X), N(bb.Max.Y), N(bb.Max.Z) });
                         else cells.AddRange(new[] { "", "", "", "", "", "" });
-                        cells.Add(geoms.Count.ToString(Inv));
+                        cells.Add(geoms.Count.ToString(Inv)); cells.Add(skipped.Count.ToString(Inv));
 
                         if (cat != "Ducts") { cells.Add(""); for (int k = 0; k < 13; k++) cells.Add(""); w.WriteLine(Csv(cells)); continue; }
                         ducts++;
-                        var pts = new List<double>();   // x y z per corner, world
-                        try { foreach (ModelItem g in geoms) Triangles(g, pts); }
+                        var pts = new List<double>();   // x y z per corner, world: the duct's own geometry only
+                        try
+                        {
+                            foreach (ModelItem g in geoms) pts.AddRange(Part(pw, guid, g, true));
+                            foreach (ModelItem g in skipped) Part(pw, guid, g, false);
+                        }
                         catch (Exception ex) { triErrors++; if (firstTriError == null) firstTriError = ex.GetType().Name + ": " + ex.Message; }
                         int nTri = pts.Count / 9;
                         cells.Add(nTri.ToString(Inv));
@@ -201,6 +212,46 @@ namespace PlutoNavis
             if (string.IsNullOrEmpty(s)) return;
             string[] parts = s.Split(new[] { 'x', 'X', '×' }, StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length == 2) { wIn = Len(parts[0], 12); hIn = Len(parts[1], 12); }
+        }
+
+        // Geometry under an element that belongs to it: the walk stops at a descendant carrying a different
+        // IfcGUID (another element, with its own row); that subtree's geometry goes to `skipped`.
+        // (2026-10-05: a 5.147 ft duct had 2 geometry items, 7.92 ft together, both 10x8.)
+        static void Collect(ModelItem node, string guid, bool isRoot, List<ModelItem> own, List<ModelItem> skipped)
+        {
+            if (!isRoot)
+            {
+                DataProperty dp = node.PropertyCategories.FindPropertyByDisplayName("Element", "IfcGUID");
+                string g = "";
+                try { if (dp != null && dp.Value != null) g = dp.Value.ToDisplayString(); } catch (Exception) { }
+                if (g != "" && g != guid)
+                {
+                    foreach (ModelItem d in node.DescendantsAndSelf) if (d.HasGeometry) skipped.Add(d);
+                    return;
+                }
+            }
+            if (node.HasGeometry) own.Add(node);
+            foreach (ModelItem c in node.Children) Collect(c, guid, false, own, skipped);
+        }
+
+        // One duct_parts.csv row per geometry item under a duct (its own fit); returns its triangles.
+        static List<double> Part(StreamWriter pw, string ductGuid, ModelItem g, bool used)
+        {
+            var pts = new List<double>();
+            Triangles(g, pts);
+            string pg = "", pc = "";
+            DataProperty dp = g.PropertyCategories.FindPropertyByDisplayName("Element", "IfcGUID");
+            DataProperty dc = g.PropertyCategories.FindPropertyByDisplayName("Element", "Category");
+            try { if (dp != null && dp.Value != null) pg = dp.Value.ToDisplayString(); if (dc != null && dc.Value != null) pc = dc.Value.ToDisplayString(); } catch (Exception) { }
+            var cells = new List<string> { ductGuid, used ? "1" : "0", g.DisplayName, g.ClassDisplayName, pg, pc, (pts.Count / 9).ToString(Inv) };
+            if (pts.Count >= 9)
+            {
+                double[] e1, e2, a; double fa, fb;
+                Fit(pts, out e1, out e2, out a, out fa, out fb);
+                cells.AddRange(new[] { N(Dist(e1, e2)), N(fa * 12), N(fb * 12), N(e1[0]), N(e1[1]), N(e1[2]), N(e2[0]), N(e2[1]), N(e2[2]) });
+            }
+            pw.WriteLine(Csv(cells));
+            return pts;
         }
 
         // ---- triangles (COM API), world coordinates ----
