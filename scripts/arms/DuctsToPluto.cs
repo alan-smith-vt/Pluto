@@ -286,6 +286,7 @@ public class DuctsToPluto
             var r = new Row();
             r.Guid = Get(c, "IfcGUID"); r.Cat = Get(c, "Category"); r.System = Get(c, "SystemName"); r.SizeText = Get(c, "Size");
             r.Name = Get(c, "Name"); r.FitA = Num(c, "FitA_in"); r.FitB = Num(c, "FitB_in");
+            if (double.IsNaN(r.T)) r.T = Num(c, "MeshWall_in");   // fabrication parts: wall measured from the mesh
             r.W = Num(c, "Width_in"); r.H = Num(c, "Height_in"); r.D = Num(c, "Diameter_in"); r.T = Num(c, "WallThk_in");
             double[] mn = { Num(c, "MinX"), Num(c, "MinY"), Num(c, "MinZ") }, mx = { Num(c, "MaxX"), Num(c, "MaxY"), Num(c, "MaxZ") };
             if (!double.IsNaN(mn[0]) && !double.IsNaN(mx[0])) { r.Min = mn; r.Max = mx; }
