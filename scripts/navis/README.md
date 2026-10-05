@@ -31,6 +31,19 @@ file name and the number of appended models.
 | Pluto Inventory | `InventoryButton` | read-only walk of the open model; every item with an Element-tab `IfcGUID` → `C:\Temp\hvac\inventory\<yyyyMMdd-HHmmss>\`: `items.csv` (id, source file, Revit category / family / type / system / size, bbox in document units), `property-names.csv` (every tab + property seen, count, sample value), `summary.txt` (models, units, counts by source file and category). Cancel from the progress bar writes partial results, flagged |
 | Pluto Ducts | `DuctsButton` | read-only; one search, then Ducts / Duct Fittings / Duct Accessories (insulation skipped) → `C:\Temp\hvac\ducts\<yyyyMMdd-HHmmss>\`: `ducts.csv` (properties parsed to numbers: sizes in, lengths ft; bbox; `OwnGeom` / `SkippedGeom`; for Ducts the triangle fit of its own geometry (stops at descendants with a different IfcGUID): endpoints, fitted length and section, checks `LenErr_ft` / `SizeErr_in` / `TriVsBbox_ft`, `Flag`), `duct_parts.csv` (one row per geometry item under each duct, used or skipped, with its own fit and any line segments), `duct_ends.csv` (per duct end: overlap + / gap − with the collinear neighbouring duct), `cl_segments.csv` + `cl_nodes.csv` (centreline graph from the Revit centrelines, which come through as line primitives: segments per element, nodes merged at 0.02 ft with degree and categories), `ducts_tri.bin` (duct triangles, world coordinates: int32 row, int32 nTri, nTri × 9 float32), `summary.txt` (counts, check statistics). Triangles via the COM API (`ComApiBridge`); the build references `Autodesk.Navisworks.ComApi.dll` and `Autodesk.Navisworks.Interop.ComApi.dll` from the install |
 
+## Viewer file from a Pluto Ducts run
+
+```
+powershell -ExecutionPolicy Bypass -File scripts\navis\Export-DuctsViewer.ps1 -Run C:\Temp\hvac\ducts\<yyyyMMdd-HHmmss>
+```
+
+Writes `<run>\ducts.bin` + `ducts.features.json` (`scripts\arms\DuctsToPluto.cs`): ducts along their Revit
+centrelines (fitted ends when a duct has none) with box / pipe sections from size and wall thickness;
+fitting centrelines with the fitting's size (symbol linework dropped: segments at nodes of degree ≥ 5);
+fittings without centrelines and accessories as bbox blocks; node group "Loose ends". Inches with the plant
+worldOffset, so in the viewer **Add overlay…** puts it on the SP3D plant file (rot 0: Navisworks X/Y/Z =
+plant E/N/EL).
+
 ## If the button is missing
 
 - Restart Navisworks once more (the tab has been seen to appear only on a later start).
