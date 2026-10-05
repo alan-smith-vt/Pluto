@@ -53,6 +53,9 @@ namespace PlutoNavis
             var byCat = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var lenErr = new List<double>(); var bbErr = new List<double>();
             var segs = new List<Seg>();
+            var cl = new List<ClSeg>();                                       // centreline segments, all kept categories
+            var clNone = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);   // elements without a line, by category
+            var lineVsFit = new List<double>();
             double searchSec = 0; bool cancelled = false; string firstTriError = null;
             Progress progress = Autodesk.Navisworks.Api.Application.BeginProgress("Pluto ducts: searching for IfcGUID items");
             try
@@ -110,15 +113,24 @@ namespace PlutoNavis
                         else cells.AddRange(new[] { "", "", "", "", "", "" });
                         cells.Add(geoms.Count.ToString(Inv)); cells.Add(skipped.Count.ToString(Inv));
 
-                        if (cat != "Ducts") { cells.Add(""); for (int k = 0; k < 13; k++) cells.Add(""); w.WriteLine(Csv(cells)); continue; }
+                        if (cat != "Ducts")
+                        {
+                            var fl = new List<double>();
+                            try { foreach (ModelItem g in geoms) Triangles(g, new List<double>(), fl); }
+                            catch (Exception ex) { triErrors++; if (firstTriError == null) firstTriError = ex.GetType().Name + ": " + ex.Message; }
+                            AddCl(cl, clNone, rows, guid, cat, fl);
+                            cells.Add(""); for (int k = 0; k < 13; k++) cells.Add(""); w.WriteLine(Csv(cells)); continue;
+                        }
                         ducts++;
                         var pts = new List<double>();   // x y z per corner, world: the duct's own geometry only
+                        var dl = new List<double>();    // its centreline segments
                         try
                         {
-                            foreach (ModelItem g in geoms) pts.AddRange(Part(pw, guid, g, true));
-                            foreach (ModelItem g in skipped) Part(pw, guid, g, false);
+                            foreach (ModelItem g in geoms) pts.AddRange(Part(pw, guid, g, true, dl));
+                            foreach (ModelItem g in skipped) Part(pw, guid, g, false, null);
                         }
                         catch (Exception ex) { triErrors++; if (firstTriError == null) firstTriError = ex.GetType().Name + ": " + ex.Message; }
+                        AddCl(cl, clNone, rows, guid, cat, dl);
                         int nTri = pts.Count / 9;
                         cells.Add(nTri.ToString(Inv));
                         string flag = "";
@@ -132,6 +144,7 @@ namespace PlutoNavis
                         double fitLen = Dist(e1, e2);
                         fitted++;
                         segs.Add(new Seg { Row = rows, Guid = guid, E1 = e1, E2 = e2, A = Sub(e2, e1, fitLen), Len = fitLen, LenProp = lenFt, Half = Math.Max(fa, fb) / 2 });
+                        if (dl.Count >= 6) lineVsFit.Add(LineVsFit(dl, e1, e2));
                         double le = double.IsNaN(lenFt) ? double.NaN : fitLen - lenFt;
                         if (!double.IsNaN(le)) lenErr.Add(Math.Abs(le));
                         double se = double.NaN;
@@ -153,6 +166,8 @@ namespace PlutoNavis
 
             List<double> endVals, trimErr; int contained;
             Ends(segs, Path.Combine(dir, "duct_ends.csv"), out endVals, out trimErr, out contained);
+            string graph = Graph(cl, dir);
+            lineVsFit.Sort();
             lenErr.Sort(); bbErr.Sort(); endVals.Sort(); trimErr.Sort();
             var s = new StringBuilder();
             s.AppendLine("Pluto ducts " + t0.ToString("yyyy-MM-dd HH:mm:ss", Inv) + (cancelled ? "  ** CANCELLED: partial **" : ""));
@@ -166,9 +181,111 @@ namespace PlutoNavis
             s.AppendLine("duct-duct end overlap ft:    " + Stats(endVals) + "   (+ overlap, - gap; collinear neighbours only)");
             s.AppendLine("|half-trimmed len - .Length|:" + Stats(trimErr) + "   (ducts with a neighbour at both ends; ~0 = joints at overlap midpoints)");
             if (contained > 0) s.AppendLine(string.Format(Inv, "ducts lying inside another duct: {0}", contained));
+            s.AppendLine("duct centreline vs fit ends ft:" + Stats(lineVsFit) + "   (~0 = Revit centreline = fitted solid)");
+            s.Append(graph);
+            if (clNone.Count > 0)
+            {
+                s.Append("elements without a centreline:");
+                foreach (KeyValuePair<string, int> kv in clNone) s.Append(string.Format(Inv, "  {0} {1}", kv.Key, kv.Value));
+                s.AppendLine();
+            }
             File.WriteAllText(Path.Combine(dir, "summary.txt"), s.ToString(), new UTF8Encoding(false));
             MessageBox.Show(s.ToString() + "\nWritten to:\n" + dir, "Pluto Ducts");
             return 0;
+        }
+
+        // ---- centreline graph (Revit centrelines come through as line primitives on a 0-triangle geometry
+        // item: one line per straight duct, = the duct's length; 2026-10-05) ----
+        class ClSeg { public int Row; public string Guid, Cat; public double[] P, Q; }
+
+        static void AddCl(List<ClSeg> cl, SortedDictionary<string, int> none, int row, string guid, string cat, List<double> lines)
+        {
+            int n = 0;
+            for (int i = 0; i + 5 < lines.Count; i += 6)
+            {
+                double[] p = { lines[i], lines[i + 1], lines[i + 2] }, q = { lines[i + 3], lines[i + 4], lines[i + 5] };
+                if (Dist(p, q) < 1e-6) continue;
+                cl.Add(new ClSeg { Row = row, Guid = guid, Cat = cat, P = p, Q = q });
+                n++;
+            }
+            if (n == 0) { int c; none.TryGetValue(cat, out c); none[cat] = c + 1; }
+        }
+
+        // max distance between the fitted ends and the extreme centreline points along the fitted axis
+        static double LineVsFit(List<double> lines, double[] e1, double[] e2)
+        {
+            double len = Dist(e1, e2);
+            double[] a = Sub(e2, e1, len);
+            double tmin = double.MaxValue, tmax = double.MinValue; double[] pmin = null, pmax = null;
+            for (int i = 0; i + 2 < lines.Count; i += 3)
+            {
+                double[] p = { lines[i], lines[i + 1], lines[i + 2] };
+                double t = Dot(new[] { p[0] - e1[0], p[1] - e1[1], p[2] - e1[2] }, a);
+                if (t < tmin) { tmin = t; pmin = p; }
+                if (t > tmax) { tmax = t; pmax = p; }
+            }
+            return Math.Max(Dist(pmin, e1), Dist(pmax, e2));
+        }
+
+        // Segment ends within Tol of each other become one node. Writes cl_nodes.csv (Node, X, Y, Z, Degree,
+        // Categories) and cl_segments.csv (Seg, Row, IfcGUID, Category, Node1, Node2, Length_ft); returns
+        // summary lines.
+        static string Graph(List<ClSeg> cl, string dir)
+        {
+            const double Tol = 0.02;
+            var nodes = new List<double[]>(); var degree = new List<int>(); var cats = new List<SortedSet<string>>();
+            var grid = new Dictionary<long, List<int>>();
+            var segNodes = new int[cl.Count, 2];
+            for (int i = 0; i < cl.Count; i++)
+                for (int e = 0; e < 2; e++)
+                {
+                    double[] p = e == 0 ? cl[i].P : cl[i].Q;
+                    int hit = -1;
+                    for (int dx = -1; dx <= 1 && hit < 0; dx++) for (int dy = -1; dy <= 1 && hit < 0; dy++) for (int dz = -1; dz <= 1 && hit < 0; dz++)
+                    {
+                        List<int> l;
+                        if (!grid.TryGetValue(Key(p[0] + dx * Tol, p[1] + dy * Tol, p[2] + dz * Tol, Tol), out l)) continue;
+                        foreach (int k in l) if (Dist(nodes[k], p) <= Tol) { hit = k; break; }
+                    }
+                    if (hit < 0)
+                    {
+                        hit = nodes.Count; nodes.Add(p); degree.Add(0); cats.Add(new SortedSet<string>());
+                        long key = Key(p[0], p[1], p[2], Tol);
+                        List<int> l; if (!grid.TryGetValue(key, out l)) { l = new List<int>(); grid[key] = l; } l.Add(hit);
+                    }
+                    degree[hit]++; cats[hit].Add(cl[i].Cat);
+                    segNodes[i, e] = hit;
+                }
+            var segByCat = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            using (var w = new StreamWriter(Path.Combine(dir, "cl_segments.csv"), false, new UTF8Encoding(false)))
+            {
+                w.WriteLine("Seg,Row,IfcGUID,Category,Node1,Node2,Length_ft");
+                for (int i = 0; i < cl.Count; i++)
+                {
+                    int c; segByCat.TryGetValue(cl[i].Cat, out c); segByCat[cl[i].Cat] = c + 1;
+                    w.WriteLine(Csv(new List<string> { (i + 1).ToString(Inv), cl[i].Row.ToString(Inv), cl[i].Guid, cl[i].Cat,
+                        (segNodes[i, 0] + 1).ToString(Inv), (segNodes[i, 1] + 1).ToString(Inv), N(Dist(cl[i].P, cl[i].Q)) }));
+                }
+            }
+            var byDeg = new SortedDictionary<int, int>();
+            using (var w = new StreamWriter(Path.Combine(dir, "cl_nodes.csv"), false, new UTF8Encoding(false)))
+            {
+                w.WriteLine("Node,X,Y,Z,Degree,Categories");
+                for (int k = 0; k < nodes.Count; k++)
+                {
+                    int c; byDeg.TryGetValue(degree[k], out c); byDeg[degree[k]] = c + 1;
+                    w.WriteLine(Csv(new List<string> { (k + 1).ToString(Inv), N(nodes[k][0]), N(nodes[k][1]), N(nodes[k][2]),
+                        degree[k].ToString(Inv), string.Join(";", new List<string>(cats[k]).ToArray()) }));
+                }
+            }
+            var sb = new StringBuilder();
+            sb.Append(string.Format(Inv, "centreline segments {0}:", cl.Count));
+            foreach (KeyValuePair<string, int> kv in segByCat) sb.Append(string.Format(Inv, "  {0} {1}", kv.Key, kv.Value));
+            sb.AppendLine();
+            sb.Append(string.Format(Inv, "centreline nodes {0} (tol {1} ft) by degree:", nodes.Count, Tol));
+            foreach (KeyValuePair<int, int> kv in byDeg) sb.Append(string.Format(Inv, "  {0}:{1}", kv.Key, kv.Value));
+            sb.AppendLine("   (1 = loose end, 2 = run-through / bend, 3+ = branch)");
+            return sb.ToString();
         }
 
         class Seg { public int Row; public string Guid; public double[] E1, E2, A; public double Len, LenProp, Half; }
@@ -323,11 +440,13 @@ namespace PlutoNavis
             foreach (ModelItem c in node.Children) Collect(c, guid, false, own, skipped);
         }
 
-        // One duct_parts.csv row per geometry item under a duct (its own fit); returns its triangles.
-        static List<double> Part(StreamWriter pw, string ductGuid, ModelItem g, bool used)
+        // One duct_parts.csv row per geometry item under a duct (its own fit); returns its triangles and
+        // appends its line segments to linesOut when given.
+        static List<double> Part(StreamWriter pw, string ductGuid, ModelItem g, bool used, List<double> linesOut)
         {
             var pts = new List<double>(); var lines = new List<double>();
             Triangles(g, pts, lines);
+            if (linesOut != null) linesOut.AddRange(lines);
             string pg = "", pc = "";
             DataProperty dp = g.PropertyCategories.FindPropertyByDisplayName("Element", "IfcGUID");
             DataProperty dc = g.PropertyCategories.FindPropertyByDisplayName("Element", "Category");
