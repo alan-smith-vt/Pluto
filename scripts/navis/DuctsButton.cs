@@ -90,6 +90,9 @@ namespace PlutoNavis
                     {
                         seen++;
                         if (seen % 200 == 0 && !progress.Update(total > 0 ? (double)seen / total : 0)) { cancelled = true; break; }
+                        if (seen % 1000 == 0)   // live log: open started.txt during a run to see where the time goes
+                            File.AppendAllText(log, string.Format(Inv, "{0:HH:mm:ss}  {1}/{2}  last category {3}  rows {4}  ducts {5}\r\n",
+                                DateTime.Now, seen, total, lastCat ?? "-", rows, ducts));
                         Dictionary<string, string> p = Props(it);
                         string cat = Get(p, "Element|Category");
                         if (Array.IndexOf(Keep, cat) < 0) continue;
@@ -135,7 +138,7 @@ namespace PlutoNavis
                         try
                         {
                             foreach (ModelItem g in geoms) pts.AddRange(Part(pw, guid, g, true, dl));
-                            foreach (ModelItem g in skipped) Part(pw, guid, g, false, null);
+                            foreach (ModelItem g in skipped) SkippedPart(pw, guid, g);   // listed only, no triangles (cost)
                         }
                         catch (Exception ex) { triErrors++; if (firstTriError == null) firstTriError = ex.GetType().Name + ": " + ex.Message; }
                         AddCl(cl, clNone, rows, guid, cat, dl);
@@ -452,6 +455,16 @@ namespace PlutoNavis
             }
             if (node.HasGeometry) own.Add(node);
             foreach (ModelItem c in node.Children) Collect(c, guid, false, own, skipped);
+        }
+
+        // duct_parts.csv row for another element's geometry under a duct: name / class / its IfcGUID and category
+        static void SkippedPart(StreamWriter pw, string ductGuid, ModelItem g)
+        {
+            string pg = "", pc = "";
+            DataProperty dp = g.PropertyCategories.FindPropertyByDisplayName("Element", "IfcGUID");
+            DataProperty dc = g.PropertyCategories.FindPropertyByDisplayName("Element", "Category");
+            try { if (dp != null && dp.Value != null) pg = dp.Value.ToDisplayString(); if (dc != null && dc.Value != null) pc = dc.Value.ToDisplayString(); } catch (Exception) { }
+            pw.WriteLine(Csv(new List<string> { ductGuid, "0", g.DisplayName, g.ClassDisplayName, pg, pc }));
         }
 
         // One duct_parts.csv row per geometry item under a duct (its own fit); returns its triangles and
