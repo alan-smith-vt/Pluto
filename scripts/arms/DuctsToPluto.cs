@@ -42,7 +42,7 @@ public class DuctsToPluto
             return string.Format(CultureInfo.InvariantCulture,
                 "nodes={0} beams={1}: ducts {2} (fitted-end fallback {3}), fitting centreline {4}, fitting blocks {5}, accessory blocks {6}\n" +
                 "fabrication: beams {13} (straights from bbox + size {17}), blocks {14} (fit rejected {16}); hanger blocks {15}\n" +
-                "phantoms (contradict their own size, not drawn; <out>.phantoms.txt) {18}; fittings bridged {19} (fabrication {20})\n" +
+                "fabrication straights not matching their stated size (still drawn; <out>.fab-mismatch.txt) {18}; fittings bridged {19} (fabrication {20})\n" +
                 "symbol-fan segments dropped {7}, loose ends {8}, unsized {9}, rows skipped (no geometry) {10}\n{11}\n{12}",
                 Nodes, Beams, DuctBeams, DuctFallback, FittingBeams, FittingBlocks, AccessoryBlocks, FanDropped, LooseEnds, Unsized, Skipped,
                 BinPath, SidecarPath, FabBeams, FabBlocks, HangerBlocks, FabFitRejected, FabFromBbox, FabPhantom, FittingsBridged, FabBridged);
@@ -189,22 +189,29 @@ public class DuctsToPluto
                 if (drawn.Count == 0 && fabStraight)
                 {
                     // fabrication straight: the run direction from the bbox and the stated size (two extents match
-                    // W x H or D x D, the third is the run); else the fit, if its section matches the stated size;
-                    // else the element contradicts its own size (a phantom, e.g. an invisible 8 in round "Straight"
-                    // sharing its IfcGUID with the real rectangular parts): not drawn, listed
+                    // W x H or D x D, allowing flanges, the third is the run); else the fit, if its section matches.
+                    // When neither matches, the element is LISTED (<out>.fab-mismatch.txt) and drawn as before
+                    // (fit if plausible, else a flagged block) -- never dropped: a skip rule with a 2 in tolerance
+                    // removed almost every good straight (flanges make real parts bigger than nominal, 2026-10-05).
                     double sa, sb; double[] b1, b2;
-                    if (StatedSize(r, out sa, out sb))
+                    bool stated = StatedSize(r, out sa, out sb);
+                    if (stated && BboxAxis(r, sa, sb, out b1, out b2)) { drawn.Add(new[] { ptNode(b1), ptNode(b2) }); res.FabFromBbox++; }
+                    else if (stated && r.E1 != null && FitMatches(r, sa, sb)) { drawn.Add(new[] { ptNode(r.E1), ptNode(r.E2) }); res.DuctFallback++; }
+                    else
                     {
-                        if (BboxAxis(r, sa, sb, out b1, out b2)) { drawn.Add(new[] { ptNode(b1), ptNode(b2) }); res.FabFromBbox++; }
-                        else if (r.E1 != null && FitMatches(r, sa, sb)) { drawn.Add(new[] { ptNode(r.E1), ptNode(r.E2) }); res.DuctFallback++; }
-                        else { res.FabPhantom++; phantoms.Add(label + string.Format(Inv, " | stated {0:0.##}x{1:0.##}", sa, sb)); continue; }
-                    }
-                    else if (!FitTrusted(r))
-                    {
-                        // no size anywhere and an implausible fit: block, flagged
-                        res.FabFitRejected++;
-                        if (addBlock(r, gFabRej)) res.FabBlocks++; else res.Skipped++;
-                        continue;
+                        if (stated)
+                        {
+                            res.FabPhantom++;
+                            string bx = r.Min == null ? "-" : string.Format(Inv, "{0:0.#}x{1:0.#}x{2:0.#}", (r.Max[0] - r.Min[0]) * 12, (r.Max[1] - r.Min[1]) * 12, (r.Max[2] - r.Min[2]) * 12);
+                            phantoms.Add(label + string.Format(Inv, " | stated {0:0.##}x{1:0.##} | bbox in {2} | fit {3:0.#}x{4:0.#} len {5:0.##} ft",
+                                sa, sb, bx, r.FitA, r.FitB, r.FitLen));
+                        }
+                        if (!FitTrusted(r))
+                        {
+                            res.FabFitRejected++;
+                            if (addBlock(r, gFabRej)) res.FabBlocks++; else res.Skipped++;
+                            continue;
+                        }
                     }
                 }
                 if (drawn.Count == 0 && linear && r.E1 != null) { drawn.Add(new[] { ptNode(r.E1), ptNode(r.E2) }); res.DuctFallback++; }
@@ -341,7 +348,7 @@ public class DuctsToPluto
             }
             foreach (KeyValuePair<int, int> kv in deg) if (kv.Value == 1) loose.Add((uint)kv.Key);
         }
-        File.WriteAllLines(outBase + ".phantoms.txt", phantoms.ToArray());
+        File.WriteAllLines(outBase + ".fab-mismatch.txt", phantoms.ToArray());
         if (loose.Count > 0) sc.AddNodeGroup("Loose ends", "#ff3b3b", loose, new[] { "duct", "looseEnd" }, "DUCT_LOOSE_ENDS");
         string scPath = outBase + ".features.json";
         File.WriteAllText(scPath, sc.ToJson(), new UTF8Encoding(false));
@@ -512,13 +519,12 @@ public class DuctsToPluto
     {
         e1 = e2 = null;
         if (r.Min == null) return false;
-        const double tol = 2;
         double[] ext = { (r.Max[0] - r.Min[0]) * 12, (r.Max[1] - r.Min[1]) * 12, (r.Max[2] - r.Min[2]) * 12 };
         int best = -1;
         for (int k = 0; k < 3; k++)
         {
             double o1 = ext[(k + 1) % 3], o2 = ext[(k + 2) % 3];
-            bool ok = (Math.Abs(o1 - a) <= tol && Math.Abs(o2 - b) <= tol) || (Math.Abs(o1 - b) <= tol && Math.Abs(o2 - a) <= tol);
+            bool ok = (Near(o1, a) && Near(o2, b)) || (Near(o1, b) && Near(o2, a));
             if (ok && (best < 0 || ext[k] > ext[best])) best = k;
         }
         if (best < 0 || ext[best] < 1e-3) return false;
@@ -528,12 +534,15 @@ public class DuctsToPluto
         return true;
     }
 
-    // the fitted section matches the stated one (either orientation, 2 in) and the fit is longer than wide
+    // A measured extent (bbox / fit, inches) against a stated size: real fabrication parts carry flanges /
+    // connectors, so the measure may exceed the nominal by up to 8 in, but not fall short by more than 1 in.
+    static bool Near(double measured, double stated) { return measured >= stated - 1 && measured <= stated + 8; }
+
+    // the fitted section matches the stated one (either orientation, flange allowance) and the fit has length
     static bool FitMatches(Row r, double a, double b)
     {
         if (double.IsNaN(r.FitA) || double.IsNaN(r.FitB) || double.IsNaN(r.FitLen)) return false;
-        const double tol = 2;
-        bool sec = (Math.Abs(r.FitA - a) <= tol && Math.Abs(r.FitB - b) <= tol) || (Math.Abs(r.FitA - b) <= tol && Math.Abs(r.FitB - a) <= tol);
+        bool sec = (Near(r.FitA, a) && Near(r.FitB, b)) || (Near(r.FitA, b) && Near(r.FitB, a));
         return sec && r.FitLen * 12 > 0.5 * Math.Min(a, b);
     }
 
@@ -573,8 +582,7 @@ public class DuctsToPluto
         if (double.IsNaN(r.FitA) || double.IsNaN(r.FitB) || double.IsNaN(r.FitLen) || r.E1 == null) return false;
         double sw = !double.IsNaN(r.NameD) ? r.NameD : r.NameW, sh = !double.IsNaN(r.NameD) ? r.NameD : r.NameH;
         if (double.IsNaN(sw) || double.IsNaN(sh)) return r.FitLen * 12 > Math.Max(r.FitA, r.FitB);
-        const double tol = 2;
-        return (Math.Abs(r.FitA - sw) <= tol && Math.Abs(r.FitB - sh) <= tol) || (Math.Abs(r.FitA - sh) <= tol && Math.Abs(r.FitB - sw) <= tol);
+        return (Near(r.FitA, sw) && Near(r.FitB, sh)) || (Near(r.FitA, sh) && Near(r.FitB, sw));
     }
 
     static RawViewerWriter.BeamMember Beam(int id, int a, int b, int sec, Dictionary<int, Node> nodes)
