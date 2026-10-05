@@ -1,10 +1,9 @@
-# Builds PlutoNavis.dll and installs it. No Visual Studio, no .NET SDK: compiles with the .NET Framework 4.x
-# csc.exe that ships with Windows (C# 5), against the Autodesk.Navisworks.Api.dll of the installed Navisworks
-# (Manage or Simulate, newest year unless -NavisRoot).
-# Installs to <NavisRoot>\Plugins\PlutoNavis\ (folder name = DLL name) with a plain copy; when Windows refuses,
-# it opens both folders in Explorer for a manual copy (never elevates: UAC needs IT here). The per-user
-# %APPDATA%\Autodesk Navisworks <Product> <Year>\Plugins folder did NOT load on Simulate 2025 (2026-10-05);
-# a stale copy there is removed. Close Navisworks first: a loaded DLL is locked.
+# Builds PlutoNavis.dll. No Visual Studio, no .NET SDK: compiles with the .NET Framework 4.x csc.exe that
+# ships with Windows (C# 5), against the Autodesk.Navisworks.Api.dll of the installed Navisworks (Manage or
+# Simulate, newest year unless -NavisRoot), then prints where to copy it: <NavisRoot>\Plugins\PlutoNavis\
+# (folder name = DLL name). The copy is by hand in Explorer: the script has no write access to Program Files
+# and never elevates (UAC needs IT on the work machine). The per-user %APPDATA%\Autodesk Navisworks
+# <Product> <Year>\Plugins folder did NOT load on Simulate 2025 (2026-10-05); a stale copy there is removed.
 #   powershell -ExecutionPolicy Bypass -File Build-NavisPlugin.ps1 [-NavisRoot <dir>] [-NoInstall]
 param(
     [string]$NavisRoot,
@@ -34,25 +33,9 @@ if ($LASTEXITCODE -ne 0) { throw "compile failed" }
 Write-Output "[build] $dll"
 
 if (-not $NoInstall) {
-    if (Get-Process Roamer -ErrorAction SilentlyContinue) { throw "Navisworks is running (Roamer.exe): close it, then rerun to install. The build is in $dll" }
-    $plugins = Join-Path $NavisRoot "Plugins\PlutoNavis"
-    # Plain copy, never elevation (a UAC prompt here needs IT credentials). When Windows refuses, open the
-    # build folder and the Plugins folder in Explorer for a drag-and-drop copy.
-    $copied = $false
-    try {
-        $null = New-Item -ItemType Directory -Force $plugins
-        Copy-Item $dll $plugins -Force
-        $copied = (Get-FileHash $dll).Hash -eq (Get-FileHash (Join-Path $plugins "PlutoNavis.dll")).Hash
-    } catch { }
-    if ($copied) { Write-Output "[install] $plugins\PlutoNavis.dll" }
-    else {
-        Write-Output "[install] no write access to $plugins from the script: copy by hand."
-        Write-Output "          Drag $dll into $plugins (create the PlutoNavis folder if missing; replace the old file)."
-        $plugParent = Split-Path $plugins
-        Start-Process explorer.exe $out
-        Start-Process explorer.exe $(if (Test-Path $plugins) { $plugins } else { $plugParent })
-    }
+    # The script has no write access to Program Files and never elevates: the copy is by hand in Explorer.
     $stale = Join-Path $env:APPDATA ("Autodesk " + $product + "\Plugins\PlutoNavis")
-    if (Test-Path $stale) { Remove-Item -Recurse -Force $stale; Write-Output "[install] removed the old per-user copy $stale" }
-    Write-Output "[next] start $product, ribbon 'Tool add-ins 1'"
+    if (Test-Path $stale) { Remove-Item -Recurse -Force $stale; Write-Output "[clean] removed the old per-user copy $stale" }
+    Write-Output ("[copy]  close Navisworks, then copy`n          {0}`n        into`n          {1}" -f $dll, (Join-Path $NavisRoot "Plugins\PlutoNavis\"))
+    Write-Output "[next]  start $product, ribbon 'Tool add-ins 1'"
 }

@@ -6,19 +6,17 @@ Current rung: a hello-world button that proves the add-in loads.
 
 ## Build and install (no Visual Studio, no SDK)
 
-Close Navisworks, then:
-
 ```
 powershell -ExecutionPolicy Bypass -File scripts\navis\Build-NavisPlugin.ps1
 ```
 
 - Finds the newest Navisworks Manage / Simulate under `C:\Program Files\Autodesk` (or `-NavisRoot <dir>`).
-- Compiles with the Windows .NET Framework `csc.exe`, so **keep the sources C# 5**.
-- Copies `PlutoNavis.dll` to `<NavisRoot>\Plugins\PlutoNavis\` (the folder name must equal the DLL name).
-  Plain copy only, **never elevation** (UAC on the work machine needs IT): when Windows refuses, the script
-  opens `scripts\navis\bin\` and the Plugins folder in Explorer; drag the DLL across (Explorer's own
-  permission prompt works). It stops if Navisworks is running (the loaded DLL is locked). `-NoInstall` stops after the build
-  (`scripts\navis\bin\`).
+- Compiles with the Windows .NET Framework `csc.exe`, so **keep the sources C# 5**. Output:
+  `scripts\navis\bin\PlutoNavis.dll`.
+- **Copy by hand** (close Navisworks first; a loaded DLL is locked): in Explorer, copy the DLL into
+  `<NavisRoot>\Plugins\PlutoNavis\` (the folder name must equal the DLL name; replace the old file). The
+  script prints both paths. It has no write access to Program Files and **never elevates** (UAC on the
+  work machine needs IT); Explorer's own permission prompt works.
 - The per-user `%APPDATA%\Autodesk Navisworks <Product> <Year>\Plugins` folder did **not** load on
   Simulate 2025 (2026-10-05); the script removes an old copy there.
 
