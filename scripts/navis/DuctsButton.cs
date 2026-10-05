@@ -55,7 +55,7 @@ namespace PlutoNavis
             int total = 0, seen = 0, rows = 0, ducts = 0, fitted = 0, triErrors = 0;
             var byCat = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var catSec = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);   // time per category (to the next kept item)
-            var clock = new System.Diagnostics.Stopwatch(); string lastCat = null;
+            var clock = new System.Diagnostics.Stopwatch(); string lastCat = null, lastGuid = "", lastFam = ""; int lastTri = 0;
             var lenErr = new List<double>(); var bbErr = new List<double>();
             var segs = new List<Seg>();
             var cl = new List<ClSeg>();                                       // centreline segments, all kept categories
@@ -103,8 +103,15 @@ namespace PlutoNavis
                         string cat = Get(p, "Element|Category");
                         rows++;
                         int n; byCat.TryGetValue(cat, out n); byCat[cat] = n + 1;
-                        if (lastCat != null) { double sec; catSec.TryGetValue(lastCat, out sec); catSec[lastCat] = sec + clock.Elapsed.TotalSeconds; }
-                        clock.Reset(); clock.Start(); lastCat = cat;
+                        if (lastCat != null)
+                        {
+                            double el = clock.Elapsed.TotalSeconds;
+                            double sec; catSec.TryGetValue(lastCat, out sec); catSec[lastCat] = sec + el;
+                            if (el > 2)   // slow element (plus any skipped items after it): name it
+                                File.AppendAllText(log, string.Format(Inv, "{0:HH:mm:ss}  SLOW {1:0.0}s  {2}  {3}  family '{4}'  triangles {5}\r\n",
+                                    DateTime.Now, el, lastCat, lastGuid, lastFam, lastTri));
+                        }
+                        clock.Reset(); clock.Start(); lastCat = cat; lastTri = 0;
 
                         double wIn, hIn;
                         string size = Ifc(p, "Size");
@@ -116,6 +123,7 @@ namespace PlutoNavis
                         bool hasBb = bb != null && !bb.IsEmpty;
 
                         string guid = Get(p, "Element|IfcGUID");
+                        lastGuid = guid; lastFam = Get(p, "Element|Family");
                         var geoms = new List<ModelItem>(); var skipped = new List<ModelItem>();
                         Collect(it, guid, true, geoms, skipped);
 
@@ -132,7 +140,8 @@ namespace PlutoNavis
                         if (cat != "Ducts")
                         {
                             var fl = new List<double>();
-                            try { foreach (ModelItem g in geoms) Triangles(g, new List<double>(), fl); }
+                            var ft = new List<double>();
+                            try { foreach (ModelItem g in geoms) { ft.Clear(); Triangles(g, ft, fl); lastTri += ft.Count / 9; } }
                             catch (Exception ex) { triErrors++; if (firstTriError == null) firstTriError = ex.GetType().Name + ": " + ex.Message; }
                             AddCl(cl, clNone, rows, guid, cat, fl);
                             cells.Add(""); for (int k = 0; k < 13; k++) cells.Add(""); w.WriteLine(Csv(cells)); continue;
@@ -148,6 +157,7 @@ namespace PlutoNavis
                         catch (Exception ex) { triErrors++; if (firstTriError == null) firstTriError = ex.GetType().Name + ": " + ex.Message; }
                         AddCl(cl, clNone, rows, guid, cat, dl);
                         int nTri = pts.Count / 9;
+                        lastTri = nTri;
                         cells.Add(nTri.ToString(Inv));
                         string flag = "";
                         if (nTri == 0) { for (int k = 0; k < 12; k++) cells.Add(""); cells.Add("no triangles"); w.WriteLine(Csv(cells)); continue; }
