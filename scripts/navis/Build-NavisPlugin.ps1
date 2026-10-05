@@ -1,0 +1,40 @@
+# Builds PlutoNavis.dll and installs it for the current user. No Visual Studio, no .NET SDK, no admin:
+# compiles with the .NET Framework 4.x csc.exe that ships with Windows (C# 5), against the
+# Autodesk.Navisworks.Api.dll of the installed Navisworks (Manage or Simulate, newest year unless -NavisRoot).
+# Installs to %APPDATA%\Autodesk Navisworks <Product> <Year>\Plugins\PlutoNavis\ (folder name = DLL name),
+# which Navisworks scans at start-up. Restart Navisworks after a rebuild (a loaded DLL is locked).
+#   powershell -ExecutionPolicy Bypass -File Build-NavisPlugin.ps1 [-NavisRoot <dir>] [-NoInstall]
+param(
+    [string]$NavisRoot,
+    [switch]$NoInstall
+)
+$ErrorActionPreference = "Stop"
+if (-not $NavisRoot) {
+    $NavisRoot = Get-ChildItem "C:\Program Files\Autodesk" -Directory -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -match '^Navisworks (Manage|Simulate) \d{4}$' -and (Test-Path (Join-Path $_.FullName "Autodesk.Navisworks.Api.dll")) } |
+        Sort-Object { [int]($_.Name -replace '\D', '') } | Select-Object -Last 1 -ExpandProperty FullName
+}
+if (-not $NavisRoot -or -not (Test-Path (Join-Path $NavisRoot "Autodesk.Navisworks.Api.dll"))) {
+    throw "No Navisworks Manage / Simulate found (Freedom cannot load add-ins). Pass -NavisRoot '<install folder>'."
+}
+$product = Split-Path $NavisRoot -Leaf                       # e.g. "Navisworks Simulate 2024"
+$api = Join-Path $NavisRoot "Autodesk.Navisworks.Api.dll"
+Write-Output ("[navis] {0}  (API {1})" -f $NavisRoot, (Get-Item $api).VersionInfo.FileVersion)
+
+$csc = Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+if (-not (Test-Path $csc)) { throw "csc.exe not found at $csc" }
+$out = Join-Path $PSScriptRoot "bin"
+$null = New-Item -ItemType Directory -Force $out
+$dll = Join-Path $out "PlutoNavis.dll"
+$src = @(Get-ChildItem $PSScriptRoot -Filter *.cs | ForEach-Object FullName)
+& $csc /nologo /target:library /platform:x64 /optimize+ "/out:$dll" "/reference:$api" /reference:System.Windows.Forms.dll $src
+if ($LASTEXITCODE -ne 0) { throw "compile failed" }
+Write-Output "[build] $dll"
+
+if (-not $NoInstall) {
+    $plugins = Join-Path $env:APPDATA ("Autodesk " + $product + "\Plugins\PlutoNavis")
+    $null = New-Item -ItemType Directory -Force $plugins
+    Copy-Item $dll $plugins -Force
+    Write-Output "[install] $plugins\PlutoNavis.dll"
+    Write-Output "[next] start $product, open any NWD/NWF, ribbon 'Tool add-ins 1' -> 'Pluto Hello'"
+}

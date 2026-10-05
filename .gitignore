@@ -18,3 +18,6 @@ Thumbs.db
 
 # production-side settings (copy of duct-config.example.psd1)
 scripts/duct/duct-config.psd1
+
+# Navisworks add-in build output
+scripts/navis/bin/
