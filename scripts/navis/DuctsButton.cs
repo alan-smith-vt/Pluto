@@ -52,6 +52,7 @@ namespace PlutoNavis
             int total = 0, seen = 0, rows = 0, ducts = 0, fitted = 0, triErrors = 0;
             var byCat = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             var lenErr = new List<double>(); var bbErr = new List<double>();
+            var segs = new List<Seg>();
             double searchSec = 0; bool cancelled = false; string firstTriError = null;
             Progress progress = Autodesk.Navisworks.Api.Application.BeginProgress("Pluto ducts: searching for IfcGUID items");
             try
@@ -70,7 +71,7 @@ namespace PlutoNavis
                 using (var pw = new StreamWriter(Path.Combine(dir, "duct_parts.csv"), false, new UTF8Encoding(false)))
                 using (var tri = new BinaryWriter(File.Create(Path.Combine(dir, "ducts_tri.bin"))))
                 {
-                    pw.WriteLine("DuctIfcGUID,Used,DisplayName,ClassDisplayName,PartIfcGUID,PartCategory,Triangles,FitLength_ft,FitA_in,FitB_in,X1,Y1,Z1,X2,Y2,Z2");
+                    pw.WriteLine("DuctIfcGUID,Used,DisplayName,ClassDisplayName,PartIfcGUID,PartCategory,Triangles,FitLength_ft,FitA_in,FitB_in,X1,Y1,Z1,X2,Y2,Z2,Lines,LineTotal_ft,LX1,LY1,LZ1,LX2,LY2,LZ2");
                     w.WriteLine(string.Join(",", new[] {
                         "IfcGUID", "Category", "Family", "Type", "SystemName", "SystemType", "Shape", "Material",
                         "Width_in", "Height_in", "Diameter_in", "WallThk_in", "InsulThk_in", "Length_ft", "Size", "Location",
@@ -130,6 +131,7 @@ namespace PlutoNavis
                         Fit(pts, out e1, out e2, out a, out fa, out fb);
                         double fitLen = Dist(e1, e2);
                         fitted++;
+                        segs.Add(new Seg { Row = rows, Guid = guid, E1 = e1, E2 = e2, A = Sub(e2, e1, fitLen), Len = fitLen, LenProp = lenFt, Half = Math.Max(fa, fb) / 2 });
                         double le = double.IsNaN(lenFt) ? double.NaN : fitLen - lenFt;
                         if (!double.IsNaN(le)) lenErr.Add(Math.Abs(le));
                         double se = double.NaN;
@@ -149,7 +151,9 @@ namespace PlutoNavis
             }
             finally { Autodesk.Navisworks.Api.Application.EndProgress(); }
 
-            lenErr.Sort(); bbErr.Sort();
+            List<double> endVals, trimErr; int contained;
+            Ends(segs, Path.Combine(dir, "duct_ends.csv"), out endVals, out trimErr, out contained);
+            lenErr.Sort(); bbErr.Sort(); endVals.Sort(); trimErr.Sort();
             var s = new StringBuilder();
             s.AppendLine("Pluto ducts " + t0.ToString("yyyy-MM-dd HH:mm:ss", Inv) + (cancelled ? "  ** CANCELLED: partial **" : ""));
             s.AppendLine("Document: " + (string.IsNullOrEmpty(doc.FileName) ? "(unsaved)" : doc.FileName) + "   units " + doc.Units);
@@ -158,11 +162,96 @@ namespace PlutoNavis
             s.AppendLine(string.Format(Inv, "Ducts {0}, fitted from triangles {1}, triangle errors {2}{3}", ducts, fitted, triErrors,
                 firstTriError == null ? "" : " (first: " + firstTriError + ")"));
             s.AppendLine("|fit length - .Length| ft:   " + Stats(lenErr));
-            s.AppendLine("triangles vs bbox gap ft:    " + Stats(bbErr) + "   (~0 = transform right)");
+            s.AppendLine("triangles vs bbox gap ft:    " + Stats(bbErr) + "   (> 0 where another element's geometry was skipped)");
+            s.AppendLine("duct-duct end overlap ft:    " + Stats(endVals) + "   (+ overlap, - gap; collinear neighbours only)");
+            s.AppendLine("|half-trimmed len - .Length|:" + Stats(trimErr) + "   (ducts with a neighbour at both ends; ~0 = joints at overlap midpoints)");
+            if (contained > 0) s.AppendLine(string.Format(Inv, "ducts lying inside another duct: {0}", contained));
             File.WriteAllText(Path.Combine(dir, "summary.txt"), s.ToString(), new UTF8Encoding(false));
             MessageBox.Show(s.ToString() + "\nWritten to:\n" + dir, "Pluto Ducts");
             return 0;
         }
+
+        class Seg { public int Row; public string Guid; public double[] E1, E2, A; public double Len, LenProp, Half; }
+
+        static double[] Sub(double[] q, double[] p, double len)
+        {
+            return len > 0 ? new double[] { (q[0] - p[0]) / len, (q[1] - p[1]) / len, (q[2] - p[2]) / len } : new double[] { 1, 0, 0 };
+        }
+
+        // Duct-to-duct end relations from the fitted solids: for each end, the collinear neighbour (axes
+        // within 2 deg, lateral offset < 0.1 ft) that reaches past it. Value at the end: + overlap (how far
+        // the neighbour runs into this duct), - gap (up to 0.5 ft). Trimmed length = fitted length minus
+        // half of each end's overlap (both ends having a neighbour), compared with .Length.
+        // Writes duct_ends.csv: Row, IfcGUID, End1_ft, End1Nbr, End2_ft, End2Nbr, Fit_ft, Trim_ft, Length_ft.
+        static void Ends(List<Seg> segs, string path, out List<double> endVals, out List<double> trimErr, out int contained)
+        {
+            endVals = new List<double>(); trimErr = new List<double>(); contained = 0;
+            const double cell = 4.0, cosTol = 0.99939, latTol = 0.1, gapTol = 0.5;
+            var grid = new Dictionary<long, List<int>>();
+            for (int i = 0; i < segs.Count; i++)
+            {
+                Seg sg = segs[i];
+                int steps = (int)Math.Ceiling(sg.Len / (cell / 2)) + 1;
+                var cellsOf = new HashSet<long>();
+                for (int k = 0; k <= steps; k++)
+                {
+                    double t = sg.Len * k / steps;
+                    cellsOf.Add(Key(sg.E1[0] + sg.A[0] * t, sg.E1[1] + sg.A[1] * t, sg.E1[2] + sg.A[2] * t, cell));
+                }
+                foreach (long c in cellsOf) { List<int> l; if (!grid.TryGetValue(c, out l)) { l = new List<int>(); grid[c] = l; } l.Add(i); }
+            }
+            using (var w = new StreamWriter(path, false, new UTF8Encoding(false)))
+            {
+                w.WriteLine("Row,IfcGUID,End1_ft,End1Nbr,End2_ft,End2Nbr,Fit_ft,Trim_ft,Length_ft");
+                for (int i = 0; i < segs.Count; i++)
+                {
+                    Seg s = segs[i];
+                    var cand = new HashSet<int>();
+                    foreach (double[] e in new[] { s.E1, s.E2 })
+                        for (int dx = -1; dx <= 1; dx++) for (int dy = -1; dy <= 1; dy++) for (int dz = -1; dz <= 1; dz++)
+                        {
+                            List<int> l;
+                            if (grid.TryGetValue(Key(e[0] + dx * cell, e[1] + dy * cell, e[2] + dz * cell, cell), out l)) foreach (int j in l) if (j != i) cand.Add(j);
+                        }
+                    double v1 = double.NaN, v2 = double.NaN; string n1 = "", n2 = "";
+                    bool inside = false;
+                    foreach (int j in cand)
+                    {
+                        Seg o = segs[j];
+                        if (Math.Abs(Dot(s.A, o.A)) < cosTol) continue;
+                        // lateral offset of o's midpoint from s's axis
+                        double[] mid = { (o.E1[0] + o.E2[0]) / 2 - s.E1[0], (o.E1[1] + o.E2[1]) / 2 - s.E1[1], (o.E1[2] + o.E2[2]) / 2 - s.E1[2] };
+                        double tm = Dot(mid, s.A);
+                        double lx = mid[0] - s.A[0] * tm, ly = mid[1] - s.A[1] * tm, lz = mid[2] - s.A[2] * tm;
+                        if (Math.Sqrt(lx * lx + ly * ly + lz * lz) > latTol) continue;
+                        double ta = Dot(new[] { o.E1[0] - s.E1[0], o.E1[1] - s.E1[1], o.E1[2] - s.E1[2] }, s.A);
+                        double tb = Dot(new[] { o.E2[0] - s.E1[0], o.E2[1] - s.E1[1], o.E2[2] - s.E1[2] }, s.A);
+                        double lo = Math.Min(ta, tb), hi = Math.Max(ta, tb);
+                        if (lo <= 1e-6 && hi >= s.Len - 1e-6) { inside = true; continue; }
+                        if (lo < 0 && hi > -gapTol && hi < s.Len && (double.IsNaN(v1) || hi > v1)) { v1 = hi; n1 = o.Guid; }
+                        if (hi > s.Len && lo < s.Len + gapTol && lo > 0 && (double.IsNaN(v2) || s.Len - lo > v2)) { v2 = s.Len - lo; n2 = o.Guid; }
+                    }
+                    if (inside) contained++;
+                    if (!double.IsNaN(v1)) endVals.Add(v1);
+                    if (!double.IsNaN(v2)) endVals.Add(v2);
+                    double trim = double.NaN;
+                    if (!double.IsNaN(v1) && !double.IsNaN(v2))
+                    {
+                        trim = s.Len - Math.Max(v1, 0) / 2 - Math.Max(v2, 0) / 2;
+                        if (!double.IsNaN(s.LenProp)) trimErr.Add(Math.Abs(trim - s.LenProp));
+                    }
+                    w.WriteLine(Csv(new List<string> { s.Row.ToString(Inv), s.Guid, N(v1), n1, N(v2), n2, N(s.Len), N(trim), N(s.LenProp) }));
+                }
+            }
+        }
+
+        static long Key(double x, double y, double z, double cell)
+        {
+            long ix = (long)Math.Floor(x / cell), iy = (long)Math.Floor(y / cell), iz = (long)Math.Floor(z / cell);
+            return (ix * 73856093L) ^ (iy * 19349663L) ^ (iz * 83492791L);
+        }
+
+        static double Dot(double[] p, double[] q) { return p[0] * q[0] + p[1] * q[1] + p[2] * q[2]; }
 
         // ---- properties: every tab, keyed "Tab|Property" (display names) ----
         static Dictionary<string, string> Props(ModelItem it)
@@ -237,8 +326,8 @@ namespace PlutoNavis
         // One duct_parts.csv row per geometry item under a duct (its own fit); returns its triangles.
         static List<double> Part(StreamWriter pw, string ductGuid, ModelItem g, bool used)
         {
-            var pts = new List<double>();
-            Triangles(g, pts);
+            var pts = new List<double>(); var lines = new List<double>();
+            Triangles(g, pts, lines);
             string pg = "", pc = "";
             DataProperty dp = g.PropertyCategories.FindPropertyByDisplayName("Element", "IfcGUID");
             DataProperty dc = g.PropertyCategories.FindPropertyByDisplayName("Element", "Category");
@@ -250,12 +339,25 @@ namespace PlutoNavis
                 Fit(pts, out e1, out e2, out a, out fa, out fb);
                 cells.AddRange(new[] { N(Dist(e1, e2)), N(fa * 12), N(fb * 12), N(e1[0]), N(e1[1]), N(e1[2]), N(e2[0]), N(e2[1]), N(e2[2]) });
             }
+            else for (int k = 0; k < 9; k++) cells.Add("");
+            // line segments (0-triangle parts may be Revit centrelines): count, total length, the longest one
+            int nl = lines.Count / 6; double tot = 0, best = -1; int bi = -1;
+            for (int i = 0; i < nl; i++)
+            {
+                double l = Dist(new[] { lines[6 * i], lines[6 * i + 1], lines[6 * i + 2] }, new[] { lines[6 * i + 3], lines[6 * i + 4], lines[6 * i + 5] });
+                tot += l; if (l > best) { best = l; bi = i; }
+            }
+            cells.Add(nl.ToString(Inv)); cells.Add(nl > 0 ? N(tot) : "");
+            if (bi >= 0) for (int k = 0; k < 6; k++) cells.Add(N(lines[6 * bi + k]));
             pw.WriteLine(Csv(cells));
             return pts;
         }
 
         // ---- triangles (COM API), world coordinates ----
-        static void Triangles(ModelItem g, List<double> pts)
+        static void Triangles(ModelItem g, List<double> pts) { Triangles(g, pts, null); }
+
+        // triangles into pts; line segments (two corners each) into lines when given
+        static void Triangles(ModelItem g, List<double> pts, List<double> lines)
         {
             ComApi.InwOaPath path = ComBridge.ToInwOaPath(g);
             foreach (ComApi.InwOaFragment3 frag in path.Fragments())
@@ -264,7 +366,7 @@ namespace PlutoNavis
                 Array ma = (Array)((ComApi.InwLTransform3f3)frag.GetLocalToWorldMatrix()).Matrix;
                 int lo = ma.GetLowerBound(0);
                 for (int k = 0; k < 16; k++) m[k] = Convert.ToDouble(ma.GetValue(lo + k));
-                var cb = new TriCollector(m, pts);
+                var cb = new TriCollector(m, pts, lines);
                 frag.GenerateSimplePrimitives(ComApi.nwEVertexProperty.eNORMAL, cb);
             }
         }
@@ -272,19 +374,19 @@ namespace PlutoNavis
         // Row-vector convention: world = [x y z 1] * M, M row-major (translation in m[12..14]).
         class TriCollector : ComApi.InwSimplePrimitivesCB
         {
-            readonly double[] m; readonly List<double> pts;
-            public TriCollector(double[] m, List<double> pts) { this.m = m; this.pts = pts; }
-            void Add(ComApi.InwSimpleVertex v)
+            readonly double[] m; readonly List<double> pts, lines;
+            public TriCollector(double[] m, List<double> pts, List<double> lines) { this.m = m; this.pts = pts; this.lines = lines; }
+            void Add(List<double> to, ComApi.InwSimpleVertex v)
             {
                 Array c = (Array)v.coord;
                 int lo = c.GetLowerBound(0);
                 double x = Convert.ToDouble(c.GetValue(lo)), y = Convert.ToDouble(c.GetValue(lo + 1)), z = Convert.ToDouble(c.GetValue(lo + 2));
-                pts.Add(x * m[0] + y * m[4] + z * m[8] + m[12]);
-                pts.Add(x * m[1] + y * m[5] + z * m[9] + m[13]);
-                pts.Add(x * m[2] + y * m[6] + z * m[10] + m[14]);
+                to.Add(x * m[0] + y * m[4] + z * m[8] + m[12]);
+                to.Add(x * m[1] + y * m[5] + z * m[9] + m[13]);
+                to.Add(x * m[2] + y * m[6] + z * m[10] + m[14]);
             }
-            public void Triangle(ComApi.InwSimpleVertex v1, ComApi.InwSimpleVertex v2, ComApi.InwSimpleVertex v3) { Add(v1); Add(v2); Add(v3); }
-            public void Line(ComApi.InwSimpleVertex v1, ComApi.InwSimpleVertex v2) { }
+            public void Triangle(ComApi.InwSimpleVertex v1, ComApi.InwSimpleVertex v2, ComApi.InwSimpleVertex v3) { Add(pts, v1); Add(pts, v2); Add(pts, v3); }
+            public void Line(ComApi.InwSimpleVertex v1, ComApi.InwSimpleVertex v2) { if (lines != null) { Add(lines, v1); Add(lines, v2); } }
             public void Point(ComApi.InwSimpleVertex v1) { }
             public void SnapPoint(ComApi.InwSimpleVertex v1) { }
         }
