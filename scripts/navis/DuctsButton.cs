@@ -53,25 +53,12 @@ namespace PlutoNavis
 
         public override int Execute(params string[] parameters) { return Run(false); }
 
-        // Fabrication part type text -> kept category: exact Keep name, else by content ("Hanger" / "Duct").
-        static string FabCat(string type)
-        {
-            string k = KeepCat(type);
-            if (k == Fab || k == FabHangers) return k;
-            string t = (type ?? "").ToLowerInvariant();
-            if (t.Contains("hanger")) return FabHangers;
-            if (t.Contains("duct")) return Fab;
-            return null;
-        }
-
-        static string ItemType(ModelItem m)
-        {
-            DataProperty dp = m.PropertyCategories.FindPropertyByDisplayName("Item", "Type");
-            try { return dp != null && dp.Value != null ? dp.Value.ToDisplayString() : ""; } catch (Exception) { return ""; }
-        }
-
-        // fabOnly: the fabrication search and its parts only (the Pluto Fab button; seconds instead of minutes),
-        // written under C:\Temp\hvac\fab\<run>.
+        // fabOnly: only elements whose Element/Category contains "Fabrication" (the Pluto Fab button; seconds
+        // instead of minutes), written under C:\Temp\hvac\fab\<run>.
+        // Fabrication parts (2026-10-05): the Revit element node carries Element / Custom tabs, IfcGUID and
+        // Category "MEP Fabrication Ductwork"; under it a composite object with only an Item tab (what a click
+        // selects), then the mesh. So the IfcGUID search finds them like any other element. Their IfcGUID is
+        // NOT unique (parts of one fabrication assembly share it): rows are keyed by NavisId.
         internal static int Run(bool fabOnly)
         {
             string title = fabOnly ? "Pluto Fab" : "Pluto Ducts";
@@ -89,6 +76,7 @@ namespace PlutoNavis
             var clock = new System.Diagnostics.Stopwatch(); string lastCat = null, lastGuid = "", lastFam = ""; int lastTri = 0;
             var lenErr = new List<double>(); var bbErr = new List<double>();
             var segs = new List<Seg>();
+            var guidUse = new Dictionary<string, int>(StringComparer.Ordinal);   // IfcGUID -> rows carrying it
             var propCensus = new SortedDictionary<string, string[]>(StringComparer.Ordinal);   // "cat|tab|prop" -> {count, sample}
             var cl = new List<ClSeg>();                                       // centreline segments, all kept categories
             var clNone = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);   // elements without a line, by category
@@ -98,41 +86,16 @@ namespace PlutoNavis
             try
             {
                 progress.Update(0);
-                // the fabrication flag travels with each item (ModelItem wrappers are new objects on every
-                // enumeration, so a set lookup by object never matched: 2026-10-05, 1165 found, 0 rows)
-                var work = new List<ModelItem>(); var isFab = new List<bool>();
-                if (!fabOnly)
-                {
-                    Search search = new Search();
-                    search.Selection.SelectAll();
-                    search.Locations = SearchLocations.DescendantsAndSelf;
-                    search.SearchConditions.Add(SearchCondition.HasPropertyByDisplayName("Element", "IfcGUID"));
-                    ModelItemCollection found = search.FindAll(doc, false);
-                    foreach (ModelItem m in found) { work.Add(m); isFab.Add(false); }
-                    searchSec = (DateTime.Now - t0).TotalSeconds;
-                    File.AppendAllText(log, string.Format(Inv, "search IfcGUID: {0} items in {1:0}s\r\n", found.Count, searchSec));
-                }
-                // Fabrication parts carry only the Item tab (no Element tab, no IfcGUID): a search on Item/Type,
-                // keeping the top item of each composite object (nested = its parent's Item/Type is fabrication too).
-                Search fs = new Search();
-                fs.Selection.SelectAll();
-                fs.Locations = SearchLocations.DescendantsAndSelf;
-                fs.SearchConditions.Add(SearchCondition.HasPropertyByDisplayName("Item", "Type").DisplayStringContains("Fabrication"));
-                ModelItemCollection fabAll = fs.FindAll(doc, false);
-                int fabTop = 0;
-                var fabTypes = new SortedDictionary<string, int>(StringComparer.Ordinal);
-                foreach (ModelItem m in fabAll)
-                {
-                    ModelItem pa = m.Parent;
-                    if (pa != null && ItemType(pa).IndexOf("Fabrication", StringComparison.OrdinalIgnoreCase) >= 0) continue;
-                    work.Add(m); isFab.Add(true); fabTop++;
-                    string ty = ItemType(m); int c; fabTypes.TryGetValue(ty, out c); fabTypes[ty] = c + 1;
-                }
-                total = work.Count;
+                Search search = new Search();
+                search.Selection.SelectAll();
+                search.Locations = SearchLocations.DescendantsAndSelf;
+                search.SearchConditions.Add(fabOnly
+                    ? SearchCondition.HasPropertyByDisplayName("Element", "Category").DisplayStringContains("Fabrication")
+                    : SearchCondition.HasPropertyByDisplayName("Element", "IfcGUID"));
+                ModelItemCollection found = search.FindAll(doc, false);
+                total = found.Count;
                 searchSec = (DateTime.Now - t0).TotalSeconds;
-                File.AppendAllText(log, string.Format(Inv, "search Fabrication: {0} items, {1} top-level, total {2:0}s\r\n", fabAll.Count, fabTop, searchSec));
-                foreach (KeyValuePair<string, int> kv in fabTypes)
-                    File.AppendAllText(log, string.Format(Inv, "  fabrication Item/Type '{0}': {1} -> {2}\r\n", kv.Key, kv.Value, FabCat(kv.Key) ?? "(skipped)"));
+                File.AppendAllText(log, string.Format(Inv, "search {0}: {1} items in {2:0}s\r\n", fabOnly ? "Element/Category ~ Fabrication" : "IfcGUID", total, searchSec));
 
                 using (var w = new StreamWriter(Path.Combine(dir, "ducts.csv"), false, new UTF8Encoding(false)))
                 using (var pw = new StreamWriter(Path.Combine(dir, "duct_parts.csv"), false, new UTF8Encoding(false)))
@@ -140,14 +103,13 @@ namespace PlutoNavis
                 {
                     pw.WriteLine("DuctIfcGUID,Used,DisplayName,ClassDisplayName,PartIfcGUID,PartCategory,Triangles,FitLength_ft,FitA_in,FitB_in,X1,Y1,Z1,X2,Y2,Z2,Lines,LineTotal_ft,LX1,LY1,LZ1,LX2,LY2,LZ2");
                     w.WriteLine(string.Join(",", new[] {
-                        "IfcGUID", "Category", "Family", "Type", "Name", "SystemName", "SystemType", "Shape", "Material",
+                        "IfcGUID", "NavisId", "Category", "Family", "Type", "Name", "SystemName", "SystemType", "Shape", "Material",
                         "Width_in", "Height_in", "Diameter_in", "WallThk_in", "InsulThk_in", "Length_ft", "Size", "Location",
                         "MinX", "MinY", "MinZ", "MaxX", "MaxY", "MaxZ", "OwnGeom", "SkippedGeom", "Triangles",
                         "X1", "Y1", "Z1", "X2", "Y2", "Z2", "FitLength_ft", "FitA_in", "FitB_in",
                         "LenErr_ft", "SizeErr_in", "TriVsBbox_ft", "Flag" }));
-                    for (int wi = 0; wi < work.Count; wi++)
+                    foreach (ModelItem it in found)
                     {
-                        ModelItem it = work[wi];
                         seen++;
                         if (seen % 200 == 0 && !progress.Update(total > 0 ? (double)seen / total : 0)) { cancelled = true; break; }
                         if (seen % 1000 == 0)   // live log: open started.txt during a run to see where the time goes
@@ -155,11 +117,10 @@ namespace PlutoNavis
                                 DateTime.Now, seen, total, lastCat ?? "-", rows, ducts));
                         // category first (one lookup); every property only for the items kept (insulation and
                         // the rest would otherwise each pay a full property read)
-                        bool fabItem = isFab[wi];
-                        DataProperty cp = it.PropertyCategories.FindPropertyByDisplayName(fabItem ? "Item" : "Element", fabItem ? "Type" : "Category");
+                        DataProperty cp = it.PropertyCategories.FindPropertyByDisplayName("Element", "Category");
                         string cat0 = "";
                         try { if (cp != null && cp.Value != null) cat0 = cp.Value.ToDisplayString(); } catch (Exception) { }
-                        string cat = fabItem ? FabCat(cat0) : KeepCat(cat0);
+                        string cat = KeepCat(cat0);
                         if (cat == null) continue;
                         Dictionary<string, string> p = Props(it);
                         foreach (KeyValuePair<string, string> kv in p)   // property census per category
@@ -192,16 +153,18 @@ namespace PlutoNavis
                         bool hasBb = bb != null && !bb.IsEmpty;
 
                         string guid = Get(p, "Element|IfcGUID");
-                        if (guid == "")   // fabrication part: Navisworks' instance id (stable until the file is re-exported)
-                            guid = it.InstanceGuid != Guid.Empty ? "NW-" + it.InstanceGuid.ToString("N") : "NW-row" + rows.ToString(Inv);
-                        lastGuid = guid; lastFam = Get(p, "Element|Family");
+                        // unique key: Navisworks' item id (stable until the file is re-exported); IfcGUID is not
+                        // unique (fabrication assembly parts share one)
+                        string navisId = it.InstanceGuid != Guid.Empty ? it.InstanceGuid.ToString("N") : "row" + rows.ToString(Inv);
+                        if (guid != "") { int gu; guidUse.TryGetValue(guid, out gu); guidUse[guid] = gu + 1; }
+                        lastGuid = guid + " (" + navisId + ")"; lastFam = Get(p, "Element|Family");
                         string material = Ifc(p, "Material");
                         if (material == "") material = Get(p, "Item|Material");
                         var geoms = new List<ModelItem>(); var skipped = new List<ModelItem>();
                         Collect(it, guid, true, geoms, skipped);
 
                         var cells = new List<string> {
-                            guid, cat, Get(p, "Element|Family"), Get(p, "Element|Type"), it.DisplayName,
+                            guid, navisId, cat, Get(p, "Element|Family"), Get(p, "Element|Type"), it.DisplayName,
                             Get(p, "Element|System Name"), Get(p, "Element|System Type"), Ifc(p, "Shape"), material,
                             N(wIn), N(hIn), N(dia), N(Len(Ifc(p, "Wall Thickness"), 12)), N(Len(Ifc(p, "Insulation Thickness"), 12)),
                             N(lenFt), size, Ifc(p, "Location") };
@@ -297,6 +260,11 @@ namespace PlutoNavis
             s.AppendLine("|half-trimmed len - .Length|:" + Stats(trimErr) + "   (ducts with a neighbour at both ends; ~0 = joints at overlap midpoints)");
             if (contained > 0) s.AppendLine(string.Format(Inv, "ducts lying inside another duct: {0}", contained));
             s.AppendLine("duct centreline vs fit ends ft:" + Stats(lineVsFit) + "   (~0 = Revit centreline = fitted solid)");
+            {
+                int sharedIds = 0, sharedRows = 0;
+                foreach (int u in guidUse.Values) if (u > 1) { sharedIds++; sharedRows += u; }
+                s.AppendLine(string.Format(Inv, "IfcGUIDs shared by more than one row: {0} ({1} rows); rows are keyed by NavisId", sharedIds, sharedRows));
+            }
             s.Append(graph);
             if (clNone.Count > 0)
             {
@@ -543,9 +511,9 @@ namespace PlutoNavis
             if (parts.Length == 2) { wIn = Len(parts[0], 12); hIn = Len(parts[1], 12); }
         }
 
-        // Geometry under an element that belongs to it: the walk stops at a descendant carrying a different
-        // IfcGUID (another element, with its own row); that subtree's geometry goes to `skipped`.
-        // (2026-10-05: a 5.147 ft duct had 2 geometry items, 7.92 ft together, both 10x8.)
+        // Geometry under an element that belongs to it: the walk stops at a descendant carrying its own IfcGUID,
+        // even the same one (it is a found item with its own row; IfcGUIDs are shared between fabrication
+        // assembly parts); that subtree's geometry goes to `skipped`.
         static void Collect(ModelItem node, string guid, bool isRoot, List<ModelItem> own, List<ModelItem> skipped)
         {
             if (!isRoot)
@@ -553,7 +521,7 @@ namespace PlutoNavis
                 DataProperty dp = node.PropertyCategories.FindPropertyByDisplayName("Element", "IfcGUID");
                 string g = "";
                 try { if (dp != null && dp.Value != null) g = dp.Value.ToDisplayString(); } catch (Exception) { }
-                if (g != "" && g != guid)
+                if (g != "")
                 {
                     foreach (ModelItem d in node.DescendantsAndSelf) if (d.HasGeometry) skipped.Add(d);
                     return;

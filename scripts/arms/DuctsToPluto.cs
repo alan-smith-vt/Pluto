@@ -54,7 +54,7 @@ public class DuctsToPluto
 
     class Row
     {
-        public string Guid, Cat, System, SizeText, Name, Shape;
+        public string Guid, NavisId, Cat, System, SizeText, Name, Shape;
         public double W, H, D, T;                 // inches; NaN = unknown
         public double FitA, FitB;                 // fitted cross-section, inches (fallback when no size)
         public double FitLen;                     // fitted length, feet
@@ -122,7 +122,8 @@ public class DuctsToPluto
         {
             Row r = rows[i]; int rowNo = i + 1;
             List<int[]> segs; segsByRow.TryGetValue(rowNo, out segs);
-            string label = r.Guid + " | " + r.System + " | " + (r.SizeText != "" ? r.SizeText : r.Name);
+            string label = r.Guid + (r.NavisId != "" ? " #" + r.NavisId.Substring(0, Math.Min(8, r.NavisId.Length)) : "")
+                + " | " + r.System + " | " + (r.SizeText != "" ? r.SizeText : r.Name);   // IfcGUID is not unique: short NavisId too
             bool isDuct = r.Cat == "Ducts", isFit = r.Cat == "Duct Fittings";
             bool fab = string.Equals(r.Cat, Fab, StringComparison.OrdinalIgnoreCase);
             // a straight: named "Straight…", or named by its size (" 74 in x 28 in") with a fit that matches it
@@ -344,7 +345,7 @@ public class DuctsToPluto
         foreach (Dictionary<string, string> c in ReadCsv(path))
         {
             var r = new Row();
-            r.Guid = Get(c, "IfcGUID"); r.Cat = Get(c, "Category"); r.System = Get(c, "SystemName"); r.SizeText = Get(c, "Size");
+            r.Guid = Get(c, "IfcGUID"); r.NavisId = Get(c, "NavisId"); r.Cat = Get(c, "Category"); r.System = Get(c, "SystemName"); r.SizeText = Get(c, "Size");
             r.Name = Get(c, "Name"); r.Shape = Get(c, "Shape"); r.FitA = Num(c, "FitA_in"); r.FitB = Num(c, "FitB_in"); r.FitLen = Num(c, "FitLength_ft");
             NameSize(r.Name, out r.NameW, out r.NameH, out r.NameD);
             r.W = Num(c, "Width_in"); r.H = Num(c, "Height_in"); r.D = Num(c, "Diameter_in"); r.T = Num(c, "WallThk_in");
