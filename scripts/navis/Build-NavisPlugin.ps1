@@ -1,8 +1,10 @@
-# Builds PlutoNavis.dll and installs it for the current user. No Visual Studio, no .NET SDK, no admin:
-# compiles with the .NET Framework 4.x csc.exe that ships with Windows (C# 5), against the
-# Autodesk.Navisworks.Api.dll of the installed Navisworks (Manage or Simulate, newest year unless -NavisRoot).
-# Installs to %APPDATA%\Autodesk Navisworks <Product> <Year>\Plugins\PlutoNavis\ (folder name = DLL name),
-# which Navisworks scans at start-up. Restart Navisworks after a rebuild (a loaded DLL is locked).
+# Builds PlutoNavis.dll and installs it. No Visual Studio, no .NET SDK: compiles with the .NET Framework 4.x
+# csc.exe that ships with Windows (C# 5), against the Autodesk.Navisworks.Api.dll of the installed Navisworks
+# (Manage or Simulate, newest year unless -NavisRoot).
+# Installs to <NavisRoot>\Plugins\PlutoNavis\ (folder name = DLL name). That folder needs admin, so only the
+# copy runs elevated (one UAC prompt; none when the shell is already elevated). The per-user
+# %APPDATA%\Autodesk Navisworks <Product> <Year>\Plugins folder did NOT load on Simulate 2025 (2026-10-05);
+# a stale copy there is removed. Close Navisworks first: a loaded DLL is locked.
 #   powershell -ExecutionPolicy Bypass -File Build-NavisPlugin.ps1 [-NavisRoot <dir>] [-NoInstall]
 param(
     [string]$NavisRoot,
@@ -17,7 +19,7 @@ if (-not $NavisRoot) {
 if (-not $NavisRoot -or -not (Test-Path (Join-Path $NavisRoot "Autodesk.Navisworks.Api.dll"))) {
     throw "No Navisworks Manage / Simulate found (Freedom cannot load add-ins). Pass -NavisRoot '<install folder>'."
 }
-$product = Split-Path $NavisRoot -Leaf                       # e.g. "Navisworks Simulate 2024"
+$product = Split-Path $NavisRoot -Leaf                       # e.g. "Navisworks Simulate 2025"
 $api = Join-Path $NavisRoot "Autodesk.Navisworks.Api.dll"
 Write-Output ("[navis] {0}  (API {1})" -f $NavisRoot, (Get-Item $api).VersionInfo.FileVersion)
 
@@ -32,9 +34,20 @@ if ($LASTEXITCODE -ne 0) { throw "compile failed" }
 Write-Output "[build] $dll"
 
 if (-not $NoInstall) {
-    $plugins = Join-Path $env:APPDATA ("Autodesk " + $product + "\Plugins\PlutoNavis")
-    $null = New-Item -ItemType Directory -Force $plugins
-    Copy-Item $dll $plugins -Force
+    if (Get-Process Roamer -ErrorAction SilentlyContinue) { throw "Navisworks is running (Roamer.exe): close it, then rerun to install. The build is in $dll" }
+    $plugins = Join-Path $NavisRoot "Plugins\PlutoNavis"
+    $copy = "New-Item -ItemType Directory -Force '$plugins' | Out-Null; Copy-Item '$dll' '$plugins' -Force"
+    $admin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    if ($admin) { Invoke-Expression $copy }
+    else {
+        Write-Output "[install] asking for admin to copy into $plugins"
+        $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes("`$ErrorActionPreference='Stop'; $copy"))
+        $p = Start-Process powershell.exe -Verb RunAs -Wait -PassThru -WindowStyle Hidden -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-EncodedCommand", $enc
+        if ($p.ExitCode -ne 0) { throw "elevated copy failed (exit $($p.ExitCode))" }
+    }
+    if ((Get-FileHash $dll).Hash -ne (Get-FileHash (Join-Path $plugins "PlutoNavis.dll")).Hash) { throw "installed DLL does not match the build" }
     Write-Output "[install] $plugins\PlutoNavis.dll"
-    Write-Output "[next] start $product, open any NWD/NWF, ribbon 'Tool add-ins 1' -> 'Pluto Hello'"
+    $stale = Join-Path $env:APPDATA ("Autodesk " + $product + "\Plugins\PlutoNavis")
+    if (Test-Path $stale) { Remove-Item -Recurse -Force $stale; Write-Output "[install] removed the old per-user copy $stale" }
+    Write-Output "[next] start $product, ribbon 'Tool add-ins 1'"
 }
