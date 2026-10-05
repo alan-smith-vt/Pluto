@@ -351,6 +351,78 @@ public class DuctsToPluto
         return res;
     }
 
+    // Side pass: the raw triangles of ducts_tri.bin (Ducts and MEP Fabrication Ductwork, world coordinates, feet)
+    // as a shell mesh overlay, to see each element's actual geometry independent of any fit / size logic.
+    // Record: int32 row (1-based ducts.csv data row), int32 nTri, nTri * 9 float32. One shell group per
+    // category; every triangle labelled like the beams (IfcGUID #NavisId | system | size).
+    public static Result ExportMesh(string runDir, string outBase, string modelId, string lengthUnit)
+    {
+        double scale = LengthScale(lengthUnit);
+        var rows = ReadRows(Path.Combine(runDir, "ducts.csv"));
+        string triPath = Path.Combine(runDir, "ducts_tri.bin");
+        if (!File.Exists(triPath)) throw new Exception("DuctsToPluto: missing " + triPath);
+        var recs = new List<KeyValuePair<int, float[]>>();
+        double[] lo = { double.MaxValue, double.MaxValue, double.MaxValue }, hi = { double.MinValue, double.MinValue, double.MinValue };
+        using (var br = new BinaryReader(File.OpenRead(triPath)))
+        {
+            while (br.BaseStream.Position + 8 <= br.BaseStream.Length)
+            {
+                int row = br.ReadInt32(), n = br.ReadInt32();
+                var f = new float[n * 9];
+                for (int k = 0; k < f.Length; k++) { f[k] = br.ReadSingle(); lo[k % 3] = Math.Min(lo[k % 3], f[k]); hi[k % 3] = Math.Max(hi[k % 3], f[k]); }
+                recs.Add(new KeyValuePair<int, float[]>(row, f));
+            }
+        }
+        if (recs.Count == 0) throw new Exception("DuctsToPluto: no triangles in " + triPath);
+        double[] off = { Math.Round((lo[0] + hi[0]) / 2), Math.Round((lo[1] + hi[1]) / 2), Math.Round((lo[2] + hi[2]) / 2) };
+        var nodes = new Dictionary<int, Node>(); var elems = new Dictionary<int, Element>(); var labels = new Dictionary<int, string>();
+        var keyToNode = new Dictionary<string, int>(); var byCat = new SortedDictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
+        int nextNode = 1, nextElem = 1;
+        foreach (KeyValuePair<int, float[]> rec in recs)
+        {
+            Row r = rec.Key >= 1 && rec.Key <= rows.Count ? rows[rec.Key - 1] : null;
+            string label = r == null ? "row " + rec.Key : r.Guid + (r.NavisId != "" ? " #" + r.NavisId.Substring(0, Math.Min(8, r.NavisId.Length)) : "")
+                + " | " + r.System + " | " + (r.SizeText != "" ? r.SizeText : r.Name);
+            string cat = r == null ? "?" : r.Cat;
+            List<uint> g; if (!byCat.TryGetValue(cat, out g)) { g = new List<uint>(); byCat[cat] = g; }
+            float[] f = rec.Value;
+            for (int t = 0; t + 8 < f.Length; t += 9)
+            {
+                var el = new Element(); el.id = nextElem++; el.nNodes = 3; el.n = new Node[4];
+                for (int c = 0; c < 3; c++)
+                {
+                    double[] p = { f[t + 3 * c], f[t + 3 * c + 1], f[t + 3 * c + 2] };
+                    string key = string.Format(Inv, "{0:F4}|{1:F4}|{2:F4}", p[0], p[1], p[2]);
+                    int nid;
+                    if (!keyToNode.TryGetValue(key, out nid)) { nid = MakeNode(nodes, ref nextNode, p, off, scale); keyToNode[key] = nid; }
+                    el.n[c] = nodes[nid];
+                }
+                elems[el.id] = el; labels[el.id] = label; g.Add((uint)el.id);
+            }
+        }
+        var units = new Dictionary<string, string>(); units["length"] = lengthUnit;
+        var comps = new List<RawViewerWriter.Component>();
+        comps.Add(new RawViewerWriter.Component("Axial N", "force", "kip"));   // layout only; no planes written
+        string binPath = outBase + ".bin";
+        var w = new RawViewerWriter(binPath, nodes, elems, null, comps, null, null, null, modelId, units);
+        w.SetShellLabels(labels);
+        w.Write(false);
+        var sc = new FeaturesSidecar();
+        sc.ModelId = modelId; sc.GeometryHash = w.GeometryHash;
+        sc.Units["length"] = lengthUnit;
+        sc.Units["worldOffset"] = string.Format(Inv, "{0} {1} {2}", off[0] * scale, off[1] * scale, off[2] * scale);
+        string[] palette = { "#7fb3ff", "#5a8fe0", "#3fc1a5", "#ffc04d" };
+        int pi = 0;
+        foreach (KeyValuePair<string, List<uint>> kv in byCat)
+            sc.AddGroup(kv.Key + " (mesh)", palette[pi++ % palette.Length], "shells", kv.Value, new[] { "duct", "mesh", kv.Key }, null);
+        string scPath = outBase + ".features.json";
+        File.WriteAllText(scPath, sc.ToJson(), new UTF8Encoding(false));
+        var res = new Result();
+        res.BinPath = binPath; res.SidecarPath = scPath; res.GeometryHash = w.GeometryHash;
+        res.Nodes = nodes.Count; res.Beams = 0; res.Skipped = rows.Count - recs.Count;
+        return res;
+    }
+
     // Box (W x H, wall) or pipe (D, wall) per distinct size; unsized -> a 2 in pipe placeholder.
     static int SectionFor(Row r, double scale, List<RawViewerWriter.SectionDef> sections, Dictionary<string, int> index, out bool sized)
     {
