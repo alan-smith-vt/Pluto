@@ -38,6 +38,9 @@ namespace PlutoNavis
         const string OutRoot = @"C:\Temp\hvac\ducts";
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
         static readonly string[] Keep = { "Ducts", "Duct Fittings", "Duct Accessories" };
+        // Accessory geometry is heavy (finely tessellated parts; the triangles must be generated to reach the
+        // centreline): a run with it did ~15 % of the items per hour (2026-10-05). Off until accessories matter.
+        const bool AccessoryGeometry = false;
 
         public override int Execute(params string[] parameters)
         {
@@ -51,6 +54,8 @@ namespace PlutoNavis
 
             int total = 0, seen = 0, rows = 0, ducts = 0, fitted = 0, triErrors = 0;
             var byCat = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var catSec = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);   // time per category (to the next kept item)
+            var clock = new System.Diagnostics.Stopwatch(); string lastCat = null;
             var lenErr = new List<double>(); var bbErr = new List<double>();
             var segs = new List<Seg>();
             var cl = new List<ClSeg>();                                       // centreline segments, all kept categories
@@ -90,6 +95,8 @@ namespace PlutoNavis
                         if (Array.IndexOf(Keep, cat) < 0) continue;
                         rows++;
                         int n; byCat.TryGetValue(cat, out n); byCat[cat] = n + 1;
+                        if (lastCat != null) { double sec; catSec.TryGetValue(lastCat, out sec); catSec[lastCat] = sec + clock.Elapsed.TotalSeconds; }
+                        clock.Reset(); clock.Start(); lastCat = cat;
 
                         double wIn, hIn;
                         string size = Ifc(p, "Size");
@@ -113,6 +120,7 @@ namespace PlutoNavis
                         else cells.AddRange(new[] { "", "", "", "", "", "" });
                         cells.Add(geoms.Count.ToString(Inv)); cells.Add(skipped.Count.ToString(Inv));
 
+                        if (cat == "Duct Accessories" && !AccessoryGeometry) { cells.Add(""); for (int k = 0; k < 13; k++) cells.Add(""); w.WriteLine(Csv(cells)); continue; }
                         if (cat != "Ducts")
                         {
                             var fl = new List<double>();
@@ -173,7 +181,13 @@ namespace PlutoNavis
             s.AppendLine("Pluto ducts " + t0.ToString("yyyy-MM-dd HH:mm:ss", Inv) + (cancelled ? "  ** CANCELLED: partial **" : ""));
             s.AppendLine("Document: " + (string.IsNullOrEmpty(doc.FileName) ? "(unsaved)" : doc.FileName) + "   units " + doc.Units);
             s.AppendLine(string.Format(Inv, "Search {0} IfcGUID items in {1:0}s; read {2}; rows {3}; total {4:0}s", total, searchSec, seen, rows, (DateTime.Now - t0).TotalSeconds));
-            foreach (KeyValuePair<string, int> kv in byCat) s.AppendLine(string.Format(Inv, "  {0,8}  {1}", kv.Value, kv.Key));
+            if (lastCat != null) { double sec; catSec.TryGetValue(lastCat, out sec); catSec[lastCat] = sec + clock.Elapsed.TotalSeconds; }
+            foreach (KeyValuePair<string, int> kv in byCat)
+            {
+                double sec; catSec.TryGetValue(kv.Key, out sec);
+                s.AppendLine(string.Format(Inv, "  {0,8}  {1}   {2:0}s", kv.Value, kv.Key, sec));
+            }
+            if (!AccessoryGeometry) s.AppendLine("  (Duct Accessories: properties + bbox only, no geometry / centrelines)");
             s.AppendLine(string.Format(Inv, "Ducts {0}, fitted from triangles {1}, triangle errors {2}{3}", ducts, fitted, triErrors,
                 firstTriError == null ? "" : " (first: " + firstTriError + ")"));
             s.AppendLine("|fit length - .Length| ft:   " + Stats(lenErr));
