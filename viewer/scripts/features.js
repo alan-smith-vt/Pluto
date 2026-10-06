@@ -638,10 +638,13 @@ var FEAFeatures = (function () {
         groupOf: groupOf,
         isOn: function () { return enabled && !!resolved; },
         envelope: function () { return envelope; },
-        // Recenter offset written by the exporter (units.worldOffset, "x y z" in
-        // FILE units); add to picked coordinates to recover world/plant position.
+        // Recenter offset written by the exporter (model.units.worldOffset per the
+        // sidecar spec, top-level units.worldOffset accepted too; "x y z" in FILE
+        // units); add to picked coordinates to recover world/plant position. Reading
+        // only the top level left the readout short by the offset (2026-10-06).
         worldOffset: function () {
-            var s = envelope && envelope.units && envelope.units.worldOffset;
+            var u = envelope && ((envelope.model && envelope.model.units) || envelope.units);
+            var s = u && u.worldOffset;
             if (!s) return null;
             var p = String(s).trim().split(/\s+/).map(Number);
             return (p.length === 3 && p.every(isFinite)) ? p : null;

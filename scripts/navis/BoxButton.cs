@@ -34,6 +34,7 @@ namespace PlutoNavis
     public class BoxButton : AddInPlugin
     {
         const string OutRoot = @"C:\Temp\hvac\box";
+        const int ProgressDepth = 4;        // tree levels that split the progress bar
         const int MaxTriangles = 5000000;   // stop (flagged) past this: the overlay would be unusable anyway
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
@@ -83,7 +84,7 @@ namespace PlutoNavis
                     {
                         st.Frac = (double)i / roots.Count;
                         if (!st.Progress.Update(st.Frac)) { st.Cancelled = true; break; }
-                        Walk(st, roots[i], new Anc(), false, roots[i].DisplayName, 0);
+                        Walk(st, roots[i], new Anc(), false, roots[i].DisplayName, 0, st.Frac, 1.0 / roots.Count);
                     }
                 }
             }
@@ -108,11 +109,12 @@ namespace PlutoNavis
 
         // Depth-first; a subtree is skipped when its bbox (hidden items included) misses the box. The nearest
         // element (IfcGUID), hidden state and the path are carried down instead of walking up per item.
-        static void Walk(State st, ModelItem it, Anc anc, bool hiddenAbove, string path, int depth)
+        static void Walk(State st, ModelItem it, Anc anc, bool hiddenAbove, string path, int depth, double f0, double span)
         {
             if (st.Cancelled || st.Capped) return;
             st.Visited++;
-            if (st.Visited % 2000 == 0 && !st.Progress.Update(st.Frac)) { st.Cancelled = true; return; }
+            st.Frac = f0;
+            if ((depth <= ProgressDepth || st.Visited % 2000 == 0) && !st.Progress.Update(st.Frac)) { st.Cancelled = true; return; }
             BoundingBox3D bb = it.BoundingBox(false);
             if (bb == null || bb.IsEmpty || !Touches(st, bb.Min.X, bb.Min.Y, bb.Min.Z, bb.Max.X, bb.Max.Y, bb.Max.Z)) { st.Pruned++; return; }
 
@@ -137,7 +139,13 @@ namespace PlutoNavis
                                                  || anc.Cat.IndexOf("Fabrication", StringComparison.OrdinalIgnoreCase) >= 0))
                 Emit(st, it, anc, hidden, path, depth, bb);
 
-            foreach (ModelItem ch in it.Children) Walk(st, ch, anc, hidden, path, depth + 1);
+            if (depth < ProgressDepth)   // progress: each child's share of its parent's span (a federation has few roots)
+            {
+                var kids = new List<ModelItem>();
+                foreach (ModelItem ch in it.Children) kids.Add(ch);
+                for (int i = 0; i < kids.Count; i++) Walk(st, kids[i], anc, hidden, path, depth + 1, f0 + span * i / kids.Count, span / kids.Count);
+            }
+            else foreach (ModelItem ch in it.Children) Walk(st, ch, anc, hidden, path, depth + 1, f0, 0);
         }
 
         static void Emit(State st, ModelItem it, Anc anc, bool hidden, string path, int depth, BoundingBox3D bb)
