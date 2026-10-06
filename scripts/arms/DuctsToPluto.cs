@@ -128,7 +128,7 @@ public class DuctsToPluto
         var phantoms = new List<string>();
         Func<Row, string> labelOf = delegate(Row r)
         {
-            return r.Guid + (r.NavisId != "" ? " #" + r.NavisId.Substring(0, Math.Min(8, r.NavisId.Length)) : "")
+            return r.Guid + (r.NavisId != "" ? " #" + r.NavisId : "")
                 + " | " + r.System + " | " + (r.SizeText != "" ? r.SizeText : r.Name);   // IfcGUID is not unique: short NavisId too
         };
         // bbox block: a beam along the bbox's longest axis with a RECT of the other two extents; false when no bbox
@@ -390,7 +390,7 @@ public class DuctsToPluto
         foreach (KeyValuePair<int, float[]> rec in recs)
         {
             Row r = rec.Key >= 1 && rec.Key <= rows.Count ? rows[rec.Key - 1] : null;
-            string label = r == null ? "row " + rec.Key : r.Guid + (r.NavisId != "" ? " #" + r.NavisId.Substring(0, Math.Min(8, r.NavisId.Length)) : "")
+            string label = r == null ? "row " + rec.Key : r.Guid + (r.NavisId != "" ? " #" + r.NavisId : "")
                 + " | " + r.System + " | " + (r.SizeText != "" ? r.SizeText : r.Name);
             // hidden in Navisworks: own groups, so they can be toggled apart from what the model shows
             string hid = r == null ? "" : r.Hidden != "" ? "hidden" : r.HiddenGeom > 0 ? "partly hidden" : "";
@@ -477,9 +477,9 @@ public class DuctsToPluto
                 if (Get(it, "AncIfcGUID") != "")
                     sb.Append(" | ").Append(ac).Append(": ").Append(Get(it, "AncName"))
                       .Append(Get(it, "AncSize") != "" ? " " + Get(it, "AncSize") : "")
-                      .Append(" | ").Append(Get(it, "AncIfcGUID")).Append(aid != "" ? " #" + aid.Substring(0, Math.Min(8, aid.Length)) : "")
+                      .Append(" | ").Append(Get(it, "AncIfcGUID")).Append(aid != "" ? " #" + aid : "")
                       .Append(" (").Append(Get(it, "AncLevelsUp")).Append(" up)");
-                if (id != "") sb.Append(" | item #").Append(id.Substring(0, Math.Min(8, id.Length)));
+                if (id != "") sb.Append(" | item #").Append(id);
                 sb.Append(" | ").Append(Get(it, "Path"));
                 if (hidden) sb.Append(Get(it, "HiddenSelf") == "1" ? " | HIDDEN (self)" : " | HIDDEN (ancestor)");
                 label = sb.ToString();
