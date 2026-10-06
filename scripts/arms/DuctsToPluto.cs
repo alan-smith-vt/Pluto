@@ -36,16 +36,16 @@ public class DuctsToPluto
         public string BinPath, SidecarPath, GeometryHash;
         public int Nodes, Beams, DuctBeams, DuctFallback, FittingBeams, FittingBlocks, AccessoryBlocks, FanDropped, LooseEnds, Unsized, Skipped;
         public int FabBeams, FabBlocks, HangerBlocks, FabFitRejected;
-        public int FabFromBbox, FabPhantom, FabBridged, FittingsBridged;
+        public int FabFromBbox, FabPhantom, FabBridged, FittingsBridged, FabFromFit;
         public string Summary()
         {
             return string.Format(CultureInfo.InvariantCulture,
                 "nodes={0} beams={1}: ducts {2} (fitted-end fallback {3}), fitting centreline {4}, fitting blocks {5}, accessory blocks {6}\n" +
                 "fabrication: beams {13} (straights from bbox + size {17}), blocks {14} (fit rejected {16}); hanger blocks {15}\n" +
-                "fabrication straights not matching their stated size (still drawn; <out>.fab-mismatch.txt) {18}; fittings bridged {19} (fabrication {20})\n" +
+                "fabrication straights not matching their stated size (<out>.fab-mismatch.txt) {18}, drawn with the fitted section {21}; fittings bridged {19} (fabrication {20})\n" +
                 "symbol-fan segments dropped {7}, loose ends {8}, unsized {9}, rows skipped (no geometry) {10}\n{11}\n{12}",
                 Nodes, Beams, DuctBeams, DuctFallback, FittingBeams, FittingBlocks, AccessoryBlocks, FanDropped, LooseEnds, Unsized, Skipped,
-                BinPath, SidecarPath, FabBeams, FabBlocks, HangerBlocks, FabFitRejected, FabFromBbox, FabPhantom, FittingsBridged, FabBridged);
+                BinPath, SidecarPath, FabBeams, FabBlocks, HangerBlocks, FabFitRejected, FabFromBbox, FabPhantom, FittingsBridged, FabBridged, FabFromFit);
         }
     }
 
@@ -213,6 +213,15 @@ public class DuctsToPluto
                             res.FabFitRejected++;
                             if (addBlock(r, gFabRej)) res.FabBlocks++; else res.Skipped++;
                             continue;
+                        }
+                        // the geometry contradicts the stated size and the fit is sound: draw the fitted section.
+                        // A part stated "Round, 8 in" (no W x H) whose triangles are a 74 x 26 box was drawn as an
+                        // 8 in pipe where the rectangular run belongs (2026-10-06, box dump of the problem spot).
+                        if (stated && !double.IsNaN(r.FitA) && !double.IsNaN(r.FitB))
+                        {
+                            sec = SectionFor(r, scale, sections, sectionIndex, out sized, true);
+                            label += string.Format(Inv, " | drawn as fit {0:0.#}x{1:0.#} (stated {2:0.##}x{3:0.##})", r.FitA, r.FitB, sa, sb);
+                            res.FabFromFit++;
                         }
                     }
                 }
@@ -529,7 +538,7 @@ public class DuctsToPluto
     }
 
     // Box (W x H, wall) or pipe (D, wall) per distinct size; unsized -> a 2 in pipe placeholder.
-    static int SectionFor(Row r, double scale, List<RawViewerWriter.SectionDef> sections, Dictionary<string, int> index, out bool sized)
+    static int SectionFor(Row r, double scale, List<RawViewerWriter.SectionDef> sections, Dictionary<string, int> index, out bool sized, bool fromFit = false)
     {
         double ft = scale / 12.0;                                   // inches -> file units
         double t = double.IsNaN(r.T) || r.T <= 0 ? 0.05 : r.T;      // wall: 0.05 in when absent (drawing only)
@@ -541,6 +550,7 @@ public class DuctsToPluto
         bool rect = !double.IsNaN(r.W) && !double.IsNaN(r.H) && r.W > 0 && r.H > 0;
         bool nameRect = !double.IsNaN(r.NameW) && !double.IsNaN(r.NameH) && r.NameW > 0 && r.NameH > 0;
         bool dia = !double.IsNaN(r.D) && r.D > 0, nameDia = !double.IsNaN(r.NameD) && r.NameD > 0;
+        if (fromFit) round = rect = nameRect = dia = nameDia = false;   // stated size contradicted by the geometry
         if (round && (dia || nameDia))
         {
             double d = dia ? r.D : r.NameD;
