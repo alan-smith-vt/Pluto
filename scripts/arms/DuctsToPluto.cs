@@ -57,6 +57,8 @@ public class DuctsToPluto
     class Row
     {
         public string Guid, NavisId, Cat, System, SizeText, Name, Shape;
+        public string Hidden = "";               // "self" / "ancestor" / "" (runs from 2026-10-06 on)
+        public double HiddenGeom;                 // own geometry items hidden (NaN on older runs)
         public double W, H, D, T;                 // inches; NaN = unknown
         public double FitA, FitB;                 // fitted cross-section, inches (fallback when no size)
         public double FitLen;                     // fitted length, feet
@@ -390,7 +392,10 @@ public class DuctsToPluto
             Row r = rec.Key >= 1 && rec.Key <= rows.Count ? rows[rec.Key - 1] : null;
             string label = r == null ? "row " + rec.Key : r.Guid + (r.NavisId != "" ? " #" + r.NavisId.Substring(0, Math.Min(8, r.NavisId.Length)) : "")
                 + " | " + r.System + " | " + (r.SizeText != "" ? r.SizeText : r.Name);
-            string cat = r == null ? "?" : r.Cat;
+            // hidden in Navisworks: own groups, so they can be toggled apart from what the model shows
+            string hid = r == null ? "" : r.Hidden != "" ? "hidden" : r.HiddenGeom > 0 ? "partly hidden" : "";
+            if (hid != "") label += " | " + hid.ToUpperInvariant() + (r.Hidden != "" ? " (" + r.Hidden + ")" : "");
+            string cat = (r == null ? "?" : r.Cat) + (hid != "" ? ", " + hid : "");
             List<uint> g; if (!byCat.TryGetValue(cat, out g)) { g = new List<uint>(); byCat[cat] = g; }
             float[] f = rec.Value;
             for (int t = 0; t + 8 < f.Length; t += 9)
@@ -427,6 +432,99 @@ public class DuctsToPluto
         var res = new Result();
         res.BinPath = binPath; res.SidecarPath = scPath; res.GeometryHash = w.GeometryHash;
         res.Nodes = nodes.Count; res.Beams = 0; res.Skipped = rows.Count - recs.Count;
+        return res;
+    }
+
+    // A "Pluto Box" run (scripts/navis/BoxButton.cs: every geometry item inside a box) -> shell overlay.
+    // box_tri.bin: int32 row (1-based box_items.csv data row), int32 nTri, nTri * 9 float32 (world feet).
+    // One shell group per element category (the nearest ancestor with an IfcGUID; "(no element)" when
+    // none), hidden items in their own red groups; every triangle labelled with its item and where it hangs:
+    // DisplayName [Class] | category: element name size | IfcGUID #id (n up) | item #id | path | HIDDEN.
+    public static Result ExportBox(string runDir, string outBase, string modelId, string lengthUnit)
+    {
+        double scale = LengthScale(lengthUnit);
+        var items = new List<Dictionary<string, string>>(ReadCsv(Path.Combine(runDir, "box_items.csv")));
+        string triPath = Path.Combine(runDir, "box_tri.bin");
+        if (!File.Exists(triPath)) throw new Exception("DuctsToPluto: missing " + triPath);
+        var recs = new List<KeyValuePair<int, float[]>>();
+        double[] lo = { double.MaxValue, double.MaxValue, double.MaxValue }, hi = { double.MinValue, double.MinValue, double.MinValue };
+        using (var br = new BinaryReader(File.OpenRead(triPath)))
+        {
+            while (br.BaseStream.Position + 8 <= br.BaseStream.Length)
+            {
+                int row = br.ReadInt32(), n = br.ReadInt32();
+                var f = new float[n * 9];
+                for (int k = 0; k < f.Length; k++) { f[k] = br.ReadSingle(); lo[k % 3] = Math.Min(lo[k % 3], f[k]); hi[k % 3] = Math.Max(hi[k % 3], f[k]); }
+                recs.Add(new KeyValuePair<int, float[]>(row, f));
+            }
+        }
+        if (recs.Count == 0) throw new Exception("DuctsToPluto: no triangles in " + triPath + " (box empty or misplaced? see summary.txt)");
+        double[] off = { Math.Round((lo[0] + hi[0]) / 2), Math.Round((lo[1] + hi[1]) / 2), Math.Round((lo[2] + hi[2]) / 2) };
+        var nodes = new Dictionary<int, Node>(); var elems = new Dictionary<int, Element>(); var labels = new Dictionary<int, string>();
+        var keyToNode = new Dictionary<string, int>(); var byCat = new SortedDictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
+        int nextNode = 1, nextElem = 1;
+        foreach (KeyValuePair<int, float[]> rec in recs)
+        {
+            Dictionary<string, string> it = rec.Key >= 1 && rec.Key <= items.Count ? items[rec.Key - 1] : null;
+            string label, cat;
+            if (it == null) { label = "row " + rec.Key; cat = "?"; }
+            else
+            {
+                bool hidden = Get(it, "Hidden") == "1";
+                string ac = Get(it, "AncCategory"), id = Get(it, "NavisId"), aid = Get(it, "AncNavisId");
+                var sb = new StringBuilder();
+                sb.Append(Get(it, "DisplayName")).Append(" [").Append(Get(it, "ClassDisplayName")).Append("]");
+                if (Get(it, "AncIfcGUID") != "")
+                    sb.Append(" | ").Append(ac).Append(": ").Append(Get(it, "AncName"))
+                      .Append(Get(it, "AncSize") != "" ? " " + Get(it, "AncSize") : "")
+                      .Append(" | ").Append(Get(it, "AncIfcGUID")).Append(aid != "" ? " #" + aid.Substring(0, Math.Min(8, aid.Length)) : "")
+                      .Append(" (").Append(Get(it, "AncLevelsUp")).Append(" up)");
+                if (id != "") sb.Append(" | item #").Append(id.Substring(0, Math.Min(8, id.Length)));
+                sb.Append(" | ").Append(Get(it, "Path"));
+                if (hidden) sb.Append(Get(it, "HiddenSelf") == "1" ? " | HIDDEN (self)" : " | HIDDEN (ancestor)");
+                label = sb.ToString();
+                cat = (ac != "" ? ac : "(no element)") + (hidden ? ", hidden" : "");
+            }
+            List<uint> g; if (!byCat.TryGetValue(cat, out g)) { g = new List<uint>(); byCat[cat] = g; }
+            float[] f = rec.Value;
+            for (int t = 0; t + 8 < f.Length; t += 9)
+            {
+                var el = new Element(); el.id = nextElem++; el.nNodes = 3; el.n = new Node[4];
+                for (int c = 0; c < 3; c++)
+                {
+                    double[] p = { f[t + 3 * c], f[t + 3 * c + 1], f[t + 3 * c + 2] };
+                    string key = string.Format(Inv, "{0:F4}|{1:F4}|{2:F4}", p[0], p[1], p[2]);
+                    int nid;
+                    if (!keyToNode.TryGetValue(key, out nid)) { nid = MakeNode(nodes, ref nextNode, p, off, scale); keyToNode[key] = nid; }
+                    el.n[c] = nodes[nid];
+                }
+                elems[el.id] = el; labels[el.id] = label; g.Add((uint)el.id);
+            }
+        }
+        var units = new Dictionary<string, string>(); units["length"] = lengthUnit;
+        var comps = new List<RawViewerWriter.Component>();
+        comps.Add(new RawViewerWriter.Component("Axial N", "force", "kip"));   // layout only; no planes written
+        string binPath = outBase + ".bin";
+        var w = new RawViewerWriter(binPath, nodes, elems, null, comps, null, null, null, modelId, units);
+        w.SetShellLabels(labels);
+        w.Write(false);
+        var sc = new FeaturesSidecar();
+        sc.ModelId = modelId; sc.GeometryHash = w.GeometryHash;
+        sc.Units["length"] = lengthUnit;
+        sc.Units["worldOffset"] = string.Format(Inv, "{0} {1} {2}", off[0] * scale, off[1] * scale, off[2] * scale);
+        string[] palette = { "#7fb3ff", "#3fc1a5", "#ffc04d", "#b0b0b8", "#e040c0", "#5a8fe0", "#ff9f40", "#9ad04d" };
+        int pi = 0;
+        foreach (KeyValuePair<string, List<uint>> kv in byCat)
+        {
+            bool hid = kv.Key.EndsWith(", hidden", StringComparison.Ordinal);
+            sc.AddGroup(kv.Key, hid ? "#ff3b3b" : palette[pi++ % palette.Length], "shells", kv.Value,
+                hid ? new[] { "box", "mesh", kv.Key, "hidden" } : new[] { "box", "mesh", kv.Key }, null);
+        }
+        string scPath = outBase + ".features.json";
+        File.WriteAllText(scPath, sc.ToJson(), new UTF8Encoding(false));
+        var res = new Result();
+        res.BinPath = binPath; res.SidecarPath = scPath; res.GeometryHash = w.GeometryHash;
+        res.Nodes = nodes.Count; res.Beams = 0; res.Skipped = items.Count - recs.Count;
         return res;
     }
 
@@ -620,6 +718,7 @@ public class DuctsToPluto
             r.Guid = Get(c, "IfcGUID"); r.NavisId = Get(c, "NavisId"); r.Cat = Get(c, "Category"); r.System = Get(c, "SystemName"); r.SizeText = Get(c, "Size");
             r.Name = Get(c, "Name"); r.Shape = Get(c, "Shape"); r.FitA = Num(c, "FitA_in"); r.FitB = Num(c, "FitB_in"); r.FitLen = Num(c, "FitLength_ft");
             NameSize(r.Name, out r.NameW, out r.NameH, out r.NameD);
+            r.Hidden = Get(c, "Hidden"); r.HiddenGeom = Num(c, "HiddenGeom");
             r.W = Num(c, "Width_in"); r.H = Num(c, "Height_in"); r.D = Num(c, "Diameter_in"); r.T = Num(c, "WallThk_in");
             double[] mn = { Num(c, "MinX"), Num(c, "MinY"), Num(c, "MinZ") }, mx = { Num(c, "MaxX"), Num(c, "MaxY"), Num(c, "MaxZ") };
             if (!double.IsNaN(mn[0]) && !double.IsNaN(mx[0])) { r.Min = mn; r.Max = mx; }

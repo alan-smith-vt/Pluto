@@ -81,6 +81,9 @@ namespace PlutoNavis
             var cl = new List<ClSeg>();                                       // centreline segments, all kept categories
             var clNone = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);   // elements without a line, by category
             var lineVsFit = new List<double>();
+            var hiddenByCat = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);       // element hidden (self / ancestor)
+            var partHiddenByCat = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);   // element visible, some own geometry hidden
+            int hiddenSelf = 0, geomTotal = 0, geomHidden = 0;
             double searchSec = 0; bool cancelled = false; string firstTriError = null;
             Progress progress = Autodesk.Navisworks.Api.Application.BeginProgress(title + ": searching");
             try
@@ -101,13 +104,13 @@ namespace PlutoNavis
                 using (var pw = new StreamWriter(Path.Combine(dir, "duct_parts.csv"), false, new UTF8Encoding(false)))
                 using (var tri = new BinaryWriter(File.Create(Path.Combine(dir, "ducts_tri.bin"))))
                 {
-                    pw.WriteLine("DuctIfcGUID,Used,DisplayName,ClassDisplayName,PartIfcGUID,PartCategory,Triangles,FitLength_ft,FitA_in,FitB_in,X1,Y1,Z1,X2,Y2,Z2,Lines,LineTotal_ft,LX1,LY1,LZ1,LX2,LY2,LZ2");
+                    pw.WriteLine("DuctIfcGUID,DuctNavisId,Used,Hidden,DisplayName,ClassDisplayName,PartIfcGUID,PartCategory,Triangles,FitLength_ft,FitA_in,FitB_in,X1,Y1,Z1,X2,Y2,Z2,Lines,LineTotal_ft,LX1,LY1,LZ1,LX2,LY2,LZ2");
                     w.WriteLine(string.Join(",", new[] {
                         "IfcGUID", "NavisId", "Category", "Family", "Type", "Name", "SystemName", "SystemType", "Shape", "Material",
                         "Width_in", "Height_in", "Diameter_in", "WallThk_in", "InsulThk_in", "Length_ft", "Size", "Location",
                         "MinX", "MinY", "MinZ", "MaxX", "MaxY", "MaxZ", "OwnGeom", "SkippedGeom", "Triangles",
                         "X1", "Y1", "Z1", "X2", "Y2", "Z2", "FitLength_ft", "FitA_in", "FitB_in",
-                        "LenErr_ft", "SizeErr_in", "TriVsBbox_ft", "Flag" }));
+                        "LenErr_ft", "SizeErr_in", "TriVsBbox_ft", "Flag", "Hidden", "HiddenGeom" }));
                     foreach (ModelItem it in found)
                     {
                         seen++;
@@ -162,6 +165,17 @@ namespace PlutoNavis
                         if (material == "") material = Get(p, "Item|Material");
                         var geoms = new List<ModelItem>(); var skipped = new List<ModelItem>();
                         Collect(it, guid, true, geoms, skipped);
+                        // hidden state (the search includes hidden items): the element itself / an ancestor, and
+                        // how many of its own geometry items are hidden (2026-10-06: suspect for the 8 in round
+                        // "Straight" that cannot be seen or selected in Navisworks)
+                        string hid = it.IsHidden ? "self" : AncestorHidden(it) ? "ancestor" : "";
+                        int hidGeom = 0;
+                        foreach (ModelItem g in geoms) if (hid != "" || HiddenBelow(g, it)) hidGeom++;
+                        if (hid != "") { int hc; hiddenByCat.TryGetValue(cat, out hc); hiddenByCat[cat] = hc + 1; if (hid == "self") hiddenSelf++; }
+                        else if (hidGeom > 0) { int hc; partHiddenByCat.TryGetValue(cat, out hc); partHiddenByCat[cat] = hc + 1; }
+                        geomTotal += geoms.Count; geomHidden += hidGeom;
+                        string hidCell = hid, hidGeomCell = hidGeom.ToString(Inv);
+                        Action<List<string>> emit = delegate(List<string> c) { c.Add(hidCell); c.Add(hidGeomCell); w.WriteLine(Csv(c)); };
 
                         var cells = new List<string> {
                             guid, navisId, cat, Get(p, "Element|Family"), Get(p, "Element|Type"), it.DisplayName,
@@ -172,7 +186,7 @@ namespace PlutoNavis
                         else cells.AddRange(new[] { "", "", "", "", "", "" });
                         cells.Add(geoms.Count.ToString(Inv)); cells.Add(skipped.Count.ToString(Inv));
 
-                        if ((cat == "Duct Accessories" && !AccessoryGeometry) || cat == FabHangers) { cells.Add(""); for (int k = 0; k < 13; k++) cells.Add(""); w.WriteLine(Csv(cells)); continue; }
+                        if ((cat == "Duct Accessories" && !AccessoryGeometry) || cat == FabHangers) { cells.Add(""); for (int k = 0; k < 13; k++) cells.Add(""); emit(cells); continue; }
                         if (cat != "Ducts" && cat != Fab)
                         {
                             var fl = new List<double>();
@@ -180,15 +194,15 @@ namespace PlutoNavis
                             try { foreach (ModelItem g in geoms) { ft.Clear(); Triangles(g, ft, fl); lastTri += ft.Count / 9; } }
                             catch (Exception ex) { triErrors++; if (firstTriError == null) firstTriError = ex.GetType().Name + ": " + ex.Message; }
                             AddCl(cl, clNone, rows, guid, cat, fl);
-                            cells.Add(""); for (int k = 0; k < 13; k++) cells.Add(""); w.WriteLine(Csv(cells)); continue;
+                            cells.Add(""); for (int k = 0; k < 13; k++) cells.Add(""); emit(cells); continue;
                         }
                         ducts++;
                         var pts = new List<double>();   // x y z per corner, world: the duct's own geometry only
                         var dl = new List<double>();    // its centreline segments
                         try
                         {
-                            foreach (ModelItem g in geoms) pts.AddRange(Part(pw, guid, g, true, dl));
-                            foreach (ModelItem g in skipped) SkippedPart(pw, guid, g);   // listed only, no triangles (cost)
+                            foreach (ModelItem g in geoms) pts.AddRange(Part(pw, guid, navisId, g, true, hid != "" || HiddenBelow(g, it), dl));
+                            foreach (ModelItem g in skipped) SkippedPart(pw, guid, navisId, g, hid != "" || HiddenBelow(g, it));   // listed only, no triangles (cost)
                         }
                         catch (Exception ex) { triErrors++; if (firstTriError == null) firstTriError = ex.GetType().Name + ": " + ex.Message; }
                         AddCl(cl, clNone, rows, guid, cat, dl);
@@ -196,7 +210,7 @@ namespace PlutoNavis
                         lastTri = nTri;
                         cells.Add(nTri.ToString(Inv));
                         string flag = "";
-                        if (nTri == 0) { for (int k = 0; k < 12; k++) cells.Add(""); cells.Add("no triangles"); w.WriteLine(Csv(cells)); continue; }
+                        if (nTri == 0) { for (int k = 0; k < 12; k++) cells.Add(""); cells.Add("no triangles"); emit(cells); continue; }
 
                         tri.Write(rows); tri.Write(nTri);
                         foreach (double v in pts) tri.Write((float)v);
@@ -220,7 +234,7 @@ namespace PlutoNavis
                         if (fitLen < Math.Max(fa, fb)) flag += (flag == "" ? "" : "+") + "short";
                         cells.AddRange(new[] { N(e1[0]), N(e1[1]), N(e1[2]), N(e2[0]), N(e2[1]), N(e2[2]), N(fitLen), N(fa * 12), N(fb * 12),
                             N(le), N(se), N(be), flag });
-                        w.WriteLine(Csv(cells));
+                        emit(cells);
                     }
                 }
             }
@@ -264,6 +278,16 @@ namespace PlutoNavis
                 int sharedIds = 0, sharedRows = 0;
                 foreach (int u in guidUse.Values) if (u > 1) { sharedIds++; sharedRows += u; }
                 s.AppendLine(string.Format(Inv, "IfcGUIDs shared by more than one row: {0} ({1} rows); rows are keyed by NavisId", sharedIds, sharedRows));
+            }
+            {
+                var hb = new StringBuilder();
+                foreach (KeyValuePair<string, int> kv in hiddenByCat) hb.Append(string.Format(Inv, "  {0} {1}", kv.Key, kv.Value));
+                var pb = new StringBuilder();
+                foreach (KeyValuePair<string, int> kv in partHiddenByCat) pb.Append(string.Format(Inv, "  {0} {1}", kv.Key, kv.Value));
+                int hiddenAll = 0; foreach (int v in hiddenByCat.Values) hiddenAll += v;
+                s.AppendLine(string.Format(Inv, "hidden elements {0} (self {1}, under a hidden ancestor {2}):{3}", hiddenAll, hiddenSelf, hiddenAll - hiddenSelf, hb.Length > 0 ? hb.ToString() : "  none"));
+                s.AppendLine(string.Format(Inv, "visible elements with hidden own geometry:{0}", pb.Length > 0 ? pb.ToString() : "  none"));
+                s.AppendLine(string.Format(Inv, "own geometry items hidden {0} of {1}   (ducts.csv Hidden / HiddenGeom, duct_parts.csv Hidden)", geomHidden, geomTotal));
             }
             s.Append(graph);
             if (clNone.Count > 0)
@@ -462,7 +486,7 @@ namespace PlutoNavis
         static double Dot(double[] p, double[] q) { return p[0] * q[0] + p[1] * q[1] + p[2] * q[2]; }
 
         // ---- properties: every tab, keyed "Tab|Property" (display names) ----
-        static Dictionary<string, string> Props(ModelItem it)
+        internal static Dictionary<string, string> Props(ModelItem it)
         {
             var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (PropertyCategory pc in it.PropertyCategories)
@@ -475,11 +499,11 @@ namespace PlutoNavis
             return d;
         }
 
-        static string Get(Dictionary<string, string> p, string key) { string v; return p.TryGetValue(key, out v) ? v : ""; }
+        internal static string Get(Dictionary<string, string> p, string key) { string v; return p.TryGetValue(key, out v) ? v : ""; }
 
         // IfcObjectProperties.<name>, wherever it sits: a property "IfcObjectProperties.<name>" on any tab
         // (seen under Custom), or a tab "IfcObjectProperties" with property "<name>".
-        static string Ifc(Dictionary<string, string> p, string name)
+        internal static string Ifc(Dictionary<string, string> p, string name)
         {
             string v;
             if (p.TryGetValue("IfcObjectProperties|" + name, out v)) return v;
@@ -531,19 +555,33 @@ namespace PlutoNavis
             foreach (ModelItem c in node.Children) Collect(c, guid, false, own, skipped);
         }
 
+        // Any ancestor hidden (the item then is not drawn, though its own flag is clear).
+        static bool AncestorHidden(ModelItem it)
+        {
+            for (ModelItem a = it.Parent; a != null; a = a.Parent) if (a.IsHidden) return true;
+            return false;
+        }
+
+        // Hidden at or below `top` on the way down to g (g itself included, `top` excluded).
+        static bool HiddenBelow(ModelItem g, ModelItem top)
+        {
+            for (ModelItem a = g; a != null && !a.Equals(top); a = a.Parent) if (a.IsHidden) return true;
+            return false;
+        }
+
         // duct_parts.csv row for another element's geometry under a duct: name / class / its IfcGUID and category
-        static void SkippedPart(StreamWriter pw, string ductGuid, ModelItem g)
+        static void SkippedPart(StreamWriter pw, string ductGuid, string ductId, ModelItem g, bool hidden)
         {
             string pg = "", pc = "";
             DataProperty dp = g.PropertyCategories.FindPropertyByDisplayName("Element", "IfcGUID");
             DataProperty dc = g.PropertyCategories.FindPropertyByDisplayName("Element", "Category");
             try { if (dp != null && dp.Value != null) pg = dp.Value.ToDisplayString(); if (dc != null && dc.Value != null) pc = dc.Value.ToDisplayString(); } catch (Exception) { }
-            pw.WriteLine(Csv(new List<string> { ductGuid, "0", g.DisplayName, g.ClassDisplayName, pg, pc }));
+            pw.WriteLine(Csv(new List<string> { ductGuid, ductId, "0", hidden ? "1" : "0", g.DisplayName, g.ClassDisplayName, pg, pc }));
         }
 
         // One duct_parts.csv row per geometry item under a duct (its own fit); returns its triangles and
         // appends its line segments to linesOut when given.
-        static List<double> Part(StreamWriter pw, string ductGuid, ModelItem g, bool used, List<double> linesOut)
+        static List<double> Part(StreamWriter pw, string ductGuid, string ductId, ModelItem g, bool used, bool hidden, List<double> linesOut)
         {
             var pts = new List<double>(); var lines = new List<double>();
             Triangles(g, pts, lines);
@@ -552,7 +590,7 @@ namespace PlutoNavis
             DataProperty dp = g.PropertyCategories.FindPropertyByDisplayName("Element", "IfcGUID");
             DataProperty dc = g.PropertyCategories.FindPropertyByDisplayName("Element", "Category");
             try { if (dp != null && dp.Value != null) pg = dp.Value.ToDisplayString(); if (dc != null && dc.Value != null) pc = dc.Value.ToDisplayString(); } catch (Exception) { }
-            var cells = new List<string> { ductGuid, used ? "1" : "0", g.DisplayName, g.ClassDisplayName, pg, pc, (pts.Count / 9).ToString(Inv) };
+            var cells = new List<string> { ductGuid, ductId, used ? "1" : "0", hidden ? "1" : "0", g.DisplayName, g.ClassDisplayName, pg, pc, (pts.Count / 9).ToString(Inv) };
             if (pts.Count >= 9)
             {
                 double[] e1, e2, a; double fa, fb;
@@ -577,7 +615,7 @@ namespace PlutoNavis
         static void Triangles(ModelItem g, List<double> pts) { Triangles(g, pts, null); }
 
         // triangles into pts; line segments (two corners each) into lines when given
-        static void Triangles(ModelItem g, List<double> pts, List<double> lines)
+        internal static void Triangles(ModelItem g, List<double> pts, List<double> lines)
         {
             ComApi.InwOaPath path = ComBridge.ToInwOaPath(g);
             foreach (ComApi.InwOaFragment3 frag in path.Fragments())
@@ -681,9 +719,9 @@ namespace PlutoNavis
             return string.Format(Inv, "n {0}, median {1:0.####}, p95 {2:0.####}, max {3:0.####}", v.Count, v[v.Count / 2], v[(int)(0.95 * (v.Count - 1))], v[v.Count - 1]);
         }
 
-        static string N(double v) { return double.IsNaN(v) ? "" : v.ToString("R", Inv); }
+        internal static string N(double v) { return double.IsNaN(v) ? "" : v.ToString("R", Inv); }
 
-        static string Csv(List<string> cells)
+        internal static string Csv(List<string> cells)
         {
             var sb = new StringBuilder();
             for (int i = 0; i < cells.Count; i++)
