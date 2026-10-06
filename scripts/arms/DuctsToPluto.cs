@@ -36,16 +36,18 @@ public class DuctsToPluto
         public string BinPath, SidecarPath, GeometryHash;
         public int Nodes, Beams, DuctBeams, DuctFallback, FittingBeams, FittingBlocks, AccessoryBlocks, FanDropped, LooseEnds, Unsized, Skipped;
         public int FabBeams, FabBlocks, HangerBlocks, FabFitRejected;
-        public int FabFromBbox, FabPhantom, FabBridged, FittingsBridged, FabFromFit, FabFromSibling;
+        public int FabFromBbox, FabPhantom, FabBridged, FittingsBridged, FabBodyAgrees, FabBodyDiffers, FabFromBody;
         public string Summary()
         {
             return string.Format(CultureInfo.InvariantCulture,
                 "nodes={0} beams={1}: ducts {2} (fitted-end fallback {3}), fitting centreline {4}, fitting blocks {5}, accessory blocks {6}\n" +
                 "fabrication: beams {13} (straights from bbox + size {17}), blocks {14} (fit rejected {16}); hanger blocks {15}\n" +
-                "fabrication straights not matching their stated size (<out>.fab-mismatch.txt) {18}, drawn with the fitted section {21}; sized from their assembly (bbox) {22}; fittings bridged {19} (fabrication {20})\n" +
+                "fabrication straights measured from the mesh body (walls, flanges excluded): agrees with stated size {21}, differs (drawn from the mesh, own group) {22}; placed from the mesh {23}\n" +
+                "fabrication straights not measurable and not matching their stated size (still drawn; <out>.fab-mismatch.txt) {18}; fittings bridged {19} (fabrication {20})\n" +
                 "symbol-fan segments dropped {7}, loose ends {8}, unsized {9}, rows skipped (no geometry) {10}\n{11}\n{12}",
                 Nodes, Beams, DuctBeams, DuctFallback, FittingBeams, FittingBlocks, AccessoryBlocks, FanDropped, LooseEnds, Unsized, Skipped,
-                BinPath, SidecarPath, FabBeams, FabBlocks, HangerBlocks, FabFitRejected, FabFromBbox, FabPhantom, FittingsBridged, FabBridged, FabFromFit, FabFromSibling);
+                BinPath, SidecarPath, FabBeams, FabBlocks, HangerBlocks, FabFitRejected, FabFromBbox, FabPhantom, FittingsBridged, FabBridged,
+                FabBodyAgrees, FabBodyDiffers, FabFromBody);
         }
     }
 
@@ -56,7 +58,6 @@ public class DuctsToPluto
 
     class Row
     {
-        public object Clone() { return MemberwiseClone(); }
         public string Guid, NavisId, Cat, System, SizeText, Name, Shape;
         public string Hidden = "";               // "self" / "ancestor" / "" (runs from 2026-10-06 on)
         public double HiddenGeom;                 // own geometry items hidden (NaN on older runs)
@@ -127,20 +128,11 @@ public class DuctsToPluto
         var network = new HashSet<int>();          // beams of the duct network (not blocks): loose ends and bridging use them
         var pending = new List<int>();             // fittings without a centreline: bridged after the loop
         var phantoms = new List<string>();
-        // rectangular sizes stated by the parts of each fabrication assembly (shared IfcGUID): a part whose own
-        // size is junk (stated "Round 8 in", mesh a 74 x 26 box, 2026-10-06) takes its section from a sibling
-        var sibSizes = new Dictionary<string, List<double[]>>(StringComparer.Ordinal);
-        foreach (Row q in rows)
-        {
-            if (!string.Equals(q.Cat, Fab, StringComparison.OrdinalIgnoreCase) || q.Guid == "") continue;
-            if (q.Shape.IndexOf("round", StringComparison.OrdinalIgnoreCase) >= 0) continue;
-            double qa, qb;
-            bool rectStated = (!double.IsNaN(q.W) && !double.IsNaN(q.H) && q.W > 0 && q.H > 0) || (!double.IsNaN(q.NameW) && !double.IsNaN(q.NameH) && q.NameW > 0 && q.NameH > 0);
-            if (!rectStated || !StatedSize(q, out qa, out qb)) continue;
-            List<double[]> l; if (!sibSizes.TryGetValue(q.Guid, out l)) { l = new List<double[]>(); sibSizes[q.Guid] = l; }
-            bool have = false; foreach (double[] s in l) if (s[0] == qa && s[1] == qb) have = true;
-            if (!have) l.Add(new[] { qa, qb });
-        }
+        // fabrication triangles (ducts_tri.bin) for the body measurement of fabrication straights
+        var fabRows = new HashSet<int>();
+        for (int i = 0; i < rows.Count; i++) if (string.Equals(rows[i].Cat, Fab, StringComparison.OrdinalIgnoreCase)) fabRows.Add(i + 1);
+        var fabTri = ReadTriangles(Path.Combine(runDir, "ducts_tri.bin"), fabRows);
+        var gFabMesh = new List<uint>();
         Func<Row, string> labelOf = delegate(Row r)
         {
             return r.Guid + (r.NavisId != "" ? " #" + r.NavisId : "")
@@ -191,6 +183,35 @@ public class DuctsToPluto
                 bool sized;
                 int sec = SectionFor(r, scale, sections, sectionIndex, out sized);
                 var drawn = new List<int[]>();
+                // fabrication straight: the body measured from its own walls (flanges excluded) is the section;
+                // the stated size is only a cross-check (it can be junk: "Round 8 in" on a 74 x 26 part)
+                Body body = null; bool meshDiffers = false;
+                float[] ftri;
+                if (fabStraight && fabTri.TryGetValue(rowNo, out ftri)) body = MeasureBody(ftri);
+                if (body != null)
+                {
+                    double sa0, sb0;
+                    bool st0 = StatedSize(r, out sa0, out sb0);
+                    bool agrees = st0 && ((Math.Abs(body.W - sa0) <= 1 && Math.Abs(body.H - sb0) <= 1) || (Math.Abs(body.W - sb0) <= 1 && Math.Abs(body.H - sa0) <= 1));
+                    meshDiffers = !agrees;
+                    if (agrees) res.FabBodyAgrees++;
+                    else
+                    {
+                        res.FabBodyDiffers++;
+                        double bw = Math.Round(body.W, 1), bh = Math.Round(body.H, 1);
+                        string mname = string.Format(Inv, "DUCT {0:0.#}x{1:0.#} (mesh)", bw, bh);
+                        if (!sectionIndex.TryGetValue(mname, out sec))
+                        {
+                            sec = sections.Count; sectionIndex[mname] = sec;
+                            double t = double.IsNaN(r.T) || r.T <= 0 ? 0.05 : r.T;
+                            sections.Add(RawViewerWriter.SectionDef.Box(mname, (float)(bw * scale / 12), (float)(bh * scale / 12), (float)(Math.Min(t, Math.Min(bw, bh) / 2) * scale / 12)));
+                        }
+                        sized = true;
+                    }
+                    label += string.Format(Inv, " | mesh body {0:0.#}x{1:0.#}, {2:0.##} ft{3}", body.W, body.H, body.Len,
+                        agrees ? "" : st0 ? string.Format(Inv, " (stated {0:0.##}x{1:0.##}: drawn from the mesh)", sa0, sb0) : " (no stated size: drawn from the mesh)");
+                    if (segs == null) { drawn.Add(new[] { ptNode(body.E1), ptNode(body.E2) }); res.FabFromBody++; }
+                }
                 if (segs != null)
                 {
                     // symbol fan = THIS element's own segment ends piling up at one node (its degree there,
@@ -212,19 +233,7 @@ public class DuctsToPluto
                     // removed almost every good straight (flanges make real parts bigger than nominal, 2026-10-05).
                     double sa, sb; double[] b1, b2;
                     bool stated = StatedSize(r, out sa, out sb);
-                    double[] sib = null;
                     if (stated && BboxAxis(r, sa, sb, out b1, out b2)) { drawn.Add(new[] { ptNode(b1), ptNode(b2) }); res.FabFromBbox++; }
-                    else if ((sib = SiblingBbox(r, sibSizes, out b1, out b2)) != null)
-                    {
-                        // own size contradicted, a sibling's matches the bbox: run along the remaining axis (a part
-                        // wider than long fools the fit, which takes the width as the run)
-                        drawn.Add(new[] { ptNode(b1), ptNode(b2) });
-                        var rs = (Row)r.Clone(); rs.Shape = "Rectangular"; rs.W = sib[0]; rs.H = sib[1];
-                        sec = SectionFor(rs, scale, sections, sectionIndex, out sized);
-                        label += string.Format(Inv, " | drawn {0:0.##}x{1:0.##} from its assembly (stated {2})", sib[0], sib[1],
-                            stated ? string.Format(Inv, "{0:0.##}x{1:0.##}", sa, sb) : "none");
-                        res.FabFromSibling++;
-                    }
                     else if (stated && r.E1 != null && FitMatches(r, sa, sb)) { drawn.Add(new[] { ptNode(r.E1), ptNode(r.E2) }); res.DuctFallback++; }
                     else
                     {
@@ -241,15 +250,6 @@ public class DuctsToPluto
                             if (addBlock(r, gFabRej)) res.FabBlocks++; else res.Skipped++;
                             continue;
                         }
-                        // the geometry contradicts the stated size and the fit is sound: draw the fitted section.
-                        // A part stated "Round, 8 in" (no W x H) whose triangles are a 74 x 26 box was drawn as an
-                        // 8 in pipe where the rectangular run belongs (2026-10-06, box dump of the problem spot).
-                        if (stated && !double.IsNaN(r.FitA) && !double.IsNaN(r.FitB))
-                        {
-                            sec = SectionFor(r, scale, sections, sectionIndex, out sized, true);
-                            label += string.Format(Inv, " | drawn as fit {0:0.#}x{1:0.#} (stated {2:0.##}x{3:0.##})", r.FitA, r.FitB, sa, sb);
-                            res.FabFromFit++;
-                        }
                     }
                 }
                 if (drawn.Count == 0 && linear && r.E1 != null) { drawn.Add(new[] { ptNode(r.E1), ptNode(r.E2) }); res.DuctFallback++; }
@@ -262,7 +262,7 @@ public class DuctsToPluto
                     labels[id] = label;
                     network.Add(id);
                     if (!sized) gUnsized.Add((uint)id);
-                    else if (isDuct) gDucts.Add((uint)id); else if (fab) gFab.Add((uint)id); else gFitCl.Add((uint)id);
+                    else if (isDuct) gDucts.Add((uint)id); else if (fab) (meshDiffers ? gFabMesh : gFab).Add((uint)id); else gFitCl.Add((uint)id);
                     if (isDuct) res.DuctBeams++; else if (fab) res.FabBeams++; else res.FittingBeams++;
                 }
                 if (drawn.Count > 0) continue;
@@ -369,6 +369,7 @@ public class DuctsToPluto
         if (gFitBox.Count > 0) sc.AddGroup("Fittings (bbox only)", "#ff9f40", "beams", gFitBox, new[] { "duct", "Duct Fittings", "bbox" }, "DUCT_FITTINGS_BBOX");
         if (gAcc.Count > 0) sc.AddGroup("Accessories (bbox)", "#b0b0b8", "beams", gAcc, new[] { "duct", "Duct Accessories", "bbox" }, "DUCT_ACCESSORIES");
         if (gFab.Count > 0) sc.AddGroup("Fabrication ductwork", "#5a8fe0", "beams", gFab, new[] { "duct", Fab }, "DUCT_FAB");
+        if (gFabMesh.Count > 0) sc.AddGroup("Fabrication (size from mesh, not as stated)", "#ff5ad0", "beams", gFabMesh, new[] { "duct", Fab, "meshSize" }, "DUCT_FAB_MESH_SIZE");
         if (gFabBox.Count > 0) sc.AddGroup("Fabrication (bbox)", "#ffc04d", "beams", gFabBox, new[] { "duct", Fab, "bbox" }, "DUCT_FAB_BBOX");
         if (gFabRej.Count > 0) sc.AddGroup("Fabrication (fit rejected)", "#ff7a00", "beams", gFabRej, new[] { "duct", Fab, "bbox", "fitRejected" }, "DUCT_FAB_FIT_REJECTED");
         if (gFitBridge.Count > 0) sc.AddGroup("Fittings (bridged)", "#2fa88f", "beams", gFitBridge, new[] { "duct", "Duct Fittings", "bridged" }, "DUCT_FITTINGS_BRIDGED");
@@ -564,8 +565,131 @@ public class DuctsToPluto
         return res;
     }
 
+    // ---- fabrication straight body from its own triangles (2026-10-06) ----
+    // A fabrication straight's mesh is the duct body plus its end connectors (the sheet formed out into flanges),
+    // so its bbox / principal-axis fit measure the flange outline (a 74 x 26 duct came out ~79-81 x 33), and a part
+    // wider than long fools the fit into taking the width as the run. Instead: the body's four walls are the
+    // largest flat faces. Triangle normals are grouped into directions; the three largest by area (nearly
+    // perpendicular) are the part's frame. In each direction the triangles are grouped into planes by offset;
+    // the two largest planes are the body walls, their distance the body size (flange rims are narrow strips).
+    // The run is the direction whose two wall families have the areas section x length predicts (top / bottom
+    // = W x L, sides = H x L); the length is the full extent along it (flanges included, so neighbours meet).
+    // Not boxy (round, fittings): null, and the stated-size logic applies.
+    class Body { public double W, H, Len; public double[] E1, E2; }
+
+    static Body MeasureBody(float[] f)
+    {
+        int nt = f.Length / 9;
+        if (nt < 8) return null;
+        var dirs = new List<double[]>(); var dirArea = new List<double>();
+        var tn = new double[nt][]; var ta = new double[nt]; var td = new int[nt];
+        double total = 0;
+        for (int t = 0; t < nt; t++)
+        {
+            int o = t * 9;
+            double ux = f[o + 3] - f[o], uy = f[o + 4] - f[o + 1], uz = f[o + 5] - f[o + 2];
+            double vx = f[o + 6] - f[o], vy = f[o + 7] - f[o + 1], vz = f[o + 8] - f[o + 2];
+            double[] n = { uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx };
+            double l = Math.Sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+            td[t] = -1;
+            if (l < 1e-12) continue;
+            n[0] /= l; n[1] /= l; n[2] /= l;
+            double area = l / 2; tn[t] = n; ta[t] = area; total += area;
+            int hit = -1;
+            for (int d = 0; d < dirs.Count; d++) if (Math.Abs(Dot(dirs[d], n)) > 0.999) { hit = d; break; }   // ± same direction, ~2.5 deg
+            if (hit < 0) { hit = dirs.Count; dirs.Add(n); dirArea.Add(0); }
+            dirArea[hit] += area; td[t] = hit;
+        }
+        if (dirs.Count < 3 || total <= 0) return null;
+        var order = new List<int>(); for (int d = 0; d < dirs.Count; d++) order.Add(d);
+        order.Sort((a, b) => dirArea[b].CompareTo(dirArea[a]));
+        // the frame: the largest direction, then the largest perpendicular to it, then the largest perpendicular to both
+        var fam = new List<int> { order[0] };
+        foreach (int d in order) if (fam.Count == 1 && Math.Abs(Dot(dirs[d], dirs[fam[0]])) < 0.03) fam.Add(d);
+        if (fam.Count < 2) return null;
+        foreach (int d in order) if (fam.Count == 2 && Math.Abs(Dot(dirs[d], dirs[fam[0]])) < 0.03 && Math.Abs(Dot(dirs[d], dirs[fam[1]])) < 0.03) fam.Add(d);
+        if (fam.Count < 3) return null;
+        if (dirArea[fam[0]] + dirArea[fam[1]] + dirArea[fam[2]] < 0.85 * total) return null;   // not a box (round, curved)
+        // orthonormal frame from the three directions
+        double[] a0 = (double[])dirs[fam[0]].Clone();
+        double[] a1 = Sub3(dirs[fam[1]], Scale3(a0, Dot(dirs[fam[1]], a0))); Normalize(a1);
+        double[] a2 = Cross3(a0, a1);
+        double[][] ax = { a0, a1, a2 };
+        // per axis: planes by offset (0.03 ft bins), the two largest -> wall pair (size, smaller wall area); extent
+        var size = new double[3]; var wall = new double[3]; var mid = new double[3]; var lo = new double[3]; var hi = new double[3];
+        for (int k = 0; k < 3; k++)
+        {
+            lo[k] = double.MaxValue; hi[k] = double.MinValue;
+            for (int i = 0; i + 2 < f.Length; i += 3)
+            {
+                double p = f[i] * ax[k][0] + f[i + 1] * ax[k][1] + f[i + 2] * ax[k][2];
+                if (p < lo[k]) lo[k] = p; if (p > hi[k]) hi[k] = p;
+            }
+            var planes = new Dictionary<long, double>(); var planeOff = new Dictionary<long, double>();
+            for (int t = 0; t < nt; t++)
+            {
+                if (td[t] < 0 || Math.Abs(Dot(tn[t], ax[k])) < 0.999) continue;
+                int o = t * 9;
+                double p = ((f[o] + f[o + 3] + f[o + 6]) * ax[k][0] + (f[o + 1] + f[o + 4] + f[o + 7]) * ax[k][1] + (f[o + 2] + f[o + 5] + f[o + 8]) * ax[k][2]) / 3;
+                long key = (long)Math.Round(p / 0.03);   // float32 world coordinates near 1e5 ft are good to ~0.008 ft
+                double s; planes.TryGetValue(key, out s); planes[key] = s + ta[t]; planeOff[key] = p;
+            }
+            long k1 = 0, k2 = 0; double s1 = -1, s2 = -1;
+            foreach (KeyValuePair<long, double> kv in planes) if (kv.Value > s1) { s1 = kv.Value; k1 = kv.Key; }
+            foreach (KeyValuePair<long, double> kv in planes)
+                if (Math.Abs(planeOff[kv.Key] - planeOff[k1]) > 0.1 && kv.Value > s2) { s2 = kv.Value; k2 = kv.Key; }
+            if (s2 <= 0) { size[k] = double.NaN; continue; }
+            size[k] = Math.Abs(planeOff[k1] - planeOff[k2]); wall[k] = Math.Min(s1, s2); mid[k] = (planeOff[k1] + planeOff[k2]) / 2;
+        }
+        // run axis: walls along the run have area ~ (other section side) x length
+        int run = -1; double best = double.MaxValue;
+        for (int r = 0; r < 3; r++)
+        {
+            int p = (r + 1) % 3, q = (r + 2) % 3;
+            if (double.IsNaN(size[p]) || double.IsNaN(size[q])) continue;
+            double len = hi[r] - lo[r];
+            if (len <= 0 || wall[p] <= 0 || wall[q] <= 0) continue;
+            double score = Math.Abs(Math.Log(wall[p] / (size[q] * len))) + Math.Abs(Math.Log(wall[q] / (size[p] * len)));
+            if (score < best) { best = score; run = r; }
+        }
+        if (run < 0 || best > 2 * Math.Log(1.35)) return null;   // walls do not span the run: not a plain straight
+        int pa = (run + 1) % 3, pb = (run + 2) % 3;
+        // W = the side along the more horizontal cross axis (the beam's local y is horizontal), H the other
+        if (Math.Abs(ax[pa][2]) > Math.Abs(ax[pb][2])) { int tmp = pa; pa = pb; pb = tmp; }
+        var body = new Body { W = size[pa] * 12, H = size[pb] * 12, Len = hi[run] - lo[run] };
+        double[] c = Add3(Scale3(ax[pa], mid[pa]), Scale3(ax[pb], mid[pb]));
+        body.E1 = Add3(c, Scale3(ax[run], lo[run])); body.E2 = Add3(c, Scale3(ax[run], hi[run]));
+        return body;
+    }
+
+    static double Dot(double[] p, double[] q) { return p[0] * q[0] + p[1] * q[1] + p[2] * q[2]; }
+    static double[] Sub3(double[] p, double[] q) { return new[] { p[0] - q[0], p[1] - q[1], p[2] - q[2] }; }
+    static double[] Add3(double[] p, double[] q) { return new[] { p[0] + q[0], p[1] + q[1], p[2] + q[2] }; }
+    static double[] Scale3(double[] p, double s) { return new[] { p[0] * s, p[1] * s, p[2] * s }; }
+    static double[] Cross3(double[] p, double[] q) { return new[] { p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0] }; }
+    static void Normalize(double[] p) { double l = Math.Sqrt(Dot(p, p)); if (l > 0) { p[0] /= l; p[1] /= l; p[2] /= l; } }
+
+    // ducts_tri.bin records of the wanted rows (int32 row, int32 nTri, nTri * 9 float32); others skipped
+    static Dictionary<int, float[]> ReadTriangles(string path, HashSet<int> want)
+    {
+        var res = new Dictionary<int, float[]>();
+        if (!File.Exists(path)) return res;
+        using (var br = new BinaryReader(File.OpenRead(path)))
+        {
+            while (br.BaseStream.Position + 8 <= br.BaseStream.Length)
+            {
+                int row = br.ReadInt32(), n = br.ReadInt32();
+                if (!want.Contains(row)) { br.BaseStream.Seek((long)n * 36, SeekOrigin.Current); continue; }
+                var f = new float[n * 9];
+                for (int k = 0; k < f.Length; k++) f[k] = br.ReadSingle();
+                res[row] = f;
+            }
+        }
+        return res;
+    }
+
     // Box (W x H, wall) or pipe (D, wall) per distinct size; unsized -> a 2 in pipe placeholder.
-    static int SectionFor(Row r, double scale, List<RawViewerWriter.SectionDef> sections, Dictionary<string, int> index, out bool sized, bool fromFit = false)
+    static int SectionFor(Row r, double scale, List<RawViewerWriter.SectionDef> sections, Dictionary<string, int> index, out bool sized)
     {
         double ft = scale / 12.0;                                   // inches -> file units
         double t = double.IsNaN(r.T) || r.T <= 0 ? 0.05 : r.T;      // wall: 0.05 in when absent (drawing only)
@@ -577,7 +701,6 @@ public class DuctsToPluto
         bool rect = !double.IsNaN(r.W) && !double.IsNaN(r.H) && r.W > 0 && r.H > 0;
         bool nameRect = !double.IsNaN(r.NameW) && !double.IsNaN(r.NameH) && r.NameW > 0 && r.NameH > 0;
         bool dia = !double.IsNaN(r.D) && r.D > 0, nameDia = !double.IsNaN(r.NameD) && r.NameD > 0;
-        if (fromFit) round = rect = nameRect = dia = nameDia = false;   // stated size contradicted by the geometry
         if (round && (dia || nameDia))
         {
             double d = dia ? r.D : r.NameD;
@@ -667,27 +790,6 @@ public class DuctsToPluto
         e1 = (double[])c.Clone(); e2 = (double[])c.Clone();
         e1[best] = r.Min[best]; e2[best] = r.Max[best];
         return true;
-    }
-
-    // The rectangular size stated by another part of the same assembly (shared IfcGUID) that fits this part's
-    // bbox (BboxAxis) most closely (74 x 28 and 74 x 26 both pass the flange allowance on a 79 x 33 bbox);
-    // its ends in e1 / e2. Null when none fits.
-    static double[] SiblingBbox(Row r, Dictionary<string, List<double[]>> sibSizes, out double[] e1, out double[] e2)
-    {
-        e1 = e2 = null;
-        List<double[]> l;
-        if (r.Guid == "" || !sibSizes.TryGetValue(r.Guid, out l)) return null;
-        double[] best = null; double bestDev = double.MaxValue;
-        foreach (double[] s in l)
-        {
-            double[] a1, a2;
-            if (!BboxAxis(r, s[0], s[1], out a1, out a2)) continue;
-            int run = 0; for (int k = 1; k < 3; k++) if (Math.Abs(a2[k] - a1[k]) > Math.Abs(a2[run] - a1[run])) run = k;
-            double o1 = (r.Max[(run + 1) % 3] - r.Min[(run + 1) % 3]) * 12, o2 = (r.Max[(run + 2) % 3] - r.Min[(run + 2) % 3]) * 12;
-            double dev = Math.Min(Math.Abs(o1 - s[0]) + Math.Abs(o2 - s[1]), Math.Abs(o1 - s[1]) + Math.Abs(o2 - s[0]));
-            if (dev < bestDev) { bestDev = dev; best = s; e1 = a1; e2 = a2; }
-        }
-        return best;
     }
 
     // A measured extent (bbox / fit, inches) against a stated size: real fabrication parts carry flanges /
