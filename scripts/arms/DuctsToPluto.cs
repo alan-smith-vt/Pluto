@@ -36,16 +36,16 @@ public class DuctsToPluto
         public string BinPath, SidecarPath, GeometryHash;
         public int Nodes, Beams, DuctBeams, DuctFallback, FittingBeams, FittingBlocks, AccessoryBlocks, FanDropped, LooseEnds, Unsized, Skipped;
         public int FabBeams, FabBlocks, HangerBlocks, FabFitRejected;
-        public int FabFromBbox, FabPhantom, FabBridged, FittingsBridged, FabFromFit;
+        public int FabFromBbox, FabPhantom, FabBridged, FittingsBridged, FabFromFit, FabFromSibling;
         public string Summary()
         {
             return string.Format(CultureInfo.InvariantCulture,
                 "nodes={0} beams={1}: ducts {2} (fitted-end fallback {3}), fitting centreline {4}, fitting blocks {5}, accessory blocks {6}\n" +
                 "fabrication: beams {13} (straights from bbox + size {17}), blocks {14} (fit rejected {16}); hanger blocks {15}\n" +
-                "fabrication straights not matching their stated size (<out>.fab-mismatch.txt) {18}, drawn with the fitted section {21}; fittings bridged {19} (fabrication {20})\n" +
+                "fabrication straights not matching their stated size (<out>.fab-mismatch.txt) {18}, drawn with the fitted section {21}; sized from their assembly (bbox) {22}; fittings bridged {19} (fabrication {20})\n" +
                 "symbol-fan segments dropped {7}, loose ends {8}, unsized {9}, rows skipped (no geometry) {10}\n{11}\n{12}",
                 Nodes, Beams, DuctBeams, DuctFallback, FittingBeams, FittingBlocks, AccessoryBlocks, FanDropped, LooseEnds, Unsized, Skipped,
-                BinPath, SidecarPath, FabBeams, FabBlocks, HangerBlocks, FabFitRejected, FabFromBbox, FabPhantom, FittingsBridged, FabBridged, FabFromFit);
+                BinPath, SidecarPath, FabBeams, FabBlocks, HangerBlocks, FabFitRejected, FabFromBbox, FabPhantom, FittingsBridged, FabBridged, FabFromFit, FabFromSibling);
         }
     }
 
@@ -56,6 +56,7 @@ public class DuctsToPluto
 
     class Row
     {
+        public object Clone() { return MemberwiseClone(); }
         public string Guid, NavisId, Cat, System, SizeText, Name, Shape;
         public string Hidden = "";               // "self" / "ancestor" / "" (runs from 2026-10-06 on)
         public double HiddenGeom;                 // own geometry items hidden (NaN on older runs)
@@ -126,6 +127,20 @@ public class DuctsToPluto
         var network = new HashSet<int>();          // beams of the duct network (not blocks): loose ends and bridging use them
         var pending = new List<int>();             // fittings without a centreline: bridged after the loop
         var phantoms = new List<string>();
+        // rectangular sizes stated by the parts of each fabrication assembly (shared IfcGUID): a part whose own
+        // size is junk (stated "Round 8 in", mesh a 74 x 26 box, 2026-10-06) takes its section from a sibling
+        var sibSizes = new Dictionary<string, List<double[]>>(StringComparer.Ordinal);
+        foreach (Row q in rows)
+        {
+            if (!string.Equals(q.Cat, Fab, StringComparison.OrdinalIgnoreCase) || q.Guid == "") continue;
+            if (q.Shape.IndexOf("round", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+            double qa, qb;
+            bool rectStated = (!double.IsNaN(q.W) && !double.IsNaN(q.H) && q.W > 0 && q.H > 0) || (!double.IsNaN(q.NameW) && !double.IsNaN(q.NameH) && q.NameW > 0 && q.NameH > 0);
+            if (!rectStated || !StatedSize(q, out qa, out qb)) continue;
+            List<double[]> l; if (!sibSizes.TryGetValue(q.Guid, out l)) { l = new List<double[]>(); sibSizes[q.Guid] = l; }
+            bool have = false; foreach (double[] s in l) if (s[0] == qa && s[1] == qb) have = true;
+            if (!have) l.Add(new[] { qa, qb });
+        }
         Func<Row, string> labelOf = delegate(Row r)
         {
             return r.Guid + (r.NavisId != "" ? " #" + r.NavisId : "")
@@ -197,7 +212,19 @@ public class DuctsToPluto
                     // removed almost every good straight (flanges make real parts bigger than nominal, 2026-10-05).
                     double sa, sb; double[] b1, b2;
                     bool stated = StatedSize(r, out sa, out sb);
+                    double[] sib = null;
                     if (stated && BboxAxis(r, sa, sb, out b1, out b2)) { drawn.Add(new[] { ptNode(b1), ptNode(b2) }); res.FabFromBbox++; }
+                    else if ((sib = SiblingBbox(r, sibSizes, out b1, out b2)) != null)
+                    {
+                        // own size contradicted, a sibling's matches the bbox: run along the remaining axis (a part
+                        // wider than long fools the fit, which takes the width as the run)
+                        drawn.Add(new[] { ptNode(b1), ptNode(b2) });
+                        var rs = (Row)r.Clone(); rs.Shape = "Rectangular"; rs.W = sib[0]; rs.H = sib[1];
+                        sec = SectionFor(rs, scale, sections, sectionIndex, out sized);
+                        label += string.Format(Inv, " | drawn {0:0.##}x{1:0.##} from its assembly (stated {2})", sib[0], sib[1],
+                            stated ? string.Format(Inv, "{0:0.##}x{1:0.##}", sa, sb) : "none");
+                        res.FabFromSibling++;
+                    }
                     else if (stated && r.E1 != null && FitMatches(r, sa, sb)) { drawn.Add(new[] { ptNode(r.E1), ptNode(r.E2) }); res.DuctFallback++; }
                     else
                     {
@@ -640,6 +667,27 @@ public class DuctsToPluto
         e1 = (double[])c.Clone(); e2 = (double[])c.Clone();
         e1[best] = r.Min[best]; e2[best] = r.Max[best];
         return true;
+    }
+
+    // The rectangular size stated by another part of the same assembly (shared IfcGUID) that fits this part's
+    // bbox (BboxAxis) most closely (74 x 28 and 74 x 26 both pass the flange allowance on a 79 x 33 bbox);
+    // its ends in e1 / e2. Null when none fits.
+    static double[] SiblingBbox(Row r, Dictionary<string, List<double[]>> sibSizes, out double[] e1, out double[] e2)
+    {
+        e1 = e2 = null;
+        List<double[]> l;
+        if (r.Guid == "" || !sibSizes.TryGetValue(r.Guid, out l)) return null;
+        double[] best = null; double bestDev = double.MaxValue;
+        foreach (double[] s in l)
+        {
+            double[] a1, a2;
+            if (!BboxAxis(r, s[0], s[1], out a1, out a2)) continue;
+            int run = 0; for (int k = 1; k < 3; k++) if (Math.Abs(a2[k] - a1[k]) > Math.Abs(a2[run] - a1[run])) run = k;
+            double o1 = (r.Max[(run + 1) % 3] - r.Min[(run + 1) % 3]) * 12, o2 = (r.Max[(run + 2) % 3] - r.Min[(run + 2) % 3]) * 12;
+            double dev = Math.Min(Math.Abs(o1 - s[0]) + Math.Abs(o2 - s[1]), Math.Abs(o1 - s[1]) + Math.Abs(o2 - s[0]));
+            if (dev < bestDev) { bestDev = dev; best = s; e1 = a1; e2 = a2; }
+        }
+        return best;
     }
 
     // A measured extent (bbox / fit, inches) against a stated size: real fabrication parts carry flanges /
