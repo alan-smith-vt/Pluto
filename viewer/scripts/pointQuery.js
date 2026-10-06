@@ -170,7 +170,7 @@ var FEAQuery = (function () {
                 f.push(smoothed
                     ? (build.cornerAvgCache ? build.cornerAvgCache[slot]
                                             : build.nodeAvgCache[ni])
-                    : lcData[base + k * stride]);
+                    : (lcData ? lcData[base + k * stride] : NaN));   // geometry-only file: "no data"
             }
         }
 

@@ -1641,9 +1641,11 @@ function showReadout(clientX, clientY) {
     var inDsr = inDsrMode();
     var inStr = inStrMode();
     if (inStr && !feaModel.strData) return null;
-    // Geometry-only files have no LC data; still pickable (beams draw neutral).
+    // Geometry-only files have no LC data; still pickable (beams draw neutral; shells
+    // read "no data" with their label: mesh dumps such as the Navisworks box, 2026-10-06).
     var beamsOnly = window.FEABeams && FEABeams.view();
-    if (!inDsr && !inStr && !feaLCData && !beamsOnly) return null;
+    var shellsGeom = feaModel.header && feaModel.header.nElements > 0 && feaBuild;
+    if (!inDsr && !inStr && !feaLCData && !beamsOnly && !shellsGeom) return null;
 
     var hit = feaPick(clientX, clientY);
     if (!hit) { clearReadout(); return null; }
