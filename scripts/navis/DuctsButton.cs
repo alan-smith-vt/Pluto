@@ -65,6 +65,7 @@ namespace PlutoNavis
             Document doc = Autodesk.Navisworks.Api.Application.ActiveDocument;
             if (doc == null || doc.Models.Count == 0) { MessageBox.Show("Open a model first.", title); return 0; }
             DateTime t0 = DateTime.Now;
+            ForeignFragments = 0;
             string dir = Path.Combine(fabOnly ? FabOutRoot : OutRoot, t0.ToString("yyyyMMdd-HHmmss", Inv));
             Directory.CreateDirectory(dir);
             string log = Path.Combine(dir, "started.txt");
@@ -266,6 +267,7 @@ namespace PlutoNavis
             }
             if (!AccessoryGeometry) s.AppendLine("  (Duct Accessories: properties + bbox only, no geometry / centrelines)");
             s.AppendLine("  (" + FabHangers + ": properties + bbox only; " + Fab + ": like Ducts)");
+            s.AppendLine(string.Format(Inv, "Geometry fragments of other instances skipped (shared geometry): {0}", ForeignFragments));
             s.AppendLine(string.Format(Inv, "Ducts {0}, fitted from triangles {1}, triangle errors {2}{3}", ducts, fitted, triErrors,
                 firstTriError == null ? "" : " (first: " + firstTriError + ")"));
             s.AppendLine("|fit length - .Length| ft:   " + Stats(lenErr));
@@ -614,12 +616,19 @@ namespace PlutoNavis
         // ---- triangles (COM API), world coordinates ----
         static void Triangles(ModelItem g, List<double> pts) { Triangles(g, pts, null); }
 
-        // triangles into pts; line segments (two corners each) into lines when given
+        // triangles into pts; line segments (two corners each) into lines when given.
+        // Instanced geometry (2026-10-07): identical parts (fabrication straights of one size and length)
+        // share one geometry, and path.Fragments() returns the fragments of EVERY instance, each with its
+        // own instance's transform. Only the fragments whose own path is this item's path are its geometry;
+        // without the filter a straight got its twins' triangles (one 12.05 ft along the run), measured as
+        // the wrong size and drawn on top of them.
         internal static void Triangles(ModelItem g, List<double> pts, List<double> lines)
         {
             ComApi.InwOaPath path = ComBridge.ToInwOaPath(g);
+            Array own = (Array)path.ArrayData;
             foreach (ComApi.InwOaFragment3 frag in path.Fragments())
             {
+                if (!SamePath((Array)frag.path.ArrayData, own)) { ForeignFragments++; continue; }
                 var m = new double[16];
                 Array ma = (Array)((ComApi.InwLTransform3f3)frag.GetLocalToWorldMatrix()).Matrix;
                 int lo = ma.GetLowerBound(0);
@@ -627,6 +636,17 @@ namespace PlutoNavis
                 var cb = new TriCollector(m, pts, lines);
                 frag.GenerateSimplePrimitives(ComApi.nwEVertexProperty.eNORMAL, cb);
             }
+        }
+
+        internal static int ForeignFragments;   // other instances' fragments skipped (summary)
+
+        static bool SamePath(Array a, Array b)
+        {
+            if (a.Length != b.Length) return false;
+            int la = a.GetLowerBound(0), lb = b.GetLowerBound(0);
+            for (int i = 0; i < a.Length; i++)
+                if (Convert.ToInt64(a.GetValue(la + i)) != Convert.ToInt64(b.GetValue(lb + i))) return false;
+            return true;
         }
 
         // Row-vector convention: world = [x y z 1] * M, M row-major (translation in m[12..14]).
