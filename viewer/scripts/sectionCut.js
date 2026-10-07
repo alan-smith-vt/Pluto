@@ -635,8 +635,12 @@ var FEASectionCut = (function () {
 
     // Write the keep-set into the mesh + edge elemVis attributes; a
     // null set means "show everything". Beams and node markers follow.
+    // Elements of a group whose eye is off (Groups tab) stay hidden either way.
+    var lastKeep = null, lastBox = null;
     function writeVis(keep, boxTest) {
+        lastKeep = keep || null; lastBox = boxTest || null;
         if (!mesh || !feaBuild) return;
+        var off = window.FEAFeatures && FEAFeatures.elemOff ? FEAFeatures.elemOff('shell') : null;
         var nElem = feaBuild.elemNCount.length;
         var attr = mesh.geometry.getAttribute('elemVis');
         var arrv = attr.array;
@@ -646,6 +650,7 @@ var FEASectionCut = (function () {
         for (var e = 0; e < nElem; e++) {
             var nc = feaBuild.elemNCount[e];
             var vis = keep ? keep[e] : 1;
+            if (off && off[e]) vis = 0;
             var nv = nc === 4 ? 6 : 3;
             for (var i = 0; i < nv; i++) arrv[vptr++] = vis;
             if (eArr) for (var q = 0; q < nc * 2; q++) eArr[eptr++] = vis;
@@ -673,6 +678,13 @@ var FEASectionCut = (function () {
         if (window.FEABeams && FEABeams.writeVis) FEABeams.writeVis(nodeKeep, keep ? boxTest : null);
         if (window.FEAFeatures && FEAFeatures.writeVis) FEAFeatures.writeVis(nodeKeep);
         requestRender();
+    }
+    // Rewrite with the last isolate state (the group eyes changed); false when
+    // there is no shell mesh (beam-only file: the caller rewrites the beams).
+    function reapplyVis() {
+        if (!mesh || !feaBuild) return false;
+        writeVis(lastKeep, lastBox);
+        return true;
     }
 
     // Crop box: keep every element whose centroid lies within length/2 of the
@@ -1399,6 +1411,7 @@ var FEASectionCut = (function () {
         cuts.forEach(function (c) { c.elem = -1; });
         samples = null;
         isolated = null;          // fresh geometry draws fully visible
+        lastKeep = null; lastBox = null;
         lastModel = null;         // next model re-syncs the units dropdown
         setArmed(false);
         setAdjusting(false);
@@ -1420,6 +1433,7 @@ var FEASectionCut = (function () {
         onModelCleared: onModelCleared,
         onEnvelope: onEnvelope,
         importLegacy: importLegacy,
+        reapplyVis: reapplyVis,
         disarm: function () { setArmed(false); setAdjusting(false); },
         // test hooks (viewer/tests/test_sectioncuts.js)
         _itemToCut: itemToCut,

@@ -105,5 +105,26 @@ FEAFeatures._setEnabled(true);
 assert(FEAFeatures.groupOf('shell', 0) === 'WALL', 'groupOf(shell 0) = WALL (winner)');
 assert(FEAFeatures.groupOf('node', 3) === 'RIM' && FEAFeatures.groupOf('node', 0) === 'BASE', 'groupOf(node) reports the node group');
 
+// 6. eye: an invisible group's elements are flagged off (any group with its eye off
+// hides the element), independent of painting; the visibility writers are called
+{
+  let reapplied = 0;
+  global.FEABeams = { reapplyVis() { reapplied++; }, view: () => null, build: () => null, mesh: () => null };
+  e.groups.items.forEach(g => { delete g.invisible; });
+  const c1 = e.groups.items.findIndex(g => g.name === 'C1');
+  e.groups.items[c1].invisible = true;
+  FEAFeatures.refresh();
+  const off = FEAFeatures.elemOff('shell');
+  const n = off ? Array.from(off).reduce((a, b) => a + b, 0) : -1;
+  assert(n === 5, 'C1 eye off: its 5 shells flagged off (' + n + ')');
+  assert(FEAFeatures.groupOf('shell', 0) === 'WALL', 'eye does not change painting');
+  assert(reapplied > 0, 'visibility rewritten on refresh');
+  delete e.groups.items[c1].invisible;
+  FEAFeatures.refresh();
+  assert(Array.from(FEAFeatures.elemOff('shell')).every(x => x === 0), 'eye back on: nothing off');
+  const out2 = JSON.parse(FEAFeatures.exportJson());
+  assert(out2.groups.items.every(g => g.invisible === undefined), 'no invisible flag exported when every eye is on');
+}
+
 console.log(fails ? fails + ' FAILED' : 'ALL GROUP TESTS PASSED');
 process.exitCode = fails ? 1 : 0;

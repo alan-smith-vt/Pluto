@@ -99,6 +99,7 @@ var FEABeams = (function () {
             beamMesh.material.dispose();
         }
         beamMesh = null; material = null; build = null; view = null;
+        lastKeep = null; lastBox = null;
         lcData = null; lcLoaded = -1; dispLoaded = -1;
         if (elSection) elSection.style.display = 'none';
     }
@@ -181,9 +182,13 @@ var FEABeams = (function () {
     // nodeKeep: kept shell nodes (beams follow by coincident position). boxTest
     // (2026-09-10, crop box): a point test on x, y, z; when given, a beam is kept
     // when BOTH its end joints lie in the box, whether or not they are shell
-    // nodes (ring wall axis and arm joints are not).
+    // nodes (ring wall axis and arm joints are not). Beams of a group whose eye is
+    // off in the Groups tab stay hidden either way (FEAFeatures.elemOff).
+    var lastKeep = null, lastBox = null;
     function writeVis(nodeKeep, boxTest) {
+        lastKeep = nodeKeep || null; lastBox = boxTest || null;
         if (!build || !view) return;
+        var off = window.FEAFeatures && FEAFeatures.elemOff ? FEAFeatures.elemOff('beam') : null;
         var attr = build.geometry.getAttribute('elemVis');
         var arr = attr.array, elems = view.elems, REC = view.elemRecordU32;
         var nodes = view.nodes;
@@ -198,10 +203,13 @@ var FEABeams = (function () {
             var n0 = elems[e * REC + 1], n1 = elems[e * REC + 2];
             if (boxTest) vis = (inBox(n0) && inBox(n1)) ? 1 : 0;
             else if (nodeKeep) vis = (keptPos[posKey(nodes, n0)] && keptPos[posKey(nodes, n1)]) ? 1 : 0;
+            if (off && off[e]) vis = 0;
             arr.fill(vis, build.vertStart[e], build.vertStart[e] + build.vertCount[e]);
         }
         attr.needsUpdate = true;
     }
+    // Rewrite with the last isolate state (the group eyes changed).
+    function reapplyVis() { writeVis(lastKeep, lastBox); }
 
     function elemVisible(e) {
         if (!build) return false;
@@ -281,6 +289,7 @@ var FEABeams = (function () {
         refreshDispVecs: refreshDispVecs,
         pick: pick,
         writeVis: writeVis,
+        reapplyVis: reapplyVis,
         fillReadout: fillReadout,
         // The coloured beam field ({name, unit, min, max}), or null when beams draw neutral.
         legend: function () {

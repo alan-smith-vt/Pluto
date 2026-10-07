@@ -82,6 +82,8 @@
 .gr-row.dragging { opacity: 0.4; }
 
 .gr-check { margin: 0; cursor: pointer; }
+.gr-eye { flex: none; padding: 0 2px; border: none; background: none; color: inherit; font-size: 12px; line-height: 1; cursor: pointer; }
+.gr-eye.hidden { opacity: 0.3; text-decoration: line-through; }
 .gr-swatch {
     width: 14px; height: 14px; border-radius: 3px; flex: none;
     border: 1px solid rgba(255, 255, 255, 0.25);

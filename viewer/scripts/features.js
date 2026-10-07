@@ -208,6 +208,7 @@ var FEAFeatures = (function () {
             var arr = new Float32Array(v.header.nElements);
             arr.fill(-1);
             out[fam] = arr;
+            out[fam + 'Off'] = new Uint8Array(v.header.nElements);
         });
         var domainByName = {};
         if (feaModel.unified) feaModel.unified.domains.forEach(function (d) { domainByName[d.name] = d.family; });
@@ -217,7 +218,7 @@ var FEAFeatures = (function () {
             var color = g.color ? hexToRgb(g.color) : autoColor(gi);
             rgb.push(color);
             var count = 0, nodeCount = 0, nodeIdx = [];
-            var hidden = groupHidden(g);
+            var hidden = groupHidden(g), invisible = groupInvisible(g);
             // Work on a COPY: predicate members expand into explicit entries
             // appended to the queue; the envelope itself is never mutated.
             var members = (Array.isArray(g.members) ? g.members : (g.members ? [g.members] : [])).slice();
@@ -251,10 +252,11 @@ var FEAFeatures = (function () {
                     if (idx === undefined) { out.unmatched++; return; }
                     count++;
                     if (!hidden) arr[idx] = gi;
+                    if (invisible) out[fam + 'Off'][idx] = 1;
                 });
             })(members[mi]);
             groupList.push({ name: g.name || ('Group ' + (gi + 1)), color: g.color, rgb: color,
-                             count: count, nodeCount: nodeCount, hidden: hidden, painted: 0, nodePainted: 0, nodeNudged: 0,
+                             count: count, nodeCount: nodeCount, hidden: hidden, invisible: invisible, painted: 0, nodePainted: 0, nodeNudged: 0,
                              tags: Array.isArray(g.tags) ? g.tags : [] });
             nodeMembers.push(Int32Array.from(nodeIdx));
         });
@@ -388,6 +390,7 @@ var FEAFeatures = (function () {
         applyUniforms(feaMaterial, on);
         if (window.FEABeams && FEABeams.mesh()) applyUniforms(FEABeams.mesh().material, on);
         rebuildMarkers(on);
+        applyVisibility();
         if (elToggle) elToggle.checked = enabled;
         drawLegend(on);
         if (typeof updateViewCaption === 'function') updateViewCaption();
@@ -395,6 +398,20 @@ var FEAFeatures = (function () {
     }
 
     function drawLegend(on) { renderList(on); }
+
+    // Group eyes -> elemVis, through the section-cut / beam writers so the
+    // isolate and the eyes combine (each writer reads elemOff).
+    function elemOff(fam) { return resolved ? resolved[fam + 'Off'] || null : null; }
+    function applyVisibility() {
+        var done = window.FEASectionCut && FEASectionCut.reapplyVis && FEASectionCut.reapplyVis();
+        if (!done && window.FEABeams && FEABeams.reapplyVis) FEABeams.reapplyVis();
+    }
+    function setInvisible(gi, invisible) {
+        var g = items()[gi]; if (!g) return;
+        if (invisible) g.invisible = true; else delete g.invisible;
+        markDirty();
+        refresh();
+    }
 
     // ---- Groups tab list --------------------------------------------------
     var dragFrom = -1;
@@ -421,6 +438,10 @@ var FEAFeatures = (function () {
     function writeHidden(g, hidden) {
         g.hidden = !!hidden;
     }
+    // Eye (2026-10-07): `invisible: true` on the item hides the group's elements
+    // (not drawn, not pickable), independent of painting. An element in several
+    // groups hides when ANY of them has its eye off. Absent = shown.
+    function groupInvisible(g) { return !!g.invisible; }
     function showTab(tab) {
         listTab = tab === 'nodes' ? 'nodes' : 'elements';
         try { localStorage.setItem('pluto.groupsTab', listTab); } catch (e0) {}
@@ -489,7 +510,18 @@ var FEAFeatures = (function () {
                     cnt.title = (info.count - info.painted) + ' member(s) painted by a group lower in the list';
                 }
             }
-            row.appendChild(cb); row.appendChild(sw); row.appendChild(name); row.appendChild(cnt);
+            row.appendChild(cb);
+            if (!isNodes) {
+                var eye = document.createElement('button');
+                eye.type = 'button';
+                eye.className = 'gr-eye' + (info.invisible ? ' hidden' : '');
+                eye.textContent = '👁';   // eye
+                eye.title = info.invisible ? 'Hidden: not drawn, not picked (click to show)' : 'Shown (click to hide: not drawn, not picked)';
+                eye.addEventListener('click', function (e) { e.stopPropagation(); setInvisible(gi, !info.invisible); });
+                eye.addEventListener('mousedown', function (e) { e.stopPropagation(); });
+                row.appendChild(eye);
+            }
+            row.appendChild(sw); row.appendChild(name); row.appendChild(cnt);
 
             row.addEventListener('dragstart', function (e) {
                 dragFrom = gi; row.classList.add('dragging');
@@ -635,6 +667,7 @@ var FEAFeatures = (function () {
         onModelCleared: onModelCleared,
         sync: sync,
         writeVis: writeVis,
+        elemOff: elemOff,
         groupOf: groupOf,
         isOn: function () { return enabled && !!resolved; },
         envelope: function () { return envelope; },
