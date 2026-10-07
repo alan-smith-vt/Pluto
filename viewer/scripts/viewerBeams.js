@@ -246,11 +246,13 @@ var FEABeams = (function () {
             if (absValue) v = Math.abs(v);
         }
         lastQuery = null;                       // shell calc card does not apply
-        elRoValue.textContent = neutral ? '—' : (v === v ? fmt(v, 6) + (c.unit ? ' ' + c.unit : '') : 'no data');
-        elRoValue.className = 'ro-value' + (v === v ? '' : ' ro-nodata');
-        elRoComp.textContent = neutral ? 'beam (neutral view)' :
-            c.name + (c.unit ? ' [' + c.unit + ']' : '') + ' (beam ' + c.kind + ')';
         var grp = window.FEAFeatures ? FEAFeatures.groupOf('beam', e) : null;
+        // no results (geometry-only file, e.g. ducts): the group in the value slot, as the overlay readout does
+        var noResults = !lcData;
+        elRoValue.textContent = noResults ? (grp || '—') : neutral ? '—' : (v === v ? fmt(v, 6) + (c.unit ? ' ' + c.unit : '') : 'no data');
+        elRoValue.className = 'ro-value' + (v === v || noResults ? '' : ' ro-nodata');
+        elRoComp.textContent = noResults ? 'beam (no results)' : neutral ? 'beam (neutral view)' :
+            c.name + (c.unit ? ' [' + c.unit + ']' : '') + ' (beam ' + c.kind + ')';
         var lbl = view.labels ? view.labels.get(e) : '';
         elRoElem.textContent = view.elemIds[e] + (lbl ? ' [' + lbl + ']' : '') + '  (beam idx ' + e + ', ' +
             (sec ? sec.name + ' ' + sec.type : 'no section') + (grp ? ', group: ' + grp : '') + ')';
