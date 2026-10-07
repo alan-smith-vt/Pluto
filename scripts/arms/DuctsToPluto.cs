@@ -37,9 +37,17 @@ public class DuctsToPluto
         public int Nodes, Beams, DuctBeams, DuctFallback, FittingBeams, FittingBlocks, AccessoryBlocks, FanDropped, LooseEnds, Unsized, Skipped;
         public int FabBeams, FabBlocks, HangerBlocks, FabFitRejected;
         public int FabFromBbox, FabPhantom, FabBridged, FittingsBridged, FabBodyAgrees, FabBodyDiffers, FabFromBody;
+        public int NoRunName, ServiceOut;
+        public string ServiceFilter = "";
+        public SortedDictionary<string, int> BeamsByService = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         public string Summary()
         {
+            var sv = new StringBuilder();
+            foreach (KeyValuePair<string, int> kv in BeamsByService) sv.Append(sv.Length > 0 ? ", " : "").Append(kv.Key).Append(' ').Append(kv.Value);
             return string.Format(CultureInfo.InvariantCulture,
+                "services: {0}; rows dropped by service {1}; rows without RunName {2} (drawn, own group); beams by service: {3}\n",
+                ServiceFilter == "" ? "all (no filter)" : ServiceFilter, ServiceOut, NoRunName, sv.Length > 0 ? sv.ToString() : "-") +
+                string.Format(CultureInfo.InvariantCulture,
                 "nodes={0} beams={1}: ducts {2} (fitted-end fallback {3}), fitting centreline {4}, fitting blocks {5}, accessory blocks {6}\n" +
                 "fabrication: beams {13} (straights from bbox + size {17}), blocks {14} (fit rejected {16}); hanger blocks {15}\n" +
                 "fabrication straights measured from the mesh body (walls, flanges excluded): agrees with stated size {21}, differs (drawn from the mesh, own group) {22}; placed from the mesh {23}\n" +
@@ -66,12 +74,38 @@ public class DuctsToPluto
         public double FitLen;                     // fitted length, feet
         public double NameW = double.NaN, NameH = double.NaN, NameD = double.NaN;   // size read from the Name (fabrication parts)
         public double[] Min, Max, E1, E2;         // feet; null = absent
+        public string RunName = "", Service = ""; // IfcObjectProperties.RunName "A-<bldg>-<service>-DUCT-<n>" (runs from 2026-10-07 on)
+        public bool Out;                          // service not in the requested list: not drawn (row kept so row numbers stay aligned)
+    }
+
+    // The service field of a RunName ("A-<bldg>-<service>-DUCT-<n>" -> "<service>"), "" when it has no such field.
+    static string ServiceOf(string runName)
+    {
+        string[] f = (runName ?? "").Split('-');
+        return f.Length >= 4 ? f[2].Trim() : "";
     }
 
     public static Result Export(string runDir, string outBase, string modelId, string lengthUnit)
     {
+        return Export(runDir, outBase, modelId, lengthUnit, null);
+    }
+
+    // services: draw only rows whose RunName service is in the list (ignoring case); rows without a RunName are
+    // kept and grouped as such. null / empty = every row. One group per service (colour by service) on top of
+    // the category groups; labels carry the RunName.
+    public static Result Export(string runDir, string outBase, string modelId, string lengthUnit, string[] services)
+    {
         double scale = LengthScale(lengthUnit);   // feet -> file units
         var rows = ReadRows(Path.Combine(runDir, "ducts.csv"));
+        var res = new Result();
+        var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (services != null) foreach (string s in services) if (!string.IsNullOrEmpty(s) && s.Trim().Length > 0) keep.Add(s.Trim());
+        foreach (Row r in rows)
+        {
+            if (r.RunName == "") res.NoRunName++;
+            else if (keep.Count > 0 && !keep.Contains(r.Service)) { r.Out = true; res.ServiceOut++; }
+        }
+        res.ServiceFilter = keep.Count > 0 ? string.Join(", ", new List<string>(keep).ToArray()) : "";
         var nodeXyz = new Dictionary<int, double[]>(); var nodeDeg = new Dictionary<int, int>();
         foreach (Dictionary<string, string> r in ReadCsv(Path.Combine(runDir, "cl_nodes.csv")))
         {
@@ -94,8 +128,8 @@ public class DuctsToPluto
         if (lo[0] == double.MaxValue) throw new Exception("DuctsToPluto: nothing with coordinates in " + runDir);
         double[] off = { Math.Round((lo[0] + hi[0]) / 2), Math.Round((lo[1] + hi[1]) / 2), Math.Round((lo[2] + hi[2]) / 2) };
 
-        var res = new Result();
         var nodes = new Dictionary<int, Node>();
+        var beamRow = new Dictionary<int, Row>();          // beam id -> its element row (service groups, run labels)
         var clToFile = new Dictionary<int, int>();          // cl node id -> file node id
         var keyToFile = new Dictionary<string, int>();      // fallback / block ends, deduped at 1e-4 ft
         int nextNode = 1, nextBeam = 1;
@@ -136,7 +170,8 @@ public class DuctsToPluto
         Func<Row, string> labelOf = delegate(Row r)
         {
             return r.Guid + (r.NavisId != "" ? " #" + r.NavisId : "")
-                + " | " + r.System + " | " + (r.SizeText != "" ? r.SizeText : r.Name);   // IfcGUID is not unique: short NavisId too
+                + " | " + r.System + " | " + (r.SizeText != "" ? r.SizeText : r.Name)   // IfcGUID is not unique: short NavisId too
+                + (r.RunName != "" ? " | run " + r.RunName : "");
         };
         // bbox block: a beam along the bbox's longest axis with a RECT of the other two extents; false when no bbox
         Func<Row, List<uint>, bool> addBlock = delegate(Row r, List<uint> grp)
@@ -161,7 +196,7 @@ public class DuctsToPluto
             }
             int bid = nextBeam++;
             beams[bid] = Beam(bid, ptNode(pa), ptNode(pb), bs, nodes);
-            labels[bid] = labelOf(r);
+            labels[bid] = labelOf(r); beamRow[bid] = r;
             grp.Add((uint)bid);
             return true;
         };
@@ -169,6 +204,7 @@ public class DuctsToPluto
         for (int i = 0; i < rows.Count; i++)
         {
             Row r = rows[i]; int rowNo = i + 1;
+            if (r.Out) continue;                       // service not requested (also never pending for bridging)
             List<int[]> segs; segsByRow.TryGetValue(rowNo, out segs);
             string label = labelOf(r);
             bool isDuct = r.Cat == "Ducts", isFit = r.Cat == "Duct Fittings";
@@ -259,7 +295,7 @@ public class DuctsToPluto
                     if (d[0] == d[1]) continue;
                     int id = nextBeam++;
                     beams[id] = Beam(id, d[0], d[1], sec, nodes);
-                    labels[id] = label;
+                    labels[id] = label; beamRow[id] = r;
                     network.Add(id);
                     if (!sized) gUnsized.Add((uint)id);
                     else if (isDuct) gDucts.Add((uint)id); else if (fab) (meshDiffers ? gFabMesh : gFab).Add((uint)id); else gFitCl.Add((uint)id);
@@ -343,7 +379,7 @@ public class DuctsToPluto
                     claimed.Add(e);
                     int id = nextBeam++;
                     beams[id] = Beam(id, e, wn, sized ? sec : secOf[e], nodes);   // unsized fitting: its duct's section
-                    labels[id] = labelOf(r);
+                    labels[id] = labelOf(r); beamRow[id] = r;
                     network.Add(id);
                     (fab ? gFabBridge : gFitBridge).Add((uint)id);
                 }
@@ -376,6 +412,42 @@ public class DuctsToPluto
         if (gFabBridge.Count > 0) sc.AddGroup("Fabrication fittings (bridged)", "#4a7fd0", "beams", gFabBridge, new[] { "duct", Fab, "bridged" }, "DUCT_FAB_BRIDGED");
         if (gHang.Count > 0) sc.AddGroup("Fabrication hangers", "#e040c0", "beams", gHang, new[] { "duct", FabHangers, "bbox" }, "DUCT_FAB_HANGERS");
         if (gUnsized.Count > 0) sc.AddGroup("Unsized", "#ff3b3b", "beams", gUnsized, new[] { "duct", "unsized" }, "DUCT_UNSIZED");
+        // service groups last (the viewer paints an element with the last enabled group that lists it): colour by
+        // service, in the order of the requested list, then any other service seen; recolour in the Groups tab
+        {
+            var bySvc = new Dictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
+            var order = new List<string>();
+            if (services != null) foreach (string s in services) if (s != null && s.Trim().Length > 0 && !order.Contains(s.Trim())) order.Add(s.Trim());
+            var noRun = new List<uint>();
+            foreach (KeyValuePair<int, Row> kv in beamRow)
+            {
+                string svc = kv.Value.Service;
+                if (kv.Value.RunName == "") { noRun.Add((uint)kv.Key); continue; }
+                if (svc == "") svc = "(RunName without service field)";
+                List<uint> l; if (!bySvc.TryGetValue(svc, out l)) { l = new List<uint>(); bySvc[svc] = l; }
+                l.Add((uint)kv.Key);
+            }
+            var rest = new List<string>();
+            foreach (string k in bySvc.Keys) if (!order.Exists(o => o.Equals(k, StringComparison.OrdinalIgnoreCase))) rest.Add(k);
+            rest.Sort(StringComparer.OrdinalIgnoreCase);
+            order.AddRange(rest);
+            string[] pal = { "#ff4fd8", "#ffd23f", "#4f8cff", "#3fe0e0", "#ff8a3d", "#8ae04f", "#b07cff", "#f0f0f0" };
+            int pi = 0;
+            foreach (string svc in order)
+            {
+                List<uint> l;
+                if (!bySvc.TryGetValue(svc, out l)) continue;
+                l.Sort();
+                sc.AddGroup("Service " + svc, pal[pi++ % pal.Length], "beams", l, new[] { "duct", "service", svc }, null);
+                res.BeamsByService[svc] = l.Count;
+            }
+            if (noRun.Count > 0)
+            {
+                noRun.Sort();
+                sc.AddGroup("No RunName", "#ff3b3b", "beams", noRun, new[] { "duct", "service", "noRunName" }, "DUCT_NO_RUNNAME");
+                res.BeamsByService["(no RunName)"] = noRun.Count;
+            }
+        }
         // loose ends: network nodes (ducts, centrelines, bridges; not blocks) with one member after bridging
         var loose = new List<uint>();
         {
@@ -879,6 +951,7 @@ public class DuctsToPluto
             r.Name = Get(c, "Name"); r.Shape = Get(c, "Shape"); r.FitA = Num(c, "FitA_in"); r.FitB = Num(c, "FitB_in"); r.FitLen = Num(c, "FitLength_ft");
             NameSize(r.Name, out r.NameW, out r.NameH, out r.NameD);
             r.Hidden = Get(c, "Hidden"); r.HiddenGeom = Num(c, "HiddenGeom");
+            r.RunName = Get(c, "RunName"); r.Service = ServiceOf(r.RunName);
             r.W = Num(c, "Width_in"); r.H = Num(c, "Height_in"); r.D = Num(c, "Diameter_in"); r.T = Num(c, "WallThk_in");
             double[] mn = { Num(c, "MinX"), Num(c, "MinY"), Num(c, "MinZ") }, mx = { Num(c, "MaxX"), Num(c, "MaxY"), Num(c, "MaxZ") };
             if (!double.IsNaN(mn[0]) && !double.IsNaN(mx[0])) { r.Min = mn; r.Max = mx; }

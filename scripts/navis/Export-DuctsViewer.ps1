@@ -7,6 +7,10 @@
 #     [-Out <base>]      default <run>\ducts  ->  <run>\ducts.bin + <run>\ducts.features.json
 #     [-Unit in]         file length unit; "in" matches the plant export
 #     [-ModelId <id>]    default hvac/ducts/<run folder name> (+ "/mesh")
+#     [-Services <list>] draw only these services (the service field of IfcObjectProperties.RunName,
+#                        "A-<bldg>-<service>-DUCT-<n>"), comma separated; default: the codes in
+#                        C:\Temp\hvac\service-codes.txt (Pluto Service's file) when it exists; "*" = all.
+#                        Rows without a RunName are always drawn, in their own group.
 #   A Pluto Box run (C:\Temp\hvac\box\<run>: box_items.csv + box_tri.bin) is detected: every item in the box as
 #   a shell mesh, one group per element category, hidden items separate (red); default out <run>\box.
 param(
@@ -14,7 +18,8 @@ param(
     [switch]$Mesh,
     [string]$Out,
     [string]$Unit = "in",
-    [string]$ModelId
+    [string]$ModelId,
+    [string]$Services
 )
 $ErrorActionPreference = "Stop"
 $Run = [IO.Path]::GetFullPath($Run)
@@ -33,7 +38,11 @@ if ($Box) {
     $r = [DuctsToPluto]::ExportMesh($Run, $Out, $ModelId, $Unit)
     Write-Output ("mesh: {0} nodes; {1} rows without triangles" -f $r.Nodes, $r.Skipped)
 } else {
-    $r = [DuctsToPluto]::Export($Run, $Out, $ModelId, $Unit)
+    $codesFile = "C:\Temp\hvac\service-codes.txt"
+    if (-not $Services -and (Test-Path $codesFile)) { $Services = (Get-Content $codesFile -Raw) }
+    $svc = $null
+    if ($Services -and $Services.Trim() -ne "*") { $svc = [string[]]@($Services -split '[,;\r\n]' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
+    $r = [DuctsToPluto]::Export($Run, $Out, $ModelId, $Unit, $svc)
     $r.Summary()
 }
 Write-Output ("[done] {0:0}s. In the viewer: Add overlay... -> {1}.bin" -f ((Get-Date) - $t0).TotalSeconds, $Out)

@@ -84,7 +84,7 @@ namespace PlutoNavis
             var lineVsFit = new List<double>();
             var hiddenByCat = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);       // element hidden (self / ancestor)
             var partHiddenByCat = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);   // element visible, some own geometry hidden
-            int hiddenSelf = 0, geomTotal = 0, geomHidden = 0;
+            int hiddenSelf = 0, geomTotal = 0, geomHidden = 0, runsMissing = 0;
             double searchSec = 0; bool cancelled = false; string firstTriError = null;
             Progress progress = Autodesk.Navisworks.Api.Application.BeginProgress(title + ": searching");
             try
@@ -111,7 +111,8 @@ namespace PlutoNavis
                         "Width_in", "Height_in", "Diameter_in", "WallThk_in", "InsulThk_in", "Length_ft", "Size", "Location",
                         "MinX", "MinY", "MinZ", "MaxX", "MaxY", "MaxZ", "OwnGeom", "SkippedGeom", "Triangles",
                         "X1", "Y1", "Z1", "X2", "Y2", "Z2", "FitLength_ft", "FitA_in", "FitB_in",
-                        "LenErr_ft", "SizeErr_in", "TriVsBbox_ft", "Flag", "Hidden", "HiddenGeom" }));
+                        "LenErr_ft", "SizeErr_in", "TriVsBbox_ft", "Flag", "Hidden", "HiddenGeom",
+                        "RunName", "ServiceAbbrev", "SystemAbbrev" }));
                     foreach (ModelItem it in found)
                     {
                         seen++;
@@ -176,7 +177,11 @@ namespace PlutoNavis
                         else if (hidGeom > 0) { int hc; partHiddenByCat.TryGetValue(cat, out hc); partHiddenByCat[cat] = hc + 1; }
                         geomTotal += geoms.Count; geomHidden += hidGeom;
                         string hidCell = hid, hidGeomCell = hidGeom.ToString(Inv);
-                        Action<List<string>> emit = delegate(List<string> c) { c.Add(hidCell); c.Add(hidGeomCell); w.WriteLine(Csv(c)); };
+                        // run / service (2026-10-07): IfcObjectProperties.RunName "A-<bldg>-<service>-DUCT-<n>" is
+                        // on Ducts, fittings and fabrication parts alike; the two abbreviations are cross-checks
+                        string runName = Ifc(p, "RunName"), svcAbbr = AnyTab(p, "eM_Service Abbreviation"), sysAbbr = AnyTab(p, "System Abbreviation");
+                        if (runName == "") runsMissing++;
+                        Action<List<string>> emit = delegate(List<string> c) { c.Add(hidCell); c.Add(hidGeomCell); c.Add(runName); c.Add(svcAbbr); c.Add(sysAbbr); w.WriteLine(Csv(c)); };
 
                         var cells = new List<string> {
                             guid, navisId, cat, Get(p, "Element|Family"), Get(p, "Element|Type"), it.DisplayName,
@@ -288,6 +293,7 @@ namespace PlutoNavis
                 foreach (KeyValuePair<string, int> kv in partHiddenByCat) pb.Append(string.Format(Inv, "  {0} {1}", kv.Key, kv.Value));
                 int hiddenAll = 0; foreach (int v in hiddenByCat.Values) hiddenAll += v;
                 s.AppendLine(string.Format(Inv, "hidden elements {0} (self {1}, under a hidden ancestor {2}):{3}", hiddenAll, hiddenSelf, hiddenAll - hiddenSelf, hb.Length > 0 ? hb.ToString() : "  none"));
+                s.AppendLine(string.Format(Inv, "rows without IfcObjectProperties.RunName: {0}", runsMissing));
                 s.AppendLine(string.Format(Inv, "visible elements with hidden own geometry:{0}", pb.Length > 0 ? pb.ToString() : "  none"));
                 s.AppendLine(string.Format(Inv, "own geometry items hidden {0} of {1}   (ducts.csv Hidden / HiddenGeom, duct_parts.csv Hidden)", geomHidden, geomTotal));
             }
@@ -511,6 +517,18 @@ namespace PlutoNavis
             if (p.TryGetValue("IfcObjectProperties|" + name, out v)) return v;
             string suffix = "|IfcObjectProperties." + name;
             foreach (KeyValuePair<string, string> kv in p) if (kv.Key.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) return kv.Value;
+            return "";
+        }
+
+        // A property by name on any tab (exact name, ignoring case; also "<prefix>.<name>"), "" when absent.
+        internal static string AnyTab(Dictionary<string, string> p, string name)
+        {
+            foreach (KeyValuePair<string, string> kv in p)
+            {
+                int bar = kv.Key.IndexOf('|');
+                string prop = bar >= 0 ? kv.Key.Substring(bar + 1) : kv.Key;
+                if (prop.Equals(name, StringComparison.OrdinalIgnoreCase) || prop.EndsWith("." + name, StringComparison.OrdinalIgnoreCase)) return kv.Value;
+            }
             return "";
         }
 
