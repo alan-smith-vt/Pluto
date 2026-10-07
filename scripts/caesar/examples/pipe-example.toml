@@ -1,0 +1,206 @@
+# Pipe builder example: a generic, made-up job that shows every key (a tracked test fixture, never a
+# project model). Build it with:
+#   powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\caesar\Build-Pipe.ps1 `
+#       -Config scripts\caesar\examples\pipe-example.toml -Out "<project dir>\pipe-example" -Preview
+# Then import <out>.cii in CAESAR II (File > Import > CAESAR II Neutral File). Usage note: vault/arms/pipe-builder.md.
+#
+# Units: geometry in model.length_unit (ft here); diameters, walls, insulation, corrosion, bend radii and
+# translational gaps in inches; rotational gaps and coupling deflections in degrees; temperatures F;
+# pressures psi; densities lb/cu.ft; weights lb; stiffness lb/in (translation) and in.lb/deg (rotation).
+# Any number may be an expression over [parameters]; a position along a run may also use L (its length).
+
+[model]
+title = "Pipe builder example"
+length_unit = "ft"          # "ft" or "in"
+node_step = 10              # node numbers go up by this along a run
+material = 102              # CAESAR material number (102 = A53 Grade B): E, density, allowables from its database
+ambient = 70                # F, installation temperature; delta_t is measured from it
+y_up = true                 # false = Z up
+code = "B31.1"              # built in; another code: allowables_from = "<a .cii exported with that code>"
+
+[parameters]                # names for numbers; Build-Pipe.ps1 -Set "run1=45;dT=250" overrides them
+run1 = 40                   # ft
+rise = 12                   # ft
+dT = 230                    # F above ambient: the header's operating temperature is ambient + dT
+rest = 15                   # ft, rest spacing on the header
+
+[defaults]                  # what every run gets unless it says otherwise
+section = "8in"
+delta_t = "dT"              # T1 = ambient + dT (a list gives T1, T2, ...); or temperature = [T1, ...]
+pressure = 150              # P1 (a list gives P1, P2, ...)
+bend = "LR"                 # LR = 1.5 x nominal, SR = 1 x nominal, a radius in inches, or "none" (a sharp corner)
+bend_nodes = "mid"          # nodes on each bend: "mid" (TO - 1), "near-mid" (TO - 1 and TO - 2) or "none"
+max_length = 10             # longest straight between nodes (more nodes are added)
+
+[sections.8in]
+nps = 8
+schedule = "STD"            # STD XS 40 80 160 (NPS 1/2 - 24); or od = ..., wall = ... in inches
+insulation = 2              # in
+insulation_density = 11.5   # lb/cu.ft
+fluid_sg = 1.0              # or fluid_density = 62.4 (lb/cu.ft)
+corrosion = 0.0625          # in
+
+[sections.6in]
+nps = 6
+schedule = "40"
+fluid_density = 62.4
+
+[sections.4in]
+nps = 4
+schedule = "80"
+fluid_sg = 1.0
+
+# ---- runs: a start (a point, or a position on an earlier run) and legs ([direction, length] or a table)
+[[runs]]
+name = "header"
+start = [0, 0, 0]
+line = "LINE-A"
+legs = [
+  ["+X", "run1"],
+  { dir = "+Y", length = "rise", bend = "SR" },   # bend = the bend at the END of this leg
+  { dir = "+X", length = 30, bend = 18 },         # an 18 in radius
+  ["-Z", 25],                                     # or { to = [x, y, z] } / { by = [dx, dy, dz] }
+]
+
+[[runs]]
+name = "drop"
+from = { run = "header", at = 12 }    # a branch: a welding tee at the header node (tee = "none": no tee)
+section = "4in"
+line = "LINE-B"
+temperature = 250                      # F (this run's own, instead of delta_t)
+pressure = [150, 225]                  # P1, P2
+bend_nodes = "near-mid"
+legs = [["+Z", 15], ["-Y", 8]]
+
+[[runs]]
+name = "return"
+start = [0, 0, -4]
+section = "6in"
+line = "LINE-C"
+first_node = 1000                      # otherwise the next free hundred
+temperature = 120
+pressure = 50
+legs = [["+X", 40]]
+
+# ---- in-line components: at = where it starts on the run, length = its own length
+# (a component placed at a corner starts at the bend's far point)
+[[components]]
+type = "flanged_valve"                 # valve flange flange_pair flanged_valve rigid: weight (lb)
+name = "VALVE-A"
+run = "header"
+at = 3
+length = 2
+weight = 450
+
+[[components]]
+type = "expansion_joint"
+name = "EJ-A"
+run = "header"
+at = 18
+length = 1.5
+axial_stiffness = 1200                 # lb/in
+transverse_stiffness = 6000            # lb/in (or bending_stiffness, in.lb/deg: give one of the two)
+effective_id = 9.5                     # in: pressure thrust (torsion_stiffness: rigid unless given)
+
+[[components]]
+type = "flange_pair"
+run = "header"
+at = 25
+length = 0.5
+weight = 120
+
+[[components]]
+type = "coupling"                      # a mechanical coupling: nodes N and N + 1 tied in the pipe's axes
+run = "header"
+at = 33
+axial_gap = 0.125                      # in, free axial movement each way (then axial_stiffness, rigid unless given)
+deflection = 1.0                       # deg, free angular deflection (then rotational_stiffness, rigid unless given)
+sif = 1.3                              # optional SIF at the coupling
+
+[[components]]
+type = "reducer"
+run = "header"
+at = 95
+length = 0.5
+to_section = "6in"                     # the section after it
+
+# ---- supports: node = n, or run with at = position(s) / every = spacing (from, to); type or dofs
+[[supports]]
+run = "header"
+at = 0
+type = "ANC"
+
+[[supports]]
+run = "header"
+every = "rest"                         # from = rest (first), to = L (last) unless given
+type = "+Y"                            # a rest
+mu = 0.3
+
+[[supports]]
+run = "header"
+at = 36
+type = ["+Y", "GUI"]                   # a guided rest
+gap = { GUI = 0.0625 }                 # per type: a number applies to every type
+mu = 0.3
+
+[[supports]]
+run = "header"
+at = 65
+type = ["+Y", "LIM"]                   # a line stop with a gap
+gap = { LIM = 0.25 }
+mu = 0.3
+
+[[supports]]
+run = "header"
+at = "L"                               # an equipment nozzle: every DOF, flexible in rotation
+dofs = ["X", "Y", "Z", "RX", "RY", "RZ"]
+stiffness = { RX = 2.5e6, RY = 4.0e6, RZ = 2.5e6 }    # in.lb/deg; translations rigid
+tag = "NOZZLE-A"
+
+[[supports]]
+run = "drop"
+at = 5
+type = "+Y"
+
+[[supports]]
+run = "drop"
+at = 8
+type = "Y"
+stiffness = 1500                       # lb/in: a spring as a linear support
+
+[[supports]]
+run = "drop"
+at = "L"
+type = "ANC"
+
+[[supports]]
+run = "return"
+at = [0, "L"]
+type = "ANC"
+
+[[supports]]
+run = "return"
+every = 10
+to = 30
+type = "+Y"
+mu = 0.3
+
+[[supports]]
+run = "return"
+at = 25
+type = "X"
+direction = [1, 0, 1]                  # a skewed restraint (written with direction cosines)
+
+# ---- ties: node to node (CNODE) in chosen DOFs, with gaps and stiffness like a support
+[[ties]]
+node = { run = "header", at = 30 }
+cnode = { run = "return", at = 30 }
+type = "Z"                             # a strut between the lines, 1/8 in free each way
+gap = 0.125
+
+# ---- SIFs: a welding tee (branches get one automatically), or user SIFs
+[[sifs]]
+run = "return"
+at = 15
+sif_in = 1.8
+sif_out = 1.5

@@ -20,6 +20,8 @@ A CAESAR II pipe-stress model becomes a Pluto viewer model, `<base>.bin` + `<bas
 
 Verified on the generic fixture and in the browser. The production-machine check (PS 5.1 compile, a real job) is still to do, so this note stays `draft`.
 
+The other direction, a `.cii` built from a TOML config, is the [[vault/arms/pipe-builder|pipe-builder]]. Its `-Preview` runs this arm on the file it writes.
+
 ## Run
 
 ```powershell
