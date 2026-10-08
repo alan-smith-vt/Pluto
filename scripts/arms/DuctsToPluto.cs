@@ -706,7 +706,7 @@ public class DuctsToPluto
     {
         public int Row; public string Shape; public double A, B, Dia;   // inches
         public double[] C, N; public double Planar, Perim;              // C feet; Planar / Perim inches
-        public bool SizeOk; public double Near = double.NaN, Dot = double.NaN; public int NearRow; public string Status = "";
+        public bool SizeOk; public string SizeBand = "no stated size"; public double Near = double.NaN, Dot = double.NaN; public int NearRow; public string Status = "";
         public int Rings = 1; public string Outer = "";                // rings merged into this connector; largest ring's size
     }
 
@@ -766,8 +766,19 @@ public class DuctsToPluto
                 if (hit != null) { hit.Rings++; hit.Outer = o.Shape == "round" ? string.Format(Inv, "round {0:0.#}", o.Dia) : string.Format(Inv, "{0:0.#}x{1:0.#}", o.A, o.B); continue; }
                 double sa, sb;
                 if (StatedSize(rows[row - 1], out sa, out sb))
-                    o.SizeOk = o.Shape == "round" ? Math.Abs(o.Dia - Math.Max(sa, sb)) <= 1.5
-                        : (Math.Abs(o.A - sa) <= 1.5 && Math.Abs(o.B - sb) <= 1.5) || (Math.Abs(o.A - sb) <= 1.5 && Math.Abs(o.B - sa) <= 1.5);
+                {
+                    // agrees within 1 in; "flange" = 1..8 in larger (the end loop is the flange's outer edge;
+                    // same allowance as Near()); else differs
+                    double e1, e2;
+                    if (o.Shape == "round") { e1 = e2 = o.Dia - Math.Max(sa, sb); }
+                    else
+                    {
+                        double hiS = Math.Max(sa, sb), loS = Math.Min(sa, sb);
+                        e1 = o.A - hiS; e2 = o.B - loS;
+                    }
+                    o.SizeOk = Math.Abs(e1) <= 1 && Math.Abs(e2) <= 1;
+                    o.SizeBand = o.SizeOk ? "agrees" : e1 >= -1 && e2 >= -1 && e1 <= 8 && e2 <= 8 ? "flange (1-8 in larger)" : "differs";
+                }
                 conns.Add(o);
             }
             ops.AddRange(conns);
@@ -792,12 +803,12 @@ public class DuctsToPluto
 
         // CSV
         var csv = new List<string>();
-        csv.Add("Row,NavisId,IfcGUID,Name,Type,StatedSize,Room,RunName,Shape,A_in,B_in,Dia_in,SizeOk,Rings,OuterRing,Cx_ft,Cy_ft,Cz_ft,Nx,Ny,Nz,Planarity_in,Perimeter_in,Nearest_in,NearestRow,NormalDot,Status");
+        csv.Add("Row,NavisId,IfcGUID,Name,Type,StatedSize,Room,RunName,Shape,A_in,B_in,Dia_in,SizeOk,SizeBand,Rings,OuterRing,Cx_ft,Cy_ft,Cz_ft,Nx,Ny,Nz,Planarity_in,Perimeter_in,Nearest_in,NearestRow,NormalDot,Status");
         foreach (Opening o in ops)
         {
             Row r = rows[o.Row - 1];
             csv.Add(string.Join(",", new[] { o.Row.ToString(Inv), r.NavisId, r.Guid, CsvCell(r.Name), PartType(r.Name), CsvCell(r.SizeText), CsvCell(r.Room), CsvCell(r.RunName), o.Shape,
-                F1(o.A), F1(o.B), F1(o.Dia), o.SizeOk ? "1" : "0", o.Rings.ToString(Inv), CsvCell(o.Outer), F3(o.C[0]), F3(o.C[1]), F3(o.C[2]), F3(o.N[0]), F3(o.N[1]), F3(o.N[2]),
+                F1(o.A), F1(o.B), F1(o.Dia), o.SizeOk ? "1" : "0", o.SizeBand, o.Rings.ToString(Inv), CsvCell(o.Outer), F3(o.C[0]), F3(o.C[1]), F3(o.C[2]), F3(o.N[0]), F3(o.N[1]), F3(o.N[2]),
                 F1(o.Planar), F1(o.Perim), F1(o.Near), o.NearRow > 0 ? o.NearRow.ToString(Inv) : "", F3(o.Dot), o.Status }));
         }
         File.WriteAllLines(outBase + ".openings.csv", csv.ToArray());
@@ -824,7 +835,7 @@ public class DuctsToPluto
         var tally = new SortedDictionary<string, int>();
         foreach (Opening o in ops)
         {
-            foreach (string k in new[] { "shape " + o.Shape, "size " + (o.SizeOk ? "agrees with stated" : "differs / no stated size"), "status " + o.Status,
+            foreach (string k in new[] { "shape " + o.Shape, "size vs stated: " + o.SizeBand, "status " + o.Status,
                 "rings per connector " + o.Rings, "planarity " + (o.Planar <= 0.25 ? "<= 1/4 in" : o.Planar <= 1 ? "<= 1 in" : "> 1 in (not a flat opening)") })
             { int c; tally.TryGetValue(k, out c); tally[k] = c + 1; }
         }
@@ -857,7 +868,7 @@ public class DuctsToPluto
             List<uint> l;
             if (!gShape.TryGetValue(o.Shape, out l)) { l = new List<uint>(); gShape[o.Shape] = l; } l.Add((uint)nb);
             if (!gStatus.TryGetValue(o.Status, out l)) { l = new List<uint>(); gStatus[o.Status] = l; } l.Add((uint)nb);
-            if (!o.SizeOk) gSize.Add((uint)nb);
+            if (o.SizeBand == "differs") gSize.Add((uint)nb);
             nb++;
         }
         var comps = new List<RawViewerWriter.Component>();
