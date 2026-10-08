@@ -718,6 +718,7 @@ public class DuctsToPluto
     {
         public int Row; public string Shape; public double A, B, Dia;   // inches
         public double[] C, N; public double Planar, Perim;              // C feet; Planar / Perim inches
+        public double[] Ua;                                            // rect: in-plane unit direction of side A (null for round)
         public bool SizeOk; public string SizeBand = "no stated size"; public double Near = double.NaN, Dot = double.NaN; public int NearRow; public string Status = "";
         public double DA = double.NaN, DB = double.NaN;                 // measured minus stated (larger / smaller side), inches
         public Opening Mate;                                            // the matched connector (joint / near), null otherwise
@@ -733,7 +734,7 @@ public class DuctsToPluto
     // part (2026-10-08): a NavisId (or its start) whose rings are reported in NEW instead of the summary lines
     public static Result ExportProbe(string runDir, string outBase, string modelId, string lengthUnit, string room, string part)
     {
-        const double WeldFt = 1e-3, BigPerimIn = 12, MatchIn = 1, SlipIn = 6, EndTolIn = 1, SideTolIn = 1.5, MergeAlongIn = 3, MergeLatIn = 3;
+        const double WeldFt = 1e-3, BigPerimIn = 12, MatchIn = 1, SlipIn = 6, EndTolIn = 1, SideTolIn = 1.5, MergeAlongIn = 3, MergeLatIn = 3, SplitAlongIn = 2;
         double scale = LengthScale(lengthUnit);
         var rows = ReadRows(Path.Combine(runDir, "ducts.csv"));
         bool hasRoom = false; foreach (Row r in rows) if (r.Room != "") { hasRoom = true; break; }
@@ -817,7 +818,7 @@ public class DuctsToPluto
                 foreach (Opening m in o.Members)                      // smallest first
                     if (m == big || LateralIn(big, m) <= 1) { sz = m; break; }
                 o.C = (double[])big.C.Clone();
-                o.Shape = sz.Shape; o.A = sz.A; o.B = sz.B; o.Dia = sz.Dia; o.Planar = sz.Planar; o.Perim = sz.Perim;
+                o.Shape = sz.Shape; o.A = sz.A; o.B = sz.B; o.Dia = sz.Dia; o.Planar = sz.Planar; o.Perim = sz.Perim; o.Ua = sz.Ua;
                 double sa, sb;
                 if (StatedSize(rows[row - 1], out sa, out sb))
                 {
@@ -856,6 +857,31 @@ public class DuctsToPluto
             o.Status = o.Near <= MatchIn && o.Dot < -0.9 ? "joint" : o.Near <= SlipIn && Math.Abs(o.Dot) > 0.9 ? "near (slip / gap)" : "unmatched";
             if (o.Status != "unmatched" && !want.Contains(o.NearRow)) o.Status += ", other room";
         }
+        // split (2026-10-08): a big end feeding several smaller ducts side by side (e.g. 2/3 + 1/3 of its
+        // width). A connector that is not a joint, faces another part's end (dot < -0.9), lies in its plane
+        // (within SplitAlongIn) and inside its outline (+1 in), and is smaller, joins that end; the big end
+        // is marked "split" too. Nearest-opening matching alone joined only the branch nearest the centre.
+        int nSplit = 0; var splitBig = new HashSet<Opening>();
+        foreach (Opening o in ops)
+        {
+            if (o.Status.StartsWith("joint")) continue;
+            Opening best = null; double bestAlong = double.MaxValue;
+            foreach (Opening x in all)
+            {
+                if (x.Row == o.Row || o.N[0] * x.N[0] + o.N[1] * x.N[1] + o.N[2] * x.N[2] > -0.9) continue;
+                if (Area(o) >= Area(x)) continue;
+                double dx = o.C[0] - x.C[0], dy = o.C[1] - x.C[1], dz = o.C[2] - x.C[2];
+                double along = Math.Abs(dx * x.N[0] + dy * x.N[1] + dz * x.N[2]) * 12;
+                if (along > SplitAlongIn || !InsideOutline(x, o.C, 1)) continue;
+                if (along < bestAlong) { bestAlong = along; best = x; }
+            }
+            if (best == null) continue;
+            o.Status = "split" + (want.Contains(best.Row) ? "" : ", other room");
+            o.Mate = best; o.NearRow = best.Row; o.Near = bestAlong; nSplit++;
+            splitBig.Add(best);
+            if (!best.Status.StartsWith("joint")) { best.Status = "split" + (want.Contains(best.Row) ? "" : ", other room"); best.NearRow = o.Row; best.Mate = null; }
+        }
+
         // side branch: an unmatched connector lying on another part's wall (within SideTolIn) and facing it (a tap /
         // branch base on a main duct, whose prism has no opening there)
         foreach (Opening o in ops)
@@ -977,7 +1003,7 @@ public class DuctsToPluto
         foreach (Opening o in ops)
         {
             string t = PartType(rows[o.Row - 1].Name) + (o.Shape == "round" ? " (r)" : "");
-            if (o.Status.StartsWith("joint")) nJ++;
+            if (o.Status.StartsWith("joint") || o.Status.StartsWith("split")) nJ++;
             else if (o.Status.StartsWith("side branch")) nS++;
             else if (o.Status.StartsWith("fitting joint")) nF++;
             else if (o.Status.StartsWith("near")) nN++;
@@ -1014,7 +1040,7 @@ public class DuctsToPluto
         {
             if (o.NearRow <= 0 || !allFab.Contains(o.NearRow)) continue;
             bool end = o.Status.StartsWith("joint") || o.Status.StartsWith("near");
-            if (end || o.Status.StartsWith("side branch")) link(nbrs, o.Row, o.NearRow);
+            if (end || o.Status.StartsWith("side branch") || o.Status.StartsWith("split")) link(nbrs, o.Row, o.NearRow);
             if (end) link(inLine, o.Row, o.NearRow);
         }
         // run-label check: two or more end-to-end neighbours, all on one RunName, and it is not the part's own
@@ -1070,11 +1096,13 @@ public class DuctsToPluto
                 }
             if (gaps.Count < 5) gaps.Add(t + (double.IsNaN(bA) ? " none" : string.Format(Inv, " {0:0.#}/{1:0.#}", bA, bL)));
         }
-        fresh.AppendLine(string.Format(Inv, "connectors vs part type: as expected {0}, unexpected {1}, type not known {2}", nOk, unexpected.Count, nUnknown));
+        sum.AppendLine(string.Format(Inv, "connectors vs part type: as expected {0}, unexpected {1}, type not known {2}", nOk, unexpected.Count, nUnknown));
+        int bigIn = 0; foreach (Opening x in splitBig) if (want.Contains(x.Row)) bigIn++;
+        fresh.AppendLine(string.Format(Inv, "split joints: smaller connectors joined {0}, onto big ends {1} ({2} in this room)", nSplit, splitBig.Count, bigIn));
         var bt = new List<KeyValuePair<string, int>>(badType); bt.Sort((x, y) => y.Value.CompareTo(x.Value));
         var b5 = new List<string>(); for (int q = 0; q < bt.Count && q < 5; q++) b5.Add(bt[q].Key + " (" + bt[q].Value + ")");
-        fresh.AppendLine("unexpected, type + connectors (parts): " + (b5.Count > 0 ? string.Join(", ", b5.ToArray()) : "-"));
-        fresh.AppendLine("unexpected, closest same-direction pair along/lateral in: " + (gaps.Count > 0 ? string.Join(", ", gaps.ToArray()) : "-"));
+        sum.AppendLine("unexpected, type + connectors (parts): " + (b5.Count > 0 ? string.Join(", ", b5.ToArray()) : "-"));
+        sum.AppendLine("unexpected, closest same-direction pair along/lateral in: " + (gaps.Count > 0 ? string.Join(", ", gaps.ToArray()) : "-"));
         if (ops.Count > 0) WriteGraph(outBase + "_graph", modelId + "/graph", lengthUnit, scale, rows, ops, all, tri, want, conflict, fitEnds, unexpected);
 
         if (!string.IsNullOrEmpty(part))
@@ -1257,6 +1285,8 @@ public class DuctsToPluto
             a0 = Math.Min(a0, pa); a1 = Math.Max(a1, pa); b0 = Math.Min(b0, pb); b1 = Math.Max(b1, pb);
         }
         o.Shape = "rect"; o.A = Math.Max(a1 - a0, b1 - b0) * 12; o.B = Math.Min(a1 - a0, b1 - b0) * 12; o.Dia = double.NaN;
+        if (a1 - a0 >= b1 - b0) { o.Ua = new[] { u[0] * ca + v[0] * sa, u[1] * ca + v[1] * sa, u[2] * ca + v[2] * sa }; }
+        else { o.Ua = new[] { -u[0] * sa + v[0] * ca, -u[1] * sa + v[1] * ca, -u[2] * sa + v[2] * ca }; }
         return o;
     }
 
@@ -1335,7 +1365,9 @@ public class DuctsToPluto
         foreach (Opening o in ops)
         {
             string lbl = string.Format(Inv, "{0} | {1} #{2} -> row {3} | {4:0.#} in", o.Status, rows[o.Row - 1].Name, rows[o.Row - 1].NavisId, o.NearRow, o.Near);
-            if (o.Status.StartsWith("near") && o.Mate != null)
+            if (o.Status.StartsWith("split") && o.Mate != null)
+                addLink("Link: split", beam(conn(o), want.Contains(o.Mate.Row) ? conn(o.Mate) : pt(o.Mate.C), 1, lbl));
+            else if (o.Status.StartsWith("near") && o.Mate != null)
                 addLink("Link: near (slip / gap)", beam(conn(o), want.Contains(o.Mate.Row) ? conn(o.Mate) : pt(o.Mate.C), 1, lbl));
             else if (o.Status.StartsWith("side branch"))
             {
@@ -1383,7 +1415,7 @@ public class DuctsToPluto
         foreach (KeyValuePair<string, List<uint>> kv in byRun)
             sc.AddGroup(kv.Key, kv.Key == "No RunName" ? "#ff3b3b" : pal[pi++ % pal.Length], "beams", kv.Value, new[] { "duct", "graph", "run" }, null);
         foreach (KeyValuePair<string, List<uint>> kv in gLink)
-            sc.AddGroup(kv.Key, kv.Key.Contains("near") ? "#ffd23f" : kv.Key.Contains("side") ? "#8ae04f" : "#3fc1a5", "beams", kv.Value, new[] { "duct", "graph", "link" }, null);
+            sc.AddGroup(kv.Key, kv.Key.Contains("near") ? "#ffd23f" : kv.Key.Contains("side") ? "#8ae04f" : kv.Key.Contains("split") ? "#b07cff" : "#3fc1a5", "beams", kv.Value, new[] { "duct", "graph", "link" }, null);
         if (gOdd.Count > 0) sc.AddGroup("Connector count unexpected for its type", "#ff8a3d", "beams", gOdd, new[] { "duct", "graph", "connectorCount" }, "GRAPH_ODD_CONNECTORS");
         if (gConf.Count > 0) sc.AddGroup("RunName differs from both neighbours", "#ff3b3b", "beams", gConf, new[] { "duct", "graph", "runConflict" }, "GRAPH_RUN_CONFLICT");
         if (unmatched.Count > 0) sc.AddNodeGroup("Unmatched connectors", "#ff3b3b", unmatched, new[] { "duct", "graph", "unmatched" }, "GRAPH_UNMATCHED");
@@ -1469,7 +1501,12 @@ public class DuctsToPluto
         }
         double cA = (a0 + a1) / 2, cB = (b0 + b1) / 2, cx = cA * ca - cB * sa, cy = cA * sa + cB * ca;
         o.C = new[] { u[0] * cx + v[0] * cy + n[0] * ext, u[1] * cx + v[1] * cy + n[1] * ext, u[2] * cx + v[2] * cy + n[2] * ext };
-        if (o.Shape != "round") { o.A = Math.Max(a1 - a0, b1 - b0) * 12; o.B = Math.Min(a1 - a0, b1 - b0) * 12; }
+        if (o.Shape != "round")
+        {
+            o.A = Math.Max(a1 - a0, b1 - b0) * 12; o.B = Math.Min(a1 - a0, b1 - b0) * 12;
+            if (a1 - a0 >= b1 - b0) { o.Ua = new[] { u[0] * ca + v[0] * sa, u[1] * ca + v[1] * sa, u[2] * ca + v[2] * sa }; }
+            else { o.Ua = new[] { -u[0] * sa + v[0] * ca, -u[1] * sa + v[1] * ca, -u[2] * sa + v[2] * ca }; }
+        }
     }
 
     static Opening Snapshot(Opening o)
@@ -1503,6 +1540,25 @@ public class DuctsToPluto
         double along = dx * o.N[0] + dy * o.N[1] + dz * o.N[2];
         double lx = dx - along * o.N[0], ly = dy - along * o.N[1], lz = dz - along * o.N[2];
         return Math.Sqrt(lx * lx + ly * ly + lz * lz) * 12;
+    }
+
+    // Opening area (sq in) for size comparisons.
+    static double Area(Opening o) { return o.Shape == "round" ? Math.PI * o.Dia * o.Dia / 4 : o.A * o.B; }
+
+    // Does point p (feet) lie inside x's outline, projected on x's plane, with tolIn slack?
+    static bool InsideOutline(Opening x, double[] p, double tolIn)
+    {
+        double dx = p[0] - x.C[0], dy = p[1] - x.C[1], dz = p[2] - x.C[2];
+        double along = dx * x.N[0] + dy * x.N[1] + dz * x.N[2];
+        double lx = (dx - along * x.N[0]) * 12, ly = (dy - along * x.N[1]) * 12, lz = (dz - along * x.N[2]) * 12;
+        if (x.Shape == "round" || x.Ua == null)
+        {
+            double r = x.Shape == "round" ? x.Dia / 2 : Math.Min(x.A, x.B) / 2;
+            return Math.Sqrt(lx * lx + ly * ly + lz * lz) <= r + tolIn;
+        }
+        double[] ub = { x.N[1] * x.Ua[2] - x.N[2] * x.Ua[1], x.N[2] * x.Ua[0] - x.N[0] * x.Ua[2], x.N[0] * x.Ua[1] - x.N[1] * x.Ua[0] };
+        double pa = lx * x.Ua[0] + ly * x.Ua[1] + lz * x.Ua[2], pb = lx * ub[0] + ly * ub[1] + lz * ub[2];
+        return Math.Abs(pa) <= x.A / 2 + tolIn && Math.Abs(pb) <= x.B / 2 + tolIn;
     }
 
     // Offset of q's centre from m's axis (inches).
