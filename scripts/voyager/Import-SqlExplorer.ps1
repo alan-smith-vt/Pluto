@@ -83,6 +83,14 @@ function Import-AtlasRelationMap {
 }
 Import-AtlasRelationMap
 
+# Atlas plant prefix (<plant>_MDB.dbo.*): config.json "plant" when given, else the database name minus its
+# _MDB / _RDB / _CDB suffix (e.g. "ABC_MDB" -> "ABC"). Setting [Voyager.Atlas]::Plant by hand still overrides.
+$plant = $null
+if ($config.PSObject.Properties.Name -contains "plant" -and -not [string]::IsNullOrWhiteSpace($config.plant)) { $plant = ([string]$config.plant).Trim() }
+elseif ([string]$config.database -match '^(.+)_(MDB|RDB|CDB)$') { $plant = $Matches[1] }
+if ($plant) { [Voyager.Atlas]::Plant = $plant; Write-Host "Atlas plant: $plant" }
+else { Write-Host "Atlas plant not set: add `"plant`" to config.json (database '$($config.database)' has no _MDB/_RDB/_CDB suffix)." }
+
 # Neighborhood atlas: Invoke-Atlas -Oid <guid> [-Hops 2] [-OneWay] [-OutDir C:\Temp\atlas]  (production box: only C:\Temp is writable)
 # Prints the text tree; writes <OutDir>\atlas-<oid8>.html / .csv / .nodes.csv.
 function Invoke-Atlas {
@@ -92,7 +100,7 @@ function Invoke-Atlas {
         [switch]$OneWay,
         [string]$OutDir = "C:\Temp\atlas"
     )
-    if ([Voyager.Atlas]::Plant -eq "<plant>") { throw "Set [Voyager.Atlas]::Plant = '<plant>' first." }
+    if ([Voyager.Atlas]::Plant -eq "<plant>") { throw "Atlas plant unknown: add `"plant`": `"<prefix of <prefix>_MDB>`" to config.json and re-import, or set [Voyager.Atlas]::Plant." }
     if (-not (Test-Path $OutDir)) { New-Item -ItemType Directory -Path $OutDir | Out-Null }
     $r = [Voyager.Atlas]::Explore($Oid, $Hops, -not $OneWay)
     $stem = Join-Path (Resolve-Path $OutDir) ("atlas-" + $Oid.Substring(0, 8))

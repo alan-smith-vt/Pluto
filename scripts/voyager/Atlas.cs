@@ -10,7 +10,7 @@
 //
 // Nothing here reads JNamedItem / strName / ItemName - labels are classid + oid only.
 //
-// Fill in before use:  [Voyager.Atlas]::Plant = "<plant>"   (the MDB prefix)
+// Plant (the MDB prefix) is set by Import-SqlExplorer.ps1 from config.json ("plant", else database minus _MDB)
 
 using System;
 using System.Collections.Generic;
