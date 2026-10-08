@@ -477,8 +477,17 @@ public class DuctsToPluto
     // category; every triangle labelled like the beams (IfcGUID #NavisId | system | size).
     public static Result ExportMesh(string runDir, string outBase, string modelId, string lengthUnit)
     {
+        return ExportMesh(runDir, outBase, modelId, lengthUnit, null);
+    }
+
+    // room (2026-10-08): only rows whose Custom room number is room (null / "" = all)
+    public static Result ExportMesh(string runDir, string outBase, string modelId, string lengthUnit, string room)
+    {
         double scale = LengthScale(lengthUnit);
         var rows = ReadRows(Path.Combine(runDir, "ducts.csv"));
+        bool byRoom = !string.IsNullOrEmpty(room);
+        if (byRoom && !rows.Exists(r => r.Room != ""))
+            throw new Exception("DuctsToPluto: ducts.csv has no Room values (run Pluto Fab / Ducts with the 2026-10-08 build)");
         string triPath = Path.Combine(runDir, "ducts_tri.bin");
         if (!File.Exists(triPath)) throw new Exception("DuctsToPluto: missing " + triPath);
         var recs = new List<KeyValuePair<int, float[]>>();
@@ -488,12 +497,14 @@ public class DuctsToPluto
             while (br.BaseStream.Position + 8 <= br.BaseStream.Length)
             {
                 int row = br.ReadInt32(), n = br.ReadInt32();
+                bool keep = !byRoom || (row >= 1 && row <= rows.Count && rows[row - 1].Room.Trim().Equals(room.Trim(), StringComparison.OrdinalIgnoreCase));
+                if (!keep) { br.BaseStream.Seek((long)n * 36, SeekOrigin.Current); continue; }
                 var f = new float[n * 9];
                 for (int k = 0; k < f.Length; k++) { f[k] = br.ReadSingle(); lo[k % 3] = Math.Min(lo[k % 3], f[k]); hi[k % 3] = Math.Max(hi[k % 3], f[k]); }
                 recs.Add(new KeyValuePair<int, float[]>(row, f));
             }
         }
-        if (recs.Count == 0) throw new Exception("DuctsToPluto: no triangles in " + triPath);
+        if (recs.Count == 0) throw new Exception("DuctsToPluto: no triangles in " + triPath + (byRoom ? " for room " + room : ""));
         double[] off = { Math.Round((lo[0] + hi[0]) / 2), Math.Round((lo[1] + hi[1]) / 2), Math.Round((lo[2] + hi[2]) / 2) };
         var nodes = new Dictionary<int, Node>(); var elems = new Dictionary<int, Element>(); var labels = new Dictionary<int, string>();
         var keyToNode = new Dictionary<string, int>(); var byCat = new SortedDictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
@@ -542,7 +553,8 @@ public class DuctsToPluto
         File.WriteAllText(scPath, sc.ToJson(), new UTF8Encoding(false));
         var res = new Result();
         res.BinPath = binPath; res.SidecarPath = scPath; res.GeometryHash = w.GeometryHash;
-        res.Nodes = nodes.Count; res.Beams = 0; res.Skipped = rows.Count - recs.Count;
+        int inScope = byRoom ? rows.FindAll(r => r.Room.Trim().Equals(room.Trim(), StringComparison.OrdinalIgnoreCase)).Count : rows.Count;
+        res.Nodes = nodes.Count; res.Beams = 0; res.Skipped = inScope - recs.Count;
         return res;
     }
 
