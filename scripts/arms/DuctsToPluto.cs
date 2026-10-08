@@ -828,6 +828,58 @@ public class DuctsToPluto
             }
             if (bestD <= SideTolIn) { o.Status = "side branch" + (want.Contains(bestRow) ? "" : ", other room"); o.NearRow = bestRow; o.Near = bestD; }
         }
+        // Revit duct fittings (elbows, wyes on the round runs) are not fabrication parts and have no mesh here,
+        // but their centreline line work (cl_segments.csv) does: the element's own free segment ends are its
+        // connectors (point + outward direction). An unmatched / near fabrication connector within SlipIn of one,
+        // coaxial, joins that fitting.
+        var fitEnds = new List<Opening>(); var fitRows = new HashSet<int>(); var fitWithCl = new HashSet<int>();
+        for (int i = 0; i < rows.Count; i++) if (rows[i].Cat.Equals("Duct Fittings", StringComparison.OrdinalIgnoreCase)) fitRows.Add(i + 1);
+        string clSeg = Path.Combine(runDir, "cl_segments.csv"), clNod = Path.Combine(runDir, "cl_nodes.csv");
+        if (File.Exists(clSeg) && File.Exists(clNod))
+        {
+            var xyz = new Dictionary<int, double[]>();
+            foreach (Dictionary<string, string> r in ReadCsv(clNod)) xyz[int.Parse(r["Node"], Inv)] = new[] { Num(r, "X"), Num(r, "Y"), Num(r, "Z") };
+            var segsOf = new Dictionary<int, List<int[]>>();
+            foreach (Dictionary<string, string> r in ReadCsv(clSeg))
+            {
+                int row = int.Parse(r["Row"], Inv); if (!fitRows.Contains(row)) continue;
+                List<int[]> l; if (!segsOf.TryGetValue(row, out l)) { l = new List<int[]>(); segsOf[row] = l; }
+                l.Add(new[] { int.Parse(r["Node1"], Inv), int.Parse(r["Node2"], Inv) });
+            }
+            foreach (KeyValuePair<int, List<int[]>> kv in segsOf)
+            {
+                fitWithCl.Add(kv.Key);
+                var deg = new Dictionary<int, int>(); var nbr = new Dictionary<int, int>();
+                foreach (int[] sg in kv.Value)
+                    for (int e = 0; e < 2; e++) { int c; deg.TryGetValue(sg[e], out c); deg[sg[e]] = c + 1; nbr[sg[e]] = sg[1 - e]; }
+                foreach (KeyValuePair<int, int> d in deg)
+                {
+                    if (d.Value != 1 || !xyz.ContainsKey(d.Key) || !xyz.ContainsKey(nbr[d.Key])) continue;
+                    double[] pe = xyz[d.Key], pn = xyz[nbr[d.Key]];
+                    double[] dir = { pe[0] - pn[0], pe[1] - pn[1], pe[2] - pn[2] };
+                    double dl = Math.Sqrt(dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]); if (dl < 1e-9) continue;
+                    var fe = new Opening(); fe.Row = kv.Key; fe.C = pe; fe.N = new[] { dir[0] / dl, dir[1] / dl, dir[2] / dl }; fe.Shape = "fitting end";
+                    fitEnds.Add(fe);
+                }
+            }
+        }
+        var fitMatched = new HashSet<Opening>();
+        foreach (Opening o in ops)
+        {
+            if (!(o.Status == "unmatched" || o.Status.StartsWith("near"))) continue;
+            double best = double.MaxValue; Opening bf = null;
+            foreach (Opening fe in fitEnds)
+            {
+                double dx = fe.C[0] - o.C[0], dy = fe.C[1] - o.C[1], dz = fe.C[2] - o.C[2];
+                double d = Math.Sqrt(dx * dx + dy * dy + dz * dz) * 12;
+                if (d < best && Math.Abs(fe.N[0] * o.N[0] + fe.N[1] * o.N[1] + fe.N[2] * o.N[2]) > 0.9) { best = d; bf = fe; }
+            }
+            if (bf != null && best <= SlipIn)
+            {
+                o.Status = "fitting joint" + (rows[bf.Row - 1].Room.Trim().Equals((room ?? "").Trim(), StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(room) ? "" : ", other room");
+                o.NearRow = bf.Row; o.Near = best; fitMatched.Add(bf);
+            }
+        }
 
         // CSV
         var csv = new List<string>();
@@ -870,30 +922,29 @@ public class DuctsToPluto
         }
         sum.AppendLine("openings:"); foreach (KeyValuePair<string, int> kv in tally) sum.AppendLine("  " + kv.Key + ": " + kv.Value);
         // NEW: at most 3 lines of at most 5 items, typed back by hand
-        // 1. status totals (side branch is new); 2. unmatched by type (top 5); 3. size gap of "differs" by type (top 3)
-        int nJ = 0, nJo = 0, nS = 0, nN = 0, nU = 0;
-        var unm = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase); var gap = new Dictionary<string, List<double[]>>(StringComparer.OrdinalIgnoreCase);
+        // 1. status totals (fitting joint is new); 2. Revit fittings in the room: centreline coverage and use;
+        // 3. unmatched by type (top 5)
+        int nJ = 0, nS = 0, nF = 0, nN = 0, nU = 0;
+        var unm = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (Opening o in ops)
         {
             string t = PartType(rows[o.Row - 1].Name) + (o.Shape == "round" ? " (r)" : "");
-            if (o.Status.StartsWith("joint")) { nJ++; if (o.Status.EndsWith(", other room")) nJo++; }
+            if (o.Status.StartsWith("joint")) nJ++;
             else if (o.Status.StartsWith("side branch")) nS++;
+            else if (o.Status.StartsWith("fitting joint")) nF++;
             else if (o.Status.StartsWith("near")) nN++;
             else { nU++; int c; unm.TryGetValue(t, out c); unm[t] = c + 1; }
-            if (o.SizeBand == "differs") { List<double[]> l; if (!gap.TryGetValue(t, out l)) { l = new List<double[]>(); gap[t] = l; } l.Add(new[] { o.DA, o.DB }); }
         }
-        fresh.AppendLine(string.Format(Inv, "status: joint {0} ({1} other room), side branch {2}, near {3}, unmatched {4}", nJ, nJo, nS, nN, nU));
+        fresh.AppendLine(string.Format(Inv, "status: joint {0}, side branch {1}, fitting joint {2}, near {3}, unmatched {4}", nJ, nS, nF, nN, nU));
+        int fitIn = 0, fitInCl = 0, endsIn = 0, endsUsed = 0;
+        foreach (int fr in fitRows)
+            if (string.IsNullOrEmpty(room) || rows[fr - 1].Room.Trim().Equals(room.Trim(), StringComparison.OrdinalIgnoreCase)) { fitIn++; if (fitWithCl.Contains(fr)) fitInCl++; }
+        foreach (Opening fe in fitEnds)
+            if (string.IsNullOrEmpty(room) || rows[fe.Row - 1].Room.Trim().Equals(room.Trim(), StringComparison.OrdinalIgnoreCase)) { endsIn++; if (fitMatched.Contains(fe)) endsUsed++; }
+        fresh.AppendLine(string.Format(Inv, "Revit fittings in room: {0}, with centreline {1}, ends {2}, ends joined to fab {3}", fitIn, fitInCl, endsIn, endsUsed));
         var ul = new List<KeyValuePair<string, int>>(unm); ul.Sort((x, y) => y.Value.CompareTo(x.Value));
-        var u5 = new List<string>(); for (int k = 0; k < ul.Count && k < 5; k++) u5.Add(ul[k].Key + " " + ul[k].Value);
+        var u5 = new List<string>(); for (int q = 0; q < ul.Count && q < 5; q++) u5.Add(ul[q].Key + " " + ul[q].Value);
         fresh.AppendLine("unmatched by type: " + (u5.Count > 0 ? string.Join(", ", u5.ToArray()) : "-"));
-        var gl = new List<KeyValuePair<string, List<double[]>>>(gap); gl.Sort((x, y) => y.Value.Count.CompareTo(x.Value.Count));
-        var g3 = new List<string>();
-        for (int k = 0; k < gl.Count && k < 3; k++)
-        {
-            var a = new List<double>(); var b = new List<double>(); foreach (double[] d in gl[k].Value) { a.Add(d[0]); b.Add(d[1]); }
-            g3.Add(string.Format(Inv, "{0} {1:+0.#;-0.#;0}/{2:+0.#;-0.#;0} ({3})", gl[k].Key, Median(a), Median(b), a.Count));
-        }
-        fresh.AppendLine("size differs, median measured-stated in (n): " + (g3.Count > 0 ? string.Join(", ", g3.ToArray()) : "-"));
         var dist = new[] { 0, 0, 0, 0, 0 };
         foreach (Opening o in ops) { double d = o.Near; dist[double.IsNaN(d) ? 4 : d <= 0.25 ? 0 : d <= 1 ? 1 : d <= 6 ? 2 : 3]++; }
         sum.AppendLine(string.Format(Inv, "nearest other opening: <= 1/4 in {0}; <= 1 in {1}; <= 6 in {2}; farther {3}; none {4}", dist[0], dist[1], dist[2], dist[3], dist[4]));
