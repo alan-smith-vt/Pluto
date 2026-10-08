@@ -726,7 +726,7 @@ public class DuctsToPluto
 
     public static Result ExportProbe(string runDir, string outBase, string modelId, string lengthUnit, string room)
     {
-        const double WeldFt = 1e-3, BigPerimIn = 12, MatchIn = 1, SlipIn = 6, EndTolIn = 1, SideTolIn = 1.5;
+        const double WeldFt = 1e-3, BigPerimIn = 12, MatchIn = 1, SlipIn = 6, EndTolIn = 1, SideTolIn = 1.5, MergeAlongIn = 3, MergeLatIn = 3;
         double scale = LengthScale(lengthUnit);
         var rows = ReadRows(Path.Combine(runDir, "ducts.csv"));
         bool hasRoom = false; foreach (Row r in rows) if (r.Room != "") { hasRoom = true; break; }
@@ -768,8 +768,12 @@ public class DuctsToPluto
                 else { interior++; continue; }
                 o.Row = row; ends.Add(o);
             }
-            // rings at one end (same plane within EndTolIn, centres within 2 in, same outward direction) -> one
-            // connector, sized by its smallest ring (the duct; the larger ones are flange / collar / other skin)
+            // rings at one end -> one connector, sized by its smallest ring (the duct; the larger ones are
+            // flange / collar / other skin): same outward direction, within MergeAlongIn along it, and the
+            // smaller ring's centre inside the larger ring's outline (lateral offset within half the larger
+            // ring's short side, at least MergeLatIn). 2026-10-08: was 1 in along and 3 in apart, which left
+            // off-centre rings (a flange outline in pieces) as extra connectors: a transition drawn as a T, a
+            // tap base split in two (a V onto the main duct). Outlets side by side (pants wye) stay apart.
             ends.Sort((x, y) => x.Perim.CompareTo(y.Perim));
             var conns = new List<Opening>();
             foreach (Opening o in ends)
@@ -779,7 +783,9 @@ public class DuctsToPluto
                 {
                     double dx = o.C[0] - c.C[0], dy = o.C[1] - c.C[1], dz = o.C[2] - c.C[2];
                     double along = Math.Abs(dx * c.N[0] + dy * c.N[1] + dz * c.N[2]) * 12, sep = Math.Sqrt(dx * dx + dy * dy + dz * dz) * 12;
-                    if (o.N[0] * c.N[0] + o.N[1] * c.N[1] + o.N[2] * c.N[2] > 0.95 && along <= EndTolIn && sep <= 2 + EndTolIn) { hit = c; break; }
+                    double lateral = Math.Sqrt(Math.Max(0, sep * sep - along * along));
+                    double inside = Math.Max(MergeLatIn, 0.5 * (o.Shape == "round" ? o.Dia : Math.Min(o.A, o.B)));   // o is the larger ring (perimeter order)
+                    if (o.N[0] * c.N[0] + o.N[1] * c.N[1] + o.N[2] * c.N[2] > 0.95 && along <= MergeAlongIn && lateral <= inside) { hit = c; break; }
                 }
                 if (hit != null) { hit.Rings++; hit.Outer = o.Shape == "round" ? string.Format(Inv, "round {0:0.#}", o.Dia) : string.Format(Inv, "{0:0.#}x{1:0.#}", o.A, o.B); continue; }
                 double sa, sb;
@@ -1006,9 +1012,41 @@ public class DuctsToPluto
             biggest = Math.Max(biggest, size); if (size == 1) single++;
         }
         int nUnm = 0; foreach (Opening o in ops) if (o.Status == "unmatched") nUnm++;
-        fresh.AppendLine(string.Format(Inv, "graph: parts {0}, connected groups {1}, largest {2}, single parts {3}", loopsOf.Count, nComp, biggest, single));
-        fresh.AppendLine(string.Format(Inv, "RunName differs from both neighbours: {0} parts; unmatched connectors {1}", conflict.Count, nUnm));
-        if (ops.Count > 0) WriteGraph(outBase + "_graph", modelId + "/graph", lengthUnit, scale, rows, ops, all, tri, want, conflict, fitEnds);
+        sum.AppendLine(string.Format(Inv, "graph: parts {0}, connected groups {1}, largest {2}, single parts {3}", loopsOf.Count, nComp, biggest, single));
+        sum.AppendLine(string.Format(Inv, "RunName differs from both neighbours: {0} parts; unmatched connectors {1}", conflict.Count, nUnm));
+
+        // NEW (3 lines, <= 5 items): connectors per part against what its type should have, and for the
+        // misfits the closest pair of same-direction connectors (along / lateral, in): a pair that should
+        // have merged into one end shows a small gap here, which says how far MergeAlongIn / MergeLatIn are off
+        var opsOf = new Dictionary<int, List<Opening>>();
+        foreach (Opening o in ops) { List<Opening> l; if (!opsOf.TryGetValue(o.Row, out l)) { l = new List<Opening>(); opsOf[o.Row] = l; } l.Add(o); }
+        var unexpected = new HashSet<int>(); int nOk = 0, nUnknown = 0;
+        var badType = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase); var gaps = new List<string>();
+        foreach (KeyValuePair<int, int[]> kv in loopsOf)
+        {
+            string t = PartType(rows[kv.Key - 1].Name);
+            int want0 = ExpectedConnectors(t), have = kv.Value[0];
+            if (want0 < 0) { nUnknown++; continue; }
+            if (have == want0) { nOk++; continue; }
+            unexpected.Add(kv.Key);
+            string k = t + " " + have; int c; badType.TryGetValue(k, out c); badType[k] = c + 1;
+            List<Opening> l; double bA = double.NaN, bL = double.NaN, bS = double.MaxValue;
+            if (opsOf.TryGetValue(kv.Key, out l))
+                for (int i = 0; i < l.Count; i++) for (int j = i + 1; j < l.Count; j++)
+                {
+                    if (l[i].N[0] * l[j].N[0] + l[i].N[1] * l[j].N[1] + l[i].N[2] * l[j].N[2] < 0.95) continue;
+                    double dx = l[j].C[0] - l[i].C[0], dy = l[j].C[1] - l[i].C[1], dz = l[j].C[2] - l[i].C[2];
+                    double sep = Math.Sqrt(dx * dx + dy * dy + dz * dz) * 12, along = Math.Abs(dx * l[i].N[0] + dy * l[i].N[1] + dz * l[i].N[2]) * 12;
+                    if (sep < bS) { bS = sep; bA = along; bL = Math.Sqrt(Math.Max(0, sep * sep - along * along)); }
+                }
+            if (gaps.Count < 5) gaps.Add(t + (double.IsNaN(bA) ? " none" : string.Format(Inv, " {0:0.#}/{1:0.#}", bA, bL)));
+        }
+        fresh.AppendLine(string.Format(Inv, "connectors vs part type: as expected {0}, unexpected {1}, type not known {2}", nOk, unexpected.Count, nUnknown));
+        var bt = new List<KeyValuePair<string, int>>(badType); bt.Sort((x, y) => y.Value.CompareTo(x.Value));
+        var b5 = new List<string>(); for (int q = 0; q < bt.Count && q < 5; q++) b5.Add(bt[q].Key + " (" + bt[q].Value + ")");
+        fresh.AppendLine("unexpected, type + connectors (parts): " + (b5.Count > 0 ? string.Join(", ", b5.ToArray()) : "-"));
+        fresh.AppendLine("unexpected, closest same-direction pair along/lateral in: " + (gaps.Count > 0 ? string.Join(", ", gaps.ToArray()) : "-"));
+        if (ops.Count > 0) WriteGraph(outBase + "_graph", modelId + "/graph", lengthUnit, scale, rows, ops, all, tri, want, conflict, fitEnds, unexpected);
 
         string report = head.ToString() + Environment.NewLine + "=== NEW ===" + Environment.NewLine + fresh.ToString()
             + Environment.NewLine + "=== Reviewed before ===" + Environment.NewLine + sum.ToString();
@@ -1169,7 +1207,7 @@ public class DuctsToPluto
 
     // The probe's connectivity as a viewer overlay (see ExportProbe): part lines, shared joint nodes, link beams.
     static void WriteGraph(string outBase, string modelId, string lengthUnit, double scale, List<Row> rows, List<Opening> ops, List<Opening> all,
-        Dictionary<int, float[]> tri, HashSet<int> want, HashSet<int> conflict, List<Opening> fitEnds)
+        Dictionary<int, float[]> tri, HashSet<int> want, HashSet<int> conflict, List<Opening> fitEnds, HashSet<int> unexpected)
     {
         double[] lo = { double.MaxValue, double.MaxValue, double.MaxValue }, hi = { double.MinValue, double.MinValue, double.MinValue };
         foreach (Opening o in ops) for (int k = 0; k < 3; k++) { lo[k] = Math.Min(lo[k], o.C[k]); hi[k] = Math.Max(hi[k], o.C[k]); }
@@ -1189,7 +1227,7 @@ public class DuctsToPluto
         sections.Add(RawViewerWriter.SectionDef.Pipe("part", (float)(3 * scale / 12), (float)(0.5 * scale / 12)));
         sections.Add(RawViewerWriter.SectionDef.Pipe("link", (float)(1.5 * scale / 12), (float)(0.375 * scale / 12)));
         var beams = new Dictionary<int, RawViewerWriter.BeamMember>(); var labels = new Dictionary<int, string>();
-        var byRun = new SortedDictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase); var gConf = new List<uint>();
+        var byRun = new SortedDictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase); var gConf = new List<uint>(); var gOdd = new List<uint>();
         var gLink = new SortedDictionary<string, List<uint>>(); int nb = 1;
         Func<int, int, int, string, int> beam = delegate(int a, int b, int sec, string label)
         {
@@ -1204,7 +1242,8 @@ public class DuctsToPluto
         {
             Row r = rows[kv.Key - 1];
             string label = (r.RunName != "" ? r.RunName : "(no RunName)") + " | " + r.Name + " | " + r.Guid + " #" + r.NavisId
-                + (conflict.Contains(kv.Key) ? " | RUNNAME DIFFERS FROM BOTH NEIGHBOURS" : "");
+                + (conflict.Contains(kv.Key) ? " | RUNNAME DIFFERS FROM BOTH NEIGHBOURS" : "")
+                + (unexpected.Contains(kv.Key) ? " | " + kv.Value.Count + " CONNECTORS, UNEXPECTED FOR ITS TYPE" : "");
             var ids = new List<int>();
             if (kv.Value.Count == 2) ids.Add(beam(conn(kv.Value[0]), conn(kv.Value[1]), 0, label));
             else
@@ -1217,7 +1256,7 @@ public class DuctsToPluto
             }
             string run = r.RunName != "" ? "Run " + r.RunName : "No RunName";
             List<uint> g; if (!byRun.TryGetValue(run, out g)) { g = new List<uint>(); byRun[run] = g; }
-            foreach (int id in ids) if (id > 0) { g.Add((uint)id); if (conflict.Contains(kv.Key)) gConf.Add((uint)id); }
+            foreach (int id in ids) if (id > 0) { g.Add((uint)id); if (conflict.Contains(kv.Key)) gConf.Add((uint)id); if (unexpected.Contains(kv.Key)) gOdd.Add((uint)id); }
         }
         Action<string, int> addLink = delegate(string kind, int id)
         {
@@ -1276,6 +1315,7 @@ public class DuctsToPluto
             sc.AddGroup(kv.Key, kv.Key == "No RunName" ? "#ff3b3b" : pal[pi++ % pal.Length], "beams", kv.Value, new[] { "duct", "graph", "run" }, null);
         foreach (KeyValuePair<string, List<uint>> kv in gLink)
             sc.AddGroup(kv.Key, kv.Key.Contains("near") ? "#ffd23f" : kv.Key.Contains("side") ? "#8ae04f" : "#3fc1a5", "beams", kv.Value, new[] { "duct", "graph", "link" }, null);
+        if (gOdd.Count > 0) sc.AddGroup("Connector count unexpected for its type", "#ff8a3d", "beams", gOdd, new[] { "duct", "graph", "connectorCount" }, "GRAPH_ODD_CONNECTORS");
         if (gConf.Count > 0) sc.AddGroup("RunName differs from both neighbours", "#ff3b3b", "beams", gConf, new[] { "duct", "graph", "runConflict" }, "GRAPH_RUN_CONFLICT");
         if (unmatched.Count > 0) sc.AddNodeGroup("Unmatched connectors", "#ff3b3b", unmatched, new[] { "duct", "graph", "unmatched" }, "GRAPH_UNMATCHED");
         File.WriteAllText(outBase + ".features.json", sc.ToJson(), new UTF8Encoding(false));
@@ -1314,6 +1354,17 @@ public class DuctsToPluto
         }
         double den = 1 / (va + vb + vc), v = vb * den, w = vc * den;
         return dist(new[] { a[0] + ab[0] * v + ac[0] * w, a[1] + ab[1] * v + ac[1] * w, a[2] + ab[2] * v + ac[2] * w });
+    }
+
+    // Connectors a fabrication part of this type should have; -1 = not known (no check).
+    static int ExpectedConnectors(string type)
+    {
+        string t = (type ?? "").ToLowerInvariant();
+        if (t.Contains("cross")) return 4;
+        if (t.Contains("tee") || t.Contains("wye") || t.Contains("boot")) return 3;
+        if (t.Contains("straight") || t.Contains("transition") || t.Contains("elbow") || t.Contains("offset") || t.Contains("reducer")
+            || t.Contains("tap") || t.Contains("coupling") || t.Contains("radius") || t.Contains("square to round") || t.Contains("duct")) return 2;
+        return -1;
     }
 
     static string PartType(string name)
