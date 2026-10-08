@@ -4,6 +4,9 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\navis\Export-DuctsViewer.ps1 -Run C:\Temp\hvac\ducts\<yyyyMMdd-HHmmss>
 #     [-Mesh]            the raw triangles (ducts_tri.bin: Ducts + MEP Fabrication Ductwork) as a shell mesh
 #                        instead of beams, to check each element's actual geometry; default out <run>\ducts_mesh
+#     [-Centrelines]     the Revit centrelines (cl_segments.csv) as thin beams in their own file, one group
+#                        per RunName, node groups for free ends / junctions / RunName changes; default out
+#                        <run>\ducts_cl (load beside ducts.bin with Add overlay...)
 #     [-Out <base>]      default <run>\ducts  ->  <run>\ducts.bin + <run>\ducts.features.json
 #     [-Unit in]         file length unit; "in" matches the plant export
 #     [-ModelId <id>]    default hvac/ducts/<run folder name> (+ "/mesh")
@@ -16,6 +19,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$Run,
     [switch]$Mesh,
+    [switch]$Centrelines,
     [string]$Out,
     [string]$Unit = "in",
     [string]$ModelId,
@@ -25,9 +29,9 @@ $ErrorActionPreference = "Stop"
 $Run = [IO.Path]::GetFullPath($Run)
 $Box = Test-Path (Join-Path $Run "box_items.csv")
 if (-not $Box -and -not (Test-Path (Join-Path $Run "ducts.csv"))) { throw "No ducts.csv or box_items.csv in $Run (a Pluto Ducts / Fab / Box run folder)." }
-if (-not $Out) { $Out = Join-Path $Run $(if ($Box) { "box" } elseif ($Mesh) { "ducts_mesh" } else { "ducts" }) }
+if (-not $Out) { $Out = Join-Path $Run $(if ($Box) { "box" } elseif ($Mesh) { "ducts_mesh" } elseif ($Centrelines) { "ducts_cl" } else { "ducts" }) }
 if (-not $ModelId) {
-    $ModelId = $(if ($Box) { "hvac/box/" + (Split-Path $Run -Leaf) } else { "hvac/ducts/" + (Split-Path $Run -Leaf) + $(if ($Mesh) { "/mesh" } else { "" }) })
+    $ModelId = $(if ($Box) { "hvac/box/" + (Split-Path $Run -Leaf) } else { "hvac/ducts/" + (Split-Path $Run -Leaf) + $(if ($Mesh) { "/mesh" } elseif ($Centrelines) { "/cl" } else { "" }) })
 }
 . (Join-Path (Split-Path $PSScriptRoot) "lib\Config.ps1")
 $t0 = Get-Date
@@ -37,6 +41,9 @@ if ($Box) {
 } elseif ($Mesh) {
     $r = [DuctsToPluto]::ExportMesh($Run, $Out, $ModelId, $Unit)
     Write-Output ("mesh: {0} nodes; {1} rows without triangles" -f $r.Nodes, $r.Skipped)
+} elseif ($Centrelines) {
+    $r = [DuctsToPluto]::ExportCentrelines($Run, $Out, $ModelId, $Unit)
+    Write-Output $r.Note
 } else {
     $codesFile = "C:\Temp\hvac\service-codes.txt"
     if (-not $Services -and (Test-Path $codesFile)) { $Services = (Get-Content $codesFile -Raw) }

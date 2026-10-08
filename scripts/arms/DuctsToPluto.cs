@@ -39,6 +39,7 @@ public class DuctsToPluto
         public int FabFromBbox, FabPhantom, FabBridged, FittingsBridged, FabBodyAgrees, FabBodyDiffers, FabFromBody;
         public int NoRunName, ServiceOut;
         public string ServiceFilter = "";
+        public string Note = "";                  // one-line summary of a side pass (centrelines)
         public SortedDictionary<string, int> BeamsByService = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         public string Summary()
         {
@@ -541,6 +542,133 @@ public class DuctsToPluto
         var res = new Result();
         res.BinPath = binPath; res.SidecarPath = scPath; res.GeometryHash = w.GeometryHash;
         res.Nodes = nodes.Count; res.Beams = 0; res.Skipped = rows.Count - recs.Count;
+        return res;
+    }
+
+    // Side pass (2026-10-08): the Revit centrelines (cl_segments.csv / cl_nodes.csv, nodes as merged by the
+    // button) as thin beams in their own file, one group per RunName (sorted by service), rows without a
+    // RunName in their own red group; fabrication straights without a centreline drawn from their fitted ends
+    // (own group). Node groups to review connectivity: free ends (degree 1), junctions (degree >= 3) and
+    // RunName changes (segments of different RunNames meet). Labels: run | IfcGUID #NavisId | category | size.
+    public static Result ExportCentrelines(string runDir, string outBase, string modelId, string lengthUnit)
+    {
+        const double OdIn = 2;   // drawn pipe OD, inches
+        double scale = LengthScale(lengthUnit);
+        var rows = ReadRows(Path.Combine(runDir, "ducts.csv"));
+        var nodeXyz = new Dictionary<int, double[]>();
+        foreach (Dictionary<string, string> r in ReadCsv(Path.Combine(runDir, "cl_nodes.csv")))
+            nodeXyz[int.Parse(r["Node"], Inv)] = new[] { Num(r, "X"), Num(r, "Y"), Num(r, "Z") };
+        var segs = new List<int[]>();   // row, cl node 1, cl node 2
+        var rowsWithCl = new HashSet<int>();
+        foreach (Dictionary<string, string> r in ReadCsv(Path.Combine(runDir, "cl_segments.csv")))
+        {
+            int row = int.Parse(r["Row"], Inv);
+            segs.Add(new[] { row, int.Parse(r["Node1"], Inv), int.Parse(r["Node2"], Inv) });
+            rowsWithCl.Add(row);
+        }
+        // the same recentring as Export (bbox of rows and centreline nodes, whole feet)
+        double[] lo = { double.MaxValue, double.MaxValue, double.MaxValue }, hi = { double.MinValue, double.MinValue, double.MinValue };
+        foreach (Row r in rows) if (r.Min != null) for (int k = 0; k < 3; k++) { lo[k] = Math.Min(lo[k], r.Min[k]); hi[k] = Math.Max(hi[k], r.Max[k]); }
+        foreach (double[] p in nodeXyz.Values) for (int k = 0; k < 3; k++) { lo[k] = Math.Min(lo[k], p[k]); hi[k] = Math.Max(hi[k], p[k]); }
+        if (lo[0] == double.MaxValue) throw new Exception("DuctsToPluto: nothing with coordinates in " + runDir);
+        double[] off = { Math.Round((lo[0] + hi[0]) / 2), Math.Round((lo[1] + hi[1]) / 2), Math.Round((lo[2] + hi[2]) / 2) };
+
+        var nodes = new Dictionary<int, Node>(); int nextNode = 1;
+        var clToFile = new Dictionary<int, int>(); var keyToFile = new Dictionary<string, int>(StringComparer.Ordinal);
+        Func<int, int> clNode = delegate(int id)
+        {
+            int f;
+            if (!clToFile.TryGetValue(id, out f)) { f = MakeNode(nodes, ref nextNode, nodeXyz[id], off, scale); clToFile[id] = f; }
+            return f;
+        };
+        Func<double[], int> ptNode = delegate(double[] p)
+        {
+            string key = string.Format(Inv, "{0:F4}|{1:F4}|{2:F4}", p[0], p[1], p[2]);
+            int f;
+            if (!keyToFile.TryGetValue(key, out f)) { f = MakeNode(nodes, ref nextNode, p, off, scale); keyToFile[key] = f; }
+            return f;
+        };
+        var sections = new List<RawViewerWriter.SectionDef>();
+        sections.Add(RawViewerWriter.SectionDef.Pipe("centreline", (float)(OdIn * scale / 12), (float)(OdIn / 4 * scale / 12)));
+        var beams = new Dictionary<int, RawViewerWriter.BeamMember>(); var labels = new Dictionary<int, string>();
+        var byRun = new Dictionary<string, List<uint>>(StringComparer.Ordinal); var fitted = new List<uint>();
+        var runsAt = new Dictionary<int, HashSet<string>>(); var degree = new Dictionary<int, int>();
+        int nextBeam = 1, skipped = 0;
+        Func<Row, string> labelOf = r => (r.RunName != "" ? r.RunName : "(no RunName)") + " | " + r.Guid + (r.NavisId != "" ? " #" + r.NavisId : "")
+            + " | " + r.Cat + " | " + (r.SizeText != "" ? r.SizeText : r.Name);
+        Func<Row, int, int, int> add = delegate(Row r, int a, int b)
+        {
+            if (a == b) return 0;
+            int id = nextBeam++;
+            beams[id] = Beam(id, a, b, 0, nodes); labels[id] = labelOf(r);
+            List<uint> l; if (!byRun.TryGetValue(r.RunName, out l)) { l = new List<uint>(); byRun[r.RunName] = l; }
+            l.Add((uint)id);
+            foreach (int n in new[] { a, b })
+            {
+                int d; degree.TryGetValue(n, out d); degree[n] = d + 1;
+                HashSet<string> s; if (!runsAt.TryGetValue(n, out s)) { s = new HashSet<string>(StringComparer.Ordinal); runsAt[n] = s; }
+                s.Add(r.RunName);
+            }
+            return id;
+        };
+        foreach (int[] s in segs)
+        {
+            if (s[0] < 1 || s[0] > rows.Count || !nodeXyz.ContainsKey(s[1]) || !nodeXyz.ContainsKey(s[2])) { skipped++; continue; }
+            add(rows[s[0] - 1], clNode(s[1]), clNode(s[2]));
+        }
+        for (int i = 0; i < rows.Count; i++)
+        {
+            Row r = rows[i];
+            if (rowsWithCl.Contains(i + 1) || r.E1 == null || r.E2 == null) continue;
+            if (!r.Cat.Equals(Fab, StringComparison.OrdinalIgnoreCase) || !r.Name.TrimStart().StartsWith("Straight", StringComparison.OrdinalIgnoreCase)) continue;
+            int id = add(r, ptNode(r.E1), ptNode(r.E2));
+            if (id > 0) fitted.Add((uint)id);
+        }
+        if (beams.Count == 0) throw new Exception("DuctsToPluto: no centrelines in " + runDir);
+
+        var comps = new List<RawViewerWriter.Component>();
+        comps.Add(new RawViewerWriter.Component("Axial N", "force", "kip"));   // layout only; no planes written
+        var units = new Dictionary<string, string>(); units["length"] = lengthUnit;
+        string binPath = outBase + ".bin";
+        var w = new RawViewerWriter(binPath, nodes, null, null, null, beams, sections, comps, modelId, units);
+        w.SetBeamLabels(labels);
+        w.Write(false);
+
+        var sc = new FeaturesSidecar();
+        sc.ModelId = modelId; sc.GeometryHash = w.GeometryHash;
+        sc.Units["length"] = lengthUnit;
+        sc.Units["worldOffset"] = string.Format(Inv, "{0} {1} {2}", off[0] * scale, off[1] * scale, off[2] * scale);
+        string[] pal = { "#ff4fd8", "#ffd23f", "#4f8cff", "#3fe0e0", "#ff8a3d", "#8ae04f", "#b07cff", "#f0f0f0" };
+        var runs = new List<string>(byRun.Keys);
+        runs.Sort((x, y) => { int c = string.Compare(ServiceOf(x), ServiceOf(y), StringComparison.OrdinalIgnoreCase); return c != 0 ? c : string.Compare(x, y, StringComparison.OrdinalIgnoreCase); });
+        int pi = 0;
+        foreach (string run in runs)
+        {
+            List<uint> l = byRun[run]; l.Sort();
+            if (run == "") sc.AddGroup("No RunName", "#ff3b3b", "beams", l, new[] { "duct", "centreline", "noRunName" }, "CL_NO_RUNNAME");
+            else sc.AddGroup("Run " + run, pal[pi++ % pal.Length], "beams", l, new[] { "duct", "centreline", "run", ServiceOf(run) }, null);
+        }
+        fitted.Sort();
+        if (fitted.Count > 0) sc.AddGroup("Fabrication straights (fitted ends, no centreline)", "#ffc04d", "beams", fitted, new[] { "duct", "centreline", "fitted" }, "CL_FITTED");
+        var ends = new List<uint>(); var junctions = new List<uint>(); var changes = new List<uint>();
+        foreach (KeyValuePair<int, int> kv in degree)
+        {
+            if (kv.Value == 1) ends.Add((uint)kv.Key);
+            else if (kv.Value >= 3) junctions.Add((uint)kv.Key);
+            if (runsAt[kv.Key].Count > 1) changes.Add((uint)kv.Key);
+        }
+        ends.Sort(); junctions.Sort(); changes.Sort();
+        if (ends.Count > 0) sc.AddNodeGroup("Free ends (degree 1)", "#ff3b3b", ends, new[] { "duct", "centreline", "freeEnd" }, "CL_FREE_ENDS");
+        if (junctions.Count > 0) sc.AddNodeGroup("Junctions (degree 3+)", "#3fe0e0", junctions, new[] { "duct", "centreline", "junction" }, "CL_JUNCTIONS");
+        if (changes.Count > 0) sc.AddNodeGroup("RunName changes", "#ffd23f", changes, new[] { "duct", "centreline", "runChange" }, "CL_RUN_CHANGES");
+        string scPath = outBase + ".features.json";
+        File.WriteAllText(scPath, sc.ToJson(), new UTF8Encoding(false));
+
+        var res = new Result();
+        res.BinPath = binPath; res.SidecarPath = scPath; res.GeometryHash = w.GeometryHash;
+        res.Nodes = nodes.Count; res.Beams = beams.Count; res.Skipped = skipped; res.LooseEnds = ends.Count;
+        res.Note = string.Format(Inv, "centrelines: {0} beams ({1} fitted fabrication straights), {2} run groups{3}; nodes {4}: free ends {5}, junctions {6}, RunName changes {7}; segments skipped {8}",
+            beams.Count, fitted.Count, runs.Count, byRun.ContainsKey("") ? " incl. No RunName" : "", nodes.Count, ends.Count, junctions.Count, changes.Count, skipped);
         return res;
     }
 
