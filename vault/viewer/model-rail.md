@@ -54,7 +54,7 @@ Module contracts are in [[vault/viewer/Viewer modules|Viewer modules]].
   - With group painting off, an overlay is drawn in its **model colour**, set by the swatch on its row. The primary keeps its field colouring.
 - **X-ray:** a checkbox on every row (primary included) makes that model additive-translucent, shells and beams.
   - It replaces stage 1's "ghost".
-  - The primary's x-ray also sets the beam panel's x-ray switch.
+  - The primary's x-ray covers its beams too (FEABeams.setXray); the beam panel's old X-ray checkbox is gone.
   - Dark field colours are lifted in x-ray so additive blending still shows them.
 - **Not done:** clicking a member of another model does not offer to make that model active. Use the rail instead.
 - **Checked 2026-10-08** in the browser, on synthetic duct files (centrelines as primary with a mesh overlay and the probe graph, then a mesh as primary):

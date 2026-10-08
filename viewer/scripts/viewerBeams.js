@@ -27,10 +27,6 @@ var FEABeams = (function () {
 
     var elSection = document.getElementById('beamSection');
     var elShow    = document.getElementById('beamShow');
-    var elXray    = document.getElementById('beamXray');
-
-    try { xray = localStorage.getItem('pluto.beamXray') === '1'; } catch (e) {}
-    if (elXray) elXray.checked = xray;
     var elComp    = document.getElementById('beamComp');
     var elRange   = document.getElementById('beamRange');
     var elCount   = document.getElementById('beamCount');
@@ -271,11 +267,6 @@ var FEABeams = (function () {
         if (beamMesh) beamMesh.visible = visible;
         needsRender = true;
     });
-    if (elXray) elXray.addEventListener('change', function () {
-        xray = this.checked;
-        try { localStorage.setItem('pluto.beamXray', xray ? '1' : '0'); } catch (e) {}
-        applyXray();
-    });
     if (elComp) elComp.addEventListener('change', function () {
         comp = parseInt(this.value, 10) || 0;
         sync();
@@ -293,6 +284,8 @@ var FEABeams = (function () {
         writeVis: writeVis,
         reapplyVis: reapplyVis,
         fillReadout: fillReadout,
+        // x-ray of the primary's beams: set from the model rail (models.js primary.setXray)
+        setXray: function (on) { xray = !!on; applyXray(); },
         // The coloured beam field ({name, unit, min, max}), or null when beams draw neutral.
         legend: function () {
             if (!material || material.uniforms.uNeutral.value) return null;

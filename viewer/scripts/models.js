@@ -94,12 +94,11 @@ var FEAModels = (function () {
             if (bm) bm.visible = on && (document.getElementById('beamShow') ? document.getElementById('beamShow').checked : true);
             redraw();
         },
-        // x-ray covers the shells here and the beams through the beam panel's own switch
+        // x-ray: the shells here, the beams through FEABeams (which keeps it across beam rebuilds)
         setXray: function (on) {
             primary.look.xray = on;
             xrayMaterial(g('feaMaterial'), on);
-            var cb = document.getElementById('beamXray');
-            if (cb && cb.checked !== on) { cb.checked = on; cb.dispatchEvent(new Event('change')); }
+            if (beams() && beams().setXray) beams().setXray(on);
             redraw();
         },
         // the primary keeps its field colouring when group painting is off: no flat model colour
