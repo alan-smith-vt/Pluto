@@ -708,6 +708,7 @@ public class DuctsToPluto
         public double[] C, N; public double Planar, Perim;              // C feet; Planar / Perim inches
         public bool SizeOk; public string SizeBand = "no stated size"; public double Near = double.NaN, Dot = double.NaN; public int NearRow; public string Status = "";
         public double DA = double.NaN, DB = double.NaN;                 // measured minus stated (larger / smaller side), inches
+        public Opening Mate;                                            // the matched connector (joint / near), null otherwise
         public int Rings = 1; public string Outer = "";                // rings merged into this connector; largest ring's size
     }
 
@@ -803,7 +804,7 @@ public class DuctsToPluto
                 if (d < best) { best = d; bj = j; }
             }
             if (bj < 0) { o.Status = "unmatched"; continue; }
-            o.Near = Math.Sqrt(best) * 12; o.NearRow = all[bj].Row;
+            o.Near = Math.Sqrt(best) * 12; o.NearRow = all[bj].Row; o.Mate = all[bj];
             o.Dot = o.N[0] * all[bj].N[0] + o.N[1] * all[bj].N[1] + o.N[2] * all[bj].N[2];
             o.Status = o.Near <= MatchIn && o.Dot < -0.9 ? "joint" : o.Near <= SlipIn && Math.Abs(o.Dot) > 0.9 ? "near (slip / gap)" : "unmatched";
             if (o.Status != "unmatched" && !want.Contains(o.NearRow)) o.Status += ", other room";
@@ -921,7 +922,7 @@ public class DuctsToPluto
             { int c; tally.TryGetValue(k, out c); tally[k] = c + 1; }
         }
         sum.AppendLine("openings:"); foreach (KeyValuePair<string, int> kv in tally) sum.AppendLine("  " + kv.Key + ": " + kv.Value);
-        // NEW: at most 3 lines of at most 5 items, typed back by hand
+        // (reviewed 2026-10-08) status, Revit fittings, unmatched by type
         // 1. status totals (fitting joint is new); 2. Revit fittings in the room: centreline coverage and use;
         // 3. unmatched by type (top 5)
         int nJ = 0, nS = 0, nF = 0, nN = 0, nU = 0;
@@ -935,19 +936,68 @@ public class DuctsToPluto
             else if (o.Status.StartsWith("near")) nN++;
             else { nU++; int c; unm.TryGetValue(t, out c); unm[t] = c + 1; }
         }
-        fresh.AppendLine(string.Format(Inv, "status: joint {0}, side branch {1}, fitting joint {2}, near {3}, unmatched {4}", nJ, nS, nF, nN, nU));
+        sum.AppendLine(string.Format(Inv, "status: joint {0}, side branch {1}, fitting joint {2}, near {3}, unmatched {4}", nJ, nS, nF, nN, nU));
         int fitIn = 0, fitInCl = 0, endsIn = 0, endsUsed = 0;
         foreach (int fr in fitRows)
             if (string.IsNullOrEmpty(room) || rows[fr - 1].Room.Trim().Equals(room.Trim(), StringComparison.OrdinalIgnoreCase)) { fitIn++; if (fitWithCl.Contains(fr)) fitInCl++; }
         foreach (Opening fe in fitEnds)
             if (string.IsNullOrEmpty(room) || rows[fe.Row - 1].Room.Trim().Equals(room.Trim(), StringComparison.OrdinalIgnoreCase)) { endsIn++; if (fitMatched.Contains(fe)) endsUsed++; }
-        fresh.AppendLine(string.Format(Inv, "Revit fittings in room: {0}, with centreline {1}, ends {2}, ends joined to fab {3}", fitIn, fitInCl, endsIn, endsUsed));
+        sum.AppendLine(string.Format(Inv, "Revit fittings in room: {0}, with centreline {1}, ends {2}, ends joined to fab {3}", fitIn, fitInCl, endsIn, endsUsed));
         var ul = new List<KeyValuePair<string, int>>(unm); ul.Sort((x, y) => y.Value.CompareTo(x.Value));
         var u5 = new List<string>(); for (int q = 0; q < ul.Count && q < 5; q++) u5.Add(ul[q].Key + " " + ul[q].Value);
-        fresh.AppendLine("unmatched by type: " + (u5.Count > 0 ? string.Join(", ", u5.ToArray()) : "-"));
+        sum.AppendLine("unmatched by type: " + (u5.Count > 0 ? string.Join(", ", u5.ToArray()) : "-"));
         var dist = new[] { 0, 0, 0, 0, 0 };
         foreach (Opening o in ops) { double d = o.Near; dist[double.IsNaN(d) ? 4 : d <= 0.25 ? 0 : d <= 1 ? 1 : d <= 6 ? 2 : 3]++; }
         sum.AppendLine(string.Format(Inv, "nearest other opening: <= 1/4 in {0}; <= 1 in {1}; <= 6 in {2}; farther {3}; none {4}", dist[0], dist[1], dist[2], dist[3], dist[4]));
+        // ---- connectivity graph overlay (<out>_graph.bin) ----
+        // Each part = lines through its connectors (2: end to end; else a star from their mean). Joint mates share
+        // one node; near = a link beam; side branch = a link from the base to the closest point of the main part's
+        // own lines; fitting joint = a link to the fitting end. Groups: one per RunName, links by kind, "RunName
+        // differs from both neighbours"; node group: unmatched connectors.
+        // nbrs: every link (islands); inLine: end-to-end links only (joint / near), for the run-label check, so
+        // a branch tapped off a main duct does not count as one of the main's neighbours
+        var nbrs = new Dictionary<int, HashSet<int>>(); var inLine = new Dictionary<int, HashSet<int>>();
+        Action<Dictionary<int, HashSet<int>>, int, int> link = delegate(Dictionary<int, HashSet<int>> g0, int a1, int b1)
+        {
+            if (a1 == b1) return; HashSet<int> h;
+            if (!g0.TryGetValue(a1, out h)) { h = new HashSet<int>(); g0[a1] = h; } h.Add(b1);
+            if (!g0.TryGetValue(b1, out h)) { h = new HashSet<int>(); g0[b1] = h; } h.Add(a1);
+        };
+        foreach (Opening o in ops)
+        {
+            if (o.NearRow <= 0 || !allFab.Contains(o.NearRow)) continue;
+            bool end = o.Status.StartsWith("joint") || o.Status.StartsWith("near");
+            if (end || o.Status.StartsWith("side branch")) link(nbrs, o.Row, o.NearRow);
+            if (end) link(inLine, o.Row, o.NearRow);
+        }
+        // run-label check: two or more end-to-end neighbours, all on one RunName, and it is not the part's own
+        var conflict = new HashSet<int>();
+        foreach (int prow in want)
+        {
+            HashSet<int> h; if (!inLine.TryGetValue(prow, out h) || h.Count < 2) continue;
+            var cnt = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (int q in h) { string rn = rows[q - 1].RunName; if (rn == "") continue; int c; cnt.TryGetValue(rn, out c); cnt[rn] = c + 1; }
+            foreach (KeyValuePair<string, int> kv in cnt)
+                if (kv.Value >= 2 && kv.Value == h.Count && !kv.Key.Equals(rows[prow - 1].RunName, StringComparison.OrdinalIgnoreCase)) conflict.Add(prow);
+        }
+        // islands: connected groups of the room's parts (links to other rooms are not followed)
+        var comp = new Dictionary<int, int>(); int nComp = 0, biggest = 0, single = 0;
+        foreach (int prow in want)
+        {
+            if (comp.ContainsKey(prow) || !loopsOf.ContainsKey(prow)) continue;
+            nComp++; int size = 0; var stack = new Stack<int>(); stack.Push(prow); comp[prow] = nComp;
+            while (stack.Count > 0)
+            {
+                int x = stack.Pop(); size++; HashSet<int> h;
+                if (nbrs.TryGetValue(x, out h)) foreach (int y in h) if (want.Contains(y) && !comp.ContainsKey(y)) { comp[y] = nComp; stack.Push(y); }
+            }
+            biggest = Math.Max(biggest, size); if (size == 1) single++;
+        }
+        int nUnm = 0; foreach (Opening o in ops) if (o.Status == "unmatched") nUnm++;
+        fresh.AppendLine(string.Format(Inv, "graph: parts {0}, connected groups {1}, largest {2}, single parts {3}", loopsOf.Count, nComp, biggest, single));
+        fresh.AppendLine(string.Format(Inv, "RunName differs from both neighbours: {0} parts; unmatched connectors {1}", conflict.Count, nUnm));
+        if (ops.Count > 0) WriteGraph(outBase + "_graph", modelId + "/graph", lengthUnit, scale, rows, ops, all, tri, want, conflict, fitEnds);
+
         string report = head.ToString() + Environment.NewLine + "=== NEW ===" + Environment.NewLine + fresh.ToString()
             + Environment.NewLine + "=== Reviewed before ===" + Environment.NewLine + sum.ToString();
         File.WriteAllText(outBase + ".probe.txt", report);
@@ -1103,6 +1153,120 @@ public class DuctsToPluto
         }
         o.Shape = "rect"; o.A = Math.Max(a1 - a0, b1 - b0) * 12; o.B = Math.Min(a1 - a0, b1 - b0) * 12; o.Dia = double.NaN;
         return o;
+    }
+
+    // The probe's connectivity as a viewer overlay (see ExportProbe): part lines, shared joint nodes, link beams.
+    static void WriteGraph(string outBase, string modelId, string lengthUnit, double scale, List<Row> rows, List<Opening> ops, List<Opening> all,
+        Dictionary<int, float[]> tri, HashSet<int> want, HashSet<int> conflict, List<Opening> fitEnds)
+    {
+        double[] lo = { double.MaxValue, double.MaxValue, double.MaxValue }, hi = { double.MinValue, double.MinValue, double.MinValue };
+        foreach (Opening o in ops) for (int k = 0; k < 3; k++) { lo[k] = Math.Min(lo[k], o.C[k]); hi[k] = Math.Max(hi[k], o.C[k]); }
+        double[] off = { Math.Round((lo[0] + hi[0]) / 2), Math.Round((lo[1] + hi[1]) / 2), Math.Round((lo[2] + hi[2]) / 2) };
+        var nodes = new Dictionary<int, Node>(); int nextNode = 1;
+        var nodeOf = new Dictionary<Opening, int>();
+        Func<Opening, int> conn = delegate(Opening o)
+        {
+            int id; if (nodeOf.TryGetValue(o, out id)) return id;
+            if (o.Mate != null && o.Status.StartsWith("joint") && nodeOf.TryGetValue(o.Mate, out id)) { nodeOf[o] = id; return id; }
+            id = MakeNode(nodes, ref nextNode, o.C, off, scale); nodeOf[o] = id;
+            if (o.Mate != null && o.Status.StartsWith("joint")) nodeOf[o.Mate] = id;
+            return id;
+        };
+        Func<double[], int> pt = p => MakeNode(nodes, ref nextNode, p, off, scale);
+        var sections = new List<RawViewerWriter.SectionDef>();
+        sections.Add(RawViewerWriter.SectionDef.Pipe("part", (float)(3 * scale / 12), (float)(0.5 * scale / 12)));
+        sections.Add(RawViewerWriter.SectionDef.Pipe("link", (float)(1.5 * scale / 12), (float)(0.375 * scale / 12)));
+        var beams = new Dictionary<int, RawViewerWriter.BeamMember>(); var labels = new Dictionary<int, string>();
+        var byRun = new SortedDictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase); var gConf = new List<uint>();
+        var gLink = new SortedDictionary<string, List<uint>>(); int nb = 1;
+        Func<int, int, int, string, int> beam = delegate(int a, int b, int sec, string label)
+        {
+            if (a == b) return 0;
+            beams[nb] = Beam(nb, a, b, sec, nodes); labels[nb] = label; return nb++;
+        };
+        var byRow = new Dictionary<int, List<Opening>>();
+        foreach (Opening o in ops) { List<Opening> l; if (!byRow.TryGetValue(o.Row, out l)) { l = new List<Opening>(); byRow[o.Row] = l; } l.Add(o); }
+        var allByRow = new Dictionary<int, List<Opening>>();
+        foreach (Opening o in all) { List<Opening> l; if (!allByRow.TryGetValue(o.Row, out l)) { l = new List<Opening>(); allByRow[o.Row] = l; } l.Add(o); }
+        foreach (KeyValuePair<int, List<Opening>> kv in byRow)
+        {
+            Row r = rows[kv.Key - 1];
+            string label = (r.RunName != "" ? r.RunName : "(no RunName)") + " | " + r.Name + " | " + r.Guid + " #" + r.NavisId
+                + (conflict.Contains(kv.Key) ? " | RUNNAME DIFFERS FROM BOTH NEIGHBOURS" : "");
+            var ids = new List<int>();
+            if (kv.Value.Count == 2) ids.Add(beam(conn(kv.Value[0]), conn(kv.Value[1]), 0, label));
+            else
+            {
+                double[] c = new double[3];
+                if (kv.Value.Count == 1 && r.Min != null) for (int k = 0; k < 3; k++) c[k] = (r.Min[k] + r.Max[k]) / 2;
+                else { foreach (Opening o in kv.Value) for (int k = 0; k < 3; k++) c[k] += o.C[k] / kv.Value.Count; }
+                int hub = pt(c);
+                foreach (Opening o in kv.Value) ids.Add(beam(hub, conn(o), 0, label));
+            }
+            string run = r.RunName != "" ? "Run " + r.RunName : "No RunName";
+            List<uint> g; if (!byRun.TryGetValue(run, out g)) { g = new List<uint>(); byRun[run] = g; }
+            foreach (int id in ids) if (id > 0) { g.Add((uint)id); if (conflict.Contains(kv.Key)) gConf.Add((uint)id); }
+        }
+        Action<string, int> addLink = delegate(string kind, int id)
+        {
+            if (id <= 0) return; List<uint> l; if (!gLink.TryGetValue(kind, out l)) { l = new List<uint>(); gLink[kind] = l; } l.Add((uint)id);
+        };
+        var unmatched = new List<uint>();
+        foreach (Opening o in ops)
+        {
+            string lbl = string.Format(Inv, "{0} | {1} #{2} -> row {3} | {4:0.#} in", o.Status, rows[o.Row - 1].Name, rows[o.Row - 1].NavisId, o.NearRow, o.Near);
+            if (o.Status.StartsWith("near") && o.Mate != null)
+                addLink("Link: near (slip / gap)", beam(conn(o), want.Contains(o.Mate.Row) ? conn(o.Mate) : pt(o.Mate.C), 1, lbl));
+            else if (o.Status.StartsWith("side branch"))
+            {
+                // closest point on the main part's own line (its two connectors), else the mean of its connectors
+                List<Opening> m; double[] q = null;
+                if (allByRow.TryGetValue(o.NearRow, out m) && m.Count > 0)
+                {
+                    if (m.Count == 2)
+                    {
+                        double[] a = m[0].C, b = m[1].C, ab = { b[0] - a[0], b[1] - a[1], b[2] - a[2] };
+                        double L2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
+                        double t = L2 > 0 ? ((o.C[0] - a[0]) * ab[0] + (o.C[1] - a[1]) * ab[1] + (o.C[2] - a[2]) * ab[2]) / L2 : 0;
+                        t = Math.Max(0, Math.Min(1, t)); q = new[] { a[0] + ab[0] * t, a[1] + ab[1] * t, a[2] + ab[2] * t };
+                    }
+                    else { q = new double[3]; foreach (Opening x in m) for (int k = 0; k < 3; k++) q[k] += x.C[k] / m.Count; }
+                }
+                if (q != null) addLink("Link: side branch", beam(conn(o), pt(q), 1, lbl));
+            }
+            else if (o.Status.StartsWith("fitting joint"))
+            {
+                Opening fe = null; double bd = double.MaxValue;
+                foreach (Opening x in fitEnds)
+                {
+                    if (x.Row != o.NearRow) continue;
+                    double d = (x.C[0] - o.C[0]) * (x.C[0] - o.C[0]) + (x.C[1] - o.C[1]) * (x.C[1] - o.C[1]) + (x.C[2] - o.C[2]) * (x.C[2] - o.C[2]);
+                    if (d < bd) { bd = d; fe = x; }
+                }
+                if (fe != null) addLink("Link: Revit fitting", beam(conn(o), pt(fe.C), 1, lbl));
+            }
+            else if (o.Status == "unmatched") unmatched.Add((uint)conn(o));
+        }
+        if (beams.Count == 0) return;
+        var comps = new List<RawViewerWriter.Component>();
+        comps.Add(new RawViewerWriter.Component("Axial N", "force", "kip"));   // layout only; no planes written
+        var units = new Dictionary<string, string>(); units["length"] = lengthUnit;
+        var w = new RawViewerWriter(outBase + ".bin", nodes, null, null, null, beams, sections, comps, modelId, units);
+        w.SetBeamLabels(labels);
+        w.Write(false);
+        var sc = new FeaturesSidecar();
+        sc.ModelId = modelId; sc.GeometryHash = w.GeometryHash;
+        sc.Units["length"] = lengthUnit;
+        sc.Units["worldOffset"] = string.Format(Inv, "{0} {1} {2}", off[0] * scale, off[1] * scale, off[2] * scale);
+        string[] pal = { "#4f8cff", "#3fe0e0", "#8ae04f", "#b07cff", "#f0f0f0", "#ff4fd8", "#ffd23f", "#ff8a3d" };
+        int pi = 0;
+        foreach (KeyValuePair<string, List<uint>> kv in byRun)
+            sc.AddGroup(kv.Key, kv.Key == "No RunName" ? "#ff3b3b" : pal[pi++ % pal.Length], "beams", kv.Value, new[] { "duct", "graph", "run" }, null);
+        foreach (KeyValuePair<string, List<uint>> kv in gLink)
+            sc.AddGroup(kv.Key, kv.Key.Contains("near") ? "#ffd23f" : kv.Key.Contains("side") ? "#8ae04f" : "#3fc1a5", "beams", kv.Value, new[] { "duct", "graph", "link" }, null);
+        if (gConf.Count > 0) sc.AddGroup("RunName differs from both neighbours", "#ff3b3b", "beams", gConf, new[] { "duct", "graph", "runConflict" }, "GRAPH_RUN_CONFLICT");
+        if (unmatched.Count > 0) sc.AddNodeGroup("Unmatched connectors", "#ff3b3b", unmatched, new[] { "duct", "graph", "unmatched" }, "GRAPH_UNMATCHED");
+        File.WriteAllText(outBase + ".features.json", sc.ToJson(), new UTF8Encoding(false));
     }
 
     static double Median(List<double> v) { if (v.Count == 0) return double.NaN; v.Sort(); return v.Count % 2 == 1 ? v[v.Count / 2] : (v[v.Count / 2 - 1] + v[v.Count / 2]) / 2; }
