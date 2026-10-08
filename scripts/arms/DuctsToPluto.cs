@@ -723,14 +723,18 @@ public class DuctsToPluto
             if (string.Equals(rows[i].Cat, Fab, StringComparison.OrdinalIgnoreCase)
                 && (string.IsNullOrEmpty(room) || rows[i].Room.Trim().Equals(room.Trim(), StringComparison.OrdinalIgnoreCase))) want.Add(i + 1);
         if (want.Count == 0) throw new Exception("DuctsToPluto: no fabrication rows" + (string.IsNullOrEmpty(room) ? "" : " in room " + room));
-        var tri = ReadTriangles(Path.Combine(runDir, "ducts_tri.bin"), want);
+        // connectors are found on EVERY fabrication part, so a connector at the room edge finds its neighbour
+        // in the next room; counts and outputs cover the room's parts only
+        var allFab = new HashSet<int>();
+        for (int i = 0; i < rows.Count; i++) if (string.Equals(rows[i].Cat, Fab, StringComparison.OrdinalIgnoreCase)) allFab.Add(i + 1);
+        var tri = ReadTriangles(Path.Combine(runDir, "ducts_tri.bin"), allFab);
 
-        var ops = new List<Opening>(); var loopsOf = new Dictionary<int, int[]>();   // row -> {big, small}
+        var all = new List<Opening>(); var loopsOf = new Dictionary<int, int[]>();   // row -> {connectors, small, interior, end rings}
         int noTri = 0;
-        foreach (int row in want)
+        foreach (int row in allFab)
         {
             float[] f;
-            if (!tri.TryGetValue(row, out f) || f.Length < 9) { noTri++; continue; }
+            if (!tri.TryGetValue(row, out f) || f.Length < 9) { if (want.Contains(row)) noTri++; continue; }
             int small = 0, interior = 0;
             var ends = new List<Opening>();
             foreach (List<double[]> loop in BoundaryLoops(f, WeldFt))
@@ -760,8 +764,8 @@ public class DuctsToPluto
                 foreach (Opening c in conns)
                 {
                     double dx = o.C[0] - c.C[0], dy = o.C[1] - c.C[1], dz = o.C[2] - c.C[2];
-                    double along = Math.Abs(dx * c.N[0] + dy * c.N[1] + dz * c.N[2]) * 12, all = Math.Sqrt(dx * dx + dy * dy + dz * dz) * 12;
-                    if (o.N[0] * c.N[0] + o.N[1] * c.N[1] + o.N[2] * c.N[2] > 0.95 && along <= EndTolIn && all <= 2 + EndTolIn) { hit = c; break; }
+                    double along = Math.Abs(dx * c.N[0] + dy * c.N[1] + dz * c.N[2]) * 12, sep = Math.Sqrt(dx * dx + dy * dy + dz * dz) * 12;
+                    if (o.N[0] * c.N[0] + o.N[1] * c.N[1] + o.N[2] * c.N[2] > 0.95 && along <= EndTolIn && sep <= 2 + EndTolIn) { hit = c; break; }
                 }
                 if (hit != null) { hit.Rings++; hit.Outer = o.Shape == "round" ? string.Format(Inv, "round {0:0.#}", o.Dia) : string.Format(Inv, "{0:0.#}x{1:0.#}", o.A, o.B); continue; }
                 double sa, sb;
@@ -781,24 +785,26 @@ public class DuctsToPluto
                 }
                 conns.Add(o);
             }
-            ops.AddRange(conns);
-            loopsOf[row] = new[] { conns.Count, small, interior, ends.Count };
+            all.AddRange(conns);
+            if (want.Contains(row)) loopsOf[row] = new[] { conns.Count, small, interior, ends.Count };
         }
+        var ops = all.FindAll(o => want.Contains(o.Row));
         // nearest opening on another part
         for (int i = 0; i < ops.Count; i++)
         {
             Opening o = ops[i]; double best = double.MaxValue; int bj = -1;
-            for (int j = 0; j < ops.Count; j++)
+            for (int j = 0; j < all.Count; j++)
             {
-                if (ops[j].Row == o.Row) continue;
-                double dx = ops[j].C[0] - o.C[0], dy = ops[j].C[1] - o.C[1], dz = ops[j].C[2] - o.C[2];
+                if (all[j].Row == o.Row) continue;
+                double dx = all[j].C[0] - o.C[0], dy = all[j].C[1] - o.C[1], dz = all[j].C[2] - o.C[2];
                 double d = dx * dx + dy * dy + dz * dz;
                 if (d < best) { best = d; bj = j; }
             }
             if (bj < 0) { o.Status = "unmatched"; continue; }
-            o.Near = Math.Sqrt(best) * 12; o.NearRow = ops[bj].Row;
-            o.Dot = o.N[0] * ops[bj].N[0] + o.N[1] * ops[bj].N[1] + o.N[2] * ops[bj].N[2];
+            o.Near = Math.Sqrt(best) * 12; o.NearRow = all[bj].Row;
+            o.Dot = o.N[0] * all[bj].N[0] + o.N[1] * all[bj].N[1] + o.N[2] * all[bj].N[2];
             o.Status = o.Near <= MatchIn && o.Dot < -0.9 ? "joint" : o.Near <= SlipIn && Math.Abs(o.Dot) > 0.9 ? "near (slip / gap)" : "unmatched";
+            if (o.Status != "unmatched" && !want.Contains(o.NearRow)) o.Status += ", other room";
         }
 
         // CSV
@@ -840,10 +846,27 @@ public class DuctsToPluto
             { int c; tally.TryGetValue(k, out c); tally[k] = c + 1; }
         }
         sum.AppendLine("openings:"); foreach (KeyValuePair<string, int> kv in tally) sum.AppendLine("  " + kv.Key + ": " + kv.Value);
+        // by part type: size band and match status (which types carry the problems)
+        foreach (string what in new[] { "size", "status" })
+        {
+            var xt = new SortedDictionary<string, SortedDictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
+            foreach (Opening o in ops)
+            {
+                string t = PartType(rows[o.Row - 1].Name) + (o.Shape == "round" ? " (round)" : "");
+                SortedDictionary<string, int> h; if (!xt.TryGetValue(t, out h)) { h = new SortedDictionary<string, int>(); xt[t] = h; }
+                string k = what == "size" ? o.SizeBand : o.Status; int c; h.TryGetValue(k, out c); h[k] = c + 1;
+            }
+            sum.AppendLine(what == "size" ? "size vs stated by part type (connectors):" : "match status by part type (connectors):");
+            foreach (KeyValuePair<string, SortedDictionary<string, int>> t in xt)
+            {
+                var parts = new List<string>(); foreach (KeyValuePair<string, int> h in t.Value) parts.Add(h.Key + ": " + h.Value);
+                sum.AppendLine("  " + t.Key + " -> " + string.Join("; ", parts.ToArray()));
+            }
+        }
         var dist = new[] { 0, 0, 0, 0, 0 };
         foreach (Opening o in ops) { double d = o.Near; dist[double.IsNaN(d) ? 4 : d <= 0.25 ? 0 : d <= 1 ? 1 : d <= 6 ? 2 : 3]++; }
         sum.AppendLine(string.Format(Inv, "nearest other opening: <= 1/4 in {0}; <= 1 in {1}; <= 6 in {2}; farther {3}; none {4}", dist[0], dist[1], dist[2], dist[3], dist[4]));
-        if (!string.IsNullOrEmpty(room)) sum.AppendLine("(openings at the room boundary show as unmatched: their neighbours are outside the filter)");
+        if (!string.IsNullOrEmpty(room)) sum.AppendLine("(neighbours are searched in every room: \", other room\" = the connector joins a part outside " + room + ")");
         File.WriteAllText(outBase + ".probe.txt", sum.ToString());
 
         // overlay: 6 in stub per opening along its normal
