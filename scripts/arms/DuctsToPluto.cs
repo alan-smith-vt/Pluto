@@ -707,11 +707,12 @@ public class DuctsToPluto
         public int Row; public string Shape; public double A, B, Dia;   // inches
         public double[] C, N; public double Planar, Perim;              // C feet; Planar / Perim inches
         public bool SizeOk; public double Near = double.NaN, Dot = double.NaN; public int NearRow; public string Status = "";
+        public int Rings = 1; public string Outer = "";                // rings merged into this connector; largest ring's size
     }
 
     public static Result ExportProbe(string runDir, string outBase, string modelId, string lengthUnit, string room)
     {
-        const double WeldFt = 1e-3, BigPerimIn = 12, MatchIn = 1, SlipIn = 6;
+        const double WeldFt = 1e-3, BigPerimIn = 12, MatchIn = 1, SlipIn = 6, EndTolIn = 1;
         double scale = LengthScale(lengthUnit);
         var rows = ReadRows(Path.Combine(runDir, "ducts.csv"));
         bool hasRoom = false; foreach (Row r in rows) if (r.Room != "") { hasRoom = true; break; }
@@ -730,19 +731,47 @@ public class DuctsToPluto
         {
             float[] f;
             if (!tri.TryGetValue(row, out f) || f.Length < 9) { noTri++; continue; }
-            int big = 0, small = 0;
+            int small = 0, interior = 0;
+            var ends = new List<Opening>();
             foreach (List<double[]> loop in BoundaryLoops(f, WeldFt))
             {
                 Opening o = Describe(loop);
                 if (o == null || o.Perim < BigPerimIn) { small++; continue; }
-                big++; o.Row = row;
+                // an end has all of the part on one side of its plane (EndTolIn): the normal is then turned
+                // to point out of the part; a ring with mesh on both sides (stiffener band, seam) is interior
+                double dLo = double.MaxValue, dHi = double.MinValue;
+                for (int k = 0; k + 2 < f.Length; k += 3)
+                {
+                    double d = ((f[k] - o.C[0]) * o.N[0] + (f[k + 1] - o.C[1]) * o.N[1] + (f[k + 2] - o.C[2]) * o.N[2]) * 12;
+                    if (d < dLo) dLo = d; if (d > dHi) dHi = d;
+                }
+                if (dHi <= EndTolIn) { }
+                else if (dLo >= -EndTolIn) { for (int k = 0; k < 3; k++) o.N[k] = -o.N[k]; }
+                else { interior++; continue; }
+                o.Row = row; ends.Add(o);
+            }
+            // rings at one end (same plane within EndTolIn, centres within 2 in, same outward direction) -> one
+            // connector, sized by its smallest ring (the duct; the larger ones are flange / collar / other skin)
+            ends.Sort((x, y) => x.Perim.CompareTo(y.Perim));
+            var conns = new List<Opening>();
+            foreach (Opening o in ends)
+            {
+                Opening hit = null;
+                foreach (Opening c in conns)
+                {
+                    double dx = o.C[0] - c.C[0], dy = o.C[1] - c.C[1], dz = o.C[2] - c.C[2];
+                    double along = Math.Abs(dx * c.N[0] + dy * c.N[1] + dz * c.N[2]) * 12, all = Math.Sqrt(dx * dx + dy * dy + dz * dz) * 12;
+                    if (o.N[0] * c.N[0] + o.N[1] * c.N[1] + o.N[2] * c.N[2] > 0.95 && along <= EndTolIn && all <= 2 + EndTolIn) { hit = c; break; }
+                }
+                if (hit != null) { hit.Rings++; hit.Outer = o.Shape == "round" ? string.Format(Inv, "round {0:0.#}", o.Dia) : string.Format(Inv, "{0:0.#}x{1:0.#}", o.A, o.B); continue; }
                 double sa, sb;
                 if (StatedSize(rows[row - 1], out sa, out sb))
                     o.SizeOk = o.Shape == "round" ? Math.Abs(o.Dia - Math.Max(sa, sb)) <= 1.5
                         : (Math.Abs(o.A - sa) <= 1.5 && Math.Abs(o.B - sb) <= 1.5) || (Math.Abs(o.A - sb) <= 1.5 && Math.Abs(o.B - sa) <= 1.5);
-                ops.Add(o);
+                conns.Add(o);
             }
-            loopsOf[row] = new[] { big, small };
+            ops.AddRange(conns);
+            loopsOf[row] = new[] { conns.Count, small, interior, ends.Count };
         }
         // nearest opening on another part
         for (int i = 0; i < ops.Count; i++)
@@ -758,17 +787,17 @@ public class DuctsToPluto
             if (bj < 0) { o.Status = "unmatched"; continue; }
             o.Near = Math.Sqrt(best) * 12; o.NearRow = ops[bj].Row;
             o.Dot = o.N[0] * ops[bj].N[0] + o.N[1] * ops[bj].N[1] + o.N[2] * ops[bj].N[2];
-            o.Status = o.Near <= MatchIn && Math.Abs(o.Dot) > 0.9 ? "joint" : o.Near <= SlipIn && Math.Abs(o.Dot) > 0.9 ? "near (slip / gap)" : "unmatched";
+            o.Status = o.Near <= MatchIn && o.Dot < -0.9 ? "joint" : o.Near <= SlipIn && Math.Abs(o.Dot) > 0.9 ? "near (slip / gap)" : "unmatched";
         }
 
         // CSV
         var csv = new List<string>();
-        csv.Add("Row,NavisId,IfcGUID,Name,Type,StatedSize,Room,RunName,Shape,A_in,B_in,Dia_in,SizeOk,Cx_ft,Cy_ft,Cz_ft,Nx,Ny,Nz,Planarity_in,Perimeter_in,Nearest_in,NearestRow,NormalDot,Status");
+        csv.Add("Row,NavisId,IfcGUID,Name,Type,StatedSize,Room,RunName,Shape,A_in,B_in,Dia_in,SizeOk,Rings,OuterRing,Cx_ft,Cy_ft,Cz_ft,Nx,Ny,Nz,Planarity_in,Perimeter_in,Nearest_in,NearestRow,NormalDot,Status");
         foreach (Opening o in ops)
         {
             Row r = rows[o.Row - 1];
             csv.Add(string.Join(",", new[] { o.Row.ToString(Inv), r.NavisId, r.Guid, CsvCell(r.Name), PartType(r.Name), CsvCell(r.SizeText), CsvCell(r.Room), CsvCell(r.RunName), o.Shape,
-                F1(o.A), F1(o.B), F1(o.Dia), o.SizeOk ? "1" : "0", F3(o.C[0]), F3(o.C[1]), F3(o.C[2]), F3(o.N[0]), F3(o.N[1]), F3(o.N[2]),
+                F1(o.A), F1(o.B), F1(o.Dia), o.SizeOk ? "1" : "0", o.Rings.ToString(Inv), CsvCell(o.Outer), F3(o.C[0]), F3(o.C[1]), F3(o.C[2]), F3(o.N[0]), F3(o.N[1]), F3(o.N[2]),
                 F1(o.Planar), F1(o.Perim), F1(o.Near), o.NearRow > 0 ? o.NearRow.ToString(Inv) : "", F3(o.Dot), o.Status }));
         }
         File.WriteAllLines(outBase + ".openings.csv", csv.ToArray());
@@ -776,15 +805,17 @@ public class DuctsToPluto
         // summary: per part type, how many big openings, shapes, size agreement, match status
         var sum = new StringBuilder();
         sum.AppendLine(string.Format(Inv, "Opening probe {0}  room {1}", runDir, string.IsNullOrEmpty(room) ? "(all)" : room));
-        sum.AppendLine(string.Format(Inv, "fabrication parts {0}; without triangles {1}; openings (perimeter >= {2} in) {3}", want.Count, noTri, BigPerimIn, ops.Count));
+        int rEnd = 0, rInt = 0, rSmall = 0; foreach (int[] v in loopsOf.Values) { rEnd += v[3]; rInt += v[2]; rSmall += v[1]; }
+        sum.AppendLine(string.Format(Inv, "fabrication parts {0}; without triangles {1}; rings (perimeter >= {2} in): at ends {3}, interior {4}; smaller loops {5}", want.Count, noTri, BigPerimIn, rEnd, rInt, rSmall));
+        sum.AppendLine(string.Format(Inv, "connectors (end rings merged per end) {0}", ops.Count));
         var byType = new SortedDictionary<string, SortedDictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
         foreach (KeyValuePair<int, int[]> kv in loopsOf)
         {
             string t = PartType(rows[kv.Key - 1].Name) + (IsRound(rows[kv.Key - 1]) ? " (round)" : "");
             SortedDictionary<string, int> h; if (!byType.TryGetValue(t, out h)) { h = new SortedDictionary<string, int>(); byType[t] = h; }
-            string k = kv.Value[0] + " openings" + (kv.Value[1] > 0 ? " +small" : ""); int c; h.TryGetValue(k, out c); h[k] = c + 1;
+            string k = kv.Value[0] + " connectors" + (kv.Value[2] > 0 ? " +interior" : ""); int c; h.TryGetValue(k, out c); h[k] = c + 1;
         }
-        sum.AppendLine("parts by type: count by number of openings (\"+small\" = also loops under the perimeter cut: holes, seams)");
+        sum.AppendLine("parts by type: count by number of connectors (end rings merged per end; \"+interior\" = also rings with the part on both sides: stiffeners, seams)");
         foreach (KeyValuePair<string, SortedDictionary<string, int>> t in byType)
         {
             var parts = new List<string>(); foreach (KeyValuePair<string, int> h in t.Value) parts.Add(h.Key + ": " + h.Value);
@@ -794,7 +825,7 @@ public class DuctsToPluto
         foreach (Opening o in ops)
         {
             foreach (string k in new[] { "shape " + o.Shape, "size " + (o.SizeOk ? "agrees with stated" : "differs / no stated size"), "status " + o.Status,
-                "planarity " + (o.Planar <= 0.25 ? "<= 1/4 in" : o.Planar <= 1 ? "<= 1 in" : "> 1 in (not a flat opening)") })
+                "rings per connector " + o.Rings, "planarity " + (o.Planar <= 0.25 ? "<= 1/4 in" : o.Planar <= 1 ? "<= 1 in" : "> 1 in (not a flat opening)") })
             { int c; tally.TryGetValue(k, out c); tally[k] = c + 1; }
         }
         sum.AppendLine("openings:"); foreach (KeyValuePair<string, int> kv in tally) sum.AppendLine("  " + kv.Key + ": " + kv.Value);
