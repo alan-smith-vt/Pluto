@@ -820,8 +820,9 @@ public class DuctsToPluto
         File.WriteAllLines(outBase + ".openings.csv", csv.ToArray());
 
         // summary: per part type, how many big openings, shapes, size agreement, match status
-        var sum = new StringBuilder();
-        sum.AppendLine(string.Format(Inv, "Opening probe {0}  room {1}", runDir, string.IsNullOrEmpty(room) ? "(all)" : room));
+        // probe.txt: header, then NEW (what the latest change adds), then the sections already reviewed
+        var head = new StringBuilder(); var fresh = new StringBuilder(); var sum = new StringBuilder();
+        head.AppendLine(string.Format(Inv, "Opening probe {0}  room {1}", runDir, string.IsNullOrEmpty(room) ? "(all)" : room));
         int rEnd = 0, rInt = 0, rSmall = 0; foreach (int[] v in loopsOf.Values) { rEnd += v[3]; rInt += v[2]; rSmall += v[1]; }
         sum.AppendLine(string.Format(Inv, "fabrication parts {0}; without triangles {1}; rings (perimeter >= {2} in): at ends {3}, interior {4}; smaller loops {5}", want.Count, noTri, BigPerimIn, rEnd, rInt, rSmall));
         sum.AppendLine(string.Format(Inv, "connectors (end rings merged per end) {0}", ops.Count));
@@ -841,12 +842,16 @@ public class DuctsToPluto
         var tally = new SortedDictionary<string, int>();
         foreach (Opening o in ops)
         {
-            foreach (string k in new[] { "shape " + o.Shape, "size vs stated: " + o.SizeBand, "status " + o.Status,
+            foreach (string k in new[] { "shape " + o.Shape, "size vs stated: " + o.SizeBand,
                 "rings per connector " + o.Rings, "planarity " + (o.Planar <= 0.25 ? "<= 1/4 in" : o.Planar <= 1 ? "<= 1 in" : "> 1 in (not a flat opening)") })
             { int c; tally.TryGetValue(k, out c); tally[k] = c + 1; }
         }
         sum.AppendLine("openings:"); foreach (KeyValuePair<string, int> kv in tally) sum.AppendLine("  " + kv.Key + ": " + kv.Value);
-        // by part type: size band and match status (which types carry the problems)
+        // NEW: match status with neighbours searched in every room, and both breakdowns by part type
+        var st = new SortedDictionary<string, int>();
+        foreach (Opening o in ops) { int c; st.TryGetValue(o.Status, out c); st[o.Status] = c + 1; }
+        fresh.AppendLine("match status (neighbours searched in every room; \", other room\" = joins a part outside the room):");
+        foreach (KeyValuePair<string, int> kv in st) fresh.AppendLine("  " + kv.Key + ": " + kv.Value);
         foreach (string what in new[] { "size", "status" })
         {
             var xt = new SortedDictionary<string, SortedDictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
@@ -856,24 +861,25 @@ public class DuctsToPluto
                 SortedDictionary<string, int> h; if (!xt.TryGetValue(t, out h)) { h = new SortedDictionary<string, int>(); xt[t] = h; }
                 string k = what == "size" ? o.SizeBand : o.Status; int c; h.TryGetValue(k, out c); h[k] = c + 1;
             }
-            sum.AppendLine(what == "size" ? "size vs stated by part type (connectors):" : "match status by part type (connectors):");
+            fresh.AppendLine(what == "size" ? "size vs stated by part type (connectors):" : "match status by part type (connectors):");
             foreach (KeyValuePair<string, SortedDictionary<string, int>> t in xt)
             {
                 var parts = new List<string>(); foreach (KeyValuePair<string, int> h in t.Value) parts.Add(h.Key + ": " + h.Value);
-                sum.AppendLine("  " + t.Key + " -> " + string.Join("; ", parts.ToArray()));
+                fresh.AppendLine("  " + t.Key + " -> " + string.Join("; ", parts.ToArray()));
             }
         }
         var dist = new[] { 0, 0, 0, 0, 0 };
         foreach (Opening o in ops) { double d = o.Near; dist[double.IsNaN(d) ? 4 : d <= 0.25 ? 0 : d <= 1 ? 1 : d <= 6 ? 2 : 3]++; }
         sum.AppendLine(string.Format(Inv, "nearest other opening: <= 1/4 in {0}; <= 1 in {1}; <= 6 in {2}; farther {3}; none {4}", dist[0], dist[1], dist[2], dist[3], dist[4]));
-        if (!string.IsNullOrEmpty(room)) sum.AppendLine("(neighbours are searched in every room: \", other room\" = the connector joins a part outside " + room + ")");
-        File.WriteAllText(outBase + ".probe.txt", sum.ToString());
+        string report = head.ToString() + Environment.NewLine + "=== NEW ===" + Environment.NewLine + fresh.ToString()
+            + Environment.NewLine + "=== Reviewed before ===" + Environment.NewLine + sum.ToString();
+        File.WriteAllText(outBase + ".probe.txt", report);
 
         // overlay: 6 in stub per opening along its normal
         var nodes = new Dictionary<int, Node>(); int nextNode = 1;
         double[] lo = { double.MaxValue, double.MaxValue, double.MaxValue }, hi = { double.MinValue, double.MinValue, double.MinValue };
         foreach (Opening o in ops) for (int k = 0; k < 3; k++) { lo[k] = Math.Min(lo[k], o.C[k]); hi[k] = Math.Max(hi[k], o.C[k]); }
-        if (ops.Count == 0) { var r0 = new Result(); r0.Note = sum.ToString(); return r0; }
+        if (ops.Count == 0) { var r0 = new Result(); r0.Note = report; return r0; }
         double[] off = { Math.Round((lo[0] + hi[0]) / 2), Math.Round((lo[1] + hi[1]) / 2), Math.Round((lo[2] + hi[2]) / 2) };
         var sections = new List<RawViewerWriter.SectionDef>();
         sections.Add(RawViewerWriter.SectionDef.Pipe("opening", (float)(1.5 * scale / 12), (float)(0.375 * scale / 12)));
@@ -913,7 +919,7 @@ public class DuctsToPluto
         File.WriteAllText(scPath, sc.ToJson(), new UTF8Encoding(false));
         var res = new Result();
         res.BinPath = binPath; res.SidecarPath = scPath; res.GeometryHash = w.GeometryHash;
-        res.Nodes = nodes.Count; res.Beams = beams.Count; res.Note = sum.ToString();
+        res.Nodes = nodes.Count; res.Beams = beams.Count; res.Note = report;
         return res;
     }
 
