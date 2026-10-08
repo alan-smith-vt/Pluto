@@ -807,22 +807,17 @@ public class DuctsToPluto
                 o.Members = new List<Opening> { o };
                 conns.Add(o);
             }
-            // where and how big a connector is (2026-10-08): from the smallest of its rings whose outline contains
-            // every other ring's centre (lateral offset within half its short side). An off-centre piece (a flange
-            // outline in pieces, which kinked a transition's line) cannot contain the duct's centre; a centred
-            // rim can. None qualifies: the largest ring.
+            // where and how big a connector is (2026-10-08, from a real eccentric transition: flange 82x36 off 0,
+            // an extra 78.2x27.4 ring off 8.1 in at the same end): POSITION from the largest ring, the flange's
+            // outer edge, which is centred on the duct; SIZE from the smallest ring concentric with it (within
+            // 1 in), else the largest. Taking the smallest containing ring put that connector 8 in off-centre.
             foreach (Opening o in conns)
             {
-                Opening pick = o.Members[o.Members.Count - 1];
+                Opening big = o.Members[o.Members.Count - 1], sz = big;
                 foreach (Opening m in o.Members)                      // smallest first
-                {
-                    double half = 0.5 * (m.Shape == "round" ? m.Dia : Math.Min(m.A, m.B));
-                    bool holds = true;
-                    foreach (Opening q in o.Members) if (q != m && LateralIn(m, q) > half) { holds = false; break; }
-                    if (holds) { pick = m; break; }
-                }
-                o.C = (double[])pick.C.Clone();
-                o.Shape = pick.Shape; o.A = pick.A; o.B = pick.B; o.Dia = pick.Dia; o.Planar = pick.Planar; o.Perim = pick.Perim;
+                    if (m == big || LateralIn(big, m) <= 1) { sz = m; break; }
+                o.C = (double[])big.C.Clone();
+                o.Shape = sz.Shape; o.A = sz.A; o.B = sz.B; o.Dia = sz.Dia; o.Planar = sz.Planar; o.Perim = sz.Perim;
                 double sa, sb;
                 if (StatedSize(rows[row - 1], out sa, out sb))
                 {
