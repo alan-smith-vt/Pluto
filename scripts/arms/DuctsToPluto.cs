@@ -547,9 +547,10 @@ public class DuctsToPluto
 
     // Side pass (2026-10-08): the Revit centrelines (cl_segments.csv / cl_nodes.csv, nodes as merged by the
     // button) as thin beams in their own file, one group per RunName (sorted by service), rows without a
-    // RunName in their own red group; fabrication straights without a centreline drawn along the bbox axis that
-    // matches their stated size (own group; none oriented that way are listed in <out>.cl-unoriented.txt). Node groups to review connectivity: free ends (degree 1), junctions (degree >= 3) and
-    // RunName changes (segments of different RunNames meet). Labels: run | IfcGUID #NavisId | category | size.
+    // RunName in their own red group; fabrication straights without a centreline placed as Export places
+    // them (mesh body, else the bbox axis matching the stated size; own group; the rest listed in
+    // <out>.cl-unoriented.txt). Node groups to review connectivity: free ends (degree 1), junctions
+    // (degree >= 3) and RunName changes (segments of different RunNames meet). Labels: run | IfcGUID #NavisId | category | size.
     public static Result ExportCentrelines(string runDir, string outBase, string modelId, string lengthUnit)
     {
         const double OdIn = 2;   // drawn pipe OD, inches
@@ -616,15 +617,28 @@ public class DuctsToPluto
             if (s[0] < 1 || s[0] > rows.Count || !nodeXyz.ContainsKey(s[1]) || !nodeXyz.ContainsKey(s[2])) { skipped++; continue; }
             add(rows[s[0] - 1], clNode(s[1]), clNode(s[2]));
         }
+        var fabRows = new HashSet<int>();
+        for (int i = 0; i < rows.Count; i++) if (string.Equals(rows[i].Cat, Fab, StringComparison.OrdinalIgnoreCase)) fabRows.Add(i + 1);
+        var fabTri = ReadTriangles(Path.Combine(runDir, "ducts_tri.bin"), fabRows);
         for (int i = 0; i < rows.Count; i++)
         {
             Row r = rows[i];
-            if (rowsWithCl.Contains(i + 1)) continue;
-            if (!r.Cat.Equals(Fab, StringComparison.OrdinalIgnoreCase) || !r.Name.TrimStart().StartsWith("Straight", StringComparison.OrdinalIgnoreCase)) continue;
-            // run axis = the bbox axis whose other two extents match the stated size, as in Export. Not the
-            // fit's principal axis: a 74 x 28 straight 24 in long (stiffener spacing) is longest crosswise.
-            double sa, sb; double[] b1, b2;
-            if (!StatedSize(r, out sa, out sb) || !BboxAxis(r, sa, sb, out b1, out b2)) { unoriented.Add(labelOf(r)); continue; }
+            if (rowsWithCl.Contains(i + 1) || !fabRows.Contains(i + 1)) continue;
+            bool nameSized = !double.IsNaN(r.NameW) || !double.IsNaN(r.NameD);
+            if (!r.Name.TrimStart().StartsWith("Straight", StringComparison.OrdinalIgnoreCase) && !(nameSized && FitTrusted(r))) continue;   // as Export
+            // placed as Export places it: the body measured from its own walls (stiffeners, flanges excluded),
+            // else the bbox axis whose other two extents match the stated size. Never the fit's principal axis:
+            // a 74 x 28 straight 24 in long (stiffener spacing) is longest crosswise.
+            double[] b1 = null, b2 = null; float[] ftri; double sa, sb;
+            Body body = fabTri.TryGetValue(i + 1, out ftri) ? MeasureBody(ftri) : null;
+            if (body != null) { b1 = body.E1; b2 = body.E2; }
+            else if (!StatedSize(r, out sa, out sb) || !BboxAxis(r, sa, sb, out b1, out b2))
+            {
+                unoriented.Add(labelOf(r) + (ftri == null ? " | no triangles" : " | body not measurable") + (StatedSize(r, out sa, out sb)
+                    ? string.Format(Inv, " | stated {0:0.##}x{1:0.##}, bbox {2}", sa, sb, r.Min == null ? "-" : string.Format(Inv, "{0:0.#}x{1:0.#}x{2:0.#} in",
+                        (r.Max[0] - r.Min[0]) * 12, (r.Max[1] - r.Min[1]) * 12, (r.Max[2] - r.Min[2]) * 12)) : " | no stated size"));
+                continue;
+            }
             int id = add(r, ptNode(b1), ptNode(b2));
             if (id > 0) fitted.Add((uint)id);
         }
@@ -653,7 +667,7 @@ public class DuctsToPluto
             else sc.AddGroup("Run " + run, pal[pi++ % pal.Length], "beams", l, new[] { "duct", "centreline", "run", ServiceOf(run) }, null);
         }
         fitted.Sort();
-        if (fitted.Count > 0) sc.AddGroup("Fabrication straights (bbox axis, no centreline)", "#ffc04d", "beams", fitted, new[] { "duct", "centreline", "fitted" }, "CL_FITTED");
+        if (fitted.Count > 0) sc.AddGroup("Fabrication straights (no centreline: mesh body or bbox axis)", "#ffc04d", "beams", fitted, new[] { "duct", "centreline", "fitted" }, "CL_FITTED");
         var ends = new List<uint>(); var junctions = new List<uint>(); var changes = new List<uint>();
         foreach (KeyValuePair<int, int> kv in degree)
         {
@@ -672,7 +686,7 @@ public class DuctsToPluto
         var res = new Result();
         res.BinPath = binPath; res.SidecarPath = scPath; res.GeometryHash = w.GeometryHash;
         res.Nodes = nodes.Count; res.Beams = beams.Count; res.Skipped = skipped; res.LooseEnds = ends.Count;
-        res.Note = string.Format(Inv, "centrelines: {0} beams ({1} fabrication straights from bbox axis, {9} not oriented: <out>.cl-unoriented.txt), {2} run groups{3}; nodes {4}: free ends {5}, junctions {6}, RunName changes {7}; segments skipped {8}",
+        res.Note = string.Format(Inv, "centrelines: {0} beams ({1} fabrication straights placed from mesh body or bbox, {9} not placed: <out>.cl-unoriented.txt), {2} run groups{3}; nodes {4}: free ends {5}, junctions {6}, RunName changes {7}; segments skipped {8}",
             beams.Count, fitted.Count, runs.Count, byRun.ContainsKey("") ? " incl. No RunName" : "", nodes.Count, ends.Count, junctions.Count, changes.Count, skipped, unoriented.Count);
         return res;
     }
