@@ -707,12 +707,13 @@ public class DuctsToPluto
         public int Row; public string Shape; public double A, B, Dia;   // inches
         public double[] C, N; public double Planar, Perim;              // C feet; Planar / Perim inches
         public bool SizeOk; public string SizeBand = "no stated size"; public double Near = double.NaN, Dot = double.NaN; public int NearRow; public string Status = "";
+        public double DA = double.NaN, DB = double.NaN;                 // measured minus stated (larger / smaller side), inches
         public int Rings = 1; public string Outer = "";                // rings merged into this connector; largest ring's size
     }
 
     public static Result ExportProbe(string runDir, string outBase, string modelId, string lengthUnit, string room)
     {
-        const double WeldFt = 1e-3, BigPerimIn = 12, MatchIn = 1, SlipIn = 6, EndTolIn = 1;
+        const double WeldFt = 1e-3, BigPerimIn = 12, MatchIn = 1, SlipIn = 6, EndTolIn = 1, SideTolIn = 1.5;
         double scale = LengthScale(lengthUnit);
         var rows = ReadRows(Path.Combine(runDir, "ducts.csv"));
         bool hasRoom = false; foreach (Row r in rows) if (r.Room != "") { hasRoom = true; break; }
@@ -780,6 +781,7 @@ public class DuctsToPluto
                         double hiS = Math.Max(sa, sb), loS = Math.Min(sa, sb);
                         e1 = o.A - hiS; e2 = o.B - loS;
                     }
+                    o.DA = e1; o.DB = e2;
                     o.SizeOk = Math.Abs(e1) <= 1 && Math.Abs(e2) <= 1;
                     o.SizeBand = o.SizeOk ? "agrees" : e1 >= -1 && e2 >= -1 && e1 <= 8 && e2 <= 8 ? "flange (1-8 in larger)" : "differs";
                 }
@@ -805,6 +807,26 @@ public class DuctsToPluto
             o.Dot = o.N[0] * all[bj].N[0] + o.N[1] * all[bj].N[1] + o.N[2] * all[bj].N[2];
             o.Status = o.Near <= MatchIn && o.Dot < -0.9 ? "joint" : o.Near <= SlipIn && Math.Abs(o.Dot) > 0.9 ? "near (slip / gap)" : "unmatched";
             if (o.Status != "unmatched" && !want.Contains(o.NearRow)) o.Status += ", other room";
+        }
+        // side branch: an unmatched connector lying on another part's wall (within SideTolIn) and facing it (a tap /
+        // branch base on a main duct, whose prism has no opening there)
+        foreach (Opening o in ops)
+        {
+            if (o.Status != "unmatched") continue;
+            double bestD = double.MaxValue; int bestRow = 0;
+            foreach (int r2 in allFab)
+            {
+                Row q = rows[r2 - 1]; float[] f2;
+                if (r2 == o.Row || q.Min == null || !tri.TryGetValue(r2, out f2)) continue;
+                double pad = SideTolIn / 12;
+                if (o.C[0] < q.Min[0] - pad || o.C[0] > q.Max[0] + pad || o.C[1] < q.Min[1] - pad || o.C[1] > q.Max[1] + pad || o.C[2] < q.Min[2] - pad || o.C[2] > q.Max[2] + pad) continue;
+                for (int t = 0; t + 8 < f2.Length; t += 9)
+                {
+                    double[] tn; double d = PointTriangle(o.C, f2, t, out tn) * 12;
+                    if (d < bestD && tn != null && Math.Abs(tn[0] * o.N[0] + tn[1] * o.N[1] + tn[2] * o.N[2]) > 0.9) { bestD = d; bestRow = r2; }
+                }
+            }
+            if (bestD <= SideTolIn) { o.Status = "side branch" + (want.Contains(bestRow) ? "" : ", other room"); o.NearRow = bestRow; o.Near = bestD; }
         }
 
         // CSV
@@ -847,28 +869,31 @@ public class DuctsToPluto
             { int c; tally.TryGetValue(k, out c); tally[k] = c + 1; }
         }
         sum.AppendLine("openings:"); foreach (KeyValuePair<string, int> kv in tally) sum.AppendLine("  " + kv.Key + ": " + kv.Value);
-        // NEW: at most 3 short lines, meant to be typed back by hand
-        // 1. status totals; 2. size problems by type (differs / no stated size); 3. unmatched by type
-        int nJ = 0, nJo = 0, nN = 0, nNo = 0, nU = 0;
-        var badSize = new SortedDictionary<string, int[]>(StringComparer.OrdinalIgnoreCase); var unm = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        // NEW: at most 3 lines of at most 5 items, typed back by hand
+        // 1. status totals (side branch is new); 2. unmatched by type (top 5); 3. size gap of "differs" by type (top 3)
+        int nJ = 0, nJo = 0, nS = 0, nN = 0, nU = 0;
+        var unm = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase); var gap = new Dictionary<string, List<double[]>>(StringComparer.OrdinalIgnoreCase);
         foreach (Opening o in ops)
         {
             string t = PartType(rows[o.Row - 1].Name) + (o.Shape == "round" ? " (r)" : "");
-            bool other = o.Status.EndsWith(", other room");
-            if (o.Status.StartsWith("joint")) { nJ++; if (other) nJo++; }
-            else if (o.Status.StartsWith("near")) { nN++; if (other) nNo++; }
+            if (o.Status.StartsWith("joint")) { nJ++; if (o.Status.EndsWith(", other room")) nJo++; }
+            else if (o.Status.StartsWith("side branch")) nS++;
+            else if (o.Status.StartsWith("near")) nN++;
             else { nU++; int c; unm.TryGetValue(t, out c); unm[t] = c + 1; }
-            if (o.SizeBand == "differs" || o.SizeBand == "no stated size")
-            {
-                int[] b; if (!badSize.TryGetValue(t, out b)) { b = new int[2]; badSize[t] = b; }
-                b[o.SizeBand == "differs" ? 0 : 1]++;
-            }
+            if (o.SizeBand == "differs") { List<double[]> l; if (!gap.TryGetValue(t, out l)) { l = new List<double[]>(); gap[t] = l; } l.Add(new[] { o.DA, o.DB }); }
         }
-        fresh.AppendLine(string.Format(Inv, "status: joint {0} ({1} other room), near {2} ({3} other room), unmatched {4}", nJ, nJo, nN, nNo, nU));
-        var sb1 = new List<string>(); foreach (KeyValuePair<string, int[]> kv in badSize) sb1.Add(kv.Key + " " + kv.Value[0] + "/" + kv.Value[1]);
-        fresh.AppendLine("size differs/none by type: " + (sb1.Count > 0 ? string.Join(", ", sb1.ToArray()) : "-"));
-        var sb2 = new List<string>(); foreach (KeyValuePair<string, int> kv in unm) sb2.Add(kv.Key + " " + kv.Value);
-        fresh.AppendLine("unmatched by type: " + (sb2.Count > 0 ? string.Join(", ", sb2.ToArray()) : "-"));
+        fresh.AppendLine(string.Format(Inv, "status: joint {0} ({1} other room), side branch {2}, near {3}, unmatched {4}", nJ, nJo, nS, nN, nU));
+        var ul = new List<KeyValuePair<string, int>>(unm); ul.Sort((x, y) => y.Value.CompareTo(x.Value));
+        var u5 = new List<string>(); for (int k = 0; k < ul.Count && k < 5; k++) u5.Add(ul[k].Key + " " + ul[k].Value);
+        fresh.AppendLine("unmatched by type: " + (u5.Count > 0 ? string.Join(", ", u5.ToArray()) : "-"));
+        var gl = new List<KeyValuePair<string, List<double[]>>>(gap); gl.Sort((x, y) => y.Value.Count.CompareTo(x.Value.Count));
+        var g3 = new List<string>();
+        for (int k = 0; k < gl.Count && k < 3; k++)
+        {
+            var a = new List<double>(); var b = new List<double>(); foreach (double[] d in gl[k].Value) { a.Add(d[0]); b.Add(d[1]); }
+            g3.Add(string.Format(Inv, "{0} {1:+0.#;-0.#;0}/{2:+0.#;-0.#;0} ({3})", gl[k].Key, Median(a), Median(b), a.Count));
+        }
+        fresh.AppendLine("size differs, median measured-stated in (n): " + (g3.Count > 0 ? string.Join(", ", g3.ToArray()) : "-"));
         var dist = new[] { 0, 0, 0, 0, 0 };
         foreach (Opening o in ops) { double d = o.Near; dist[double.IsNaN(d) ? 4 : d <= 0.25 ? 0 : d <= 1 ? 1 : d <= 6 ? 2 : 3]++; }
         sum.AppendLine(string.Format(Inv, "nearest other opening: <= 1/4 in {0}; <= 1 in {1}; <= 6 in {2}; farther {3}; none {4}", dist[0], dist[1], dist[2], dist[3], dist[4]));
@@ -1027,6 +1052,41 @@ public class DuctsToPluto
         }
         o.Shape = "rect"; o.A = Math.Max(a1 - a0, b1 - b0) * 12; o.B = Math.Min(a1 - a0, b1 - b0) * 12; o.Dia = double.NaN;
         return o;
+    }
+
+    static double Median(List<double> v) { if (v.Count == 0) return double.NaN; v.Sort(); return v.Count % 2 == 1 ? v[v.Count / 2] : (v[v.Count / 2 - 1] + v[v.Count / 2]) / 2; }
+
+    // Distance from p to triangle t of f (feet), Ericson's closest-point method; n = the triangle's unit normal (null if degenerate).
+    static double PointTriangle(double[] p, float[] f, int t, out double[] n)
+    {
+        double[] a = { f[t], f[t + 1], f[t + 2] }, b = { f[t + 3], f[t + 4], f[t + 5] }, c = { f[t + 6], f[t + 7], f[t + 8] };
+        double[] ab = { b[0] - a[0], b[1] - a[1], b[2] - a[2] }, ac = { c[0] - a[0], c[1] - a[1], c[2] - a[2] }, ap = { p[0] - a[0], p[1] - a[1], p[2] - a[2] };
+        double[] cr = { ab[1] * ac[2] - ab[2] * ac[1], ab[2] * ac[0] - ab[0] * ac[2], ab[0] * ac[1] - ab[1] * ac[0] };
+        double cl = Math.Sqrt(cr[0] * cr[0] + cr[1] * cr[1] + cr[2] * cr[2]);
+        n = cl > 1e-12 ? new[] { cr[0] / cl, cr[1] / cl, cr[2] / cl } : null;
+        Func<double[], double[], double> dot = (x, y) => x[0] * y[0] + x[1] * y[1] + x[2] * y[2];
+        Func<double[], double> dist = q => Math.Sqrt((p[0] - q[0]) * (p[0] - q[0]) + (p[1] - q[1]) * (p[1] - q[1]) + (p[2] - q[2]) * (p[2] - q[2]));
+        Func<double[], double[], double, double[]> along = (o, d, s0) => new[] { o[0] + d[0] * s0, o[1] + d[1] * s0, o[2] + d[2] * s0 };
+        double d1 = dot(ab, ap), d2 = dot(ac, ap);
+        if (d1 <= 0 && d2 <= 0) return dist(a);
+        double[] bp = { p[0] - b[0], p[1] - b[1], p[2] - b[2] };
+        double d3 = dot(ab, bp), d4 = dot(ac, bp);
+        if (d3 >= 0 && d4 <= d3) return dist(b);
+        double vc = d1 * d4 - d3 * d2;
+        if (vc <= 0 && d1 >= 0 && d3 <= 0) return dist(along(a, ab, d1 / (d1 - d3)));
+        double[] cp = { p[0] - c[0], p[1] - c[1], p[2] - c[2] };
+        double d5 = dot(ab, cp), d6 = dot(ac, cp);
+        if (d6 >= 0 && d5 <= d6) return dist(c);
+        double vb = d5 * d2 - d1 * d6;
+        if (vb <= 0 && d2 >= 0 && d6 <= 0) return dist(along(a, ac, d2 / (d2 - d6)));
+        double va = d3 * d6 - d5 * d4;
+        if (va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0)
+        {
+            double w0 = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+            return dist(new[] { b[0] + (c[0] - b[0]) * w0, b[1] + (c[1] - b[1]) * w0, b[2] + (c[2] - b[2]) * w0 });
+        }
+        double den = 1 / (va + vb + vc), v = vb * den, w = vc * den;
+        return dist(new[] { a[0] + ab[0] * v + ac[0] * w, a[1] + ab[1] * v + ac[1] * w, a[2] + ab[2] * v + ac[2] * w });
     }
 
     static string PartType(string name)
