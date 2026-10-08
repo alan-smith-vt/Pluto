@@ -547,8 +547,8 @@ public class DuctsToPluto
 
     // Side pass (2026-10-08): the Revit centrelines (cl_segments.csv / cl_nodes.csv, nodes as merged by the
     // button) as thin beams in their own file, one group per RunName (sorted by service), rows without a
-    // RunName in their own red group; fabrication straights without a centreline drawn from their fitted ends
-    // (own group). Node groups to review connectivity: free ends (degree 1), junctions (degree >= 3) and
+    // RunName in their own red group; fabrication straights without a centreline drawn along the bbox axis that
+    // matches their stated size (own group; none oriented that way are listed in <out>.cl-unoriented.txt). Node groups to review connectivity: free ends (degree 1), junctions (degree >= 3) and
     // RunName changes (segments of different RunNames meet). Labels: run | IfcGUID #NavisId | category | size.
     public static Result ExportCentrelines(string runDir, string outBase, string modelId, string lengthUnit)
     {
@@ -591,7 +591,7 @@ public class DuctsToPluto
         var sections = new List<RawViewerWriter.SectionDef>();
         sections.Add(RawViewerWriter.SectionDef.Pipe("centreline", (float)(OdIn * scale / 12), (float)(OdIn / 4 * scale / 12)));
         var beams = new Dictionary<int, RawViewerWriter.BeamMember>(); var labels = new Dictionary<int, string>();
-        var byRun = new Dictionary<string, List<uint>>(StringComparer.Ordinal); var fitted = new List<uint>();
+        var byRun = new Dictionary<string, List<uint>>(StringComparer.Ordinal); var fitted = new List<uint>(); var unoriented = new List<string>();
         var runsAt = new Dictionary<int, HashSet<string>>(); var degree = new Dictionary<int, int>();
         int nextBeam = 1, skipped = 0;
         Func<Row, string> labelOf = r => (r.RunName != "" ? r.RunName : "(no RunName)") + " | " + r.Guid + (r.NavisId != "" ? " #" + r.NavisId : "")
@@ -619,9 +619,13 @@ public class DuctsToPluto
         for (int i = 0; i < rows.Count; i++)
         {
             Row r = rows[i];
-            if (rowsWithCl.Contains(i + 1) || r.E1 == null || r.E2 == null) continue;
+            if (rowsWithCl.Contains(i + 1)) continue;
             if (!r.Cat.Equals(Fab, StringComparison.OrdinalIgnoreCase) || !r.Name.TrimStart().StartsWith("Straight", StringComparison.OrdinalIgnoreCase)) continue;
-            int id = add(r, ptNode(r.E1), ptNode(r.E2));
+            // run axis = the bbox axis whose other two extents match the stated size, as in Export. Not the
+            // fit's principal axis: a 74 x 28 straight 24 in long (stiffener spacing) is longest crosswise.
+            double sa, sb; double[] b1, b2;
+            if (!StatedSize(r, out sa, out sb) || !BboxAxis(r, sa, sb, out b1, out b2)) { unoriented.Add(labelOf(r)); continue; }
+            int id = add(r, ptNode(b1), ptNode(b2));
             if (id > 0) fitted.Add((uint)id);
         }
         if (beams.Count == 0) throw new Exception("DuctsToPluto: no centrelines in " + runDir);
@@ -649,7 +653,7 @@ public class DuctsToPluto
             else sc.AddGroup("Run " + run, pal[pi++ % pal.Length], "beams", l, new[] { "duct", "centreline", "run", ServiceOf(run) }, null);
         }
         fitted.Sort();
-        if (fitted.Count > 0) sc.AddGroup("Fabrication straights (fitted ends, no centreline)", "#ffc04d", "beams", fitted, new[] { "duct", "centreline", "fitted" }, "CL_FITTED");
+        if (fitted.Count > 0) sc.AddGroup("Fabrication straights (bbox axis, no centreline)", "#ffc04d", "beams", fitted, new[] { "duct", "centreline", "fitted" }, "CL_FITTED");
         var ends = new List<uint>(); var junctions = new List<uint>(); var changes = new List<uint>();
         foreach (KeyValuePair<int, int> kv in degree)
         {
@@ -663,12 +667,13 @@ public class DuctsToPluto
         if (changes.Count > 0) sc.AddNodeGroup("RunName changes", "#ffd23f", changes, new[] { "duct", "centreline", "runChange" }, "CL_RUN_CHANGES");
         string scPath = outBase + ".features.json";
         File.WriteAllText(scPath, sc.ToJson(), new UTF8Encoding(false));
+        File.WriteAllLines(outBase + ".cl-unoriented.txt", unoriented.ToArray());
 
         var res = new Result();
         res.BinPath = binPath; res.SidecarPath = scPath; res.GeometryHash = w.GeometryHash;
         res.Nodes = nodes.Count; res.Beams = beams.Count; res.Skipped = skipped; res.LooseEnds = ends.Count;
-        res.Note = string.Format(Inv, "centrelines: {0} beams ({1} fitted fabrication straights), {2} run groups{3}; nodes {4}: free ends {5}, junctions {6}, RunName changes {7}; segments skipped {8}",
-            beams.Count, fitted.Count, runs.Count, byRun.ContainsKey("") ? " incl. No RunName" : "", nodes.Count, ends.Count, junctions.Count, changes.Count, skipped);
+        res.Note = string.Format(Inv, "centrelines: {0} beams ({1} fabrication straights from bbox axis, {9} not oriented: <out>.cl-unoriented.txt), {2} run groups{3}; nodes {4}: free ends {5}, junctions {6}, RunName changes {7}; segments skipped {8}",
+            beams.Count, fitted.Count, runs.Count, byRun.ContainsKey("") ? " incl. No RunName" : "", nodes.Count, ends.Count, junctions.Count, changes.Count, skipped, unoriented.Count);
         return res;
     }
 
