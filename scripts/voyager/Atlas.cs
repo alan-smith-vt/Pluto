@@ -5,7 +5,7 @@
 //
 // What it does: starting from one oid, walks CoreRelationOrigin `Hops` times (both
 // directions by default), classifies every node via CoreBaseClass, attaches bbox
-// (CoreSpatialIndex) and, for 80014 ports, JDistribPort/JDPipePort geometry.
+// (CoreSpatialIndex), JDistribPort place points for any port class, JDPipePort size for 80014.
 // Emits: text tree (console), edges CSV, and a self-contained HTML graph.
 //
 // Nothing here reads JNamedItem / strName / ItemName - labels are classid + oid only.
@@ -32,7 +32,7 @@ namespace Voyager
         public bool HasBbox;
         public double Cx, Cy, Cz;      // bbox centroid (m)
         public double Ex, Ey, Ez;      // bbox extents (m)
-        public bool HasPort;           // JDistribPort row found (80014 only)
+        public bool HasPort;           // JDistribPort row found (any class; NPD/OD only for 80014)
         public double Px, Py, Pz;      // PlacePointX/Y/Z (m)
         public double Npd;             // JDPipePort.NPD
         public double Od;              // JDPipePort.PipingOutsideDiameter (m)
@@ -79,7 +79,7 @@ namespace Voyager
         // Class display names - vault Classid Atlas. Unknown classids print as the number.
         public static Dictionary<int, string> ClassNames = new Dictionary<int, string>() {
             {80012,"pipe"},{80005,"fitting"},{80054,"instrument"},{80055,"specialty"},
-            {80042,"weld"},{80014,"port"},{80007,"HUB"},{80013,"run"},{9,"portproxy"},
+            {80042,"weld"},{80014,"port"},{80007,"HUB"},{80013,"run"},{80009,"duct"},{80010,"ductrun?"},{80011,"ductport?"},{20014,"equipment"},{9,"portproxy"},
             {8,"proxy8"},{80040,"gasket"},{80041,"boltset"},{20003,"tap?"},
             {80033,"pathleg"},{80034,"alongleg"},{80036,"endfeat"},{80038,"turnfeat"},
             {80059,"tapfeat"},{80060,"tapocc"},{80008,"unk8008"},
@@ -264,8 +264,8 @@ namespace Voyager
         private static void Enrich(AtlasResult r)
         {
             List<Guid> all = new List<Guid>(r.Nodes.Keys);
-            List<Guid> ports = new List<Guid>();
-            foreach (AtlasNode n in r.Nodes.Values) { if (n.ClassId == 80014) { ports.Add(n.Oid); } }
+            List<Guid> pipePorts = new List<Guid>();
+            foreach (AtlasNode n in r.Nodes.Values) { if (n.ClassId == 80014) { pipePorts.Add(n.Oid); } }
 
             for (int i = 0; i < all.Count; i += 500)
             {
@@ -282,18 +282,31 @@ namespace Voyager
                 }
             }
 
-            if (ports.Count > 0)
+            // place points for ANY port class (2026-10-08: duct ports 80011?), looked up on the nodes without a
+            // bbox (ports have none); pipe size only for 80014
+            List<Guid> noBbox = new List<Guid>();
+            foreach (AtlasNode n in r.Nodes.Values) { if (!n.HasBbox) { noBbox.Add(n.Oid); } }
+            try
             {
-                string ids = InList(ports);
-                string sql = "SELECT oid, PlacePointX, PlacePointY, PlacePointZ FROM " + T("JDistribPort") +
-                             " WHERE oid IN (" + ids + ")";
-                try
+                for (int i = 0; i < noBbox.Count; i += 500)
                 {
+                    string sql = "SELECT oid, PlacePointX, PlacePointY, PlacePointZ FROM " + T("JDistribPort") +
+                                 " WHERE oid IN (" + InList(noBbox.GetRange(i, Math.Min(500, noBbox.Count - i))) + ")";
                     foreach (DataRow row in SqlExplorer.Query(sql).Rows)
                     {
                         AtlasNode n = r.Nodes[(Guid)row[0]];
                         n.HasPort = true; n.Px = D(row[1]); n.Py = D(row[2]); n.Pz = D(row[3]);
                     }
+                }
+            }
+            catch (Exception ex) { r.Log.Add("JDistribPort skipped: " + ex.Message); }
+
+            if (pipePorts.Count > 0)
+            {
+                string ids = InList(pipePorts);
+                string sql;
+                try
+                {
                     sql = "SELECT oid, NPD, PipingOutsideDiameter FROM " + T("JDPipePort") +
                           " WHERE oid IN (" + ids + ")";
                     foreach (DataRow row in SqlExplorer.Query(sql).Rows)
