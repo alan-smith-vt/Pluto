@@ -63,6 +63,16 @@ var FEAFeatures = (function () {
     var elAll    = document.getElementById('grAll');
     var elNone   = document.getElementById('grNone');
     var elInvert = document.getElementById('grInvert');
+    var elFilter = document.getElementById('grFilter');
+    // Filter box (2026-10-08): a group shows when its name or tags contain every word typed (any case).
+    var filterText = '';
+    function groupMatches(g, info) {
+        var words = filterText.toLowerCase().split(/\s+/).filter(Boolean);
+        if (!words.length) return true;
+        var tags = (info && info.tags) || (Array.isArray(g.tags) ? g.tags : []);
+        var hay = (String((info && info.name) || g.name || '') + ' ' + tags.join(' ')).toLowerCase();
+        return words.every(function (w) { return hay.indexOf(w) >= 0; });
+    }
 
     // ---- helpers --------------------------------------------------------
     function hexToRgb(hex) {
@@ -468,6 +478,7 @@ var FEAFeatures = (function () {
         var nElemRows = 0, nNodeRows = 0;
         list.forEach(function (g, gi) {
             var info = groupList[gi] || { name: g.name, rgb: [200, 200, 200], count: 0, nodeCount: 0, painted: 0, nodePainted: 0, hidden: groupHidden(g), tags: [] };
+            if (!groupMatches(g, info)) return;
             var isNodes = isNodeGroup(info);
             var target = isNodes ? (elNodeList || elList) : elList;
             if (isNodes) nNodeRows++; else nElemRows++;
@@ -573,6 +584,7 @@ var FEAFeatures = (function () {
         items().forEach(function (g, gi) {
             var nodes = isNodeGroup(groupList[gi]);
             if (nodes !== (listTab === 'nodes')) return;
+            if (!groupMatches(g, groupList[gi])) return;
             writeHidden(g, fn(groupHidden(g)));
         });
         markDirty();
@@ -653,6 +665,7 @@ var FEAFeatures = (function () {
     if (elTab && elPanel) elTab.addEventListener('click', function () { elPanel.classList.toggle('collapsed'); });
     if (elTabE) elTabE.addEventListener('click', function () { showTab('elements'); });
     if (elTabN) elTabN.addEventListener('click', function () { showTab('nodes'); });
+    if (elFilter) elFilter.addEventListener('input', function () { filterText = this.value; renderList(); });
     if (elAll) elAll.addEventListener('click', function () { setAllHidden(function () { return false; }); });
     if (elNone) elNone.addEventListener('click', function () { setAllHidden(function () { return true; }); });
     if (elInvert) elInvert.addEventListener('click', function () { setAllHidden(function (h) { return !h; }); });

@@ -58,6 +58,11 @@
     color: #8a8a95; font-family: inherit;
 }
 .gr-tab:hover { color: #ccc; }
+.gr-filter {
+    flex: 1; min-width: 0; padding: 3px 6px; font-size: 11px; font-family: inherit;
+    background: #1c1c22; color: #ddd; border: 1px solid #3a3a44; border-radius: 3px;
+}
+.gr-filter:focus { outline: none; border-color: #5a8fe0; }
 .gr-tab.active { color: #f2b84b; border-bottom-color: #f2b84b; }
 
 #grList, #grNodeList {
