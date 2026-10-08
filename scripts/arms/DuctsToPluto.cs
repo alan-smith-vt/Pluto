@@ -1245,7 +1245,20 @@ public class DuctsToPluto
                 + (conflict.Contains(kv.Key) ? " | RUNNAME DIFFERS FROM BOTH NEIGHBOURS" : "")
                 + (unexpected.Contains(kv.Key) ? " | " + kv.Value.Count + " CONNECTORS, UNEXPECTED FOR ITS TYPE" : "");
             var ids = new List<int>();
+            int[] thr = kv.Value.Count >= 3 ? ThroughPair(kv.Value) : null;
             if (kv.Value.Count == 2) ids.Add(beam(conn(kv.Value[0]), conn(kv.Value[1]), 0, label));
+            else if (thr != null)
+            {
+                // tee / tap-on-main in one part: the through pair as a straight line, each other connector
+                // from the closest point of that line (a star from the mean zig-zagged the main run)
+                Opening a = kv.Value[thr[0]], b = kv.Value[thr[1]];
+                ids.Add(beam(conn(a), conn(b), 0, label));
+                for (int q = 0; q < kv.Value.Count; q++)
+                {
+                    if (q == thr[0] || q == thr[1]) continue;
+                    ids.Add(beam(pt(ClosestOnSegment(a.C, b.C, kv.Value[q].C)), conn(kv.Value[q]), 0, label));
+                }
+            }
             else
             {
                 double[] c = new double[3];
@@ -1319,6 +1332,37 @@ public class DuctsToPluto
         if (gConf.Count > 0) sc.AddGroup("RunName differs from both neighbours", "#ff3b3b", "beams", gConf, new[] { "duct", "graph", "runConflict" }, "GRAPH_RUN_CONFLICT");
         if (unmatched.Count > 0) sc.AddNodeGroup("Unmatched connectors", "#ff3b3b", unmatched, new[] { "duct", "graph", "unmatched" }, "GRAPH_UNMATCHED");
         File.WriteAllText(outBase + ".features.json", sc.ToJson(), new UTF8Encoding(false));
+    }
+
+    // The main run through a part with 3+ connectors: the pair facing opposite ways (dot < -0.9), on one
+    // axis (each centre within max(3 in, a quarter of its size) of the other's axis) and the same size
+    // (within 1 in); the farthest-apart such pair. null = none (drawn as a star).
+    static int[] ThroughPair(List<Opening> c)
+    {
+        int[] best = null; double bestD = -1;
+        for (int i = 0; i < c.Count; i++)
+            for (int j = i + 1; j < c.Count; j++)
+            {
+                Opening a = c[i], b = c[j];
+                if (a.N[0] * b.N[0] + a.N[1] * b.N[1] + a.N[2] * b.N[2] > -0.9) continue;
+                double sa = a.Shape == "round" ? a.Dia : a.A, sb = b.Shape == "round" ? b.Dia : b.A;
+                double ta = a.Shape == "round" ? a.Dia : a.B, tb = b.Shape == "round" ? b.Dia : b.B;
+                if (a.Shape != b.Shape || Math.Abs(sa - sb) > 1 || Math.Abs(ta - tb) > 1) continue;
+                double dx = b.C[0] - a.C[0], dy = b.C[1] - a.C[1], dz = b.C[2] - a.C[2];
+                double d = Math.Sqrt(dx * dx + dy * dy + dz * dz) * 12, along = Math.Abs(dx * a.N[0] + dy * a.N[1] + dz * a.N[2]) * 12;
+                double lateral = Math.Sqrt(Math.Max(0, d * d - along * along));
+                if (lateral > Math.Max(3, 0.25 * Math.Min(sa, ta))) continue;
+                if (d > bestD) { bestD = d; best = new[] { i, j }; }
+            }
+        return best;
+    }
+    static double[] ClosestOnSegment(double[] a, double[] b, double[] p)
+    {
+        double[] ab = { b[0] - a[0], b[1] - a[1], b[2] - a[2] };
+        double L2 = ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2];
+        double t = L2 > 0 ? ((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1] + (p[2] - a[2]) * ab[2]) / L2 : 0;
+        t = Math.Max(0, Math.Min(1, t));
+        return new[] { a[0] + ab[0] * t, a[1] + ab[1] * t, a[2] + ab[2] * t };
     }
 
     static double Median(List<double> v) { if (v.Count == 0) return double.NaN; v.Sort(); return v.Count % 2 == 1 ? v[v.Count / 2] : (v[v.Count / 2 - 1] + v[v.Count / 2]) / 2; }
