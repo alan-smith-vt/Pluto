@@ -847,27 +847,28 @@ public class DuctsToPluto
             { int c; tally.TryGetValue(k, out c); tally[k] = c + 1; }
         }
         sum.AppendLine("openings:"); foreach (KeyValuePair<string, int> kv in tally) sum.AppendLine("  " + kv.Key + ": " + kv.Value);
-        // NEW: match status with neighbours searched in every room, and both breakdowns by part type
-        var st = new SortedDictionary<string, int>();
-        foreach (Opening o in ops) { int c; st.TryGetValue(o.Status, out c); st[o.Status] = c + 1; }
-        fresh.AppendLine("match status (neighbours searched in every room; \", other room\" = joins a part outside the room):");
-        foreach (KeyValuePair<string, int> kv in st) fresh.AppendLine("  " + kv.Key + ": " + kv.Value);
-        foreach (string what in new[] { "size", "status" })
+        // NEW: at most 3 short lines, meant to be typed back by hand
+        // 1. status totals; 2. size problems by type (differs / no stated size); 3. unmatched by type
+        int nJ = 0, nJo = 0, nN = 0, nNo = 0, nU = 0;
+        var badSize = new SortedDictionary<string, int[]>(StringComparer.OrdinalIgnoreCase); var unm = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (Opening o in ops)
         {
-            var xt = new SortedDictionary<string, SortedDictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
-            foreach (Opening o in ops)
+            string t = PartType(rows[o.Row - 1].Name) + (o.Shape == "round" ? " (r)" : "");
+            bool other = o.Status.EndsWith(", other room");
+            if (o.Status.StartsWith("joint")) { nJ++; if (other) nJo++; }
+            else if (o.Status.StartsWith("near")) { nN++; if (other) nNo++; }
+            else { nU++; int c; unm.TryGetValue(t, out c); unm[t] = c + 1; }
+            if (o.SizeBand == "differs" || o.SizeBand == "no stated size")
             {
-                string t = PartType(rows[o.Row - 1].Name) + (o.Shape == "round" ? " (round)" : "");
-                SortedDictionary<string, int> h; if (!xt.TryGetValue(t, out h)) { h = new SortedDictionary<string, int>(); xt[t] = h; }
-                string k = what == "size" ? o.SizeBand : o.Status; int c; h.TryGetValue(k, out c); h[k] = c + 1;
-            }
-            fresh.AppendLine(what == "size" ? "size vs stated by part type (connectors):" : "match status by part type (connectors):");
-            foreach (KeyValuePair<string, SortedDictionary<string, int>> t in xt)
-            {
-                var parts = new List<string>(); foreach (KeyValuePair<string, int> h in t.Value) parts.Add(h.Key + ": " + h.Value);
-                fresh.AppendLine("  " + t.Key + " -> " + string.Join("; ", parts.ToArray()));
+                int[] b; if (!badSize.TryGetValue(t, out b)) { b = new int[2]; badSize[t] = b; }
+                b[o.SizeBand == "differs" ? 0 : 1]++;
             }
         }
+        fresh.AppendLine(string.Format(Inv, "status: joint {0} ({1} other room), near {2} ({3} other room), unmatched {4}", nJ, nJo, nN, nNo, nU));
+        var sb1 = new List<string>(); foreach (KeyValuePair<string, int[]> kv in badSize) sb1.Add(kv.Key + " " + kv.Value[0] + "/" + kv.Value[1]);
+        fresh.AppendLine("size differs/none by type: " + (sb1.Count > 0 ? string.Join(", ", sb1.ToArray()) : "-"));
+        var sb2 = new List<string>(); foreach (KeyValuePair<string, int> kv in unm) sb2.Add(kv.Key + " " + kv.Value);
+        fresh.AppendLine("unmatched by type: " + (sb2.Count > 0 ? string.Join(", ", sb2.ToArray()) : "-"));
         var dist = new[] { 0, 0, 0, 0, 0 };
         foreach (Opening o in ops) { double d = o.Near; dist[double.IsNaN(d) ? 4 : d <= 0.25 ? 0 : d <= 1 ? 1 : d <= 6 ? 2 : 3]++; }
         sum.AppendLine(string.Format(Inv, "nearest other opening: <= 1/4 in {0}; <= 1 in {1}; <= 6 in {2}; farther {3}; none {4}", dist[0], dist[1], dist[2], dist[3], dist[4]));
