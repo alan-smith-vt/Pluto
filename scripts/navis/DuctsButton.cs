@@ -184,10 +184,10 @@ namespace PlutoNavis
                         if (runName == "") runsMissing++;
                         // 2026-10-08: room number (Custom tab), reference level, SP3D OID, MatMan CWP id; matched by
                         // normalised property name (spaces / underscores / dots ignored), the key used is counted
-                        string room = Pick(p, "Custom", n => n == "roomnumber" || n.EndsWith("roomnumber"), "Room", picked);
-                        string refLevel = Pick(p, null, n => n == "referencelevel" || n.EndsWith("referencelevel"), "RefLevel", picked);
-                        string oid = Pick(p, "Custom", n => n == "oid" || n.EndsWith("customoid"), "OID", picked);
-                        string cwp = Pick(p, null, n => n.Contains("cwp"), "CWP", picked);
+                        string room = Pick(p, "Custom", pn => pn == "roomnumber" || pn.EndsWith("roomnumber"), "Room", picked);
+                        string refLevel = Pick(p, null, pn => pn == "referencelevel" || pn.EndsWith("referencelevel"), "RefLevel", picked);
+                        string oid = Pick(p, "Custom", pn => pn == "oid" || pn.EndsWith("customoid"), "OID", picked);
+                        string cwp = Pick(p, null, pn => pn.Contains("cwp"), "CWP", picked);
                         Action<List<string>> emit = delegate(List<string> c) { c.Add(hidCell); c.Add(hidGeomCell); c.Add(runName); c.Add(svcAbbr); c.Add(sysAbbr); c.Add(room); c.Add(refLevel); c.Add(oid); c.Add(cwp); w.WriteLine(Csv(c)); };
 
                         var cells = new List<string> {
