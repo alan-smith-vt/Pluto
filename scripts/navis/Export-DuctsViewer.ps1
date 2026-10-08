@@ -10,6 +10,7 @@
 #     [-Probe [-Room <code>]]  fabrication-part opening probe (connectors from the mesh): <out>.openings.csv,
 #                        <out>.probe.txt and an overlay of opening stubs; -Room = Custom room number (e.g. A-123),
 #                        needs a run from the 2026-10-08 build; default out <run>\probe[_<room>]
+#                        [-Part <NavisId start>]: NEW reports that one part's rings and connectors instead
 #     [-Out <base>]      default <run>\ducts  ->  <run>\ducts.bin + <run>\ducts.features.json
 #     [-Unit in]         file length unit; "in" matches the plant export
 #     [-ModelId <id>]    default hvac/ducts/<run folder name> (+ "/mesh")
@@ -25,6 +26,7 @@ param(
     [switch]$Centrelines,
     [switch]$Probe,
     [string]$Room,
+    [string]$Part,
     [string]$Out,
     [string]$Unit = "in",
     [string]$ModelId,
@@ -48,7 +50,7 @@ if ($Box) {
     $r = [DuctsToPluto]::ExportMesh($Run, $Out, $ModelId, $Unit, $Room)
     Write-Output ("mesh: {0} nodes; {1} rows without triangles" -f $r.Nodes, $r.Skipped)
 } elseif ($Probe) {
-    $r = [DuctsToPluto]::ExportProbe($Run, $Out, $ModelId, $Unit, $Room)
+    $r = [DuctsToPluto]::ExportProbe($Run, $Out, $ModelId, $Unit, $Room, $Part)
     Write-Output $r.Note
 } elseif ($Centrelines) {
     $r = [DuctsToPluto]::ExportCentrelines($Run, $Out, $ModelId, $Unit)

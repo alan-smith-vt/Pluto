@@ -727,6 +727,12 @@ public class DuctsToPluto
 
     public static Result ExportProbe(string runDir, string outBase, string modelId, string lengthUnit, string room)
     {
+        return ExportProbe(runDir, outBase, modelId, lengthUnit, room, null);
+    }
+
+    // part (2026-10-08): a NavisId (or its start) whose rings are reported in NEW instead of the summary lines
+    public static Result ExportProbe(string runDir, string outBase, string modelId, string lengthUnit, string room, string part)
+    {
         const double WeldFt = 1e-3, BigPerimIn = 12, MatchIn = 1, SlipIn = 6, EndTolIn = 1, SideTolIn = 1.5, MergeAlongIn = 3, MergeLatIn = 3;
         double scale = LengthScale(lengthUnit);
         var rows = ReadRows(Path.Combine(runDir, "ducts.csv"));
@@ -744,6 +750,7 @@ public class DuctsToPluto
         for (int i = 0; i < rows.Count; i++) if (string.Equals(rows[i].Cat, Fab, StringComparison.OrdinalIgnoreCase)) allFab.Add(i + 1);
         var tri = ReadTriangles(Path.Combine(runDir, "ducts_tri.bin"), allFab);
 
+        int partRow = 0, partLoops = 0; var partRings = new List<object[]>(); var partKind = new Dictionary<int, string>();
         var all = new List<Opening>(); var loopsOf = new Dictionary<int, int[]>();   // row -> {connectors, small, interior, end rings}
         int noTri = 0;
         foreach (int row in allFab)
@@ -752,9 +759,13 @@ public class DuctsToPluto
             if (!tri.TryGetValue(row, out f) || f.Length < 9) { if (want.Contains(row)) noTri++; continue; }
             int small = 0, interior = 0;
             var ends = new List<Opening>();
+            bool watch = !string.IsNullOrEmpty(part) && rows[row - 1].NavisId.StartsWith(part.Trim(), StringComparison.OrdinalIgnoreCase);
+            if (watch) { partRow = row; partLoops = 0; }
             foreach (List<double[]> loop in BoundaryLoops(f, WeldFt))
             {
                 Opening o = Describe(loop);
+                if (watch) partLoops++;
+                if (watch && o != null && o.Perim >= BigPerimIn) partRings.Add(new object[] { Snapshot(o), loop.Count, PartAxisOffset(rows[row - 1], o) });   // a copy: merging later rewrites o
                 if (o == null || o.Perim < BigPerimIn) { small++; continue; }
                 // an end has all of the part on one side of its plane (EndTolIn): the normal is then turned
                 // to point out of the part; a ring with mesh on both sides (stiffener band, seam) is interior.
@@ -768,7 +779,9 @@ public class DuctsToPluto
                 }
                 if (dHi <= EndTolIn) { }
                 else if (dLo >= -EndTolIn) { for (int k = 0; k < 3; k++) o.N[k] = -o.N[k]; }
-                else { interior++; continue; }
+                else { interior++; if (watch) partKind[partRings.Count - 1] = "interior"; continue; }
+                if (watch) partKind[partRings.Count - 1] = "end";
+                TrimToEnd(o, loop, EndTolIn);
                 o.Row = row; ends.Add(o);
             }
             // rings at one end -> one connector, sized by its smallest ring (the duct; the larger ones are
@@ -1069,6 +1082,32 @@ public class DuctsToPluto
         fresh.AppendLine("unexpected, closest same-direction pair along/lateral in: " + (gaps.Count > 0 ? string.Join(", ", gaps.ToArray()) : "-"));
         if (ops.Count > 0) WriteGraph(outBase + "_graph", modelId + "/graph", lengthUnit, scale, rows, ops, all, tri, want, conflict, fitEnds, unexpected);
 
+        if (!string.IsNullOrEmpty(part))
+        {
+            // 3 lines: the part; its rings (largest 5: size, end/interior, normal, planarity, centre offset from
+            // the part's bbox centre across the ring axis); its connectors (size, centre offset, status)
+            fresh.Length = 0;
+            if (partRow == 0) fresh.AppendLine("part " + part + ": not found among the fabrication parts (NavisId start)");
+            else
+            {
+                Row pr = rows[partRow - 1];
+                fresh.AppendLine(string.Format(Inv, "part {0}: {1}, stated {2}, loops {3}, rings {4}", pr.NavisId.Substring(0, Math.Min(8, pr.NavisId.Length)), pr.Name, pr.SizeText, partLoops, partRings.Count));
+                var idx = new List<int>(); for (int i = 0; i < partRings.Count; i++) idx.Add(i);
+                idx.Sort((x, y) => ((Opening)partRings[y][0]).Perim.CompareTo(((Opening)partRings[x][0]).Perim));
+                var rs = new List<string>();
+                for (int q = 0; q < idx.Count && q < 5; q++)
+                {
+                    Opening o = (Opening)partRings[idx[q]][0]; string kind; partKind.TryGetValue(idx[q], out kind);
+                    rs.Add(string.Format(Inv, "{0} {1} n({2:0.##},{3:0.##},{4:0.##}) flat {5:0.#} off {6:0.#}", o.Shape == "round" ? "d" + o.Dia.ToString("0.#", Inv) : o.A.ToString("0.#", Inv) + "x" + o.B.ToString("0.#", Inv),
+                        kind ?? "?", o.N[0], o.N[1], o.N[2], o.Planar, (double)partRings[idx[q]][2]));
+                }
+                fresh.AppendLine("rings: " + string.Join("; ", rs.ToArray()));
+                var cs = new List<string>();
+                foreach (Opening o in ops) if (o.Row == partRow && cs.Count < 5)
+                    cs.Add(string.Format(Inv, "{0} off {1:0.#} {2}", o.Shape == "round" ? "d" + o.Dia.ToString("0.#", Inv) : o.A.ToString("0.#", Inv) + "x" + o.B.ToString("0.#", Inv), PartAxisOffset(pr, o), o.Status));
+                fresh.AppendLine("connectors: " + (cs.Count > 0 ? string.Join("; ", cs.ToArray()) : "none"));
+            }
+        }
         string report = head.ToString() + Environment.NewLine + "=== NEW ===" + Environment.NewLine + fresh.ToString()
             + Environment.NewLine + "=== Reviewed before ===" + Environment.NewLine + sum.ToString();
         File.WriteAllText(outBase + ".probe.txt", report);
@@ -1399,6 +1438,60 @@ public class DuctsToPluto
         double t = L2 > 0 ? ((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1] + (p[2] - a[2]) * ab[2]) / L2 : 0;
         t = Math.Max(0, Math.Min(1, t));
         return new[] { a[0] + ab[0] * t, a[1] + ab[1] * t, a[2] + ab[2] * t };
+    }
+
+    // An end ring's centre and size from its points at the very end only (within tolIn of the outermost
+    // plane along its outward normal), as the middle of their outline across the axis. 2026-10-08: an
+    // eccentric transition's large-end loop ran back along open seams of its slanted panel (unwelded
+    // T-junctions), and the loop's average pulled the connector toward the tapered side and into the part.
+    // Round rings keep their circle fit; a rectangular ring gets a x b from the trimmed outline.
+    static void TrimToEnd(Opening o, List<double[]> loop, double tolIn)
+    {
+        double ext = double.MinValue;
+        foreach (double[] q in loop) ext = Math.Max(ext, q[0] * o.N[0] + q[1] * o.N[1] + q[2] * o.N[2]);
+        var keep = new List<double[]>();
+        foreach (double[] q in loop) if ((ext - (q[0] * o.N[0] + q[1] * o.N[1] + q[2] * o.N[2])) * 12 <= tolIn) keep.Add(q);
+        if (keep.Count < 3 || keep.Count == loop.Count) return;      // nothing ran back into the part
+        double[] n = o.N;
+        double[] u = Math.Abs(n[0]) < 0.9 ? new[] { 1.0, 0, 0 } : new[] { 0, 1.0, 0 };
+        double ud = u[0] * n[0] + u[1] * n[1] + u[2] * n[2];
+        for (int k = 0; k < 3; k++) u[k] -= ud * n[k];
+        double ul = Math.Sqrt(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]); for (int k = 0; k < 3; k++) u[k] /= ul;
+        double[] v = { n[1] * u[2] - n[2] * u[1], n[2] * u[0] - n[0] * u[2], n[0] * u[1] - n[1] * u[0] };
+        // in-plane principal axes of the kept points, then their bbox in those axes
+        double mx = 0, my = 0;
+        var xs = new double[keep.Count]; var ys = new double[keep.Count];
+        for (int i = 0; i < keep.Count; i++) { double[] q = keep[i]; xs[i] = q[0] * u[0] + q[1] * u[1] + q[2] * u[2]; ys[i] = q[0] * v[0] + q[1] * v[1] + q[2] * v[2]; mx += xs[i]; my += ys[i]; }
+        mx /= keep.Count; my /= keep.Count;
+        double sxx = 0, syy = 0, sxy = 0;
+        for (int i = 0; i < keep.Count; i++) { double dx = xs[i] - mx, dy = ys[i] - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
+        double ang = 0.5 * Math.Atan2(2 * sxy, sxx - syy), ca = Math.Cos(ang), sa = Math.Sin(ang);
+        double a0 = double.MaxValue, a1 = double.MinValue, b0 = double.MaxValue, b1 = double.MinValue;
+        for (int i = 0; i < keep.Count; i++)
+        {
+            double pa = xs[i] * ca + ys[i] * sa, pb = -xs[i] * sa + ys[i] * ca;
+            a0 = Math.Min(a0, pa); a1 = Math.Max(a1, pa); b0 = Math.Min(b0, pb); b1 = Math.Max(b1, pb);
+        }
+        double cA = (a0 + a1) / 2, cB = (b0 + b1) / 2, cx = cA * ca - cB * sa, cy = cA * sa + cB * ca;
+        o.C = new[] { u[0] * cx + v[0] * cy + n[0] * ext, u[1] * cx + v[1] * cy + n[1] * ext, u[2] * cx + v[2] * cy + n[2] * ext };
+        if (o.Shape != "round") { o.A = Math.Max(a1 - a0, b1 - b0) * 12; o.B = Math.Min(a1 - a0, b1 - b0) * 12; }
+    }
+
+    static Opening Snapshot(Opening o)
+    {
+        var c = new Opening(); c.Shape = o.Shape; c.A = o.A; c.B = o.B; c.Dia = o.Dia; c.Planar = o.Planar; c.Perim = o.Perim;
+        c.C = (double[])o.C.Clone(); c.N = (double[])o.N.Clone();
+        return c;
+    }
+
+    // Offset (inches) of a ring's centre from the part's bbox centre, measured across the ring's axis.
+    static double PartAxisOffset(Row r, Opening o)
+    {
+        if (r.Min == null) return double.NaN;
+        double dx = o.C[0] - (r.Min[0] + r.Max[0]) / 2, dy = o.C[1] - (r.Min[1] + r.Max[1]) / 2, dz = o.C[2] - (r.Min[2] + r.Max[2]) / 2;
+        double along = dx * o.N[0] + dy * o.N[1] + dz * o.N[2];
+        double lx = dx - along * o.N[0], ly = dy - along * o.N[1], lz = dz - along * o.N[2];
+        return Math.Sqrt(lx * lx + ly * ly + lz * lz) * 12;
     }
 
     // Offset of q's centre from m's axis (inches).
