@@ -36,16 +36,36 @@
 
 var FEAFeatures = (function () {
 
-    var envelope = null;      // parsed sidecar (or null)
-    var fileName = '';
-    var dirty = false;        // edits since the sidecar was loaded / saved (files.js shows it)
-    var enabled = false;      // the single switch
-    var resolved = null;      // { shells: Float32Array|null, beams: ..., counts, unmatched }
-    var palette = null;       // THREE.DataTexture of group colors
-    var groupList = [];       // [{name,color,rgb,count}] in envelope order
-    var nodeMarkers = null;   // THREE.Points for painted node-group members (or null)
-    var nodeKeepMask = null;  // Uint8Array from the section-cut isolate (null = all)
-    var nodeMembers = [];     // per group: Int32Array of node indices (resolved members, in order)
+    // Per-model state (2026-10-08, model rail stage 2): each model context keeps its own in ctx.feat;
+    // S is the state being worked on (the active model's, or the primary's inside withState).
+    function newState(defaultShown) {
+        return {
+            envelope: null,       // parsed sidecar (or null)
+            fileName: '',
+            dirty: false,         // edits since the sidecar was loaded / saved (files.js shows it)
+            enabled: false,       // the single switch
+            resolved: null,       // { shell: Float32Array|null, beam: ..., nodes, unmatched }
+            palette: null,        // THREE.DataTexture of group colors
+            groupList: [],        // [{name,color,rgb,count}] in envelope order
+            nodeMarkers: null,    // THREE.Points for painted node-group members (or null)
+            nodeKeepMask: null,   // Uint8Array from the section-cut isolate (null = all)
+            nodeMembers: [],      // per group: Int32Array of node indices (resolved members, in order)
+            markerData: null,     // { n, pos, col } from buildMarkerData
+            defaultShown: !!defaultShown   // overlays: a group with no `hidden` flag paints (exporter files carry none)
+        };
+    }
+    function stateOf(ctx) { if (!ctx.feat || !('groupList' in ctx.feat)) ctx.feat = newState(ctx.kind === 'overlay'); return ctx.feat; }
+    function ctxActive() { return FEAModels.active(); }
+    function ctxPrimary() { return FEAModels.primary(); }
+    var S = null;             // the state being worked on (the active model's outside withState)
+    var C = null;             // its model context
+    function withState(ctx, fn) {
+        var ks = S, kc = C;
+        S = stateOf(ctx); C = ctx;
+        try { return fn(); } finally { S = ks; C = kc; }
+    }
+    // DOM writes (Groups tab, file name, switch) only for the model the tab is showing
+    function shown() { return C === ctxActive(); }
     var NODE_POINT_PX = 7;
     var NUDGE_SPAN_FRACTION = 0.004;   // coincident-marker step = model span x this
     var listTab = 'elements';        // 'elements' | 'nodes' -- which sub-tab is showing
@@ -110,7 +130,7 @@ var FEAFeatures = (function () {
         try { obj = JSON.parse(text); }
         catch (err) { log('Features: ' + file.name + ' is not valid JSON (' + err.message + ').'); return; }
         setEnvelope(obj, file.name);
-        if (window.FEAOverlays) FEAOverlays.reposition();   // the primary's worldOffset may have changed
+        if (C.kind === 'primary' && window.FEAOverlays) FEAOverlays.reposition();   // the primary's worldOffset may have changed
     }
 
     function setEnvelope(obj, name) {
@@ -118,31 +138,33 @@ var FEAFeatures = (function () {
             log('Features: not a pluto-features file (format="' + (obj && obj.format) + '").');
             return;
         }
-        envelope = obj;
-        fileName = name || 'features.json';
-        dirty = false;
-        if (elName) elName.textContent = fileName;
+        S.envelope = obj;
+        S.fileName = name || 'features.json';
+        S.dirty = false;
+        if (elName && shown()) elName.textContent = S.fileName;
         checkBinding();
-        if (window.FEAFiles) FEAFiles.syncUI();
+        if (window.FEAFiles && shown()) FEAFiles.syncUI();
         resolve();
-        if (elToggle) elToggle.disabled = !resolved;
+        if (elToggle && shown()) elToggle.disabled = !S.resolved;
         sync();
         var g = (obj.groups && obj.groups.items) ? obj.groups.items.length : 0;
-        log('Features: ' + fileName + ' loaded (' + g + ' group(s)' +
-            (resolved && resolved.unmatched ? ', ' + resolved.unmatched + ' unmatched ID(s)' : '') +
-            (resolved && resolved.unresolvedPredicates ? ', ' + resolved.unresolvedPredicates +
+        log('Features: ' + S.fileName + ' loaded (' + g + ' group(s)' +
+            (S.resolved && S.resolved.unmatched ? ', ' + S.resolved.unmatched + ' unmatched ID(s)' : '') +
+            (S.resolved && S.resolved.unresolvedPredicates ? ', ' + S.resolved.unresolvedPredicates +
                 ' predicate member(s) unresolved (predicate module not loaded)' : '') + ').');
         // Hand the predicate section to the predicate module; it calls back
         // into refresh() so predicate-member groups resolve on second pass.
-        if (window.FEAPredicates && FEAPredicates.onEnvelope) FEAPredicates.onEnvelope(envelope);
-        if (window.FEASectionCut && FEASectionCut.onEnvelope) FEASectionCut.onEnvelope(envelope);
+        // Predicates and section cuts belong to the primary (model rail stage 3).
+        if (C.kind !== 'primary') return;
+        if (window.FEAPredicates && FEAPredicates.onEnvelope) FEAPredicates.onEnvelope(S.envelope);
+        if (window.FEASectionCut && FEASectionCut.onEnvelope) FEASectionCut.onEnvelope(S.envelope);
     }
 
     // Minimal empty envelope bound to the loaded model, so features can be
     // authored in-viewer without importing a sidecar first.
     function ensureEnvelope() {
-        if (envelope) return envelope;
-        var u = feaModel && feaModel.unified;
+        if (S.envelope) return S.envelope;
+        var sm0 = C.shellModel(), u = sm0 && sm0.unified;
         var obj = {
             format: 'pluto-features',
             version: 1,
@@ -154,27 +176,28 @@ var FEAFeatures = (function () {
             predicates: { version: 1, items: [] },
             sectionCuts: { version: 1, items: [] }
         };
-        envelope = obj;
+        S.envelope = obj;
         var mid = (u && u.meta && u.meta.modelId) ? String(u.meta.modelId).split('/').pop() : '';
-        fileName = (mid || 'untitled') + '.features.json';
-        dirty = true;
-        if (elName) elName.textContent = fileName + ' (unsaved)';
+        S.fileName = (mid || 'untitled') + '.features.json';
+        S.dirty = true;
+        if (elName && shown()) elName.textContent = S.fileName + ' (unsaved)';
         checkBinding();
-        if (window.FEAFiles) FEAFiles.syncUI();
-        return envelope;
+        if (window.FEAFiles && shown()) FEAFiles.syncUI();
+        return S.envelope;
     }
 
     // Re-resolve groups + repaint (public: predicate edits call this).
     function refresh() {
         resolve();
-        if (elToggle) elToggle.disabled = !resolved;
+        if (elToggle && shown()) elToggle.disabled = !S.resolved;
         sync();
     }
 
     function checkBinding() {
-        if (!envelope || !feaModel || !elHint) return;
-        var u = feaModel.unified;
-        var want = envelope.model && envelope.model.geometryHash;
+        var sm0 = C.shellModel();
+        if (!S.envelope || !sm0 || !elHint || !shown()) return;
+        var u = sm0.unified;
+        var want = S.envelope.model && S.envelope.model.geometryHash;
         var have = u && u.geometryHash;
         if (want && have && want !== have) {
             elHint.textContent = '⚠ geometryHash differs from the loaded model — members may not resolve.';
@@ -192,26 +215,27 @@ var FEAFeatures = (function () {
     // Replaced by the predicate module when it lands.
     function resolvePredicateMembers(predicateId) {
         if (window.FEAPredicates && FEAPredicates.resolveMembers) {
-            return FEAPredicates.resolveMembers(predicateId, envelope);
+            return FEAPredicates.resolveMembers(predicateId, S.envelope);
         }
         return null;
     }
 
     // ---- resolve groups -> per-element category per domain --------------
     function resolve() {
-        resolved = null;
-        groupList = [];
-        if (palette) { palette.dispose(); palette = null; }
-        if (!envelope || !feaModel) return;
-        var items = (envelope.groups && Array.isArray(envelope.groups.items)) ? envelope.groups.items : [];
+        S.resolved = null;
+        S.groupList = [];
+        if (S.palette) { S.palette.dispose(); S.palette = null; }
+        var sm = C.shellModel();
+        if (!S.envelope || !sm) return;
+        var items = (S.envelope.groups && Array.isArray(S.envelope.groups.items)) ? S.envelope.groups.items : [];
         if (items.length === 0) return;
 
-        var views = { shell: feaModel, beam: window.FEABeams ? FEABeams.view() : null };
+        var views = { shell: sm, beam: C.beamView() };
         var out = { shell: null, beam: null, nodes: null, unmatched: 0 };
-        nodeMembers = [];
-        var nNodes = (feaModel.header && feaModel.header.nNodes) || (feaModel.nodeIds ? feaModel.nodeIds.length : 0);
+        S.nodeMembers = [];
+        var nNodes = (sm.header && sm.header.nNodes) || (sm.nodeIds ? sm.nodeIds.length : 0);
         if (nNodes > 0) { out.nodes = new Float32Array(nNodes); out.nodes.fill(-1); }
-        var nmap = nodeIdMap(feaModel);
+        var nmap = nodeIdMap(sm);
         Object.keys(views).forEach(function (fam) {
             var v = views[fam];
             if (!v) return;
@@ -221,7 +245,7 @@ var FEAFeatures = (function () {
             out[fam + 'Off'] = new Uint8Array(v.header.nElements);
         });
         var domainByName = {};
-        if (feaModel.unified) feaModel.unified.domains.forEach(function (d) { domainByName[d.name] = d.family; });
+        if (sm.unified) sm.unified.domains.forEach(function (d) { domainByName[d.name] = d.family; });
 
         var rgb = [];
         items.forEach(function (g, gi) {
@@ -265,42 +289,33 @@ var FEAFeatures = (function () {
                     if (invisible) out[fam + 'Off'][idx] = 1;
                 });
             })(members[mi]);
-            groupList.push({ name: g.name || ('Group ' + (gi + 1)), color: g.color, rgb: color,
+            S.groupList.push({ name: g.name || ('Group ' + (gi + 1)), color: g.color, rgb: color,
                              count: count, nodeCount: nodeCount, hidden: hidden, invisible: invisible, painted: 0, nodePainted: 0, nodeNudged: 0,
                              tags: Array.isArray(g.tags) ? g.tags : [] });
-            nodeMembers.push(Int32Array.from(nodeIdx));
+            S.nodeMembers.push(Int32Array.from(nodeIdx));
         });
         // painted = elements whose final category is this group (after precedence)
         ['shell', 'beam'].forEach(function (fam) {
             var arr = out[fam];
             if (!arr) return;
-            for (var i = 0; i < arr.length; i++) if (arr[i] >= 0) groupList[arr[i]].painted++;
+            for (var i = 0; i < arr.length; i++) if (arr[i] >= 0) S.groupList[arr[i]].painted++;
         });
-        resolved = out;                     // buildMarkerData reads the per-node category
-        markerData = buildMarkerData();     // also fills nodePainted / nodeNudged
-        resolved = out;
-        palette = FEAShaders.makePaletteTexture(rgb);
+        S.resolved = out;                     // buildMarkerData reads the per-node category
+        S.markerData = buildMarkerData();     // also fills nodePainted / nodeNudged
+        S.resolved = out;
+        S.palette = FEAShaders.makePaletteTexture(rgb);
     }
 
     // ---- apply to materials -----------------------------------------
-    function applyUniforms(mat, on) {
-        if (!mat || !mat.uniforms.uGroupMode) return;
-        mat.uniforms.uGroupMode.value = on ? 1 : 0;
-        if (on) {
-            mat.uniforms.groupPalette.value = palette;
-            mat.uniforms.uGroupCount.value = groupList.length;
-        }
-    }
 
     // ---- node markers ---------------------------------------------------
     function disposeMarkers() {
-        if (!nodeMarkers) return;
-        if (typeof scene !== 'undefined' && scene) scene.remove(nodeMarkers);
-        nodeMarkers.geometry.dispose();
-        nodeMarkers.material.dispose();
-        nodeMarkers = null;
+        if (!S.nodeMarkers) return;
+        if (S.nodeMarkers.parent) S.nodeMarkers.parent.remove(S.nodeMarkers);
+        S.nodeMarkers.geometry.dispose();
+        S.nodeMarkers.material.dispose();
+        S.nodeMarkers = null;
     }
-    var markerData = null;    // { n, pos: Float32Array, col: Float32Array } from buildMarkerData
     // Model span (largest bbox side) from the node table, cached on the model.
     function modelSpan(model) {
         if (model._featSpan) return model._featSpan;
@@ -326,20 +341,21 @@ var FEAFeatures = (function () {
     // node index; the first keeps the true spot. Fills nodePainted /
     // nodeNudged per group (2026-09-04, per the user's correction).
     function buildMarkerData() {
-        for (var g = 0; g < groupList.length; g++) { groupList[g].nodePainted = 0; groupList[g].nodeNudged = 0; }
-        if (!feaModel || !feaModel.nodes || !resolved || !resolved.nodes) return null;
-        var nodes = feaModel.nodes, cat = resolved.nodes, step = modelSpan(feaModel) * NUDGE_SPAN_FRACTION;
+        for (var g = 0; g < S.groupList.length; g++) { S.groupList[g].nodePainted = 0; S.groupList[g].nodeNudged = 0; }
+        var sm = C.shellModel();
+        if (!sm || !sm.nodes || !S.resolved || !S.resolved.nodes) return null;
+        var nodes = sm.nodes, cat = S.resolved.nodes, step = modelSpan(sm) * NUDGE_SPAN_FRACTION;
         var scale = 1e4, occupied = {};
         var px = [], py = [], pz = [], cr = [], cg = [], cb = [];
         var order = [];
         for (var ni = 0; ni < cat.length; ni++) {
             if (cat[ni] < 0) continue;
-            if (nodeKeepMask && !nodeKeepMask[ni]) continue;
+            if (S.nodeKeepMask && !S.nodeKeepMask[ni]) continue;
             order.push(ni);
         }
         order.sort(function (a, b) { return (cat[a] - cat[b]) || (a - b); });
         for (var q = 0; q < order.length; q++) {
-            var n0 = order[q], gi = cat[n0], info = groupList[gi], c = info.rgb;
+            var n0 = order[q], gi = cat[n0], info = S.groupList[gi], c = info.rgb;
             var x = nodes[n0 * 3], y = nodes[n0 * 3 + 1], z = nodes[n0 * 3 + 2];
             var key = Math.round(x * scale) + ',' + Math.round(y * scale) + ',' + Math.round(z * scale);
             var occ = occupied[key] || 0;
@@ -366,44 +382,39 @@ var FEAFeatures = (function () {
     // so a node inside solid geometry (the ring wall) is hidden by it.
     function rebuildMarkers(on) {
         disposeMarkers();
-        if (!on || !resolved || !feaModel || !feaModel.nodes) return;
-        markerData = buildMarkerData();
-        if (typeof THREE === 'undefined' || typeof scene === 'undefined' || !scene) return;
-        if (!markerData) return;
+        var sm = C.shellModel();
+        if (!on || !S.resolved || !sm || !sm.nodes) return;
+        S.markerData = buildMarkerData();
+        var parent = C.markerParent();
+        if (typeof THREE === 'undefined' || !parent) return;
+        if (!S.markerData) return;
         var geom = new THREE.BufferGeometry();
-        geom.setAttribute('position', new THREE.BufferAttribute(markerData.pos, 3));
-        geom.setAttribute('color', new THREE.BufferAttribute(markerData.col, 3));
+        geom.setAttribute('position', new THREE.BufferAttribute(S.markerData.pos, 3));
+        geom.setAttribute('color', new THREE.BufferAttribute(S.markerData.col, 3));
         var mat = new THREE.PointsMaterial({ size: NODE_POINT_PX, sizeAttenuation: false, vertexColors: true,
                                              depthTest: true, depthWrite: false });
-        nodeMarkers = new THREE.Points(geom, mat);
-        nodeMarkers.renderOrder = 5;
-        nodeMarkers.frustumCulled = false;
-        scene.add(nodeMarkers);
+        S.nodeMarkers = new THREE.Points(geom, mat);
+        S.nodeMarkers.renderOrder = 5;
+        S.nodeMarkers.frustumCulled = false;
+        parent.add(S.nodeMarkers);
     }
     // Section-cut isolate hook (sectionCut.js): null = show every painted node.
     function writeVis(nodeKeep) {
-        nodeKeepMask = nodeKeep || null;
-        rebuildMarkers(enabled && !!resolved);
-        renderList(enabled && !!resolved);      // painted / nudged counts follow the isolate
+        S.nodeKeepMask = nodeKeep || null;
+        rebuildMarkers(S.enabled && !!S.resolved);
+        renderList(S.enabled && !!S.resolved);      // painted / nudged counts follow the isolate
         needsRender = true;
     }
 
     function sync() {
-        var on = enabled && !!resolved;
-        if (feaBuild && resolved) {
-            FEAAttributes.updateCatIdx(feaBuild.geometry, feaBuild.elemNCount, null, resolved.shell);
-        }
-        if (window.FEABeams && FEABeams.build() && resolved) {
-            var bb = FEABeams.build();
-            FEAAttributes.updateCatIdx(bb.geometry, null, bb, resolved.beam);
-        }
-        applyUniforms(feaMaterial, on);
-        if (window.FEABeams && FEABeams.mesh()) applyUniforms(FEABeams.mesh().material, on);
+        var on = S.enabled && !!S.resolved;
+        if (S.resolved) { C.paint('shell', S.resolved.shell); C.paint('beam', S.resolved.beam); }
+        C.setGroupLook(on, S.palette, S.groupList.length);
         rebuildMarkers(on);
-        applyVisibility();
-        if (elToggle) elToggle.checked = enabled;
+        C.applyVisibility();
+        if (elToggle && shown()) elToggle.checked = S.enabled;
         drawLegend(on);
-        if (typeof updateViewCaption === 'function') updateViewCaption();
+        if (C.kind === 'primary' && typeof updateViewCaption === 'function') updateViewCaption();
         needsRender = true;
     }
 
@@ -411,11 +422,10 @@ var FEAFeatures = (function () {
 
     // Group eyes -> elemVis, through the section-cut / beam writers so the
     // isolate and the eyes combine (each writer reads elemOff).
-    function elemOff(fam) { return resolved ? resolved[fam + 'Off'] || null : null; }
-    function applyVisibility() {
-        var done = window.FEASectionCut && FEASectionCut.reapplyVis && FEASectionCut.reapplyVis();
-        if (!done && window.FEABeams && FEABeams.reapplyVis) FEABeams.reapplyVis();
-    }
+    // Eye-hidden mask of a model's family: Uint8Array (1 = hidden) or null. The primary's
+    // section-cut / beam writers read it through elemOff (primary); overlays through elemOffFor.
+    function elemOffFor(ctx, fam) { var st = stateOf(ctx); return st.resolved ? st.resolved[fam + 'Off'] || null : null; }
+    function elemOff(fam) { return elemOffFor(ctxPrimary(), fam); }
     function setInvisible(gi, invisible) {
         var g = items()[gi]; if (!g) return;
         if (invisible) g.invisible = true; else delete g.invisible;
@@ -425,7 +435,7 @@ var FEAFeatures = (function () {
 
     // ---- Groups tab list --------------------------------------------------
     var dragFrom = -1;
-    function items() { return (envelope && envelope.groups && Array.isArray(envelope.groups.items)) ? envelope.groups.items : []; }
+    function items() { return (S.envelope && S.envelope.groups && Array.isArray(S.envelope.groups.items)) ? S.envelope.groups.items : []; }
     function hex2(c) { return ('0' + c.toString(16)).slice(-2); }
 
     function isNodeGroup(info) { return !!info && info.count === 0 && info.nodeCount > 0; }
@@ -442,8 +452,9 @@ var FEAFeatures = (function () {
     }
     // Enabled state: a group paints only when the item says `hidden: false`;
     // absent or true = off. Ticking always writes the flag explicitly.
+    // Overlays (defaultShown): absent = on, so an exporter's groups paint as they did before stage 2.
     function groupHidden(g) {
-        return g.hidden === undefined ? true : !!g.hidden;
+        return g.hidden === undefined ? !S.defaultShown : !!g.hidden;
     }
     function writeHidden(g, hidden) {
         g.hidden = !!hidden;
@@ -462,22 +473,23 @@ var FEAFeatures = (function () {
     }
 
     function renderList(on) {
+        if (!shown()) return;          // the tab shows the active model only
         if (!elList) return;
         elList.innerHTML = '';
         if (elNodeList) elNodeList.innerHTML = '';
         showTab(listTab);
         var list = items();
-        var can = list.length > 0 && !!feaModel;
+        var can = list.length > 0 && !!C.shellModel();
         [elAll, elNone, elInvert].forEach(function (b) { if (b) b.disabled = !can; });
         if (!list.length) {
-            var empty = '<div class="gr-empty">' + (envelope ? 'No groups in file' : 'No features file') + '</div>';
+            var empty = '<div class="gr-empty">' + (S.envelope ? 'No groups in file' : 'No features file') + '</div>';
             elList.innerHTML = empty;
             if (elNodeList) elNodeList.innerHTML = empty;
             return;
         }
         var nElemRows = 0, nNodeRows = 0;
         list.forEach(function (g, gi) {
-            var info = groupList[gi] || { name: g.name, rgb: [200, 200, 200], count: 0, nodeCount: 0, painted: 0, nodePainted: 0, hidden: groupHidden(g), tags: [] };
+            var info = S.groupList[gi] || { name: g.name, rgb: [200, 200, 200], count: 0, nodeCount: 0, painted: 0, nodePainted: 0, hidden: groupHidden(g), tags: [] };
             if (!groupMatches(g, info)) return;
             var isNodes = isNodeGroup(info);
             var target = isNodes ? (elNodeList || elList) : elList;
@@ -582,9 +594,9 @@ var FEAFeatures = (function () {
     // All / None / Invert act on the sub-tab that is showing.
     function setAllHidden(fn) {
         items().forEach(function (g, gi) {
-            var nodes = isNodeGroup(groupList[gi]);
+            var nodes = isNodeGroup(S.groupList[gi]);
             if (nodes !== (listTab === 'nodes')) return;
-            if (!groupMatches(g, groupList[gi])) return;
+            if (!groupMatches(g, S.groupList[gi])) return;
             writeHidden(g, fn(groupHidden(g)));
         });
         markDirty();
@@ -604,62 +616,86 @@ var FEAFeatures = (function () {
 
     // Group name for a (family, element index), or null.
     function groupOf(family, e) {
-        if (!resolved || !enabled) return null;
-        var arr = resolved[family === 'node' ? 'nodes' : family];
+        if (!S.resolved || !S.enabled) return null;
+        var arr = S.resolved[family === 'node' ? 'nodes' : family];
         if (!arr || e < 0 || e >= arr.length) return null;
         var gi = arr[e];
-        return gi >= 0 ? groupList[gi].name : null;
+        return gi >= 0 ? S.groupList[gi].name : null;
     }
 
     // ---- hooks from viewer.js -------------------------------------------
     function onModelLoaded() {
-        if (feaModel) { feaModel._featIdMap = null; feaModel._featNodeIdMap = null; }
-        nodeKeepMask = null;
+        var sm = C.shellModel();
+        if (sm) { sm._featIdMap = null; sm._featNodeIdMap = null; }
+        S.nodeKeepMask = null;
         checkBinding();
         resolve();
-        if (elToggle) elToggle.disabled = !resolved;
+        if (elToggle && shown()) elToggle.disabled = !S.resolved;
         sync();
     }
     var DEMO_NAME = 'PlateDemo.features.json';
     function onModelCleared() {
-        resolved = null;
-        nodeKeepMask = null;
+        S.resolved = null;
+        S.nodeKeepMask = null;
         disposeMarkers();
-        if (palette) { palette.dispose(); palette = null; }
+        if (S.palette) { S.palette.dispose(); S.palette = null; }
         // The demo's sample sidecar must not outlive the demo: a real model
         // loaded over it would otherwise inherit demo groups and export as
         // "PlateDemo.features.json" (2026-09-04).
-        if (envelope && fileName === DEMO_NAME) {
-            envelope = null; fileName = '';
-            if (elName) elName.textContent = 'no features file';
-            if (elHint) elHint.textContent = '';
+        if (S.envelope && S.fileName === DEMO_NAME) {
+            S.envelope = null; S.fileName = '';
+            if (elName && shown()) elName.textContent = 'no features file';
+            if (elHint && shown()) elHint.textContent = '';
             if (window.FEAPredicates && FEAPredicates.onEnvelope) FEAPredicates.onEnvelope(null);
             if (window.FEASectionCut && FEASectionCut.onEnvelope) FEASectionCut.onEnvelope(null);
             renderList(false);
-            if (window.FEAFiles) FEAFiles.syncUI();
+            if (window.FEAFiles && shown()) FEAFiles.syncUI();
         }
     }
 
     // ---- export / dirty state --------------------------------------------
     function exportJson() {
-        if (!envelope) return null;
-        return JSON.stringify(envelope, null, 2);
+        if (!S.envelope) return null;
+        return JSON.stringify(S.envelope, null, 2);
     }
     function markDirty() {
-        if (!envelope) return;
-        dirty = true;
-        if (window.FEAFiles) FEAFiles.syncUI();
+        if (!S.envelope) return;
+        S.dirty = true;
+        if (window.FEAFiles && shown()) FEAFiles.syncUI();
     }
     function markSaved(name) {
-        dirty = false;
-        if (name) fileName = name;
-        if (elName) elName.textContent = fileName;
+        S.dirty = false;
+        if (name) S.fileName = name;
+        if (elName && shown()) elName.textContent = S.fileName;
+        if (window.FEAFiles && shown()) FEAFiles.syncUI();
+    }
+
+    // ---- active model (FEAModels.setActive calls this) -----------------------
+    function bind(ctx) {
+        if (!ctx) return;
+        S = stateOf(ctx); C = ctx;
+        if (elName) elName.textContent = S.fileName ? S.fileName + (S.dirty ? ' (unsaved)' : '') : 'no features file';
+        if (elHint) { elHint.textContent = ''; elHint.style.color = ''; }
+        checkBinding();
+        if (elToggle) { elToggle.disabled = !S.resolved; elToggle.checked = S.enabled; }
+        renderList(S.enabled && !!S.resolved);
         if (window.FEAFiles) FEAFiles.syncUI();
     }
+    // An overlay's sidecar: resolved and painted at once (its groups show unless they say hidden).
+    function attach(ctx, envelope, name) {
+        withState(ctx, function () {
+            S.enabled = true;
+            if (envelope) setEnvelope(envelope, name);
+            else { resolve(); sync(); }
+        });
+    }
+    function detach(ctx) { withState(ctx, function () { disposeMarkers(); if (S.palette) { S.palette.dispose(); S.palette = null; } }); }
+
+    bind(ctxActive());
 
     // ---- UI -------------------------------------------------------------
     if (elToggle) elToggle.addEventListener('change', function () {
-        enabled = this.checked;
+        S.enabled = this.checked;
         sync();
     });
     if (elTab && elPanel) elTab.addEventListener('click', function () { elPanel.classList.toggle('collapsed'); });
@@ -670,40 +706,53 @@ var FEAFeatures = (function () {
     if (elNone) elNone.addEventListener('click', function () { setAllHidden(function () { return true; }); });
     if (elInvert) elInvert.addEventListener('click', function () { setAllHidden(function (h) { return !h; }); });
 
+    // Public API. P(fn): runs on the PRIMARY model (section cuts, predicates, load cases, file
+    // loading and the readout of primary members all mean the main model). Unwrapped calls act on
+    // the ACTIVE model (Save writes the sidecar of the model whose groups are on the Groups tab).
+    function P(fn) { return function () { var a = arguments; return withState(ctxPrimary(), function () { return fn.apply(null, a); }); }; }
     return {
-        loadFile: loadFile,
-        setEnvelope: setEnvelope,
-        ensureEnvelope: ensureEnvelope,
-        refresh: refresh,
-        fileName: function () { return fileName; },
-        onModelLoaded: onModelLoaded,
-        onModelCleared: onModelCleared,
-        sync: sync,
-        writeVis: writeVis,
+        // primary
+        loadFile: P(loadFile),
+        setEnvelope: P(setEnvelope),
+        ensureEnvelope: P(ensureEnvelope),
+        refresh: P(refresh),
+        onModelLoaded: P(onModelLoaded),
+        onModelCleared: P(onModelCleared),
+        sync: P(sync),
+        writeVis: P(writeVis),
+        markDirty: P(markDirty),
         elemOff: elemOff,
-        groupOf: groupOf,
-        isOn: function () { return enabled && !!resolved; },
-        envelope: function () { return envelope; },
+        groupOf: P(groupOf),
+        isOn: P(function () { return S.enabled && !!S.resolved; }),
+        envelope: P(function () { return S.envelope; }),
         // Recenter offset written by the exporter (model.units.worldOffset per the
         // sidecar spec, top-level units.worldOffset accepted too; "x y z" in FILE
         // units); add to picked coordinates to recover world/plant position. Reading
         // only the top level left the readout short by the offset (2026-10-06).
-        worldOffset: function () {
-            var u = envelope && ((envelope.model && envelope.model.units) || envelope.units);
+        worldOffset: P(function () {
+            var u = S.envelope && ((S.envelope.model && S.envelope.model.units) || S.envelope.units);
             var s = u && u.worldOffset;
             if (!s) return null;
             var p = String(s).trim().split(/\s+/).map(Number);
             return (p.length === 3 && p.every(isFinite)) ? p : null;
-        },
+        }),
+        // active model (files.js Save)
+        activeEnvelope: function () { return S.envelope; },
+        fileName: function () { return S.fileName; },
         exportJson: exportJson,
-        markDirty: markDirty,
         markSaved: markSaved,
-        isDirty: function () { return dirty; },
+        isDirty: function () { return S.dirty; },
+        // model contexts (models.js / overlays.js)
+        bind: bind,
+        attach: attach,
+        detach: detach,
+        elemOffFor: elemOffFor,
+        groupOfIn: function (ctx, family, e) { return withState(ctx, function () { return groupOf(family, e); }); },
         // test hooks (viewer/tests/test_groups.js)
-        _groupList: function () { return groupList; },
-        _resolved: function () { return resolved; },
-        _markers: function () { return markerData; },
+        _groupList: function () { return S.groupList; },
+        _resolved: function () { return S.resolved; },
+        _markers: function () { return S.markerData; },
         _moveGroup: moveGroup,
-        _setEnabled: function (on) { enabled = !!on; sync(); }
+        _setEnabled: function (on) { S.enabled = !!on; sync(); }
     };
 })();

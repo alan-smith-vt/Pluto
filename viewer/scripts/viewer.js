@@ -538,7 +538,10 @@ async function loadModels(entriesIn) {
                 dispScale: { value: 0 },
                 uGroupMode: { value: 0 },
                 groupPalette: { value: FEAShaders.makePaletteTexture([[200, 200, 200]]) },
-                uGroupCount: { value: 1 }
+                uGroupCount: { value: 1 },
+                uNeutral: { value: 0 },
+                neutralColor: { value: new THREE.Vector3(0.62, 0.64, 0.68) },
+                uXray: { value: 0 }
             },
             vertexShader: FEAShaders.vertex,
             fragmentShader: FEAShaders.fragment,
