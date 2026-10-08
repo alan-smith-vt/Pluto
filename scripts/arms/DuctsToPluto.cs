@@ -497,14 +497,14 @@ public class DuctsToPluto
             while (br.BaseStream.Position + 8 <= br.BaseStream.Length)
             {
                 int row = br.ReadInt32(), n = br.ReadInt32();
-                bool keep = !byRoom || (row >= 1 && row <= rows.Count && rows[row - 1].Room.Trim().Equals(room.Trim(), StringComparison.OrdinalIgnoreCase));
+                bool keep = !byRoom || (row >= 1 && row <= rows.Count && InRooms(rows[row - 1].Room, room));
                 if (!keep) { br.BaseStream.Seek((long)n * 36, SeekOrigin.Current); continue; }
                 var f = new float[n * 9];
                 for (int k = 0; k < f.Length; k++) { f[k] = br.ReadSingle(); lo[k % 3] = Math.Min(lo[k % 3], f[k]); hi[k % 3] = Math.Max(hi[k % 3], f[k]); }
                 recs.Add(new KeyValuePair<int, float[]>(row, f));
             }
         }
-        if (recs.Count == 0) throw new Exception("DuctsToPluto: no triangles in " + triPath + (byRoom ? " for room " + room : ""));
+        if (recs.Count == 0) throw new Exception("DuctsToPluto: no triangles in " + triPath + (byRoom ? " for room(s) " + room : ""));
         double[] off = { Math.Round((lo[0] + hi[0]) / 2), Math.Round((lo[1] + hi[1]) / 2), Math.Round((lo[2] + hi[2]) / 2) };
         var nodes = new Dictionary<int, Node>(); var elems = new Dictionary<int, Element>(); var labels = new Dictionary<int, string>();
         var keyToNode = new Dictionary<string, int>(); var byCat = new SortedDictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
@@ -553,7 +553,7 @@ public class DuctsToPluto
         File.WriteAllText(scPath, sc.ToJson(), new UTF8Encoding(false));
         var res = new Result();
         res.BinPath = binPath; res.SidecarPath = scPath; res.GeometryHash = w.GeometryHash;
-        int inScope = byRoom ? rows.FindAll(r => r.Room.Trim().Equals(room.Trim(), StringComparison.OrdinalIgnoreCase)).Count : rows.Count;
+        int inScope = byRoom ? rows.FindAll(r => InRooms(r.Room, room)).Count : rows.Count;
         res.Nodes = nodes.Count; res.Beams = 0; res.Skipped = inScope - recs.Count;
         return res;
     }
@@ -742,8 +742,8 @@ public class DuctsToPluto
         var want = new HashSet<int>();
         for (int i = 0; i < rows.Count; i++)
             if (string.Equals(rows[i].Cat, Fab, StringComparison.OrdinalIgnoreCase)
-                && (string.IsNullOrEmpty(room) || rows[i].Room.Trim().Equals(room.Trim(), StringComparison.OrdinalIgnoreCase))) want.Add(i + 1);
-        if (want.Count == 0) throw new Exception("DuctsToPluto: no fabrication rows" + (string.IsNullOrEmpty(room) ? "" : " in room " + room));
+                && (string.IsNullOrEmpty(room) || InRooms(rows[i].Room, room))) want.Add(i + 1);
+        if (want.Count == 0) throw new Exception("DuctsToPluto: no fabrication rows" + (string.IsNullOrEmpty(room) ? "" : " in room(s) " + room));
         // connectors are found on EVERY fabrication part, so a connector at the room edge finds its neighbour
         // in the next room; counts and outputs cover the room's parts only
         var allFab = new HashSet<int>();
@@ -924,7 +924,7 @@ public class DuctsToPluto
             }
             if (bf != null && best <= SlipIn)
             {
-                o.Status = "fitting joint" + (rows[bf.Row - 1].Room.Trim().Equals((room ?? "").Trim(), StringComparison.OrdinalIgnoreCase) || string.IsNullOrEmpty(room) ? "" : ", other room");
+                o.Status = "fitting joint" + (InRooms(rows[bf.Row - 1].Room, room) ? "" : ", other room");
                 o.NearRow = bf.Row; o.Near = best; fitMatched.Add(bf);
             }
         }
@@ -986,9 +986,9 @@ public class DuctsToPluto
         sum.AppendLine(string.Format(Inv, "status: joint {0}, side branch {1}, fitting joint {2}, near {3}, unmatched {4}", nJ, nS, nF, nN, nU));
         int fitIn = 0, fitInCl = 0, endsIn = 0, endsUsed = 0;
         foreach (int fr in fitRows)
-            if (string.IsNullOrEmpty(room) || rows[fr - 1].Room.Trim().Equals(room.Trim(), StringComparison.OrdinalIgnoreCase)) { fitIn++; if (fitWithCl.Contains(fr)) fitInCl++; }
+            if (string.IsNullOrEmpty(room) || InRooms(rows[fr - 1].Room, room)) { fitIn++; if (fitWithCl.Contains(fr)) fitInCl++; }
         foreach (Opening fe in fitEnds)
-            if (string.IsNullOrEmpty(room) || rows[fe.Row - 1].Room.Trim().Equals(room.Trim(), StringComparison.OrdinalIgnoreCase)) { endsIn++; if (fitMatched.Contains(fe)) endsUsed++; }
+            if (string.IsNullOrEmpty(room) || InRooms(rows[fe.Row - 1].Room, room)) { endsIn++; if (fitMatched.Contains(fe)) endsUsed++; }
         sum.AppendLine(string.Format(Inv, "Revit fittings in room: {0}, with centreline {1}, ends {2}, ends joined to fab {3}", fitIn, fitInCl, endsIn, endsUsed));
         var ul = new List<KeyValuePair<string, int>>(unm); ul.Sort((x, y) => y.Value.CompareTo(x.Value));
         var u5 = new List<string>(); for (int q = 0; q < ul.Count && q < 5; q++) u5.Add(ul[q].Key + " " + ul[q].Value);
@@ -1477,6 +1477,22 @@ public class DuctsToPluto
         var c = new Opening(); c.Shape = o.Shape; c.A = o.A; c.B = o.B; c.Dia = o.Dia; c.Planar = o.Planar; c.Perim = o.Perim;
         c.C = (double[])o.C.Clone(); c.N = (double[])o.N.Clone();
         return c;
+    }
+
+    // Room filter (2026-10-08): room is one Custom room number or a list ("A-123, A-124"; commas, semicolons
+    // or spaces); null / "" = every room. Case and surrounding spaces ignored.
+    static readonly Dictionary<string, HashSet<string>> roomSets = new Dictionary<string, HashSet<string>>();
+    static bool InRooms(string value, string rooms)
+    {
+        if (string.IsNullOrEmpty(rooms) || rooms.Trim() == "") return true;
+        HashSet<string> set;
+        if (!roomSets.TryGetValue(rooms, out set))
+        {
+            set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string r in rooms.Split(new[] { ',', ';', ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)) set.Add(r.Trim());
+            roomSets[rooms] = set;
+        }
+        return set.Contains((value ?? "").Trim());
     }
 
     // Offset (inches) of a ring's centre from the part's bbox centre, measured across the ring's axis.

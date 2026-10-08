@@ -2,13 +2,13 @@
 # with "Add overlay..." beside the SP3D plant file. Windows PowerShell 5.1; uses scripts\arms\DuctsToPluto.cs
 # (compiled with the lib by scripts\lib\Config.ps1).
 #   powershell -ExecutionPolicy Bypass -File scripts\navis\Export-DuctsViewer.ps1 -Run C:\Temp\hvac\ducts\<yyyyMMdd-HHmmss>
-#     [-Mesh [-Room <code>]]  the raw triangles (ducts_tri.bin: Ducts + MEP Fabrication Ductwork) as a shell mesh
+#     [-Mesh [-Room <codes>]]  the raw triangles (ducts_tri.bin: Ducts + MEP Fabrication Ductwork) as a shell mesh
 #                        instead of beams, to check each element's actual geometry; default out <run>\ducts_mesh
 #     [-Centrelines]     the Revit centrelines (cl_segments.csv) as thin beams in their own file, one group
 #                        per RunName, node groups for free ends / junctions / RunName changes; default out
 #                        <run>\ducts_cl (load beside ducts.bin with Add overlay...)
 #     [-Probe [-Room <code>]]  fabrication-part opening probe (connectors from the mesh): <out>.openings.csv,
-#                        <out>.probe.txt and an overlay of opening stubs; -Room = Custom room number (e.g. A-123),
+#                        <out>.probe.txt and an overlay of opening stubs; -Room = Custom room number(s) (e.g. A-123 or "A-123,A-124"),
 #                        needs a run from the 2026-10-08 build; default out <run>\probe[_<room>]
 #                        [-Part <NavisId start>]: NEW reports that one part's rings and connectors instead
 #     [-Out <base>]      default <run>\ducts  ->  <run>\ducts.bin + <run>\ducts.features.json
@@ -34,10 +34,13 @@ param(
 )
 $ErrorActionPreference = "Stop"
 if ($Room -and -not ($Mesh -or $Probe)) { throw "-Room works with -Mesh or -Probe only." }
+# file-name tag for the room filter: one room as is, a list as "<first>_plus<n>"
+$roomList = @(if ($Room) { $Room -split '[,;\s]+' | Where-Object { $_ } })
+$roomTag = $(if ($roomList.Count -eq 1) { "_" + ($roomList[0] -replace "[^A-Za-z0-9-]", "_") } elseif ($roomList.Count -gt 1) { "_" + ($roomList[0] -replace "[^A-Za-z0-9-]", "_") + "_plus" + ($roomList.Count - 1) } else { "" })
 $Run = [IO.Path]::GetFullPath($Run)
 $Box = Test-Path (Join-Path $Run "box_items.csv")
 if (-not $Box -and -not (Test-Path (Join-Path $Run "ducts.csv"))) { throw "No ducts.csv or box_items.csv in $Run (a Pluto Ducts / Fab / Box run folder)." }
-if (-not $Out) { $Out = Join-Path $Run $(if ($Box) { "box" } elseif ($Mesh) { "ducts_mesh" + $(if ($Room) { "_" + ($Room -replace "[^A-Za-z0-9-]", "_") } else { "" }) } elseif ($Centrelines) { "ducts_cl" } elseif ($Probe) { "probe" + $(if ($Room) { "_" + ($Room -replace "[^A-Za-z0-9-]", "_") } else { "" }) } else { "ducts" }) }
+if (-not $Out) { $Out = Join-Path $Run $(if ($Box) { "box" } elseif ($Mesh) { "ducts_mesh" + $roomTag } elseif ($Centrelines) { "ducts_cl" } elseif ($Probe) { "probe" + $roomTag } else { "ducts" }) }
 if (-not $ModelId) {
     $ModelId = $(if ($Box) { "hvac/box/" + (Split-Path $Run -Leaf) } else { "hvac/ducts/" + (Split-Path $Run -Leaf) + $(if ($Mesh) { "/mesh" } elseif ($Centrelines) { "/cl" } elseif ($Probe) { "/probe" } else { "" }) })
 }
