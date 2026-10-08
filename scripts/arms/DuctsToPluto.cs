@@ -75,6 +75,7 @@ public class DuctsToPluto
         public double FitLen;                     // fitted length, feet
         public double NameW = double.NaN, NameH = double.NaN, NameD = double.NaN;   // size read from the Name (fabrication parts)
         public double[] Min, Max, E1, E2;         // feet; null = absent
+        public string Room = "", RefLevel = "", Oid = "", Cwp = "";   // Custom room number etc. (runs from 2026-10-08 on)
         public string RunName = "", Service = ""; // IfcObjectProperties.RunName "A-<bldg>-<service>-DUCT-<n>" (runs from 2026-10-07 on)
         public bool Out;                          // service not in the requested list: not drawn (row kept so row numbers stay aligned)
     }
@@ -691,6 +692,283 @@ public class DuctsToPluto
         return res;
     }
 
+    // ---- Opening probe (2026-10-08) ------------------------------------------------------------------
+    // Fabrication ductwork has no connector data (no Revit, SP3D models it as equipment), so connectors
+    // must come from the mesh. This probe asks whether they can: per fabrication part (optionally one
+    // Custom room number), weld its own triangles, chain the boundary edges (edges on one triangle) into
+    // loops, and describe each loop: centre, plane normal, round (diameter) or rectangular (a x b), planarity.
+    // An open-ended skin should give 2 loops on a straight / elbow, 3 on a tee; a closed solid gives none.
+    // Each opening is then matched to the nearest opening of another part: coincident and facing (joint),
+    // coaxial within 6 in (slip joint / gap), or unmatched. Nothing here builds the graph yet.
+    // Writes <out>.openings.csv, <out>.probe.txt and a viewer overlay: one 6 in stub per opening along its
+    // normal, groups by shape and by match status.
+    class Opening
+    {
+        public int Row; public string Shape; public double A, B, Dia;   // inches
+        public double[] C, N; public double Planar, Perim;              // C feet; Planar / Perim inches
+        public bool SizeOk; public double Near = double.NaN, Dot = double.NaN; public int NearRow; public string Status = "";
+    }
+
+    public static Result ExportProbe(string runDir, string outBase, string modelId, string lengthUnit, string room)
+    {
+        const double WeldFt = 1e-3, BigPerimIn = 12, MatchIn = 1, SlipIn = 6;
+        double scale = LengthScale(lengthUnit);
+        var rows = ReadRows(Path.Combine(runDir, "ducts.csv"));
+        bool hasRoom = false; foreach (Row r in rows) if (r.Room != "") { hasRoom = true; break; }
+        if (!string.IsNullOrEmpty(room) && !hasRoom)
+            throw new Exception("DuctsToPluto: ducts.csv has no Room values (run Pluto Fab / Ducts with the 2026-10-08 build)");
+        var want = new HashSet<int>();
+        for (int i = 0; i < rows.Count; i++)
+            if (string.Equals(rows[i].Cat, Fab, StringComparison.OrdinalIgnoreCase)
+                && (string.IsNullOrEmpty(room) || rows[i].Room.Trim().Equals(room.Trim(), StringComparison.OrdinalIgnoreCase))) want.Add(i + 1);
+        if (want.Count == 0) throw new Exception("DuctsToPluto: no fabrication rows" + (string.IsNullOrEmpty(room) ? "" : " in room " + room));
+        var tri = ReadTriangles(Path.Combine(runDir, "ducts_tri.bin"), want);
+
+        var ops = new List<Opening>(); var loopsOf = new Dictionary<int, int[]>();   // row -> {big, small}
+        int noTri = 0;
+        foreach (int row in want)
+        {
+            float[] f;
+            if (!tri.TryGetValue(row, out f) || f.Length < 9) { noTri++; continue; }
+            int big = 0, small = 0;
+            foreach (List<double[]> loop in BoundaryLoops(f, WeldFt))
+            {
+                Opening o = Describe(loop);
+                if (o == null || o.Perim < BigPerimIn) { small++; continue; }
+                big++; o.Row = row;
+                double sa, sb;
+                if (StatedSize(rows[row - 1], out sa, out sb))
+                    o.SizeOk = o.Shape == "round" ? Math.Abs(o.Dia - Math.Max(sa, sb)) <= 1.5
+                        : (Math.Abs(o.A - sa) <= 1.5 && Math.Abs(o.B - sb) <= 1.5) || (Math.Abs(o.A - sb) <= 1.5 && Math.Abs(o.B - sa) <= 1.5);
+                ops.Add(o);
+            }
+            loopsOf[row] = new[] { big, small };
+        }
+        // nearest opening on another part
+        for (int i = 0; i < ops.Count; i++)
+        {
+            Opening o = ops[i]; double best = double.MaxValue; int bj = -1;
+            for (int j = 0; j < ops.Count; j++)
+            {
+                if (ops[j].Row == o.Row) continue;
+                double dx = ops[j].C[0] - o.C[0], dy = ops[j].C[1] - o.C[1], dz = ops[j].C[2] - o.C[2];
+                double d = dx * dx + dy * dy + dz * dz;
+                if (d < best) { best = d; bj = j; }
+            }
+            if (bj < 0) { o.Status = "unmatched"; continue; }
+            o.Near = Math.Sqrt(best) * 12; o.NearRow = ops[bj].Row;
+            o.Dot = o.N[0] * ops[bj].N[0] + o.N[1] * ops[bj].N[1] + o.N[2] * ops[bj].N[2];
+            o.Status = o.Near <= MatchIn && Math.Abs(o.Dot) > 0.9 ? "joint" : o.Near <= SlipIn && Math.Abs(o.Dot) > 0.9 ? "near (slip / gap)" : "unmatched";
+        }
+
+        // CSV
+        var csv = new List<string>();
+        csv.Add("Row,NavisId,IfcGUID,Name,Type,StatedSize,Room,RunName,Shape,A_in,B_in,Dia_in,SizeOk,Cx_ft,Cy_ft,Cz_ft,Nx,Ny,Nz,Planarity_in,Perimeter_in,Nearest_in,NearestRow,NormalDot,Status");
+        foreach (Opening o in ops)
+        {
+            Row r = rows[o.Row - 1];
+            csv.Add(string.Join(",", new[] { o.Row.ToString(Inv), r.NavisId, r.Guid, CsvCell(r.Name), PartType(r.Name), CsvCell(r.SizeText), CsvCell(r.Room), CsvCell(r.RunName), o.Shape,
+                F1(o.A), F1(o.B), F1(o.Dia), o.SizeOk ? "1" : "0", F3(o.C[0]), F3(o.C[1]), F3(o.C[2]), F3(o.N[0]), F3(o.N[1]), F3(o.N[2]),
+                F1(o.Planar), F1(o.Perim), F1(o.Near), o.NearRow > 0 ? o.NearRow.ToString(Inv) : "", F3(o.Dot), o.Status }));
+        }
+        File.WriteAllLines(outBase + ".openings.csv", csv.ToArray());
+
+        // summary: per part type, how many big openings, shapes, size agreement, match status
+        var sum = new StringBuilder();
+        sum.AppendLine(string.Format(Inv, "Opening probe {0}  room {1}", runDir, string.IsNullOrEmpty(room) ? "(all)" : room));
+        sum.AppendLine(string.Format(Inv, "fabrication parts {0}; without triangles {1}; openings (perimeter >= {2} in) {3}", want.Count, noTri, BigPerimIn, ops.Count));
+        var byType = new SortedDictionary<string, SortedDictionary<string, int>>(StringComparer.OrdinalIgnoreCase);
+        foreach (KeyValuePair<int, int[]> kv in loopsOf)
+        {
+            string t = PartType(rows[kv.Key - 1].Name) + (IsRound(rows[kv.Key - 1]) ? " (round)" : "");
+            SortedDictionary<string, int> h; if (!byType.TryGetValue(t, out h)) { h = new SortedDictionary<string, int>(); byType[t] = h; }
+            string k = kv.Value[0] + " openings" + (kv.Value[1] > 0 ? " +small" : ""); int c; h.TryGetValue(k, out c); h[k] = c + 1;
+        }
+        sum.AppendLine("parts by type: count by number of openings (\"+small\" = also loops under the perimeter cut: holes, seams)");
+        foreach (KeyValuePair<string, SortedDictionary<string, int>> t in byType)
+        {
+            var parts = new List<string>(); foreach (KeyValuePair<string, int> h in t.Value) parts.Add(h.Key + ": " + h.Value);
+            sum.AppendLine("  " + t.Key + " -> " + string.Join("; ", parts.ToArray()));
+        }
+        var tally = new SortedDictionary<string, int>();
+        foreach (Opening o in ops)
+        {
+            foreach (string k in new[] { "shape " + o.Shape, "size " + (o.SizeOk ? "agrees with stated" : "differs / no stated size"), "status " + o.Status,
+                "planarity " + (o.Planar <= 0.25 ? "<= 1/4 in" : o.Planar <= 1 ? "<= 1 in" : "> 1 in (not a flat opening)") })
+            { int c; tally.TryGetValue(k, out c); tally[k] = c + 1; }
+        }
+        sum.AppendLine("openings:"); foreach (KeyValuePair<string, int> kv in tally) sum.AppendLine("  " + kv.Key + ": " + kv.Value);
+        var dist = new[] { 0, 0, 0, 0, 0 };
+        foreach (Opening o in ops) { double d = o.Near; dist[double.IsNaN(d) ? 4 : d <= 0.25 ? 0 : d <= 1 ? 1 : d <= 6 ? 2 : 3]++; }
+        sum.AppendLine(string.Format(Inv, "nearest other opening: <= 1/4 in {0}; <= 1 in {1}; <= 6 in {2}; farther {3}; none {4}", dist[0], dist[1], dist[2], dist[3], dist[4]));
+        if (!string.IsNullOrEmpty(room)) sum.AppendLine("(openings at the room boundary show as unmatched: their neighbours are outside the filter)");
+        File.WriteAllText(outBase + ".probe.txt", sum.ToString());
+
+        // overlay: 6 in stub per opening along its normal
+        var nodes = new Dictionary<int, Node>(); int nextNode = 1;
+        double[] lo = { double.MaxValue, double.MaxValue, double.MaxValue }, hi = { double.MinValue, double.MinValue, double.MinValue };
+        foreach (Opening o in ops) for (int k = 0; k < 3; k++) { lo[k] = Math.Min(lo[k], o.C[k]); hi[k] = Math.Max(hi[k], o.C[k]); }
+        if (ops.Count == 0) { var r0 = new Result(); r0.Note = sum.ToString(); return r0; }
+        double[] off = { Math.Round((lo[0] + hi[0]) / 2), Math.Round((lo[1] + hi[1]) / 2), Math.Round((lo[2] + hi[2]) / 2) };
+        var sections = new List<RawViewerWriter.SectionDef>();
+        sections.Add(RawViewerWriter.SectionDef.Pipe("opening", (float)(1.5 * scale / 12), (float)(0.375 * scale / 12)));
+        var beams = new Dictionary<int, RawViewerWriter.BeamMember>(); var labels = new Dictionary<int, string>();
+        var gShape = new SortedDictionary<string, List<uint>>(); var gStatus = new SortedDictionary<string, List<uint>>(); var gSize = new List<uint>();
+        int nb = 1;
+        foreach (Opening o in ops)
+        {
+            Row r = rows[o.Row - 1];
+            int a = MakeNode(nodes, ref nextNode, o.C, off, scale);
+            int b = MakeNode(nodes, ref nextNode, new[] { o.C[0] + o.N[0] * 0.5, o.C[1] + o.N[1] * 0.5, o.C[2] + o.N[2] * 0.5 }, off, scale);
+            beams[nb] = Beam(nb, a, b, 0, nodes);
+            labels[nb] = string.Format(Inv, "{0} #{1} | {2} | stated {3} | opening {4} | {5} | nearest {6} in", r.Guid, r.NavisId, r.Name, r.SizeText,
+                o.Shape == "round" ? string.Format(Inv, "round {0:0.#}", o.Dia) : string.Format(Inv, "{0:0.#}x{1:0.#}", o.A, o.B), o.Status, F1(o.Near));
+            List<uint> l;
+            if (!gShape.TryGetValue(o.Shape, out l)) { l = new List<uint>(); gShape[o.Shape] = l; } l.Add((uint)nb);
+            if (!gStatus.TryGetValue(o.Status, out l)) { l = new List<uint>(); gStatus[o.Status] = l; } l.Add((uint)nb);
+            if (!o.SizeOk) gSize.Add((uint)nb);
+            nb++;
+        }
+        var comps = new List<RawViewerWriter.Component>();
+        comps.Add(new RawViewerWriter.Component("Axial N", "force", "kip"));   // layout only; no planes written
+        var units = new Dictionary<string, string>(); units["length"] = lengthUnit;
+        string binPath = outBase + ".bin";
+        var w = new RawViewerWriter(binPath, nodes, null, null, null, beams, sections, comps, modelId, units);
+        w.SetBeamLabels(labels);
+        w.Write(false);
+        var sc = new FeaturesSidecar();
+        sc.ModelId = modelId; sc.GeometryHash = w.GeometryHash;
+        sc.Units["length"] = lengthUnit;
+        sc.Units["worldOffset"] = string.Format(Inv, "{0} {1} {2}", off[0] * scale, off[1] * scale, off[2] * scale);
+        foreach (KeyValuePair<string, List<uint>> kv in gShape) sc.AddGroup("Opening " + kv.Key, kv.Key == "round" ? "#3fe0e0" : "#4f8cff", "beams", kv.Value, new[] { "duct", "opening", kv.Key }, null);
+        if (gSize.Count > 0) sc.AddGroup("Opening size differs from stated", "#ff8a3d", "beams", gSize, new[] { "duct", "opening", "sizeDiffers" }, null);
+        foreach (KeyValuePair<string, List<uint>> kv in gStatus)
+            sc.AddGroup("Match: " + kv.Key, kv.Key == "joint" ? "#8ae04f" : kv.Key == "unmatched" ? "#ff3b3b" : "#ffd23f", "beams", kv.Value, new[] { "duct", "opening", "match" }, null);
+        string scPath = outBase + ".features.json";
+        File.WriteAllText(scPath, sc.ToJson(), new UTF8Encoding(false));
+        var res = new Result();
+        res.BinPath = binPath; res.SidecarPath = scPath; res.GeometryHash = w.GeometryHash;
+        res.Nodes = nodes.Count; res.Beams = beams.Count; res.Note = sum.ToString();
+        return res;
+    }
+
+    // Boundary loops of a triangle soup (feet): vertices welded on a tol grid, edges used by exactly one
+    // triangle chained into closed loops (a vertex with more than two boundary edges is left on whichever
+    // walk reaches it first; such loops come out irregular and show in the planarity / size checks).
+    static List<List<double[]>> BoundaryLoops(float[] f, double tol)
+    {
+        var index = new Dictionary<string, int>(StringComparer.Ordinal); var pts = new List<double[]>();
+        int nt = f.Length / 9; var tv = new int[nt * 3];
+        for (int i = 0; i < nt * 3; i++)
+        {
+            double x = f[i * 3], y = f[i * 3 + 1], z = f[i * 3 + 2];
+            string k = Math.Round(x / tol).ToString(Inv) + "|" + Math.Round(y / tol).ToString(Inv) + "|" + Math.Round(z / tol).ToString(Inv);
+            int id; if (!index.TryGetValue(k, out id)) { id = pts.Count; pts.Add(new[] { x, y, z }); index[k] = id; }
+            tv[i] = id;
+        }
+        var edges = new Dictionary<long, int>();
+        for (int t = 0; t < nt; t++)
+            for (int e = 0; e < 3; e++)
+            {
+                int a = tv[t * 3 + e], b = tv[t * 3 + (e + 1) % 3];
+                if (a == b) continue;
+                long key = a < b ? ((long)a << 32) | (uint)b : ((long)b << 32) | (uint)a;
+                int c; edges.TryGetValue(key, out c); edges[key] = c + 1;
+            }
+        var adj = new Dictionary<int, List<int>>();
+        foreach (KeyValuePair<long, int> kv in edges)
+        {
+            if (kv.Value != 1) continue;
+            int a = (int)(kv.Key >> 32), b = (int)(kv.Key & 0xffffffff);
+            List<int> l; if (!adj.TryGetValue(a, out l)) { l = new List<int>(); adj[a] = l; } l.Add(b);
+            if (!adj.TryGetValue(b, out l)) { l = new List<int>(); adj[b] = l; } l.Add(a);
+        }
+        var used = new HashSet<long>(); var loops = new List<List<double[]>>();
+        foreach (int start in adj.Keys)
+        {
+            foreach (int first in adj[start])
+            {
+                long k0 = start < first ? ((long)start << 32) | (uint)first : ((long)first << 32) | (uint)start;
+                if (used.Contains(k0)) continue;
+                var loop = new List<double[]>(); loop.Add(pts[start]);
+                int prev = start, cur = first; used.Add(k0);
+                while (cur != start)
+                {
+                    loop.Add(pts[cur]);
+                    int next = -1;
+                    foreach (int n in adj[cur])
+                    {
+                        long kn = cur < n ? ((long)cur << 32) | (uint)n : ((long)n << 32) | (uint)cur;
+                        if (!used.Contains(kn)) { next = n; used.Add(kn); break; }
+                    }
+                    if (next < 0) break;   // open chain (non-manifold): keep what was walked
+                    prev = cur; cur = next;
+                }
+                if (loop.Count >= 3) loops.Add(loop);
+            }
+        }
+        return loops;
+    }
+
+    // Centre, Newell normal, planarity, perimeter; round when the radius varies < 6 % about the centre and the loop is circle-full,
+    // else a x b along the in-plane principal axes (inches).
+    static Opening Describe(List<double[]> p)
+    {
+        int n = p.Count; double[] c = new double[3]; double per = 0; double[] nn = new double[3];
+        for (int i = 0; i < n; i++)
+        {
+            double[] a = p[i], b = p[(i + 1) % n];
+            double l = Math.Sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1]) + (b[2] - a[2]) * (b[2] - a[2]));
+            per += l; for (int k = 0; k < 3; k++) c[k] += (a[k] + b[k]) / 2 * l;
+            nn[0] += (a[1] - b[1]) * (a[2] + b[2]); nn[1] += (a[2] - b[2]) * (a[0] + b[0]); nn[2] += (a[0] - b[0]) * (a[1] + b[1]);
+        }
+        double nl = Math.Sqrt(nn[0] * nn[0] + nn[1] * nn[1] + nn[2] * nn[2]);
+        if (per <= 0 || nl < 1e-12) return null;
+        for (int k = 0; k < 3; k++) { c[k] /= per; nn[k] /= nl; }
+        // in-plane basis
+        double[] u = Math.Abs(nn[0]) < 0.9 ? new[] { 1.0, 0, 0 } : new[] { 0, 1.0, 0 };
+        double ud = u[0] * nn[0] + u[1] * nn[1] + u[2] * nn[2];
+        for (int k = 0; k < 3; k++) u[k] -= ud * nn[k];
+        double ul = Math.Sqrt(u[0] * u[0] + u[1] * u[1] + u[2] * u[2]); for (int k = 0; k < 3; k++) u[k] /= ul;
+        double[] v = { nn[1] * u[2] - nn[2] * u[1], nn[2] * u[0] - nn[0] * u[2], nn[0] * u[1] - nn[1] * u[0] };
+        var xs = new double[n]; var ys = new double[n]; double planar = 0, rs = 0, rs2 = 0, sxx = 0, syy = 0, sxy = 0;
+        for (int i = 0; i < n; i++)
+        {
+            double[] d = { p[i][0] - c[0], p[i][1] - c[1], p[i][2] - c[2] };
+            xs[i] = d[0] * u[0] + d[1] * u[1] + d[2] * u[2]; ys[i] = d[0] * v[0] + d[1] * v[1] + d[2] * v[2];
+            planar = Math.Max(planar, Math.Abs(d[0] * nn[0] + d[1] * nn[1] + d[2] * nn[2]));
+            double r = Math.Sqrt(xs[i] * xs[i] + ys[i] * ys[i]); rs += r; rs2 += r * r;
+            sxx += xs[i] * xs[i]; syy += ys[i] * ys[i]; sxy += xs[i] * ys[i];
+        }
+        double rm = rs / n, cv = rm > 0 ? Math.Sqrt(Math.Max(0, rs2 / n - rm * rm)) / rm : 1;
+        var o = new Opening(); o.C = c; o.N = nn; o.Planar = planar * 12; o.Perim = per * 12;
+        // round needs both: radius nearly constant AND circle-like fullness 4 pi A / P^2 (circle 1, 24-gon 0.99,
+        // square 0.79, 74 x 28 rectangle 0.57); the corners of any rectangle alone are equidistant from its centre
+        double fullness = 4 * Math.PI * (nl / 2) / (per * per);
+        if (cv < 0.06 && fullness > 0.95) { o.Shape = "round"; o.Dia = 2 * rm * 12; o.A = o.B = double.NaN; return o; }
+        double ang = 0.5 * Math.Atan2(2 * sxy, sxx - syy), ca = Math.Cos(ang), sa = Math.Sin(ang);
+        double a0 = double.MaxValue, a1 = double.MinValue, b0 = double.MaxValue, b1 = double.MinValue;
+        for (int i = 0; i < n; i++)
+        {
+            double pa = xs[i] * ca + ys[i] * sa, pb = -xs[i] * sa + ys[i] * ca;
+            a0 = Math.Min(a0, pa); a1 = Math.Max(a1, pa); b0 = Math.Min(b0, pb); b1 = Math.Max(b1, pb);
+        }
+        o.Shape = "rect"; o.A = Math.Max(a1 - a0, b1 - b0) * 12; o.B = Math.Min(a1 - a0, b1 - b0) * 12; o.Dia = double.NaN;
+        return o;
+    }
+
+    static string PartType(string name)
+    {
+        string s = (name ?? "").Trim(); int i = 0;
+        while (i < s.Length && (char.IsLetter(s[i]) || s[i] == ' ' || s[i] == '-') && !(s[i] == ' ' && i + 1 < s.Length && char.IsDigit(s[i + 1]))) i++;
+        s = s.Substring(0, i).Trim();
+        return s == "" ? "(unnamed)" : s;
+    }
+    static bool IsRound(Row r) { return r.Shape.IndexOf("round", StringComparison.OrdinalIgnoreCase) >= 0 || (!double.IsNaN(r.NameD) && double.IsNaN(r.NameW)); }
+    static string F1(double v) { return double.IsNaN(v) ? "" : v.ToString("0.##", Inv); }
+    static string F3(double v) { return double.IsNaN(v) ? "" : v.ToString("0.####", Inv); }
+    static string CsvCell(string v) { v = v ?? ""; return v.IndexOfAny(new[] { ',', '"', '\n' }) >= 0 ? "\"" + v.Replace("\"", "\"\"") + "\"" : v; }
+
     // A "Pluto Box" run (scripts/navis/BoxButton.cs: every geometry item inside a box) -> shell overlay.
     // box_tri.bin: int32 row (1-based box_items.csv data row), int32 nTri, nTri * 9 float32 (world feet).
     // One shell group per element category (the nearest ancestor with an IfcGUID; "(no element)" when
@@ -1099,6 +1377,7 @@ public class DuctsToPluto
             NameSize(r.Name, out r.NameW, out r.NameH, out r.NameD);
             r.Hidden = Get(c, "Hidden"); r.HiddenGeom = Num(c, "HiddenGeom");
             r.RunName = Get(c, "RunName"); r.Service = ServiceOf(r.RunName);
+            r.Room = Get(c, "Room"); r.RefLevel = Get(c, "RefLevel"); r.Oid = Get(c, "OID"); r.Cwp = Get(c, "CWP");
             r.W = Num(c, "Width_in"); r.H = Num(c, "Height_in"); r.D = Num(c, "Diameter_in"); r.T = Num(c, "WallThk_in");
             double[] mn = { Num(c, "MinX"), Num(c, "MinY"), Num(c, "MinZ") }, mx = { Num(c, "MaxX"), Num(c, "MaxY"), Num(c, "MaxZ") };
             if (!double.IsNaN(mn[0]) && !double.IsNaN(mx[0])) { r.Min = mn; r.Max = mx; }

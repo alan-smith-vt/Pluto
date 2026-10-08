@@ -78,6 +78,7 @@ namespace PlutoNavis
             var lenErr = new List<double>(); var bbErr = new List<double>();
             var segs = new List<Seg>();
             var guidUse = new Dictionary<string, int>(StringComparer.Ordinal);   // IfcGUID -> rows carrying it
+            var picked = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);   // "<column> <- <tab|property>" -> rows
             var propCensus = new SortedDictionary<string, string[]>(StringComparer.Ordinal);   // "cat|tab|prop" -> {count, sample}
             var cl = new List<ClSeg>();                                       // centreline segments, all kept categories
             var clNone = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);   // elements without a line, by category
@@ -112,7 +113,7 @@ namespace PlutoNavis
                         "MinX", "MinY", "MinZ", "MaxX", "MaxY", "MaxZ", "OwnGeom", "SkippedGeom", "Triangles",
                         "X1", "Y1", "Z1", "X2", "Y2", "Z2", "FitLength_ft", "FitA_in", "FitB_in",
                         "LenErr_ft", "SizeErr_in", "TriVsBbox_ft", "Flag", "Hidden", "HiddenGeom",
-                        "RunName", "ServiceAbbrev", "SystemAbbrev" }));
+                        "RunName", "ServiceAbbrev", "SystemAbbrev", "Room", "RefLevel", "OID", "CWP" }));
                     foreach (ModelItem it in found)
                     {
                         seen++;
@@ -181,7 +182,13 @@ namespace PlutoNavis
                         // on Ducts, fittings and fabrication parts alike; the two abbreviations are cross-checks
                         string runName = Ifc(p, "RunName"), svcAbbr = AnyTab(p, "eM_Service Abbreviation"), sysAbbr = AnyTab(p, "System Abbreviation");
                         if (runName == "") runsMissing++;
-                        Action<List<string>> emit = delegate(List<string> c) { c.Add(hidCell); c.Add(hidGeomCell); c.Add(runName); c.Add(svcAbbr); c.Add(sysAbbr); w.WriteLine(Csv(c)); };
+                        // 2026-10-08: room number (Custom tab), reference level, SP3D OID, MatMan CWP id; matched by
+                        // normalised property name (spaces / underscores / dots ignored), the key used is counted
+                        string room = Pick(p, "Custom", n => n == "roomnumber" || n.EndsWith("roomnumber"), "Room", picked);
+                        string refLevel = Pick(p, null, n => n == "referencelevel" || n.EndsWith("referencelevel"), "RefLevel", picked);
+                        string oid = Pick(p, "Custom", n => n == "oid" || n.EndsWith("customoid"), "OID", picked);
+                        string cwp = Pick(p, null, n => n.Contains("cwp"), "CWP", picked);
+                        Action<List<string>> emit = delegate(List<string> c) { c.Add(hidCell); c.Add(hidGeomCell); c.Add(runName); c.Add(svcAbbr); c.Add(sysAbbr); c.Add(room); c.Add(refLevel); c.Add(oid); c.Add(cwp); w.WriteLine(Csv(c)); };
 
                         var cells = new List<string> {
                             guid, navisId, cat, Get(p, "Element|Family"), Get(p, "Element|Type"), it.DisplayName,
@@ -294,6 +301,7 @@ namespace PlutoNavis
                 int hiddenAll = 0; foreach (int v in hiddenByCat.Values) hiddenAll += v;
                 s.AppendLine(string.Format(Inv, "hidden elements {0} (self {1}, under a hidden ancestor {2}):{3}", hiddenAll, hiddenSelf, hiddenAll - hiddenSelf, hb.Length > 0 ? hb.ToString() : "  none"));
                 s.AppendLine(string.Format(Inv, "rows without IfcObjectProperties.RunName: {0}", runsMissing));
+                foreach (KeyValuePair<string, int> kv in picked) s.AppendLine(string.Format(Inv, "  {0}: {1} rows", kv.Key, kv.Value));
                 s.AppendLine(string.Format(Inv, "visible elements with hidden own geometry:{0}", pb.Length > 0 ? pb.ToString() : "  none"));
                 s.AppendLine(string.Format(Inv, "own geometry items hidden {0} of {1}   (ducts.csv Hidden / HiddenGeom, duct_parts.csv Hidden)", geomHidden, geomTotal));
             }
@@ -521,6 +529,23 @@ namespace PlutoNavis
         }
 
         // A property by name on any tab (exact name, ignoring case; also "<prefix>.<name>"), "" when absent.
+        // First property whose normalised name (lower case; spaces, underscores, dots dropped) passes match,
+        // on tab preferTab first (null = any), then on any tab; counts "<column> <- <tab|property>" in picked.
+        internal static string Pick(Dictionary<string, string> p, string preferTab, Func<string, bool> match, string column, IDictionary<string, int> picked)
+        {
+            for (int pass = preferTab == null ? 1 : 0; pass < 2; pass++)
+                foreach (KeyValuePair<string, string> kv in p)
+                {
+                    int bar = kv.Key.IndexOf('|');
+                    if (pass == 0 && (bar < 0 || !kv.Key.Substring(0, bar).Equals(preferTab, StringComparison.OrdinalIgnoreCase))) continue;
+                    string n = (bar >= 0 ? kv.Key.Substring(bar + 1) : kv.Key).ToLowerInvariant().Replace(" ", "").Replace("_", "").Replace(".", "");
+                    if (kv.Value == "" || !match(n)) continue;
+                    string k = column + " <- " + kv.Key; int c; picked.TryGetValue(k, out c); picked[k] = c + 1;
+                    return kv.Value;
+                }
+            return "";
+        }
+
         internal static string AnyTab(Dictionary<string, string> p, string name)
         {
             foreach (KeyValuePair<string, string> kv in p)
