@@ -721,6 +721,7 @@ public class DuctsToPluto
         public bool SizeOk; public string SizeBand = "no stated size"; public double Near = double.NaN, Dot = double.NaN; public int NearRow; public string Status = "";
         public double DA = double.NaN, DB = double.NaN;                 // measured minus stated (larger / smaller side), inches
         public Opening Mate;                                            // the matched connector (joint / near), null otherwise
+        public List<Opening> Members;                                  // rings merged into this connector, smallest first
         public int Rings = 1; public string Outer = "";                // rings merged into this connector; largest ring's size
     }
 
@@ -756,7 +757,9 @@ public class DuctsToPluto
                 Opening o = Describe(loop);
                 if (o == null || o.Perim < BigPerimIn) { small++; continue; }
                 // an end has all of the part on one side of its plane (EndTolIn): the normal is then turned
-                // to point out of the part; a ring with mesh on both sides (stiffener band, seam) is interior
+                // to point out of the part; a ring with mesh on both sides (stiffener band, seam) is interior.
+                // Known limit: a lateral whose branch reaches past a main end's plane (or the reverse) loses
+                // that end here; the connector-count check flags the part.
                 double dLo = double.MaxValue, dHi = double.MinValue;
                 for (int k = 0; k + 2 < f.Length; k += 3)
                 {
@@ -787,7 +790,26 @@ public class DuctsToPluto
                     double inside = Math.Max(MergeLatIn, 0.5 * (o.Shape == "round" ? o.Dia : Math.Min(o.A, o.B)));   // o is the larger ring (perimeter order)
                     if (o.N[0] * c.N[0] + o.N[1] * c.N[1] + o.N[2] * c.N[2] > 0.95 && along <= MergeAlongIn && lateral <= inside) { hit = c; break; }
                 }
-                if (hit != null) { hit.Rings++; hit.Outer = o.Shape == "round" ? string.Format(Inv, "round {0:0.#}", o.Dia) : string.Format(Inv, "{0:0.#}x{1:0.#}", o.A, o.B); continue; }
+                if (hit != null) { hit.Rings++; hit.Members.Add(o); hit.Outer = o.Shape == "round" ? string.Format(Inv, "round {0:0.#}", o.Dia) : string.Format(Inv, "{0:0.#}x{1:0.#}", o.A, o.B); continue; }
+                o.Members = new List<Opening> { o };
+                conns.Add(o);
+            }
+            // where and how big a connector is (2026-10-08): from the smallest of its rings whose outline contains
+            // every other ring's centre (lateral offset within half its short side). An off-centre piece (a flange
+            // outline in pieces, which kinked a transition's line) cannot contain the duct's centre; a centred
+            // rim can. None qualifies: the largest ring.
+            foreach (Opening o in conns)
+            {
+                Opening pick = o.Members[o.Members.Count - 1];
+                foreach (Opening m in o.Members)                      // smallest first
+                {
+                    double half = 0.5 * (m.Shape == "round" ? m.Dia : Math.Min(m.A, m.B));
+                    bool holds = true;
+                    foreach (Opening q in o.Members) if (q != m && LateralIn(m, q) > half) { holds = false; break; }
+                    if (holds) { pick = m; break; }
+                }
+                o.C = (double[])pick.C.Clone();
+                o.Shape = pick.Shape; o.A = pick.A; o.B = pick.B; o.Dia = pick.Dia; o.Planar = pick.Planar; o.Perim = pick.Perim;
                 double sa, sb;
                 if (StatedSize(rows[row - 1], out sa, out sb))
                 {
@@ -804,7 +826,6 @@ public class DuctsToPluto
                     o.SizeOk = Math.Abs(e1) <= 1 && Math.Abs(e2) <= 1;
                     o.SizeBand = o.SizeOk ? "agrees" : e1 >= -1 && e2 >= -1 && e1 <= 8 && e2 <= 8 ? "flange (1-8 in larger)" : "differs";
                 }
-                conns.Add(o);
             }
             all.AddRange(conns);
             if (want.Contains(row)) loopsOf[row] = new[] { conns.Count, small, interior, ends.Count };
@@ -1249,14 +1270,15 @@ public class DuctsToPluto
             if (kv.Value.Count == 2) ids.Add(beam(conn(kv.Value[0]), conn(kv.Value[1]), 0, label));
             else if (thr != null)
             {
-                // tee / tap-on-main in one part: the through pair as a straight line, each other connector
-                // from the closest point of that line (a star from the mean zig-zagged the main run)
+                // tee / lateral in one part: the through pair as a straight line, each other connector along
+                // its own axis back to where that axis meets the main line, so a lateral keeps its angle
+                // (a star from the mean zig-zagged the main run; the closest point drew laterals square)
                 Opening a = kv.Value[thr[0]], b = kv.Value[thr[1]];
                 ids.Add(beam(conn(a), conn(b), 0, label));
                 for (int q = 0; q < kv.Value.Count; q++)
                 {
                     if (q == thr[0] || q == thr[1]) continue;
-                    ids.Add(beam(pt(ClosestOnSegment(a.C, b.C, kv.Value[q].C)), conn(kv.Value[q]), 0, label));
+                    ids.Add(beam(pt(BranchJunction(a.C, b.C, kv.Value[q])), conn(kv.Value[q]), 0, label));
                 }
             }
             else
@@ -1356,6 +1378,20 @@ public class DuctsToPluto
             }
         return best;
     }
+    // Where a branch connector's axis (its centre, back along its outward normal) comes closest to the
+    // main segment a-b: the point on the segment. Parallel axes fall back to the closest point of p.
+    static double[] BranchJunction(double[] a, double[] b, Opening br)
+    {
+        double[] u = { b[0] - a[0], b[1] - a[1], b[2] - a[2] }, v = { -br.N[0], -br.N[1], -br.N[2] };
+        double[] w = { a[0] - br.C[0], a[1] - br.C[1], a[2] - br.C[2] };
+        double uu = u[0] * u[0] + u[1] * u[1] + u[2] * u[2], uv = u[0] * v[0] + u[1] * v[1] + u[2] * v[2], vv = 1;
+        double uw = u[0] * w[0] + u[1] * w[1] + u[2] * w[2], vw = v[0] * w[0] + v[1] * w[1] + v[2] * w[2];
+        double den = uu * vv - uv * uv;
+        if (uu <= 0 || den < 1e-9 * uu) return ClosestOnSegment(a, b, br.C);
+        double s = (uv * vw - vv * uw) / den;            // parameter on the main segment
+        s = Math.Max(0, Math.Min(1, s));
+        return new[] { a[0] + u[0] * s, a[1] + u[1] * s, a[2] + u[2] * s };
+    }
     static double[] ClosestOnSegment(double[] a, double[] b, double[] p)
     {
         double[] ab = { b[0] - a[0], b[1] - a[1], b[2] - a[2] };
@@ -1363,6 +1399,14 @@ public class DuctsToPluto
         double t = L2 > 0 ? ((p[0] - a[0]) * ab[0] + (p[1] - a[1]) * ab[1] + (p[2] - a[2]) * ab[2]) / L2 : 0;
         t = Math.Max(0, Math.Min(1, t));
         return new[] { a[0] + ab[0] * t, a[1] + ab[1] * t, a[2] + ab[2] * t };
+    }
+
+    // Offset of q's centre from m's axis (inches).
+    static double LateralIn(Opening m, Opening q)
+    {
+        double dx = q.C[0] - m.C[0], dy = q.C[1] - m.C[1], dz = q.C[2] - m.C[2];
+        double off = Math.Sqrt(dx * dx + dy * dy + dz * dz) * 12, along = Math.Abs(dx * m.N[0] + dy * m.N[1] + dz * m.N[2]) * 12;
+        return Math.Sqrt(Math.Max(0, off * off - along * along));
     }
 
     static double Median(List<double> v) { if (v.Count == 0) return double.NaN; v.Sort(); return v.Count % 2 == 1 ? v[v.Count / 2] : (v[v.Count / 2 - 1] + v[v.Count / 2]) / 2; }
