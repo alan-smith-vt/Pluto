@@ -1,29 +1,28 @@
 // ================================================================
-// overlays.js  --  extra models drawn beside the loaded one (model rail, stage 1).
-// Design: vault/viewer/model-rail.md
+// overlays.js  --  extra models drawn beside the loaded one, and the model rail.
+// Design: vault/viewer/model-rail.md · module map: vault/viewer/Viewer modules.md
 //
-// The loaded model (viewer.js feaModel) is the PRIMARY: it owns the field,
-// load cases, legend, groups tab, section cuts and predicates. Overlays are
-// other files (e.g. plant steel + pipes over a SAP duct model) drawn as
-// reference geometry:
-//   - beams only for now (a file with shells draws its beams and says so)
-//   - coloured by the overlay's OWN sidecar groups (every element group,
-//     envelope order, later wins; no group = neutral grey), or ghosted
+// Owns: the rail (one row per model), "Add overlay...", file pairing, placement.
+// Each overlay is a FEAModelMesh drawable (shells + beams under one group) wrapped
+// as a model context (models.js) and registered with FEAModels:
+//   - click a row to make that model ACTIVE: the Groups tab, its filter / eyes /
+//     colours and Save features then act on it (features.js through the context)
+//   - colours: a model is painted by its own groups (Groups tab state; an overlay's
+//     groups paint unless they say hidden). With its group painting off, an overlay
+//     is drawn in its MODEL COLOUR (swatch on its row); the primary keeps its field.
+//   - x-ray per row (every model): additive translucency, overlaps read brighter
 //   - placed at true world coordinates: each file's exporter recenter
-//     (sidecar units.worldOffset) and the viewer recenter are added back,
-//     lengths converted to the primary's unit
+//     (sidecar model.units.worldOffset) and the viewer recenter are added back,
+//     lengths converted to the primary's unit; plan rotation 0/90/180/270 per row
 //   - pickable: the readout names the overlay, the member label and group
-// Each overlay keeps its own sidecar (bound by its own geometryHash); nothing
-// is merged. Not yet (stage 2/3): making an overlay the active model (its
-// groups in the Groups tab, Save, field), section cuts / predicates across
-// models.
+// Stays primary-only (stage 3): load cases / legend, section cuts, predicates.
 // ================================================================
 
 var FEAOverlays = (function () {
 
     var list = [];            // overlay records, in load order
-    var primaryVisible = true;
-    var GHOST_ALPHA = 0.22;
+    var OVERLAY_COLORS = ['#9ea3ad', '#c9a46b', '#7fb3ff', '#8ae0a5', '#d08ad0', '#e0c25a'];
+    var nextColor = 0;
     var UNIT_M = { m: 1, mm: 0.001, cm: 0.01, in: 0.0254, inch: 0.0254, ft: 0.3048, feet: 0.3048 };
 
     var elRail = document.getElementById('modelRail');
@@ -74,11 +73,11 @@ var FEAOverlays = (function () {
 
     function placeOne(ov, po) {
         var s = unitScale(ov);
-        ov.mesh.scale.setScalar(s);
-        ov.mesh.rotation.set(0, 0, ov.rotZ * Math.PI / 180);
+        ov.root.scale.setScalar(s);
+        ov.root.rotation.set(0, 0, ov.rotZ * Math.PI / 180);
         // world(ov) = local + localOrigin + worldOffset; scene = R (world * s) - primary origin
         var w = toPrimaryWorld(ov, [ov.localOrigin[0] + ov.offset[0], ov.localOrigin[1] + ov.offset[1], ov.localOrigin[2] + ov.offset[2]], s);
-        ov.mesh.position.set(w[0] - po[0], w[1] - po[1], w[2] - po[2]);
+        ov.root.position.set(w[0] - po[0], w[1] - po[1], w[2] - po[2]);
     }
 
     function reposition() {
@@ -88,68 +87,52 @@ var FEAOverlays = (function () {
         if (typeof needsRender !== 'undefined') needsRender = true;
     }
 
-    // Element groups of the overlay's sidecar -> per-element category + palette.
-    function resolveGroups(ov) {
-        var n = ov.view.header.nElements;
-        var cat = new Float32Array(n); cat.fill(-1);
-        ov.groupOfElem = new Int32Array(n); ov.groupOfElem.fill(-1);
-        ov.groups = [];
-        var items = (ov.envelope && ov.envelope.groups && Array.isArray(ov.envelope.groups.items)) ? ov.envelope.groups.items : [];
-        if (!items.length) return { cat: cat, rgb: [[200, 200, 200]] };
-        var idx = new Map();
-        var ids = ov.view.elemIds;
-        for (var e = 0; e < n; e++) idx.set(ids[e], e);
-        var beamDomains = {};
-        ov.unified.domains.forEach(function (d) { if (d.family === 'beam') beamDomains[d.name] = 1; });
-        var rgb = [];
-        items.forEach(function (g, gi) {
-            rgb.push(g.color ? hexToRgb(g.color) : FEAShaders.categoryColor(gi));
-            var count = 0;
-            (Array.isArray(g.members) ? g.members : []).forEach(function (m) {
-                var d = m.domain || '';
-                if (!(d === 'beams' || d === 'beam' || beamDomains[d])) return;
-                (m.ids || []).forEach(function (id) {
-                    var i = idx.get(id);
-                    if (i === undefined) return;
-                    cat[i] = gi; ov.groupOfElem[i] = gi; count++;
-                });
-            });
-            ov.groups.push({ name: g.name || ('Group ' + (gi + 1)), count: count });
-        });
-        return { cat: cat, rgb: rgb };
+    // The overlay as a model context (models.js interface).
+    function makeContext(ov) {
+        var d = ov.drawable, sv = PlutoFormat.shellView(ov.unified);
+        var ctx = {
+            id: 'ov:' + ov.name + ':' + Date.now(), kind: 'overlay', feat: {}, ov: ov,
+            look: { visible: true, xray: false, color: ov.color },
+            name: function () { return ov.name; },
+            shellModel: function () { return sv; },
+            beamView: function () { return d.beam ? d.beam.view : null; },
+            paint: d.paint,
+            setGroupLook: d.setGroupLook,
+            applyVisibility: function () {
+                d.setElemOff('shell', FEAFeatures.elemOffFor(ctx, 'shell'));
+                d.setElemOff('beam', FEAFeatures.elemOffFor(ctx, 'beam'));
+                redraw();
+            },
+            markerParent: function () { return d.root; },
+            setVisible: function (on) { ctx.look.visible = on; d.setVisible(on); redraw(); },
+            setXray: function (on) { ctx.look.xray = on; d.setXray(on); redraw(); },
+            setColor: function (hex) { ctx.look.color = hex; d.setColor(hex); redraw(); }
+        };
+        return ctx;
     }
-    function hexToRgb(h) {
-        var m = /^#?([0-9a-f]{6})$/i.exec(String(h || ''));
-        if (!m) return [200, 200, 200];
-        var v = parseInt(m[1], 16);
-        return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
-    }
-
-    function applyLook(ov) {
-        var u = ov.material.uniforms;
-        u.uGroupMode.value = ov.hasGroups ? 1 : 0;
-        u.uXray.value = ov.ghost ? GHOST_ALPHA : 0;
-        ov.material.transparent = ov.ghost;
-        ov.material.depthWrite = !ov.ghost;
-        ov.mesh.visible = ov.visible;
-        if (typeof needsRender !== 'undefined') needsRender = true;
+    function redraw() { if (typeof needsRender !== 'undefined') needsRender = true; }
+    function counts(ov) {
+        var d = ov.drawable, a = [];
+        if (d.shell) a.push(d.shell.view.header.nElements + ' shells');
+        if (d.beam) a.push(d.beam.view.header.nElements + ' beams');
+        return a.join(' + ');
     }
 
     // binFile: Blob/File of the .bin; jsonFile: its features sidecar (optional).
     async function add(binFile, jsonFile, name) {
         if (typeof feaModel === 'undefined' || !feaModel) { log('Load a model first; overlays are placed relative to it.'); return null; }
         var unified = await PlutoFormat.load(binFile, log);
-        var view = PlutoFormat.beamView(unified);
-        if (!view || view.header.nElements === 0) { log('Overlay ' + name + ': no beams (overlays draw beams only for now).'); return null; }
+        var sv = PlutoFormat.shellView(unified), bv = PlutoFormat.beamView(unified);
+        if (!(sv && sv.header.nElements > 0) && !(bv && bv.header.nElements > 0)) { log('Overlay ' + name + ': no shells or beams in the file.'); return null; }
         var envelope = null;
         if (jsonFile) {
             try { envelope = JSON.parse(await jsonFile.text()); }
             catch (err) { log('Overlay ' + name + ': features file unreadable (' + err.message + ').'); }
         }
         var ov = {
-            name: name, unified: unified, view: view, envelope: envelope,
-            unit: unitOf(unified), offset: parseOffset(envelope),
-            visible: true, ghost: false, hasGroups: false, rotZ: 0
+            name: name, unified: unified, envelope: envelope,
+            unit: unitOf(unified), offset: parseOffset(envelope), rotZ: 0,
+            color: OVERLAY_COLORS[nextColor++ % OVERLAY_COLORS.length]
         };
         try { ov.rotZ = Number(localStorage.getItem('pluto.ovRot.' + name)) || 0; } catch (e0) {}   // remembered per overlay name
         var want = envelope && envelope.model && envelope.model.geometryHash;
@@ -162,33 +145,16 @@ var FEAOverlays = (function () {
         ov.localOrigin = [Math.round((mn[0] + mx[0]) / 2), Math.round((mn[1] + mx[1]) / 2), Math.round((mn[2] + mx[2]) / 2)];
         for (var j = 0; j < nn * 3; j++) xyz[j] -= ov.localOrigin[j % 3];
 
-        ov.build = FEABeamGeometry.build(view);
-        var gr = resolveGroups(ov);
-        ov.hasGroups = ov.groups.length > 0;
-        FEAAttributes.updateCatIdx(ov.build.geometry, null, ov.build, gr.cat);
-        ov.palette = FEAShaders.makePaletteTexture(gr.rgb);
-        ov.material = new THREE.ShaderMaterial({
-            uniforms: {
-                colormap: { value: ov.palette },
-                vMin: { value: 0 }, vMax: { value: 1 },
-                alarmThreshold: { value: 0 }, alarmColor: { value: new THREE.Vector3(1, 0, 1) },
-                uAbs: { value: 0 }, uNeutral: { value: 1 },
-                neutralColor: { value: new THREE.Vector3(0.62, 0.64, 0.68) },   // grey: reads as "not the model"
-                dispScale: { value: 0 },
-                uGroupMode: { value: 0 }, groupPalette: { value: ov.palette }, uGroupCount: { value: Math.max(gr.rgb.length, 1) },
-                uXray: { value: 0 }
-            },
-            vertexShader: FEAShaders.beamVertex,
-            fragmentShader: FEAShaders.beamFragment,
-            side: THREE.DoubleSide
-        });
-        ov.mesh = new THREE.Mesh(ov.build.geometry, ov.material);
-        ov.mesh.renderOrder = 2;          // after the primary, so a ghost blends over it
-        scene.add(ov.mesh);
+        ov.drawable = FEAModelMesh.create(unified, ov.color);
+        ov.root = ov.drawable.root;
+        scene.add(ov.root);
         list.push(ov);
-        applyLook(ov);
+        ov.ctx = makeContext(ov);
+        FEAModels.register(ov.ctx);
+        FEAFeatures.attach(ov.ctx, envelope, name + '.features.json');
         reposition();
-        log('Overlay ' + name + ': ' + view.header.nElements + ' beams, ' + ov.groups.length + ' groups, units ' + (ov.unit || '?') +
+        var ng = envelope && envelope.groups && envelope.groups.items ? envelope.groups.items.length : 0;
+        log('Overlay ' + name + ': ' + counts(ov) + ', ' + ng + ' groups, units ' + (ov.unit || '?') +
             (ov.unitNote ? ' (' + ov.unitNote + ')' : '') + '.');
         reportPlacement(ov);                 // last, so it is the line the status shows
         return ov;
@@ -197,47 +163,35 @@ var FEAOverlays = (function () {
     function remove(ov) {
         var i = list.indexOf(ov);
         if (i < 0) return;
-        scene.remove(ov.mesh);
-        ov.build.geometry.dispose(); ov.material.dispose(); ov.palette.dispose();
+        FEAFeatures.detach(ov.ctx);
+        FEAModels.unregister(ov.ctx);
+        scene.remove(ov.root);
+        ov.drawable.dispose();
         list.splice(i, 1);
         render();
-        if (typeof needsRender !== 'undefined') needsRender = true;
+        redraw();
     }
 
-    function setPrimaryVisible(on) {
-        primaryVisible = on;
-        if (typeof mesh !== 'undefined' && mesh) mesh.visible = on;
-        if (typeof feaEdges !== 'undefined' && feaEdges) feaEdges.visible = on;
-        var bm = window.FEABeams && FEABeams.mesh();
-        if (bm) bm.visible = on && (document.getElementById('beamShow') ? document.getElementById('beamShow').checked : true);
-        if (typeof needsRender !== 'undefined') needsRender = true;
-    }
-
-    // Nearest visible overlay member under the ray: { overlay, elem, point, distance }.
+    // Nearest visible overlay member under the ray: { overlay, fam, elem, point, distance }.
     function pick(raycaster) {
         var best = null;
         list.forEach(function (ov) {
-            if (!ov.visible) return;
-            var hits = raycaster.intersectObject(ov.mesh);
-            for (var i = 0; i < hits.length; i++) {
-                if (hits[i].faceIndex == null) continue;
-                if (!best || hits[i].distance < best.distance)
-                    best = { overlay: ov, elem: ov.build.triToElem[hits[i].faceIndex], point: hits[i].point, distance: hits[i].distance };
-                break;
-            }
+            if (!ov.ctx.look.visible) return;
+            var h = ov.drawable.pick(raycaster);
+            if (h && (!best || h.distance < best.distance)) { h.overlay = ov; best = h; }
         });
         return best;
     }
 
     function fillReadout(hit) {
-        var ov = hit.overlay, e = hit.elem, v = ov.view;
-        var lbl = v.labels ? v.labels.get(e) : '';
-        var g = ov.groupOfElem[e] >= 0 ? ov.groups[ov.groupOfElem[e]].name : 'no group';
-        var sec = v.sections && ov.build.sectionOf ? v.sections[ov.build.sectionOf[e]] : null;
+        var ov = hit.overlay, d = ov.drawable, e = hit.elem, fam = hit.fam;
+        var lbl = d.label(fam, e);
+        var g = FEAFeatures.groupOfIn(ov.ctx, fam, e) || 'no group';
+        var sec = fam === 'beam' && d.beam.view.sections && d.beam.build.sectionOf ? d.beam.view.sections[d.beam.build.sectionOf[e]] : null;
         elRoValue.textContent = g;
         elRoValue.className = 'ro-value';
         elRoComp.textContent = 'overlay ' + ov.name + (sec && sec.name ? ' · ' + sec.name : '');
-        elRoElem.textContent = v.elemIds[e] + (lbl ? ' [' + lbl + ']' : '') + '  (overlay beam)';
+        elRoElem.textContent = d.elemId(fam, e) + (lbl ? ' [' + lbl + ']' : '') + '  (overlay ' + fam + ')';
         elRoNode.textContent = '—';
         elRoCorners.textContent = '—';
         elRoUV.textContent = '—';
@@ -250,7 +204,7 @@ var FEAOverlays = (function () {
     // Scene-space box of an object (empty Box3 when nothing to measure).
     function sceneBox(obj) {
         var b = new THREE.Box3();
-        if (!obj || !obj.geometry) return b;
+        if (!obj) return b;
         obj.updateMatrixWorld(true);
         b.setFromObject(obj);
         return b;
@@ -286,8 +240,8 @@ var FEAOverlays = (function () {
     }
     function fitAll() {
         var b = new THREE.Box3();
-        if (primaryVisible) b.union(primaryBox());
-        list.forEach(function (ov) { if (ov.visible) b.union(sceneBox(ov.mesh)); });
+        if (FEAModels.primary().look.visible) b.union(primaryBox());
+        list.forEach(function (ov) { if (ov.ctx.look.visible) b.union(sceneBox(ov.root)); });
         zoomToBox(b);
     }
 
@@ -299,7 +253,7 @@ var FEAOverlays = (function () {
         var pc = pb.getCenter(new THREE.Vector3());
         [0, 90, 180, 270].forEach(function (a) {
             ov.rotZ = a; placeOne(ov, po);
-            var oc = sceneBox(ov.mesh).getCenter(new THREE.Vector3());
+            var oc = sceneBox(ov.root).getCenter(new THREE.Vector3());
             var d = oc.distanceTo(pc);
             if (!best || d < best.d) best = { rot: a, d: d };
         });
@@ -309,7 +263,7 @@ var FEAOverlays = (function () {
 
     // One log line per overlay: where it is, where the main model is, how far apart.
     function reportPlacement(ov) {
-        var pb = primaryBox(), ob = sceneBox(ov.mesh);
+        var pb = primaryBox(), ob = sceneBox(ov.root);
         var pc = worldCentre(pb), oc = worldCentre(ob), u = primaryUnit();
         var off = ov.offset.some(function (x) { return x !== 0; }) ? fmtXYZ(ov.offset) + ' ' + (ov.unit || '?')
             : (ov.envelope ? 'none in its features file' : 'none (no features file loaded)');
@@ -340,58 +294,65 @@ var FEAOverlays = (function () {
     }
 
     // ---- rail ----------------------------------------------------------
+    // One row per model: [show] name / info [x-ray] [colour] [rot] [zoom] [x]. Clicking the
+    // name makes the model active (the Groups tab follows it).
     function render() {
         if (!elRail) return;
         elRail.innerHTML = '';
         var hasPrimary = typeof feaModel !== 'undefined' && !!feaModel;
         if (!hasPrimary) { elRail.innerHTML = '<div class="fea-hint">no model loaded</div>'; return; }
-        var u = primaryUnit();
-        var pBox = primaryBox();
-        elRail.appendChild(row(window.feaPrimaryName || 'model',
-            'active · centre ' + fmtXYZ(worldCentre(pBox)) + ' ' + u, primaryVisible,
-            function (on) { setPrimaryVisible(on); }, null, null, true, false, function () { zoomToBox(primaryBox()); }));
+        var u = primaryUnit(), act = FEAModels.active(), pc = FEAModels.primary();
+        elRail.appendChild(row(pc, window.feaPrimaryName || 'model',
+            'main model · centre ' + fmtXYZ(worldCentre(primaryBox())) + ' ' + u,
+            null, function () { zoomToBox(primaryBox()); }, null, act === pc));
         list.forEach(function (ov) {
             var off = ov.offset.some(function (x) { return x !== 0; }) ? 'offset ' + fmtXYZ(ov.offset) + ' ' + (ov.unit || '?') : 'NO offset';
-            var info = ov.view.header.nElements + ' beams · ' + (ov.groups.length ? ov.groups.length + ' groups' : 'no groups') +
-                ' · centre ' + fmtXYZ(worldCentre(sceneBox(ov.mesh))) + ' ' + u + ' · ' + off + (ov.unitNote ? ' · ' + ov.unitNote : '');
-            elRail.appendChild(row(ov.name, info, ov.visible,
-                function (on) { ov.visible = on; applyLook(ov); },
-                function (on) { ov.ghost = on; applyLook(ov); }, function () { remove(ov); }, false, ov.ghost,
-                function () { zoomToBox(sceneBox(ov.mesh)); },
+            var info = counts(ov) + ' · centre ' + fmtXYZ(worldCentre(sceneBox(ov.root))) + ' ' + u + ' · ' + off + (ov.unitNote ? ' · ' + ov.unitNote : '');
+            elRail.appendChild(row(ov.ctx, ov.name, info, function () { remove(ov); },
+                function () { zoomToBox(sceneBox(ov.root)); },
                 { value: ov.rotZ, set: function (a) {
                     ov.rotZ = a;
                     try { localStorage.setItem('pluto.ovRot.' + ov.name, String(a)); } catch (e1) {}
                     reposition(); reportPlacement(ov);
-                } }));
+                } }, act === ov.ctx));
         });
         if (list.length) {
             var fa = document.createElement('button'); fa.className = 'fea-btn'; fa.textContent = 'Fit all models';
             fa.title = 'Frame every visible model (sets the camera range to all of them)';
             fa.addEventListener('click', fitAll);
+            var hint = document.createElement('span'); hint.className = 'fea-hint'; hint.style.marginLeft = '6px';
+            hint.textContent = 'click a name: the Groups tab shows that model';
             var wrap = document.createElement('div'); wrap.className = 'fea-row'; wrap.style.marginTop = '4px';
-            wrap.appendChild(fa); elRail.appendChild(wrap);
+            wrap.appendChild(fa); wrap.appendChild(hint); elRail.appendChild(wrap);
         }
     }
 
-    function row(name, info, visible, onVis, onGhost, onRemove, active, ghost, onZoom, rot) {
+    function row(ctx, name, info, onRemove, onZoom, rot, active) {
         var r = document.createElement('div');
         r.className = 'rail-row' + (active ? ' active' : '');
         var eye = document.createElement('input');
-        eye.type = 'checkbox'; eye.className = 'fea-check'; eye.checked = visible; eye.title = 'Show / hide';
-        eye.addEventListener('change', function () { onVis(eye.checked); });
+        eye.type = 'checkbox'; eye.className = 'fea-check'; eye.checked = ctx.look.visible; eye.title = 'Show / hide';
+        eye.addEventListener('change', function () { ctx.setVisible(eye.checked); });
         r.appendChild(eye);
         var txt = document.createElement('div');
         txt.className = 'rail-text';
-        var nm = document.createElement('div'); nm.className = 'rail-name'; nm.textContent = name; nm.title = name;
-        var sub = document.createElement('div'); sub.className = 'rail-info'; sub.textContent = info; sub.title = info;
+        txt.title = active ? 'Active: the Groups tab shows this model' : 'Click to make active: the Groups tab shows this model';
+        var nm = document.createElement('div'); nm.className = 'rail-name'; nm.textContent = name;
+        var sub = document.createElement('div'); sub.className = 'rail-info'; sub.textContent = info;
         txt.appendChild(nm); txt.appendChild(sub);
+        txt.addEventListener('click', function () { FEAModels.setActive(ctx); });
         r.appendChild(txt);
-        if (onGhost) {
-            var gh = document.createElement('label'); gh.className = 'rail-ghost'; gh.title = 'Translucent';
-            var gc = document.createElement('input'); gc.type = 'checkbox'; gc.className = 'fea-check'; gc.checked = !!ghost;
-            gc.addEventListener('change', function () { onGhost(gc.checked); });
-            gh.appendChild(gc); gh.appendChild(document.createTextNode('ghost'));
-            r.appendChild(gh);
+        var xr = document.createElement('label'); xr.className = 'rail-ghost';
+        xr.title = 'X-ray: translucent, overlaps read brighter';
+        var xc = document.createElement('input'); xc.type = 'checkbox'; xc.className = 'fea-check'; xc.checked = !!ctx.look.xray;
+        xc.addEventListener('change', function () { ctx.setXray(xc.checked); });
+        xr.appendChild(xc); xr.appendChild(document.createTextNode('x-ray'));
+        r.appendChild(xr);
+        if (ctx.setColor) {
+            var sw = document.createElement('input'); sw.type = 'color'; sw.className = 'rail-swatch'; sw.value = ctx.look.color;
+            sw.title = 'Model colour: used where this model is not painted by its groups';
+            sw.addEventListener('input', function () { ctx.setColor(sw.value); });
+            r.appendChild(sw);
         }
         if (rot) {
             var sel = document.createElement('select'); sel.className = 'fea-select rail-rot';
@@ -415,6 +376,7 @@ var FEAOverlays = (function () {
         }
         return r;
     }
+    FEAModels.onChange(function () { render(); });
 
     // ---- file picking: .bin files + their sidecars, paired by base name ----
     function baseName(n) { return String(n).replace(/\.features\.json$/i, '').replace(/\.(bin|json)$/i, ''); }
@@ -443,7 +405,7 @@ var FEAOverlays = (function () {
         render: render,
         fitAll: fitAll,
         list: function () { return list; },
-        // a new primary keeps its own visibility; overlays stay and are re-placed
-        onPrimaryLoaded: function () { primaryVisible = true; reposition(); }
+        // a new primary is shown; overlays stay and are re-placed
+        onPrimaryLoaded: function () { FEAModels.primary().look.visible = true; reposition(); }
     };
 })();

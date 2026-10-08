@@ -16,7 +16,7 @@ Several files in one scene, e.g. plant steel and pipes over a SAP duct model. Th
 
 - **Rail:** the loaded model is the active row (show/hide). Overlays are rows with show/hide, **ghost** (translucent) and remove (×). "Add overlay…" takes a `.bin` and its `.features.json` together, paired by base name. URL form: `&ov=<bin url>[,<features url>]`, repeatable.
 - **What an overlay draws:**
-  - Beams only. A file with shells draws its beams and says so.
+  - Beams only at stage 1; shells too since stage 2.
   - Colours come from the overlay's own sidecar: every element group, in envelope order, last one wins. Unlike the Groups tab, it ignores `hidden`. Members in no group are grey.
   - Plant steel groups are near-white by the exporter's choice; pipes use the size ramp.
 - **Placement:** true world coordinates.
@@ -38,16 +38,32 @@ Several files in one scene, e.g. plant steel and pipes over a SAP duct model. Th
   - Ghost and remove work; there are no console errors.
   - Viewer tests pass.
 
-## Stage 2 (task)
+## Stage 2: done 2026-10-08 (`models.js`, `modelMesh.js`, `overlays.js`, `features.js`)
 
-- [ ] Click a rail row to make it active. Per-model contexts for the viewer's global state:
-  - `viewer.js`: feaModel / feaSet / feaBuild / mesh, LC and legend state.
-  - `viewerBeams.js`: view / build / material.
-  - `features.js`: envelope / resolved / palette.
-- [ ] Switching the active model swaps the Groups tab, Save features, load case / component / legend.
-- [ ] Inactive models keep their last look: colours, field, LC.
-- [ ] Clicking a member of another model offers to make that model active.
-- [ ] Shells in overlays.
+Module contracts are in [[vault/viewer/Viewer modules|Viewer modules]].
+
+- **Active model:** click a rail row's name to make that model active.
+  - The Groups tab, its filter, eyes, colours and reorder, and Save features act on the active model.
+  - The other models keep their last look.
+- **Shells in overlays:** an overlay draws its shells and beams together, under one placed group.
+  - Both are painted by its groups and pickable.
+  - The readout says "overlay shell" or "overlay beam".
+- **Colours:**
+  - Every model is painted by its own groups.
+  - An overlay's groups paint unless they say `hidden`. Exporter files carry no flag, so they look as they did in stage 1.
+  - With group painting off, an overlay is drawn in its **model colour**, set by the swatch on its row. The primary keeps its field colouring.
+- **X-ray:** a checkbox on every row (primary included) makes that model additive-translucent, shells and beams.
+  - It replaces stage 1's "ghost".
+  - The primary's x-ray also sets the beam panel's x-ray switch.
+  - Dark field colours are lifted in x-ray so additive blending still shows them.
+- **Not done:** clicking a member of another model does not offer to make that model active. Use the rail instead.
+- **Checked 2026-10-08** in the browser, on synthetic duct files (centrelines as primary with a mesh overlay and the probe graph, then a mesh as primary):
+  - The Groups tab and file name follow the active row, and Save targets the overlay's sidecar.
+  - X-ray works on overlay and primary shells.
+  - The model colour shows with painting off.
+  - The eye hides overlay shells and marks only the overlay dirty.
+  - Picking works on overlay shells and beams.
+  - No console errors; all viewer tests pass.
 
 ## Stage 3 (task)
 

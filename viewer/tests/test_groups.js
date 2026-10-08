@@ -23,6 +23,7 @@ global.feaModel = {
   nodes: Float64Array.from([0, 0, 0, 1, 0, 0, 2, 0, 0, 3, 0, 0]),
   unified: { domains: [{ name: 'shells', family: 'shell' }], geometryHash: 'h' }
 };
+vm.runInThisContext(fs.readFileSync(V + 'models.js', 'utf8'), { filename: 'models.js' });
 vm.runInThisContext(fs.readFileSync(V + 'features.js', 'utf8'), { filename: 'features.js' });
 
 let fails = 0;

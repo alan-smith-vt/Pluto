@@ -205,7 +205,7 @@ var FEAFiles = (function () {
     function syncUI() {
         if (!window.FEAFeatures) return;
         var dirty = FEAFeatures.isDirty();
-        var has = !!FEAFeatures.envelope();
+        var has = !!FEAFeatures.activeEnvelope();
         if (elSave) {
             elSave.disabled = !has;
             elSave.classList.toggle('dirty', dirty);

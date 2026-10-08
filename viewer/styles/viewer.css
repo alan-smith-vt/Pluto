@@ -149,7 +149,8 @@ input[type=file].fea-file::file-selector-button {
 /* === Model rail (Model section): the loaded model + overlays, 2026-10-02 === */
 .rail-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 3px 4px; border-radius: 4px; margin-bottom: 2px; }
 .rail-row.active { background: rgba(110, 130, 255, 0.14); }
-.rail-text { flex: 1 1 150px; min-width: 0; }
+.rail-text { flex: 1 1 150px; min-width: 0; cursor: pointer; }
+.rail-swatch { flex: 0 0 22px; width: 22px; height: 16px; padding: 0; border: 1px solid #3a3a44; border-radius: 3px; background: none; cursor: pointer; }
 .rail-name { font-size: 11px; color: #ddd; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rail-row.active .rail-name { color: #fff; font-weight: 600; }
 .rail-info { font-size: 9px; color: #8888aa; overflow-wrap: anywhere; }

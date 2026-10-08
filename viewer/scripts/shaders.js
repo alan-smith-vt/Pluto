@@ -94,23 +94,32 @@ var FEAShaders = (function () {
         'uniform vec3  alarmColor;',
         'uniform float uAbs;',            // 1.0 -> display |field|
         'uniform float uCategorical;',    // 1.0 -> nearest-corner category
+        'uniform float uNeutral;',        // 1.0 -> one flat colour (a model with its group painting off)
+        'uniform vec3  neutralColor;',
+        'uniform float uXray;',           // 0 = opaque; >0 = fragment alpha for additive x-ray mode
         fieldEvalGLSL,
         'void main() {',
         '  if (vVis < 0.5) discard;',
-        '  if (uGroupMode > 0.5) { gl_FragColor = vec4(groupColor(vCat), 1.0); return; }',
+        '  float a = uXray > 0.0 ? uXray : 1.0;',
+        '  if (uGroupMode > 0.5) { gl_FragColor = vec4(groupColor(vCat), a); return; }',
+        '  if (uNeutral > 0.5) { gl_FragColor = vec4(neutralColor, a); return; }',
         '  float f = fieldValue(vUV, vVals, uCategorical, uAbs);',
         // NaN guard: any NaN corner -> f is NaN -> render no-data color.
-        '  if (!(f == f)) { gl_FragColor = vec4(0.16, 0.16, 0.18, 1.0); return; }',
+        // (x-ray: no-data in the light model colour; the dark grey vanishes under additive blending)
+        '  if (!(f == f)) { gl_FragColor = vec4(uXray > 0.0 ? neutralColor : vec3(0.16, 0.16, 0.18), a); return; }',
         // Overstress flag: any value at or above alarmThreshold renders in
         // alarmColor instead of the colormap. Default magenta -- distinct
         // from every colormap max (viridis yellow, turbo & coolwarm red,
         // grayscale white) and the matplotlib convention for clipped values.
         '  if (alarmThreshold > 0.0 && f >= alarmThreshold) {',
-        '    gl_FragColor = vec4(alarmColor, 1.0); return;',
+        '    gl_FragColor = vec4(alarmColor, a); return;',
         '  }',
         '  float denom = max(vMax - vMin, 1e-6);',
         '  float t = clamp((f - vMin) / denom, 0.0, 1.0);',
-        '  gl_FragColor = texture2D(colormap, vec2(t, 0.5));',
+        '  vec3 c = texture2D(colormap, vec2(t, 0.5)).rgb;',
+        // x-ray: lift dark colours (turbo / viridis lows) so additive blending still shows them
+        '  if (uXray > 0.0) c = max(c, neutralColor * 0.6);',
+        '  gl_FragColor = vec4(c, a);',
         '}'
     ].join('\n');
 
