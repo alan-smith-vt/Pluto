@@ -33,8 +33,25 @@ public partial class DuctsToPluto
     {
         public RvEl Owner;
         public string Key, Type;
-        public double[] P, D;     // Navisworks frame after the fit
+        public double[] P, D;     // Navisworks frame after the fit; D = outward (BasisZ)
+        public string Shape;      // Rectangular / Round / Oval
+        public double W, H, Dia;  // inches, NaN = n/a
         public List<string> To = new List<string>();
+    }
+
+    // As a probe Opening, to reuse ThroughPair / BranchJunction (round = "round", else A x B, A the larger).
+    static Opening AsOpening(RvConn k)
+    {
+        var o = new Opening(); o.C = k.P; o.N = k.D;
+        if (k.Shape == "Round") { o.Shape = "round"; o.Dia = k.Dia; }
+        else { o.Shape = "rect"; o.A = Math.Max(k.W, k.H); o.B = Math.Min(k.W, k.H); }
+        return o;
+    }
+
+    static double HalfSizeFt(RvConn k)
+    {
+        double s = k.Shape == "Round" ? k.Dia : Math.Max(k.W, k.H);
+        return double.IsNaN(s) ? 0.5 : s / 24;
     }
 
     const double RvTouch = 0.02;   // ft, as the add-in's "touching"
@@ -76,6 +93,7 @@ public partial class DuctsToPluto
             k.P = new[] { x, y, z };
             double dx = Num(c, "DirX"), dy = Num(c, "DirY"), dz = Num(c, "DirZ");
             k.D = double.IsNaN(dx) ? new double[] { 0, 0, 0 } : new[] { dx, dy, dz };
+            k.Shape = Get(c, "Shape"); k.W = Num(c, "Width_in"); k.H = Num(c, "Height_in"); k.Dia = Num(c, "Diameter_in");
             foreach (string t in Get(c, "ConnectedTo").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)) k.To.Add(t);
             e.Conns.Add(k); conns[k.Key] = k;
         }
@@ -189,6 +207,7 @@ public partial class DuctsToPluto
         sections.Add(RawViewerWriter.SectionDef.Pipe("revit part", (float)(3 * scale / 12), (float)(0.5 * scale / 12)));
         var beams = new Dictionary<int, RawViewerWriter.BeamMember>(); var labels = new Dictionary<int, string>(); int nb = 1;
         var byCat = new SortedDictionary<string, List<uint>>(); var gOnly = new List<uint>();
+        var mains = new List<RvConn[]>();   // each part's main line (its 2 connectors / through pair), for side branches
         var navName = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (int i in inRoom) if (rows[i].Guid != "" && !navName.ContainsKey(rows[i].Guid)) navName[rows[i].Guid] = "#" + rows[i].NavisId;
         foreach (RvEl e in scope)
@@ -197,18 +216,86 @@ public partial class DuctsToPluto
             string label = "Revit " + e.Id + " | " + e.Cat + " | " + (e.Fam + " " + e.Type).Trim() + " | " + e.Size + " | " + e.System
                 + " | " + e.Conns.Count + " conn | " + (e.Only ? "NO NAVISWORKS MATCH" : "IfcGUID " + e.Match + " Navisworks " + (nav ?? "(other room)"));
             var ids = new List<int>();
-            if (e.Conns.Count == 2) ids.Add(RvBeam(beams, labels, ref nb, node(e.Conns[0]), node(e.Conns[1]), nodes, label));
+            if (e.Conns.Count == 2)
+            {
+                ids.Add(RvBeam(beams, labels, ref nb, node(e.Conns[0]), node(e.Conns[1]), nodes, label));
+                mains.Add(new[] { e.Conns[0], e.Conns[1] });
+            }
             else if (e.Conns.Count > 2)
             {
-                int hub = MakeNode(nodes, ref nextNode, e.P, off, scale);
-                foreach (RvConn k in e.Conns) ids.Add(RvBeam(beams, labels, ref nb, hub, node(k), nodes, label));
+                // as the probe: the through pair as one line, each other connector along its own axis to where
+                // it meets that line (a star from the mean zig-zagged tees and laterals)
+                var ops = e.Conns.ConvertAll(AsOpening);
+                int[] thr = ThroughPair(ops);
+                if (thr != null)
+                {
+                    RvConn a = e.Conns[thr[0]], b = e.Conns[thr[1]];
+                    ids.Add(RvBeam(beams, labels, ref nb, node(a), node(b), nodes, label));
+                    mains.Add(new[] { a, b });
+                    for (int q = 0; q < e.Conns.Count; q++)
+                        if (q != thr[0] && q != thr[1])
+                            ids.Add(RvBeam(beams, labels, ref nb, MakeNode(nodes, ref nextNode, BranchJunction(a.P, b.P, ops[q]), off, scale), node(e.Conns[q]), nodes, label));
+                }
+                else
+                {
+                    int hub = MakeNode(nodes, ref nextNode, e.P, off, scale);
+                    foreach (RvConn k in e.Conns) ids.Add(RvBeam(beams, labels, ref nb, hub, node(k), nodes, label));
+                }
             }
             else node(e.Conns[0]);
             string g = "Revit " + (e.Fab ? "fabrication" : e.Cat);
             List<uint> gl; if (!byCat.TryGetValue(g, out gl)) { gl = new List<uint>(); byCat[g] = gl; }
             foreach (int id in ids) if (id > 0) { gl.Add((uint)id); if (e.Only) gOnly.Add((uint)id); }
         }
-        int nConnected = 0, nOutside = 0, nTouch = 0, nOpen = 0;
+        // Links between open ends that are neither connected nor touching (as the probe's):
+        //   near (gap / overlap): another element's open end facing it (directions opposite, dot < -0.9), on its
+        //     axis (lateral <= 1 in), within 1 ft; labelled with the signed gap
+        //   side branch: the end's axis meets another part's main line inside the segment (not within 1 in of
+        //     its ends), the end lying within that part's half size + 3 in of the line
+        var gNear = new List<uint>(); var gSide = new List<uint>();
+        var linked = new HashSet<RvConn>(); var nearSet = new HashSet<RvConn>();
+        var loose = new List<RvConn>();
+        foreach (RvConn k in open) if (!touch.ContainsKey(k)) loose.Add(k);
+        foreach (RvConn k in loose)
+        {
+            if (linked.Contains(k)) continue;
+            RvConn best = null; double bd = 1.0, bAlong = 0;
+            foreach (RvConn q in loose)
+            {
+                if (q == k || q.Owner == k.Owner || linked.Contains(q)) continue;
+                if (k.D[0] * q.D[0] + k.D[1] * q.D[1] + k.D[2] * q.D[2] > -0.9) continue;
+                double d = Math.Sqrt(Dist2(k.P, q.P)); if (d > bd) continue;
+                double along = (q.P[0] - k.P[0]) * k.D[0] + (q.P[1] - k.P[1]) * k.D[1] + (q.P[2] - k.P[2]) * k.D[2];
+                if (Math.Sqrt(Math.Max(0, d * d - along * along)) * 12 > 1) continue;
+                bd = d; best = q; bAlong = along;
+            }
+            if (best == null) continue;
+            linked.Add(k); linked.Add(best); nearSet.Add(k); nearSet.Add(best);
+            int id = RvBeam(beams, labels, ref nb, node(k), node(best), nodes, string.Format(Inv, "near: {0} {1:0.#} in | Revit {2} -> {3}",
+                bAlong >= 0 ? "gap" : "overlap", Math.Abs(bAlong) * 12, k.Owner.Id, best.Owner.Id));
+            if (id > 0) gNear.Add((uint)id);
+        }
+        foreach (RvConn k in loose)
+        {
+            if (linked.Contains(k)) continue;
+            double[] bestF = null; RvConn[] bestM = null; double bd = double.MaxValue;
+            foreach (RvConn[] m in mains)
+            {
+                if (m[0].Owner == k.Owner) continue;
+                double[] f = BranchJunction(m[0].P, m[1].P, AsOpening(k));
+                if (Math.Sqrt(Dist2(f, m[0].P)) * 12 < 1 || Math.Sqrt(Dist2(f, m[1].P)) * 12 < 1) continue;
+                double d = Math.Sqrt(Dist2(f, k.P));
+                if (d > HalfSizeFt(m[0]) + 0.25 || d >= bd) continue;
+                bd = d; bestF = f; bestM = m;
+            }
+            if (bestF == null) continue;
+            linked.Add(k);
+            int id = RvBeam(beams, labels, ref nb, node(k), MakeNode(nodes, ref nextNode, bestF, off, scale), nodes,
+                string.Format(Inv, "side branch: Revit {0} -> side of {1} | {2:0.#} in from its line", k.Owner.Id, bestM[0].Owner.Id, bd * 12));
+            if (id > 0) gSide.Add((uint)id);
+        }
+
+        int nConnected = 0, nOutside = 0, nTouch = 0, nOpen = 0, nNear = 0, nSide = 0;
         var seen = new HashSet<int>();
         foreach (RvEl e in scope)
             foreach (RvConn k in e.Conns)
@@ -219,6 +306,8 @@ public partial class DuctsToPluto
                 if (inside) { gConn.Add((uint)id); nConnected++; }
                 else if (outside) { gOut.Add((uint)id); nOutside++; }
                 else if (touch.ContainsKey(k)) { gTouch.Add((uint)id); nTouch++; }
+                else if (nearSet.Contains(k)) nNear++;
+                else if (linked.Contains(k)) nSide++;
                 else if (k.Type == "End") { gOpen.Add((uint)id); nOpen++; }
             }
 
@@ -240,8 +329,10 @@ public partial class DuctsToPluto
             foreach (KeyValuePair<string, List<uint>> kv in byCat)
                 sc.AddGroup(kv.Key, kv.Key == "Revit fabrication" ? "#ff8a3d" : pal[1 + pi++ % (pal.Length - 1)], "beams", kv.Value, new[] { "duct", "revit", "category" }, null);
             if (gOnly.Count > 0) sc.AddGroup("Revit only (no Navisworks match)", "#ff3b3b", "beams", gOnly, new[] { "duct", "revit", "unmatched" }, "REVIT_ONLY");
+            if (gNear.Count > 0) sc.AddGroup("Link: near (gap / overlap)", "#ffd23f", "beams", gNear, new[] { "duct", "revit", "link" }, null);
+            if (gSide.Count > 0) sc.AddGroup("Link: side branch", "#8ae04f", "beams", gSide, new[] { "duct", "revit", "link" }, null);
             if (gConn.Count > 0) sc.AddNodeGroup("Revit joint: connected", "#3fc1a5", gConn, new[] { "duct", "revit", "joint" });
-            if (gTouch.Count > 0) sc.AddNodeGroup("Revit joint: touching, not connected", "#ffd23f", gTouch, new[] { "duct", "revit", "touching" });
+            if (gTouch.Count > 0) sc.AddNodeGroup("Revit joint: touching, not connected", "#ff9f1c", gTouch, new[] { "duct", "revit", "touching" });
             if (gOut.Count > 0) sc.AddNodeGroup("Revit joint: connected outside the room", "#4f8cff", gOut, new[] { "duct", "revit", "outside" });
             if (gOpen.Count > 0) sc.AddNodeGroup("Revit open end", "#ff3b3b", gOpen, new[] { "duct", "revit", "open" }, "REVIT_OPEN");
             File.WriteAllText(outBase + ".features.json", sc.ToJson(), new UTF8Encoding(false));
@@ -254,12 +345,22 @@ public partial class DuctsToPluto
         foreach (int i in inRoom) if (rows[i].Guid == "" || !matchedGuids.Contains(rows[i].Guid)) navMissing.Add(i);
         int navFab = 0, navFabMissing = 0;
         foreach (int i in inRoom) if (rows[i].Cat == Fab) { navFab++; if (navMissing.Contains(i)) navFabMissing++; }
-        int rvFab = 0, rvOnly = 0; foreach (RvEl e in scope) { if (e.Fab) rvFab++; if (e.Only) rvOnly++; }
+        int rvFab = 0, rvOnly = 0, rvOnlyFab = 0; foreach (RvEl e in scope) { if (e.Fab) rvFab++; if (e.Only) { rvOnly++; if (e.Fab) rvOnlyFab++; } }
+        // matched elements whose category differs (Revit fabrication vs a Navisworks Ducts / Fittings row, or back)
+        var catDiff = new List<string>();
+        foreach (RvEl e in scope)
+        {
+            if (e.Match == "") continue;
+            foreach (int i in navByGuid[e.Match])
+                if ((rows[i].Cat == Fab) != e.Fab || (!e.Fab && !string.Equals(rows[i].Cat, e.Cat, StringComparison.OrdinalIgnoreCase)))
+                { catDiff.Add("  Revit " + e.Id + " " + e.Cat + " (" + (e.Fam + " " + e.Type).Trim() + ")  vs  Navisworks #" + rows[i].NavisId + " " + rows[i].Cat + " (" + rows[i].Name + ")"); break; }
+        }
         var s = new StringBuilder();
         res.Note = string.Format(Inv,
-            "NEW fit {0:0.00} ft median ({1} pairs{2}, rot {3:0.###} deg, scale check {4:0.###})\nNEW room: Navisworks {5} rows ({6} fab), Revit {7} el ({8} fab), Navisworks without Revit {9} ({10} fab), Revit only {11}\nNEW joints: connected {12} touching {13} outside {14} open {15}",
+            "NEW fit {0:0.00} ft median ({1} pairs{2}, rot {3:0.###} deg, scale check {4:0.###})\nNEW room: Navisworks {5} rows ({6} fab), Revit {7} el ({8} fab), Navisworks without Revit {9} ({10} fab), Revit only {11} ({12} fab), category differs {13}\nNEW joints: connected {14} touching {15} near {16} side {17} outside {18} open {19}",
             medRes, used, means ? " by GUID group" : " 1:1", Math.Atan2(T[1], T[0]) * 180 / Math.PI, spread,
-            inRoom.Count, navFab, scope.Count, rvFab, navMissing.Count, navFabMissing, rvOnly, nConnected, nTouch, nOutside, nOpen);
+            inRoom.Count, navFab, scope.Count, rvFab, navMissing.Count, navFabMissing, rvOnly, rvOnlyFab, catDiff.Count,
+            nConnected, nTouch, nNear, nSide, nOutside, nOpen);
         s.AppendLine(res.Note);
         s.AppendLine();
         s.AppendLine("Navisworks run: " + navisRun);
@@ -277,6 +378,9 @@ public partial class DuctsToPluto
         s.AppendLine();
         s.AppendLine("Revit elements in the room box with no Navisworks row (ElementId, category, family type, size):");
         foreach (RvEl e in scope) if (e.Only) s.AppendLine("  " + e.Id + "  " + e.Cat + "  " + (e.Fam + " " + e.Type).Trim() + "  " + e.Size);
+        s.AppendLine();
+        s.AppendLine("Matched by IfcGUID, category differs (a Pluto Fab run holds only fabrication rows: use a Pluto Ducts run to see these):");
+        foreach (string line in catDiff) s.AppendLine(line);
         File.WriteAllText(outBase + ".match.txt", s.ToString(), new UTF8Encoding(false));
         return res;
     }
