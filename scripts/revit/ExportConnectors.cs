@@ -42,6 +42,8 @@ namespace PlutoRevit
             var byFam = new SortedDictionary<string, int>();
             var errors = new List<string>();
             int nConn = 0, nOpen = 0, nNoMgr = 0;
+            var openByCat = new SortedDictionary<string, int>();
+            var open = new List<OpenEnd>();
             var e = new StringBuilder();
             var c = new StringBuilder();
             e.AppendLine("ElementId,UniqueId,IfcGUID,Category,Family,Type,Size,SystemName,SystemType,Level,IsFabrication,Connectors");
@@ -103,7 +105,12 @@ namespace PlutoRevit
                                 }
                             }
                             catch { }
-                            if (to.Count == 0 && k.ConnectorType == ConnectorType.End) nOpen++;
+                            if (to.Count == 0 && k.ConnectorType == ConnectorType.End)
+                            {
+                                nOpen++;
+                                Bump(openByCat, Abbr(el));
+                                if (o != null) open.Add(new OpenEnd { X = o.X, Y = o.Y, Z = o.Z, Owner = el.Id.ToString(), Cat = Abbr(el) });
+                            }
                             c.AppendLine(string.Join(";", to));
                         }
                     }
@@ -121,8 +128,20 @@ namespace PlutoRevit
 
             File.WriteAllText(Path.Combine(dir, "elements.csv"), e.ToString());
             File.WriteAllText(Path.Combine(dir, "connectors.csv"), c.ToString());
+            // Open End connectors with another element's open End within Touch ft: drawn end to end but not
+            // connected in Revit (geometric joint), vs. truly open (terminal, cap, stub, gap).
+            var touchByCat = new SortedDictionary<string, int>();
+            int nTouch = Touching(open, touchByCat);
+
             var s = new StringBuilder();
+            // NEW block: 3 short lines to type back from the secure machine.
+            s.AppendLine(string.Format(Inv, "NEW el {0} conn {1} open {2} touching {3} err {4}", els.Count, nConn, nOpen, nTouch, errors.Count));
+            s.AppendLine("NEW open " + Compact(openByCat));
+            s.AppendLine("NEW touch " + Compact(touchByCat));
+            s.AppendLine();
             s.AppendLine("PlutoRevit ExportConnectors  " + t0.ToString("yyyy-MM-dd HH:mm:ss", Inv));
+            s.AppendLine(string.Format(Inv, "touching = open End connector with another element's open End within {0} ft", Touch));
+            s.AppendLine("abbreviations: Fab = MEP Fabrication Ductwork, Duct, Fit = Duct Fittings, Acc = Duct Accessories, Flex, Term = Air Terminals, Eq = Mechanical Equipment");
             s.AppendLine("document: " + doc.PathName);
             s.AppendLine("revit:    " + data.Application.Application.VersionName + " " + data.Application.Application.VersionBuild);
             s.AppendLine(string.Format(Inv, "elements {0}  connectors {1}  unconnected End connectors {2}  no connector manager {3}  errors {4}  {5:0.0} s",
@@ -137,6 +156,68 @@ namespace PlutoRevit
             TaskDialog.Show("Pluto Connectors", string.Format(Inv,
                 "{0} elements, {1} connectors ({2} open ends), {3} errors.\n\n{4}", els.Count, nConn, nOpen, errors.Count, dir));
             return Result.Succeeded;
+        }
+
+        const double Touch = 0.02;   // ft (~1/4 in)
+        class OpenEnd { public double X, Y, Z; public string Owner, Cat; }
+
+        static int Touching(List<OpenEnd> open, IDictionary<string, int> byCat)
+        {
+            var grid = new Dictionary<string, List<OpenEnd>>();
+            foreach (var p in open)
+            {
+                string key = Cell(p.X, 0) + "," + Cell(p.Y, 0) + "," + Cell(p.Z, 0);
+                List<OpenEnd> l;
+                if (!grid.TryGetValue(key, out l)) { l = new List<OpenEnd>(); grid[key] = l; }
+                l.Add(p);
+            }
+            int n = 0;
+            foreach (var p in open)
+            {
+                bool hit = false;
+                for (int i = -1; i <= 1 && !hit; i++)
+                    for (int j = -1; j <= 1 && !hit; j++)
+                        for (int k = -1; k <= 1 && !hit; k++)
+                        {
+                            List<OpenEnd> l;
+                            if (!grid.TryGetValue(Cell(p.X, i) + "," + Cell(p.Y, j) + "," + Cell(p.Z, k), out l)) continue;
+                            foreach (var q in l)
+                            {
+                                if (q.Owner == p.Owner) continue;
+                                double dx = p.X - q.X, dy = p.Y - q.Y, dz = p.Z - q.Z;
+                                if (dx * dx + dy * dy + dz * dz <= Touch * Touch) { hit = true; break; }
+                            }
+                        }
+                if (hit) { n++; Bump(byCat, p.Cat); }
+            }
+            return n;
+        }
+
+        static long Cell(double v, int off) { return (long)Math.Floor(v / Touch) + off; }
+
+        static string Compact(IDictionary<string, int> d)
+        {
+            var parts = new List<string>();
+            foreach (var kv in d) parts.Add(kv.Key + " " + K(kv.Value));
+            return string.Join(" ", parts);
+        }
+
+        static string K(int v) { return v >= 10000 ? (v / 1000).ToString(Inv) + "k" : v >= 1000 ? (v / 1000.0).ToString("0.#", Inv) + "k" : v.ToString(Inv); }
+
+        static string Abbr(Element el)
+        {
+            if (el.Category == null) return "?";
+            switch ((BuiltInCategory)el.Category.Id.Value)
+            {
+                case BuiltInCategory.OST_FabricationDuctwork: return "Fab";
+                case BuiltInCategory.OST_DuctCurves: return "Duct";
+                case BuiltInCategory.OST_DuctFitting: return "Fit";
+                case BuiltInCategory.OST_DuctAccessory: return "Acc";
+                case BuiltInCategory.OST_FlexDuctCurves: return "Flex";
+                case BuiltInCategory.OST_DuctTerminal: return "Term";
+                case BuiltInCategory.OST_MechanicalEquipment: return "Eq";
+            }
+            return "?";
         }
 
         static ConnectorManager Manager(Element el)
