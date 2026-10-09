@@ -29,7 +29,7 @@ using System.Text;
 // Fittings (bbox only), Accessories (bbox); tags carry the category. Labels: IfcGUID | system | size.
 // Written in lengthUnit ("in" to match the plant export), recentred on the bbox centre (whole feet),
 // worldOffset in the sidecar.
-public class DuctsToPluto
+public partial class DuctsToPluto
 {
     public class Result
     {
