@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RevitAddIns>
+  <AddIn Type="Command">
+    <Name>Pluto Connectors</Name>
+    <Text>Pluto Connectors</Text>
+    <Description>Read-only: HVAC elements and connectors to C:\Temp\hvac\revit</Description>
+    <Assembly>__DLL__</Assembly>
+    <FullClassName>PlutoRevit.ExportConnectors</FullClassName>
+    <ClientId>6d1f0b52-3c4e-4a8e-9f7a-2b5c8e1d4a90</ClientId>
+    <VendorId>PLUTO</VendorId>
+    <VendorDescription>Pluto</VendorDescription>
+  </AddIn>
+</RevitAddIns>
