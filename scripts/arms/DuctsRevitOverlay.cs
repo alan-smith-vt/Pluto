@@ -355,12 +355,34 @@ public partial class DuctsToPluto
                 if ((rows[i].Cat == Fab) != e.Fab || (!e.Fab && !string.Equals(rows[i].Cat, e.Cat, StringComparison.OrdinalIgnoreCase)))
                 { catDiff.Add("  Revit " + e.Id + " " + e.Cat + " (" + (e.Fam + " " + e.Type).Trim() + ")  vs  Navisworks #" + rows[i].NavisId + " " + rows[i].Cat + " (" + rows[i].Name + ")"); break; }
         }
+        // Revit-only elements located in a Navisworks-only row: its centre inside that row's bbox (+0.1 ft), the
+        // smallest such box. Same part, different IfcGUID; tallied by (Revit category -> Navisworks category).
+        var located = new List<string>(); var pairTally = new SortedDictionary<string, int>(); var usedRow = new HashSet<int>();
+        foreach (RvEl e in scope)
+        {
+            if (!e.Only) continue;
+            int bi = -1; double bv = double.MaxValue;
+            foreach (int i in navMissing)
+            {
+                Row r = rows[i]; bool inside = true;
+                for (int a = 0; a < 3; a++) if (e.P[a] < r.Min[a] - 0.1 || e.P[a] > r.Max[a] + 0.1) { inside = false; break; }
+                if (!inside) continue;
+                double v = (r.Max[0] - r.Min[0] + 0.1) * (r.Max[1] - r.Min[1] + 0.1) * (r.Max[2] - r.Min[2] + 0.1);
+                if (v < bv) { bv = v; bi = i; }
+            }
+            if (bi < 0) continue;
+            usedRow.Add(bi);
+            string key = (e.Fab ? "Revit fabrication" : "Revit " + e.Cat) + " -> Navisworks " + rows[bi].Cat;
+            int n; pairTally.TryGetValue(key, out n); pairTally[key] = n + 1;
+            located.Add("  Revit " + e.Id + " " + (e.Fam + " " + e.Type).Trim() + " " + e.Size + " IfcGUID " + (e.Guid != "" ? e.Guid : e.GuidCalc)
+                + "  in  Navisworks #" + rows[bi].NavisId + " " + rows[bi].Cat + " (" + rows[bi].Name + ") " + rows[bi].Guid);
+        }
         var s = new StringBuilder();
         res.Note = string.Format(Inv,
-            "NEW fit {0:0.00} ft median ({1} pairs{2}, rot {3:0.###} deg, scale check {4:0.###})\nNEW room: Navisworks {5} rows ({6} fab), Revit {7} el ({8} fab), Navisworks without Revit {9} ({10} fab), Revit only {11} ({12} fab), category differs {13}\nNEW joints: connected {14} touching {15} near {16} side {17} outside {18} open {19}",
+            "NEW fit {0:0.00} ft median ({1} pairs{2}, rot {3:0.###} deg, scale check {4:0.###})\nNEW room: Navisworks {5} rows ({6} fab), Revit {7} el ({8} fab), Navisworks without Revit {9} ({10} fab), Revit only {11} ({12} fab), category differs {13}, Revit only located in a Navisworks-only part {20} (Navisworks parts {21})\nNEW joints: connected {14} touching {15} near {16} side {17} outside {18} open {19}",
             medRes, used, means ? " by GUID group" : " 1:1", Math.Atan2(T[1], T[0]) * 180 / Math.PI, spread,
             inRoom.Count, navFab, scope.Count, rvFab, navMissing.Count, navFabMissing, rvOnly, rvOnlyFab, catDiff.Count,
-            nConnected, nTouch, nNear, nSide, nOutside, nOpen);
+            nConnected, nTouch, nNear, nSide, nOutside, nOpen, located.Count, usedRow.Count);
         s.AppendLine(res.Note);
         s.AppendLine();
         s.AppendLine("Navisworks run: " + navisRun);
@@ -381,6 +403,10 @@ public partial class DuctsToPluto
         s.AppendLine();
         s.AppendLine("Matched by IfcGUID, category differs (a Pluto Fab run holds only fabrication rows: use a Pluto Ducts run to see these):");
         foreach (string line in catDiff) s.AppendLine(line);
+        s.AppendLine();
+        s.AppendLine("Revit-only elements located inside a Navisworks-only part (same part, different IfcGUID?):");
+        foreach (KeyValuePair<string, int> kv in pairTally) s.AppendLine(string.Format(Inv, "  {0,5}  {1}", kv.Value, kv.Key));
+        foreach (string line in located) s.AppendLine(line);
         File.WriteAllText(outBase + ".match.txt", s.ToString(), new UTF8Encoding(false));
         return res;
     }
