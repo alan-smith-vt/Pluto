@@ -29,6 +29,7 @@ public partial class DuctsToPluto
         public int LocRow = -1;   // Revit-only: the Navisworks-only row it lies inside (same part, other IfcGUID)
         public List<RvConn> Conns = new List<RvConn>();
         public List<int> Beams = new List<int>();
+        public List<int[]> Segs = new List<int[]>();   // SAP frames: { node i, node j, connector whose size it takes (-1 = the element's) }
         public List<string> Flags = new List<string>(), Detail = new List<string>();
         public double[] C, P;     // centre: Revit internal / Navisworks frame (feet)
     }
@@ -240,6 +241,7 @@ public partial class DuctsToPluto
             if (e.Conns.Count == 2)
             {
                 ids.Add(RvBeam(beams, labels, ref nb, node(e.Conns[0]), node(e.Conns[1]), nodes, label));
+                e.Segs.Add(new[] { node(e.Conns[0]), node(e.Conns[1]), -1 });
                 mains.Add(new[] { e.Conns[0], e.Conns[1] });
             }
             else if (e.Conns.Count > 2)
@@ -253,14 +255,30 @@ public partial class DuctsToPluto
                     RvConn a = e.Conns[thr[0]], b = e.Conns[thr[1]];
                     ids.Add(RvBeam(beams, labels, ref nb, node(a), node(b), nodes, label));
                     mains.Add(new[] { a, b });
+                    // SAP: the through line split at each branch junction (sorted along it), branches to their connector
+                    var junc = new List<KeyValuePair<double, int>>();
                     for (int q = 0; q < e.Conns.Count; q++)
                         if (q != thr[0] && q != thr[1])
-                            ids.Add(RvBeam(beams, labels, ref nb, MakeNode(nodes, ref nextNode, BranchJunction(a.P, b.P, ops[q]), off, scale), node(e.Conns[q]), nodes, label));
+                        {
+                            double[] f = BranchJunction(a.P, b.P, ops[q]);
+                            int jn = MakeNode(nodes, ref nextNode, f, off, scale);
+                            ids.Add(RvBeam(beams, labels, ref nb, jn, node(e.Conns[q]), nodes, label));
+                            e.Segs.Add(new[] { jn, node(e.Conns[q]), q });
+                            junc.Add(new KeyValuePair<double, int>(Dist2(a.P, f), jn));
+                        }
+                    junc.Sort((u, v) => u.Key.CompareTo(v.Key));
+                    int prev = node(a);
+                    foreach (KeyValuePair<double, int> j in junc) { e.Segs.Add(new[] { prev, j.Value, -1 }); prev = j.Value; }
+                    e.Segs.Add(new[] { prev, node(b), -1 });
                 }
                 else
                 {
                     int hub = MakeNode(nodes, ref nextNode, e.P, off, scale);
-                    foreach (RvConn k in e.Conns) ids.Add(RvBeam(beams, labels, ref nb, hub, node(k), nodes, label));
+                    for (int q = 0; q < e.Conns.Count; q++)
+                    {
+                        ids.Add(RvBeam(beams, labels, ref nb, hub, node(e.Conns[q]), nodes, label));
+                        e.Segs.Add(new[] { hub, node(e.Conns[q]), q });
+                    }
                 }
             }
             else node(e.Conns[0]);
@@ -373,6 +391,7 @@ public partial class DuctsToPluto
         var navOnly = new List<int>();
         foreach (int i in navMissing) if (!partners.ContainsKey(i)) navOnly.Add(i);
         WriteFlagsCsv(outBase + ".flags.csv", scope, rows, rowsOf, navOnly);
+        string framesNote = WriteFramesCsv(outBase + ".frames.csv", scope, rows, rowsOf, navOnly, nodes, off, scale);
 
         var res = new Result();
         if (beams.Count > 0)
@@ -447,6 +466,7 @@ public partial class DuctsToPluto
         }
         fc.Add("NAVIS_ONLY " + navOnly.Count);
         s.AppendLine("flags (parts; <out>.flags.csv): " + string.Join(", ", fc.ToArray()));
+        s.AppendLine(framesNote);
         s.AppendLine();
         s.AppendLine("Navisworks run: " + navisRun);
         s.AppendLine("Revit run:      " + revitRun);
@@ -525,6 +545,83 @@ public partial class DuctsToPluto
         }
         File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));
     }
+
+    // <out>.frames.csv, the SAP model's input (scripts\sap\Run-SapDucts.ps1): one frame per straight piece, inches,
+    // Navisworks frame (absolute). Topology from Revit: joints are the Revit connectors (fitted onto Navisworks,
+    // connected and touching ends share a joint), tees split at the branch junction; near / side links are NOT
+    // frames (the gap stays open, flagged). Size: the Navisworks stated size of the matched row, else Revit's
+    // connector; branch pieces take their own connector's size. Navisworks-only rows: their axis (X1..Z2, else
+    // the bbox's long axis) between joints of their own (not connected). Elements with one connector (caps,
+    // terminals) have no frame. Thickness: the row's WallThk_in, else 0.06 in (ThkSource "default").
+    static string WriteFramesCsv(string path, List<RvEl> scope, List<Row> rows, Func<RvEl, List<int>> rowsOf, List<int> navOnly,
+        Dictionary<int, Node> nodes, double[] off, double scale)
+    {
+        var s = new StringBuilder();
+        s.AppendLine("Frame,JointI,JointJ,XI_in,YI_in,ZI_in,XJ_in,YJ_in,ZJ_in,Shape,W_in,H_in,Dia_in,Thk_in,ThkSource,SizeSource,Source,RevitElementId,NavisId,Flags");
+        Func<int, double[]> at = id => new[] { (nodes[id].xyz.X / scale + off[0]) * 12, (nodes[id].xyz.Y / scale + off[1]) * 12, (nodes[id].xyz.Z / scale + off[2]) * 12 };
+        int nf = 0, noFrame = 0, noSize = 0, nav = 0;
+        Action<string, string, double[], double[], string, double, double, double, double, string, string, string, string, string, string> line =
+            (ji, jj, p, q, shape, w, h, d, t, tsrc, ssrc, src, rid, nid, flags) =>
+            {
+                nf++;
+                s.AppendLine(string.Join(",", new[] { "F" + nf, ji, jj, R3(p[0]), R3(p[1]), R3(p[2]), R3(q[0]), R3(q[1]), R3(q[2]), shape,
+                    R3(w), R3(h), R3(d), R3(t), tsrc, ssrc, src, rid, nid, flags }.Select(CsvCell).ToArray()));
+            };
+        foreach (RvEl e in scope)
+        {
+            if (e.Segs.Count == 0) { noFrame++; continue; }
+            List<int> pr = rowsOf(e); Row r = pr.Count > 0 ? rows[pr[0]] : null;
+            double t = r != null && !double.IsNaN(r.T) && r.T > 0 ? r.T : 0.06;
+            string flags = string.Join(" ", e.Flags.ToArray());
+            foreach (int[] g in e.Segs)
+            {
+                if (g[0] == g[1]) continue;
+                string shape, ssrc; double w, h, d;
+                if (g[2] < 0 && r != null && NavSize(r, out shape, out w, out h, out d)) ssrc = "navisworks";
+                else
+                {
+                    RvConn k = e.Conns[g[2] >= 0 ? g[2] : 0];
+                    shape = k.Shape == "Round" ? "round" : "rect"; w = k.W; h = k.H; d = k.Dia; ssrc = "revit";
+                    if (shape == "round" ? double.IsNaN(d) : double.IsNaN(w) || double.IsNaN(h)) { noSize++; ssrc = "none"; }
+                }
+                line("N" + g[0], "N" + g[1], at(g[0]), at(g[1]), shape, w, h, d, t, t == 0.06 ? "default" : "navisworks", ssrc, e.Only && e.LocRow < 0 ? "revit-only" : "revit",
+                    e.Id, r != null ? r.NavisId : "", flags);
+            }
+        }
+        foreach (int i in navOnly)
+        {
+            Row r = rows[i]; double[] p, q;
+            if (r.E1 != null) { p = r.E1; q = r.E2; }
+            else
+            {
+                int ax = 0; for (int a = 1; a < 3; a++) if (r.Max[a] - r.Min[a] > r.Max[ax] - r.Min[ax]) ax = a;
+                p = new double[3]; q = new double[3];
+                for (int a = 0; a < 3; a++) { p[a] = q[a] = (r.Min[a] + r.Max[a]) / 2; }
+                p[ax] = r.Min[ax]; q[ax] = r.Max[ax];
+            }
+            string shape; double w, h, d;
+            string ssrc = NavSize(r, out shape, out w, out h, out d) ? "navisworks" : "none";
+            if (ssrc == "none") noSize++;
+            double t = !double.IsNaN(r.T) && r.T > 0 ? r.T : 0.06;
+            nav++;
+            line("V" + i + "a", "V" + i + "b", new[] { p[0] * 12, p[1] * 12, p[2] * 12 }, new[] { q[0] * 12, q[1] * 12, q[2] * 12 }, shape, w, h, d, t,
+                t == 0.06 ? "default" : "navisworks", ssrc, "navisworks-only", "", r.NavisId, "NAVIS_ONLY");
+        }
+        File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));
+        return string.Format(Inv, "SAP frames (<out>.frames.csv): {0} ({1} from Navisworks-only rows), Revit elements without a frame (1 connector) {2}, frames without a size {3}",
+            nf, nav, noFrame, noSize);
+    }
+
+    // Navisworks stated size: Width / Height / Diameter, else read from the Name
+    static bool NavSize(Row r, out string shape, out double w, out double h, out double d)
+    {
+        w = !double.IsNaN(r.W) ? r.W : r.NameW; h = !double.IsNaN(r.H) ? r.H : r.NameH; d = !double.IsNaN(r.D) ? r.D : r.NameD;
+        if (!double.IsNaN(w) && !double.IsNaN(h)) { shape = "rect"; d = double.NaN; return true; }
+        if (!double.IsNaN(d)) { shape = "round"; w = h = double.NaN; return true; }
+        shape = "rect"; return false;
+    }
+
+    static string R3(double v) { return double.IsNaN(v) ? "" : v.ToString("0.###", Inv); }
 
     static int RvBeam(Dictionary<int, RawViewerWriter.BeamMember> beams, Dictionary<int, string> labels, ref int nb, int a, int b, Dictionary<int, Node> nodes, string label)
     {
