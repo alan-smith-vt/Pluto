@@ -41,9 +41,12 @@ public partial class DuctsToPluto
         Func<RvEl, RvEl> find = null;
         find = e => { while (parent[e] != e) { parent[e] = parent[parent[e]]; e = parent[e]; } return e; };
         // names first (2026-10-12: a weak join bridged system A into the system B run next to it in a test room). STRONG joins
-        // (Revit connection, touching ends) always join, flagged SYSTEM_NAME_CONFLICT across two names; WEAK joins
-        // (near / side links, proximity) join only when the two GROUPS' majority names agree or one group has none
-        // (so an unnamed part cannot bridge two names either), else are BLOCKED, listed in match.txt.
+        // (Revit connection, touching ends, near links, side-branch links: an end butting into or facing another
+        // part is a connection; user 2026-10-12: two systems never connect into each other) always join. Only
+        // PROXIMITY is weak: it joins when the two GROUPS' majority names agree or one group has none, else it is
+        // BLOCKED and listed in match.txt (a duct passing over another is not a connection). Afterwards the
+        // majority name wins per system and every part whose own name differs is flagged SYSTEM_NAME_CONFLICT
+        // (test room: one branch piece with Revit RunName system B in a system A branch).
         var nameOf = new Dictionary<RvEl, string>();
         foreach (RvEl e in scope) nameOf[e] = SystemBase(PartRunName(e, rows, rowsOf), e.System);
         // group root -> name counts; a group's name is its MAJORITY (one mislabelled part must not let a weak
@@ -62,11 +65,6 @@ public partial class DuctsToPluto
         Action<RvEl, RvEl> strong = (a, b) =>
         {
             if (a == b || !parent.ContainsKey(a) || !parent.ContainsKey(b)) return;
-            if (nameOf[a] != "" && nameOf[b] != "" && nameOf[a] != nameOf[b])
-            {
-                AddFlag(a, "SYSTEM_NAME_CONFLICT", "connected to " + b.Id + " of " + nameOf[b]);
-                AddFlag(b, "SYSTEM_NAME_CONFLICT", "connected to " + a.Id + " of " + nameOf[a]);
-            }
             union(a, b);
         };
         Func<RvEl, RvEl, string, bool> weak = (a, b, kind) =>
@@ -84,10 +82,10 @@ public partial class DuctsToPluto
             foreach (RvConn k in e.Conns)
                 foreach (string t in k.To) { RvConn q; if (conns.TryGetValue(t, out q) && inScope.Contains(q.Owner)) strong(e, q.Owner); }
         foreach (KeyValuePair<RvConn, RvConn> kv in touch) strong(kv.Key.Owner, kv.Value.Owner);
-        // weak candidates: near / side links, then proximity over the drawn boxes; applied in two passes (below)
+        foreach (RvConn[] p in nearPairs) strong(p[0].Owner, p[1].Owner);
+        foreach (RvEl[] p in sidePairs) strong(p[0], p[1]);
+        // proximity candidates, applied in two passes (below)
         var cands = new List<Tuple<RvEl, RvEl, string>>();
-        foreach (RvConn[] p in nearPairs) cands.Add(Tuple.Create(p[0].Owner, p[1].Owner, "near link"));
-        foreach (RvEl[] p in sidePairs) cands.Add(Tuple.Create(p[0], p[1], "side link"));
 
         // proximity over the drawn boxes
         var boxes = new List<PartBox>();
@@ -123,9 +121,7 @@ public partial class DuctsToPluto
                 if (!overlap || !(LineInBox(p, q) || LineInBox(q, p))) continue;
                 cands.Add(Tuple.Create(p.Owner, q.Owner, "proximity"));
             }
-        // pass 1: weak joins between groups that both carry a name and agree; pass 2: the rest (a group without a
-        // name), links before proximity, so an unnamed branch joins along its own link before a duct passing over
-        // it can claim it by proximity (2026-10-12)
+        // pass 1: proximity between groups that both carry a name and agree; pass 2: the rest (a group without a name)
         Action<Tuple<RvEl, RvEl, string>> apply = c =>
         {
             if (find(c.Item1) == find(c.Item2) || !weak(c.Item1, c.Item2, c.Item3) || c.Item3 != "proximity") return;
@@ -152,7 +148,13 @@ public partial class DuctsToPluto
                 if (n == "") continue; int c; s.Names.TryGetValue(n, out c); s.Names[n] = c + 1;
             }
             s.Name = s.Names.Count > 0 ? s.Names.OrderByDescending(kv => kv.Value).First().Key : "unnamed";
-            foreach (RvEl e in l) { e.Sys = s.Id; e.SysName = s.Name; if (e.Flags.Contains("JOINED_BY_PROXIMITY")) s.ProxJoins++; }
+            foreach (RvEl e in l)
+            {
+                e.Sys = s.Id; e.SysName = s.Name;
+                if (e.Flags.Contains("JOINED_BY_PROXIMITY")) s.ProxJoins++;
+                // majority rules: a part whose own name differs from its system's is flagged (the data mislabels it)
+                if (nameOf[e] != "" && nameOf[e] != s.Name) AddFlag(e, "SYSTEM_NAME_CONFLICT", "own name " + nameOf[e] + " in system " + s.Name);
+            }
             res.Add(s);
         }
         return res;
