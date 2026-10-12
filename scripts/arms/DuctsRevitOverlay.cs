@@ -526,6 +526,15 @@ public partial class DuctsToPluto
                 if ((q >= 0 && IsTapPoint(e.Conns[q])) || offsetStubs.Contains(id)) { beams[id].SectionIndex = 0; gTap.Add((uint)id); continue; }
                 string shape, ssrc; double w, h, d; RvConn src;
                 SegSize(e, q, r, out shape, out w, out h, out d, out ssrc, out src);
+                // orientation from the connector AT this beam's end (a bend's width direction turns with it; a tee
+                // branch has its own), its W x H order kept (2026-10-12, test room: elbows drawn 10x26 for 26x10)
+                foreach (RvConn k in e.Conns)
+                {
+                    int kn = node(k);
+                    if ((kn != beams[id].NodeA && kn != beams[id].NodeB) || k.WX == null || k.Shape == "Round" || double.IsNaN(k.W)) continue;
+                    if (shape == "rect" && Math.Abs(w - k.H) + Math.Abs(h - k.W) < Math.Abs(w - k.W) + Math.Abs(h - k.H)) { double x = w; w = h; h = x; }
+                    src = k; break;
+                }
                 beams[id].SectionIndex = sec(shape, w, h, d, t);
                 beamDim[id] = new[] { shape == "round" ? 1.0 : 0.0, w, h, d };
                 // box width along the connector's width direction (Revit BasisX) where the run exported it
