@@ -15,6 +15,8 @@
 #                        C:\Temp\hvac\revit\<yyyyMMdd-HHmmss>) fitted onto this run's frame by IfcGUID and drawn for the
 #                        room(s): Revit parts, connected / touching / open joints; <out>.match.txt lists what is in one
 #                        model and not the other; default out <run>\revit[_<room>]. Load beside ducts_mesh[_<room>].
+#                        Also <out>.flags.csv (discrepancy flags per part, 'Flag: <name>' viewer groups) and
+#                        <out>.frames.csv, the SAP model input: scripts\sap\Run-SapDucts.ps1 -Frames <it> -SavePath <x.sdb>
 #     [-Out <base>]      default <run>\ducts  ->  <run>\ducts.bin + <run>\ducts.features.json
 #     [-Unit in]         file length unit; "in" matches the plant export
 #     [-ModelId <id>]    default hvac/ducts/<run folder name> (+ "/mesh")
