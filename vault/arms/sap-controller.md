@@ -21,9 +21,11 @@ This is the only route that runs on the production machine (SAP 22, no Python). 
 | `SapExport.cs` | whatever SAP holds → analysis mesh (`Mesh`, renumbered 1..N) → `model.s2k` + `labels.csv` for `SapToPluto` |
 | `SapSurvey.cs` | read-only survey of a model (materials, sections, frames, links, joints, patterns, cases, combos, groups → TSVs), expansion-joint candidates, force export by group, the axis probe. Derives from `SapSession` |
 | `SapRelease.cs` | HVAC link / direct release models, the synthetic duct test model. Uses a `SapSurvey` |
+| `SapDucts.cs` | HVAC duct model from a clean `frames.csv` ([[vault/arms/revit-duct-model\|revit-duct-model]]): new blank model, tube / pipe sections, rigid tap stubs, `DUCT_ALL` / `SRC_` / `FLAG_` groups. Uses a `SapSurvey` |
 | `Import-SapApi.ps1` | dot-sourced by every runner: finds the install (`-SapDir`, `PLUTO_SAP_DIR`, else the newest `SAP2000 NN`), loads `SAP2000v1.dll`, compiles every `Sap*.cs` in one batch |
 | `Run-Sap.ps1` | the general runner (below); Python's only entry point |
 | `Run-SapSurvey.ps1`, `Run-SapRelease.ps1` | survey / candidates / forces / probe; release models (duct workflow) |
+| `Run-SapDucts.ps1` | duct model from `frames.csv` (`-Frames`, `-SavePath`) |
 
 ## Capabilities
 
@@ -39,6 +41,7 @@ This is the only route that runs on the production machine (SAP 22, no Python). 
 | model → viewer: mesh, model + results `.s2k`, `SapToPluto` | `SapExport` | `-Export <base\|folder> [-NoResults] [-FinalOnly] [-Cylindrical] [-NoViewerFile]` | `export_model.py` |
 | survey, candidates, forces by group, axis probe | `SapSurvey` | `Run-SapSurvey.ps1` | duct workflow |
 | link / direct release models, synthetic duct | `SapRelease` | `Run-SapRelease.ps1` | duct workflow |
+| duct model from a clean `frames.csv` (geometry, sections, groups; no supports / loads yet; non-prismatic transitions to do) | `SapDucts.Build` | `Run-SapDucts.ps1 -Frames <csv> -SavePath <sdb>` | duct workflow |
 | self test: 20 ft beam, 10 kip midspan → 5 kip, 50 kip-ft | `WriteTestBeamS2k` | `-SelfTest <dir>` | install check |
 
 `Run-Sap.ps1` prints `[step]` progress lines and ends with `RESULT {json}` (version, counts,
