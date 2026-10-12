@@ -19,7 +19,7 @@ using System.Text;
 // <out>.parts_frames.csv) and returns the checks for match.txt.
 public partial class DuctsToPluto
 {
-    const double MergeIn = 1, CollinearCos = 0.99939, LatTolIn = 1;   // cos 2 deg
+    const double MergeIn = 1, CollinearCos = 0.99939, LatTolIn = 1, GapFt = 1, GapLatIn = 2;   // cos 2 deg; gaps up to 12 in along, 2 in sideways
 
     class CEdge
     {
@@ -115,8 +115,56 @@ public partial class DuctsToPluto
         foreach (CEdge ce in edges) { ce.A = find(ce.A); ce.B = find(ce.B); if (ce.A == ce.B) ce.Dead = true; }
         int nextId = P.Keys.Count > 0 ? P.Keys.Max() + 1 : 1;
 
-        // 3a. split a duct edge where a rigid link ends on its line (side-link junctions on a main's centreline)
+        // 2b. gaps (2026-10-12, a 4 in gap in a big duct's line stayed open: no near link formed): two same-size
+        // collinear duct edges of one system whose FREE ends (nothing else on that joint) face each other across
+        // up to GapFt along the axis and GapLatIn sideways are joined at the midpoint
+        int gapsClosed = 0;
         bool changed = true;
+        while (changed)
+        {
+            changed = false;
+            // free = one DUCT edge on the joint (an end-contact rigid link across the gap does not count)
+            var deg = new Dictionary<int, int>(); var degAll = new Dictionary<int, int>();
+            foreach (CEdge ce in edges.Where(x => !x.Dead))
+                foreach (int n in new[] { ce.A, ce.B })
+                {
+                    int c; degAll.TryGetValue(n, out c); degAll[n] = c + 1;
+                    if (!ce.Rigid) { deg.TryGetValue(n, out c); deg[n] = c + 1; } else if (!deg.ContainsKey(n)) deg[n] = 0;
+                }
+            var live = edges.Where(x => !x.Dead && !x.Rigid && x.DimB == null && x.Source != "navisworks-only").ToList();
+            for (int i = 0; i < live.Count && !changed; i++)
+                for (int j = i + 1; j < live.Count && !changed; j++)
+                {
+                    CEdge a = live[i], b = live[j];
+                    if (a.Sys != b.Sys || !SameDim(a, b)) continue;
+                    foreach (int na in new[] { a.A, a.B })
+                    {
+                        if (changed || deg[na] != 1) continue;
+                        double[] ua = Unit(Sub3(P[na], P[na == a.A ? a.B : a.A]));
+                        foreach (int nb in new[] { b.A, b.B })
+                        {
+                            if (changed || nb == na || deg[nb] != 1) continue;
+                            double[] ub = Unit(Sub3(P[nb], P[nb == b.A ? b.B : b.A]));
+                            if (Dot3(ua, ub) > -CollinearCos) continue;
+                            double[] g = Sub3(P[nb], P[na]); double along = Dot3(g, ua);
+                            double lat = Math.Sqrt(Math.Max(0, Dot3(g, g) - along * along));
+                            if (along < 0 || along > GapFt || lat * 12 > GapLatIn) continue;
+                            // rigid links on either end whose far end dangles within the gap: the gap's own link, dropped
+                            foreach (CEdge rl in edges.Where(x => !x.Dead && x.Rigid && (x.A == na || x.B == na || x.A == nb || x.B == nb)).ToList())
+                            {
+                                int o = rl.A == na || rl.A == nb ? rl.B : rl.A;
+                                if (o == na || o == nb || (degAll[o] == 1 && Len(P[o], P[na]) <= GapFt + 0.2)) rl.Dead = true;
+                            }
+                            P[na] = Lerp(P[na], P[nb], 0.5);
+                            foreach (CEdge ce in edges) { if (ce.A == nb) ce.A = na; if (ce.B == nb) ce.B = na; if (ce.A == ce.B) ce.Dead = true; }
+                            gapsClosed++; changed = true;
+                        }
+                    }
+                }
+        }
+
+        // 3a. split a duct edge where a rigid link ends on its line (side-link junctions on a main's centreline)
+        changed = true;
         while (changed)
         {
             changed = false;
@@ -209,9 +257,9 @@ public partial class DuctsToPluto
         WriteCleanViewer(outBase + "_clean", modelId + "/clean", lengthUnit, clean, P, off, scale);
         WriteCleanFrames(outBase + ".frames.csv", clean, P);
 
-        return string.Format(Inv, "clean model (<out>_clean.bin, <out>.frames.csv): {0} elements ({1} rigid links) from {2} pieces; duct length {3:0.#} ft -> {4:0.#} ft, overlaps merged {5} ({6:0.#} ft), different-size overlaps {7} (OVERLAP_SIZE_CONFLICT); connectors > 1 in from the clean line {8}{9}",
+        return string.Format(Inv, "clean model (<out>_clean.bin, <out>.frames.csv): {0} elements ({1} rigid links) from {2} pieces; duct length {3:0.#} ft -> {4:0.#} ft, overlaps merged {5} ({6:0.#} ft), different-size overlaps {7} (OVERLAP_SIZE_CONFLICT), gaps closed {10}; connectors > 1 in from the clean line {8}{9}",
             clean.Count, clean.Count(x => x.Rigid), edges.Count(x => x.Src.Count > 0 || x.Source != "revit"), rawLen, cleanLen, overlapMerged, overlapFt, overlapConflict, dev.Count,
-            dev.Count > 0 ? " (worst: " + string.Join(", ", dev.Take(5).Select(x => x.Value + " " + x.Key.ToString("0.#", Inv) + " in").ToArray()) + ")" : "");
+            dev.Count > 0 ? " (worst: " + string.Join(", ", dev.Take(5).Select(x => x.Value + " " + x.Key.ToString("0.#", Inv) + " in").ToArray()) + ")" : "", gapsClosed);
     }
 
     static CEdge CopyEdge(CEdge s, int a, int b)
