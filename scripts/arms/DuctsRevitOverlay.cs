@@ -251,6 +251,7 @@ public partial class DuctsToPluto
         var beams = new Dictionary<int, RawViewerWriter.BeamMember>(); var labels = new Dictionary<int, string>(); int nb = 1;
         var byCat = new SortedDictionary<string, List<uint>>(); var gOnly = new List<uint>();
         var mains = new List<RvConn[]>();   // each part's main line (its 2 connectors / through pair), for side branches
+        var offsetStubs = new HashSet<int>();   // beams of eccentric parts' sideways offset (seg code -3): thin, SAP rigid
         var navName = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (int i in inRoom) if (rows[i].Guid != "" && !navName.ContainsKey(rows[i].Guid)) navName[rows[i].Guid] = "#" + rows[i].NavisId;
         foreach (RvEl e in scope)
@@ -264,7 +265,23 @@ public partial class DuctsToPluto
                 // a bend: two legs meeting at its corner (where the two connector axes meet), not the chord across it
                 // (2026-10-12, test room: tap - 90 - 90 - straight drew as a zig-zag of chords)
                 double[] corner = BendCorner(e.Conns[0], e.Conns[1]);
-                if (corner != null)
+                int ecc = EccentricOutlet(e.Conns[0], e.Conns[1]);
+                if (corner == null && ecc >= 0)
+                {
+                    // ends facing opposite ways but offset sideways (a shoe tap's inlet sits at its footprint's
+                    // centre; eccentric reducer): the part along the OUTLET's axis back to the inlet's plane, the
+                    // sideways offset to the inlet a rigid stub (2026-10-12, test room: the tap drew tilted into the main)
+                    RvConn o = e.Conns[ecc], i = e.Conns[1 - ecc];
+                    double back = (o.P[0] - i.P[0]) * o.D[0] + (o.P[1] - i.P[1]) * o.D[1] + (o.P[2] - i.P[2]) * o.D[2];
+                    double[] foot = { o.P[0] - back * o.D[0], o.P[1] - back * o.D[1], o.P[2] - back * o.D[2] };
+                    int fn = MakeNode(nodes, ref nextNode, foot, off, scale);
+                    ids.Add(RvBeam(beams, labels, ref nb, fn, node(o), nodes, label));
+                    e.Segs.Add(new[] { fn, node(o), -1 });
+                    int sid = RvBeam(beams, labels, ref nb, node(i), fn, nodes, label + " | offset stub");
+                    ids.Add(sid); offsetStubs.Add(sid);
+                    e.Segs.Add(new[] { node(i), fn, -3 });
+                }
+                else if (corner != null)
                 {
                     int cn = MakeNode(nodes, ref nextNode, corner, off, scale);
                     ids.Add(RvBeam(beams, labels, ref nb, node(e.Conns[0]), cn, nodes, label));
@@ -486,7 +503,7 @@ public partial class DuctsToPluto
                 int q; if (!connOf.TryGetValue(beams[id].NodeA + "-" + beams[id].NodeB, out q)) q = -1;
                 // tap point on a straight's side (Curve connector, 2026-10-12): the stub from the centreline is a
                 // thin link (a box at the tap's size stood out of the duct as a plate); SAP: rigid stub
-                if (q >= 0 && IsTapPoint(e.Conns[q])) { beams[id].SectionIndex = 0; gTap.Add((uint)id); continue; }
+                if ((q >= 0 && IsTapPoint(e.Conns[q])) || offsetStubs.Contains(id)) { beams[id].SectionIndex = 0; gTap.Add((uint)id); continue; }
                 string shape, ssrc; double w, h, d; RvConn src;
                 SegSize(e, q, r, out shape, out w, out h, out d, out ssrc, out src);
                 beams[id].SectionIndex = sec(shape, w, h, d, t);
@@ -551,7 +568,7 @@ public partial class DuctsToPluto
             if (gOnly.Count > 0) sc.AddGroup("Revit only (no Navisworks match)", "#ff3b3b", "beams", gOnly, new[] { "duct", "revit", "unmatched" }, "REVIT_ONLY");
             if (gNear.Count > 0) sc.AddGroup("Link: near (gap / overlap)", "#ffd23f", "beams", gNear, new[] { "duct", "revit", "link" }, null);
             if (gSide.Count > 0) sc.AddGroup("Link: side branch", "#8ae04f", "beams", gSide, new[] { "duct", "revit", "link" }, null);
-            if (gTap.Count > 0) sc.AddGroup("Link: tap stub (centreline to tap point)", "#b07cff", "beams", gTap, new[] { "duct", "revit", "link" }, null);
+            if (gTap.Count > 0) sc.AddGroup("Link: rigid stub (tap point / offset)", "#b07cff", "beams", gTap, new[] { "duct", "revit", "link" }, null);
             if (gConn.Count > 0) sc.AddNodeGroup("Revit joint: connected", "#3fc1a5", gConn, new[] { "duct", "revit", "joint" });
             if (gTouch.Count > 0) sc.AddNodeGroup("Revit joint: touching, not connected", "#ff9f1c", gTouch, new[] { "duct", "revit", "touching" });
             if (gOut.Count > 0) sc.AddNodeGroup("Revit joint: connected outside the room", "#4f8cff", gOut, new[] { "duct", "revit", "outside" });
@@ -783,7 +800,7 @@ public partial class DuctsToPluto
             {
                 if (g[0] == g[1]) continue;
                 string shape, ssrc; double w, h, d;
-                if (g[2] >= 0 && IsTapPoint(e.Conns[g[2]])) { shape = "rigid"; w = h = d = double.NaN; ssrc = "tap-stub"; nStub++; }
+                if ((g[2] >= 0 && IsTapPoint(e.Conns[g[2]])) || g[2] == -3) { shape = "rigid"; w = h = d = double.NaN; ssrc = "tap-stub"; nStub++; }
                 else SegSize(e, g[2], r, out shape, out w, out h, out d, out ssrc);
                 if (ssrc == "none") noSize++;
                 line("N" + g[0], "N" + g[1], at(g[0]), at(g[1]), shape, w, h, d, t, t == 0.06 ? "default" : "navisworks", ssrc, e.Only && e.LocRow < 0 ? "revit-only" : "revit",
@@ -959,6 +976,18 @@ public partial class DuctsToPluto
             ns.Add(id + ": " + (cand.Count == 0 ? "nothing within 36 in" : string.Join(", ", cand.Take(2).Select(x => x.Value).ToArray())));
         }
         return l1 + "\nNEW conns: " + string.Join("; ", cs.ToArray()) + "\nNEW nearest: " + (ns.Count > 0 ? string.Join(" | ", ns.ToArray()) : "all connected");
+    }
+
+    // A 2-connector part whose ends face opposite ways (within ~18 deg) but whose centres are offset sideways by
+    // more than 1 in: the index of the OUTLET (the smaller end; connector 1 when equal) to draw along; else -1
+    static int EccentricOutlet(RvConn a, RvConn b)
+    {
+        if (a.D[0] * b.D[0] + a.D[1] * b.D[1] + a.D[2] * b.D[2] > -0.95) return -1;
+        double[] w = { b.P[0] - a.P[0], b.P[1] - a.P[1], b.P[2] - a.P[2] };
+        double along = w[0] * b.D[0] + w[1] * b.D[1] + w[2] * b.D[2];
+        double lat = Math.Sqrt(Math.Max(0, Dist2(a.P, b.P) - along * along)) * 12;
+        if (lat <= 1) return -1;
+        return ConnPerim(a) > 0 && ConnPerim(a) < ConnPerim(b) ? 0 : 1;
     }
 
     // Corner of a 2-connector part that turns: the closest point between the two connector axes, going INTO the part
