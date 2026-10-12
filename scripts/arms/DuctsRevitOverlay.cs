@@ -32,6 +32,9 @@ public partial class DuctsToPluto
         public List<int[]> Segs = new List<int[]>();   // SAP frames: { node i, node j, connector whose size it takes (-1 = the element's) }
         public List<string> Flags = new List<string>(), Detail = new List<string>();
         public double[] C, P;     // centre: Revit internal / Navisworks frame (feet)
+        public string Kind = "";  // DuctsRunGraph: straight / bend / transition / branch / end / equipment
+        public int Run = -1, Seg = -1;   // DuctsRunGraph run and segment ids (-1 = none)
+        public double[] Voted;    // the segment's voted size { round 1/0, big side or dia, small side } (null = none)
     }
 
     class RvConn
@@ -397,6 +400,17 @@ public partial class DuctsToPluto
             if (fOpen) e.Flags.Add("OPEN_END");
             if (fTouch) e.Flags.Add("TOUCHING_NOT_CONNECTED");
             if (fNear) e.Flags.Add("NEAR_GAP");
+        }
+        // runs, segments and size voting (DuctsRunGraph.cs): adds SIZE_OUTLIER, SIZE_CHANGE_WITHOUT_TRANSITION,
+        // RUNNAME_DEVIATION, SYSTEM_CHANGE and sets each part's Kind / Run / Seg / Voted
+        List<RunSeg> runSegs = AnalyzeRuns(scope, rows, rowsOf, k => node(k), nodes, off, scale);
+        WriteRunsCsv(outBase + ".runs.csv", runSegs);
+        foreach (RvEl e in scope)
+        {
+            string extra = " | " + (e.Kind != "" ? e.Kind : "?")
+                + (e.Run >= 0 ? string.Format(Inv, " | run R{0} seg S{1}", e.Run, e.Seg) : "")
+                + (e.Voted != null ? " voted " + VotedText(e.Voted) : "");
+            foreach (int id in e.Beams) labels[id] += extra;
             if (e.Flags.Count > 0) foreach (int id in e.Beams) labels[id] += " | FLAGS " + string.Join(" ", e.Flags.ToArray());
         }
         var flagGroups = new SortedDictionary<string, List<uint>>(StringComparer.Ordinal);
@@ -514,7 +528,22 @@ public partial class DuctsToPluto
             if (gTouch.Count > 0) sc.AddNodeGroup("Revit joint: touching, not connected", "#ff9f1c", gTouch, new[] { "duct", "revit", "touching" });
             if (gOut.Count > 0) sc.AddNodeGroup("Revit joint: connected outside the room", "#4f8cff", gOut, new[] { "duct", "revit", "outside" });
             if (gOpen.Count > 0) sc.AddNodeGroup("Revit open end", "#ff3b3b", gOpen, new[] { "duct", "revit", "open" }, "REVIT_OPEN");
-            string[] fpal = { "#ff5fa2", "#ffd23f", "#3fe0e0", "#b07cff", "#ff8a3d", "#8ae04f", "#4f8cff", "#ff3b3b", "#f0f0f0" };
+            // one group per run (hide all but one to follow it)
+            string[] rpal = { "#4f8cff", "#ff8a3d", "#3fe0e0", "#b07cff", "#8ae04f", "#ffd23f", "#ff5fa2", "#f0f0f0" };
+            var runBeams = new SortedDictionary<int, List<uint>>(); var runSize = new Dictionary<int, string>();
+            foreach (RvEl e in scope)
+            {
+                if (e.Run < 0) continue;
+                List<uint> l; if (!runBeams.TryGetValue(e.Run, out l)) { l = new List<uint>(); runBeams[e.Run] = l; }
+                foreach (int id in e.Beams) l.Add((uint)id);
+                if (!runSize.ContainsKey(e.Run) && e.Voted != null) runSize[e.Run] = VotedText(e.Voted);
+            }
+            foreach (KeyValuePair<int, List<uint>> kv in runBeams)
+            {
+                string sz; runSize.TryGetValue(kv.Key, out sz);
+                sc.AddGroup(string.Format(Inv, "Run R{0}{1}", kv.Key, sz != null ? " (" + sz + ")" : ""), rpal[(kv.Key - 1) % rpal.Length], "beams", kv.Value, new[] { "duct", "revit", "run" }, null);
+            }
+            string[] fpal ={ "#ff5fa2", "#ffd23f", "#3fe0e0", "#b07cff", "#ff8a3d", "#8ae04f", "#4f8cff", "#ff3b3b", "#f0f0f0" };
             int fi = 0;
             foreach (KeyValuePair<string, List<uint>> kv in flagGroups)
                 sc.AddGroup("Flag: " + kv.Key, fpal[fi++ % fpal.Length], "beams", kv.Value, new[] { "duct", "revit", "flag" }, "FLAG_" + kv.Key);
@@ -566,6 +595,11 @@ public partial class DuctsToPluto
         s.AppendLine("flags (parts; <out>.flags.csv): " + string.Join(", ", fc.ToArray()));
         s.AppendLine(framesNote);
         s.AppendLine(meshNote);
+        {
+            int nRuns = runSegs.Select(g => g.Run).Distinct().Count(), nSeg = runSegs.Count(g => g.Kind == "segment"), nTr = runSegs.Count(g => g.Kind == "transition");
+            var kinds = scope.GroupBy(e => e.Kind == "" ? "none" : e.Kind).OrderByDescending(g => g.Count()).Select(g => g.Key + " " + g.Count());
+            s.AppendLine(string.Format(Inv, "runs (<out>.runs.csv): {0} runs, {1} segments + {2} transitions; parts: {3}", nRuns, nSeg, nTr, string.Join(", ", kinds.ToArray())));
+        }
         s.AppendLine(string.Format(Inv, "boxes turned to the Revit connector's width direction: {0} beams{1}", nOriented,
             nOriented == 0 ? " (connectors.csv has no WidthDirX: a Pluto Connectors run from before 2026-10-12; boxes keep width horizontal)" : ""));
         s.AppendLine();
@@ -819,6 +853,14 @@ public partial class DuctsToPluto
         {
             shape = k.Shape == "Round" ? "round" : "rect"; w = k.W; h = k.H; d = k.Dia; ssrc = differ ? "revit-transition" : "revit";
             used = k;
+            // a run segment's voted size (DuctsRunGraph) for main pieces, kept in the connector's W / H order
+            if (q < 0 && e.Voted != null && e.Kind != "transition" && (e.Voted[0] == 1) == (shape == "round"))
+            {
+                if (shape == "round") d = e.Voted[1];
+                else if (w >= h) { w = e.Voted[1]; h = e.Voted[2]; }
+                else { w = e.Voted[2]; h = e.Voted[1]; }
+                ssrc = "voted";
+            }
             return;
         }
         if (r != null && NavSize(r, out shape, out w, out h, out d)) { ssrc = "navisworks"; return; }
