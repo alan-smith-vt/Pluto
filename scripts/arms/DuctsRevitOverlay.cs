@@ -546,6 +546,8 @@ public partial class DuctsToPluto
         // systems (DuctsSystems.cs): flood fill over connections, touching ends, near / side links and the drawn
         // boxes (a centreline inside another part's box + 6 in: overlaps, gaps, branches into a side); adds
         // JOINED_BY_PROXIMITY, sets e.Sys / e.SysName
+        FreeEnds.Clear();
+        foreach (RvConn k in open) if (!touch.ContainsKey(k) && !nearSet.Contains(k) && !linked.Contains(k) && !attach.ContainsKey(k)) FreeEnds.Add(k);
         List<DuctSystem> systems = AnalyzeSystems(scope, conns, inScope, touch, nearPairs, sidePairs, beams, beamDim, nodes, off, scale, rows, rowsOf);
         WriteRunsCsv(outBase + ".runs.csv", runSegs);
         foreach (RvEl e in scope)

@@ -16,6 +16,7 @@ using System.Text.RegularExpressions;
 public partial class DuctsToPluto
 {
     const double ProxTolFt = 0.5;
+    static readonly HashSet<RvConn> FreeEnds = new HashSet<RvConn>();   // set by the overlay before AnalyzeSystems
     static readonly List<string> Blocked = new List<string>();   // weak joins refused across two system names (last AnalyzeSystems)
 
     class DuctSystem
@@ -119,6 +120,16 @@ public partial class DuctsToPluto
                 bool overlap = true;
                 for (int k = 0; k < 3 && overlap; k++) if (p.Hi[k] < q.Lo[k] || q.Hi[k] < p.Lo[k]) overlap = false;
                 if (!overlap || !(LineInBox(p, q) || LineInBox(q, p))) continue;
+                // an OPEN END of one part inside / against the other's box = an end butting into it: a connection,
+                // joined regardless of names (2026-10-12, test room: a system B-labelled S-bend hanging off a system A tap);
+                // only centrelines crossing / running close stay name-checked
+                if (OpenEndInBox(p, q.Owner) || OpenEndInBox(q, p.Owner))
+                {
+                    strong(p.Owner, q.Owner);
+                    AddFlag(p.Owner, "JOINED_BY_PROXIMITY", "end contact with " + q.Owner.Id);
+                    AddFlag(q.Owner, "JOINED_BY_PROXIMITY", "end contact with " + p.Owner.Id);
+                    continue;
+                }
                 cands.Add(Tuple.Create(p.Owner, q.Owner, "proximity"));
             }
         // pass 1: proximity between groups that both carry a name and agree; pass 2: the rest (a group without a name)
@@ -167,13 +178,25 @@ public partial class DuctsToPluto
         for (int s = 0; s <= n; s++)
         {
             double t = q.L * s / n;
-            double[] v = { q.A[0] + q.X[0] * t - p.A[0], q.A[1] + q.X[1] * t - p.A[1], q.A[2] + q.X[2] * t - p.A[2] };
-            double ax = v[0] * p.X[0] + v[1] * p.X[1] + v[2] * p.X[2];
-            if (ax < -ProxTolFt || ax > p.L + ProxTolFt) continue;
-            double y = v[0] * p.Y[0] + v[1] * p.Y[1] + v[2] * p.Y[2], z = v[0] * p.Z[0] + v[1] * p.Z[1] + v[2] * p.Z[2];
-            if (p.Round ? Math.Sqrt(y * y + z * z) <= p.R + ProxTolFt : Math.Abs(y) <= p.HW + ProxTolFt && Math.Abs(z) <= p.HH + ProxTolFt) return true;
+            if (PointInBox(p, new[] { q.A[0] + q.X[0] * t, q.A[1] + q.X[1] * t, q.A[2] + q.X[2] * t })) return true;
         }
         return false;
+    }
+
+    // a FREE end of part e (open: no connection, touch, near / side link or attachment) inside p's box + ProxTolFt
+    static bool OpenEndInBox(PartBox p, RvEl e)
+    {
+        foreach (RvConn k in e.Conns) if (FreeEnds.Contains(k) && PointInBox(p, k.P)) return true;
+        return false;
+    }
+
+    static bool PointInBox(PartBox p, double[] pt)
+    {
+        double[] v = { pt[0] - p.A[0], pt[1] - p.A[1], pt[2] - p.A[2] };
+        double ax = v[0] * p.X[0] + v[1] * p.X[1] + v[2] * p.X[2];
+        if (ax < -ProxTolFt || ax > p.L + ProxTolFt) return false;
+        double y = v[0] * p.Y[0] + v[1] * p.Y[1] + v[2] * p.Y[2], z = v[0] * p.Z[0] + v[1] * p.Z[1] + v[2] * p.Z[2];
+        return p.Round ? Math.Sqrt(y * y + z * z) <= p.R + ProxTolFt : Math.Abs(y) <= p.HW + ProxTolFt && Math.Abs(z) <= p.HH + ProxTolFt;
     }
 
     // "A-<bldg>-<service>-DUCT-<n>" -> service; else the system name without a trailing number ("<SYS>-<number>" -> system B)
