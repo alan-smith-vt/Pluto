@@ -392,6 +392,16 @@ public partial class DuctsToPluto
         foreach (int i in navMissing) if (!partners.ContainsKey(i)) navOnly.Add(i);
         WriteFlagsCsv(outBase + ".flags.csv", scope, rows, rowsOf, navOnly);
         string framesNote = WriteFramesCsv(outBase + ".frames.csv", scope, rows, rowsOf, navOnly, nodes, off, scale);
+        // Navisworks-only rows are SAP frames too (own joints, not connected): drawn so the overlay shows the SAP model
+        var gNavOnly = new List<uint>();
+        foreach (int i in navOnly)
+        {
+            double[] p, q; NavAxis(rows[i], out p, out q);
+            int id = RvBeam(beams, labels, ref nb, MakeNode(nodes, ref nextNode, p, off, scale), MakeNode(nodes, ref nextNode, q, off, scale), nodes,
+                "Navisworks #" + rows[i].NavisId + " | " + rows[i].Cat + " | " + rows[i].Name + " | " + rows[i].SizeText + " | NO REVIT MATCH | FLAGS NAVIS_ONLY");
+            if (id > 0) gNavOnly.Add((uint)id);
+        }
+        if (gNavOnly.Count > 0) flagGroups["NAVIS_ONLY"] = gNavOnly;
 
         var res = new Result();
         if (beams.Count > 0)
@@ -461,6 +471,7 @@ public partial class DuctsToPluto
         var fc = new List<string>();
         foreach (KeyValuePair<string, List<uint>> kv in flagGroups)
         {
+            if (kv.Key == "NAVIS_ONLY") continue;   // rows, not Revit elements: counted below
             int n = 0; foreach (RvEl e in scope) if (e.Flags.Contains(kv.Key)) n++;
             fc.Add(kv.Key + " " + n);
         }
@@ -591,14 +602,7 @@ public partial class DuctsToPluto
         foreach (int i in navOnly)
         {
             Row r = rows[i]; double[] p, q;
-            if (r.E1 != null) { p = r.E1; q = r.E2; }
-            else
-            {
-                int ax = 0; for (int a = 1; a < 3; a++) if (r.Max[a] - r.Min[a] > r.Max[ax] - r.Min[ax]) ax = a;
-                p = new double[3]; q = new double[3];
-                for (int a = 0; a < 3; a++) { p[a] = q[a] = (r.Min[a] + r.Max[a]) / 2; }
-                p[ax] = r.Min[ax]; q[ax] = r.Max[ax];
-            }
+            NavAxis(r, out p, out q);
             string shape; double w, h, d;
             string ssrc = NavSize(r, out shape, out w, out h, out d) ? "navisworks" : "none";
             if (ssrc == "none") noSize++;
@@ -610,6 +614,16 @@ public partial class DuctsToPluto
         File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));
         return string.Format(Inv, "SAP frames (<out>.frames.csv): {0} ({1} from Navisworks-only rows), Revit elements without a frame (1 connector) {2}, frames without a size {3}",
             nf, nav, noFrame, noSize);
+    }
+
+    // A Navisworks row's axis (feet): X1..Z2, else the bbox's long axis through its centre
+    static void NavAxis(Row r, out double[] p, out double[] q)
+    {
+        if (r.E1 != null) { p = r.E1; q = r.E2; return; }
+        int ax = 0; for (int a = 1; a < 3; a++) if (r.Max[a] - r.Min[a] > r.Max[ax] - r.Min[ax]) ax = a;
+        p = new double[3]; q = new double[3];
+        for (int a = 0; a < 3; a++) { p[a] = q[a] = (r.Min[a] + r.Max[a]) / 2; }
+        p[ax] = r.Min[ax]; q[ax] = r.Max[ax];
     }
 
     // Navisworks stated size: Width / Height / Diameter, else read from the Name
