@@ -733,7 +733,7 @@ public partial class DuctsToPluto
 
     // part (2026-10-08): a NavisId (or its start) whose rings are reported in NEW instead of the summary lines
     // probe ring thresholds shared by ExportProbe and MeshConnectors
-    const double WeldFt = 1e-3, BigPerimIn = 12, EndTolIn = 1, MergeAlongIn = 3, MergeLatIn = 3;
+    const double WeldFt = 1e-3, BigPerimIn = 12, EndTolIn = 1, MergeAlongIn = 3, MergeLatIn = 3, RimAlongIn = 3;
 
     public static Result ExportProbe(string runDir, string outBase, string modelId, string lengthUnit, string room, string part)
     {
@@ -1119,7 +1119,7 @@ public partial class DuctsToPluto
         out int small, out int interior, out int nEnds)
     {
         small = 0; interior = 0;
-        var ends = new List<Opening>();
+        var ends = new List<Opening>(); var inner = new List<Opening>();
         foreach (List<double[]> loop in BoundaryLoops(f, WeldFt))
         {
             Opening o = Describe(loop);
@@ -1138,7 +1138,7 @@ public partial class DuctsToPluto
             }
             if (dHi <= EndTolIn) { }
             else if (dLo >= -EndTolIn) { for (int k = 0; k < 3; k++) o.N[k] = -o.N[k]; }
-            else { interior++; if (watch) partKind[partRings.Count - 1] = "interior"; continue; }
+            else { interior++; if (watch) partKind[partRings.Count - 1] = "interior"; inner.Add(o); continue; }
             if (watch) partKind[partRings.Count - 1] = "end";
             TrimToEnd(o, loop, EndTolIn);
             o.Row = row; ends.Add(o);
@@ -1175,6 +1175,16 @@ public partial class DuctsToPluto
             Opening big = o.Members[o.Members.Count - 1], sz = big;
             foreach (Opening m in o.Members)                      // smallest first
                 if (m == big || LateralIn(big, m) <= 1) { sz = m; break; }
+            // 2026-10-12 (radius gooseneck, test room): the duct rim is an INTERIOR ring when the flange flares past
+            // its plane (flange 17x15 end ring, rim 14x12 = the free size); a smaller interior ring facing the same
+            // way, centred (1 in) and within RimAlongIn of the end ring sizes the connector instead.
+            foreach (Opening m in inner)
+            {
+                if (m.Perim >= sz.Perim || Math.Abs(m.N[0] * big.N[0] + m.N[1] * big.N[1] + m.N[2] * big.N[2]) < 0.95) continue;
+                double dx = m.C[0] - big.C[0], dy = m.C[1] - big.C[1], dz = m.C[2] - big.C[2];
+                if (Math.Abs(dx * big.N[0] + dy * big.N[1] + dz * big.N[2]) * 12 > RimAlongIn || LateralIn(big, m) > 1) continue;
+                sz = m;
+            }
             o.C = (double[])big.C.Clone();
             o.Shape = sz.Shape; o.A = sz.A; o.B = sz.B; o.Dia = sz.Dia; o.Planar = sz.Planar; o.Perim = sz.Perim; o.Ua = sz.Ua;
             double sa, sb;
