@@ -16,6 +16,7 @@ using System.Text.RegularExpressions;
 public partial class DuctsToPluto
 {
     const double ProxTolFt = 0.5;
+    static readonly List<string> Blocked = new List<string>();   // weak joins refused across two system names (last AnalyzeSystems)
 
     class DuctSystem
     {
@@ -39,14 +40,48 @@ public partial class DuctsToPluto
         foreach (RvEl e in scope) parent[e] = e;
         Func<RvEl, RvEl> find = null;
         find = e => { while (parent[e] != e) { parent[e] = parent[parent[e]]; e = parent[e]; } return e; };
-        Action<RvEl, RvEl> union = (a, b) => { if (a != null && b != null && parent.ContainsKey(a) && parent.ContainsKey(b)) parent[find(a)] = find(b); };
-
+        // names first (2026-10-12: a weak join bridged system A into the system B run next to it in a test room). STRONG joins
+        // (Revit connection, touching ends) always join, flagged SYSTEM_NAME_CONFLICT across two names; WEAK joins
+        // (near / side links, proximity) join only when the names the two GROUPS already carry overlap or one
+        // group has none (so an unnamed part cannot bridge two names either), else are BLOCKED, listed in match.txt.
+        var nameOf = new Dictionary<RvEl, string>();
+        foreach (RvEl e in scope) nameOf[e] = SystemBase(PartRunName(e, rows, rowsOf), e.System);
+        var names = new Dictionary<RvEl, HashSet<string>>();   // group root -> names in it
+        foreach (RvEl e in scope) { names[e] = new HashSet<string>(StringComparer.Ordinal); if (nameOf[e] != "") names[e].Add(nameOf[e]); }
+        Action<RvEl, RvEl> union = (a, b) =>
+        {
+            if (a == null || b == null || !parent.ContainsKey(a) || !parent.ContainsKey(b)) return;
+            RvEl ra = find(a), rb = find(b); if (ra == rb) return;
+            parent[ra] = rb; names[rb].UnionWith(names[ra]);
+        };
+        Blocked.Clear();
+        Action<RvEl, RvEl> strong = (a, b) =>
+        {
+            if (a == b || !parent.ContainsKey(a) || !parent.ContainsKey(b)) return;
+            if (nameOf[a] != "" && nameOf[b] != "" && nameOf[a] != nameOf[b])
+            {
+                AddFlag(a, "SYSTEM_NAME_CONFLICT", "connected to " + b.Id + " of " + nameOf[b]);
+                AddFlag(b, "SYSTEM_NAME_CONFLICT", "connected to " + a.Id + " of " + nameOf[a]);
+            }
+            union(a, b);
+        };
+        Func<RvEl, RvEl, string, bool> weak = (a, b, kind) =>
+        {
+            if (a == b || !parent.ContainsKey(a) || !parent.ContainsKey(b)) return false;
+            HashSet<string> na = names[find(a)], nb = names[find(b)];
+            if (na.Count > 0 && nb.Count > 0 && !na.Overlaps(nb))
+            {
+                Blocked.Add(string.Format(Inv, "{0}: {1} ({2}) - {3} ({4})", kind, a.Id, string.Join("/", na.ToArray()), b.Id, string.Join("/", nb.ToArray())));
+                return false;
+            }
+            union(a, b); return true;
+        };
         foreach (RvEl e in scope)
             foreach (RvConn k in e.Conns)
-                foreach (string t in k.To) { RvConn q; if (conns.TryGetValue(t, out q) && inScope.Contains(q.Owner)) union(e, q.Owner); }
-        foreach (KeyValuePair<RvConn, RvConn> kv in touch) union(kv.Key.Owner, kv.Value.Owner);
-        foreach (RvConn[] p in nearPairs) union(p[0].Owner, p[1].Owner);
-        foreach (RvEl[] p in sidePairs) union(p[0], p[1]);
+                foreach (string t in k.To) { RvConn q; if (conns.TryGetValue(t, out q) && inScope.Contains(q.Owner)) strong(e, q.Owner); }
+        foreach (KeyValuePair<RvConn, RvConn> kv in touch) strong(kv.Key.Owner, kv.Value.Owner);
+        foreach (RvConn[] p in nearPairs) weak(p[0].Owner, p[1].Owner, "near link");
+        foreach (RvEl[] p in sidePairs) weak(p[0], p[1], "side link");
 
         // proximity over the drawn boxes
         var boxes = new List<PartBox>();
@@ -81,7 +116,8 @@ public partial class DuctsToPluto
                 bool overlap = true;
                 for (int k = 0; k < 3 && overlap; k++) if (p.Hi[k] < q.Lo[k] || q.Hi[k] < p.Lo[k]) overlap = false;
                 if (!overlap || !(LineInBox(p, q) || LineInBox(q, p))) continue;
-                union(p.Owner, q.Owner); prox++;
+                if (!weak(p.Owner, q.Owner, "proximity")) continue;
+                prox++;
                 AddFlag(p.Owner, "JOINED_BY_PROXIMITY", "joined to " + q.Owner.Id + " by proximity");
                 AddFlag(q.Owner, "JOINED_BY_PROXIMITY", "joined to " + p.Owner.Id + " by proximity");
             }
@@ -142,12 +178,16 @@ public partial class DuctsToPluto
         int mixed = systems.Count(s => s.Names.Count > 1), single = systems.Count(s => s.Els.Count == 1);
         string line = string.Format(Inv, "systems: {0} connected components ({1} single parts), {2} names [{3}]; names over several components {4}; components mixing names {5}; joins by proximity only {6} parts",
             systems.Count, single, byName.Count, string.Join(" ", byName.Select(kv => kv.Key + ":" + kv.Value.Count).ToArray()),
-            byName.Count(kv => kv.Value.Count > 1), mixed, systems.Sum(s => s.ProxJoins));
+            byName.Count(kv => kv.Value.Count > 1), mixed, systems.Sum(s => s.ProxJoins))
+            + string.Format(Inv, "; weak joins blocked across two names {0}; parts connected across two names (SYSTEM_NAME_CONFLICT) {1}",
+                Blocked.Count, systems.Sum(s => s.Els.Count(e => e.Flags.Contains("SYSTEM_NAME_CONFLICT"))));
         var sb = new StringBuilder();
         sb.AppendLine("system name -> components (parts):");
         foreach (KeyValuePair<string, List<string>> kv in byName) sb.AppendLine("  " + kv.Key + ": " + string.Join(", ", kv.Value.ToArray()));
         sb.AppendLine("components mixing names (parts):");
         foreach (DuctSystem s in systems) if (s.Names.Count > 1) sb.AppendLine("  C" + s.Id + ": " + string.Join(", ", s.Names.Select(kv => kv.Key + " (" + kv.Value + ")").ToArray()));
+        sb.AppendLine("weak joins blocked across two system names (kind: Revit id (name) - Revit id (name)):");
+        foreach (string b in Blocked.Distinct()) sb.AppendLine("  " + b);
         return new[] { line, sb.ToString() };
     }
 }
