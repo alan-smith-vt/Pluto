@@ -22,6 +22,7 @@ namespace PlutoRevit
     public class ExportConnectors : IExternalCommand
     {
         const string OutRoot = @"C:\Temp\hvac\revit";
+        static readonly string[] RunNameParams = { "RunName", "Run Name", "IfcRunName", "IfcObjectProperties.RunName", "Run" };
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
         static readonly BuiltInCategory[] Cats = {
             BuiltInCategory.OST_FabricationDuctwork, BuiltInCategory.OST_DuctCurves, BuiltInCategory.OST_DuctFitting,
@@ -42,12 +43,12 @@ namespace PlutoRevit
             var byCat = new SortedDictionary<string, int>();
             var byFam = new SortedDictionary<string, int>();
             var errors = new List<string>();
-            int nConn = 0, nOpen = 0, nNoMgr = 0;
+            int nConn = 0, nOpen = 0, nNoMgr = 0, nRunName = 0;
             var openByCat = new SortedDictionary<string, int>();
             var open = new List<OpenEnd>();
             var e = new StringBuilder();
             var c = new StringBuilder();
-            e.AppendLine("ElementId,UniqueId,IfcGUID,Category,Family,Type,Size,SystemName,SystemType,Level,IsFabrication,Connectors");
+            e.AppendLine("ElementId,UniqueId,IfcGUID,Category,Family,Type,Size,SystemName,SystemType,Level,IsFabrication,Connectors,RunName,RunNameParam");
             c.AppendLine("ElementId,ConnectorId,ConnType,Domain,Shape,X_ft,Y_ft,Z_ft,DirX,DirY,DirZ,WidthDirX,WidthDirY,WidthDirZ,Width_in,Height_in,Diameter_in,ConnectedTo");
 
             foreach (Element el in els)
@@ -121,7 +122,13 @@ namespace PlutoRevit
                      .Append(Q(cat)).Append(',').Append(Q(fam)).Append(',').Append(Q(typ)).Append(',').Append(Q(size)).Append(',')
                      .Append(Q(Param(el, BuiltInParameter.RBS_SYSTEM_NAME_PARAM))).Append(',')
                      .Append(Q(Param(el, BuiltInParameter.RBS_SYSTEM_CLASSIFICATION_PARAM) != "" ? Param(el, BuiltInParameter.RBS_SYSTEM_CLASSIFICATION_PARAM) : Lookup(el, "System Type"))).Append(',')
-                     .Append(Q(lvl)).Append(',').Append(fab ? "1" : "0").Append(',').Append(n.ToString(Inv)).AppendLine();
+                     .Append(Q(lvl)).Append(',').Append(fab ? "1" : "0").Append(',').Append(n.ToString(Inv)).Append(',');
+                    // run name (2026-10-12): Navisworks shows IfcObjectProperties.RunName, mapped from some Revit
+                    // parameter; the first of these names found on the element, and which one
+                    string rn = "", rnParam = "";
+                    foreach (string pn in RunNameParams) { string v = Lookup(el, pn); if (v != "") { rn = v; rnParam = pn; break; } }
+                    if (rn != "") nRunName++;
+                    e.Append(Q(rn)).Append(',').Append(Q(rnParam)).AppendLine();
                     Bump(byCat, cat);
                     Bump(byFam, cat + " | " + fam + " | " + typ);
                 }
@@ -137,7 +144,7 @@ namespace PlutoRevit
 
             var s = new StringBuilder();
             // NEW block: 3 short lines to type back from the secure machine.
-            s.AppendLine(string.Format(Inv, "NEW el {0} conn {1} open {2} touching {3} err {4}", els.Count, nConn, nOpen, nTouch, errors.Count));
+            s.AppendLine(string.Format(Inv, "NEW el {0} conn {1} open {2} touching {3} err {4} runname {5}", els.Count, nConn, nOpen, nTouch, errors.Count, nRunName));
             s.AppendLine("NEW open " + Compact(openByCat));
             s.AppendLine("NEW touch " + Compact(touchByCat));
             s.AppendLine();

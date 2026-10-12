@@ -24,7 +24,7 @@ public partial class DuctsToPluto
 {
     class RvEl
     {
-        public string Id, Uid, Guid, GuidCalc, Cat, Fam, Type, Size, System, Level, Match = "";
+        public string Id, Uid, Guid, GuidCalc, Cat, Fam, Type, Size, System, Level, Match = "", RunName = "";   // RunName: Revit parameter (runs from 2026-10-12 on)
         public bool Fab, Only;
         public int LocRow = -1;   // Revit-only: the Navisworks-only row it lies inside (same part, other IfcGUID)
         public List<RvConn> Conns = new List<RvConn>();
@@ -90,7 +90,7 @@ public partial class DuctsToPluto
             var e = new RvEl();
             e.Id = Get(c, "ElementId"); e.Uid = Get(c, "UniqueId"); e.Guid = Get(c, "IfcGUID"); e.GuidCalc = IfcGuidFromUniqueId(e.Uid);
             e.Cat = Get(c, "Category"); e.Fam = Get(c, "Family"); e.Type = Get(c, "Type"); e.Size = Get(c, "Size");
-            e.System = Get(c, "SystemName"); e.Level = Get(c, "Level"); e.Fab = Get(c, "IsFabrication") == "1";
+            e.System = Get(c, "SystemName"); e.Level = Get(c, "Level"); e.Fab = Get(c, "IsFabrication") == "1"; e.RunName = Get(c, "RunName");
             els[e.Id] = e;
         }
         var conns = new Dictionary<string, RvConn>(StringComparer.Ordinal); int droppedCurve = 0;
@@ -600,6 +600,8 @@ public partial class DuctsToPluto
             var kinds = scope.GroupBy(e => e.Kind == "" ? "none" : e.Kind).OrderByDescending(g => g.Count()).Select(g => g.Key + " " + g.Count());
             s.AppendLine(string.Format(Inv, "runs (<out>.runs.csv): {0} runs, {1} segments + {2} transitions; parts: {3}", nRuns, nSeg, nTr, string.Join(", ", kinds.ToArray())));
         }
+        string[] rnCheck = RunNameCheck(scope, rows, rowsOf);
+        s.AppendLine(rnCheck[0]);
         s.AppendLine(string.Format(Inv, "boxes turned to the Revit connector's width direction: {0} beams{1}", nOriented,
             nOriented == 0 ? " (connectors.csv has no WidthDirX: a Pluto Connectors run from before 2026-10-12; boxes keep width horizontal)" : ""));
         s.AppendLine();
@@ -626,6 +628,8 @@ public partial class DuctsToPluto
         s.AppendLine("Revit-only elements located inside a Navisworks-only part (same part, different IfcGUID?):");
         foreach (KeyValuePair<string, int> kv in pairTally) s.AppendLine(string.Format(Inv, "  {0,5}  {1}", kv.Value, kv.Key));
         foreach (string line in located) s.AppendLine(line);
+        s.AppendLine();
+        s.Append(rnCheck[1]);
         File.WriteAllText(outBase + ".match.txt", s.ToString(), new UTF8Encoding(false));
         return res;
     }

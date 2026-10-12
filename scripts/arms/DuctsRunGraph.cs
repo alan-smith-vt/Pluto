@@ -23,7 +23,7 @@ public partial class DuctsToPluto
     {
         public int Run, Seg; public string Kind;   // "segment" / "transition"
         public List<RvEl> Els = new List<RvEl>();
-        public double LengthFt; public double[] Voted; public string Votes = "", RunName = "", System = "";
+        public double LengthFt; public double[] Voted; public string Votes = "", RunName = "", System = "", RunEnds = "";
         public int Outliers, SizeJumps, NameDev, SysDev;
     }
 
@@ -40,7 +40,22 @@ public partial class DuctsToPluto
                 if (!at.TryGetValue(n, out l)) { l = new List<KeyValuePair<RvEl, RvConn>>(); at[n] = l; }
                 l.Add(new KeyValuePair<RvEl, RvConn>(e, k));
             }
-        Func<RvEl, bool> inRun = e => e.Kind == "straight" || e.Kind == "bend" || e.Kind == "transition";
+        // run ports: both ends of a 2-end part; a branch fitting's THROUGH pair (the main carries on through a tee
+        // or a straight with a tap; its other connectors start branch runs). 2026-10-12: branch fittings ended
+        // runs, so every tee split its main in two (30+ runs where the test room has ~5).
+        var port = new HashSet<RvConn>();
+        foreach (RvEl e in scope)
+        {
+            if (e.Kind == "straight" || e.Kind == "bend" || e.Kind == "transition") foreach (RvConn k in e.Conns) port.Add(k);
+            else if (e.Kind == "branch")
+            {
+                var ends = e.Conns.FindAll(k => !IsTapPoint(k));
+                int[] thr = ends.Count == 2 ? new[] { 0, 1 } : ThroughPair(ends.ConvertAll(AsOpening));
+                if (thr != null) { port.Add(ends[thr[0]]); port.Add(ends[thr[1]]); }
+            }
+        }
+        Func<RvEl, bool> inRun = e => e.Conns.Exists(k => port.Contains(k));
+        Func<RvEl, bool> sized = e => e.Kind != "transition" && !(e.Kind == "branch" && ThroughDiffers(e, port));
         var runOf = new Dictionary<RvEl, RvEl>(); var segOf = new Dictionary<RvEl, RvEl>();
         foreach (RvEl e in scope) if (inRun(e)) { runOf[e] = e; segOf[e] = e; }
         Func<Dictionary<RvEl, RvEl>, RvEl, RvEl> find = null;
@@ -49,9 +64,9 @@ public partial class DuctsToPluto
         {
             if (l.Count != 2) continue;
             RvEl a = l[0].Key, b = l[1].Key;
-            if (a == b || !inRun(a) || !inRun(b)) continue;
+            if (a == b || !port.Contains(l[0].Value) || !port.Contains(l[1].Value)) continue;
             runOf[find(runOf, a)] = find(runOf, b);
-            if (a.Kind != "transition" && b.Kind != "transition")
+            if (sized(a) && sized(b))
             {
                 segOf[find(segOf, a)] = find(segOf, b);
                 // two run parts meeting at different sizes, neither a transition
@@ -73,20 +88,33 @@ public partial class DuctsToPluto
             foreach (RvEl e in members)
             {
                 e.Run = ri + 1;
-                RvEl key = e.Kind == "transition" ? e : find(segOf, e);
-                RunSeg s; if (!segs.TryGetValue(key, out s)) { s = new RunSeg { Run = ri + 1, Seg = ++segNo, Kind = e.Kind == "transition" ? "transition" : "segment" }; segs[key] = s; res.Add(s); }
+                RvEl key = !sized(e) ? e : find(segOf, e);
+                RunSeg s; if (!segs.TryGetValue(key, out s)) { s = new RunSeg { Run = ri + 1, Seg = ++segNo, Kind = !sized(e) ? "transition" : "segment" }; segs[key] = s; res.Add(s); }
                 s.Els.Add(e); e.Seg = s.Seg;
                 foreach (int[] g in e.Segs) s.LengthFt += Math.Sqrt(Dist2(NodeFt(nodes[g[0]], off, scale), NodeFt(nodes[g[1]], off, scale)));
             }
             // run majorities: Navisworks RunName (matched row) and Revit system
-            string runName = Majority(members.Select(e => { int nr = NavRow(e, rowsOf(e)); return nr >= 0 ? rows[nr].RunName : ""; }));
+            string runName = Majority(members.Select(e => PartRunName(e, rows, rowsOf)));
             string sys = Majority(members.Select(e => e.System));
-            foreach (RunSeg s in segs.Values) { s.RunName = runName; s.System = sys; }
+            // why the run stops: each run port whose joint does not continue the run (open end, or a joint with
+            // n connectors on it: element id + kind, '*' = a run port there)
+            var why = new List<string>();
+            foreach (RvEl e in members)
+                foreach (RvConn k in e.Conns)
+                {
+                    if (!port.Contains(k)) continue;
+                    List<KeyValuePair<RvEl, RvConn>> l = at[nodeOf(k)];
+                    if (l.Count == 2 && l[0].Key != l[1].Key && port.Contains(l[0].Value) && port.Contains(l[1].Value)) continue;
+                    if (l.Count == 1) why.Add(e.Id + " open" + (k.To.Count > 0 ? " (connected outside the room)" : ""));
+                    else why.Add(e.Id + " joint of " + l.Count + ": " + string.Join(" ", l.Select(p => p.Key.Id + "(" + p.Key.Kind + (port.Contains(p.Value) ? "*" : "") + ")").ToArray()));
+                }
+            string runEnds = string.Join("; ", why.ToArray());
+            foreach (RunSeg s in segs.Values) { s.RunName = runName; s.System = sys; s.RunEnds = runEnds; }
             foreach (RvEl e in members)
             {
-                int nr = NavRow(e, rowsOf(e)); string rn = nr >= 0 ? rows[nr].RunName : "";
-                if (runName != "" && rn != "" && rn != runName) { AddFlag(e, "RUNNAME_DEVIATION", "RunName " + rn + " in run of " + runName); segs[e.Kind == "transition" ? e : find(segOf, e)].NameDev++; }
-                if (sys != "" && e.System != "" && e.System != sys) { AddFlag(e, "SYSTEM_CHANGE", "system " + e.System + " in run of " + sys); segs[e.Kind == "transition" ? e : find(segOf, e)].SysDev++; }
+                string rn = PartRunName(e, rows, rowsOf);
+                if (runName != "" && rn != "" && rn != runName) { AddFlag(e, "RUNNAME_DEVIATION", "RunName " + rn + " in run of " + runName); segs[!sized(e) ? e : find(segOf, e)].NameDev++; }
+                if (sys != "" && e.System != "" && e.System != sys) { AddFlag(e, "SYSTEM_CHANGE", "system " + e.System + " in run of " + sys); segs[!sized(e) ? e : find(segOf, e)].SysDev++; }
             }
         }
         // size voting per segment
@@ -99,7 +127,7 @@ public partial class DuctsToPluto
             {
                 foreach (RvConn k in e.Conns)
                 {
-                    if (IsTapPoint(k)) continue;
+                    if (!port.Contains(k)) continue;   // a branch fitting votes with its through pair only
                     double[] sz = ConnSize(k); if (sz == null) continue;
                     vote(sz, 1);
                     if (k.Mesh != null && MeshConfirms(k)) vote(sz, 1);
@@ -116,7 +144,7 @@ public partial class DuctsToPluto
                 e.Voted = s.Voted;
                 foreach (RvConn k in e.Conns)
                 {
-                    if (IsTapPoint(k)) continue;
+                    if (!port.Contains(k)) continue;
                     double[] sz = ConnSize(k);
                     if (sz != null && !Near(sz, s.Voted)) { AddFlag(e, "SIZE_OUTLIER", "own " + VotedText(sz) + " vs segment " + VotedText(s.Voted)); s.Outliers++; break; }
                 }
@@ -124,6 +152,13 @@ public partial class DuctsToPluto
         }
         foreach (RunSeg s in res) foreach (RvEl e in s.Els) if (e.Flags.Contains("SIZE_CHANGE_WITHOUT_TRANSITION")) s.SizeJumps++;
         return res;
+    }
+
+    // a branch fitting whose through pair changes size (reducing tee): a transition for segments and voting
+    static bool ThroughDiffers(RvEl e, HashSet<RvConn> port)
+    {
+        var p = e.Conns.FindAll(k => port.Contains(k));
+        return p.Count == 2 && ConnSize(p[0]) != null && ConnSize(p[1]) != null && !SameSize(p[0], p[1]);
     }
 
     static string KindOf(RvEl e)
@@ -175,16 +210,61 @@ public partial class DuctsToPluto
         if (!e.Detail.Contains(detail)) e.Detail.Add(detail);
     }
 
+    // Navisworks RunName vs our runs (2026-10-12, user: check the splitting against the model's own run names):
+    // per RunName the runs it spans (parts each), per run the names it mixes. Returns { summary line, detail block }.
+    static string[] RunNameCheck(List<RvEl> scope, List<Row> rows, Func<RvEl, List<int>> rowsOf)
+    {
+        var byName = new SortedDictionary<string, SortedDictionary<int, int>>(StringComparer.Ordinal);
+        var byRun = new SortedDictionary<int, SortedDictionary<string, int>>();
+        int noName = 0, inRuns = 0;
+        foreach (RvEl e in scope)
+        {
+            if (e.Run < 0) continue;
+            inRuns++;
+            string rn = PartRunName(e, rows, rowsOf);
+            if (rn == "") { noName++; continue; }
+            SortedDictionary<int, int> a; if (!byName.TryGetValue(rn, out a)) { a = new SortedDictionary<int, int>(); byName[rn] = a; }
+            int c; a.TryGetValue(e.Run, out c); a[e.Run] = c + 1;
+            SortedDictionary<string, int> b; if (!byRun.TryGetValue(e.Run, out b)) { b = new SortedDictionary<string, int>(StringComparer.Ordinal); byRun[e.Run] = b; }
+            b.TryGetValue(rn, out c); b[rn] = c + 1;
+        }
+        int oneRun = byName.Values.Count(m => m.Count == 1), mixed = byRun.Values.Count(m => m.Count > 1);
+        int rvName = 0, bothDiffer = 0;
+        foreach (RvEl e in scope)
+        {
+            if (e.RunName == "") continue; rvName++;
+            int nr = NavRow(e, rowsOf(e)); string nv = nr >= 0 ? rows[nr].RunName : "";
+            if (nv != "" && nv != e.RunName) bothDiffer++;
+        }
+        string line = string.Format(Inv, "RunName check: {0} RunNames over {1} run parts ({2} without a name; Revit RunName on {7} parts, differs from Navisworks on {8}); names in exactly one of our runs {3}, split over several {4}; our runs mixing names {5} of {6}",
+            byName.Count, inRuns, noName, oneRun, byName.Count - oneRun, mixed, byRun.Count, rvName, bothDiffer);
+        var s = new StringBuilder();
+        s.AppendLine("RunName -> our runs (parts):");
+        foreach (KeyValuePair<string, SortedDictionary<int, int>> kv in byName)
+            s.AppendLine("  " + kv.Key + ": " + string.Join(", ", kv.Value.Select(p => "R" + p.Key + " (" + p.Value + ")").ToArray()));
+        s.AppendLine("our runs mixing RunNames (parts):");
+        foreach (KeyValuePair<int, SortedDictionary<string, int>> kv in byRun)
+            if (kv.Value.Count > 1) s.AppendLine("  R" + kv.Key + ": " + string.Join(", ", kv.Value.Select(p => p.Key + " (" + p.Value + ")").ToArray()));
+        return new[] { line, s.ToString() };
+    }
+
+    // a part's run name: the Navisworks RunName of its row, else the Revit RunName parameter
+    static string PartRunName(RvEl e, List<Row> rows, Func<RvEl, List<int>> rowsOf)
+    {
+        int nr = NavRow(e, rowsOf(e)); string nv = nr >= 0 ? rows[nr].RunName : "";
+        return nv != "" ? nv : e.RunName;
+    }
+
     // <out>.runs.csv: one row per segment (transitions are segments of their own)
     static void WriteRunsCsv(string path, List<RunSeg> segs)
     {
         var s = new StringBuilder();
-        s.AppendLine("Run,Segment,Kind,Parts,Length_ft,VotedSize,Votes,RunName,System,SizeOutliers,SizeChangesWithoutTransition,RunNameDeviations,SystemChanges,RevitElementIds");
+        s.AppendLine("Run,Segment,Kind,Parts,Length_ft,VotedSize,Votes,RunName,System,SizeOutliers,SizeChangesWithoutTransition,RunNameDeviations,SystemChanges,RevitElementIds,RunEnds");
         foreach (RunSeg g in segs)
             s.AppendLine(string.Join(",", new[] { "R" + g.Run, "S" + g.Seg, g.Kind, g.Els.Count.ToString(Inv), g.LengthFt.ToString("0.##", Inv),
                 g.Voted != null ? VotedText(g.Voted) : (g.Kind == "transition" && g.Els.Count == 1 ? string.Join(" -> ", g.Els[0].Conns.Select(SizeText).ToArray()) : ""),
                 g.Votes, g.RunName, g.System, g.Outliers.ToString(Inv), g.SizeJumps.ToString(Inv), g.NameDev.ToString(Inv), g.SysDev.ToString(Inv),
-                string.Join(";", g.Els.Select(e => e.Id).ToArray()) }.Select(CsvCell).ToArray()));
+                string.Join(";", g.Els.Select(e => e.Id).ToArray()), g.RunEnds }.Select(CsvCell).ToArray()));
         File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));
     }
 }
