@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 
-// Systems (2026-10-12, user: "a run is something like system B, not <SYS>-<number>; ~5 in the building, each a single
+// Systems (2026-10-12, user: "a run is something like <SYS>, not <SYS>-<number>; ~5 in the building, each a single
 // connected entity"): flood fill over everything that joins two parts, as a person tracing the overlay would:
 //   Revit connections, touching ends, near links (gap / overlap facing), side-branch links, and PROXIMITY: a
 //   point of one part's centreline (every 3 in) inside another part's drawn box grown by ProxTolFt on every side
@@ -208,7 +208,7 @@ public partial class DuctsToPluto
         return p.Round ? Math.Sqrt(y * y + z * z) <= p.R + ProxTolFt : Math.Abs(y) <= p.HW + ProxTolFt && Math.Abs(z) <= p.HH + ProxTolFt;
     }
 
-    // "A-<bldg>-<service>-DUCT-<n>" -> service; else the system name without a trailing number ("<SYS>-<number>" -> system B)
+    // "A-<bldg>-<service>-DUCT-<n>" -> service; else the system name without a trailing number ("<SYS>-<number>" -> <SYS>)
     static string SystemBase(string runName, string system)
     {
         string sv = ServiceOf(runName);
