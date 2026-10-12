@@ -17,6 +17,8 @@
 #                        model and not the other; default out <run>\revit[_<room>]. Load beside ducts_mesh[_<room>].
 #                        Also <out>.flags.csv (discrepancy flags per part, 'Flag: <name>' viewer groups) and
 #                        <out>.frames.csv, the SAP model input: scripts\sap\Run-SapDucts.ps1 -Frames <it> -SavePath <x.sdb>
+#                        [-Part <Revit ElementId>]: NEW reports that part's connectors and what lies near each
+#                        (-Revit wins over -Probe: leave -Revit off for the probe's -Part)
 #     [-Out <base>]      default <run>\ducts  ->  <run>\ducts.bin + <run>\ducts.features.json
 #     [-Unit in]         file length unit; "in" matches the plant export
 #     [-ModelId <id>]    default hvac/ducts/<run folder name> (+ "/mesh")
@@ -60,7 +62,7 @@ if ($Box) {
     $r = [DuctsToPluto]::ExportMesh($Run, $Out, $ModelId, $Unit, $Room)
     Write-Output ("mesh: {0} nodes; {1} rows without triangles" -f $r.Nodes, $r.Skipped)
 } elseif ($Revit) {
-    $r = [DuctsToPluto]::ExportRevit($Run, [IO.Path]::GetFullPath($Revit), $Out, $ModelId, $Unit, $Room)
+    $r = [DuctsToPluto]::ExportRevit($Run, [IO.Path]::GetFullPath($Revit), $Out, $ModelId, $Unit, $Room, $Part)
     Write-Output $r.Note
 } elseif ($Probe) {
     $r = [DuctsToPluto]::ExportProbe($Run, $Out, $ModelId, $Unit, $Room, $Part)

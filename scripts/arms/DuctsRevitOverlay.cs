@@ -69,6 +69,11 @@ public partial class DuctsToPluto
 
     public static Result ExportRevit(string navisRun, string revitRun, string outBase, string modelId, string lengthUnit, string room)
     {
+        return ExportRevit(navisRun, revitRun, outBase, modelId, lengthUnit, room, null);
+    }
+
+    public static Result ExportRevit(string navisRun, string revitRun, string outBase, string modelId, string lengthUnit, string room, string part)
+    {
         double scale = LengthScale(lengthUnit);
         var rows = ReadRows(Path.Combine(navisRun, "ducts.csv"));
         bool byRoom = !string.IsNullOrEmpty(room);
@@ -583,6 +588,12 @@ public partial class DuctsToPluto
             medRes, used, means ? " by GUID group" : " 1:1", Math.Atan2(T[1], T[0]) * 180 / Math.PI, spread,
             inRoom.Count, navFab, scope.Count, rvFab, navMissing.Count, navFabMissing, rvOnly, rvOnlyFab, catDiff.Count,
             nConnected, nTouch, nNear, nSide, nOutside, nOpen, located.Count, usedRow.Count);
+        if (!string.IsNullOrEmpty(part))
+        {
+            // -Part <Revit ElementId> (2026-10-12): that part's connectors and what lies near each, as the NEW block
+            RvEl pe = scope.Find(x => x.Id == part.Trim());
+            res.Note = pe == null ? "NEW part " + part + ": not among the room's Revit elements" : PartReport(pe, scope, conns, inScope, touch, nearSet, linked);
+        }
         s.AppendLine(res.Note);
         var fc = new List<string>();
         foreach (KeyValuePair<string, List<uint>> kv in flagGroups)
@@ -883,6 +894,48 @@ public partial class DuctsToPluto
         double yl = Math.Sqrt(y[0] * y[0] + y[1] * y[1] + y[2] * y[2]);
         if (yl < 0.2) return null;
         return new[] { y[0] / yl, y[1] / yl, y[2] / yl };
+    }
+
+    // -Part report, 3 lines: the part (kind, run / segment, category, family); each connector (id, type, size, state:
+    // connected <ids> / outside / touching <id> / near / side / open); for each connector not connected, the 2 nearest
+    // other connectors in the room: owner id + kind, distance, along (+ = in front of it) and off-axis inches, and
+    // the angle between the two directions (180 = facing each other; near links need <= 12 in, off-axis <= 1 in,
+    // angle >= 154 deg)
+    static string PartReport(RvEl pe, List<RvEl> scope, Dictionary<string, RvConn> conns, HashSet<RvEl> inScope,
+        Dictionary<RvConn, RvConn> touch, HashSet<RvConn> nearSet, HashSet<RvConn> linked)
+    {
+        var l1 = string.Format(Inv, "NEW part {0}: {1}{2} | {3} | {4} | {5} conn", pe.Id, pe.Kind == "" ? "?" : pe.Kind,
+            pe.Run >= 0 ? string.Format(Inv, " R{0} S{1}", pe.Run, pe.Seg) : " no run", pe.Cat, (pe.Fam + " " + pe.Type).Trim(), pe.Conns.Count);
+        var cs = new List<string>(); var ns = new List<string>();
+        foreach (RvConn k in pe.Conns)
+        {
+            string id = k.Key.Substring(k.Key.IndexOf(':') + 1), state;
+            var inside = k.To.FindAll(t => { RvConn q; return conns.TryGetValue(t, out q) && inScope.Contains(q.Owner); });
+            if (inside.Count > 0) state = "connected " + string.Join(" ", inside.ConvertAll(t => t.Substring(0, t.IndexOf(':'))).ToArray());
+            else if (k.To.Count > 0) state = "outside";
+            else if (touch.ContainsKey(k)) state = "touching " + touch[k].Owner.Id;
+            else if (nearSet.Contains(k)) state = "near";
+            else if (linked.Contains(k)) state = "side";
+            else state = "open";
+            cs.Add(string.Format(Inv, "{0} {1} {2} {3}", id, k.Type, SizeText(k), state));
+            if (inside.Count > 0) continue;
+            var cand = new List<KeyValuePair<double, string>>();
+            foreach (RvEl e in scope)
+            {
+                if (e == pe) continue;
+                foreach (RvConn q in e.Conns)
+                {
+                    double d = Math.Sqrt(Dist2(k.P, q.P)) * 12; if (d > 36) continue;
+                    double along = ((q.P[0] - k.P[0]) * k.D[0] + (q.P[1] - k.P[1]) * k.D[1] + (q.P[2] - k.P[2]) * k.D[2]) * 12;
+                    double lat = Math.Sqrt(Math.Max(0, d * d - along * along));
+                    double ang = Math.Acos(Math.Max(-1, Math.Min(1, k.D[0] * q.D[0] + k.D[1] * q.D[1] + k.D[2] * q.D[2]))) * 180 / Math.PI;
+                    cand.Add(new KeyValuePair<double, string>(d, string.Format(Inv, "{0}({1}) {2:0.#}in along {3:0.#} off {4:0.#} ang {5:0}", e.Id, e.Kind, d, along, lat, ang)));
+                }
+            }
+            cand.Sort((x, y) => x.Key.CompareTo(y.Key));
+            ns.Add(id + ": " + (cand.Count == 0 ? "nothing within 36 in" : string.Join(", ", cand.Take(2).Select(x => x.Value).ToArray())));
+        }
+        return l1 + "\nNEW conns: " + string.Join("; ", cs.ToArray()) + "\nNEW nearest: " + (ns.Count > 0 ? string.Join(" | ", ns.ToArray()) : "all connected");
     }
 
     // Revit "Curve" connector: where a tap meets a duct's side (not an end of the part)
