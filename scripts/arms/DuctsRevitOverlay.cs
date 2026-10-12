@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text;
 
 // Revit connectivity overlay (2026-10-09): a "Pluto Connectors" run from the Revit add-in (scripts/revit:
@@ -25,7 +26,10 @@ public partial class DuctsToPluto
     {
         public string Id, Uid, Guid, GuidCalc, Cat, Fam, Type, Size, System, Level, Match = "";
         public bool Fab, Only;
+        public int LocRow = -1;   // Revit-only: the Navisworks-only row it lies inside (same part, other IfcGUID)
         public List<RvConn> Conns = new List<RvConn>();
+        public List<int> Beams = new List<int>();
+        public List<string> Flags = new List<string>(), Detail = new List<string>();
         public double[] C, P;     // centre: Revit internal / Navisworks frame (feet)
     }
 
@@ -163,6 +167,23 @@ public partial class DuctsToPluto
         var inScope = new HashSet<RvEl>(scope);
         var matchedGuids = new HashSet<string>(StringComparer.Ordinal);
         foreach (RvEl e in scope) if (e.Match != "") matchedGuids.Add(e.Match);
+        var navMissing = new List<int>();
+        foreach (int i in inRoom) if (rows[i].Guid == "" || !matchedGuids.Contains(rows[i].Guid)) navMissing.Add(i);
+        // Revit-only elements located in a Navisworks-only row: its centre inside that row's bbox (+0.1 ft), the
+        // smallest such box. Same part, different IfcGUID.
+        foreach (RvEl e in scope)
+        {
+            if (!e.Only) continue;
+            double bv = double.MaxValue;
+            foreach (int i in navMissing)
+            {
+                Row r = rows[i]; bool inside = true;
+                for (int a = 0; a < 3; a++) if (e.P[a] < r.Min[a] - 0.1 || e.P[a] > r.Max[a] + 0.1) { inside = false; break; }
+                if (!inside) continue;
+                double v = (r.Max[0] - r.Min[0] + 0.1) * (r.Max[1] - r.Min[1] + 0.1) * (r.Max[2] - r.Min[2] + 0.1);
+                if (v < bv) { bv = v; e.LocRow = i; }
+            }
+        }
 
         // touching open ends (in scope)
         var touch = new Dictionary<RvConn, RvConn>();
@@ -245,7 +266,7 @@ public partial class DuctsToPluto
             else node(e.Conns[0]);
             string g = "Revit " + (e.Fab ? "fabrication" : e.Cat);
             List<uint> gl; if (!byCat.TryGetValue(g, out gl)) { gl = new List<uint>(); byCat[g] = gl; }
-            foreach (int id in ids) if (id > 0) { gl.Add((uint)id); if (e.Only) gOnly.Add((uint)id); }
+            foreach (int id in ids) if (id > 0) { gl.Add((uint)id); e.Beams.Add(id); if (e.Only) gOnly.Add((uint)id); }
         }
         // Links between open ends that are neither connected nor touching (as the probe's):
         //   near (gap / overlap): another element's open end facing it (directions opposite, dot < -0.9), on its
@@ -311,6 +332,48 @@ public partial class DuctsToPluto
                 else if (k.Type == "End") { gOpen.Add((uint)id); nOpen++; }
             }
 
+        // Discrepancy flags (2026-10-12, vault handoff Pluto 2026-10-12): computed facts only, per Revit element in
+        // scope; Navisworks-only rows nobody lies inside get NAVIS_ONLY in flags.csv (not drawn here).
+        var partners = new Dictionary<int, int>();   // Navisworks row -> Revit elements on it (GUID or position)
+        Func<RvEl, List<int>> rowsOf = e => e.Match != "" ? navByGuid[e.Match] : e.LocRow >= 0 ? new List<int> { e.LocRow } : new List<int>();
+        foreach (RvEl e in scope) foreach (int i in rowsOf(e)) { int n; partners.TryGetValue(i, out n); partners[i] = n + 1; }
+        foreach (RvEl e in scope)
+        {
+            List<int> pr2 = rowsOf(e);
+            if (e.Only && e.LocRow < 0) e.Flags.Add("REVIT_ONLY");
+            if (e.Only && e.LocRow >= 0) { e.Flags.Add("GUID_MISMATCH"); e.Detail.Add("Navisworks GUID " + rows[e.LocRow].Guid); }
+            if (pr2.Count > 0)
+            {
+                bool navFabAny = pr2.Exists(i => rows[i].Cat == Fab);
+                if (e.Fab != navFabAny) { e.Flags.Add("FAB_CATEGORY_MISMATCH"); e.Detail.Add("Revit " + (e.Fab ? "fabrication" : e.Cat) + " vs Navisworks " + rows[pr2[0]].Cat); }
+                if (pr2.Count > 1 || partners[pr2[0]] > 1) { e.Flags.Add("SPLIT"); e.Detail.Add(string.Format(Inv, "{0} Navisworks : {1} Revit", pr2.Count, partners[pr2[0]])); }
+                string sd = SizeDiff(e, rows[pr2[0]]);
+                if (sd != null) { e.Flags.Add("SIZE_DIFFERS"); e.Detail.Add(sd); }
+            }
+            bool fOpen = false, fTouch = false, fNear = false;
+            foreach (RvConn k in e.Conns)
+            {
+                if (k.To.Count > 0) continue;
+                if (touch.ContainsKey(k)) fTouch = true;
+                else if (nearSet.Contains(k)) fNear = true;
+                else if (!linked.Contains(k) && k.Type == "End") fOpen = true;
+            }
+            if (fOpen) e.Flags.Add("OPEN_END");
+            if (fTouch) e.Flags.Add("TOUCHING_NOT_CONNECTED");
+            if (fNear) e.Flags.Add("NEAR_GAP");
+            if (e.Flags.Count > 0) foreach (int id in e.Beams) labels[id] += " | FLAGS " + string.Join(" ", e.Flags.ToArray());
+        }
+        var flagGroups = new SortedDictionary<string, List<uint>>(StringComparer.Ordinal);
+        foreach (RvEl e in scope)
+            foreach (string f in e.Flags)
+            {
+                List<uint> l; if (!flagGroups.TryGetValue(f, out l)) { l = new List<uint>(); flagGroups[f] = l; }
+                foreach (int id in e.Beams) l.Add((uint)id);
+            }
+        var navOnly = new List<int>();
+        foreach (int i in navMissing) if (!partners.ContainsKey(i)) navOnly.Add(i);
+        WriteFlagsCsv(outBase + ".flags.csv", scope, rows, rowsOf, navOnly);
+
         var res = new Result();
         if (beams.Count > 0)
         {
@@ -335,14 +398,16 @@ public partial class DuctsToPluto
             if (gTouch.Count > 0) sc.AddNodeGroup("Revit joint: touching, not connected", "#ff9f1c", gTouch, new[] { "duct", "revit", "touching" });
             if (gOut.Count > 0) sc.AddNodeGroup("Revit joint: connected outside the room", "#4f8cff", gOut, new[] { "duct", "revit", "outside" });
             if (gOpen.Count > 0) sc.AddNodeGroup("Revit open end", "#ff3b3b", gOpen, new[] { "duct", "revit", "open" }, "REVIT_OPEN");
+            string[] fpal = { "#ff5fa2", "#ffd23f", "#3fe0e0", "#b07cff", "#ff8a3d", "#8ae04f", "#4f8cff", "#ff3b3b", "#f0f0f0" };
+            int fi = 0;
+            foreach (KeyValuePair<string, List<uint>> kv in flagGroups)
+                sc.AddGroup("Flag: " + kv.Key, fpal[fi++ % fpal.Length], "beams", kv.Value, new[] { "duct", "revit", "flag" }, "FLAG_" + kv.Key);
             File.WriteAllText(outBase + ".features.json", sc.ToJson(), new UTF8Encoding(false));
             res.BinPath = outBase + ".bin"; res.SidecarPath = outBase + ".features.json"; res.GeometryHash = w.GeometryHash;
         }
         res.Nodes = nodes.Count; res.Beams = beams.Count;
 
         // match report
-        var navMissing = new List<int>();
-        foreach (int i in inRoom) if (rows[i].Guid == "" || !matchedGuids.Contains(rows[i].Guid)) navMissing.Add(i);
         int navFab = 0, navFabMissing = 0;
         foreach (int i in inRoom) if (rows[i].Cat == Fab) { navFab++; if (navMissing.Contains(i)) navFabMissing++; }
         int rvFab = 0, rvOnly = 0, rvOnlyFab = 0; foreach (RvEl e in scope) { if (e.Fab) rvFab++; if (e.Only) { rvOnly++; if (e.Fab) rvOnlyFab++; } }
@@ -355,22 +420,12 @@ public partial class DuctsToPluto
                 if ((rows[i].Cat == Fab) != e.Fab || (!e.Fab && !string.Equals(rows[i].Cat, e.Cat, StringComparison.OrdinalIgnoreCase)))
                 { catDiff.Add("  Revit " + e.Id + " " + e.Cat + " (" + (e.Fam + " " + e.Type).Trim() + ")  vs  Navisworks #" + rows[i].NavisId + " " + rows[i].Cat + " (" + rows[i].Name + ")"); break; }
         }
-        // Revit-only elements located in a Navisworks-only row: its centre inside that row's bbox (+0.1 ft), the
-        // smallest such box. Same part, different IfcGUID; tallied by (Revit category -> Navisworks category).
+        // Revit-only elements located in a Navisworks-only row (LocRow), tallied by (Revit category -> Navisworks category)
         var located = new List<string>(); var pairTally = new SortedDictionary<string, int>(); var usedRow = new HashSet<int>();
         foreach (RvEl e in scope)
         {
-            if (!e.Only) continue;
-            int bi = -1; double bv = double.MaxValue;
-            foreach (int i in navMissing)
-            {
-                Row r = rows[i]; bool inside = true;
-                for (int a = 0; a < 3; a++) if (e.P[a] < r.Min[a] - 0.1 || e.P[a] > r.Max[a] + 0.1) { inside = false; break; }
-                if (!inside) continue;
-                double v = (r.Max[0] - r.Min[0] + 0.1) * (r.Max[1] - r.Min[1] + 0.1) * (r.Max[2] - r.Min[2] + 0.1);
-                if (v < bv) { bv = v; bi = i; }
-            }
-            if (bi < 0) continue;
+            if (!e.Only || e.LocRow < 0) continue;
+            int bi = e.LocRow;
             usedRow.Add(bi);
             string key = (e.Fab ? "Revit fabrication" : "Revit " + e.Cat) + " -> Navisworks " + rows[bi].Cat;
             int n; pairTally.TryGetValue(key, out n); pairTally[key] = n + 1;
@@ -384,6 +439,14 @@ public partial class DuctsToPluto
             inRoom.Count, navFab, scope.Count, rvFab, navMissing.Count, navFabMissing, rvOnly, rvOnlyFab, catDiff.Count,
             nConnected, nTouch, nNear, nSide, nOutside, nOpen, located.Count, usedRow.Count);
         s.AppendLine(res.Note);
+        var fc = new List<string>();
+        foreach (KeyValuePair<string, List<uint>> kv in flagGroups)
+        {
+            int n = 0; foreach (RvEl e in scope) if (e.Flags.Contains(kv.Key)) n++;
+            fc.Add(kv.Key + " " + n);
+        }
+        fc.Add("NAVIS_ONLY " + navOnly.Count);
+        s.AppendLine("flags (parts; <out>.flags.csv): " + string.Join(", ", fc.ToArray()));
         s.AppendLine();
         s.AppendLine("Navisworks run: " + navisRun);
         s.AppendLine("Revit run:      " + revitRun);
@@ -409,6 +472,58 @@ public partial class DuctsToPluto
         foreach (string line in located) s.AppendLine(line);
         File.WriteAllText(outBase + ".match.txt", s.ToString(), new UTF8Encoding(false));
         return res;
+    }
+
+    // Stated size of the Navisworks row (Width / Height / Diameter, else read from the Name) against the element's
+    // Revit connector sizes: null when any connector matches within 0.5 in (eccentric transitions and tees carry
+    // several sizes) or either side is unknown, else "Navisworks <size> vs Revit <sizes>".
+    static string SizeDiff(RvEl e, Row r)
+    {
+        double w = !double.IsNaN(r.W) ? r.W : r.NameW, h = !double.IsNaN(r.H) ? r.H : r.NameH, d = !double.IsNaN(r.D) ? r.D : r.NameD;
+        bool rect = !double.IsNaN(w) && !double.IsNaN(h), round = !rect && !double.IsNaN(d);
+        if (!rect && !round) return null;
+        var seen = new List<string>();
+        foreach (RvConn k in e.Conns)
+        {
+            if (k.Shape == "Round")
+            {
+                if (double.IsNaN(k.Dia)) continue;
+                if (round && Math.Abs(k.Dia - d) <= 0.5) return null;
+                seen.Add(string.Format(Inv, "{0:0.#} dia", k.Dia));
+            }
+            else
+            {
+                if (double.IsNaN(k.W) || double.IsNaN(k.H)) continue;
+                if (rect && Math.Abs(Math.Max(k.W, k.H) - Math.Max(w, h)) <= 0.5 && Math.Abs(Math.Min(k.W, k.H) - Math.Min(w, h)) <= 0.5) return null;
+                seen.Add(string.Format(Inv, "{0:0.#}x{1:0.#}", k.W, k.H));
+            }
+        }
+        if (seen.Count == 0) return null;
+        return string.Format(Inv, "Navisworks {0} vs Revit {1}", rect ? string.Format(Inv, "{0:0.#}x{1:0.#}", w, h) : string.Format(Inv, "{0:0.#} dia", d),
+            string.Join("/", seen.Distinct().ToArray()));
+    }
+
+    // <out>.flags.csv: one row per flagged part, Revit elements in scope, then Navisworks-only rows. Regenerated
+    // every run; flags clear themselves when the upstream models are fixed.
+    static void WriteFlagsCsv(string path, List<RvEl> scope, List<Row> rows, Func<RvEl, List<int>> rowsOf, List<int> navOnly)
+    {
+        var s = new StringBuilder();
+        s.AppendLine("Source,RevitElementId,NavisId,RevitIfcGUID,NavisIfcGUID,RevitCategory,RevitFab,NavisCategory,Match,RevitSize,NavisSize,Flags,Detail");
+        foreach (RvEl e in scope)
+        {
+            if (e.Flags.Count == 0) continue;
+            List<int> pr = rowsOf(e); Row r = pr.Count > 0 ? rows[pr[0]] : null;
+            string how = e.Match != "" ? "guid" : e.LocRow >= 0 ? "position" : "none";
+            s.AppendLine(string.Join(",", new[] { "Revit", e.Id, r != null ? r.NavisId : "", e.Guid != "" ? e.Guid : e.GuidCalc, r != null ? r.Guid : "",
+                e.Cat, e.Fab ? "1" : "0", r != null ? r.Cat : "", how, e.Size, r != null ? r.SizeText : "",
+                string.Join(" ", e.Flags.ToArray()), string.Join("; ", e.Detail.ToArray()) }.Select(CsvCell).ToArray()));
+        }
+        foreach (int i in navOnly)
+        {
+            Row r = rows[i];
+            s.AppendLine(string.Join(",", new[] { "Navisworks", "", r.NavisId, "", r.Guid, "", "", r.Cat, "none", "", r.SizeText, "NAVIS_ONLY", r.Name }.Select(CsvCell).ToArray()));
+        }
+        File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));
     }
 
     static int RvBeam(Dictionary<int, RawViewerWriter.BeamMember> beams, Dictionary<int, string> labels, ref int nb, int a, int b, Dictionary<int, Node> nodes, string label)
