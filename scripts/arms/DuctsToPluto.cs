@@ -722,6 +722,7 @@ public partial class DuctsToPluto
         public bool SizeOk; public string SizeBand = "no stated size"; public double Near = double.NaN, Dot = double.NaN; public int NearRow; public string Status = "";
         public double DA = double.NaN, DB = double.NaN;                 // measured minus stated (larger / smaller side), inches
         public Opening Mate;                                            // the matched connector (joint / near), null otherwise
+        public List<double[]> Cands;                                   // every ring centred at this end: { round 1/0, A, B, Dia } (MeshConnectors)
         public List<Opening> Members;                                  // rings merged into this connector, smallest first
         public int Rings = 1; public string Outer = "";                // rings merged into this connector; largest ring's size
     }
@@ -733,7 +734,7 @@ public partial class DuctsToPluto
 
     // part (2026-10-08): a NavisId (or its start) whose rings are reported in NEW instead of the summary lines
     // probe ring thresholds shared by ExportProbe and MeshConnectors
-    const double WeldFt = 1e-3, BigPerimIn = 12, EndTolIn = 1, MergeAlongIn = 3, MergeLatIn = 3, RimAlongIn = 3;
+    const double WeldFt = 1e-3, BigPerimIn = 12, EndTolIn = 1, MergeAlongIn = 3, MergeLatIn = 3, RimAlongIn = 3, RimSearchIn = 12;
 
     public static Result ExportProbe(string runDir, string outBase, string modelId, string lengthUnit, string room, string part)
     {
@@ -1178,12 +1179,19 @@ public partial class DuctsToPluto
             // 2026-10-12 (radius gooseneck, test room): the duct rim is an INTERIOR ring when the flange flares past
             // its plane (flange 17x15 end ring, rim 14x12 = the free size); a smaller interior ring facing the same
             // way, centred (1 in) and within RimAlongIn of the end ring sizes the connector instead.
+            // Cands (2026-10-12, 74x28 straight in a test room: flange 82x36, rim 74x28 interior but > 3 in back): every
+            // ring centred on this end (end rings merged here, interior rings within RimSearchIn along it), for the
+            // Revit overlay's size check; the connector's own size still follows the 3 in rule
+            o.Cands = new List<double[]>();
+            foreach (Opening m in o.Members) if (m == big || LateralIn(big, m) <= 1) o.Cands.Add(new[] { m.Shape == "round" ? 1.0 : 0.0, m.A, m.B, m.Dia });
             foreach (Opening m in inner)
             {
-                if (m.Perim >= sz.Perim || Math.Abs(m.N[0] * big.N[0] + m.N[1] * big.N[1] + m.N[2] * big.N[2]) < 0.95) continue;
+                if (Math.Abs(m.N[0] * big.N[0] + m.N[1] * big.N[1] + m.N[2] * big.N[2]) < 0.95 || LateralIn(big, m) > 1) continue;
                 double dx = m.C[0] - big.C[0], dy = m.C[1] - big.C[1], dz = m.C[2] - big.C[2];
-                if (Math.Abs(dx * big.N[0] + dy * big.N[1] + dz * big.N[2]) * 12 > RimAlongIn || LateralIn(big, m) > 1) continue;
-                sz = m;
+                double along = Math.Abs(dx * big.N[0] + dy * big.N[1] + dz * big.N[2]) * 12;
+                if (along > RimSearchIn) continue;
+                o.Cands.Add(new[] { m.Shape == "round" ? 1.0 : 0.0, m.A, m.B, m.Dia });
+                if (m.Perim < sz.Perim && along <= RimAlongIn) sz = m;
             }
             o.C = (double[])big.C.Clone();
             o.Shape = sz.Shape; o.A = sz.A; o.B = sz.B; o.Dia = sz.Dia; o.Planar = sz.Planar; o.Perim = sz.Perim; o.Ua = sz.Ua;

@@ -44,6 +44,7 @@ public partial class DuctsToPluto
         public double W, H, Dia;  // inches, NaN = n/a
         public List<string> To = new List<string>();
         public Opening Mesh;      // the probe's connector on the matched Navisworks row at this end (mesh-measured size)
+        public int MeshRow = -1;  // the row (0-based) that mesh connector belongs to
     }
 
     // As a probe Opening, to reuse ThroughPair / BranchJunction (round = "round", else A x B, A the larger).
@@ -379,7 +380,7 @@ public partial class DuctsToPluto
                 // NAVIS_SIZE_DIFFERS = Navisworks stated vs Revit (documented, not a geometry problem).
                 string md = MeshDiff(e);
                 if (md != null) { e.Flags.Add("SIZE_DIFFERS"); e.Detail.Add(md); }
-                string sd = SizeDiff(e, rows[pr2[0]]);
+                string sd = SizeDiff(e, rows[NavRow(e, pr2)]);
                 if (sd != null) { e.Flags.Add("NAVIS_SIZE_DIFFERS"); e.Detail.Add(sd); }
             }
             bool fOpen = false, fTouch = false, fNear = false;
@@ -457,7 +458,7 @@ public partial class DuctsToPluto
         };
         foreach (RvEl e in scope)
         {
-            List<int> er = rowsOf(e); Row r = er.Count > 0 ? rows[er[0]] : null;
+            int nr = NavRow(e, rowsOf(e)); Row r = nr >= 0 ? rows[nr] : null;
             double t = r != null && !double.IsNaN(r.T) && r.T > 0 ? r.T : 0.06;
             var connOf = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach (int[] g in e.Segs) if (g[2] >= 0) { connOf[g[0] + "-" + g[1]] = g[2]; connOf[g[1] + "-" + g[0]] = g[2]; }
@@ -596,11 +597,18 @@ public partial class DuctsToPluto
         foreach (RvConn k in e.Conns)
         {
             Opening o = k.Mesh; if (o == null) continue;
-            bool ok;
-            if (k.Shape == "Round") ok = o.Shape == "round" && !double.IsNaN(k.Dia) && Math.Abs(k.Dia - o.Dia) <= 1;
-            else ok = o.Shape != "round" && !double.IsNaN(k.W) && !double.IsNaN(k.H)
-                && Math.Abs(Math.Max(k.W, k.H) - Math.Max(o.A, o.B)) <= 1 && Math.Abs(Math.Min(k.W, k.H) - Math.Min(o.A, o.B)) <= 1;
-            if (!ok) bad.Add(string.Format(Inv, "Revit {0} vs mesh {1}", k.Shape == "Round" ? string.Format(Inv, "{0:0.#} dia", k.Dia) : string.Format(Inv, "{0:0.#}x{1:0.#}", k.W, k.H), MeshSize(o)));
+            // confirmed when ANY ring centred at that end matches (flange edge, duct rim further back, ...)
+            bool ok = false;
+            var rings = new List<string>();
+            foreach (double[] c in o.Cands ?? new List<double[]> { new[] { o.Shape == "round" ? 1.0 : 0.0, o.A, o.B, o.Dia } })
+            {
+                if (k.Shape == "Round") ok |= c[0] == 1 && !double.IsNaN(k.Dia) && Math.Abs(k.Dia - c[3]) <= 1;
+                else ok |= c[0] == 0 && !double.IsNaN(k.W) && !double.IsNaN(k.H)
+                    && Math.Abs(Math.Max(k.W, k.H) - Math.Max(c[1], c[2])) <= 1 && Math.Abs(Math.Min(k.W, k.H) - Math.Min(c[1], c[2])) <= 1;
+                rings.Add(c[0] == 1 ? string.Format(Inv, "{0:0.#} dia", c[3]) : string.Format(Inv, "{0:0.#}x{1:0.#}", c[1], c[2]));
+            }
+            if (!ok) bad.Add(string.Format(Inv, "Revit {0} vs mesh rings {1}", k.Shape == "Round" ? string.Format(Inv, "{0:0.#} dia", k.Dia) : string.Format(Inv, "{0:0.#}x{1:0.#}", k.W, k.H),
+                string.Join(" ", rings.Distinct().ToArray())));
         }
         return bad.Count > 0 ? string.Join(" / ", bad.ToArray()) : null;
     }
@@ -644,7 +652,7 @@ public partial class DuctsToPluto
         foreach (RvEl e in scope)
         {
             if (e.Flags.Count == 0) continue;
-            List<int> pr = rowsOf(e); Row r = pr.Count > 0 ? rows[pr[0]] : null;
+            List<int> pr = rowsOf(e); int nr = NavRow(e, pr); Row r = nr >= 0 ? rows[nr] : null;
             string how = e.Match != "" ? "guid" : e.LocRow >= 0 ? "position" : "none";
             s.AppendLine(string.Join(",", new[] { "Revit", e.Id, r != null ? r.NavisId : "", e.Guid != "" ? e.Guid : e.GuidCalc, r != null ? r.Guid : "",
                 e.Cat, e.Fab ? "1" : "0", r != null ? r.Cat : "", how, e.Size, r != null ? r.SizeText : "",
@@ -688,7 +696,7 @@ public partial class DuctsToPluto
         foreach (RvEl e in scope)
         {
             if (e.Segs.Count == 0) { noFrame++; continue; }
-            List<int> pr = rowsOf(e); Row r = pr.Count > 0 ? rows[pr[0]] : null;
+            List<int> pr = rowsOf(e); int nr = NavRow(e, pr); Row r = nr >= 0 ? rows[nr] : null;
             double t = r != null && !double.IsNaN(r.T) && r.T > 0 ? r.T : 0.06;
             string flags = string.Join(" ", e.Flags.ToArray());
             foreach (int[] g in e.Segs)
@@ -750,13 +758,21 @@ public partial class DuctsToPluto
                     foreach (Opening o in ol)
                     {
                         if (o.N[0] * k.D[0] + o.N[1] * k.D[1] + o.N[2] * k.D[2] <= 0.7) continue;
-                        double d = Math.Sqrt(Dist2(o.C, k.P)); if (d < bd) { bd = d; k.Mesh = o; }
+                        double d = Math.Sqrt(Dist2(o.C, k.P)); if (d < bd) { bd = d; k.Mesh = o; k.MeshRow = i; }
                     }
                 }
                 if (k.Mesh != null) got++;
             }
         return string.Format(Inv, "mesh connector sizes: {0} of {1} Revit connectors matched a mesh connector within {2} in; matched Navisworks rows {3} ({4} without triangles)",
             got, total, MeshMatchIn, want.Count, noTri);
+    }
+
+    // The Navisworks row that stands for element e: the one its mesh connectors matched (an IfcGUID can be shared
+    // by several rows of a fabrication assembly, of other sizes), else the first; -1 = none
+    static int NavRow(RvEl e, List<int> pr)
+    {
+        foreach (RvConn k in e.Conns) if (k.MeshRow >= 0 && pr.Contains(k.MeshRow)) return k.MeshRow;
+        return pr.Count > 0 ? pr[0] : -1;
     }
 
     static string MeshSize(Opening o)
