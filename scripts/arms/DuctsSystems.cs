@@ -17,6 +17,7 @@ public partial class DuctsToPluto
 {
     const double ProxTolFt = 0.5;
     static readonly HashSet<RvConn> FreeEnds = new HashSet<RvConn>();   // set by the overlay before AnalyzeSystems
+    static readonly List<Tuple<RvConn, double[]>> EndContacts = new List<Tuple<RvConn, double[]>>();   // free end -> point on the other centreline
     static readonly List<string> Blocked = new List<string>();   // weak joins refused across two system names (last AnalyzeSystems)
 
     class DuctSystem
@@ -62,7 +63,7 @@ public partial class DuctsToPluto
             parent[ra] = rb;
             foreach (KeyValuePair<string, int> kv in names[ra]) { int c; names[rb].TryGetValue(kv.Key, out c); names[rb][kv.Key] = c + kv.Value; }
         };
-        Blocked.Clear();
+        Blocked.Clear(); EndContacts.Clear();
         Action<RvEl, RvEl> strong = (a, b) =>
         {
             if (a == b || !parent.ContainsKey(a) || !parent.ContainsKey(b)) return;
@@ -183,11 +184,19 @@ public partial class DuctsToPluto
         return false;
     }
 
-    // a FREE end of part e (open: no connection, touch, near / side link or attachment) inside p's box + ProxTolFt
+    // a FREE end of part e inside p's box + ProxTolFt; each one found is recorded in EndContacts with the nearest
+    // point on p's centreline (the clean model makes it a rigid link)
     static bool OpenEndInBox(PartBox p, RvEl e)
     {
-        foreach (RvConn k in e.Conns) if (FreeEnds.Contains(k) && PointInBox(p, k.P)) return true;
-        return false;
+        bool hit = false;
+        foreach (RvConn k in e.Conns)
+        {
+            if (!FreeEnds.Contains(k) || !PointInBox(p, k.P)) continue;
+            double t = Math.Max(0, Math.Min(p.L, (k.P[0] - p.A[0]) * p.X[0] + (k.P[1] - p.A[1]) * p.X[1] + (k.P[2] - p.A[2]) * p.X[2]));
+            EndContacts.Add(Tuple.Create(k, new[] { p.A[0] + p.X[0] * t, p.A[1] + p.X[1] * t, p.A[2] + p.X[2] * t }));
+            hit = true;
+        }
+        return hit;
     }
 
     static bool PointInBox(PartBox p, double[] pt)

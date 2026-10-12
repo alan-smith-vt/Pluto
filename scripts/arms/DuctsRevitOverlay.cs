@@ -362,7 +362,7 @@ public partial class DuctsToPluto
         //   side branch: the end's axis meets another part's main line inside the segment (not within 1 in of
         //     its ends), the end lying within that part's half size + 3 in of the line
         var gNear = new List<uint>(); var gSide = new List<uint>();
-        var linked = new HashSet<RvConn>(); var nearSet = new HashSet<RvConn>(); var nearPairs = new List<RvConn[]>(); var sidePairs = new List<RvEl[]>();
+        var linked = new HashSet<RvConn>(); var nearSet = new HashSet<RvConn>(); var nearPairs = new List<RvConn[]>(); var sidePairs = new List<RvEl[]>(); var sideNodes = new List<int[]>();
         foreach (KeyValuePair<RvConn, RvConn> kv in attach) nearPairs.Add(new[] { kv.Key, kv.Value });   // systems: attached = joined
         var loose = new List<RvConn>();
         foreach (RvConn k in open) if (!touch.ContainsKey(k) && !attach.ContainsKey(k)) loose.Add(k);
@@ -400,7 +400,8 @@ public partial class DuctsToPluto
             }
             if (bestF == null) continue;
             linked.Add(k); sidePairs.Add(new[] { k.Owner, bestM[0].Owner });
-            int id = RvBeam(beams, labels, ref nb, node(k), MakeNode(nodes, ref nextNode, bestF, off, scale), nodes,
+            int jn = MakeNode(nodes, ref nextNode, bestF, off, scale); sideNodes.Add(new[] { node(k), jn });
+            int id = RvBeam(beams, labels, ref nb, node(k), jn, nodes,
                 string.Format(Inv, "side branch: Revit {0} -> side of {1} | {2:0.#} in from its line", k.Owner.Id, bestM[0].Owner.Id, bd * 12));
             if (id > 0) gSide.Add((uint)id);
         }
@@ -558,6 +559,9 @@ public partial class DuctsToPluto
         FreeEnds.Clear();
         foreach (RvConn k in open) if (!touch.ContainsKey(k) && !nearSet.Contains(k) && !linked.Contains(k) && !attach.ContainsKey(k)) FreeEnds.Add(k);
         List<DuctSystem> systems = AnalyzeSystems(scope, conns, inScope, touch, nearPairs, sidePairs, beams, beamDim, nodes, off, scale, rows, rowsOf);
+        // clean centreline model (DuctsClean.cs): <out>_clean.bin + <out>.frames.csv (the SAP input)
+        foreach (Tuple<RvConn, double[]> c in EndContacts) sideNodes.Add(new[] { node(c.Item1), MakeNode(nodes, ref nextNode, c.Item2, off, scale) });   // end contacts: rigid links
+        string cleanNote = BuildClean(outBase, modelId, lengthUnit, scope, beams, beamDim, nodes, off, scale, nearPairs, sideNodes, navBeamRow, rows, k => node(k), attach);
         WriteRunsCsv(outBase + ".runs.csv", runSegs);
         foreach (RvEl e in scope)
         {
@@ -577,7 +581,7 @@ public partial class DuctsToPluto
             }
         if (gNavOnly.Count > 0) flagGroups["NAVIS_ONLY"] = gNavOnly;
         WriteFlagsCsv(outBase + ".flags.csv", scope, rows, rowsOf, navOnly, navCovered);
-        string framesNote = WriteFramesCsv(outBase + ".frames.csv", scope, rows, rowsOf, navOnly, nodes, off, scale);
+        string framesNote = WriteFramesCsv(outBase + ".parts_frames.csv", scope, rows, rowsOf, navOnly, nodes, off, scale);
 
         var res = new Result();
         if (beams.Count > 0)
@@ -684,6 +688,7 @@ public partial class DuctsToPluto
         s.AppendLine(rnCheck[0]);
         string[] sysNote = SystemsNote(systems);
         s.AppendLine(sysNote[0]);
+        s.AppendLine(cleanNote);
         s.AppendLine(string.Format(Inv, "boxes turned to the Revit connector's width direction: {0} beams{1}", nOriented,
             nOriented == 0 ? " (connectors.csv has no WidthDirX: a Pluto Connectors run from before 2026-10-12; boxes keep width horizontal)" : ""));
         s.AppendLine();
