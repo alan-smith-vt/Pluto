@@ -732,9 +732,12 @@ public partial class DuctsToPluto
     }
 
     // part (2026-10-08): a NavisId (or its start) whose rings are reported in NEW instead of the summary lines
+    // probe ring thresholds shared by ExportProbe and MeshConnectors
+    const double WeldFt = 1e-3, BigPerimIn = 12, EndTolIn = 1, MergeAlongIn = 3, MergeLatIn = 3;
+
     public static Result ExportProbe(string runDir, string outBase, string modelId, string lengthUnit, string room, string part)
     {
-        const double WeldFt = 1e-3, BigPerimIn = 12, MatchIn = 1, SlipIn = 6, EndTolIn = 1, SideTolIn = 1.5, MergeAlongIn = 3, MergeLatIn = 3, SplitAlongIn = 2;
+        const double MatchIn = 1, SlipIn = 6, SideTolIn = 1.5, SplitAlongIn = 2;
         double scale = LengthScale(lengthUnit);
         var rows = ReadRows(Path.Combine(runDir, "ducts.csv"));
         bool hasRoom = false; foreach (Row r in rows) if (r.Room != "") { hasRoom = true; break; }
@@ -758,86 +761,12 @@ public partial class DuctsToPluto
         {
             float[] f;
             if (!tri.TryGetValue(row, out f) || f.Length < 9) { if (want.Contains(row)) noTri++; continue; }
-            int small = 0, interior = 0;
-            var ends = new List<Opening>();
             bool watch = !string.IsNullOrEmpty(part) && rows[row - 1].NavisId.StartsWith(part.Trim(), StringComparison.OrdinalIgnoreCase);
             if (watch) { partRow = row; partLoops = 0; }
-            foreach (List<double[]> loop in BoundaryLoops(f, WeldFt))
-            {
-                Opening o = Describe(loop);
-                if (watch) partLoops++;
-                if (watch && o != null && o.Perim >= BigPerimIn) partRings.Add(new object[] { Snapshot(o), loop.Count, PartAxisOffset(rows[row - 1], o) });   // a copy: merging later rewrites o
-                if (o == null || o.Perim < BigPerimIn) { small++; continue; }
-                // an end has all of the part on one side of its plane (EndTolIn): the normal is then turned
-                // to point out of the part; a ring with mesh on both sides (stiffener band, seam) is interior.
-                // Known limit: a lateral whose branch reaches past a main end's plane (or the reverse) loses
-                // that end here; the connector-count check flags the part.
-                double dLo = double.MaxValue, dHi = double.MinValue;
-                for (int k = 0; k + 2 < f.Length; k += 3)
-                {
-                    double d = ((f[k] - o.C[0]) * o.N[0] + (f[k + 1] - o.C[1]) * o.N[1] + (f[k + 2] - o.C[2]) * o.N[2]) * 12;
-                    if (d < dLo) dLo = d; if (d > dHi) dHi = d;
-                }
-                if (dHi <= EndTolIn) { }
-                else if (dLo >= -EndTolIn) { for (int k = 0; k < 3; k++) o.N[k] = -o.N[k]; }
-                else { interior++; if (watch) partKind[partRings.Count - 1] = "interior"; continue; }
-                if (watch) partKind[partRings.Count - 1] = "end";
-                TrimToEnd(o, loop, EndTolIn);
-                o.Row = row; ends.Add(o);
-            }
-            // rings at one end -> one connector, sized by its smallest ring (the duct; the larger ones are
-            // flange / collar / other skin): same outward direction, within MergeAlongIn along it, and the
-            // smaller ring's centre inside the larger ring's outline (lateral offset within half the larger
-            // ring's short side, at least MergeLatIn). 2026-10-08: was 1 in along and 3 in apart, which left
-            // off-centre rings (a flange outline in pieces) as extra connectors: a transition drawn as a T, a
-            // tap base split in two (a V onto the main duct). Outlets side by side (pants wye) stay apart.
-            ends.Sort((x, y) => x.Perim.CompareTo(y.Perim));
-            var conns = new List<Opening>();
-            foreach (Opening o in ends)
-            {
-                Opening hit = null;
-                foreach (Opening c in conns)
-                {
-                    double dx = o.C[0] - c.C[0], dy = o.C[1] - c.C[1], dz = o.C[2] - c.C[2];
-                    double along = Math.Abs(dx * c.N[0] + dy * c.N[1] + dz * c.N[2]) * 12, sep = Math.Sqrt(dx * dx + dy * dy + dz * dz) * 12;
-                    double lateral = Math.Sqrt(Math.Max(0, sep * sep - along * along));
-                    double inside = Math.Max(MergeLatIn, 0.5 * (o.Shape == "round" ? o.Dia : Math.Min(o.A, o.B)));   // o is the larger ring (perimeter order)
-                    if (o.N[0] * c.N[0] + o.N[1] * c.N[1] + o.N[2] * c.N[2] > 0.95 && along <= MergeAlongIn && lateral <= inside) { hit = c; break; }
-                }
-                if (hit != null) { hit.Rings++; hit.Members.Add(o); hit.Outer = o.Shape == "round" ? string.Format(Inv, "round {0:0.#}", o.Dia) : string.Format(Inv, "{0:0.#}x{1:0.#}", o.A, o.B); continue; }
-                o.Members = new List<Opening> { o };
-                conns.Add(o);
-            }
-            // where and how big a connector is (2026-10-08, from a real eccentric transition: flange 82x36 off 0,
-            // an extra 78.2x27.4 ring off 8.1 in at the same end): POSITION from the largest ring, the flange's
-            // outer edge, which is centred on the duct; SIZE from the smallest ring concentric with it (within
-            // 1 in), else the largest. Taking the smallest containing ring put that connector 8 in off-centre.
-            foreach (Opening o in conns)
-            {
-                Opening big = o.Members[o.Members.Count - 1], sz = big;
-                foreach (Opening m in o.Members)                      // smallest first
-                    if (m == big || LateralIn(big, m) <= 1) { sz = m; break; }
-                o.C = (double[])big.C.Clone();
-                o.Shape = sz.Shape; o.A = sz.A; o.B = sz.B; o.Dia = sz.Dia; o.Planar = sz.Planar; o.Perim = sz.Perim; o.Ua = sz.Ua;
-                double sa, sb;
-                if (StatedSize(rows[row - 1], out sa, out sb))
-                {
-                    // agrees within 1 in; "flange" = 1..8 in larger (the end loop is the flange's outer edge;
-                    // same allowance as Near()); else differs
-                    double e1, e2;
-                    if (o.Shape == "round") { e1 = e2 = o.Dia - Math.Max(sa, sb); }
-                    else
-                    {
-                        double hiS = Math.Max(sa, sb), loS = Math.Min(sa, sb);
-                        e1 = o.A - hiS; e2 = o.B - loS;
-                    }
-                    o.DA = e1; o.DB = e2;
-                    o.SizeOk = Math.Abs(e1) <= 1 && Math.Abs(e2) <= 1;
-                    o.SizeBand = o.SizeOk ? "agrees" : e1 >= -1 && e2 >= -1 && e1 <= 8 && e2 <= 8 ? "flange (1-8 in larger)" : "differs";
-                }
-            }
+            int small, interior, nEnds;
+            List<Opening> conns = MeshConnectors(f, rows[row - 1], row, watch, partRings, partKind, ref partLoops, out small, out interior, out nEnds);
             all.AddRange(conns);
-            if (want.Contains(row)) loopsOf[row] = new[] { conns.Count, small, interior, ends.Count };
+            if (want.Contains(row)) loopsOf[row] = new[] { conns.Count, small, interior, nEnds };
         }
         var ops = all.FindAll(o => want.Contains(o.Row));
         // nearest opening on another part
@@ -1181,6 +1110,92 @@ public partial class DuctsToPluto
         res.BinPath = binPath; res.SidecarPath = scPath; res.GeometryHash = w.GeometryHash;
         res.Nodes = nodes.Count; res.Beams = beams.Count; res.Note = report;
         return res;
+    }
+
+    // One part's connectors from its mesh (the probe; shared with the Revit overlay, 2026-10-12): boundary loops ->
+    // end rings -> merged per end -> position from the largest ring, size from the smallest ring concentric with it.
+    // watch / partRings / partKind / partLoops feed the -Part report (false / null when not wanted).
+    static List<Opening> MeshConnectors(float[] f, Row r, int row, bool watch, List<object[]> partRings, Dictionary<int, string> partKind, ref int partLoops,
+        out int small, out int interior, out int nEnds)
+    {
+        small = 0; interior = 0;
+        var ends = new List<Opening>();
+        foreach (List<double[]> loop in BoundaryLoops(f, WeldFt))
+        {
+            Opening o = Describe(loop);
+            if (watch) partLoops++;
+            if (watch && o != null && o.Perim >= BigPerimIn) partRings.Add(new object[] { Snapshot(o), loop.Count, PartAxisOffset(r, o) });   // a copy: merging later rewrites o
+            if (o == null || o.Perim < BigPerimIn) { small++; continue; }
+            // an end has all of the part on one side of its plane (EndTolIn): the normal is then turned
+            // to point out of the part; a ring with mesh on both sides (stiffener band, seam) is interior.
+            // Known limit: a lateral whose branch reaches past a main end's plane (or the reverse) loses
+            // that end here; the connector-count check flags the part.
+            double dLo = double.MaxValue, dHi = double.MinValue;
+            for (int k = 0; k + 2 < f.Length; k += 3)
+            {
+                double d = ((f[k] - o.C[0]) * o.N[0] + (f[k + 1] - o.C[1]) * o.N[1] + (f[k + 2] - o.C[2]) * o.N[2]) * 12;
+                if (d < dLo) dLo = d; if (d > dHi) dHi = d;
+            }
+            if (dHi <= EndTolIn) { }
+            else if (dLo >= -EndTolIn) { for (int k = 0; k < 3; k++) o.N[k] = -o.N[k]; }
+            else { interior++; if (watch) partKind[partRings.Count - 1] = "interior"; continue; }
+            if (watch) partKind[partRings.Count - 1] = "end";
+            TrimToEnd(o, loop, EndTolIn);
+            o.Row = row; ends.Add(o);
+        }
+        // rings at one end -> one connector, sized by its smallest ring (the duct; the larger ones are
+        // flange / collar / other skin): same outward direction, within MergeAlongIn along it, and the
+        // smaller ring's centre inside the larger ring's outline (lateral offset within half the larger
+        // ring's short side, at least MergeLatIn). 2026-10-08: was 1 in along and 3 in apart, which left
+        // off-centre rings (a flange outline in pieces) as extra connectors: a transition drawn as a T, a
+        // tap base split in two (a V onto the main duct). Outlets side by side (pants wye) stay apart.
+        ends.Sort((x, y) => x.Perim.CompareTo(y.Perim));
+        var conns = new List<Opening>();
+        foreach (Opening o in ends)
+        {
+            Opening hit = null;
+            foreach (Opening c in conns)
+            {
+                double dx = o.C[0] - c.C[0], dy = o.C[1] - c.C[1], dz = o.C[2] - c.C[2];
+                double along = Math.Abs(dx * c.N[0] + dy * c.N[1] + dz * c.N[2]) * 12, sep = Math.Sqrt(dx * dx + dy * dy + dz * dz) * 12;
+                double lateral = Math.Sqrt(Math.Max(0, sep * sep - along * along));
+                double inside = Math.Max(MergeLatIn, 0.5 * (o.Shape == "round" ? o.Dia : Math.Min(o.A, o.B)));   // o is the larger ring (perimeter order)
+                if (o.N[0] * c.N[0] + o.N[1] * c.N[1] + o.N[2] * c.N[2] > 0.95 && along <= MergeAlongIn && lateral <= inside) { hit = c; break; }
+            }
+            if (hit != null) { hit.Rings++; hit.Members.Add(o); hit.Outer = o.Shape == "round" ? string.Format(Inv, "round {0:0.#}", o.Dia) : string.Format(Inv, "{0:0.#}x{1:0.#}", o.A, o.B); continue; }
+            o.Members = new List<Opening> { o };
+            conns.Add(o);
+        }
+        // where and how big a connector is (2026-10-08, from a real eccentric transition: flange 82x36 off 0,
+        // an extra 78.2x27.4 ring off 8.1 in at the same end): POSITION from the largest ring, the flange's
+        // outer edge, which is centred on the duct; SIZE from the smallest ring concentric with it (within
+        // 1 in), else the largest. Taking the smallest containing ring put that connector 8 in off-centre.
+        foreach (Opening o in conns)
+        {
+            Opening big = o.Members[o.Members.Count - 1], sz = big;
+            foreach (Opening m in o.Members)                      // smallest first
+                if (m == big || LateralIn(big, m) <= 1) { sz = m; break; }
+            o.C = (double[])big.C.Clone();
+            o.Shape = sz.Shape; o.A = sz.A; o.B = sz.B; o.Dia = sz.Dia; o.Planar = sz.Planar; o.Perim = sz.Perim; o.Ua = sz.Ua;
+            double sa, sb;
+            if (StatedSize(r, out sa, out sb))
+            {
+                // agrees within 1 in; "flange" = 1..8 in larger (the end loop is the flange's outer edge;
+                // same allowance as Near()); else differs
+                double e1, e2;
+                if (o.Shape == "round") { e1 = e2 = o.Dia - Math.Max(sa, sb); }
+                else
+                {
+                    double hiS = Math.Max(sa, sb), loS = Math.Min(sa, sb);
+                    e1 = o.A - hiS; e2 = o.B - loS;
+                }
+                o.DA = e1; o.DB = e2;
+                o.SizeOk = Math.Abs(e1) <= 1 && Math.Abs(e2) <= 1;
+                o.SizeBand = o.SizeOk ? "agrees" : e1 >= -1 && e2 >= -1 && e1 <= 8 && e2 <= 8 ? "flange (1-8 in larger)" : "differs";
+            }
+        }
+        nEnds = ends.Count;
+        return conns;
     }
 
     // Boundary loops of a triangle soup (feet): vertices welded on a tol grid, edges used by exactly one

@@ -42,6 +42,7 @@ public partial class DuctsToPluto
         public string Shape;      // Rectangular / Round / Oval
         public double W, H, Dia;  // inches, NaN = n/a
         public List<string> To = new List<string>();
+        public Opening Mesh;      // the probe's connector on the matched Navisworks row at this end (mesh-measured size)
     }
 
     // As a probe Opening, to reuse ThroughPair / BranchJunction (round = "round", else A x B, A the larger).
@@ -355,6 +356,7 @@ public partial class DuctsToPluto
         var partners = new Dictionary<int, int>();   // Navisworks row -> Revit elements on it (GUID or position)
         Func<RvEl, List<int>> rowsOf = e => e.Match != "" ? navByGuid[e.Match] : e.LocRow >= 0 ? new List<int> { e.LocRow } : new List<int>();
         foreach (RvEl e in scope) foreach (int i in rowsOf(e)) { int n; partners.TryGetValue(i, out n); partners[i] = n + 1; }
+        string meshNote = MatchMeshConnectors(navisRun, rows, scope, rowsOf);
         foreach (RvEl e in scope)
         {
             List<int> pr2 = rowsOf(e);
@@ -537,6 +539,7 @@ public partial class DuctsToPluto
         fc.Add(string.Format(Inv, "NAVIS_ONLY {0} (+ {1} covered by a Revit part, no frame)", navOnly.Count, navCovered.Count));
         s.AppendLine("flags (parts; <out>.flags.csv): " + string.Join(", ", fc.ToArray()));
         s.AppendLine(framesNote);
+        s.AppendLine(meshNote);
         s.AppendLine();
         s.AppendLine("Navisworks run: " + navisRun);
         s.AppendLine("Revit run:      " + revitRun);
@@ -589,9 +592,9 @@ public partial class DuctsToPluto
             }
         }
         if (seen.Count == 0) return null;
-        return string.Format(Inv, "Navisworks {0} vs Revit {1} (mesh {2})", rect ? string.Format(Inv, "{0:0.#}x{1:0.#}", w, h) : string.Format(Inv, "{0:0.#} dia", d),
-            string.Join("/", seen.Distinct().ToArray()),
-            double.IsNaN(r.FitA) || double.IsNaN(r.FitB) ? "n/a" : string.Format(Inv, "{0:0.#}x{1:0.#}", r.FitA, r.FitB));
+        var mesh = new List<string>(); foreach (RvConn k in e.Conns) mesh.Add(MeshSize(k.Mesh));
+        return string.Format(Inv, "Navisworks {0} vs Revit {1} (mesh ends {2})", rect ? string.Format(Inv, "{0:0.#}x{1:0.#}", w, h) : string.Format(Inv, "{0:0.#} dia", d),
+            string.Join("/", seen.Distinct().ToArray()), string.Join(" / ", mesh.ToArray()));
     }
 
     // <out>.flags.csv: one row per flagged part, Revit elements in scope, then Navisworks-only rows. Regenerated
@@ -675,6 +678,53 @@ public partial class DuctsToPluto
         File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));
         return string.Format(Inv, "SAP frames (<out>.frames.csv): {0} ({1} from Navisworks-only rows), Revit elements without a frame (1 connector) {2}, frames without a size {3}",
             nf, nav, noFrame, noSize);
+    }
+
+    // Mesh-measured connector sizes (2026-10-12): the probe's connectors (MeshConnectors) on each matched
+    // Navisworks row, any category (Revit fab parts are often Ducts / Fittings in Navisworks); each Revit connector
+    // takes the row's mesh connector nearest it within MeshMatchIn, facing the same way (dot > 0.7).
+    const double MeshMatchIn = 4;
+    static string MatchMeshConnectors(string navisRun, List<Row> rows, List<RvEl> scope, Func<RvEl, List<int>> rowsOf)
+    {
+        var want = new HashSet<int>();
+        foreach (RvEl e in scope) foreach (int i in rowsOf(e)) want.Add(i + 1);
+        string triPath = Path.Combine(navisRun, "ducts_tri.bin");
+        if (!File.Exists(triPath)) return "mesh connector sizes: no ducts_tri.bin in the Navisworks run";
+        var tri = ReadTriangles(triPath, want);
+        var meshOf = new Dictionary<int, List<Opening>>();
+        int noTri = 0, dummy = 0;
+        foreach (int row in want)
+        {
+            float[] f;
+            if (!tri.TryGetValue(row, out f) || f.Length < 9) { noTri++; continue; }
+            int small, interior, nEnds;
+            meshOf[row - 1] = MeshConnectors(f, rows[row - 1], row, false, null, null, ref dummy, out small, out interior, out nEnds);
+        }
+        int total = 0, got = 0;
+        foreach (RvEl e in scope)
+            foreach (RvConn k in e.Conns)
+            {
+                total++;
+                double bd = MeshMatchIn / 12;
+                foreach (int i in rowsOf(e))
+                {
+                    List<Opening> ol; if (!meshOf.TryGetValue(i, out ol)) continue;
+                    foreach (Opening o in ol)
+                    {
+                        if (o.N[0] * k.D[0] + o.N[1] * k.D[1] + o.N[2] * k.D[2] <= 0.7) continue;
+                        double d = Math.Sqrt(Dist2(o.C, k.P)); if (d < bd) { bd = d; k.Mesh = o; }
+                    }
+                }
+                if (k.Mesh != null) got++;
+            }
+        return string.Format(Inv, "mesh connector sizes: {0} of {1} Revit connectors matched a mesh connector within {2} in; matched Navisworks rows {3} ({4} without triangles)",
+            got, total, MeshMatchIn, want.Count, noTri);
+    }
+
+    static string MeshSize(Opening o)
+    {
+        if (o == null) return "-";
+        return o.Shape == "round" ? string.Format(Inv, "{0:0.#} dia", o.Dia) : string.Format(Inv, "{0:0.#}x{1:0.#}", o.A, o.B);
     }
 
     // Size of one piece of a Revit element: connector q's own size for a branch (q >= 0), else the Navisworks
