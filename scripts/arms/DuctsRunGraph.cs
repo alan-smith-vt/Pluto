@@ -78,7 +78,8 @@ public partial class DuctsToPluto
                 }
             }
         };
-        foreach (List<KeyValuePair<RvEl, RvConn>> l in at.Values) if (l.Count == 2) join(l[0].Value, l[1].Value);
+        // a joint continues the run when exactly two RUN PORTS meet there (an attached flange / support or a cap may sit on it too)
+        foreach (List<KeyValuePair<RvEl, RvConn>> l in at.Values) { var lp = l.FindAll(p => port.Contains(p.Value)); if (lp.Count == 2) join(lp[0].Value, lp[1].Value); }
         // near links (open ends facing each other across a gap / overlap, drawn as 'Link: near'): the run carries on
         // across them; the parts keep NEAR_GAP (2026-10-12: R5 stopped at a 45 across a gap, R10 carried on)
         var nearJoined = new HashSet<RvConn>();
@@ -116,7 +117,7 @@ public partial class DuctsToPluto
                 {
                     if (!port.Contains(k) || nearJoined.Contains(k)) continue;
                     List<KeyValuePair<RvEl, RvConn>> l = at[nodeOf(k)];
-                    if (l.Count == 2 && l[0].Key != l[1].Key && port.Contains(l[0].Value) && port.Contains(l[1].Value)) continue;
+                    var lp = l.FindAll(p => port.Contains(p.Value)); if (lp.Count == 2 && lp[0].Key != lp[1].Key) continue;
                     if (l.Count == 1) why.Add(e.Id + " open" + (k.To.Count > 0 ? " (connected outside the room)" : ""));
                     else why.Add(e.Id + " joint of " + l.Count + ": " + string.Join(" ", l.Select(p => p.Key.Id + "(" + p.Key.Kind + (port.Contains(p.Value) ? "*" : "") + ")").ToArray()));
                 }

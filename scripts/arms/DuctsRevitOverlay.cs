@@ -232,15 +232,33 @@ public partial class DuctsToPluto
             }
             if (best != null) touch[k] = best;
         }
+        // attachments (2026-10-12, test room: an angle flange / support accessory with one connector
+        // sat 0.1 in from a bend's end, unconnected, and drew a side-branch link to the main): a ONE-connector part
+        // whose open end lies within AttachIn of any other part's connector shares that connector's joint
+        const double AttachIn = 1;
+        var attach = new Dictionary<RvConn, RvConn>();
+        foreach (RvConn k in open)
+        {
+            if (k.Owner.Conns.Count != 1 || touch.ContainsKey(k)) continue;
+            RvConn best = null; double bd = AttachIn / 12;
+            foreach (RvEl e2 in scope)
+            {
+                if (e2 == k.Owner) continue;
+                foreach (RvConn q in e2.Conns) { double d = Math.Sqrt(Dist2(k.P, q.P)); if (d < bd) { bd = d; best = q; } }
+            }
+            if (best != null) attach[k] = best;
+        }
 
         // nodes: a connector shares its node with the connectors it is connected (or touching) to
         double[] off = { Math.Round((lo[0] + hi[0]) / 2), Math.Round((lo[1] + hi[1]) / 2), Math.Round((lo[2] + hi[2]) / 2) };
         var nodes = new Dictionary<int, Node>(); int nextNode = 1;
         var nodeOf = new Dictionary<string, int>(StringComparer.Ordinal);
         var gConn = new List<uint>(); var gOut = new List<uint>(); var gTouch = new List<uint>(); var gOpen = new List<uint>();
-        Func<RvConn, int> node = delegate(RvConn k)
+        Func<RvConn, int> node = null;
+        node = delegate(RvConn k)
         {
             int id; if (nodeOf.TryGetValue(k.Key, out id)) return id;
+            RvConn aq; if (attach.TryGetValue(k, out aq)) { id = node(aq); nodeOf[k.Key] = id; return id; }
             id = MakeNode(nodes, ref nextNode, k.P, off, scale); nodeOf[k.Key] = id;
             foreach (string t in k.To) { RvConn q; if (conns.TryGetValue(t, out q) && inScope.Contains(q.Owner) && !nodeOf.ContainsKey(t)) nodeOf[t] = id; }
             RvConn tq; if (touch.TryGetValue(k, out tq) && !nodeOf.ContainsKey(tq.Key)) nodeOf[tq.Key] = id;
@@ -345,8 +363,9 @@ public partial class DuctsToPluto
         //     its ends), the end lying within that part's half size + 3 in of the line
         var gNear = new List<uint>(); var gSide = new List<uint>();
         var linked = new HashSet<RvConn>(); var nearSet = new HashSet<RvConn>(); var nearPairs = new List<RvConn[]>(); var sidePairs = new List<RvEl[]>();
+        foreach (KeyValuePair<RvConn, RvConn> kv in attach) nearPairs.Add(new[] { kv.Key, kv.Value });   // systems: attached = joined
         var loose = new List<RvConn>();
-        foreach (RvConn k in open) if (!touch.ContainsKey(k)) loose.Add(k);
+        foreach (RvConn k in open) if (!touch.ContainsKey(k) && !attach.ContainsKey(k)) loose.Add(k);
         foreach (RvConn k in loose)
         {
             if (linked.Contains(k)) continue;
@@ -397,6 +416,7 @@ public partial class DuctsToPluto
                 if (inside) { gConn.Add((uint)id); nConnected++; }
                 else if (outside) { gOut.Add((uint)id); nOutside++; }
                 else if (touch.ContainsKey(k)) { gTouch.Add((uint)id); nTouch++; }
+                else if (attach.ContainsKey(k)) { }   // shares another part's joint, counted there
                 else if (nearSet.Contains(k)) nNear++;
                 else if (linked.Contains(k)) nSide++;
                 else if (k.Type == "End") { gOpen.Add((uint)id); nOpen++; }
@@ -432,7 +452,7 @@ public partial class DuctsToPluto
                 if (k.To.Count > 0) continue;
                 if (touch.ContainsKey(k)) fTouch = true;
                 else if (nearSet.Contains(k)) fNear = true;
-                else if (!linked.Contains(k) && k.Type == "End") fOpen = true;
+                else if (!linked.Contains(k) && !attach.ContainsKey(k) && k.Type == "End") fOpen = true;
             }
             if (fOpen) e.Flags.Add("OPEN_END");
             if (fTouch) e.Flags.Add("TOUCHING_NOT_CONNECTED");
@@ -630,7 +650,7 @@ public partial class DuctsToPluto
         {
             // -Part <Revit ElementId> (2026-10-12): that part's connectors and what lies near each, as the NEW block
             RvEl pe = scope.Find(x => x.Id == part.Trim());
-            res.Note = pe == null ? "NEW part " + part + ": not among the room's Revit elements" : PartReport(pe, scope, conns, inScope, touch, nearSet, linked);
+            res.Note = pe == null ? "NEW part " + part + ": not among the room's Revit elements" : PartReport(pe, scope, conns, inScope, touch, nearSet, linked, attach);
         }
         s.AppendLine(res.Note);
         var fc = new List<string>();
@@ -942,7 +962,7 @@ public partial class DuctsToPluto
     // the angle between the two directions (180 = facing each other; near links need <= 12 in, off-axis <= 1 in,
     // angle >= 154 deg)
     static string PartReport(RvEl pe, List<RvEl> scope, Dictionary<string, RvConn> conns, HashSet<RvEl> inScope,
-        Dictionary<RvConn, RvConn> touch, HashSet<RvConn> nearSet, HashSet<RvConn> linked)
+        Dictionary<RvConn, RvConn> touch, HashSet<RvConn> nearSet, HashSet<RvConn> linked, Dictionary<RvConn, RvConn> attach)
     {
         var l1 = string.Format(Inv, "NEW part {0}: {1}{2} | {3} | {4} | {5} conn", pe.Id, pe.Kind == "" ? "?" : pe.Kind,
             pe.Run >= 0 ? string.Format(Inv, " R{0} S{1}", pe.Run, pe.Seg) : " no run", pe.Cat, (pe.Fam + " " + pe.Type).Trim(), pe.Conns.Count);
@@ -954,6 +974,7 @@ public partial class DuctsToPluto
             if (inside.Count > 0) state = "connected " + string.Join(" ", inside.ConvertAll(t => t.Substring(0, t.IndexOf(':'))).ToArray());
             else if (k.To.Count > 0) state = "outside";
             else if (touch.ContainsKey(k)) state = "touching " + touch[k].Owner.Id;
+            else if (attach.ContainsKey(k)) state = "attached " + attach[k].Owner.Id;
             else if (nearSet.Contains(k)) state = "near";
             else if (linked.Contains(k)) state = "side";
             else state = "open";
