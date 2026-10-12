@@ -14,6 +14,7 @@ namespace PlutoRevit
     // Writes C:\Temp\hvac\revit\<yyyyMMdd-HHmmss>\ (new folder per run):
     //   elements.csv    ElementId, UniqueId, IfcGUID, category, family/product, type, size, system, level, connector count
     //   connectors.csv  owner ElementId, connector Id, type, domain, shape, origin (ft), direction (BasisZ),
+    //                   width direction (BasisX: Width is measured along it, Height along BasisY; 2026-10-12),
     //                   width / height / diameter (in), connected-to ElementId:ConnectorId list (';')
     //   summary.txt     counts by category and by family/product, connector counts, unconnected ends, errors
     // Coordinates are Revit internal (feet, project internal origin). C# 5 (built by Build-RevitPlugin.ps1).
@@ -47,7 +48,7 @@ namespace PlutoRevit
             var e = new StringBuilder();
             var c = new StringBuilder();
             e.AppendLine("ElementId,UniqueId,IfcGUID,Category,Family,Type,Size,SystemName,SystemType,Level,IsFabrication,Connectors");
-            c.AppendLine("ElementId,ConnectorId,ConnType,Domain,Shape,X_ft,Y_ft,Z_ft,DirX,DirY,DirZ,Width_in,Height_in,Diameter_in,ConnectedTo");
+            c.AppendLine("ElementId,ConnectorId,ConnType,Domain,Shape,X_ft,Y_ft,Z_ft,DirX,DirY,DirZ,WidthDirX,WidthDirY,WidthDirZ,Width_in,Height_in,Diameter_in,ConnectedTo");
 
             foreach (Element el in els)
             {
@@ -85,11 +86,12 @@ namespace PlutoRevit
                             n++; nConn++;
                             c.Append(el.Id.ToString()).Append(',').Append(k.Id.ToString(Inv)).Append(',')
                              .Append(k.ConnectorType).Append(',').Append(k.Domain).Append(',').Append(k.Shape).Append(',');
-                            XYZ o = null, d = null;
+                            XYZ o = null, d = null, bx = null;
                             try { o = k.Origin; } catch { }
-                            try { d = k.CoordinateSystem.BasisZ; } catch { }
+                            try { d = k.CoordinateSystem.BasisZ; bx = k.CoordinateSystem.BasisX; } catch { }
                             c.Append(o == null ? ",," : F(o.X) + "," + F(o.Y) + "," + F(o.Z)).Append(',');
                             c.Append(d == null ? ",," : F(d.X) + "," + F(d.Y) + "," + F(d.Z)).Append(',');
+                            c.Append(bx == null ? ",," : F(bx.X) + "," + F(bx.Y) + "," + F(bx.Z)).Append(',');
                             double w = double.NaN, h = double.NaN, r = double.NaN;
                             try { if (k.Shape == ConnectorProfileType.Rectangular || k.Shape == ConnectorProfileType.Oval) { w = k.Width * 12; h = k.Height * 12; } } catch { }
                             try { if (k.Shape == ConnectorProfileType.Round) r = k.Radius * 24; } catch { }

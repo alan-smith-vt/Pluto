@@ -39,6 +39,7 @@ public partial class DuctsToPluto
         public RvEl Owner;
         public string Key, Type;
         public double[] P, D;     // Navisworks frame after the fit; D = outward (BasisZ)
+        public double[] WX;       // Width direction (BasisX; runs from 2026-10-12 on, else null), after the fit
         public string Shape;      // Rectangular / Round / Oval
         public double W, H, Dia;  // inches, NaN = n/a
         public List<string> To = new List<string>();
@@ -99,6 +100,8 @@ public partial class DuctsToPluto
             k.P = new[] { x, y, z };
             double dx = Num(c, "DirX"), dy = Num(c, "DirY"), dz = Num(c, "DirZ");
             k.D = double.IsNaN(dx) ? new double[] { 0, 0, 0 } : new[] { dx, dy, dz };
+            double wx = Num(c, "WidthDirX"), wy = Num(c, "WidthDirY"), wz = Num(c, "WidthDirZ");
+            if (!double.IsNaN(wx) && !double.IsNaN(wy) && !double.IsNaN(wz)) k.WX = new[] { wx, wy, wz };
             k.Shape = Get(c, "Shape"); k.W = Num(c, "Width_in"); k.H = Num(c, "Height_in"); k.Dia = Num(c, "Diameter_in");
             foreach (string t in Get(c, "ConnectedTo").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)) k.To.Add(t);
             e.Conns.Add(k); conns[k.Key] = k;
@@ -145,7 +148,11 @@ public partial class DuctsToPluto
         double[] T = FitRigidXY(pr, pn, out medRes, out used, out spread);
         Func<double[], double[]> xf = p => new[] { T[0] * p[0] - T[1] * p[1] + T[2], T[1] * p[0] + T[0] * p[1] + T[3], p[2] + T[4] };
         foreach (RvEl e in els.Values) if (e.C != null) e.P = xf(e.C);
-        foreach (RvConn k in conns.Values) { k.P = xf(k.P); k.D = new[] { T[0] * k.D[0] - T[1] * k.D[1], T[1] * k.D[0] + T[0] * k.D[1], k.D[2] }; }
+        foreach (RvConn k in conns.Values)
+        {
+            k.P = xf(k.P); k.D = new[] { T[0] * k.D[0] - T[1] * k.D[1], T[1] * k.D[0] + T[0] * k.D[1], k.D[2] };
+            if (k.WX != null) k.WX = new[] { T[0] * k.WX[0] - T[1] * k.WX[1], T[1] * k.WX[0] + T[0] * k.WX[1], k.WX[2] };
+        }
 
         // scope
         var inRoom = new List<int>();
@@ -436,7 +443,7 @@ public partial class DuctsToPluto
 
         // Cross sections: each part's beams get the size its SAP frame gets (SegSize); a tee's through beam is
         // drawn whole (SAP splits it at the branch, same size). Links keep the thin "revit part" pipe.
-        var secOf = new Dictionary<string, int>(StringComparer.Ordinal);
+        var secOf = new Dictionary<string, int>(StringComparer.Ordinal); int nOriented = 0;
         Func<string, double, double, double, double, int> sec = (shape, w, h, d, t) =>
         {
             bool round = shape == "round" && !double.IsNaN(d);
@@ -457,9 +464,15 @@ public partial class DuctsToPluto
             foreach (int id in e.Beams)
             {
                 int q; if (!connOf.TryGetValue(beams[id].NodeA + "-" + beams[id].NodeB, out q)) q = -1;
-                string shape, ssrc; double w, h, d;
-                SegSize(e, q, r, out shape, out w, out h, out d, out ssrc);
+                string shape, ssrc; double w, h, d; RvConn src;
+                SegSize(e, q, r, out shape, out w, out h, out d, out ssrc, out src);
                 beams[id].SectionIndex = sec(shape, w, h, d, t);
+                // box width along the connector's width direction (Revit BasisX) where the run exported it
+                if (src != null && src.WX != null && shape == "rect")
+                {
+                    double[] y = WidthAxis(nodes[beams[id].NodeA], nodes[beams[id].NodeB], src.WX);
+                    if (y != null) { beams[id].LocalY = y; nOriented++; }
+                }
             }
         }
         foreach (KeyValuePair<int, int> kv in navBeamRow)
@@ -545,6 +558,8 @@ public partial class DuctsToPluto
         s.AppendLine("flags (parts; <out>.flags.csv): " + string.Join(", ", fc.ToArray()));
         s.AppendLine(framesNote);
         s.AppendLine(meshNote);
+        s.AppendLine(string.Format(Inv, "boxes turned to the Revit connector's width direction: {0} beams{1}", nOriented,
+            nOriented == 0 ? " (connectors.csv has no WidthDirX: a Pluto Connectors run from before 2026-10-12; boxes keep width horizontal)" : ""));
         s.AppendLine();
         s.AppendLine("Navisworks run: " + navisRun);
         s.AppendLine("Revit run:      " + revitRun);
@@ -757,7 +772,13 @@ public partial class DuctsToPluto
     // navisworks / none.
     static void SegSize(RvEl e, int q, Row r, out string shape, out double w, out double h, out double d, out string ssrc)
     {
-        RvConn k = null; bool differ = false;
+        RvConn used; SegSize(e, q, r, out shape, out w, out h, out d, out ssrc, out used);
+    }
+
+    // as above; used = the Revit connector the size came from (null for navisworks / none)
+    static void SegSize(RvEl e, int q, Row r, out string shape, out double w, out double h, out double d, out string ssrc, out RvConn used)
+    {
+        RvConn k = null; bool differ = false; used = null;
         if (q >= 0) k = e.Conns[q];
         else
         {
@@ -772,10 +793,25 @@ public partial class DuctsToPluto
         if (k != null && ConnPerim(k) > 0)
         {
             shape = k.Shape == "Round" ? "round" : "rect"; w = k.W; h = k.H; d = k.Dia; ssrc = differ ? "revit-transition" : "revit";
+            used = k;
             return;
         }
         if (r != null && NavSize(r, out shape, out w, out h, out d)) { ssrc = "navisworks"; return; }
         shape = "rect"; w = h = d = double.NaN; ssrc = "none";
+    }
+
+    // The connector's width direction made perpendicular to the beam (a bend's chord is not along either end's
+    // axis); null when it lies (nearly) along the beam
+    static double[] WidthAxis(Node a, Node b, double[] wx)
+    {
+        double[] x = { b.xyz.X - a.xyz.X, b.xyz.Y - a.xyz.Y, b.xyz.Z - a.xyz.Z };
+        double l = Math.Sqrt(x[0] * x[0] + x[1] * x[1] + x[2] * x[2]); if (l <= 0) return null;
+        for (int i = 0; i < 3; i++) x[i] /= l;
+        double dot = wx[0] * x[0] + wx[1] * x[1] + wx[2] * x[2];
+        double[] y = { wx[0] - dot * x[0], wx[1] - dot * x[1], wx[2] - dot * x[2] };
+        double yl = Math.Sqrt(y[0] * y[0] + y[1] * y[1] + y[2] * y[2]);
+        if (yl < 0.2) return null;
+        return new[] { y[0] / yl, y[1] / yl, y[2] / yl };
     }
 
     static double ConnPerim(RvConn k)
