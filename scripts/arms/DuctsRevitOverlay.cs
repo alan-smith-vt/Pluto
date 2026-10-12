@@ -261,8 +261,22 @@ public partial class DuctsToPluto
             var ids = new List<int>();
             if (e.Conns.Count == 2)
             {
-                ids.Add(RvBeam(beams, labels, ref nb, node(e.Conns[0]), node(e.Conns[1]), nodes, label));
-                e.Segs.Add(new[] { node(e.Conns[0]), node(e.Conns[1]), -1 });
+                // a bend: two legs meeting at its corner (where the two connector axes meet), not the chord across it
+                // (2026-10-12, test room: tap - 90 - 90 - straight drew as a zig-zag of chords)
+                double[] corner = BendCorner(e.Conns[0], e.Conns[1]);
+                if (corner != null)
+                {
+                    int cn = MakeNode(nodes, ref nextNode, corner, off, scale);
+                    ids.Add(RvBeam(beams, labels, ref nb, node(e.Conns[0]), cn, nodes, label));
+                    ids.Add(RvBeam(beams, labels, ref nb, cn, node(e.Conns[1]), nodes, label));
+                    e.Segs.Add(new[] { node(e.Conns[0]), cn, -1 });
+                    e.Segs.Add(new[] { cn, node(e.Conns[1]), -1 });
+                }
+                else
+                {
+                    ids.Add(RvBeam(beams, labels, ref nb, node(e.Conns[0]), node(e.Conns[1]), nodes, label));
+                    e.Segs.Add(new[] { node(e.Conns[0]), node(e.Conns[1]), -1 });
+                }
                 mains.Add(new[] { e.Conns[0], e.Conns[1] });
             }
             else if (e.Conns.Count > 2)
@@ -945,6 +959,25 @@ public partial class DuctsToPluto
             ns.Add(id + ": " + (cand.Count == 0 ? "nothing within 36 in" : string.Join(", ", cand.Take(2).Select(x => x.Value).ToArray())));
         }
         return l1 + "\nNEW conns: " + string.Join("; ", cs.ToArray()) + "\nNEW nearest: " + (ns.Count > 0 ? string.Join(" | ", ns.ToArray()) : "all connected");
+    }
+
+    // Corner of a 2-connector part that turns: the closest point between the two connector axes, going INTO the part
+    // from each end (feet). Null when it does not turn (ends opposite within ~18 deg), the axes are parallel, the
+    // corner lies behind a connector, or it is further from either end than 3 x the distance between the ends.
+    static double[] BendCorner(RvConn a, RvConn b)
+    {
+        double[] u = { -a.D[0], -a.D[1], -a.D[2] }, v = { -b.D[0], -b.D[1], -b.D[2] };   // inward directions
+        if (a.D[0] * b.D[0] + a.D[1] * b.D[1] + a.D[2] * b.D[2] < -0.95) return null;
+        double[] w = { a.P[0] - b.P[0], a.P[1] - b.P[1], a.P[2] - b.P[2] };
+        double uu = u[0] * u[0] + u[1] * u[1] + u[2] * u[2], vv = v[0] * v[0] + v[1] * v[1] + v[2] * v[2], uv = u[0] * v[0] + u[1] * v[1] + u[2] * v[2];
+        double uw = u[0] * w[0] + u[1] * w[1] + u[2] * w[2], vw = v[0] * w[0] + v[1] * w[1] + v[2] * w[2];
+        double den = uu * vv - uv * uv;
+        if (den < 1e-6) return null;
+        double s = (uv * vw - vv * uw) / den, t = (uu * vw - uv * uw) / den;
+        double span = Math.Sqrt(Dist2(a.P, b.P));
+        if (s <= 0 || t <= 0 || s > 3 * span || t > 3 * span) return null;
+        double[] pa = { a.P[0] + s * u[0], a.P[1] + s * u[1], a.P[2] + s * u[2] }, pb = { b.P[0] + t * v[0], b.P[1] + t * v[1], b.P[2] + t * v[2] };
+        return new[] { (pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2, (pa[2] + pb[2]) / 2 };
     }
 
     // Revit "Curve" connector: where a tap meets a duct's side (not an end of the part)
