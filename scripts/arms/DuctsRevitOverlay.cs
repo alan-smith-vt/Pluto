@@ -34,6 +34,7 @@ public partial class DuctsToPluto
         public double[] C, P;     // centre: Revit internal / Navisworks frame (feet)
         public string Kind = "";  // DuctsRunGraph: straight / bend / transition / branch / end / equipment
         public int Run = -1, Seg = -1;   // DuctsRunGraph run and segment ids (-1 = none)
+        public int Sys = -1; public string SysName = "";   // DuctsSystems: connected component and its name
         public double[] Voted;    // the segment's voted size { round 1/0, big side or dia, small side } (null = none)
     }
 
@@ -312,7 +313,7 @@ public partial class DuctsToPluto
         //   side branch: the end's axis meets another part's main line inside the segment (not within 1 in of
         //     its ends), the end lying within that part's half size + 3 in of the line
         var gNear = new List<uint>(); var gSide = new List<uint>();
-        var linked = new HashSet<RvConn>(); var nearSet = new HashSet<RvConn>(); var nearPairs = new List<RvConn[]>();
+        var linked = new HashSet<RvConn>(); var nearSet = new HashSet<RvConn>(); var nearPairs = new List<RvConn[]>(); var sidePairs = new List<RvEl[]>();
         var loose = new List<RvConn>();
         foreach (RvConn k in open) if (!touch.ContainsKey(k)) loose.Add(k);
         foreach (RvConn k in loose)
@@ -348,7 +349,7 @@ public partial class DuctsToPluto
                 bd = d; bestF = f; bestM = m;
             }
             if (bestF == null) continue;
-            linked.Add(k);
+            linked.Add(k); sidePairs.Add(new[] { k.Owner, bestM[0].Owner });
             int id = RvBeam(beams, labels, ref nb, node(k), MakeNode(nodes, ref nextNode, bestF, off, scale), nodes,
                 string.Format(Inv, "side branch: Revit {0} -> side of {1} | {2:0.#} in from its line", k.Owner.Id, bestM[0].Owner.Id, bd * 12));
             if (id > 0) gSide.Add((uint)id);
@@ -409,22 +410,6 @@ public partial class DuctsToPluto
         // runs, segments and size voting (DuctsRunGraph.cs): adds SIZE_OUTLIER, SIZE_CHANGE_WITHOUT_TRANSITION,
         // RUNNAME_DEVIATION, SYSTEM_CHANGE and sets each part's Kind / Run / Seg / Voted
         List<RunSeg> runSegs = AnalyzeRuns(scope, rows, rowsOf, k => node(k), nodes, off, scale, nearPairs);
-        WriteRunsCsv(outBase + ".runs.csv", runSegs);
-        foreach (RvEl e in scope)
-        {
-            string extra = " | " + (e.Kind != "" ? e.Kind : "?")
-                + (e.Run >= 0 ? string.Format(Inv, " | run R{0} seg S{1}", e.Run, e.Seg) : "")
-                + (e.Voted != null ? " voted " + VotedText(e.Voted) : "");
-            foreach (int id in e.Beams) labels[id] += extra;
-            if (e.Flags.Count > 0) foreach (int id in e.Beams) labels[id] += " | FLAGS " + string.Join(" ", e.Flags.ToArray());
-        }
-        var flagGroups = new SortedDictionary<string, List<uint>>(StringComparer.Ordinal);
-        foreach (RvEl e in scope)
-            foreach (string f in e.Flags)
-            {
-                List<uint> l; if (!flagGroups.TryGetValue(f, out l)) { l = new List<uint>(); flagGroups[f] = l; }
-                foreach (int id in e.Beams) l.Add((uint)id);
-            }
         // Navisworks-only rows a Revit part runs through (a point every 0.25 ft along its frames inside the row's
         // bbox + 0.1 ft) are duplicates of Revit parts (bends, reducers, accessories whose centre missed the box):
         // listed in flags.csv as NAVIS_ONLY with "covered by Revit <id>", no frame. The rest are frames.
@@ -451,8 +436,6 @@ public partial class DuctsToPluto
             }
             if (by != null) navCovered[i] = by; else navOnly.Add(i);
         }
-        WriteFlagsCsv(outBase + ".flags.csv", scope, rows, rowsOf, navOnly, navCovered);
-        string framesNote = WriteFramesCsv(outBase + ".frames.csv", scope, rows, rowsOf, navOnly, nodes, off, scale);
         // Navisworks-only rows are SAP frames too (own joints, not connected): drawn so the overlay shows the SAP model
         var gNavOnly = new List<uint>(); var navBeamRow = new Dictionary<int, int>();
         foreach (int i in navOnly)
@@ -462,11 +445,11 @@ public partial class DuctsToPluto
                 "Navisworks #" + rows[i].NavisId + " | " + rows[i].Cat + " | " + rows[i].Name + " | " + rows[i].SizeText + " | NO REVIT MATCH | FLAGS NAVIS_ONLY");
             if (id > 0) { gNavOnly.Add((uint)id); navBeamRow[id] = i; }
         }
-        if (gNavOnly.Count > 0) flagGroups["NAVIS_ONLY"] = gNavOnly;
 
         // Cross sections: each part's beams get the size its SAP frame gets (SegSize); a tee's through beam is
         // drawn whole (SAP splits it at the branch, same size). Links keep the thin "revit part" pipe.
         var secOf = new Dictionary<string, int>(StringComparer.Ordinal); int nOriented = 0; var gTap = new List<uint>();
+        var beamDim = new Dictionary<int, double[]>();   // part beam -> { round 1/0, W, H, Dia } inches (DuctsSystems box test)
         Func<string, double, double, double, double, int> sec = (shape, w, h, d, t) =>
         {
             bool round = shape == "round" && !double.IsNaN(d);
@@ -493,6 +476,7 @@ public partial class DuctsToPluto
                 string shape, ssrc; double w, h, d; RvConn src;
                 SegSize(e, q, r, out shape, out w, out h, out d, out ssrc, out src);
                 beams[id].SectionIndex = sec(shape, w, h, d, t);
+                beamDim[id] = new[] { shape == "round" ? 1.0 : 0.0, w, h, d };
                 // box width along the connector's width direction (Revit BasisX) where the run exported it
                 if (src != null && src.WX != null && shape == "rect")
                 {
@@ -507,6 +491,31 @@ public partial class DuctsToPluto
             if (NavSize(r, out shape, out w, out h, out d))
                 beams[kv.Key].SectionIndex = sec(shape, w, h, d, !double.IsNaN(r.T) && r.T > 0 ? r.T : 0.06);
         }
+
+        // systems (DuctsSystems.cs): flood fill over connections, touching ends, near / side links and the drawn
+        // boxes (a centreline inside another part's box + 6 in: overlaps, gaps, branches into a side); adds
+        // JOINED_BY_PROXIMITY, sets e.Sys / e.SysName
+        List<DuctSystem> systems = AnalyzeSystems(scope, conns, inScope, touch, nearPairs, sidePairs, beams, beamDim, nodes, off, scale, rows, rowsOf);
+        WriteRunsCsv(outBase + ".runs.csv", runSegs);
+        foreach (RvEl e in scope)
+        {
+            string extra = " | " + (e.Kind != "" ? e.Kind : "?")
+                + (e.Sys >= 0 ? string.Format(Inv, " | system {0} (C{1})", e.SysName, e.Sys) : "")
+                + (e.Run >= 0 ? string.Format(Inv, " | line R{0} seg S{1}", e.Run, e.Seg) : "")
+                + (e.Voted != null ? " voted " + VotedText(e.Voted) : "");
+            foreach (int id in e.Beams) labels[id] += extra;
+            if (e.Flags.Count > 0) foreach (int id in e.Beams) labels[id] += " | FLAGS " + string.Join(" ", e.Flags.ToArray());
+        }
+        var flagGroups = new SortedDictionary<string, List<uint>>(StringComparer.Ordinal);
+        foreach (RvEl e in scope)
+            foreach (string f in e.Flags)
+            {
+                List<uint> l; if (!flagGroups.TryGetValue(f, out l)) { l = new List<uint>(); flagGroups[f] = l; }
+                foreach (int id in e.Beams) l.Add((uint)id);
+            }
+        if (gNavOnly.Count > 0) flagGroups["NAVIS_ONLY"] = gNavOnly;
+        WriteFlagsCsv(outBase + ".flags.csv", scope, rows, rowsOf, navOnly, navCovered);
+        string framesNote = WriteFramesCsv(outBase + ".frames.csv", scope, rows, rowsOf, navOnly, nodes, off, scale);
 
         var res = new Result();
         if (beams.Count > 0)
@@ -535,19 +544,17 @@ public partial class DuctsToPluto
             if (gOpen.Count > 0) sc.AddNodeGroup("Revit open end", "#ff3b3b", gOpen, new[] { "duct", "revit", "open" }, "REVIT_OPEN");
             // one group per run (hide all but one to follow it)
             string[] rpal = { "#4f8cff", "#ff8a3d", "#3fe0e0", "#b07cff", "#8ae04f", "#ffd23f", "#ff5fa2", "#f0f0f0" };
-            var runBeams = new SortedDictionary<int, List<uint>>(); var runSize = new Dictionary<int, string>();
-            foreach (RvEl e in scope)
+            // one group per system (connected component); lines / segments are in the label and runs.csv.
+            // Single loose parts go together in one group so the list stays short.
+            var looseParts = new List<uint>();
+            foreach (DuctSystem g in systems)
             {
-                if (e.Run < 0) continue;
-                List<uint> l; if (!runBeams.TryGetValue(e.Run, out l)) { l = new List<uint>(); runBeams[e.Run] = l; }
-                foreach (int id in e.Beams) l.Add((uint)id);
-                if (!runSize.ContainsKey(e.Run) && e.Voted != null) runSize[e.Run] = VotedText(e.Voted);
+                var ids = new List<uint>(); foreach (RvEl e in g.Els) foreach (int id in e.Beams) ids.Add((uint)id);
+                if (ids.Count == 0) continue;
+                if (g.Els.Count == 1) { looseParts.AddRange(ids); continue; }
+                sc.AddGroup(string.Format(Inv, "System {0} (C{1}, {2} parts)", g.Name, g.Id, g.Els.Count), rpal[(g.Id - 1) % rpal.Length], "beams", ids, new[] { "duct", "revit", "system" }, null);
             }
-            foreach (KeyValuePair<int, List<uint>> kv in runBeams)
-            {
-                string sz; runSize.TryGetValue(kv.Key, out sz);
-                sc.AddGroup(string.Format(Inv, "Run R{0}{1}", kv.Key, sz != null ? " (" + sz + ")" : ""), rpal[(kv.Key - 1) % rpal.Length], "beams", kv.Value, new[] { "duct", "revit", "run" }, null);
-            }
+            if (looseParts.Count > 0) sc.AddGroup("System: single loose parts", "#ff3b3b", "beams", looseParts, new[] { "duct", "revit", "system" }, null);
             string[] fpal ={ "#ff5fa2", "#ffd23f", "#3fe0e0", "#b07cff", "#ff8a3d", "#8ae04f", "#4f8cff", "#ff3b3b", "#f0f0f0" };
             int fi = 0;
             foreach (KeyValuePair<string, List<uint>> kv in flagGroups)
@@ -613,6 +620,8 @@ public partial class DuctsToPluto
         }
         string[] rnCheck = RunNameCheck(scope, rows, rowsOf);
         s.AppendLine(rnCheck[0]);
+        string[] sysNote = SystemsNote(systems);
+        s.AppendLine(sysNote[0]);
         s.AppendLine(string.Format(Inv, "boxes turned to the Revit connector's width direction: {0} beams{1}", nOriented,
             nOriented == 0 ? " (connectors.csv has no WidthDirX: a Pluto Connectors run from before 2026-10-12; boxes keep width horizontal)" : ""));
         s.AppendLine();
@@ -640,7 +649,7 @@ public partial class DuctsToPluto
         foreach (KeyValuePair<string, int> kv in pairTally) s.AppendLine(string.Format(Inv, "  {0,5}  {1}", kv.Value, kv.Key));
         foreach (string line in located) s.AppendLine(line);
         s.AppendLine();
-        s.Append(rnCheck[1]);
+        s.Append(rnCheck[1]); s.AppendLine(); s.Append(sysNote[1]);
         File.WriteAllText(outBase + ".match.txt", s.ToString(), new UTF8Encoding(false));
         return res;
     }

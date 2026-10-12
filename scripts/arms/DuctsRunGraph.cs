@@ -271,9 +271,9 @@ public partial class DuctsToPluto
     static void WriteRunsCsv(string path, List<RunSeg> segs)
     {
         var s = new StringBuilder();
-        s.AppendLine("Run,Segment,Kind,Parts,Length_ft,VotedSize,Votes,RunName,System,SizeOutliers,SizeChangesWithoutTransition,RunNameDeviations,SystemChanges,RevitElementIds,RunEnds");
+        s.AppendLine("SystemComponent,Run,Segment,Kind,Parts,Length_ft,VotedSize,Votes,RunName,System,SizeOutliers,SizeChangesWithoutTransition,RunNameDeviations,SystemChanges,RevitElementIds,RunEnds");
         foreach (RunSeg g in segs)
-            s.AppendLine(string.Join(",", new[] { "R" + g.Run, "S" + g.Seg, g.Kind, g.Els.Count.ToString(Inv), g.LengthFt.ToString("0.##", Inv),
+            s.AppendLine(string.Join(",", new[] { g.Els[0].Sys >= 0 ? g.Els[0].SysName + " C" + g.Els[0].Sys : "", "R" + g.Run, "S" + g.Seg, g.Kind, g.Els.Count.ToString(Inv), g.LengthFt.ToString("0.##", Inv),
                 g.Voted != null ? VotedText(g.Voted) : (g.Kind == "transition" && g.Els.Count == 1 ? string.Join(" -> ", g.Els[0].Conns.Select(SizeText).ToArray()) : ""),
                 g.Votes, g.RunName, g.System, g.Outliers.ToString(Inv), g.SizeJumps.ToString(Inv), g.NameDev.ToString(Inv), g.SysDev.ToString(Inv),
                 string.Join(";", g.Els.Select(e => e.Id).ToArray()), g.RunEnds }.Select(CsvCell).ToArray()));
