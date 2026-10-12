@@ -589,8 +589,9 @@ public partial class DuctsToPluto
             }
         }
         if (seen.Count == 0) return null;
-        return string.Format(Inv, "Navisworks {0} vs Revit {1}", rect ? string.Format(Inv, "{0:0.#}x{1:0.#}", w, h) : string.Format(Inv, "{0:0.#} dia", d),
-            string.Join("/", seen.Distinct().ToArray()));
+        return string.Format(Inv, "Navisworks {0} vs Revit {1} (mesh {2})", rect ? string.Format(Inv, "{0:0.#}x{1:0.#}", w, h) : string.Format(Inv, "{0:0.#} dia", d),
+            string.Join("/", seen.Distinct().ToArray()),
+            double.IsNaN(r.FitA) || double.IsNaN(r.FitB) ? "n/a" : string.Format(Inv, "{0:0.#}x{1:0.#}", r.FitA, r.FitB));
     }
 
     // <out>.flags.csv: one row per flagged part, Revit elements in scope, then Navisworks-only rows. Regenerated
