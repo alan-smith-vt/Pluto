@@ -12,7 +12,7 @@ using SAP2000v1;
 public class SapDucts
 {
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
-    public const string Mat = "DUCT_STEEL", NoSize = "DUCT_NOSIZE";
+    public const string Mat = "DUCT_STEEL", NoSize = "DUCT_NOSIZE", Stub = "TAP_STUB", StubMat = "RIGID_STUB";
 
     public SapSurvey S;
     cSapModel M { get { return S.Model; } }
@@ -47,6 +47,7 @@ public class SapDucts
             addTo("DUCT_ALL", name);
             addTo("SRC_" + Clean(r["Source"]), name);
             if (sec == NoSize) addTo("FLAG_NO_SIZE", name);
+            if (sec == Stub) addTo("TAP_STUBS", name);
             foreach (string f in (r["Flags"] ?? "").Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)) addTo("FLAG_" + Clean(f), name);
         }
         foreach (KeyValuePair<string, List<string>> kv in groups)
@@ -72,9 +73,21 @@ public class SapDucts
         return name;
     }
 
-    // DUCT_<W>x<H>_t<thk> (SetTube: depth = H, width = W) or DUCT_<D>dia_t<thk> (SetPipe); none -> DUCT_NOSIZE
+    // DUCT_<W>x<H>_t<thk> (SetTube: depth = H, width = W) or DUCT_<D>dia_t<thk> (SetPipe); none -> DUCT_NOSIZE;
+    // Shape "rigid" (tap stub: duct centreline to the tap point on its side) -> TAP_STUB, stiff and weightless
     string Section(HashSet<string> made, Dictionary<string, string> r)
     {
+        if (r["Shape"] == "rigid")
+        {
+            if (made.Add(Stub))
+            {
+                Check(M.PropMaterial.SetMaterial(StubMat, eMatType.Steel, -1, "", ""), "SetMaterial " + StubMat);
+                Check(M.PropMaterial.SetMPIsotropic(StubMat, 29000 * 100, 0.3, 0, 0), "SetMPIsotropic " + StubMat);
+                Check(M.PropMaterial.SetWeightAndMass(StubMat, 1, 0, 0), "SetWeightAndMass " + StubMat);
+                Check(M.PropFrame.SetTube(Stub, StubMat, 12, 12, 1, 1, -1, "", ""), "SetTube " + Stub);
+            }
+            return Stub;
+        }
         double w = Num(r, "W_in"), h = Num(r, "H_in"), d = Num(r, "Dia_in"), t = Num(r, "Thk_in");
         if (double.IsNaN(t) || t <= 0) t = 0.06;
         bool round = r["Shape"] == "round" && !double.IsNaN(d);

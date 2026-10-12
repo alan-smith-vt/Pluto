@@ -444,7 +444,7 @@ public partial class DuctsToPluto
 
         // Cross sections: each part's beams get the size its SAP frame gets (SegSize); a tee's through beam is
         // drawn whole (SAP splits it at the branch, same size). Links keep the thin "revit part" pipe.
-        var secOf = new Dictionary<string, int>(StringComparer.Ordinal); int nOriented = 0;
+        var secOf = new Dictionary<string, int>(StringComparer.Ordinal); int nOriented = 0; var gTap = new List<uint>();
         Func<string, double, double, double, double, int> sec = (shape, w, h, d, t) =>
         {
             bool round = shape == "round" && !double.IsNaN(d);
@@ -465,6 +465,9 @@ public partial class DuctsToPluto
             foreach (int id in e.Beams)
             {
                 int q; if (!connOf.TryGetValue(beams[id].NodeA + "-" + beams[id].NodeB, out q)) q = -1;
+                // tap point on a straight's side (Curve connector, 2026-10-12): the stub from the centreline is a
+                // thin link (a box at the tap's size stood out of the duct as a plate); SAP: rigid stub
+                if (q >= 0 && IsTapPoint(e.Conns[q])) { beams[id].SectionIndex = 0; gTap.Add((uint)id); continue; }
                 string shape, ssrc; double w, h, d; RvConn src;
                 SegSize(e, q, r, out shape, out w, out h, out d, out ssrc, out src);
                 beams[id].SectionIndex = sec(shape, w, h, d, t);
@@ -503,6 +506,7 @@ public partial class DuctsToPluto
             if (gOnly.Count > 0) sc.AddGroup("Revit only (no Navisworks match)", "#ff3b3b", "beams", gOnly, new[] { "duct", "revit", "unmatched" }, "REVIT_ONLY");
             if (gNear.Count > 0) sc.AddGroup("Link: near (gap / overlap)", "#ffd23f", "beams", gNear, new[] { "duct", "revit", "link" }, null);
             if (gSide.Count > 0) sc.AddGroup("Link: side branch", "#8ae04f", "beams", gSide, new[] { "duct", "revit", "link" }, null);
+            if (gTap.Count > 0) sc.AddGroup("Link: tap stub (centreline to tap point)", "#b07cff", "beams", gTap, new[] { "duct", "revit", "link" }, null);
             if (gConn.Count > 0) sc.AddNodeGroup("Revit joint: connected", "#3fc1a5", gConn, new[] { "duct", "revit", "joint" });
             if (gTouch.Count > 0) sc.AddNodeGroup("Revit joint: touching, not connected", "#ff9f1c", gTouch, new[] { "duct", "revit", "touching" });
             if (gOut.Count > 0) sc.AddNodeGroup("Revit joint: connected outside the room", "#4f8cff", gOut, new[] { "duct", "revit", "outside" });
@@ -596,7 +600,7 @@ public partial class DuctsToPluto
         var bad = new List<string>();
         foreach (RvConn k in e.Conns)
         {
-            Opening o = k.Mesh; if (o == null) continue;
+            Opening o = k.Mesh; if (o == null || IsTapPoint(k)) continue;   // a tap point has no mesh end of its own
             // confirmed when ANY ring centred at that end matches (flange edge, duct rim further back, ...)
             bool ok = false;
             var rings = new List<string>();
@@ -685,7 +689,7 @@ public partial class DuctsToPluto
         var s = new StringBuilder();
         s.AppendLine("Frame,JointI,JointJ,XI_in,YI_in,ZI_in,XJ_in,YJ_in,ZJ_in,Shape,W_in,H_in,Dia_in,Thk_in,ThkSource,SizeSource,Source,RevitElementId,NavisId,Flags");
         Func<int, double[]> at = id => new[] { (nodes[id].xyz.X / scale + off[0]) * 12, (nodes[id].xyz.Y / scale + off[1]) * 12, (nodes[id].xyz.Z / scale + off[2]) * 12 };
-        int nf = 0, noFrame = 0, noSize = 0, nav = 0;
+        int nf = 0, noFrame = 0, noSize = 0, nav = 0, nStub = 0;
         Action<string, string, double[], double[], string, double, double, double, double, string, string, string, string, string, string> line =
             (ji, jj, p, q, shape, w, h, d, t, tsrc, ssrc, src, rid, nid, flags) =>
             {
@@ -703,7 +707,8 @@ public partial class DuctsToPluto
             {
                 if (g[0] == g[1]) continue;
                 string shape, ssrc; double w, h, d;
-                SegSize(e, g[2], r, out shape, out w, out h, out d, out ssrc);
+                if (g[2] >= 0 && IsTapPoint(e.Conns[g[2]])) { shape = "rigid"; w = h = d = double.NaN; ssrc = "tap-stub"; nStub++; }
+                else SegSize(e, g[2], r, out shape, out w, out h, out d, out ssrc);
                 if (ssrc == "none") noSize++;
                 line("N" + g[0], "N" + g[1], at(g[0]), at(g[1]), shape, w, h, d, t, t == 0.06 ? "default" : "navisworks", ssrc, e.Only && e.LocRow < 0 ? "revit-only" : "revit",
                     e.Id, r != null ? r.NavisId : "", flags);
@@ -722,8 +727,8 @@ public partial class DuctsToPluto
                 t == 0.06 ? "default" : "navisworks", ssrc, "navisworks-only", "", r.NavisId, "NAVIS_ONLY");
         }
         File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));
-        return string.Format(Inv, "SAP frames (<out>.frames.csv): {0} ({1} from Navisworks-only rows), Revit elements without a frame (1 connector) {2}, frames without a size {3}",
-            nf, nav, noFrame, noSize);
+        return string.Format(Inv, "SAP frames (<out>.frames.csv): {0} ({1} from Navisworks-only rows), Revit elements without a frame (1 connector) {2}, frames without a size {3}, rigid tap stubs {4}",
+            nf, nav, noFrame, noSize, nStub);
     }
 
     // Mesh-measured connector sizes (2026-10-12): the probe's connectors (MeshConnectors) on each matched
@@ -829,6 +834,9 @@ public partial class DuctsToPluto
         if (yl < 0.2) return null;
         return new[] { y[0] / yl, y[1] / yl, y[2] / yl };
     }
+
+    // Revit "Curve" connector: where a tap meets a duct's side (not an end of the part)
+    static bool IsTapPoint(RvConn k) { return string.Equals(k.Type, "Curve", StringComparison.OrdinalIgnoreCase); }
 
     static double ConnPerim(RvConn k)
     {
