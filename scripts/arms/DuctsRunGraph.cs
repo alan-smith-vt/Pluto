@@ -271,6 +271,15 @@ public partial class DuctsToPluto
         return nr >= 0 ? rows[nr].RunName : "";
     }
 
+    // where a part's own system name comes from, for the label: "<name> (<source>)", or "none"
+    static string NameSource(RvEl e, List<Row> rows, Func<RvEl, List<int>> rowsOf)
+    {
+        string rn = PartRunName(e, rows, rowsOf);
+        string src = e.RunName != "" ? "Revit RunName " + e.RunName : rn != "" ? "Navisworks RunName " + rn + " (GUID match)" : e.System != "" ? "Revit system " + e.System : "";
+        string n = SystemBase(rn, e.System);
+        return n == "" ? "none" : n + " from " + src;
+    }
+
     // <out>.runs.csv: one row per segment (transitions are segments of their own)
     static void WriteRunsCsv(string path, List<RunSeg> segs)
     {

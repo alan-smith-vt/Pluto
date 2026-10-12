@@ -500,7 +500,7 @@ public partial class DuctsToPluto
         foreach (RvEl e in scope)
         {
             string extra = " | " + (e.Kind != "" ? e.Kind : "?")
-                + (e.Sys >= 0 ? string.Format(Inv, " | system {0} (C{1})", e.SysName, e.Sys) : "")
+                + (e.Sys >= 0 ? string.Format(Inv, " | system {0} (C{1}), own name {2}", e.SysName, e.Sys, NameSource(e, rows, rowsOf)) : "")
                 + (e.Run >= 0 ? string.Format(Inv, " | line R{0} seg S{1}", e.Run, e.Seg) : "")
                 + (e.Voted != null ? " voted " + VotedText(e.Voted) : "");
             foreach (int id in e.Beams) labels[id] += extra;

@@ -84,8 +84,10 @@ public partial class DuctsToPluto
             foreach (RvConn k in e.Conns)
                 foreach (string t in k.To) { RvConn q; if (conns.TryGetValue(t, out q) && inScope.Contains(q.Owner)) strong(e, q.Owner); }
         foreach (KeyValuePair<RvConn, RvConn> kv in touch) strong(kv.Key.Owner, kv.Value.Owner);
-        foreach (RvConn[] p in nearPairs) weak(p[0].Owner, p[1].Owner, "near link");
-        foreach (RvEl[] p in sidePairs) weak(p[0], p[1], "side link");
+        // weak candidates: near / side links, then proximity over the drawn boxes; applied in two passes (below)
+        var cands = new List<Tuple<RvEl, RvEl, string>>();
+        foreach (RvConn[] p in nearPairs) cands.Add(Tuple.Create(p[0].Owner, p[1].Owner, "near link"));
+        foreach (RvEl[] p in sidePairs) cands.Add(Tuple.Create(p[0], p[1], "side link"));
 
         // proximity over the drawn boxes
         var boxes = new List<PartBox>();
@@ -111,7 +113,6 @@ public partial class DuctsToPluto
                 for (int i = 0; i < 3; i++) { bx.Lo[i] = Math.Min(a[i], b[i]) - rad; bx.Hi[i] = Math.Max(a[i], b[i]) + rad; }
                 boxes.Add(bx);
             }
-        int prox = 0;
         for (int i = 0; i < boxes.Count; i++)
             for (int j = i + 1; j < boxes.Count; j++)
             {
@@ -120,11 +121,23 @@ public partial class DuctsToPluto
                 bool overlap = true;
                 for (int k = 0; k < 3 && overlap; k++) if (p.Hi[k] < q.Lo[k] || q.Hi[k] < p.Lo[k]) overlap = false;
                 if (!overlap || !(LineInBox(p, q) || LineInBox(q, p))) continue;
-                if (!weak(p.Owner, q.Owner, "proximity")) continue;
-                prox++;
-                AddFlag(p.Owner, "JOINED_BY_PROXIMITY", "joined to " + q.Owner.Id + " by proximity");
-                AddFlag(q.Owner, "JOINED_BY_PROXIMITY", "joined to " + p.Owner.Id + " by proximity");
+                cands.Add(Tuple.Create(p.Owner, q.Owner, "proximity"));
             }
+        // pass 1: weak joins between groups that both carry a name and agree; pass 2: the rest (a group without a
+        // name), links before proximity, so an unnamed branch joins along its own link before a duct passing over
+        // it can claim it by proximity (2026-10-12)
+        Action<Tuple<RvEl, RvEl, string>> apply = c =>
+        {
+            if (find(c.Item1) == find(c.Item2) || !weak(c.Item1, c.Item2, c.Item3) || c.Item3 != "proximity") return;
+            AddFlag(c.Item1, "JOINED_BY_PROXIMITY", "joined to " + c.Item2.Id + " by proximity");
+            AddFlag(c.Item2, "JOINED_BY_PROXIMITY", "joined to " + c.Item1.Id + " by proximity");
+        };
+        foreach (Tuple<RvEl, RvEl, string> c in cands)
+        {
+            string na = major(find(c.Item1)), nb = major(find(c.Item2));
+            if (na != "" && na == nb) apply(c);
+        }
+        foreach (Tuple<RvEl, RvEl, string> c in cands) apply(c);
 
         // components -> systems, biggest first, named by majority service
         var comp = new Dictionary<RvEl, List<RvEl>>();
