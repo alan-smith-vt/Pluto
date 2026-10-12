@@ -90,7 +90,7 @@ public partial class DuctsToPluto
             e.System = Get(c, "SystemName"); e.Level = Get(c, "Level"); e.Fab = Get(c, "IsFabrication") == "1";
             els[e.Id] = e;
         }
-        var conns = new Dictionary<string, RvConn>(StringComparer.Ordinal);
+        var conns = new Dictionary<string, RvConn>(StringComparer.Ordinal); int droppedCurve = 0;
         foreach (Dictionary<string, string> c in ReadCsv(Path.Combine(revitRun, "connectors.csv")))
         {
             RvEl e; if (!els.TryGetValue(Get(c, "ElementId"), out e)) continue;
@@ -105,6 +105,9 @@ public partial class DuctsToPluto
             if (!double.IsNaN(wx) && !double.IsNaN(wy) && !double.IsNaN(wz)) k.WX = new[] { wx, wy, wz };
             k.Shape = Get(c, "Shape"); k.W = Num(c, "Width_in"); k.H = Num(c, "Height_in"); k.Dia = Num(c, "Diameter_in");
             foreach (string t in Get(c, "ConnectedTo").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)) k.To.Add(t);
+            // a Curve connector (point on a part's side) connected to nothing: dropped, the part stays a plain
+            // straight (test room: fab straights carry them at transitions; drawn as stubs to nothing, 2026-10-12)
+            if (IsTapPoint(k) && k.To.Count == 0) { droppedCurve++; continue; }
             e.Conns.Add(k); conns[k.Key] = k;
         }
         int noConn = 0;
@@ -571,6 +574,7 @@ public partial class DuctsToPluto
         s.AppendLine("room(s):        " + (byRoom ? room : "(all)"));
         s.AppendLine(string.Format(Inv, "Revit elements {0} (no connectors {1}); matched by IfcGUID parameter {2}, by GUID computed from UniqueId {3}; shared GUIDs {4}",
             els.Count, noConn, byParam, byCalc, rvByGuid.Count));
+        s.AppendLine(string.Format(Inv, "Curve connectors (point on a part's side) connected to nothing, dropped (whole model): {0}", droppedCurve));
         s.AppendLine(string.Format(Inv, "frame (Revit internal -> Navisworks): x' = {0:0.######} x - {1:0.######} y + {2:0.###}; y' = {1:0.######} x + {0:0.######} y + {3:0.###}; z' = z + {4:0.###}",
             T[0], T[1], T[2], T[3], T[4]));
         s.AppendLine("scale check = spread of Navisworks centres / spread of Revit centres (1 = same units)");
