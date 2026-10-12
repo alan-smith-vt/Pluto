@@ -42,17 +42,21 @@ public partial class DuctsToPluto
         find = e => { while (parent[e] != e) { parent[e] = parent[parent[e]]; e = parent[e]; } return e; };
         // names first (2026-10-12: a weak join bridged system A into the system B run next to it in a test room). STRONG joins
         // (Revit connection, touching ends) always join, flagged SYSTEM_NAME_CONFLICT across two names; WEAK joins
-        // (near / side links, proximity) join only when the names the two GROUPS already carry overlap or one
-        // group has none (so an unnamed part cannot bridge two names either), else are BLOCKED, listed in match.txt.
+        // (near / side links, proximity) join only when the two GROUPS' majority names agree or one group has none
+        // (so an unnamed part cannot bridge two names either), else are BLOCKED, listed in match.txt.
         var nameOf = new Dictionary<RvEl, string>();
         foreach (RvEl e in scope) nameOf[e] = SystemBase(PartRunName(e, rows, rowsOf), e.System);
-        var names = new Dictionary<RvEl, HashSet<string>>();   // group root -> names in it
-        foreach (RvEl e in scope) { names[e] = new HashSet<string>(StringComparer.Ordinal); if (nameOf[e] != "") names[e].Add(nameOf[e]); }
+        // group root -> name counts; a group's name is its MAJORITY (one mislabelled part must not let a weak
+        // join through: user, 2026-10-12, suspects a single mislabelled segment in a test room)
+        var names = new Dictionary<RvEl, Dictionary<string, int>>();
+        foreach (RvEl e in scope) { names[e] = new Dictionary<string, int>(StringComparer.Ordinal); if (nameOf[e] != "") names[e][nameOf[e]] = 1; }
+        Func<RvEl, string> major = r => names[r].Count == 0 ? "" : names[r].OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.Ordinal).First().Key;
         Action<RvEl, RvEl> union = (a, b) =>
         {
             if (a == null || b == null || !parent.ContainsKey(a) || !parent.ContainsKey(b)) return;
             RvEl ra = find(a), rb = find(b); if (ra == rb) return;
-            parent[ra] = rb; names[rb].UnionWith(names[ra]);
+            parent[ra] = rb;
+            foreach (KeyValuePair<string, int> kv in names[ra]) { int c; names[rb].TryGetValue(kv.Key, out c); names[rb][kv.Key] = c + kv.Value; }
         };
         Blocked.Clear();
         Action<RvEl, RvEl> strong = (a, b) =>
@@ -68,10 +72,10 @@ public partial class DuctsToPluto
         Func<RvEl, RvEl, string, bool> weak = (a, b, kind) =>
         {
             if (a == b || !parent.ContainsKey(a) || !parent.ContainsKey(b)) return false;
-            HashSet<string> na = names[find(a)], nb = names[find(b)];
-            if (na.Count > 0 && nb.Count > 0 && !na.Overlaps(nb))
+            string na = major(find(a)), nb = major(find(b));
+            if (na != "" && nb != "" && na != nb)
             {
-                Blocked.Add(string.Format(Inv, "{0}: {1} ({2}) - {3} ({4})", kind, a.Id, string.Join("/", na.ToArray()), b.Id, string.Join("/", nb.ToArray())));
+                Blocked.Add(string.Format(Inv, "{0}: {1} ({2}) - {3} ({4})", kind, a.Id, na, b.Id, nb));
                 return false;
             }
             union(a, b); return true;
