@@ -28,7 +28,7 @@ public partial class DuctsToPluto
     }
 
     static List<RunSeg> AnalyzeRuns(List<RvEl> scope, List<Row> rows, Func<RvEl, List<int>> rowsOf, Func<RvConn, int> nodeOf,
-        Dictionary<int, Node> nodes, double[] off, double scale)
+        Dictionary<int, Node> nodes, double[] off, double scale, List<RvConn[]> nearPairs)
     {
         foreach (RvEl e in scope) e.Kind = KindOf(e);
         // joints: node -> (element, connector) attached there
@@ -60,21 +60,33 @@ public partial class DuctsToPluto
         foreach (RvEl e in scope) if (inRun(e)) { runOf[e] = e; segOf[e] = e; }
         Func<Dictionary<RvEl, RvEl>, RvEl, RvEl> find = null;
         find = (p, e) => { while (p[e] != e) { p[e] = p[p[e]]; e = p[e]; } return e; };
-        foreach (List<KeyValuePair<RvEl, RvConn>> l in at.Values)
+        var ownerOf = new Dictionary<RvConn, RvEl>();
+        foreach (RvEl e in scope) foreach (RvConn k in e.Conns) ownerOf[k] = e;
+        Action<RvConn, RvConn> join = (ka, kb) =>
         {
-            if (l.Count != 2) continue;
-            RvEl a = l[0].Key, b = l[1].Key;
-            if (a == b || !port.Contains(l[0].Value) || !port.Contains(l[1].Value)) continue;
+            RvEl a = ownerOf[ka], b = ownerOf[kb];
+            if (a == b || !port.Contains(ka) || !port.Contains(kb)) return;
             runOf[find(runOf, a)] = find(runOf, b);
             if (sized(a) && sized(b))
             {
                 segOf[find(segOf, a)] = find(segOf, b);
                 // two run parts meeting at different sizes, neither a transition
-                string ka = SizeKey(l[0].Value), kb = SizeKey(l[1].Value);
-                if (ka != null && kb != null && !SameSize(l[0].Value, l[1].Value))
-                    foreach (KeyValuePair<RvEl, RvConn> p in l)
-                        AddFlag(p.Key, "SIZE_CHANGE_WITHOUT_TRANSITION", "meets " + (p.Key == a ? SizeText(l[1].Value) : SizeText(l[0].Value)) + " at a joint, own " + SizeText(p.Value));
+                if (ConnSize(ka) != null && ConnSize(kb) != null && !SameSize(ka, kb))
+                {
+                    AddFlag(a, "SIZE_CHANGE_WITHOUT_TRANSITION", "meets " + SizeText(kb) + " at a joint, own " + SizeText(ka));
+                    AddFlag(b, "SIZE_CHANGE_WITHOUT_TRANSITION", "meets " + SizeText(ka) + " at a joint, own " + SizeText(kb));
+                }
             }
+        };
+        foreach (List<KeyValuePair<RvEl, RvConn>> l in at.Values) if (l.Count == 2) join(l[0].Value, l[1].Value);
+        // near links (open ends facing each other across a gap / overlap, drawn as 'Link: near'): the run carries on
+        // across them; the parts keep NEAR_GAP (2026-10-12: R5 stopped at a 45 across a gap, R10 carried on)
+        var nearJoined = new HashSet<RvConn>();
+        foreach (RvConn[] p in nearPairs ?? new List<RvConn[]>())
+        {
+            if (!ownerOf.ContainsKey(p[0]) || !ownerOf.ContainsKey(p[1])) continue;
+            join(p[0], p[1]);
+            if (port.Contains(p[0]) && port.Contains(p[1])) { nearJoined.Add(p[0]); nearJoined.Add(p[1]); }
         }
         // number runs and segments (bigger runs first)
         var runs = new Dictionary<RvEl, List<RvEl>>();
@@ -102,7 +114,7 @@ public partial class DuctsToPluto
             foreach (RvEl e in members)
                 foreach (RvConn k in e.Conns)
                 {
-                    if (!port.Contains(k)) continue;
+                    if (!port.Contains(k) || nearJoined.Contains(k)) continue;
                     List<KeyValuePair<RvEl, RvConn>> l = at[nodeOf(k)];
                     if (l.Count == 2 && l[0].Key != l[1].Key && port.Contains(l[0].Value) && port.Contains(l[1].Value)) continue;
                     if (l.Count == 1) why.Add(e.Id + " open" + (k.To.Count > 0 ? " (connected outside the room)" : ""));

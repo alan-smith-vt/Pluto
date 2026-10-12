@@ -307,7 +307,7 @@ public partial class DuctsToPluto
         //   side branch: the end's axis meets another part's main line inside the segment (not within 1 in of
         //     its ends), the end lying within that part's half size + 3 in of the line
         var gNear = new List<uint>(); var gSide = new List<uint>();
-        var linked = new HashSet<RvConn>(); var nearSet = new HashSet<RvConn>();
+        var linked = new HashSet<RvConn>(); var nearSet = new HashSet<RvConn>(); var nearPairs = new List<RvConn[]>();
         var loose = new List<RvConn>();
         foreach (RvConn k in open) if (!touch.ContainsKey(k)) loose.Add(k);
         foreach (RvConn k in loose)
@@ -324,7 +324,7 @@ public partial class DuctsToPluto
                 bd = d; best = q; bAlong = along;
             }
             if (best == null) continue;
-            linked.Add(k); linked.Add(best); nearSet.Add(k); nearSet.Add(best);
+            linked.Add(k); linked.Add(best); nearSet.Add(k); nearSet.Add(best); nearPairs.Add(new[] { k, best });
             int id = RvBeam(beams, labels, ref nb, node(k), node(best), nodes, string.Format(Inv, "near: {0} {1:0.#} in | Revit {2} -> {3}",
                 bAlong >= 0 ? "gap" : "overlap", Math.Abs(bAlong) * 12, k.Owner.Id, best.Owner.Id));
             if (id > 0) gNear.Add((uint)id);
@@ -403,7 +403,7 @@ public partial class DuctsToPluto
         }
         // runs, segments and size voting (DuctsRunGraph.cs): adds SIZE_OUTLIER, SIZE_CHANGE_WITHOUT_TRANSITION,
         // RUNNAME_DEVIATION, SYSTEM_CHANGE and sets each part's Kind / Run / Seg / Voted
-        List<RunSeg> runSegs = AnalyzeRuns(scope, rows, rowsOf, k => node(k), nodes, off, scale);
+        List<RunSeg> runSegs = AnalyzeRuns(scope, rows, rowsOf, k => node(k), nodes, off, scale, nearPairs);
         WriteRunsCsv(outBase + ".runs.csv", runSegs);
         foreach (RvEl e in scope)
         {
