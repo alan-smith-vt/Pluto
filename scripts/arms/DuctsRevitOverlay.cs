@@ -1008,6 +1008,9 @@ public partial class DuctsToPluto
         double along = w[0] * b.D[0] + w[1] * b.D[1] + w[2] * b.D[2];
         double lat = Math.Sqrt(Math.Max(0, Dist2(a.P, b.P) - along * along)) * 12;
         if (lat <= 1) return -1;
+        // same size at both ends = an S-offset: drawn as its diagonal (the chord), not outlet axis + stub
+        // (2026-10-12, test room: an S-bend got a sideways bar); taps / eccentric reducers change size
+        if (SameSize(a, b)) return -1;
         return ConnPerim(a) > 0 && ConnPerim(a) < ConnPerim(b) ? 0 : 1;
     }
 
