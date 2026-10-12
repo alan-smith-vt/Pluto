@@ -367,8 +367,13 @@ public partial class DuctsToPluto
                 bool navFabAny = pr2.Exists(i => rows[i].Cat == Fab);
                 if (e.Fab != navFabAny) { e.Flags.Add("FAB_CATEGORY_MISMATCH"); e.Detail.Add("Revit " + (e.Fab ? "fabrication" : e.Cat) + " vs Navisworks " + rows[pr2[0]].Cat); }
                 if (pr2.Count > 1 || partners[pr2[0]] > 1) { e.Flags.Add("SPLIT"); e.Detail.Add(string.Format(Inv, "{0} Navisworks : {1} Revit", pr2.Count, partners[pr2[0]])); }
+                // 2026-10-12: Revit connector = duct (free) size = mesh rim in a test room; the Navisworks stated size
+                // differs on most fab parts (16x14 vs free 14x12). SIZE_DIFFERS = Revit vs mesh (geometry);
+                // NAVIS_SIZE_DIFFERS = Navisworks stated vs Revit (documented, not a geometry problem).
+                string md = MeshDiff(e);
+                if (md != null) { e.Flags.Add("SIZE_DIFFERS"); e.Detail.Add(md); }
                 string sd = SizeDiff(e, rows[pr2[0]]);
-                if (sd != null) { e.Flags.Add("SIZE_DIFFERS"); e.Detail.Add(sd); }
+                if (sd != null) { e.Flags.Add("NAVIS_SIZE_DIFFERS"); e.Detail.Add(sd); }
             }
             bool fOpen = false, fTouch = false, fNear = false;
             foreach (RvConn k in e.Conns)
@@ -567,6 +572,24 @@ public partial class DuctsToPluto
         return res;
     }
 
+    // Revit connector sizes against the mesh-measured connector at the same end (MatchMeshConnectors), within
+    // 1 in per side: null when every connector with a mesh size agrees (or none has one), else
+    // "Revit <size> vs mesh <size>" per disagreeing end.
+    static string MeshDiff(RvEl e)
+    {
+        var bad = new List<string>();
+        foreach (RvConn k in e.Conns)
+        {
+            Opening o = k.Mesh; if (o == null) continue;
+            bool ok;
+            if (k.Shape == "Round") ok = o.Shape == "round" && !double.IsNaN(k.Dia) && Math.Abs(k.Dia - o.Dia) <= 1;
+            else ok = o.Shape != "round" && !double.IsNaN(k.W) && !double.IsNaN(k.H)
+                && Math.Abs(Math.Max(k.W, k.H) - Math.Max(o.A, o.B)) <= 1 && Math.Abs(Math.Min(k.W, k.H) - Math.Min(o.A, o.B)) <= 1;
+            if (!ok) bad.Add(string.Format(Inv, "Revit {0} vs mesh {1}", k.Shape == "Round" ? string.Format(Inv, "{0:0.#} dia", k.Dia) : string.Format(Inv, "{0:0.#}x{1:0.#}", k.W, k.H), MeshSize(o)));
+        }
+        return bad.Count > 0 ? string.Join(" / ", bad.ToArray()) : null;
+    }
+
     // Stated size of the Navisworks row (Width / Height / Diameter, else read from the Name) against the element's
     // Revit connector sizes: null when any connector matches within 0.5 in (eccentric transitions and tees carry
     // several sizes) or either side is unknown, else "Navisworks <size> vs Revit <sizes>".
@@ -727,14 +750,38 @@ public partial class DuctsToPluto
         return o.Shape == "round" ? string.Format(Inv, "{0:0.#} dia", o.Dia) : string.Format(Inv, "{0:0.#}x{1:0.#}", o.A, o.B);
     }
 
-    // Size of one piece of a Revit element: connector q's own size for a branch (q >= 0), else the Navisworks
-    // stated size of the matched row r, else the element's first connector. ssrc = navisworks / revit / none.
+    // Size of one piece of a Revit element, from the Revit connectors (the duct's free size; agrees with the
+    // mesh rim in a test room, 2026-10-12): a branch piece (q >= 0) its own connector; a main piece the larger of the
+    // element's non-branch connectors (ssrc "revit-transition" when they differ: a reducer drawn at its big
+    // end); the Navisworks stated size of row r only when Revit has none. ssrc = revit / revit-transition /
+    // navisworks / none.
     static void SegSize(RvEl e, int q, Row r, out string shape, out double w, out double h, out double d, out string ssrc)
     {
-        if (q < 0 && r != null && NavSize(r, out shape, out w, out h, out d)) { ssrc = "navisworks"; return; }
-        RvConn k = e.Conns[q >= 0 ? q : 0];
-        shape = k.Shape == "Round" ? "round" : "rect"; w = k.W; h = k.H; d = k.Dia; ssrc = "revit";
-        if (shape == "round" ? double.IsNaN(d) : double.IsNaN(w) || double.IsNaN(h)) ssrc = "none";
+        RvConn k = null; bool differ = false;
+        if (q >= 0) k = e.Conns[q];
+        else
+        {
+            var branch = new HashSet<int>(); foreach (int[] g in e.Segs) if (g[2] >= 0) branch.Add(g[2]);
+            for (int i = 0; i < e.Conns.Count; i++)
+            {
+                if (branch.Contains(i) || ConnPerim(e.Conns[i]) <= 0) continue;
+                if (k != null && Math.Abs(ConnPerim(e.Conns[i]) - ConnPerim(k)) > 1) differ = true;
+                if (k == null || ConnPerim(e.Conns[i]) > ConnPerim(k)) k = e.Conns[i];
+            }
+        }
+        if (k != null && ConnPerim(k) > 0)
+        {
+            shape = k.Shape == "Round" ? "round" : "rect"; w = k.W; h = k.H; d = k.Dia; ssrc = differ ? "revit-transition" : "revit";
+            return;
+        }
+        if (r != null && NavSize(r, out shape, out w, out h, out d)) { ssrc = "navisworks"; return; }
+        shape = "rect"; w = h = d = double.NaN; ssrc = "none";
+    }
+
+    static double ConnPerim(RvConn k)
+    {
+        if (k.Shape == "Round") return double.IsNaN(k.Dia) ? 0 : Math.PI * k.Dia;
+        return double.IsNaN(k.W) || double.IsNaN(k.H) ? 0 : 2 * (k.W + k.H);
     }
 
     // A Navisworks row's axis (feet): X1..Z2, else the bbox's long axis through its centre
