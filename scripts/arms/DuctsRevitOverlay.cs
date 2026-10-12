@@ -388,9 +388,33 @@ public partial class DuctsToPluto
                 List<uint> l; if (!flagGroups.TryGetValue(f, out l)) { l = new List<uint>(); flagGroups[f] = l; }
                 foreach (int id in e.Beams) l.Add((uint)id);
             }
-        var navOnly = new List<int>();
-        foreach (int i in navMissing) if (!partners.ContainsKey(i)) navOnly.Add(i);
-        WriteFlagsCsv(outBase + ".flags.csv", scope, rows, rowsOf, navOnly);
+        // Navisworks-only rows a Revit part runs through (a point every 0.25 ft along its frames inside the row's
+        // bbox + 0.1 ft) are duplicates of Revit parts (bends, reducers, accessories whose centre missed the box):
+        // listed in flags.csv as NAVIS_ONLY with "covered by Revit <id>", no frame. The rest are frames.
+        var navOnly = new List<int>(); var navCovered = new Dictionary<int, string>();
+        foreach (int i in navMissing)
+        {
+            if (partners.ContainsKey(i)) continue;
+            Row r = rows[i]; string by = null;
+            foreach (RvEl e in scope)
+            {
+                foreach (int[] g in e.Segs)
+                {
+                    double[] a = NodeFt(nodes[g[0]], off, scale), b = NodeFt(nodes[g[1]], off, scale);
+                    int n = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(Dist2(a, b)) / 0.25));
+                    for (int s2 = 0; s2 <= n && by == null; s2++)
+                    {
+                        double t = (double)s2 / n; bool inside = true;
+                        for (int ax = 0; ax < 3; ax++) { double v = a[ax] + (b[ax] - a[ax]) * t; if (v < r.Min[ax] - 0.1 || v > r.Max[ax] + 0.1) { inside = false; break; } }
+                        if (inside) by = e.Id;
+                    }
+                    if (by != null) break;
+                }
+                if (by != null) break;
+            }
+            if (by != null) navCovered[i] = by; else navOnly.Add(i);
+        }
+        WriteFlagsCsv(outBase + ".flags.csv", scope, rows, rowsOf, navOnly, navCovered);
         string framesNote = WriteFramesCsv(outBase + ".frames.csv", scope, rows, rowsOf, navOnly, nodes, off, scale);
         // Navisworks-only rows are SAP frames too (own joints, not connected): drawn so the overlay shows the SAP model
         var gNavOnly = new List<uint>();
@@ -475,7 +499,7 @@ public partial class DuctsToPluto
             int n = 0; foreach (RvEl e in scope) if (e.Flags.Contains(kv.Key)) n++;
             fc.Add(kv.Key + " " + n);
         }
-        fc.Add("NAVIS_ONLY " + navOnly.Count);
+        fc.Add(string.Format(Inv, "NAVIS_ONLY {0} (+ {1} covered by a Revit part, no frame)", navOnly.Count, navCovered.Count));
         s.AppendLine("flags (parts; <out>.flags.csv): " + string.Join(", ", fc.ToArray()));
         s.AppendLine(framesNote);
         s.AppendLine();
@@ -536,7 +560,7 @@ public partial class DuctsToPluto
 
     // <out>.flags.csv: one row per flagged part, Revit elements in scope, then Navisworks-only rows. Regenerated
     // every run; flags clear themselves when the upstream models are fixed.
-    static void WriteFlagsCsv(string path, List<RvEl> scope, List<Row> rows, Func<RvEl, List<int>> rowsOf, List<int> navOnly)
+    static void WriteFlagsCsv(string path, List<RvEl> scope, List<Row> rows, Func<RvEl, List<int>> rowsOf, List<int> navOnly, Dictionary<int, string> navCovered)
     {
         var s = new StringBuilder();
         s.AppendLine("Source,RevitElementId,NavisId,RevitIfcGUID,NavisIfcGUID,RevitCategory,RevitFab,NavisCategory,Match,RevitSize,NavisSize,Flags,Detail");
@@ -552,7 +576,13 @@ public partial class DuctsToPluto
         foreach (int i in navOnly)
         {
             Row r = rows[i];
-            s.AppendLine(string.Join(",", new[] { "Navisworks", "", r.NavisId, "", r.Guid, "", "", r.Cat, "none", "", r.SizeText, "NAVIS_ONLY", r.Name }.Select(CsvCell).ToArray()));
+            s.AppendLine(string.Join(",", new[] { "Navisworks", "", r.NavisId, "", r.Guid, "", "", r.Cat, "none", "", r.SizeText, "NAVIS_ONLY", r.Name + "; SAP frame" }.Select(CsvCell).ToArray()));
+        }
+        foreach (KeyValuePair<int, string> kv in navCovered)
+        {
+            Row r = rows[kv.Key];
+            s.AppendLine(string.Join(",", new[] { "Navisworks", kv.Value, r.NavisId, "", r.Guid, "", "", r.Cat, "covered", "", r.SizeText, "NAVIS_ONLY",
+                r.Name + "; covered by Revit " + kv.Value + ", no frame" }.Select(CsvCell).ToArray()));
         }
         File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));
     }
@@ -634,6 +664,8 @@ public partial class DuctsToPluto
         if (!double.IsNaN(d)) { shape = "round"; w = h = double.NaN; return true; }
         shape = "rect"; return false;
     }
+
+    static double[] NodeFt(Node n, double[] off, double scale) { return new[] { n.xyz.X / scale + off[0], n.xyz.Y / scale + off[1], n.xyz.Z / scale + off[2] }; }
 
     static string R3(double v) { return double.IsNaN(v) ? "" : v.ToString("0.###", Inv); }
 
