@@ -260,11 +260,15 @@ public partial class DuctsToPluto
         return new[] { line, s.ToString() };
     }
 
-    // a part's run name: the Navisworks RunName of its row, else the Revit RunName parameter
+    // a part's run name: its own Revit RunName parameter, else the Navisworks RunName of its row ONLY when matched by
+    // IfcGUID (2026-10-12: a system A branch matched BY POSITION to the system B duct crossing over it took system B's name);
+    // "" -> callers fall back to the Revit system name
     static string PartRunName(RvEl e, List<Row> rows, Func<RvEl, List<int>> rowsOf)
     {
-        int nr = NavRow(e, rowsOf(e)); string nv = nr >= 0 ? rows[nr].RunName : "";
-        return nv != "" ? nv : e.RunName;
+        if (e.RunName != "") return e.RunName;
+        if (e.Match == "") return "";
+        int nr = NavRow(e, rowsOf(e));
+        return nr >= 0 ? rows[nr].RunName : "";
     }
 
     // <out>.runs.csv: one row per segment (transitions are segments of their own)
