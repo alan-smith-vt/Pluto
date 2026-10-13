@@ -9,8 +9,8 @@ using Autodesk.Revit.UI;
 
 namespace PlutoRevit
 {
-    // Read-only: the triangulated solids of every HVAC element (the ExportConnectors categories plus duct
-    // insulation / lining and fabrication hangers) whose bounding box touches one of the boxes in
+    // Read-only: the triangulated solids of every model element (any model category: the model is HVAC only;
+    // the overlay's run / no-run split sets the rest aside) whose bounding box touches one of the boxes in
     // C:\Temp\hvac\revit\mesh-boxes.txt. That file is written by the overlay
     // (Export-DuctsViewer.ps1 -Revit <run> -Room <codes>): one box per room in Revit internal feet, plus the fitted
     // Revit -> Navisworks frame, so this run converts with a plain -Run. Revit draws its views the same way: the
@@ -30,11 +30,6 @@ namespace PlutoRevit
         const string OutRoot = @"C:\Temp\hvac\revit-mesh";
         const long MaxTriangles = 10000000;   // stop (flagged) past this: the overlay would be unusable anyway
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
-        static readonly BuiltInCategory[] Cats = {
-            BuiltInCategory.OST_FabricationDuctwork, BuiltInCategory.OST_DuctCurves, BuiltInCategory.OST_DuctFitting,
-            BuiltInCategory.OST_DuctAccessory, BuiltInCategory.OST_FlexDuctCurves, BuiltInCategory.OST_DuctTerminal,
-            BuiltInCategory.OST_MechanicalEquipment, BuiltInCategory.OST_DuctInsulations, BuiltInCategory.OST_DuctLinings,
-            BuiltInCategory.OST_FabricationHangers };
 
         class Box { public string Name; public double[] Lo, Hi; }
 
@@ -68,14 +63,15 @@ namespace PlutoRevit
             var boxFilters = new List<ElementFilter>();
             foreach (Box b in boxes) boxFilters.Add(new BoundingBoxIntersectsFilter(new Outline(new XYZ(b.Lo[0], b.Lo[1], b.Lo[2]), new XYZ(b.Hi[0], b.Hi[1], b.Hi[2]))));
             ElementFilter inBoxes = boxFilters.Count == 1 ? boxFilters[0] : new LogicalOrFilter(boxFilters);
-            var els = new FilteredElementCollector(doc).WherePasses(new ElementMulticategoryFilter(new List<BuiltInCategory>(Cats)))
-                .WhereElementIsNotElementType().WherePasses(inBoxes).ToElements();
+            var els = new List<Element>();
+            foreach (Element e in new FilteredElementCollector(doc).WhereElementIsNotElementType().WherePasses(inBoxes))
+                if (e.Category != null && e.Category.CategoryType == CategoryType.Model) els.Add(e);
 
             var opt = new Options();
             opt.DetailLevel = ViewDetailLevel.Fine; opt.ComputeReferences = false; opt.IncludeNonVisibleObjects = false;
             var byCat = new SortedDictionary<string, long[]>();   // elements, with triangles, triangles kept
             var errors = new List<string>();
-            int rows = 0, written = 0, noRun = 0; long tris = 0, trisTotal = 0; bool capped = false;
+            int rows = 0, written = 0, noRun = 0, noTri = 0; long tris = 0, trisTotal = 0; bool capped = false;
             var sb = new StringBuilder();
             sb.AppendLine("Row,ElementId,UniqueId,IfcGUID,Category,Family,Type,RunName,SystemName,IsFabrication,Host,Box,TrianglesTotal,TrianglesKept");
             using (var bw = new BinaryWriter(File.Create(Path.Combine(dir, "mesh_tri.bin"))))
@@ -126,6 +122,7 @@ namespace PlutoRevit
                         int nKept = kept.Count / 9;
                         rows++; tris += nKept; trisTotal += total;
                         if (rn == "") noRun++;
+                        if (total == 0) noTri++;
                         long[] cc; if (!byCat.TryGetValue(cat, out cc)) { cc = new long[3]; byCat[cat] = cc; }
                         cc[0]++; if (nKept > 0) cc[1]++; cc[2] += nKept;
                         sb.Append(rows.ToString(Inv)).Append(',').Append(el.Id.ToString()).Append(',').Append(ExportConnectors.Q(el.UniqueId)).Append(',')
@@ -147,12 +144,12 @@ namespace PlutoRevit
             File.WriteAllText(Path.Combine(dir, "mesh_items.csv"), sb.ToString());
 
             var s = new StringBuilder();
-            s.AppendLine(string.Format(Inv, "NEW mesh el {0} with tri {1} tri {2} norun {3} err {4} boxes {5}{6}", rows, written, K(tris), noRun, errors.Count, boxes.Count, capped ? " CAPPED" : ""));
+            s.AppendLine(string.Format(Inv, "NEW mesh el {0} with tri {1} tri {2} norun {3} nogeom {4} err {5} boxes {6}{7}", rows, written, K(tris), noRun, noTri, errors.Count, boxes.Count, capped ? " CAPPED" : ""));
             s.AppendLine();
             s.AppendLine("PlutoRevit ExportMesh  " + t0.ToString("yyyy-MM-dd HH:mm:ss", Inv) + (capped ? "  ** STOPPED at " + MaxTriangles + " triangles: partial, use fewer rooms **" : ""));
             s.AppendLine("document: " + doc.PathName);
-            s.AppendLine(string.Format(Inv, "elements touching the boxes {0}, with triangles in a box {1}; triangles kept {2} of {3}; no run name {4}; errors {5}; {6:0.0} s",
-                rows, written, tris, trisTotal, noRun, errors.Count, (DateTime.Now - t0).TotalSeconds));
+            s.AppendLine(string.Format(Inv, "elements touching the boxes {0}, with triangles in a box {1}; triangles kept {2} of {3}; no run name {4}; no geometry {5}; errors {6}; {7:0.0} s",
+                rows, written, tris, trisTotal, noRun, noTri, errors.Count, (DateTime.Now - t0).TotalSeconds));
             s.AppendLine("boxes:"); foreach (Box b in boxes) s.AppendLine("  " + b.Name);
             s.AppendLine("by category (elements, with triangles, triangles kept):");
             foreach (var kv in byCat) s.AppendLine(string.Format(Inv, "  {0,7} {1,7} {2,9}  {3}", kv.Value[0], kv.Value[1], kv.Value[2], kv.Key));
