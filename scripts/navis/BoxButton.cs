@@ -138,11 +138,18 @@ namespace PlutoNavis
             if (g != "")
             {
                 Dictionary<string, string> p = DuctsButton.Props(it);
+                // RunName: IfcObjectProperties.RunName, else a plain "RunName" / "Run Name" on any tab, else the
+                // enclosing element's (a nested element with its own IfcGUID often carries no run of its own)
+                string run = DuctsButton.Ifc(p, "RunName");
+                if (run == "") run = DuctsButton.AnyTab(p, "RunName");
+                if (run == "") run = DuctsButton.AnyTab(p, "Run Name");
+                if (run == "") run = anc.Run;
+                string sys = DuctsButton.Get(p, "Element|System Name");
                 anc = new Anc
                 {
                     Guid = g, Cat = DuctsButton.Get(p, "Element|Category"), Fam = DuctsButton.Get(p, "Element|Family"),
                     Type = DuctsButton.Get(p, "Element|Type"), Size = DuctsButton.Ifc(p, "Size"), Name = it.DisplayName,
-                    Id = NavisId(it), Depth = depth, Run = DuctsButton.Ifc(p, "RunName"), Sys = DuctsButton.Get(p, "Element|System Name")
+                    Id = NavisId(it), Depth = depth, Run = run, Sys = sys != "" ? sys : anc.Sys
                 };
                 path = it.DisplayName;
             }
