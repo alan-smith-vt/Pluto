@@ -83,6 +83,8 @@ var FEAFeatures = (function () {
     var elAll    = document.getElementById('grAll');
     var elNone   = document.getElementById('grNone');
     var elInvert = document.getElementById('grInvert');
+    var elHideAll = document.getElementById('grHideAll');
+    var elShowAll = document.getElementById('grShowAll');
     var elFilter = document.getElementById('grFilter');
     // Filter box (2026-10-08): a group shows when its name or tags contain every word typed (any case).
     var filterText = '';
@@ -480,7 +482,7 @@ var FEAFeatures = (function () {
         showTab(listTab);
         var list = items();
         var can = list.length > 0 && !!C.shellModel();
-        [elAll, elNone, elInvert].forEach(function (b) { if (b) b.disabled = !can; });
+        [elAll, elNone, elInvert, elHideAll, elShowAll].forEach(function (b) { if (b) b.disabled = !can; });
         if (!list.length) {
             var empty = '<div class="gr-empty">' + (S.envelope ? 'No groups in file' : 'No features file') + '</div>';
             elList.innerHTML = empty;
@@ -602,6 +604,15 @@ var FEAFeatures = (function () {
         markDirty();
         refresh();
     }
+    // Hide all / Show all: the eye of every ELEMENT group the filter shows (node groups have no eye).
+    function setAllInvisible(invisible) {
+        items().forEach(function (g, gi) {
+            if (isNodeGroup(S.groupList[gi]) || !groupMatches(g, S.groupList[gi])) return;
+            if (invisible) g.invisible = true; else delete g.invisible;
+        });
+        markDirty();
+        refresh();
+    }
     // Move item `from` so it lands at index `to` (index in the ORIGINAL list, before removal).
     function moveGroup(from, to) {
         var list = items();
@@ -705,6 +716,8 @@ var FEAFeatures = (function () {
     if (elAll) elAll.addEventListener('click', function () { setAllHidden(function () { return false; }); });
     if (elNone) elNone.addEventListener('click', function () { setAllHidden(function () { return true; }); });
     if (elInvert) elInvert.addEventListener('click', function () { setAllHidden(function (h) { return !h; }); });
+    if (elHideAll) elHideAll.addEventListener('click', function () { setAllInvisible(true); });
+    if (elShowAll) elShowAll.addEventListener('click', function () { setAllInvisible(false); });
 
     // Public API. P(fn): runs on the PRIMARY model (section cuts, predicates, load cases, file
     // loading and the readout of primary members all mean the main model). Unwrapped calls act on

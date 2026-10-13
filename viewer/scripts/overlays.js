@@ -92,7 +92,7 @@ var FEAOverlays = (function () {
         var d = ov.drawable, sv = PlutoFormat.shellView(ov.unified);
         var ctx = {
             id: 'ov:' + ov.name + ':' + Date.now(), kind: 'overlay', feat: {}, ov: ov,
-            look: { visible: true, xray: false, color: ov.color },
+            look: { visible: true, xray: false, edges: false, color: ov.color },
             name: function () { return ov.name; },
             shellModel: function () { return sv; },
             beamView: function () { return d.beam ? d.beam.view : null; },
@@ -106,6 +106,7 @@ var FEAOverlays = (function () {
             markerParent: function () { return d.root; },
             setVisible: function (on) { ctx.look.visible = on; d.setVisible(on); redraw(); },
             setXray: function (on) { ctx.look.xray = on; d.setXray(on); redraw(); },
+            setEdges: d.shell ? function (on) { ctx.look.edges = on; d.setEdges(on); redraw(); } : null,
             setColor: function (hex) { ctx.look.color = hex; d.setColor(hex); redraw(); }
         };
         return ctx;
@@ -348,6 +349,14 @@ var FEAOverlays = (function () {
         xc.addEventListener('change', function () { ctx.setXray(xc.checked); });
         xr.appendChild(xc); xr.appendChild(document.createTextNode('x-ray'));
         r.appendChild(xr);
+        if (ctx.setEdges) {
+            var er = document.createElement('label'); er.className = 'rail-ghost';
+            er.title = 'Wireframe: draw every element\'s edges (hidden groups stay hidden)';
+            var ec = document.createElement('input'); ec.type = 'checkbox'; ec.className = 'fea-check'; ec.checked = !!ctx.look.edges;
+            ec.addEventListener('change', function () { ctx.setEdges(ec.checked); });
+            er.appendChild(ec); er.appendChild(document.createTextNode('edges'));
+            r.appendChild(er);
+        }
         if (ctx.setColor) {
             var sw = document.createElement('input'); sw.type = 'color'; sw.className = 'rail-swatch'; sw.value = ctx.look.color;
             sw.title = 'Model colour: used where this model is not painted by its groups';

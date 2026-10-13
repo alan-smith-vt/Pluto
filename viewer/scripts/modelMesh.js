@@ -10,6 +10,7 @@
 //   d.setGroupLook(on, palette, count)
 //   d.setElemOff(fam, mask)   Uint8Array (1 = hidden) or null -> elemVis
 //   d.setVisible(on) / d.setXray(on) / d.setColor('#rrggbb')
+//   d.setEdges(on)            shell element edges (wireframe), built on first use; follows elemVis
 //   d.pick(raycaster)         { fam, elem, point, distance } or null
 //   d.label(fam, e)           the element label from the file
 //   d.dispose()
@@ -76,6 +77,25 @@ var FEAModelMesh = (function () {
             var n = p.view.header.nElements;
             for (var e = 0; e < n; e++) { var r = vertRange(fam, p.build, e); a.fill(mask && mask[e] ? 0 : 1, r[0], r[1]); }
             attr.needsUpdate = true;
+            if (fam === 'shell') { d._shellOff = mask; if (d.edges) edgeVis(d); }
+        };
+        // Wireframe: the shell build's element-perimeter segments (geometryBuilder edgePositions), drawn as
+        // lines that hide with their element. Built on first use only (a large mesh pays nothing until asked).
+        d.setEdges = function (on) {
+            if (!d.shell) return;
+            if (on && !d.edges) {
+                var b = d.shell.build, geo = new THREE.BufferGeometry();
+                geo.setAttribute('position', new THREE.BufferAttribute(b.edgePositions, 3));
+                geo.setAttribute('elemVis', new THREE.BufferAttribute(new Float32Array(b.edgePositions.length / 3), 1));
+                var mat = new THREE.ShaderMaterial({
+                    uniforms: { uColor: { value: new THREE.Vector3(0, 0, 0) }, uOpacity: { value: 0.45 } },
+                    vertexShader: EDGE_VERTEX, fragmentShader: FEAShaders.edgeFragment, transparent: true, depthWrite: false });
+                d.edges = new THREE.LineSegments(geo, mat);
+                d.edges.renderOrder = 3;
+                d.root.add(d.edges);
+                edgeVis(d);
+            }
+            if (d.edges) d.edges.visible = !!on;
         };
         d.setVisible = function (on) { d.root.visible = on; };
         d.setXray = function (on) { parts(d).forEach(function (p) { FEAModels.xrayMaterial(p.material, on); }); };
@@ -100,11 +120,27 @@ var FEAModelMesh = (function () {
         d.elemId = function (fam, e) { var v = d[fam] && d[fam].view; return v ? v.elemIds[e] : e; };
         d.dispose = function () {
             parts(d).forEach(function (p) { p.build.geometry.dispose(); p.material.dispose(); });
+            if (d.edges) { d.edges.geometry.dispose(); d.edges.material.dispose(); }
         };
         return d;
     }
 
     function parts(d) { return [d.shell, d.beam].filter(Boolean); }
+    // edges without displacement (overlays draw no results)
+    var EDGE_VERTEX = [
+        'attribute float elemVis;',
+        'varying float vVis;',
+        'void main() {',
+        '  vVis = elemVis;',
+        '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+        '}'
+    ].join('\n');
+    // edge vertex -> its element (edgeCorners holds e*4+k per edge vertex), hidden with it
+    function edgeVis(d) {
+        var attr = d.edges.geometry.getAttribute('elemVis'), a = attr.array, cor = d.shell.build.edgeCorners, off = d._shellOff;
+        for (var i = 0; i < a.length; i++) a[i] = off && off[cor[i] >> 2] ? 0 : 1;
+        attr.needsUpdate = true;
+    }
     // [first, end) render vertices of element e. Beam builds carry vertStart / vertCount; shell builds
     // lay elements out in order, 6 vertices per quad and 3 per triangle (geometryBuilder.js).
     function vertRange(fam, build, e) {

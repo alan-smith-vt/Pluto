@@ -353,8 +353,12 @@
             <button id="grInvert" class="fea-btn" disabled title="Invert enabled groups">Invert</button>
         </div>
         <div class="fea-row" style="margin-top:6px;">
+            <button id="grHideAll" class="fea-btn" disabled title="Eye off on every element group shown (the filter applies): not drawn, not picked">Hide all</button>
+            <button id="grShowAll" class="fea-btn" disabled title="Eye on for every element group shown (the filter applies)">Show all</button>
+        </div>
+        <div class="fea-row" style="margin-top:6px;">
             <input id="grFilter" type="search" class="gr-filter" placeholder="Filter groups (name or tag)"
-                   title="Shows only groups whose name or tags contain every word; All / None / Invert act on the rows shown">
+                   title="Shows only groups whose name or tags contain every word; All / None / Invert and Hide all / Show all act on the rows shown">
         </div>
         <div class="fea-hint">
             Tick = paints. Overlaps: the <em>lowest</em> enabled group wins &mdash; drag rows

@@ -36,9 +36,9 @@ One command turns a **Pluto Ducts** run (Navisworks add-in, `scripts/navis`) and
 > The `-Revit -Room <codes>` overlay also writes the room boxes (per room code: bbox of its Navisworks rows + 1 ft): `C:\Temp\hvac\box\room-boxes.txt` (Navisworks document units) and `C:\Temp\hvac\revit\mesh-boxes.txt` (Revit internal ft, the fit inverted, plus a `fit` line). Then:
 > 1. Navisworks **Pluto Box**, option "Use the room boxes" (optionally "only HVAC"): every geometry item touching a box, no property search, no category or IfcGUID-nesting filter (the Pluto Ducts mesh missed fittings / accessories, nested parts and parts without a room number, and drew hidden items).
 > 2. Revit **Pluto Mesh**: triangulated solids of the HVAC elements in the boxes (no view needed).
-> 3. `Export-DuctsViewer.ps1 -Run <box run>` → `box.bin`; `-Run <revit-mesh run>` → `revit_mesh.bin` (already in the Navisworks frame). Load both beside `revit_<room>_clean.bin`.
+> 3. `Export-DuctsViewer.ps1 -Run <box run>` → `box_run.bin` + `box_norun.bin`; `-Run <revit-mesh run>` → `revit_mesh_run.bin` + `revit_mesh_norun.bin` (already in the Navisworks frame). Split by RunName because a hidden group still costs memory and frame time (one room: 500 MB, 2.5 M triangles without a run name): load the `_run` files beside `revit_<room>_clean.bin`, the `_norun` ones only when needed. Viewer: overlay rail **edges** checkbox (wireframe), Groups tab **Hide all / Show all** (eyes of the rows the filter shows).
 >
-> Groups (one of each kind per element; any eye off hides it): `Category: <cat>`, `Run: <RunName>` / `Run: (no run name)`, Navisworks `Visible` / `Hidden: self` / `Hidden by: <item>` (red), Revit `Fabrication` / `Not fabrication`. Navisworks visibility = the item's or an ancestor's hidden flag in the current view; section planes and transparency overrides are not read.
+> Groups (one of each kind per element; any eye off hides it): `Category: <cat>`, `Run: <RunName>` / `Run: (no run name)`, Navisworks `Visible` / `Hidden: self` / `Hidden: by ancestor` (red; the label names the hiding item), Revit `Fabrication` / `Not fabrication`. Navisworks visibility = the item's or an ancestor's hidden flag in the current view; section planes and transparency overrides are not read.
 
 ## Pipeline
 

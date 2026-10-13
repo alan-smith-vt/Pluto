@@ -1666,13 +1666,14 @@ public partial class DuctsToPluto
     // DisplayName [Class] | category: element name size | run | IfcGUID #id (n up) | item #id | path | HIDDEN.
     // Groups (an element sits in one of each kind; any eye off hides it): "Category: <element category>"
     // ("(no element)" without an IfcGUID ancestor), "Run: <RunName>" / "Run: (no run name)", and the Navisworks
-    // hidden state "Visible" / "Hidden: self" / "Hidden by: <item>" (an ancestor; red). Rows from a Box run before
-    // 2026-10-13 have no run / hidden-by columns: run groups are all "(no run name)", hidden ones "Hidden: ancestor".
+    // hidden state "Visible" / "Hidden: self" / "Hidden: by ancestor" (red; the label names the hiding item: one
+    // group per item ran to hundreds). Rows from a Box run before 2026-10-13 have no run / hidden-by columns.
+    // Written as two files (WriteMeshOverlays): <out>_run (elements with a RunName) and <out>_norun (the rest).
     public static Result ExportBox(string runDir, string outBase, string modelId, string lengthUnit)
     {
         var items = new List<Dictionary<string, string>>(ReadCsv(Path.Combine(runDir, "box_items.csv")));
         var recs = ReadTriBin(Path.Combine(runDir, "box_tri.bin"), null);
-        return WriteMeshOverlay(recs, items, outBase, modelId, lengthUnit, "box", delegate(Dictionary<string, string> it, out string[] groups)
+        return WriteMeshOverlays(recs, items, "AncRunName", outBase, modelId, lengthUnit, "box", delegate(Dictionary<string, string> it, out string[] groups)
         {
             bool hidden = Get(it, "Hidden") == "1", self = Get(it, "HiddenSelf") == "1";
             string ac = Get(it, "AncCategory"), id = Get(it, "NavisId"), aid = Get(it, "AncNavisId"), run = Get(it, "AncRunName"), by = Get(it, "HiddenBy");
@@ -1689,7 +1690,7 @@ public partial class DuctsToPluto
             sb.Append(" | ").Append(Get(it, "Path"));
             if (hidden) sb.Append(self ? " | HIDDEN (self)" : " | HIDDEN (by " + (by != "" ? by : "an ancestor") + ")");
             groups = new[] { "Category: " + (ac != "" ? ac : "(no element)"), RunGroup(run),
-                !hidden ? "Visible" : self ? "Hidden: self" : by != "" ? "Hidden by: " + by : "Hidden: ancestor" };
+                !hidden ? "Visible" : self ? "Hidden: self" : "Hidden: by ancestor" };
             return sb.ToString();
         });
     }
@@ -1698,6 +1699,7 @@ public partial class DuctsToPluto
     // in the Navisworks frame (the fit line of the run's mesh-boxes.txt, written by the -Revit overlay), so it
     // loads beside the Navisworks box mesh and the clean model. Groups: "Category: <Revit category>", "Run: <RunName>"
     // / "Run: (no run name)" (insulation / lining take the covered duct's), "Fabrication" / "Not fabrication".
+    // Written as <out>_run and <out>_norun like the box mesh.
     public static Result ExportRevitMesh(string runDir, string outBase, string modelId, string lengthUnit)
     {
         double[] T = null;
@@ -1711,7 +1713,7 @@ public partial class DuctsToPluto
         if (T == null) throw new Exception("DuctsToPluto: no fit line in " + Path.Combine(runDir, "mesh-boxes.txt"));
         var items = new List<Dictionary<string, string>>(ReadCsv(Path.Combine(runDir, "mesh_items.csv")));
         var recs = ReadTriBin(Path.Combine(runDir, "mesh_tri.bin"), T);
-        return WriteMeshOverlay(recs, items, outBase, modelId, lengthUnit, "revit", delegate(Dictionary<string, string> it, out string[] groups)
+        return WriteMeshOverlays(recs, items, "RunName", outBase, modelId, lengthUnit, "revit", delegate(Dictionary<string, string> it, out string[] groups)
         {
             string cat = Get(it, "Category"), run = Get(it, "RunName");
             bool fab = Get(it, "IsFabrication") == "1";
@@ -1751,6 +1753,27 @@ public partial class DuctsToPluto
     }
 
     delegate string MeshItemInfo(Dictionary<string, string> item, out string[] groups);
+
+    // Split by run name (2026-10-13: one room was 500 MB, 2.5 M triangles without a run name; hiding a group does
+    // not free it): <outBase>_run.bin (items with a value in runCol) and <outBase>_norun.bin, each with its own
+    // sidecar; a part with no triangles is not written. Result = the run file; Note covers both.
+    static Result WriteMeshOverlays(List<KeyValuePair<int, float[]>> recs, List<Dictionary<string, string>> items, string runCol,
+        string outBase, string modelId, string lengthUnit, string tag, MeshItemInfo info)
+    {
+        var withRun = new List<KeyValuePair<int, float[]>>(); var noRun = new List<KeyValuePair<int, float[]>>();
+        foreach (KeyValuePair<int, float[]> rec in recs)
+        {
+            Dictionary<string, string> it = rec.Key >= 1 && rec.Key <= items.Count ? items[rec.Key - 1] : null;
+            (it != null && Get(it, runCol) != "" ? withRun : noRun).Add(rec);
+        }
+        Result a = withRun.Count > 0 ? WriteMeshOverlay(withRun, items, outBase + "_run", modelId + "/run", lengthUnit, tag, info) : null;
+        Result b = noRun.Count > 0 ? WriteMeshOverlay(noRun, items, outBase + "_norun", modelId + "/norun", lengthUnit, tag, info) : null;
+        Result res = a ?? b;
+        res.Skipped = items.Count - recs.Count;
+        res.Note = (a != null ? a.Note + " -> " + Path.GetFileName(a.BinPath) : "NEW mesh " + tag + " run: none")
+            + "\n" + (b != null ? b.Note + " -> " + Path.GetFileName(b.BinPath) : "NEW mesh " + tag + " norun: none");
+        return res;
+    }
 
     // Triangles -> shells (shared corners merged), one label per element, groups from `info` (one name per kind;
     // "Hidden..." groups red, the rest from the palette by kind).

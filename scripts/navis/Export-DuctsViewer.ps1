@@ -88,4 +88,5 @@ if ($Box) {
     $r = [DuctsToPluto]::Export($Run, $Out, $ModelId, $Unit, $svc)
     $r.Summary()
 }
-Write-Output ("[done] {0:0}s. In the viewer: Add overlay... -> {1}.bin" -f ((Get-Date) - $t0).TotalSeconds, $Out)
+$files = $(if ($Box -or $RvMesh) { (@("_run", "_norun") | ForEach-Object { "$Out$_.bin" } | Where-Object { Test-Path $_ }) -join " and " } else { "$Out.bin" })
+Write-Output ("[done] {0:0}s. In the viewer: Add overlay... -> {1}" -f ((Get-Date) - $t0).TotalSeconds, $files)
