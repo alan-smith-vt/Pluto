@@ -1660,57 +1660,124 @@ public partial class DuctsToPluto
     static string F3(double v) { return double.IsNaN(v) ? "" : v.ToString("0.####", Inv); }
     static string CsvCell(string v) { v = v ?? ""; return v.IndexOfAny(new[] { ',', '"', '\n' }) >= 0 ? "\"" + v.Replace("\"", "\"\"") + "\"" : v; }
 
-    // A "Pluto Box" run (scripts/navis/BoxButton.cs: every geometry item inside a box) -> shell overlay.
-    // box_tri.bin: int32 row (1-based box_items.csv data row), int32 nTri, nTri * 9 float32 (world feet).
-    // One shell group per element category (the nearest ancestor with an IfcGUID; "(no element)" when
-    // none), hidden items in their own red groups; every triangle labelled with its item and where it hangs:
-    // DisplayName [Class] | category: element name size | IfcGUID #id (n up) | item #id | path | HIDDEN.
+    // A "Pluto Box" run (scripts/navis/BoxButton.cs: every geometry item inside a box or the room boxes) -> shell
+    // overlay. box_tri.bin: int32 row (1-based box_items.csv data row), int32 nTri, nTri * 9 float32 (world feet).
+    // Every triangle labelled with its item and where it hangs:
+    // DisplayName [Class] | category: element name size | run | IfcGUID #id (n up) | item #id | path | HIDDEN.
+    // Groups (an element sits in one of each kind; any eye off hides it): "Category: <element category>"
+    // ("(no element)" without an IfcGUID ancestor), "Run: <RunName>" / "Run: (no run name)", and the Navisworks
+    // hidden state "Visible" / "Hidden: self" / "Hidden by: <item>" (an ancestor; red). Rows from a Box run before
+    // 2026-10-13 have no run / hidden-by columns: run groups are all "(no run name)", hidden ones "Hidden: ancestor".
     public static Result ExportBox(string runDir, string outBase, string modelId, string lengthUnit)
     {
-        double scale = LengthScale(lengthUnit);
         var items = new List<Dictionary<string, string>>(ReadCsv(Path.Combine(runDir, "box_items.csv")));
-        string triPath = Path.Combine(runDir, "box_tri.bin");
+        var recs = ReadTriBin(Path.Combine(runDir, "box_tri.bin"), null);
+        return WriteMeshOverlay(recs, items, outBase, modelId, lengthUnit, "box", delegate(Dictionary<string, string> it, out string[] groups)
+        {
+            bool hidden = Get(it, "Hidden") == "1", self = Get(it, "HiddenSelf") == "1";
+            string ac = Get(it, "AncCategory"), id = Get(it, "NavisId"), aid = Get(it, "AncNavisId"), run = Get(it, "AncRunName"), by = Get(it, "HiddenBy");
+            var sb = new StringBuilder();
+            sb.Append(Get(it, "DisplayName")).Append(" [").Append(Get(it, "ClassDisplayName")).Append("]");
+            if (Get(it, "AncIfcGUID") != "")
+                sb.Append(" | ").Append(ac).Append(": ").Append(Get(it, "AncName"))
+                  .Append(Get(it, "AncSize") != "" ? " " + Get(it, "AncSize") : "")
+                  .Append(" | run ").Append(run != "" ? run : "(none)")
+                  .Append(" | ").Append(Get(it, "AncIfcGUID")).Append(aid != "" ? " #" + aid : "")
+                  .Append(" (").Append(Get(it, "AncLevelsUp")).Append(" up)");
+            if (id != "") sb.Append(" | item #").Append(id);
+            if (Get(it, "Box") != "") sb.Append(" | box ").Append(Get(it, "Box"));
+            sb.Append(" | ").Append(Get(it, "Path"));
+            if (hidden) sb.Append(self ? " | HIDDEN (self)" : " | HIDDEN (by " + (by != "" ? by : "an ancestor") + ")");
+            groups = new[] { "Category: " + (ac != "" ? ac : "(no element)"), RunGroup(run),
+                !hidden ? "Visible" : self ? "Hidden: self" : by != "" ? "Hidden by: " + by : "Hidden: ancestor" };
+            return sb.ToString();
+        });
+    }
+
+    // A "Pluto Mesh" run (scripts/revit/ExportMesh.cs: triangulated Revit solids in the room boxes) -> shell overlay
+    // in the Navisworks frame (the fit line of the run's mesh-boxes.txt, written by the -Revit overlay), so it
+    // loads beside the Navisworks box mesh and the clean model. Groups: "Category: <Revit category>", "Run: <RunName>"
+    // / "Run: (no run name)" (insulation / lining take the covered duct's), "Fabrication" / "Not fabrication".
+    public static Result ExportRevitMesh(string runDir, string outBase, string modelId, string lengthUnit)
+    {
+        double[] T = null;
+        foreach (string line in File.ReadAllLines(Path.Combine(runDir, "mesh-boxes.txt")))
+        {
+            string[] t = line.Trim().Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+            if (t.Length != 6 || t[0] != "fit") continue;
+            T = new double[5];
+            for (int k = 0; k < 5; k++) T[k] = double.Parse(t[k + 1], NumberStyles.Float, Inv);
+        }
+        if (T == null) throw new Exception("DuctsToPluto: no fit line in " + Path.Combine(runDir, "mesh-boxes.txt"));
+        var items = new List<Dictionary<string, string>>(ReadCsv(Path.Combine(runDir, "mesh_items.csv")));
+        var recs = ReadTriBin(Path.Combine(runDir, "mesh_tri.bin"), T);
+        return WriteMeshOverlay(recs, items, outBase, modelId, lengthUnit, "revit", delegate(Dictionary<string, string> it, out string[] groups)
+        {
+            string cat = Get(it, "Category"), run = Get(it, "RunName");
+            bool fab = Get(it, "IsFabrication") == "1";
+            string label = string.Format(Inv, "Revit {0} | {1}: {2} {3} | run {4} | system {5}{6} | IfcGUID {7}{8}",
+                Get(it, "ElementId"), cat, Get(it, "Family"), Get(it, "Type"), run != "" ? run : "(none)", Get(it, "SystemName"),
+                fab ? " | fabrication" : "", Get(it, "IfcGUID"), Get(it, "Host") != "" ? " | covers " + Get(it, "Host") : "");
+            groups = new[] { "Category: " + (cat != "" ? cat : "(none)"), RunGroup(run), fab ? "Fabrication" : "Not fabrication" };
+            return label;
+        });
+    }
+
+    static string RunGroup(string run) { return run != "" ? "Run: " + run : "Run: (no run name)"; }
+
+    // record: int32 row, int32 nTri, nTri * 9 float32; T = rigid XY fit applied to every point (null = as stored)
+    static List<KeyValuePair<int, float[]>> ReadTriBin(string triPath, double[] T)
+    {
         if (!File.Exists(triPath)) throw new Exception("DuctsToPluto: missing " + triPath);
         var recs = new List<KeyValuePair<int, float[]>>();
-        double[] lo = { double.MaxValue, double.MaxValue, double.MaxValue }, hi = { double.MinValue, double.MinValue, double.MinValue };
         using (var br = new BinaryReader(File.OpenRead(triPath)))
         {
             while (br.BaseStream.Position + 8 <= br.BaseStream.Length)
             {
                 int row = br.ReadInt32(), n = br.ReadInt32();
                 var f = new float[n * 9];
-                for (int k = 0; k < f.Length; k++) { f[k] = br.ReadSingle(); lo[k % 3] = Math.Min(lo[k % 3], f[k]); hi[k % 3] = Math.Max(hi[k % 3], f[k]); }
+                for (int k = 0; k < f.Length; k++) f[k] = br.ReadSingle();
+                if (T != null)
+                    for (int k = 0; k + 2 < f.Length; k += 3)
+                    {
+                        double x = f[k], y = f[k + 1];
+                        f[k] = (float)(T[0] * x - T[1] * y + T[2]); f[k + 1] = (float)(T[1] * x + T[0] * y + T[3]); f[k + 2] = (float)(f[k + 2] + T[4]);
+                    }
                 recs.Add(new KeyValuePair<int, float[]>(row, f));
             }
         }
-        if (recs.Count == 0) throw new Exception("DuctsToPluto: no triangles in " + triPath + " (box empty or misplaced? see summary.txt)");
+        if (recs.Count == 0) throw new Exception("DuctsToPluto: no triangles in " + triPath + " (boxes empty or misplaced? see summary.txt)");
+        return recs;
+    }
+
+    delegate string MeshItemInfo(Dictionary<string, string> item, out string[] groups);
+
+    // Triangles -> shells (shared corners merged), one label per element, groups from `info` (one name per kind;
+    // "Hidden..." groups red, the rest from the palette by kind).
+    static Result WriteMeshOverlay(List<KeyValuePair<int, float[]>> recs, List<Dictionary<string, string>> items, string outBase, string modelId,
+        string lengthUnit, string tag, MeshItemInfo info)
+    {
+        double scale = LengthScale(lengthUnit);
+        double[] lo = { double.MaxValue, double.MaxValue, double.MaxValue }, hi = { double.MinValue, double.MinValue, double.MinValue };
+        foreach (KeyValuePair<int, float[]> rec in recs)
+            for (int k = 0; k < rec.Value.Length; k++) { lo[k % 3] = Math.Min(lo[k % 3], rec.Value[k]); hi[k % 3] = Math.Max(hi[k % 3], rec.Value[k]); }
         double[] off = { Math.Round((lo[0] + hi[0]) / 2), Math.Round((lo[1] + hi[1]) / 2), Math.Round((lo[2] + hi[2]) / 2) };
         var nodes = new Dictionary<int, Node>(); var elems = new Dictionary<int, Element>(); var labels = new Dictionary<int, string>();
-        var keyToNode = new Dictionary<string, int>(); var byCat = new SortedDictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
+        var keyToNode = new Dictionary<string, int>();
+        var groups = new SortedDictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
         int nextNode = 1, nextElem = 1;
         foreach (KeyValuePair<int, float[]> rec in recs)
         {
             Dictionary<string, string> it = rec.Key >= 1 && rec.Key <= items.Count ? items[rec.Key - 1] : null;
-            string label, cat;
-            if (it == null) { label = "row " + rec.Key; cat = "?"; }
-            else
+            string label; string[] gs;
+            if (it == null) { label = "row " + rec.Key; gs = new[] { "Category: ?" }; }
+            else label = info(it, out gs);
+            var lists = new List<List<uint>>();
+            foreach (string gname in gs)
             {
-                bool hidden = Get(it, "Hidden") == "1";
-                string ac = Get(it, "AncCategory"), id = Get(it, "NavisId"), aid = Get(it, "AncNavisId");
-                var sb = new StringBuilder();
-                sb.Append(Get(it, "DisplayName")).Append(" [").Append(Get(it, "ClassDisplayName")).Append("]");
-                if (Get(it, "AncIfcGUID") != "")
-                    sb.Append(" | ").Append(ac).Append(": ").Append(Get(it, "AncName"))
-                      .Append(Get(it, "AncSize") != "" ? " " + Get(it, "AncSize") : "")
-                      .Append(" | ").Append(Get(it, "AncIfcGUID")).Append(aid != "" ? " #" + aid : "")
-                      .Append(" (").Append(Get(it, "AncLevelsUp")).Append(" up)");
-                if (id != "") sb.Append(" | item #").Append(id);
-                sb.Append(" | ").Append(Get(it, "Path"));
-                if (hidden) sb.Append(Get(it, "HiddenSelf") == "1" ? " | HIDDEN (self)" : " | HIDDEN (ancestor)");
-                label = sb.ToString();
-                cat = (ac != "" ? ac : "(no element)") + (hidden ? ", hidden" : "");
+                List<uint> g; if (!groups.TryGetValue(gname, out g)) { g = new List<uint>(); groups[gname] = g; }
+                lists.Add(g);
             }
-            List<uint> g; if (!byCat.TryGetValue(cat, out g)) { g = new List<uint>(); byCat[cat] = g; }
             float[] f = rec.Value;
             for (int t = 0; t + 8 < f.Length; t += 9)
             {
@@ -1723,7 +1790,8 @@ public partial class DuctsToPluto
                     if (!keyToNode.TryGetValue(key, out nid)) { nid = MakeNode(nodes, ref nextNode, p, off, scale); keyToNode[key] = nid; }
                     el.n[c] = nodes[nid];
                 }
-                elems[el.id] = el; labels[el.id] = label; g.Add((uint)el.id);
+                elems[el.id] = el; labels[el.id] = label;
+                foreach (List<uint> g in lists) g.Add((uint)el.id);
             }
         }
         var units = new Dictionary<string, string>(); units["length"] = lengthUnit;
@@ -1738,18 +1806,31 @@ public partial class DuctsToPluto
         sc.Units["length"] = lengthUnit;
         sc.Units["worldOffset"] = string.Format(Inv, "{0} {1} {2}", off[0] * scale, off[1] * scale, off[2] * scale);
         string[] palette = { "#7fb3ff", "#3fc1a5", "#ffc04d", "#b0b0b8", "#e040c0", "#5a8fe0", "#ff9f40", "#9ad04d" };
-        int pi = 0;
-        foreach (KeyValuePair<string, List<uint>> kv in byCat)
+        var pi = new Dictionary<string, int>();
+        foreach (KeyValuePair<string, List<uint>> kv in groups)
         {
-            bool hid = kv.Key.EndsWith(", hidden", StringComparison.Ordinal);
-            sc.AddGroup(kv.Key, hid ? "#ff3b3b" : palette[pi++ % palette.Length], "shells", kv.Value,
-                hid ? new[] { "box", "mesh", kv.Key, "hidden" } : new[] { "box", "mesh", kv.Key }, null);
+            int colon = kv.Key.IndexOf(':');
+            string kind = colon > 0 ? kv.Key.Substring(0, colon) : kv.Key;
+            bool hid = kind.StartsWith("Hidden", StringComparison.Ordinal);
+            int i; pi.TryGetValue(kind, out i); pi[kind] = i + 1;
+            string color = hid ? "#ff3b3b" : kv.Key == "Visible" ? "#b0b0b8" : kv.Key == "Run: (no run name)" ? "#ff9f40"
+                : kv.Key == "Fabrication" ? "#e040c0" : kv.Key == "Not fabrication" ? "#7fb3ff" : palette[i % palette.Length];
+            sc.AddGroup(kv.Key, color, "shells", kv.Value, new[] { tag, "mesh", kind.ToLowerInvariant() }, null);
         }
         string scPath = outBase + ".features.json";
         File.WriteAllText(scPath, sc.ToJson(), new UTF8Encoding(false));
         var res = new Result();
         res.BinPath = binPath; res.SidecarPath = scPath; res.GeometryHash = w.GeometryHash;
         res.Nodes = nodes.Count; res.Beams = 0; res.Skipped = items.Count - recs.Count;
+        int nRun = 0, nNoRun = 0, nHid = 0;
+        foreach (KeyValuePair<string, List<uint>> kv in groups)
+        {
+            if (kv.Key == "Run: (no run name)") nNoRun = kv.Value.Count;
+            else if (kv.Key.StartsWith("Run: ", StringComparison.Ordinal)) nRun++;
+            else if (kv.Key.StartsWith("Hidden", StringComparison.Ordinal)) nHid += kv.Value.Count;
+        }
+        res.Note = string.Format(Inv, "NEW mesh {0}: items {1} with tri {2}, triangles {3}, runs {4}, no-run tri {5}, hidden tri {6}",
+            tag, items.Count, recs.Count, elems.Count, nRun, nNoRun, nHid);
         return res;
     }
 

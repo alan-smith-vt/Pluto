@@ -10,4 +10,14 @@
     <VendorId>PLUTO</VendorId>
     <VendorDescription>Pluto</VendorDescription>
   </AddIn>
+  <AddIn Type="Command">
+    <Name>Pluto Mesh</Name>
+    <Text>Pluto Mesh</Text>
+    <Description>Read-only: HVAC element triangles inside the room boxes (C:\Temp\hvac\revit\mesh-boxes.txt) to C:\Temp\hvac\revit-mesh</Description>
+    <Assembly>__DLL__</Assembly>
+    <FullClassName>PlutoRevit.ExportMesh</FullClassName>
+    <ClientId>a3c1e7d4-5b2f-4f86-8e1a-7d9c0b6e2f31</ClientId>
+    <VendorId>PLUTO</VendorId>
+    <VendorDescription>Pluto</VendorDescription>
+  </AddIn>
 </RevitAddIns>

@@ -125,8 +125,8 @@ namespace PlutoRevit
                      .Append(Q(lvl)).Append(',').Append(fab ? "1" : "0").Append(',').Append(n.ToString(Inv)).Append(',');
                     // run name (2026-10-12): Navisworks shows IfcObjectProperties.RunName, mapped from some Revit
                     // parameter; the first of these names found on the element, and which one
-                    string rn = "", rnParam = "";
-                    foreach (string pn in RunNameParams) { string v = Lookup(el, pn); if (v != "") { rn = v; rnParam = pn; break; } }
+                    string rnParam;
+                    string rn = RunName(el, out rnParam);
                     if (rn != "") nRunName++;
                     e.Append(Q(rn)).Append(',').Append(Q(rnParam)).AppendLine();
                     Bump(byCat, cat);
@@ -229,6 +229,14 @@ namespace PlutoRevit
             return "?";
         }
 
+        internal static string RunName(Element el) { string pn; return RunName(el, out pn); }
+        internal static string RunName(Element el, out string param)
+        {
+            param = "";
+            foreach (string pn in RunNameParams) { string v = Lookup(el, pn); if (v != "") { param = pn; return v; } }
+            return "";
+        }
+
         static ConnectorManager Manager(Element el)
         {
             var fp = el as FabricationPart; if (fp != null) return fp.ConnectorManager;
@@ -237,30 +245,30 @@ namespace PlutoRevit
             return null;
         }
 
-        static string IfcGuid(Element el)
+        internal static string IfcGuid(Element el)
         {
             string g = Param(el, BuiltInParameter.IFC_GUID);
             return g != "" ? g : Lookup(el, "IfcGUID");
         }
 
-        static string Param(Element el, BuiltInParameter bip)
+        internal static string Param(Element el, BuiltInParameter bip)
         {
             try { Parameter p = el.get_Parameter(bip); return p == null ? "" : (p.AsValueString() ?? p.AsString() ?? ""); }
             catch { return ""; }
         }
 
-        static string Lookup(Element el, string name)
+        internal static string Lookup(Element el, string name)
         {
             try { Parameter p = el.LookupParameter(name); return p == null ? "" : (p.AsString() ?? p.AsValueString() ?? ""); }
             catch { return ""; }
         }
 
-        delegate string Getter();
-        static string Safe(Getter g) { try { return g() ?? ""; } catch { return ""; } }
+        internal delegate string Getter();
+        internal static string Safe(Getter g) { try { return g() ?? ""; } catch { return ""; } }
         static void Bump(IDictionary<string, int> d, string k) { int v; d.TryGetValue(k, out v); d[k] = v + 1; }
         static string F(double v) { return v.ToString("0.#####", Inv); }
         static string N(double v) { return double.IsNaN(v) ? "" : v.ToString("0.###", Inv); }
-        static string Q(string v)
+        internal static string Q(string v)
         {
             if (v == null) return "";
             return v.IndexOfAny(new[] { ',', '"', '\n', '\r' }) < 0 ? v : "\"" + v.Replace("\"", "\"\"") + "\"";

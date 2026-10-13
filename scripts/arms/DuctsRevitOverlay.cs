@@ -668,6 +668,7 @@ public partial class DuctsToPluto
             res.Note = pe == null ? "NEW part " + part + ": not among the room's Revit elements" : PartReport(pe, scope, conns, inScope, touch, nearSet, linked, attach);
         }
         s.AppendLine(res.Note);
+        if (byRoom) s.AppendLine(WriteRoomBoxes(rows, room, T, navisRun, revitRun));
         var fc = new List<string>();
         foreach (KeyValuePair<string, List<uint>> kv in flagGroups)
         {
@@ -719,6 +720,62 @@ public partial class DuctsToPluto
         s.Append(rnCheck[1]); s.AppendLine(); s.Append(sysNote[1]);
         File.WriteAllText(outBase + ".match.txt", s.ToString(), new UTF8Encoding(false));
         return res;
+    }
+
+    // Room boxes for the two mesh exports (2026-10-13): per room code, the bbox of its Navisworks rows + RoomBoxMarginFt.
+    //   C:\Temp\hvac\box\room-boxes.txt     Navisworks document units (as ducts.csv): Pluto Box's "room boxes" option
+    //   C:\Temp\hvac\revit\mesh-boxes.txt   the same boxes in Revit internal feet (the fitted frame inverted, the
+    //                                       rotated box's bbox) + a "fit" line: Pluto Mesh copies it into its run, so
+    //                                       that run converts back to the Navisworks frame on its own
+    // Both are overwritten by every -Revit -Room run.
+    public const string NavisRoomBoxFile = @"C:\Temp\hvac\box\room-boxes.txt";
+    public const string RevitMeshBoxFile = @"C:\Temp\hvac\revit\mesh-boxes.txt";
+    const double RoomBoxMarginFt = 1;
+
+    static string WriteRoomBoxes(List<Row> rows, string room, double[] T, string navisRun, string revitRun)
+    {
+        var codes = new List<string>();
+        foreach (string r in room.Split(new[] { ',', ';', ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+            if (!codes.Exists(x => string.Equals(x, r.Trim(), StringComparison.OrdinalIgnoreCase))) codes.Add(r.Trim());
+        string head = string.Format(Inv, "# Pluto room boxes, {0:yyyy-MM-dd HH:mm:ss}; ducts run {1}; Revit run {2}; margin {3} ft",
+            DateTime.Now, navisRun, revitRun, RoomBoxMarginFt);
+        var nav = new List<string> { head, "# box <room> minX minY minZ maxX maxY maxZ (Navisworks document units)" };
+        var rv = new List<string> { head, "# box <room> minX minY minZ maxX maxY maxZ (Revit internal ft); fit c s tx ty tz: x' = c x - s y + tx, y' = s x + c y + ty, z' = z + tz",
+            string.Format(Inv, "fit {0:R} {1:R} {2:R} {3:R} {4:R}", T[0], T[1], T[2], T[3], T[4]) };
+        var missing = new List<string>();
+        foreach (string code in codes)
+        {
+            double[] lo = { double.MaxValue, double.MaxValue, double.MaxValue }, hi = { double.MinValue, double.MinValue, double.MinValue };
+            int n = 0;
+            foreach (Row r in rows)
+            {
+                if (r.Min == null || r.Max == null || !InRooms(r.Room, code)) continue;
+                n++;
+                for (int a = 0; a < 3; a++) { lo[a] = Math.Min(lo[a], r.Min[a]); hi[a] = Math.Max(hi[a], r.Max[a]); }
+            }
+            if (n == 0) { missing.Add(code); continue; }
+            for (int a = 0; a < 3; a++) { lo[a] -= RoomBoxMarginFt; hi[a] += RoomBoxMarginFt; }
+            string name = code.Replace(' ', '_');
+            nav.Add(string.Format(Inv, "box {0} {1:0.###} {2:0.###} {3:0.###} {4:0.###} {5:0.###} {6:0.###}", name, lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]));
+            // inverse of the rigid fit: p = R^-1 (p' - t); the corners' bbox (the fit rotation is ~0, so this is tight)
+            double[] rlo = { double.MaxValue, double.MaxValue, lo[2] - T[4] }, rhi = { double.MinValue, double.MinValue, hi[2] - T[4] };
+            foreach (double x in new[] { lo[0], hi[0] })
+                foreach (double y in new[] { lo[1], hi[1] })
+                {
+                    double dx = x - T[2], dy = y - T[3];
+                    double rx = T[0] * dx + T[1] * dy, ry = -T[1] * dx + T[0] * dy;
+                    rlo[0] = Math.Min(rlo[0], rx); rhi[0] = Math.Max(rhi[0], rx); rlo[1] = Math.Min(rlo[1], ry); rhi[1] = Math.Max(rhi[1], ry);
+                }
+            rv.Add(string.Format(Inv, "box {0} {1:0.###} {2:0.###} {3:0.###} {4:0.###} {5:0.###} {6:0.###}", name, rlo[0], rlo[1], rlo[2], rhi[0], rhi[1], rhi[2]));
+        }
+        int nBox = nav.Count - 2;
+        if (nBox == 0) return "room boxes: none written (no Navisworks rows with a bbox in " + room + ")";
+        Directory.CreateDirectory(Path.GetDirectoryName(NavisRoomBoxFile));
+        Directory.CreateDirectory(Path.GetDirectoryName(RevitMeshBoxFile));
+        File.WriteAllLines(NavisRoomBoxFile, nav.ToArray(), new UTF8Encoding(false));
+        File.WriteAllLines(RevitMeshBoxFile, rv.ToArray(), new UTF8Encoding(false));
+        return string.Format(Inv, "room boxes: {0} written to {1} (Pluto Box) and {2} (Revit Pluto Mesh){3}", nBox, NavisRoomBoxFile, RevitMeshBoxFile,
+            missing.Count > 0 ? "; no rows for " + string.Join(", ", missing.ToArray()) : "");
     }
 
     // Revit connector sizes against the mesh-measured connector at the same end (MatchMeshConnectors), within

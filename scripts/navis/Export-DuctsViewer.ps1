@@ -27,7 +27,11 @@
 #                        C:\Temp\hvac\service-codes.txt (Pluto Service's file) when it exists; "*" = all.
 #                        Rows without a RunName are always drawn, in their own group.
 #   A Pluto Box run (C:\Temp\hvac\box\<run>: box_items.csv + box_tri.bin) is detected: every item in the box as
-#   a shell mesh, one group per element category, hidden items separate (red); default out <run>\box.
+#   a shell mesh: groups per element category, per RunName (+ "no run name") and per hidden state (Visible /
+#   Hidden: self / Hidden by: <item>, red); default out <run>\box. With -Revit -Room the overlay writes the room
+#   boxes for the Box dialog's "room boxes" option (C:\Temp\hvac\box\room-boxes.txt) and for Revit Pluto Mesh.
+#   A Revit Pluto Mesh run (C:\Temp\hvac\revit-mesh\<run>: mesh_items.csv + mesh_tri.bin) is detected too: Revit
+#   solids as a shell mesh in the Navisworks frame, groups per category, RunName, fabrication; default out <run>\revit_mesh.
 param(
     [Parameter(Mandatory = $true)][string]$Run,
     [switch]$Mesh,
@@ -48,16 +52,22 @@ $roomList = @(if ($Room) { $Room -split '[,;\s]+' | Where-Object { $_ } })
 $roomTag = $(if ($roomList.Count -eq 1) { "_" + ($roomList[0] -replace "[^A-Za-z0-9-]", "_") } elseif ($roomList.Count -gt 1) { "_" + ($roomList[0] -replace "[^A-Za-z0-9-]", "_") + "_plus" + ($roomList.Count - 1) } else { "" })
 $Run = [IO.Path]::GetFullPath($Run)
 $Box = Test-Path (Join-Path $Run "box_items.csv")
-if (-not $Box -and -not (Test-Path (Join-Path $Run "ducts.csv"))) { throw "No ducts.csv or box_items.csv in $Run (a Pluto Ducts / Fab / Box run folder)." }
-if (-not $Out) { $Out = Join-Path $Run $(if ($Box) { "box" } elseif ($Mesh) { "ducts_mesh" + $roomTag } elseif ($Centrelines) { "ducts_cl" } elseif ($Probe) { "probe" + $roomTag } elseif ($Revit) { "revit" + $roomTag } else { "ducts" }) }
+$RvMesh = Test-Path (Join-Path $Run "mesh_items.csv")
+if (-not $Box -and -not $RvMesh -and -not (Test-Path (Join-Path $Run "ducts.csv"))) { throw "No ducts.csv or box_items.csv in $Run (a Pluto Ducts / Fab / Box or Revit Pluto Mesh run folder)." }
+if (-not $Out) { $Out = Join-Path $Run $(if ($Box) { "box" } elseif ($RvMesh) { "revit_mesh" } elseif ($Mesh) { "ducts_mesh" + $roomTag } elseif ($Centrelines) { "ducts_cl" } elseif ($Probe) { "probe" + $roomTag } elseif ($Revit) { "revit" + $roomTag } else { "ducts" }) }
 if (-not $ModelId) {
-    $ModelId = $(if ($Box) { "hvac/box/" + (Split-Path $Run -Leaf) } else { "hvac/ducts/" + (Split-Path $Run -Leaf) + $(if ($Mesh) { "/mesh" } elseif ($Centrelines) { "/cl" } elseif ($Probe) { "/probe" } elseif ($Revit) { "/revit" } else { "" }) })
+    $ModelId = $(if ($Box) { "hvac/box/" + (Split-Path $Run -Leaf) } elseif ($RvMesh) { "hvac/revit-mesh/" + (Split-Path $Run -Leaf) } else { "hvac/ducts/" + (Split-Path $Run -Leaf) + $(if ($Mesh) { "/mesh" } elseif ($Centrelines) { "/cl" } elseif ($Probe) { "/probe" } elseif ($Revit) { "/revit" } else { "" }) })
 }
 . (Join-Path (Split-Path $PSScriptRoot) "lib\Config.ps1")
 $t0 = Get-Date
 if ($Box) {
     $r = [DuctsToPluto]::ExportBox($Run, $Out, $ModelId, $Unit)
+    Write-Output $r.Note
     Write-Output ("box mesh: {0} nodes; {1} items without triangles in the box" -f $r.Nodes, $r.Skipped)
+} elseif ($RvMesh) {
+    $r = [DuctsToPluto]::ExportRevitMesh($Run, $Out, $ModelId, $Unit)
+    Write-Output $r.Note
+    Write-Output ("Revit mesh: {0} nodes; {1} elements without triangles in the boxes" -f $r.Nodes, $r.Skipped)
 } elseif ($Mesh) {
     $r = [DuctsToPluto]::ExportMesh($Run, $Out, $ModelId, $Unit, $Room)
     Write-Output ("mesh: {0} nodes; {1} rows without triangles" -f $r.Nodes, $r.Skipped)

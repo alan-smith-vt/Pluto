@@ -32,6 +32,14 @@ One command turns a **Pluto Ducts** run (Navisworks add-in, `scripts/navis`) and
 > | `.runs.csv` | one row per segment / transition: system component, line, kind, parts, length, voted size + votes, run name, deviations, `RunEnds` (why the line stops) |
 > | `.match.txt` | NEW block (fit, room counts, joints), then flag counts, frames, mesh match, runs, RunName check, **systems**, **clean model** checks, box orientation; then lists (unmatched, category differs, located pairs, RunName → lines, system name → components, blocked joins) |
 
+> [!info]- Mesh check overlays (2026-10-13): Navisworks and Revit meshes beside the clean model
+> The `-Revit -Room <codes>` overlay also writes the room boxes (per room code: bbox of its Navisworks rows + 1 ft): `C:\Temp\hvac\box\room-boxes.txt` (Navisworks document units) and `C:\Temp\hvac\revit\mesh-boxes.txt` (Revit internal ft, the fit inverted, plus a `fit` line). Then:
+> 1. Navisworks **Pluto Box**, option "Use the room boxes" (optionally "only HVAC"): every geometry item touching a box, no property search, no category or IfcGUID-nesting filter (the Pluto Ducts mesh missed fittings / accessories, nested parts and parts without a room number, and drew hidden items).
+> 2. Revit **Pluto Mesh**: triangulated solids of the HVAC elements in the boxes (no view needed).
+> 3. `Export-DuctsViewer.ps1 -Run <box run>` → `box.bin`; `-Run <revit-mesh run>` → `revit_mesh.bin` (already in the Navisworks frame). Load both beside `revit_<room>_clean.bin`.
+>
+> Groups (one of each kind per element; any eye off hides it): `Category: <cat>`, `Run: <RunName>` / `Run: (no run name)`, Navisworks `Visible` / `Hidden: self` / `Hidden by: <item>` (red), Revit `Fabrication` / `Not fabrication`. Navisworks visibility = the item's or an ancestor's hidden flag in the current view; section planes and transparency overrides are not read.
+
 ## Pipeline
 
 All stages run inside `DuctsToPluto.ExportRevit` (`scripts/arms/DuctsRevitOverlay.cs`) except where a file is named.
