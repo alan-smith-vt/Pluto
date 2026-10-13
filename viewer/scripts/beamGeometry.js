@@ -117,6 +117,7 @@ var FEABeamGeometry = (function () {
         // First pass: count.
         var vertStart = new Int32Array(nElem), vertCount = new Int32Array(nElem);
         var sectionOf = new Int32Array(nElem);
+        var outlineN = new Int32Array(nElem);   // section outline points per element (side quads first, 6 vertices each)
         var totalVerts = 0;
         for (var e = 0; e < nElem; e++) {
             var si = elems[e * REC + 3];
@@ -124,6 +125,7 @@ var FEABeamGeometry = (function () {
             sectionOf[e] = si;
             var sg = secGeom(si);
             var m = sg.pts.length;
+            outlineN[e] = m;
             var nv = m * 6 + sg.caps.length * 3 * 2;
             vertStart[e] = totalVerts;
             vertCount[e] = nv;
@@ -223,6 +225,7 @@ var FEABeamGeometry = (function () {
             vertCount: vertCount,
             triToElem: triToElem,
             sectionOf: sectionOf,
+            outlineN: outlineN,
             axisA: axisA,
             axisB: axisB,
             frames: frames,

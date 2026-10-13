@@ -106,7 +106,7 @@ var FEAOverlays = (function () {
             markerParent: function () { return d.root; },
             setVisible: function (on) { ctx.look.visible = on; d.setVisible(on); redraw(); },
             setXray: function (on) { ctx.look.xray = on; d.setXray(on); redraw(); },
-            setEdges: d.shell ? function (on) { ctx.look.edges = on; d.setEdges(on); redraw(); } : null,
+            setEdges: (d.shell || d.beam) ? function (on) { ctx.look.edges = on; d.setEdges(on); redraw(); } : null,
             setColor: function (hex) { ctx.look.color = hex; d.setColor(hex); redraw(); }
         };
         return ctx;
