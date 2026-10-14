@@ -41,11 +41,11 @@ namespace PlutoNavis
         const string OutRoot = @"C:\Temp\hvac\box";
         const string RoomBoxFile = @"C:\Temp\hvac\box\room-boxes.txt";
         const int ProgressDepth = 4;        // tree levels that split the progress bar
-        const int MaxTriangles = 5000000;   // stop (flagged) past this: the overlay would be unusable anyway
+        const int MaxTriangles = 5000000;   // per box: a box past this is closed (flagged) and the walk carries on for the others
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
         class Anc { public string Guid = "", Cat = "", Fam = "", Type = "", Size = "", Name = "", Id = "", Run = "", Sys = ""; public int Depth; }
-        class RoomBox { public string Name; public double[] Lo, Hi; }
+        class RoomBox { public string Name; public double[] Lo, Hi; public long Tris; public bool Full; }
 
         class State
         {
@@ -53,7 +53,7 @@ namespace PlutoNavis
             public bool DuctsOnly;
             public StreamWriter W; public BinaryWriter Tri;
             public int Visited, Pruned, Rows, Written, HiddenRows, Errors; public long Tris, TrisTotal;
-            public double Frac; public bool Cancelled, Capped; public string FirstError;
+            public double Frac; public bool Cancelled, Capped; public string FirstError;   // Capped: every box full
             public SortedDictionary<string, int[]> ByCat = new SortedDictionary<string, int[]>(StringComparer.OrdinalIgnoreCase);   // rows, hidden rows, triangles
             public Progress Progress;
         }
@@ -103,12 +103,12 @@ namespace PlutoNavis
 
             var s = new StringBuilder();
             s.AppendLine("Pluto Box " + t0.ToString("yyyy-MM-dd HH:mm:ss", Inv)
-                + (st.Cancelled ? "  ** CANCELLED: partial **" : "") + (st.Capped ? "  ** STOPPED at " + MaxTriangles + " triangles: partial, use a smaller box **" : ""));
+                + (st.Cancelled ? "  ** CANCELLED: partial **" : "") + (st.Capped ? "  ** STOPPED: every box reached " + MaxTriangles + " triangles: partial **" : FullNames(st) != "" ? "  ** PARTIAL: box(es) " + FullNames(st) + " reached " + MaxTriangles + " triangles and were closed; the others are complete **" : ""));
             s.AppendLine("Document: " + (string.IsNullOrEmpty(doc.FileName) ? "(unsaved)" : doc.FileName) + "   units " + doc.Units);
             if (useRooms) s.AppendLine(string.Format(Inv, "Room boxes from {0}: {1}{2}", RoomBoxFile, st.Boxes.Count, ductsOnly ? "; only under HVAC elements" : ""));
             else s.AppendLine(string.Format(Inv, "Centre {0} {1} {2} {3}; half-size {4} ft{5}", N(c[0]), N(c[1]), N(c[2]), inches ? "in" : "ft", N(halfFt), ductsOnly ? "; only under HVAC elements" : ""));
             foreach (RoomBox b in st.Boxes)
-                s.AppendLine(string.Format(Inv, "Box {0} (document units) min {1} {2} {3}  max {4} {5} {6}", b.Name, N(b.Lo[0]), N(b.Lo[1]), N(b.Lo[2]), N(b.Hi[0]), N(b.Hi[1]), N(b.Hi[2])));
+                s.AppendLine(string.Format(Inv, "Box {0} (document units) min {1} {2} {3}  max {4} {5} {6}; triangles {7}{8}", b.Name, N(b.Lo[0]), N(b.Lo[1]), N(b.Lo[2]), N(b.Hi[0]), N(b.Hi[1]), N(b.Hi[2]), b.Tris, b.Full ? " FULL (closed at the cap)" : ""));
             s.AppendLine(string.Format(Inv, "Items visited {0}, subtrees pruned by bbox {1}; geometry items {2} (with triangles in the box {3}); hidden {4}; triangles kept {5} of {6}; {7:0}s",
                 st.Visited, st.Pruned, st.Rows, st.Written, st.HiddenRows, st.Tris, st.TrisTotal, (DateTime.Now - t0).TotalSeconds));
             if (st.Errors > 0) s.AppendLine(string.Format(Inv, "triangle errors {0} (first: {1})", st.Errors, st.FirstError));
@@ -196,6 +196,7 @@ namespace PlutoNavis
                 RoomBox hit = Touches(st, x0, y0, z0, x1, y1, z1);
                 if (hit == null) continue;
                 if (firstBox == "") firstBox = hit.Name;
+                hit.Tris++;
                 for (int k = 0; k < 9; k++) kept.Add((float)pts[t + k]);
             }
             int nKept = kept.Count / 9;
@@ -215,14 +216,25 @@ namespace PlutoNavis
                 st.Tri.Write(st.Rows); st.Tri.Write(nKept);
                 foreach (float v in kept) st.Tri.Write(v);
             }
-            if (st.Tris > MaxTriangles) st.Capped = true;
+            // a box past the cap is closed: no more triangles go to it and subtrees only inside it are pruned
+            // (a triangle also touching an open box still counts there); the walk stops once every box is full
+            bool allFull = true;
+            foreach (RoomBox b in st.Boxes) { if (b.Tris > MaxTriangles) b.Full = true; allFull &= b.Full; }
+            if (allFull) st.Capped = true;
         }
 
-        // the first box the bbox touches, or null
+        static string FullNames(State st)
+        {
+            var l = new List<string>();
+            foreach (RoomBox b in st.Boxes) if (b.Full) l.Add(b.Name);
+            return string.Join(", ", l.ToArray());
+        }
+
+        // the first open (not full) box the bbox touches, or null
         static RoomBox Touches(State st, double x0, double y0, double z0, double x1, double y1, double z1)
         {
             foreach (RoomBox b in st.Boxes)
-                if (x1 >= b.Lo[0] && x0 <= b.Hi[0] && y1 >= b.Lo[1] && y0 <= b.Hi[1] && z1 >= b.Lo[2] && z0 <= b.Hi[2]) return b;
+                if (!b.Full && x1 >= b.Lo[0] && x0 <= b.Hi[0] && y1 >= b.Lo[1] && y0 <= b.Hi[1] && z1 >= b.Lo[2] && z0 <= b.Hi[2]) return b;
             return null;
         }
 
