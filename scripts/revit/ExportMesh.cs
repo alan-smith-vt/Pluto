@@ -63,9 +63,16 @@ namespace PlutoRevit
             var boxFilters = new List<ElementFilter>();
             foreach (Box b in boxes) boxFilters.Add(new BoundingBoxIntersectsFilter(new Outline(new XYZ(b.Lo[0], b.Lo[1], b.Lo[2]), new XYZ(b.Hi[0], b.Hi[1], b.Hi[2]))));
             ElementFilter inBoxes = boxFilters.Count == 1 ? boxFilters[0] : new LogicalOrFilter(boxFilters);
+            // Assemblies are skipped: an assembly instance's geometry is its members' again, so it doubled
+            // the members' triangles (most of a multi-million-triangle no-run set in a production run)
             var els = new List<Element>();
+            int skippedAssemblies = 0;
             foreach (Element e in new FilteredElementCollector(doc).WhereElementIsNotElementType().WherePasses(inBoxes))
-                if (e.Category != null && e.Category.CategoryType == CategoryType.Model) els.Add(e);
+            {
+                if (e.Category == null || e.Category.CategoryType != CategoryType.Model) continue;
+                if (e.Category.Id.Value == (long)BuiltInCategory.OST_Assemblies || e is AssemblyInstance) { skippedAssemblies++; continue; }
+                els.Add(e);
+            }
 
             var opt = new Options();
             opt.DetailLevel = ViewDetailLevel.Fine; opt.ComputeReferences = false; opt.IncludeNonVisibleObjects = false;
@@ -148,8 +155,8 @@ namespace PlutoRevit
             s.AppendLine();
             s.AppendLine("PlutoRevit ExportMesh  " + t0.ToString("yyyy-MM-dd HH:mm:ss", Inv) + (capped ? "  ** STOPPED at " + MaxTriangles + " triangles: partial, use fewer rooms **" : ""));
             s.AppendLine("document: " + doc.PathName);
-            s.AppendLine(string.Format(Inv, "elements touching the boxes {0}, with triangles in a box {1}; triangles kept {2} of {3}; no run name {4}; no geometry {5}; errors {6}; {7:0.0} s",
-                rows, written, tris, trisTotal, noRun, noTri, errors.Count, (DateTime.Now - t0).TotalSeconds));
+            s.AppendLine(string.Format(Inv, "elements touching the boxes {0}, with triangles in a box {1}; triangles kept {2} of {3}; no run name {4}; no geometry {5}; errors {6}; assemblies skipped {8}; {7:0.0} s",
+                rows, written, tris, trisTotal, noRun, noTri, errors.Count, (DateTime.Now - t0).TotalSeconds, skippedAssemblies));
             s.AppendLine("boxes:"); foreach (Box b in boxes) s.AppendLine("  " + b.Name);
             s.AppendLine("by category (elements, with triangles, triangles kept):");
             foreach (var kv in byCat) s.AppendLine(string.Format(Inv, "  {0,7} {1,7} {2,9}  {3}", kv.Value[0], kv.Value[1], kv.Value[2], kv.Key));

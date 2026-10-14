@@ -78,7 +78,7 @@ var FEAModelMesh = (function () {
             var n = p.view.header.nElements;
             for (var e = 0; e < n; e++) { var r = vertRange(fam, p.build, e); a.fill(mask && mask[e] ? 0 : 1, r[0], r[1]); }
             attr.needsUpdate = true;
-            drawOnlyShown(p, a);
+            drawOnlyShown(p.build.geometry, a, 3);
             d._off = d._off || {}; d._off[fam] = mask;
             if (d.edges && d.edges[fam]) edgeVis(d, fam);
         };
@@ -155,6 +155,7 @@ var FEAModelMesh = (function () {
         var cor = fam === 'shell' ? d.shell.build.edgeCorners : null, el = ls.userData.elem;
         for (var i = 0; i < a.length; i++) { var e = cor ? cor[i] >> 2 : el[i]; a[i] = off && off[e] ? 0 : 1; }
         attr.needsUpdate = true;
+        drawOnlyShown(ls.geometry, a, 2);   // hidden members' edges are not drawn either
     }
     // Beam outline segments from the extruded mesh (beamGeometry.js): per element, the side quads come first,
     // 6 vertices per outline point k: ringA[k], ringB[k], ringB[k+1], ringA[k], ringB[k+1], ringA[k+1].
@@ -192,15 +193,16 @@ var FEAModelMesh = (function () {
     // stays non-indexed underneath) drawn up to the shown count. The elemVis discard alone still ran every
     // hidden vertex through the GPU each frame. One index buffer per mesh, refilled in place (a new
     // attribute per toggle would leave the old GPU buffer behind); none until something is first hidden.
-    function drawOnlyShown(p, vis) {
-        var geo = p.build.geometry, n = vis.length, i, k = 0;
+    // per = vertices per primitive (3 triangles, 2 line segments).
+    function drawOnlyShown(geo, vis, per) {
+        var n = vis.length, i, j, k = 0;
         if (!geo.index) {
-            for (i = 0; i < n; i += 3) if (vis[i] < 0.5) break;
+            for (i = 0; i < n; i += per) if (vis[i] < 0.5) break;
             if (i >= n) return;
             geo.setIndex(new THREE.BufferAttribute(new Uint32Array(n), 1));
         }
         var idx = geo.index.array;
-        for (i = 0; i < n; i += 3) if (vis[i] > 0.5) { idx[k++] = i; idx[k++] = i + 1; idx[k++] = i + 2; }
+        for (i = 0; i < n; i += per) if (vis[i] > 0.5) for (j = 0; j < per; j++) idx[k++] = i + j;
         geo.index.needsUpdate = true;
         geo.setDrawRange(0, k);
     }
