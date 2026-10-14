@@ -50,7 +50,7 @@ namespace PlutoNavis
         class State
         {
             public List<RoomBox> Boxes;           // document units; an item is kept when it touches any
-            public bool DuctsOnly;
+            public bool DuctsOnly, RunOnly;
             public StreamWriter W; public BinaryWriter Tri;
             public int Visited, Pruned, Rows, Written, HiddenRows, Errors; public long Tris, TrisTotal;
             public double Frac; public bool Cancelled, Capped; public string FirstError;   // Capped: every box full
@@ -66,8 +66,8 @@ namespace PlutoNavis
             if (double.IsNaN(perFt)) { MessageBox.Show("Unsupported document units: " + doc.Units, "Pluto Box"); return 0; }
 
             List<RoomBox> rooms = ReadRoomBoxes();
-            double[] c; double halfFt; bool inches, ductsOnly, useRooms;
-            if (!Ask(rooms, out c, out inches, out halfFt, out ductsOnly, out useRooms)) return 0;
+            double[] c; double halfFt; bool inches, ductsOnly, runOnly, useRooms;
+            if (!Ask(rooms, out c, out inches, out halfFt, out ductsOnly, out runOnly, out useRooms)) return 0;
             double toFt = inches ? 1.0 / 12 : 1.0;
 
             DateTime t0 = DateTime.Now;
@@ -81,7 +81,7 @@ namespace PlutoNavis
                 double h = halfFt * perFt;
                 st.Boxes = new List<RoomBox> { new RoomBox { Name = "box", Lo = new[] { cDoc[0] - h, cDoc[1] - h, cDoc[2] - h }, Hi = new[] { cDoc[0] + h, cDoc[1] + h, cDoc[2] + h } } };
             }
-            st.DuctsOnly = ductsOnly;
+            st.DuctsOnly = ductsOnly; st.RunOnly = runOnly;
             st.Progress = Autodesk.Navisworks.Api.Application.BeginProgress("Pluto Box");
             try
             {
@@ -105,8 +105,8 @@ namespace PlutoNavis
             s.AppendLine("Pluto Box " + t0.ToString("yyyy-MM-dd HH:mm:ss", Inv)
                 + (st.Cancelled ? "  ** CANCELLED: partial **" : "") + (st.Capped ? "  ** STOPPED: every box reached " + MaxTriangles + " triangles: partial **" : FullNames(st) != "" ? "  ** PARTIAL: box(es) " + FullNames(st) + " reached " + MaxTriangles + " triangles and were closed; the others are complete **" : ""));
             s.AppendLine("Document: " + (string.IsNullOrEmpty(doc.FileName) ? "(unsaved)" : doc.FileName) + "   units " + doc.Units);
-            if (useRooms) s.AppendLine(string.Format(Inv, "Room boxes from {0}: {1}{2}", RoomBoxFile, st.Boxes.Count, ductsOnly ? "; only under HVAC elements" : ""));
-            else s.AppendLine(string.Format(Inv, "Centre {0} {1} {2} {3}; half-size {4} ft{5}", N(c[0]), N(c[1]), N(c[2]), inches ? "in" : "ft", N(halfFt), ductsOnly ? "; only under HVAC elements" : ""));
+            if (useRooms) s.AppendLine(string.Format(Inv, "Room boxes from {0}: {1}{2}", RoomBoxFile, st.Boxes.Count, (ductsOnly ? "; only under HVAC elements" : "") + (runOnly ? "; only with a run name" : "")));
+            else s.AppendLine(string.Format(Inv, "Centre {0} {1} {2} {3}; half-size {4} ft{5}", N(c[0]), N(c[1]), N(c[2]), inches ? "in" : "ft", N(halfFt), (ductsOnly ? "; only under HVAC elements" : "") + (runOnly ? "; only with a run name" : "")));
             foreach (RoomBox b in st.Boxes)
                 s.AppendLine(string.Format(Inv, "Box {0} (document units) min {1} {2} {3}  max {4} {5} {6}; triangles {7}{8}", b.Name, N(b.Lo[0]), N(b.Lo[1]), N(b.Lo[2]), N(b.Hi[0]), N(b.Hi[1]), N(b.Hi[2]), b.Tris, b.Full ? " FULL (closed at the cap)" : ""));
             s.AppendLine(string.Format(Inv, "Items visited {0}, subtrees pruned by bbox {1}; geometry items {2} (with triangles in the box {3}); hidden {4}; triangles kept {5} of {6}; {7:0}s",
@@ -156,7 +156,8 @@ namespace PlutoNavis
             else if (depth > 0) path = path + " > " + it.DisplayName;
             if (hiddenBy == "" && it.IsHidden) hiddenBy = it.DisplayName + (NavisId(it) != "" ? " #" + NavisId(it) : "");
 
-            if (it.HasGeometry && (!st.DuctsOnly || IsHvac(anc.Cat)))
+            // run only: the item's element (or an enclosing one) carries a RunName; the rest is never triangulated
+            if (it.HasGeometry && (!st.DuctsOnly || IsHvac(anc.Cat)) && (!st.RunOnly || anc.Run != ""))
                 Emit(st, it, anc, hiddenBy, path, depth, bb);
 
             if (depth < ProgressDepth)   // progress: each child's share of its parent's span (a federation has few roots)
@@ -278,17 +279,17 @@ namespace PlutoNavis
         }
 
         // ---- the box dialog; last values kept in C:\Temp\hvac\box\last.txt ----
-        static bool Ask(List<RoomBox> rooms, out double[] c, out bool inches, out double halfFt, out bool ductsOnly, out bool useRooms)
+        static bool Ask(List<RoomBox> rooms, out double[] c, out bool inches, out double halfFt, out bool ductsOnly, out bool runOnly, out bool useRooms)
         {
-            c = null; inches = true; halfFt = 10; ductsOnly = false; useRooms = false;
+            c = null; inches = true; halfFt = 10; ductsOnly = false; runOnly = false; useRooms = false;
             string last = Path.Combine(OutRoot, "last.txt");
-            string centre = "", half = "10", unit = "in", only = "0", roomsOn = "1";
+            string centre = "", half = "10", unit = "in", only = "0", roomsOn = "1", runs = "0";
             try
             {
                 if (File.Exists(last))
                 {
                     string[] l = File.ReadAllLines(last);
-                    if (l.Length > 0) centre = l[0]; if (l.Length > 1) half = l[1]; if (l.Length > 2) unit = l[2]; if (l.Length > 3) only = l[3]; if (l.Length > 4) roomsOn = l[4];
+                    if (l.Length > 0) centre = l[0]; if (l.Length > 1) half = l[1]; if (l.Length > 2) unit = l[2]; if (l.Length > 3) only = l[3]; if (l.Length > 4) roomsOn = l[4]; if (l.Length > 5) runs = l[5];
                 }
             }
             catch (Exception) { }
@@ -296,7 +297,7 @@ namespace PlutoNavis
             using (var f = new Form())
             {
                 f.Text = "Pluto Box"; f.FormBorderStyle = FormBorderStyle.FixedDialog; f.MaximizeBox = false; f.MinimizeBox = false;
-                f.StartPosition = FormStartPosition.CenterScreen; f.ClientSize = new System.Drawing.Size(460, 236);
+                f.StartPosition = FormStartPosition.CenterScreen; f.ClientSize = new System.Drawing.Size(460, 268);
                 var l1 = new Label { Text = "Centre E, N, EL (paste the Pluto viewer readout):", Left = 12, Top = 14, Width = 430 };
                 var tc = new TextBox { Text = centre, Left = 12, Top = 36, Width = 300 };
                 var cu = new ComboBox { Left = 322, Top = 36, Width = 120, DropDownStyle = ComboBoxStyle.DropDownList };
@@ -309,17 +310,18 @@ namespace PlutoNavis
                 string roomText = rooms.Count == 0 ? "Room boxes: none (the -Revit overlay with -Room writes room-boxes.txt)"
                     : "Use the " + rooms.Count + " room box(es) instead: " + (names.Count <= 6 ? string.Join(", ", names) : string.Join(", ", names.GetRange(0, 6)) + ", ...");
                 var cr = new CheckBox { Text = roomText, Left = 12, Top = 136, Width = 440, Enabled = rooms.Count > 0, Checked = rooms.Count > 0 && roomsOn == "1" };
-                var ok = new Button { Text = "Run", Left = 266, Top = 188, Width = 84, DialogResult = DialogResult.OK };
-                var cancel = new Button { Text = "Cancel", Left = 358, Top = 188, Width = 84, DialogResult = DialogResult.Cancel };
-                f.Controls.AddRange(new Control[] { l1, tc, cu, l2, th, cb, cr, ok, cancel });
+                var cn = new CheckBox { Text = "Only geometry with a run name (its element or an enclosing one has RunName)", Left = 12, Top = 168, Width = 440, Checked = runs == "1" };
+                var ok = new Button { Text = "Run", Left = 266, Top = 220, Width = 84, DialogResult = DialogResult.OK };
+                var cancel = new Button { Text = "Cancel", Left = 358, Top = 220, Width = 84, DialogResult = DialogResult.Cancel };
+                f.Controls.AddRange(new Control[] { l1, tc, cu, l2, th, cb, cr, cn, ok, cancel });
                 f.AcceptButton = ok; f.CancelButton = cancel;
                 while (true)
                 {
                     if (f.ShowDialog() != DialogResult.OK) return false;
                     if (cr.Checked)
                     {
-                        useRooms = true; ductsOnly = cb.Checked;
-                        try { Directory.CreateDirectory(OutRoot); File.WriteAllLines(last, new[] { tc.Text.Trim(), th.Text.Trim(), cu.SelectedIndex == 0 ? "in" : "ft", ductsOnly ? "1" : "0", "1" }); }
+                        useRooms = true; ductsOnly = cb.Checked; runOnly = cn.Checked;
+                        try { Directory.CreateDirectory(OutRoot); File.WriteAllLines(last, new[] { tc.Text.Trim(), th.Text.Trim(), cu.SelectedIndex == 0 ? "in" : "ft", ductsOnly ? "1" : "0", "1", runOnly ? "1" : "0" }); }
                         catch (Exception) { }
                         return true;
                     }
@@ -328,11 +330,11 @@ namespace PlutoNavis
                     if (parts.Length == 3 && double.TryParse(parts[0], NumberStyles.Float, Inv, out x) && double.TryParse(parts[1], NumberStyles.Float, Inv, out y)
                         && double.TryParse(parts[2], NumberStyles.Float, Inv, out z) && double.TryParse(th.Text.Trim(), NumberStyles.Float, Inv, out hh) && hh > 0)
                     {
-                        c = new[] { x, y, z }; inches = cu.SelectedIndex == 0; halfFt = hh; ductsOnly = cb.Checked;
+                        c = new[] { x, y, z }; inches = cu.SelectedIndex == 0; halfFt = hh; ductsOnly = cb.Checked; runOnly = cn.Checked;
                         try
                         {
                             Directory.CreateDirectory(OutRoot);
-                            File.WriteAllLines(last, new[] { tc.Text.Trim(), th.Text.Trim(), inches ? "in" : "ft", ductsOnly ? "1" : "0", "0" });
+                            File.WriteAllLines(last, new[] { tc.Text.Trim(), th.Text.Trim(), inches ? "in" : "ft", ductsOnly ? "1" : "0", "0", runOnly ? "1" : "0" });
                         }
                         catch (Exception) { }
                         return true;
