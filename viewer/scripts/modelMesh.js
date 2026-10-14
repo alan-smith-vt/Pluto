@@ -78,6 +78,7 @@ var FEAModelMesh = (function () {
             var n = p.view.header.nElements;
             for (var e = 0; e < n; e++) { var r = vertRange(fam, p.build, e); a.fill(mask && mask[e] ? 0 : 1, r[0], r[1]); }
             attr.needsUpdate = true;
+            drawOnlyShown(p, a);
             d._off = d._off || {}; d._off[fam] = mask;
             if (d.edges && d.edges[fam]) edgeVis(d, fam);
         };
@@ -108,19 +109,24 @@ var FEAModelMesh = (function () {
         d.setVisible = function (on) { d.root.visible = on; };
         d.setXray = function (on) { parts(d).forEach(function (p) { FEAModels.xrayMaterial(p.material, on); }); };
         d.setColor = function (hex) { var c = hexVec(hex); parts(d).forEach(function (p) { p.material.uniforms.neutralColor.value = c; }); };
+        // BVH pick (triBvh.js; built on the first pick per part): three.js raycasting tested every triangle on
+        // each hover, hidden ones included. Eye-hidden members are skipped inside the traversal.
         d.pick = function (raycaster) {
             var best = null;
+            if (!d.root.visible) return null;
             parts(d).forEach(function (p) {
-                if (!d.root.visible) return;
-                var hits = raycaster.intersectObject(p.mesh);
-                for (var i = 0; i < hits.length; i++) {
-                    var fi = hits[i].faceIndex;
-                    if (fi == null) continue;
-                    var e = p.build.triToElem[fi], fam = p === d.shell ? 'shell' : 'beam';
-                    if (!elemShown(fam, p, e)) continue;     // eye-hidden members are not pickable
-                    if (!best || hits[i].distance < best.distance) best = { fam: fam, elem: e, point: hits[i].point, distance: hits[i].distance };
-                    break;
-                }
+                if (!p.bvh) p.bvh = FEATriBvh.build(p.build.geometry.getAttribute('position').array);
+                var vis = p.build.geometry.getAttribute('elemVis');
+                var va = vis ? vis.array : null;
+                var inv = new THREE.Matrix4().copy(p.mesh.matrixWorld).invert();
+                var o = raycaster.ray.origin.clone().applyMatrix4(inv);
+                var q = raycaster.ray.origin.clone().add(raycaster.ray.direction).applyMatrix4(inv).sub(o);
+                var h = FEATriBvh.raycast(p.bvh, [o.x, o.y, o.z], [q.x, q.y, q.z], va ? function (t) { return va[t * 3] < 0.5; } : null);
+                if (!h) return;
+                var point = o.clone().addScaledVector(q, h.t).applyMatrix4(p.mesh.matrixWorld);
+                var dist = point.distanceTo(raycaster.ray.origin);
+                if (dist < raycaster.near || dist > raycaster.far) return;
+                if (!best || dist < best.distance) best = { fam: p === d.shell ? 'shell' : 'beam', elem: p.build.triToElem[h.tri], point: point, distance: dist };
             });
             return best;
         };
@@ -182,9 +188,21 @@ var FEAModelMesh = (function () {
         }
         return [build._vs[e], build._vs[e] + (build.elemNCount[e] === 4 ? 6 : 3)];
     }
-    function elemShown(fam, p, e) {
-        var attr = p.build.geometry.getAttribute('elemVis');
-        return !attr || attr.array[vertRange(fam, p.build, e)[0]] > 0.5;
+    // Hidden members are left out of the draw entirely: an index over the shown vertices only (the geometry
+    // stays non-indexed underneath) drawn up to the shown count. The elemVis discard alone still ran every
+    // hidden vertex through the GPU each frame. One index buffer per mesh, refilled in place (a new
+    // attribute per toggle would leave the old GPU buffer behind); none until something is first hidden.
+    function drawOnlyShown(p, vis) {
+        var geo = p.build.geometry, n = vis.length, i, k = 0;
+        if (!geo.index) {
+            for (i = 0; i < n; i += 3) if (vis[i] < 0.5) break;
+            if (i >= n) return;
+            geo.setIndex(new THREE.BufferAttribute(new Uint32Array(n), 1));
+        }
+        var idx = geo.index.array;
+        for (i = 0; i < n; i += 3) if (vis[i] > 0.5) { idx[k++] = i; idx[k++] = i + 1; idx[k++] = i + 2; }
+        geo.index.needsUpdate = true;
+        geo.setDrawRange(0, k);
     }
 
     return { create: create, beamEdges: beamEdges };
