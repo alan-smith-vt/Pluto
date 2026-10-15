@@ -258,7 +258,22 @@ public partial class DuctsToPluto
         node = delegate(RvConn k)
         {
             int id; if (nodeOf.TryGetValue(k.Key, out id)) return id;
-            RvConn aq; if (attach.TryGetValue(k, out aq)) { id = node(aq); nodeOf[k.Key] = id; return id; }
+            // attachments follow their chain in a loop (2026-10-15: two one-connector parts attached to each other
+            // recursed forever, stack overflow); the chain ends at a connector that is not attached, or, in a
+            // cycle, at the first one seen twice (its own node)
+            RvConn aq;
+            if (attach.TryGetValue(k, out aq))
+            {
+                var chain = new List<RvConn> { k }; var visited = new HashSet<RvConn> { k }; RvConn end = aq;
+                while (!nodeOf.ContainsKey(end.Key) && attach.TryGetValue(end, out aq) && visited.Add(end)) { chain.Add(end); end = aq; }
+                if (!nodeOf.TryGetValue(end.Key, out id))
+                {
+                    if (attach.ContainsKey(end)) { id = MakeNode(nodes, ref nextNode, end.P, off, scale); nodeOf[end.Key] = id; }
+                    else id = node(end);   // not attached: the plain path below, no further recursion
+                }
+                foreach (RvConn c in chain) nodeOf[c.Key] = id;
+                return id;
+            }
             id = MakeNode(nodes, ref nextNode, k.P, off, scale); nodeOf[k.Key] = id;
             foreach (string t in k.To) { RvConn q; if (conns.TryGetValue(t, out q) && inScope.Contains(q.Owner) && !nodeOf.ContainsKey(t)) nodeOf[t] = id; }
             RvConn tq; if (touch.TryGetValue(k, out tq) && !nodeOf.ContainsKey(tq.Key)) nodeOf[tq.Key] = id;
