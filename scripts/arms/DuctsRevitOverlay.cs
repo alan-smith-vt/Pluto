@@ -678,7 +678,8 @@ public partial class DuctsToPluto
         {
             // -Part <Revit ElementId> (2026-10-12): that part's connectors and what lies near each, as the NEW block
             RvEl pe = scope.Find(x => x.Id == part.Trim());
-            res.Note = pe == null ? "NEW part " + part + ": not among the room's Revit elements" : PartReport(pe, scope, conns, inScope, touch, nearSet, linked, attach);
+            res.Note = pe == null ? "NEW part " + part + ": not among the room's Revit elements: " + OutOfScopeReason(part.Trim(), els, rows, navByGuid, roomGuids, inBox, byRoom ? room : null)
+                : PartReport(pe, scope, conns, inScope, touch, nearSet, linked, attach);
         }
         s.AppendLine(res.Note);
         if (byRoom) s.AppendLine(WriteRoomBoxes(rows, room, T, navisRun, revitRun));
@@ -1120,6 +1121,20 @@ public partial class DuctsToPluto
     }
 
     // Revit "Curve" connector: where a tap meets a duct's side (not an end of the part)
+    // why a Revit element is not in the export (2026-10-15: a run-named element in the middle of a duct was missing):
+    // the scope takes matched elements whose Navisworks row is in the room list, Revit-only ones by position
+    static string OutOfScopeReason(string id, Dictionary<string, RvEl> els, List<Row> rows, Dictionary<string, List<int>> navByGuid,
+        HashSet<string> roomGuids, Func<double[], double, bool> inBox, string room)
+    {
+        RvEl e; if (!els.TryGetValue(id, out e)) return "no such ElementId in elements.csv (the Revit export skipped it)";
+        string what = string.Format(Inv, "{0} / {1} / {2}, RunName '{3}', connectors {4}", e.Cat, e.Fam, e.Type, e.RunName, e.Conns.Count);
+        if (e.P == null) return what + "; no connectors (only parts with connectors are drawn)";
+        if (e.Match == "") return what + "; no Navisworks row with its IfcGUID, centre " + (inBox(e.P, 1) ? "inside" : "outside") + " the rooms' box + 1 ft";
+        var rs = navByGuid[e.Match].Select(i => string.Format(Inv, "Navisworks #{0} {1} room '{2}'", rows[i].NavisId, rows[i].Cat, rows[i].Room)).ToArray();
+        if (!roomGuids.Contains(e.Match)) return what + "; matched by IfcGUID to " + string.Join(", ", rs) + ": that room is not in the list " + room;
+        return what + "; matched to " + string.Join(", ", rs) + " but its centre is > 3 ft outside the rooms' box (fit problem?)";
+    }
+
     static bool IsTapPoint(RvConn k) { return string.Equals(k.Type, "Curve", StringComparison.OrdinalIgnoreCase); }
 
     static double ConnPerim(RvConn k)
