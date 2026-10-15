@@ -365,7 +365,7 @@ public partial class DuctsToPluto
     static void WriteCleanFrames(string path, List<CEdge> clean, Dictionary<int, double[]> P)
     {
         var s = new StringBuilder();
-        s.AppendLine("Frame,JointI,JointJ,XI_in,YI_in,ZI_in,XJ_in,YJ_in,ZJ_in,Shape,W_in,H_in,Dia_in,W2_in,H2_in,Dia2_in,Thk_in,ThkSource,SizeSource,Source,RevitElementId,NavisId,Flags");
+        s.AppendLine("Frame,JointI,JointJ,XI_in,YI_in,ZI_in,XJ_in,YJ_in,ZJ_in,Shape,W_in,H_in,Dia_in,W2_in,H2_in,Dia2_in,Thk_in,ThkSource,SizeSource,Source,RevitElementId,NavisId,Flags,System");
         int f = 0;
         foreach (CEdge ce in clean)
         {
@@ -377,7 +377,8 @@ public partial class DuctsToPluto
                 d2 != null ? R3(d2[1]) : "", d2 != null ? R3(d2[2]) : "", d2 != null ? R3(d2[3]) : "",
                 "0.06", "default", ce.Rigid ? "rigid" : d2 != null ? "transition" : "revit", ce.Source,
                 string.Join(";", ce.Src.Select(x => x.Id).ToArray()), ce.NavisId,
-                string.Join(" ", ce.Flags.OrderBy(x => x, StringComparer.Ordinal).ToArray()) }.Select(CsvCell).ToArray()));
+                string.Join(" ", ce.Flags.OrderBy(x => x, StringComparer.Ordinal).ToArray()),
+                ce.Src.Count > 0 ? ce.Src[0].SysName : ce.Source }.Select(CsvCell).ToArray()));
         }
         File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));
     }

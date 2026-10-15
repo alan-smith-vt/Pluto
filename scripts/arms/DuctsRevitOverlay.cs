@@ -613,6 +613,18 @@ public partial class DuctsToPluto
             // one group per system (connected component); lines / segments are in the label and runs.csv.
             // Single loose parts go together in one group so the list stays short.
             var looseParts = new List<uint>();
+            // primary systems configured: one group per name ("<name>", "<name> fragments", "other: <name>")
+            if (PrimarySystems.Count > 0)
+            {
+                int gi = 0;
+                foreach (IGrouping<string, DuctSystem> byName in systems.GroupBy(g => g.Name).OrderBy(g => g.Key.StartsWith("other: ") ? 2 : g.Key.EndsWith(" fragments") ? 1 : 0).ThenBy(g => g.Key, StringComparer.Ordinal))
+                {
+                    var ids = new List<uint>(); foreach (DuctSystem g in byName) foreach (RvEl e in g.Els) foreach (int id in e.Beams) ids.Add((uint)id);
+                    if (ids.Count == 0) continue;
+                    sc.AddGroup(string.Format(Inv, "System {0} ({1} parts)", byName.Key, byName.Sum(g => g.Els.Count)), rpal[gi++ % rpal.Length], "beams", ids, new[] { "duct", "revit", "system" }, null);
+                }
+            }
+            else
             foreach (DuctSystem g in systems)
             {
                 var ids = new List<uint>(); foreach (RvEl e in g.Els) foreach (int id in e.Beams) ids.Add((uint)id);

@@ -46,6 +46,7 @@ public class SapDucts
             Check(M.FrameObj.AddByPoint(ji, jj, ref name, sec, r["Frame"]), "FrameObj.AddByPoint " + r["Frame"]);
             addTo("DUCT_ALL", name);
             addTo("SRC_" + Clean(r["Source"]), name);
+            string sys; if (r.TryGetValue("System", out sys) && !string.IsNullOrEmpty(sys)) addTo("SYS_" + Clean(sys.Replace(":", "")), name);
             if (sec == NoSize) addTo("FLAG_NO_SIZE", name);
             if (sec == Stub) addTo("TAP_STUBS", name);
             foreach (string f in (r["Flags"] ?? "").Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)) addTo("FLAG_" + Clean(f), name);

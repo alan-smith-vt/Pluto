@@ -24,7 +24,7 @@ public partial class DuctsToPluto
     {
         public int Id; public string Name = ""; public List<RvEl> Els = new List<RvEl>();
         public SortedDictionary<string, int> Names = new SortedDictionary<string, int>(StringComparer.Ordinal);
-        public int ProxJoins;
+        public int ProxJoins; public bool Primary;
     }
 
     class PartBox
@@ -50,7 +50,7 @@ public partial class DuctsToPluto
         // majority name wins per system and every part whose own name differs is flagged SYSTEM_NAME_CONFLICT
         // (test room: one branch piece with Revit RunName system B in a system A branch).
         var nameOf = new Dictionary<RvEl, string>();
-        foreach (RvEl e in scope) nameOf[e] = SystemBase(PartRunName(e, rows, rowsOf), e.System);
+        foreach (RvEl e in scope) nameOf[e] = SystemNameOf(e, rows, rowsOf);
         // group root -> name counts; a group's name is its MAJORITY (one mislabelled part must not let a weak
         // join through: user, 2026-10-12, suspects a single mislabelled segment in a test room)
         var names = new Dictionary<RvEl, Dictionary<string, int>>();
@@ -156,7 +156,7 @@ public partial class DuctsToPluto
             var s = new DuctSystem { Id = res.Count + 1 }; s.Els = l;
             foreach (RvEl e in l)
             {
-                string n = SystemBase(PartRunName(e, rows, rowsOf), e.System);
+                string n = nameOf[e];
                 if (n == "") continue; int c; s.Names.TryGetValue(n, out c); s.Names[n] = c + 1;
             }
             s.Name = s.Names.Count > 0 ? s.Names.OrderByDescending(kv => kv.Value).First().Key : "unnamed";
@@ -169,7 +169,33 @@ public partial class DuctsToPluto
             }
             res.Add(s);
         }
+        // primary systems (2026-10-15, user): per configured name the largest connected component IS that system;
+        // every other component with that majority name is "<name> fragments" (a split at a tee shows up here and
+        // is fixed in the joining, not hidden); components of any other name are "other: <name>"
+        if (PrimarySystems.Count > 0)
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            foreach (DuctSystem s in res)   // biggest first
+            {
+                if (PrimarySystems.Contains(s.Name)) { s.Primary = true; if (!seen.Add(s.Name)) { s.Name += " fragments"; s.Primary = false; } }
+                else s.Name = "other: " + s.Name;
+                foreach (RvEl e in s.Els) e.SysName = s.Name;
+            }
+        }
         return res;
+    }
+
+    // set from the duct config (DuctSystems) by Export-DuctsViewer.ps1; empty = name systems as found
+    public static readonly List<string> PrimarySystems = new List<string>();
+
+    // a part's system name: the first configured primary name (longest first) contained in its RunName or Revit
+    // system name, ignoring case ("<SYS> 123", "A-x-<SYS>-DUCT-4" -> <SYS>); else SystemBase as before
+    static string SystemNameOf(RvEl e, List<Row> rows, Func<RvEl, List<int>> rowsOf)
+    {
+        string rn = PartRunName(e, rows, rowsOf);
+        foreach (string p in PrimarySystems.OrderByDescending(x => x.Length))
+            if (rn.IndexOf(p, StringComparison.OrdinalIgnoreCase) >= 0 || (e.System ?? "").IndexOf(p, StringComparison.OrdinalIgnoreCase) >= 0) return p;
+        return SystemBase(rn, e.System);
     }
 
     // a point every 3 in along q's centreline inside p's box grown by ProxTolFt (along its axis too)
@@ -232,6 +258,15 @@ public partial class DuctsToPluto
             byName.Count(kv => kv.Value.Count > 1), mixed, systems.Sum(s => s.ProxJoins))
             + string.Format(Inv, "; weak joins blocked across two names {0}; parts connected across two names (SYSTEM_NAME_CONFLICT) {1}",
                 Blocked.Count, systems.Sum(s => s.Els.Count(e => e.Flags.Contains("SYSTEM_NAME_CONFLICT"))));
+        if (PrimarySystems.Count > 0)
+            line = string.Format(Inv, "primary systems: {0}; other: {1} components ({2} parts)\n",
+                string.Join("; ", PrimarySystems.Select(p =>
+                {
+                    DuctSystem m = systems.FirstOrDefault(s => s.Primary && s.Name == p);
+                    var fr = systems.Where(s => s.Name == p + " fragments").ToList();
+                    return string.Format(Inv, "{0} {1} parts + {2} fragments ({3} parts)", p, m != null ? m.Els.Count : 0, fr.Count, fr.Sum(s => s.Els.Count));
+                }).ToArray()),
+                systems.Count(s => s.Name.StartsWith("other: ")), systems.Where(s => s.Name.StartsWith("other: ")).Sum(s => s.Els.Count)) + line;
         var sb = new StringBuilder();
         sb.AppendLine("system name -> components (parts):");
         foreach (KeyValuePair<string, List<string>> kv in byName) sb.AppendLine("  " + kv.Key + ": " + string.Join(", ", kv.Value.ToArray()));

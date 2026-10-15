@@ -7,6 +7,9 @@
     SapDir  = ''                      # '' = newest install; else e.g. 'C:\Program Files\Computers and Structures\SAP2000 22'
 
     # ---- model ----
+    # Primary duct systems (Export-DuctsViewer.ps1 -Revit): a part whose run / system name contains one of these
+    # (ignoring case) belongs to it; the largest connected component per name is the system, the rest fragments.
+    DuctSystems = @('SYSA', 'SYSB', 'SYSC')
     Group = 'DUCT_ALL'                # SAP frame group holding every duct member
 
     # Output case names exactly as SAP lists them (copy from SAP, not from Excel).
