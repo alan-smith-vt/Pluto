@@ -9,7 +9,8 @@
     # ---- model ----
     # Primary duct systems (Export-DuctsViewer.ps1 -Revit): a part whose run / system name contains one of these
     # (ignoring case) belongs to it; the largest connected component per name is the system, the rest fragments.
-    DuctSystems = @('SYSA', 'SYSB', 'SYSC')
+    # Optional viewer colour per system as '<name>=#rrggbb' (its fragments get a desaturated variant).
+    DuctSystems = @('SYSA=#4f8cff', 'SYSB=#ff8a3d', 'SYSC')
     Group = 'DUCT_ALL'                # SAP frame group holding every duct member
 
     # Output case names exactly as SAP lists them (copy from SAP, not from Excel).

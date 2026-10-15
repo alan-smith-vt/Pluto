@@ -637,6 +637,7 @@ public partial class DuctsToPluto
             int fi = 0;
             foreach (KeyValuePair<string, List<uint>> kv in flagGroups)
                 sc.AddGroup("Flag: " + kv.Key, fpal[fi++ % fpal.Length], "beams", kv.Value, new[] { "duct", "revit", "flag" }, "FLAG_" + kv.Key);
+            ApplySystemView(sc);
             File.WriteAllText(outBase + ".features.json", sc.ToJson(), new UTF8Encoding(false));
             res.BinPath = outBase + ".bin"; res.SidecarPath = outBase + ".features.json"; res.GeometryHash = w.GeometryHash;
         }

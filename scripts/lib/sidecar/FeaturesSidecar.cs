@@ -68,6 +68,7 @@ public class FeaturesSidecar
         public string SourcePredicateId; // set when a predicate produced this group
         public string StaadName;         // name to use in the STAAD GROUP block; null = Name
         public bool? Hidden;             // viewer enable flag (null = not written)
+        public bool? Invisible;          // viewer eye off: members not drawn (null = not written)
         public string RawJson;           // a user group carried over verbatim from a previous sidecar
     }
 
@@ -207,6 +208,7 @@ public class FeaturesSidecar
             sb.Append("\"name\": ").Append(Q(g.Name)).Append(", ");
             if (g.Color != null) sb.Append("\"color\": ").Append(Q(g.Color)).Append(", ");
             if (g.Hidden.HasValue) sb.Append("\"hidden\": ").Append(g.Hidden.Value ? "true" : "false").Append(", ");
+            if (g.Invisible.HasValue) sb.Append("\"invisible\": ").Append(g.Invisible.Value ? "true" : "false").Append(", ");
             sb.Append("\"tags\": [").Append(string.Join(", ", g.Tags.Select(Q))).Append("], ");
             if (g.SourcePredicateId != null) sb.Append("\"source\": {\"predicateId\": ").Append(Q(g.SourcePredicateId)).Append("}, ");
             if (g.StaadName != null) sb.Append("\"export\": {\"staadName\": ").Append(Q(g.StaadName)).Append("}, ");

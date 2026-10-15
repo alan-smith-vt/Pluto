@@ -185,8 +185,43 @@ public partial class DuctsToPluto
         return res;
     }
 
-    // set from the duct config (DuctSystems) by Export-DuctsViewer.ps1; empty = name systems as found
+    // set from the duct config (DuctSystems) by Export-DuctsViewer.ps1; empty = name systems as found.
+    // Colours: "<name>=#rrggbb" entries; the fragments group gets a desaturated variant
     public static readonly List<string> PrimarySystems = new List<string>();
+    public static readonly Dictionary<string, string> PrimaryColors = new Dictionary<string, string>(StringComparer.Ordinal);
+
+    // the system view (2026-10-15, user): with primary systems configured, each system group in its configured colour
+    // (fragments desaturated), "other: <name>" groups not drawn, every other group (categories, links, joints, flags)
+    // unpainted; the user turns them back on in the Groups tab. Group names: "System <name> (n parts)" / "Clean: <name>"
+    static void ApplySystemView(FeaturesSidecar sc)
+    {
+        if (PrimarySystems.Count == 0) return;
+        foreach (FeaturesSidecar.Group g in sc.Groups)
+        {
+            if (!g.Tags.Contains("system")) { g.Hidden = true; continue; }
+            string n = Regex.Replace(Regex.Replace(g.Name ?? "", @"^(System |Clean: )", ""), @" \(\d+ parts\)$", "");
+            if (n.StartsWith("other: ") || !(PrimarySystems.Contains(n) || n.EndsWith(" fragments"))) { g.Hidden = true; g.Invisible = true; continue; }
+            bool frag = n.EndsWith(" fragments"); string c;
+            if (PrimaryColors.TryGetValue(frag ? n.Substring(0, n.Length - 10) : n, out c)) g.Color = frag ? Desaturate(c) : c;
+        }
+    }
+
+    // "#rrggbb" -> same hue, saturation x 0.35, lightness pulled toward 0.65
+    static string Desaturate(string hex)
+    {
+        int v; if (hex == null || !int.TryParse(hex.TrimStart('#'), NumberStyles.HexNumber, Inv, out v)) return hex;
+        double r = (v >> 16 & 255) / 255.0, g = (v >> 8 & 255) / 255.0, b = (v & 255) / 255.0;
+        double mx = Math.Max(r, Math.Max(g, b)), mn = Math.Min(r, Math.Min(g, b)), l = (mx + mn) / 2, d = mx - mn, h = 0, s = 0;
+        if (d > 0)
+        {
+            s = d / (1 - Math.Abs(2 * l - 1));
+            h = mx == r ? ((g - b) / d + 6) % 6 : mx == g ? (b - r) / d + 2 : (r - g) / d + 4;
+        }
+        s *= 0.35; l = l + (0.65 - l) * 0.5;
+        double c2 = (1 - Math.Abs(2 * l - 1)) * s, x = c2 * (1 - Math.Abs(h % 2 - 1)), m = l - c2 / 2;
+        double[] rgb = h < 1 ? new[] { c2, x, 0.0 } : h < 2 ? new[] { x, c2, 0.0 } : h < 3 ? new[] { 0.0, c2, x } : h < 4 ? new[] { 0.0, x, c2 } : h < 5 ? new[] { x, 0.0, c2 } : new[] { c2, 0.0, x };
+        return "#" + string.Concat(rgb.Select(q => ((int)Math.Round((q + m) * 255)).ToString("x2", Inv)).ToArray());
+    }
 
     // a part's system name: the first configured primary name (longest first) contained in its RunName or Revit
     // system name, ignoring case ("<SYS> 123", "A-x-<SYS>-DUCT-4" -> <SYS>); else SystemBase as before

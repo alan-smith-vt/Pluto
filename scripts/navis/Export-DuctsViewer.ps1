@@ -19,7 +19,8 @@
 #                        <out>.frames.csv, the SAP model input: scripts\sap\Run-SapDucts.ps1 -Frames <it> -SavePath <x.sdb>
 #                        [-Part <Revit ElementId>]: NEW reports that part's connectors and what lies near each
 #                        (-Revit wins over -Probe: leave -Revit off for the probe's -Part)
-#                        [-Systems <list>]: primary system names, comma separated (default: DuctSystems in
+#                        [-Systems <list>]: primary system names, comma separated, each optionally "<name>=#rrggbb"
+#                        (fragments get a desaturated variant; other groups start unpainted / hidden) (default: DuctSystems in
 #                        scripts\duct\duct-config.psd1). A part whose run / system name contains one belongs to it;
 #                        per name the largest connected component is the system, the rest "<name> fragments",
 #                        anything else "other: <name>" (viewer groups, frames.csv System column, SAP SYS_ groups)
@@ -79,8 +80,12 @@ if ($Box) {
 } elseif ($Revit) {
     $cfg = Join-Path (Split-Path $PSScriptRoot) "duct\duct-config.psd1"
     if (-not $Systems -and (Test-Path $cfg)) { $Systems = ((Import-PowerShellDataFile $cfg).DuctSystems) -join "," }
-    [DuctsToPluto]::PrimarySystems.Clear()
-    foreach ($s in @($Systems -split '[,;\s]+' | Where-Object { $_ })) { [DuctsToPluto]::PrimarySystems.Add($s) }
+    [DuctsToPluto]::PrimarySystems.Clear(); [DuctsToPluto]::PrimaryColors.Clear()
+    foreach ($s in @($Systems -split '[,;\s]+' | Where-Object { $_ })) {
+        $n, $c = $s -split '=', 2
+        [DuctsToPluto]::PrimarySystems.Add($n)
+        if ($c) { [DuctsToPluto]::PrimaryColors[$n] = $c }
+    }
     Write-Output ("primary systems: " + $(if ([DuctsToPluto]::PrimarySystems.Count) { [DuctsToPluto]::PrimarySystems -join ", " } else { "none configured (DuctSystems in duct-config.psd1 or -Systems)" }))
     $r = [DuctsToPluto]::ExportRevit($Run, [IO.Path]::GetFullPath($Revit), $Out, $ModelId, $Unit, $Room, $Part)
     Write-Output $r.Note
