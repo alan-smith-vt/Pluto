@@ -1550,7 +1550,8 @@ public partial class DuctsToPluto
     }
 
     // Room filter (2026-10-08): room is one Custom room number or a list ("R1, R2"; commas, semicolons
-    // or spaces); null / "" = every room. Case and surrounding spaces ignored.
+    // or spaces); null / "" = every room. Case and surrounding spaces ignored. Each code also takes its variants
+    // (2026-10-15, user: a room number with an extra letter was missed): a value that STARTS with a listed code.
     static readonly Dictionary<string, HashSet<string>> roomSets = new Dictionary<string, HashSet<string>>();
     static bool InRooms(string value, string rooms)
     {
@@ -1562,7 +1563,9 @@ public partial class DuctsToPluto
             foreach (string r in rooms.Split(new[] { ',', ';', ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)) set.Add(r.Trim());
             roomSets[rooms] = set;
         }
-        return set.Contains((value ?? "").Trim());
+        string v = (value ?? "").Trim();
+        foreach (string r in set) if (v.StartsWith(r, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
     }
 
     // Offset (inches) of a ring's centre from the part's bbox centre, measured across the ring's axis.

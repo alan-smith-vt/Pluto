@@ -728,6 +728,12 @@ public partial class DuctsToPluto
         s.AppendLine("Navisworks run: " + navisRun);
         s.AppendLine("Revit run:      " + revitRun);
         s.AppendLine("room(s):        " + (byRoom ? room : "(all)"));
+        if (byRoom)
+        {
+            var listed = new HashSet<string>(room.Split(new[] { ',', ';', ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).Select(x => x.Trim()), StringComparer.OrdinalIgnoreCase);
+            var variants = inRoom.Select(i => rows[i].Room.Trim()).Where(v => !listed.Contains(v)).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(v => v, StringComparer.Ordinal).ToArray();
+            s.AppendLine("room variants taken in (start with a listed code): " + (variants.Length > 0 ? string.Join(", ", variants) : "none"));
+        }
         s.AppendLine(string.Format(Inv, "Revit elements {0} (no connectors {1}); matched by IfcGUID parameter {2}, by GUID computed from UniqueId {3}; shared GUIDs {4}",
             els.Count, noConn, byParam, byCalc, rvByGuid.Count));
         s.AppendLine(string.Format(Inv, "Curve connectors (point on a part's side) connected to nothing, dropped (whole model): {0}", droppedCurve));
