@@ -1051,8 +1051,8 @@ public partial class DuctsToPluto
     static string PartReport(RvEl pe, List<RvEl> scope, Dictionary<string, RvConn> conns, HashSet<RvEl> inScope,
         Dictionary<RvConn, RvConn> touch, HashSet<RvConn> nearSet, HashSet<RvConn> linked, Dictionary<RvConn, RvConn> attach)
     {
-        var l1 = string.Format(Inv, "NEW part {0}: {1}{2} | {3} | {4} | {5} conn", pe.Id, pe.Kind == "" ? "?" : pe.Kind,
-            pe.Run >= 0 ? string.Format(Inv, " R{0} S{1}", pe.Run, pe.Seg) : " no run", pe.Cat, (pe.Fam + " " + pe.Type).Trim(), pe.Conns.Count);
+        var l1 = string.Format(Inv, "NEW part {0}: {1}{2} | {3} | {4} | {5} conn | pieces {6} (0 = not drawn, no clean frame) | system {7}", pe.Id, pe.Kind == "" ? "?" : pe.Kind,
+            pe.Run >= 0 ? string.Format(Inv, " R{0} S{1}", pe.Run, pe.Seg) : " no run", pe.Cat, (pe.Fam + " " + pe.Type).Trim(), pe.Conns.Count, pe.Segs.Count, pe.SysName == "" ? "-" : pe.SysName);
         var cs = new List<string>(); var ns = new List<string>();
         foreach (RvConn k in pe.Conns)
         {
