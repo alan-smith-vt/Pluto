@@ -81,7 +81,14 @@ public partial class DuctsToPluto
         // 2. joints merged: near pairs, then anything within MergeIn (grid); position = mean of the members
         var par = new Dictionary<int, int>();
         Func<int, int> find = null;
-        find = x => { int p; if (!par.TryGetValue(x, out p)) { par[x] = x; return x; } if (p == x) return x; int r = find(p); par[x] = r; return r; };
+        // iterative (2026-10-15: the recursive form overflowed the stack on a whole-building run)
+        find = x =>
+        {
+            int p; if (!par.TryGetValue(x, out p)) { par[x] = x; return x; }
+            int r = x; while (par[r] != r) r = par[r];
+            while (x != r) { int nx = par[x]; par[x] = r; x = nx; }
+            return r;
+        };
         Action<int, int> uni = (a, b) => { int ra = find(a), rb = find(b); if (ra != rb) par[ra] = rb; };
         foreach (CEdge ce in edges) { find(ce.A); find(ce.B); }
         foreach (RvConn[] p in nearPairs) if (!attach.ContainsKey(p[0])) uni(nodeOf(p[0]), nodeOf(p[1]));
