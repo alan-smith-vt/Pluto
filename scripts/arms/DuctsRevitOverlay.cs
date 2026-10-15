@@ -186,6 +186,9 @@ public partial class DuctsToPluto
             if (e.Match != "" && roomGuids.Contains(e.Match)) { if (inBox(e.P, 3)) scope.Add(e); else guidOutside++; }
             else if (e.Match == "" && inBox(e.P, 1)) { e.Only = true; scope.Add(e); }
         }
+        // -Part outside the scope: say why and stop here (seconds, no overlay written; 2026-10-15)
+        if (!string.IsNullOrEmpty(part) && !scope.Exists(x => x.Id == part.Trim()))
+            return new Result { Note = "NEW part " + part + ": not among the room's Revit elements: " + OutOfScopeReason(part.Trim(), els, rows, navByGuid, roomGuids, inBox, byRoom ? room : null) + " (nothing written)" };
         var inScope = new HashSet<RvEl>(scope);
         var matchedGuids = new HashSet<string>(StringComparer.Ordinal);
         foreach (RvEl e in scope) if (e.Match != "") matchedGuids.Add(e.Match);
