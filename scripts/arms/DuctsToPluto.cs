@@ -1686,6 +1686,7 @@ public partial class DuctsToPluto
                 sb.Append(" | ").Append(ac).Append(": ").Append(Get(it, "AncName"))
                   .Append(Get(it, "AncSize") != "" ? " " + Get(it, "AncSize") : "")
                   .Append(" | run ").Append(run != "" ? run : "(none)")
+                  .Append(it.ContainsKey("AncRoom") ? " | room " + (Get(it, "AncRoom") != "" ? Get(it, "AncRoom") : "(none)") : "")   // Box runs from 2026-10-17 on
                   .Append(" | ").Append(Get(it, "AncIfcGUID")).Append(aid != "" ? " #" + aid : "")
                   .Append(" (").Append(Get(it, "AncLevelsUp")).Append(" up)");
             if (id != "") sb.Append(" | item #").Append(id);

@@ -18,6 +18,7 @@
 #                        Also <out>.flags.csv (discrepancy flags per part, 'Flag: <name>' viewer groups) and
 #                        <out>.frames.csv, the SAP model input: scripts\sap\Run-SapDucts.ps1 -Frames <it> -SavePath <x.sdb>
 #                        [-Part <Revit ElementId>]: NEW reports that part's connectors and what lies near each
+#                        [-Part <NavisId start or IfcGUID>]: NEW reports why that Navisworks row is in or out of the overlay
 #                        (-Revit wins over -Probe: leave -Revit off for the probe's -Part)
 #                        [-Systems <list>]: primary system names, comma separated, each optionally "<name>=#rrggbb"
 #                        (fragments get a desaturated variant; other groups start unpainted / hidden) (default: DuctSystems in

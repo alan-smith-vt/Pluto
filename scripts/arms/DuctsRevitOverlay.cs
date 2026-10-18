@@ -186,6 +186,14 @@ public partial class DuctsToPluto
             if (e.Match != "" && roomGuids.Contains(e.Match)) { if (inBox(e.P, 3)) scope.Add(e); else guidOutside++; }
             else if (e.Match == "" && inBox(e.P, 1)) { e.Only = true; scope.Add(e); }
         }
+        // -Part <NavisId start or IfcGUID> (not a Revit ElementId): the Navisworks side of the scope, then stop
+        if (!string.IsNullOrEmpty(part) && !els.ContainsKey(part.Trim()))
+        {
+            string p = part.Trim();
+            List<int> hits = Enumerable.Range(0, rows.Count).Where(i => rows[i].Guid == p || (rows[i].NavisId != "" && rows[i].NavisId.StartsWith(p, StringComparison.OrdinalIgnoreCase))).ToList();
+            if (hits.Count > 0)
+                return new Result { Note = NavisPartReport(p, hits, rows, els, scope, navByGuid, roomGuids, inBox, byRoom ? room : null) + "\n(nothing written)" };
+        }
         // -Part outside the scope: say why and stop here (seconds, no overlay written; 2026-10-15)
         if (!string.IsNullOrEmpty(part) && !scope.Exists(x => x.Id == part.Trim()))
             return new Result { Note = "NEW part " + part + ": not among the room's Revit elements: " + OutOfScopeReason(part.Trim(), els, rows, navByGuid, roomGuids, inBox, byRoom ? room : null) + " (nothing written)" };
@@ -512,7 +520,7 @@ public partial class DuctsToPluto
         {
             double[] p, q; NavAxis(rows[i], out p, out q);
             int id = RvBeam(beams, labels, ref nb, MakeNode(nodes, ref nextNode, p, off, scale), MakeNode(nodes, ref nextNode, q, off, scale), nodes,
-                "Navisworks #" + rows[i].NavisId + " | " + rows[i].Cat + " | " + rows[i].Name + " | " + rows[i].SizeText + " | NO REVIT MATCH | FLAGS NAVIS_ONLY");
+                "Navisworks #" + rows[i].NavisId + " | " + rows[i].Cat + " | " + rows[i].Name + " | " + rows[i].SizeText + " | room " + (rows[i].Room != "" ? rows[i].Room : "(none)") + " | NO REVIT MATCH | FLAGS NAVIS_ONLY");
             if (id > 0) { gNavOnly.Add((uint)id); navBeamRow[id] = i; }
         }
 
@@ -583,7 +591,9 @@ public partial class DuctsToPluto
         WriteRunsCsv(outBase + ".runs.csv", runSegs);
         foreach (RvEl e in scope)
         {
-            string extra = " | " + (e.Kind != "" ? e.Kind : "?")
+            // room of the Navisworks row(s) (2026-10-17, user: to find the item in Navisworks; NavisId search is unreliable)
+            string[] rms = rowsOf(e).Select(i => rows[i].Room).Where(v => v != "").Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+            string extra = " | room " + (rms.Length > 0 ? string.Join(", ", rms) : "(none)") + " | " + (e.Kind != "" ? e.Kind : "?")
                 + (e.Sys >= 0 ? string.Format(Inv, " | system {0} (C{1}), own name {2}", e.SysName, e.Sys, NameSource(e, rows, rowsOf)) : "")
                 + (e.Run >= 0 ? string.Format(Inv, " | line R{0} seg S{1}", e.Run, e.Seg) : "")
                 + (e.Voted != null ? " voted " + VotedText(e.Voted) : "");
@@ -1157,6 +1167,37 @@ public partial class DuctsToPluto
         var rs = navByGuid[e.Match].Select(i => string.Format(Inv, "Navisworks #{0} {1} room '{2}'", rows[i].NavisId, rows[i].Cat, rows[i].Room)).ToArray();
         if (!roomGuids.Contains(e.Match)) return what + "; matched by IfcGUID to " + string.Join(", ", rs) + ": that room is not in the list " + room;
         return what + "; matched to " + string.Join(", ", rs) + " but its centre is > 3 ft outside the rooms' box (fit problem?)";
+    }
+
+    // -Part with a Navisworks id (2026-10-17: a segment in the Navisworks box mesh was in neither Revit mesh nor
+    // flags.csv): the row as read from ducts.csv, whether the room filter and the rooms' box take it, the Revit
+    // elements sharing its IfcGUID or lying inside its bbox, and what the overlay makes of it. 3 NEW lines.
+    static string NavisPartReport(string p, List<int> hits, List<Row> rows, Dictionary<string, RvEl> els, List<RvEl> scope,
+        Dictionary<string, List<int>> navByGuid, HashSet<string> roomGuids, Func<double[], double, bool> inBox, string room)
+    {
+        if (hits.Count > 1)
+            return string.Format(Inv, "NEW part {0}: {1} Navisworks rows match, give more of the NavisId: {2}", p, hits.Count,
+                string.Join(", ", hits.Take(5).Select(i => "#" + rows[i].NavisId + " " + rows[i].Cat).ToArray()));
+        Row r = rows[hits[0]];
+        double[] c = r.Min != null && r.Max != null ? new[] { (r.Min[0] + r.Max[0]) / 2, (r.Min[1] + r.Max[1]) / 2, (r.Min[2] + r.Max[2]) / 2 } : null;
+        bool roomOk = room == null || InRooms(r.Room, room);
+        string l1 = string.Format(Inv, "NEW part #{0}: {1} '{2}' {3}, RunName '{4}', room '{5}' ({6}), {7}{8}", r.NavisId, r.Cat, r.Name, r.SizeText, r.RunName, r.Room,
+            room == null ? "no room filter" : roomOk ? "in the room list" : "NOT in the room list " + room,
+            c == null ? "no bbox (never drawn)" : "centre " + (inBox(c, 0) ? "inside" : "outside") + " the rooms' box",
+            r.Hidden != "" ? ", hidden (" + r.Hidden + ")" : "");
+        var byGuid = r.Guid != "" ? els.Values.Where(e => e.Match == r.Guid || e.Guid == r.Guid || e.GuidCalc == r.Guid).ToList() : new List<RvEl>();
+        var inside = c == null ? new List<RvEl>() : els.Values.Where(e => e.P != null && !byGuid.Contains(e)
+            && e.P[0] >= r.Min[0] - 0.1 && e.P[0] <= r.Max[0] + 0.1 && e.P[1] >= r.Min[1] - 0.1 && e.P[1] <= r.Max[1] + 0.1 && e.P[2] >= r.Min[2] - 0.1 && e.P[2] <= r.Max[2] + 0.1).ToList();
+        Func<RvEl, string> state = e => scope.Contains(e) ? "in scope" : "out: " + OutOfScopeReason(e.Id, els, rows, navByGuid, roomGuids, inBox, room);
+        string l2 = "NEW revit: IfcGUID '" + r.Guid + "': " + (byGuid.Count == 0 ? "no Revit element" : string.Join("; ", byGuid.Take(3).Select(e => e.Id + " " + state(e)).ToArray()))
+            + " | centre inside its bbox: " + (inside.Count == 0 ? "none" : string.Join("; ", inside.Take(3).Select(e => e.Id + " " + e.Cat + " " + state(e)).ToArray()));
+        string l3;
+        if (c == null) l3 = "left out: no bbox in ducts.csv";
+        else if (!roomOk) l3 = "left out: room '" + r.Room + "' not in the list (Pluto Box takes it by position, the overlay by room)";
+        else if (byGuid.Exists(e => scope.Contains(e))) l3 = "in the overlay, matched to Revit by IfcGUID";
+        else if (inside.Exists(e => scope.Contains(e) && e.Only)) l3 = "in the overlay, paired to a Revit-only part by position";
+        else l3 = "in the overlay as Navisworks-only (NAVIS_ONLY in flags.csv: SAP frame, or covered by a Revit part)";
+        return l1 + "\n" + l2 + "\nNEW status: " + l3;
     }
 
     static bool IsTapPoint(RvConn k) { return string.Equals(k.Type, "Curve", StringComparison.OrdinalIgnoreCase); }

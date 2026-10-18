@@ -44,7 +44,7 @@ namespace PlutoNavis
         const int MaxTriangles = 5000000;   // per box: a box past this is closed (flagged) and the walk carries on for the others
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
-        class Anc { public string Guid = "", Cat = "", Fam = "", Type = "", Size = "", Name = "", Id = "", Run = "", Sys = ""; public int Depth; }
+        class Anc { public string Guid = "", Cat = "", Fam = "", Type = "", Size = "", Name = "", Id = "", Run = "", Sys = "", Room = ""; public int Depth; }
         class RoomBox { public string Name; public double[] Lo, Hi; public long Tris; public bool Full; }
 
         class State
@@ -88,7 +88,7 @@ namespace PlutoNavis
                 using (st.W = new StreamWriter(Path.Combine(dir, "box_items.csv"), false, new UTF8Encoding(false)))
                 using (st.Tri = new BinaryWriter(File.Create(Path.Combine(dir, "box_tri.bin"))))
                 {
-                    st.W.WriteLine("Row,NavisId,DisplayName,ClassDisplayName,ClassName,HiddenSelf,Hidden,HiddenBy,Box,AncIfcGUID,AncCategory,AncFamily,AncType,AncSize,AncName,AncNavisId,AncLevelsUp,AncRunName,AncSystem,Path,TrianglesTotal,TrianglesKept,Lines,MinX,MinY,MinZ,MaxX,MaxY,MaxZ");
+                    st.W.WriteLine("Row,NavisId,DisplayName,ClassDisplayName,ClassName,HiddenSelf,Hidden,HiddenBy,Box,AncIfcGUID,AncCategory,AncFamily,AncType,AncSize,AncName,AncNavisId,AncLevelsUp,AncRunName,AncSystem,Path,TrianglesTotal,TrianglesKept,Lines,MinX,MinY,MinZ,MaxX,MaxY,MaxZ,AncRoom");
                     var roots = new List<ModelItem>();
                     foreach (ModelItem r in doc.Models.RootItems) roots.Add(r);
                     for (int i = 0; i < roots.Count && !st.Cancelled && !st.Capped; i++)
@@ -145,11 +145,14 @@ namespace PlutoNavis
                 if (run == "") run = DuctsButton.AnyTab(p, "Run Name");
                 if (run == "") run = anc.Run;
                 string sys = DuctsButton.Get(p, "Element|System Name");
+                // room number as Pluto Ducts reads it (Custom tab first), else the enclosing element's (2026-10-17: hover
+                // shows it, to find the item in Navisworks)
+                string room = DuctsButton.Pick(p, "Custom", pn => pn == "roomnumber" || pn.EndsWith("roomnumber"), "Room", new Dictionary<string, int>());
                 anc = new Anc
                 {
                     Guid = g, Cat = DuctsButton.Get(p, "Element|Category"), Fam = DuctsButton.Get(p, "Element|Family"),
                     Type = DuctsButton.Get(p, "Element|Type"), Size = DuctsButton.Ifc(p, "Size"), Name = it.DisplayName,
-                    Id = NavisId(it), Depth = depth, Run = run, Sys = sys != "" ? sys : anc.Sys
+                    Id = NavisId(it), Depth = depth, Run = run, Sys = sys != "" ? sys : anc.Sys, Room = room != "" ? room : anc.Room
                 };
                 path = it.DisplayName;
             }
@@ -210,7 +213,7 @@ namespace PlutoNavis
                 st.Rows.ToString(Inv), NavisId(it), it.DisplayName, it.ClassDisplayName, it.ClassName, it.IsHidden ? "1" : "0", hidden ? "1" : "0",
                 hiddenBy, firstBox, anc.Guid, anc.Cat, anc.Fam, anc.Type, anc.Size, anc.Name, anc.Id, anc.Guid != "" ? (depth - anc.Depth).ToString(Inv) : "",
                 anc.Run, anc.Sys, path, total.ToString(Inv), nKept.ToString(Inv), (lines.Count / 6).ToString(Inv),
-                N(bb.Min.X), N(bb.Min.Y), N(bb.Min.Z), N(bb.Max.X), N(bb.Max.Y), N(bb.Max.Z) }));
+                N(bb.Min.X), N(bb.Min.Y), N(bb.Min.Z), N(bb.Max.X), N(bb.Max.Y), N(bb.Max.Z), anc.Room }));
             if (nKept > 0)
             {
                 st.Written++;
