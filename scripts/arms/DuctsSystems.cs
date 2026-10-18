@@ -238,6 +238,15 @@ public partial class DuctsToPluto
         }
     }
 
+    // the configured colour of a system name as the viewer paints it (mains and pinned mains as configured, fragments
+    // desaturated), "" for anything else; frames.csv SystemColor -> SAP group colours (2026-10-17)
+    static string SystemColor(string n)
+    {
+        string bn, c; bool frag = (n ?? "").EndsWith(" fragments");
+        if (frag) bn = n.Substring(0, n.Length - 10); else if (!IsPrimaryName(n, out bn)) return "";
+        return PrimaryColors.TryGetValue(bn, out c) ? (frag ? Desaturate(c) : c) : "";
+    }
+
     // "#rrggbb" -> same hue, saturation x 0.35, lightness pulled toward 0.65
     static string Desaturate(string hex)
     {

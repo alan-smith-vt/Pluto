@@ -40,6 +40,7 @@ public class SapDucts
         Action<string, string> addTo = (g, f) => { List<string> l; if (!groups.TryGetValue(g, out l)) { l = new List<string>(); groups[g] = l; } l.Add(f); };
         int skipped = 0, oriented = 0, noDir = 0;
         var zeroRows = new List<string>(); var failed = new List<string>();
+        var groupColor = new Dictionary<string, int>(StringComparer.Ordinal);   // SYS_ group -> the run colour (frames.csv SystemColor)
         foreach (Dictionary<string, string> r in rows)
         {
             double dx = Num(r, "XJ_in") - Num(r, "XI_in"), dy = Num(r, "YJ_in") - Num(r, "YI_in"), dz = Num(r, "ZJ_in") - Num(r, "ZI_in");
@@ -65,14 +66,20 @@ public class SapDucts
             }
             addTo("DUCT_ALL", name);
             addTo("SRC_" + Clean(r["Source"]), name);
-            string sys; if (r.TryGetValue("System", out sys) && !string.IsNullOrEmpty(sys)) addTo("SYS_" + Clean(sys.Replace(":", "")), name);
+            string sys; if (r.TryGetValue("System", out sys) && !string.IsNullOrEmpty(sys))
+            {
+                string g = "SYS_" + Clean(sys.Replace(":", "")); addTo(g, name);
+                string hex; int col; if (!groupColor.ContainsKey(g) && r.TryGetValue("SystemColor", out hex) && OleColor(hex, out col)) groupColor[g] = col;
+            }
             if (sec == NoSize) addTo("FLAG_NO_SIZE", name);
             if (sec == Stub) addTo("TAP_STUBS", name);
             foreach (string f in (r["Flags"] ?? "").Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)) addTo("FLAG_" + Clean(f), name);
         }
-        foreach (KeyValuePair<string, List<string>> kv in groups)
+        // SYS_ groups defined last and the only coloured ones (Display Options > Color By: Groups)
+        foreach (KeyValuePair<string, List<string>> kv in groups.OrderBy(g => g.Key.StartsWith("SYS_") ? 1 : 0).ToList())
         {
-            Check(M.GroupDef.SetGroup(kv.Key, -1, true, true, true, true, true, true, true, true, true, true, true), "SetGroup " + kv.Key);
+            int col; if (!groupColor.TryGetValue(kv.Key, out col)) col = -1;
+            Check(M.GroupDef.SetGroup(kv.Key, col, true, true, true, true, true, true, true, true, true, true, true), "SetGroup " + kv.Key);
             foreach (string f in kv.Value) Check(M.FrameObj.SetGroupAssign(f, kv.Key, false, eItemType.Objects), "SetGroupAssign " + f + " " + kv.Key);
         }
         Check(M.File.Save(savePath), "Save " + savePath);
@@ -101,6 +108,15 @@ public class SapDucts
         double d2 = Dot(l2, x1); l2 = Unit(new[] { l2[0] - d2 * x1[0], l2[1] - d2 * x1[1], l2[2] - d2 * x1[2] });
         double[] l3 = { x1[1] * l2[2] - x1[2] * l2[1], x1[2] * l2[0] - x1[0] * l2[2], x1[0] * l2[1] - x1[1] * l2[0] };
         ang = Math.Atan2(-Dot(w, l2), Dot(w, l3)) * 180 / Math.PI;
+        return true;
+    }
+
+    // "#rrggbb" -> SAP / OLE colour (red in the low byte)
+    static bool OleColor(string hex, out int col)
+    {
+        col = -1; int v;
+        if (string.IsNullOrEmpty(hex) || !int.TryParse(hex.TrimStart('#'), NumberStyles.HexNumber, Inv, out v)) return false;
+        col = (v >> 16 & 255) | (v & 0xff00) | (v & 255) << 16;
         return true;
     }
 
