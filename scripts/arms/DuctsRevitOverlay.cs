@@ -187,7 +187,7 @@ public partial class DuctsToPluto
             else if (e.Match == "" && inBox(e.P, 1)) { e.Only = true; scope.Add(e); }
         }
         // -Part <NavisId start or IfcGUID> (not a Revit ElementId): the Navisworks side of the scope, then stop
-        if (!string.IsNullOrEmpty(part) && !els.ContainsKey(part.Trim()))
+        if (!string.IsNullOrEmpty(part) && !part.Contains(",") && !els.ContainsKey(part.Trim()))
         {
             string p = part.Trim();
             List<int> hits = Enumerable.Range(0, rows.Count).Where(i => rows[i].Guid == p || (rows[i].NavisId != "" && rows[i].NavisId.StartsWith(p, StringComparison.OrdinalIgnoreCase))).ToList();
@@ -195,7 +195,7 @@ public partial class DuctsToPluto
                 return new Result { Note = NavisPartReport(p, hits, rows, els, scope, navByGuid, roomGuids, inBox, byRoom ? room : null) + "\n(nothing written)" };
         }
         // -Part outside the scope: say why and stop here (seconds, no overlay written; 2026-10-15)
-        if (!string.IsNullOrEmpty(part) && !scope.Exists(x => x.Id == part.Trim()))
+        if (!string.IsNullOrEmpty(part) && !part.Contains(",") && !scope.Exists(x => x.Id == part.Trim()))
             return new Result { Note = "NEW part " + part + ": not among the room's Revit elements: " + OutOfScopeReason(part.Trim(), els, rows, navByGuid, roomGuids, inBox, byRoom ? room : null) + " (nothing written)" };
         var inScope = new HashSet<RvEl>(scope);
         var matchedGuids = new HashSet<string>(StringComparer.Ordinal);
@@ -702,7 +702,19 @@ public partial class DuctsToPluto
             medRes, used, means ? " by GUID group" : " 1:1", Math.Atan2(T[1], T[0]) * 180 / Math.PI, spread,
             inRoom.Count, navFab, scope.Count, rvFab, navMissing.Count, navFabMissing, rvOnly, rvOnlyFab, catDiff.Count,
             nConnected, nTouch, nNear, nSide, nOutside, nOpen, located.Count, usedRow.Count);
-        if (!string.IsNullOrEmpty(part))
+        if (!string.IsNullOrEmpty(part) && part.Contains(","))
+        {
+            // -Part <id>,<id> (2026-10-17): the gap between two parts' systems, as the NEW block
+            string[] ids = part.Split(',').Select(x => x.Trim()).ToArray();
+            RvEl pa = scope.Find(x => x.Id == ids[0]), pb = ids.Length > 1 ? scope.Find(x => x.Id == ids[1]) : null;
+            if (pa == null || pb == null)
+            {
+                string bad = pa == null ? ids[0] : ids.Length > 1 ? ids[1] : "(second id missing)";
+                res.Note = "NEW part " + bad + ": not among the room's Revit elements: " + OutOfScopeReason(bad, els, rows, navByGuid, roomGuids, inBox, byRoom ? room : null);
+            }
+            else res.Note = GapReport(pa, pb, systems, scope, conns, inScope, touch, nearSet, linked, attach, rows, inRoom, navByGuid, matchedGuids);
+        }
+        else if (!string.IsNullOrEmpty(part))
         {
             // -Part <Revit ElementId> (2026-10-12): that part's connectors and what lies near each, as the NEW block
             RvEl pe = scope.Find(x => x.Id == part.Trim());
@@ -1169,6 +1181,66 @@ public partial class DuctsToPluto
         return what + "; matched to " + string.Join(", ", rs) + " but its centre is > 3 ft outside the rooms' box (fit problem?)";
     }
 
+    // -Part <a>,<b> (2026-10-17, user: a primary system and its fragment split by a gap; tracing it part by part took a
+    // dozen probes): each part's system (component, part count); when they differ, the closest pair of free ends
+    // (connectors with no Revit connection in scope) between the two, with along / off-axis / angle as in the -Part
+    // report; the Revit parts and Navisworks rows lying between those two ends (a point every 0.25 ft inside the
+    // part's bbox + 0.1 ft), each with run name, room and whether its IfcGUID is shared by other rows or matched.
+    static string GapReport(RvEl pa, RvEl pb, List<DuctSystem> systems, List<RvEl> scope, Dictionary<string, RvConn> conns, HashSet<RvEl> inScope,
+        Dictionary<RvConn, RvConn> touch, HashSet<RvConn> nearSet, HashSet<RvConn> linked, Dictionary<RvConn, RvConn> attach,
+        List<Row> rows, List<int> inRoom, Dictionary<string, List<int>> navByGuid, HashSet<string> matchedGuids)
+    {
+        DuctSystem sa = systems.Find(s => s.Id == pa.Sys), sb = systems.Find(s => s.Id == pb.Sys);
+        Func<RvEl, DuctSystem, string> sysText = (e, s) => s == null ? e.Id + " in no system" : string.Format(Inv, "{0} in '{1}' (C{2}, {3} parts)", e.Id, s.Name, s.Id, s.Els.Count);
+        string l1 = "NEW gap: " + sysText(pa, sa) + " | " + sysText(pb, sb);
+        if (sa != null && sa == sb) return l1 + "\nNEW ends: same system, already joined\nNEW between: -";
+        Func<RvConn, bool> free = k => !k.To.Exists(t => { RvConn q; return conns.TryGetValue(t, out q) && inScope.Contains(q.Owner); });
+        Func<RvConn, string> state = k => touch.ContainsKey(k) ? "touching " + touch[k].Owner.Id : attach.ContainsKey(k) ? "attached " + attach[k].Owner.Id
+            : nearSet.Contains(k) ? "near" : linked.Contains(k) ? "side" : k.To.Count > 0 ? "outside" : "open";
+        List<RvEl> ea = sa != null ? sa.Els : new List<RvEl> { pa }, eb = sb != null ? sb.Els : new List<RvEl> { pb };
+        RvConn ka = null, kb = null; double best = double.MaxValue;
+        foreach (RvEl x in ea) foreach (RvConn p in x.Conns) if (free(p))
+            foreach (RvEl y in eb) foreach (RvConn q in y.Conns) if (free(q))
+            { double d = Dist2(p.P, q.P); if (d < best) { best = d; ka = p; kb = q; } }
+        if (ka == null) return l1 + "\nNEW ends: no free end on " + (ea.Exists(x => x.Conns.Exists(k => free(k))) ? pb.Id : pa.Id) + "'s side\nNEW between: -";
+        double dist = Math.Sqrt(best) * 12;
+        double along = ((kb.P[0] - ka.P[0]) * ka.D[0] + (kb.P[1] - ka.P[1]) * ka.D[1] + (kb.P[2] - ka.P[2]) * ka.D[2]) * 12;
+        double lat = Math.Sqrt(Math.Max(0, dist * dist - along * along));
+        double ang = Math.Acos(Math.Max(-1, Math.Min(1, ka.D[0] * kb.D[0] + ka.D[1] * kb.D[1] + ka.D[2] * kb.D[2]))) * 180 / Math.PI;
+        string l2 = string.Format(Inv, "NEW ends: {0}({1}) conn {2} {3} -> {4}({5}) conn {6} {7}: {8:0.#} in, along {9:0.#} off {10:0.#} ang {11:0} (near link needs <= 12 in, off <= 1, ang >= 154)",
+            ka.Owner.Id, ka.Owner.Kind, ka.Key.Substring(ka.Key.IndexOf(':') + 1), state(ka), kb.Owner.Id, kb.Owner.Kind, kb.Key.Substring(kb.Key.IndexOf(':') + 1), state(kb), dist, along, lat, ang);
+        // what lies on the straight line between the two ends
+        double[] a = ka.P, b = kb.P; int n = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(best) / 0.25));
+        Func<double[], double[], bool> crosses = (lo, hi) =>
+        {
+            for (int s2 = 0; s2 <= n; s2++)
+            {
+                double t = (double)s2 / n; bool inside = true;
+                for (int ax = 0; ax < 3 && inside; ax++) { double v = a[ax] + (b[ax] - a[ax]) * t; if (v < lo[ax] - 0.1 || v > hi[ax] + 0.1) inside = false; }
+                if (inside) return true;
+            }
+            return false;
+        };
+        var between = new List<string>();
+        foreach (RvEl e in scope)
+        {
+            if (e == ka.Owner || e == kb.Owner || e.Conns.Count == 0) continue;
+            double[] lo = { double.MaxValue, double.MaxValue, double.MaxValue }, hi = { double.MinValue, double.MinValue, double.MinValue };
+            foreach (RvConn k in e.Conns) for (int ax = 0; ax < 3; ax++) { lo[ax] = Math.Min(lo[ax], k.P[ax]); hi[ax] = Math.Max(hi[ax], k.P[ax]); }
+            if (crosses(lo, hi)) between.Add(string.Format(Inv, "Revit {0} {1} {2} system '{3}'", e.Id, e.Kind, e.Cat, e.SysName));
+        }
+        foreach (int i in inRoom)
+        {
+            Row r = rows[i]; if (!crosses(r.Min, r.Max)) continue;
+            if (r.Guid != "" && (r.Guid == ka.Owner.Match || r.Guid == kb.Owner.Match) && navByGuid[r.Guid].Count == 1) continue;   // the end parts' own rows
+            int shared = r.Guid != "" && navByGuid.ContainsKey(r.Guid) ? navByGuid[r.Guid].Count : 0;
+            between.Add(string.Format(Inv, "Navisworks #{0} {1} '{2}' run '{3}' room '{4}'{5}", r.NavisId.Length > 8 ? r.NavisId.Substring(0, 8) : r.NavisId, r.Cat, r.Name, r.RunName, r.Room,
+                shared > 1 ? string.Format(Inv, ", IfcGUID shared by {0} rows{1}", shared, matchedGuids.Contains(r.Guid) ? " (matched to Revit through another row)" : "")
+                : matchedGuids.Contains(r.Guid) ? ", matched to Revit" : ", no Revit match"));
+        }
+        return l1 + "\n" + l2 + "\nNEW between: " + (between.Count == 0 ? "nothing" : string.Join("; ", between.Take(12).ToArray()) + (between.Count > 12 ? string.Format(Inv, " (+{0} more)", between.Count - 12) : ""));
+    }
+
     // -Part with a Navisworks id (2026-10-17: a segment in the Navisworks box mesh was in neither Revit mesh nor
     // flags.csv): the row as read from ducts.csv, whether the room filter and the rooms' box take it, the Revit
     // elements sharing its IfcGUID or lying inside its bbox, and what the overlay makes of it. 3 NEW lines.
@@ -1194,7 +1266,13 @@ public partial class DuctsToPluto
         string l3;
         if (c == null) l3 = "left out: no bbox in ducts.csv";
         else if (!roomOk) l3 = "left out: room '" + r.Room + "' not in the list (Pluto Box takes it by position, the overlay by room)";
-        else if (byGuid.Exists(e => scope.Contains(e))) l3 = "in the overlay, matched to Revit by IfcGUID";
+        else if (byGuid.Exists(e => scope.Contains(e)))
+        {
+            // 2026-10-17: fabrication rows of one assembly share an IfcGUID; a row with no Revit part of its own looked matched
+            int shared = navByGuid.ContainsKey(r.Guid) ? navByGuid[r.Guid].Count : 1;
+            l3 = shared > 1 ? string.Format(Inv, "IfcGUID shared by {0} Navisworks rows: the Revit part(s) above may belong to another row; this row gets no frame of its own", shared)
+                : "in the overlay, matched to Revit by IfcGUID";
+        }
         else if (inside.Exists(e => scope.Contains(e) && e.Only)) l3 = "in the overlay, paired to a Revit-only part by position";
         else l3 = "in the overlay as Navisworks-only (NAVIS_ONLY in flags.csv: SAP frame, or covered by a Revit part)";
         return l1 + "\n" + l2 + "\nNEW status: " + l3;
