@@ -46,7 +46,7 @@ param(
     [switch]$Centrelines,
     [switch]$Probe,
     [string]$Room,
-    [string]$Part,
+    [string[]]$Part,   # string[]: an unquoted "-Part a,b" arrives as an array; joined below
     [string]$Revit,
     [string]$Out,
     [string]$Unit = "in",
@@ -55,6 +55,7 @@ param(
     [string]$Systems
 )
 $ErrorActionPreference = "Stop"
+$Part = $(if ($Part) { $Part -join "," } else { $null })
 if ($Room -and -not ($Mesh -or $Probe -or $Revit)) { throw "-Room works with -Mesh, -Probe or -Revit only." }
 # file-name tag for the room filter: one room as is, a list as "<first>_plus<n>"
 $roomList = @(if ($Room) { $Room -split '[,;\s]+' | Where-Object { $_ } })
