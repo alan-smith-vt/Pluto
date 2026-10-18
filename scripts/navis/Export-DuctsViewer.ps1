@@ -11,7 +11,7 @@
 #                        <out>.probe.txt and an overlay of opening stubs; -Room = Custom room number(s) (e.g. R1 or "R1,R2"),
 #                        needs a run from the 2026-10-08 build; default out <run>\probe[_<room>]
 #                        [-Part <NavisId start>]: NEW reports that one part's rings and connectors instead
-#     [-Revit <dir> [-Room <codes>]]  Revit connectivity overlay: a Pluto Connectors run (Revit add-in,
+#     [-Revit <dir> [-Room <codes>]]  (no / empty -Room: DuctRooms from duct-config.psd1; -Room * = whole building) Revit connectivity overlay: a Pluto Connectors run (Revit add-in,
 #                        C:\Temp\hvac\revit\<yyyyMMdd-HHmmss>) fitted onto this run's frame by IfcGUID and drawn for the
 #                        room(s): Revit parts, connected / touching / open joints; <out>.match.txt lists what is in one
 #                        model and not the other; default out <run>\revit[_<room>]. Load beside ducts_mesh[_<room>].
@@ -56,6 +56,14 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $Part = $(if ($Part) { $Part -join "," } else { $null })
+# -Revit without -Room: DuctRooms from the duct config (a fresh session lost the list once and ran the whole building)
+$cfg = Join-Path (Split-Path $PSScriptRoot) "duct\duct-config.psd1"
+if ($Revit -and -not $Room -and (Test-Path $cfg)) {   # an empty -Room $var counts as not given
+    $dr = @((Import-PowerShellDataFile $cfg).DuctRooms | Where-Object { $_ })
+    if ($dr.Count) { $Room = $dr -join ","; Write-Output ("rooms from duct-config.psd1: {0} codes" -f $dr.Count) }
+}
+if ($Room -eq "*") { $Room = "" }
+if ($Revit -and -not $Room) { Write-Output "rooms: none (whole building)" }
 if ($Room -and -not ($Mesh -or $Probe -or $Revit)) { throw "-Room works with -Mesh, -Probe or -Revit only." }
 # file-name tag for the room filter: one room as is, a list as "<first>_plus<n>"
 $roomList = @(if ($Room) { $Room -split '[,;\s]+' | Where-Object { $_ } })

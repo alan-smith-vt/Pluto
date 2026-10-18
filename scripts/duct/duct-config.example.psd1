@@ -11,6 +11,9 @@
     # (ignoring case) belongs to it; the largest connected component per name is the system, the rest fragments.
     # Optional viewer colour per system as '<name>=#rrggbb' (its fragments get a desaturated variant).
     DuctSystems = @('SYSA=#4f8cff', 'SYSB=#ff8a3d', 'SYSC')
+    # Room codes for Export-DuctsViewer.ps1 -Revit when -Room is not given (each also takes its variants: values that
+    # start with it). -Room overrides; -Room '*' = the whole building. @() = no default (whole building).
+    DuctRooms = @('R101', 'R102')
     Group = 'DUCT_ALL'                # SAP frame group holding every duct member
 
     # Output case names exactly as SAP lists them (copy from SAP, not from Excel).
