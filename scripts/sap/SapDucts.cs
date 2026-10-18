@@ -39,14 +39,22 @@ public class SapDucts
         var groups = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         Action<string, string> addTo = (g, f) => { List<string> l; if (!groups.TryGetValue(g, out l)) { l = new List<string>(); groups[g] = l; } l.Add(f); };
         int skipped = 0, oriented = 0, noDir = 0;
+        var zeroRows = new List<string>(); var failed = new List<string>();
         foreach (Dictionary<string, string> r in rows)
         {
+            double dx = Num(r, "XJ_in") - Num(r, "XI_in"), dy = Num(r, "YJ_in") - Num(r, "YI_in"), dz = Num(r, "ZJ_in") - Num(r, "ZI_in");
+            // zero length (2026-10-17, production: two joint ids at one position after gap closing; SAP refused it);
+            // checked before the joints are made so no loose points are left
+            if (r["JointI"] == r["JointJ"] || !(Math.Sqrt(dx * dx + dy * dy + dz * dz) >= 0.01)) { skipped++; zeroRows.Add(r["Frame"]); continue; }
             string ji = Joint(joints, r["JointI"], Num(r, "XI_in"), Num(r, "YI_in"), Num(r, "ZI_in"));
             string jj = Joint(joints, r["JointJ"], Num(r, "XJ_in"), Num(r, "YJ_in"), Num(r, "ZJ_in"));
-            if (ji == jj) { skipped++; continue; }
             string sec = Section(sections, r);
             string name = "";
-            Check(M.FrameObj.AddByPoint(ji, jj, ref name, sec, r["Frame"]), "FrameObj.AddByPoint " + r["Frame"]);
+            if (M.FrameObj.AddByPoint(ji, jj, ref name, sec, r["Frame"]) != 0)
+            {
+                failed.Add(F("{0} ({1} -> {2}, {3:0.###} in, parts {4})", r["Frame"], r["JointI"], r["JointJ"], Math.Sqrt(dx * dx + dy * dy + dz * dz), r["RevitElementId"]));
+                continue;
+            }
             // orientation (2026-10-17): the box's width (W_in) along local 3, from the frame's width direction
             if (r["Shape"] == "rect" && sec != NoSize)
             {
@@ -71,9 +79,11 @@ public class SapDucts
         var parts = new List<string>();
         foreach (KeyValuePair<string, List<string>> kv in groups) if (kv.Key.StartsWith("FLAG_")) parts.Add(kv.Key.Substring(5) + " " + kv.Value.Count);
         int defThk = rows.Count(r => r["Shape"] != "rigid" && (r.ContainsKey("ThkSource") ? r["ThkSource"] : "default") == "default");
-        return F("NEW SAP model {0}: {1} frames, {2} joints, {3} sections{4}; material {5} (PLACEHOLDER)\nNEW orientation: {6} rect frames oriented, {7} without a width direction (FLAG_NO_ORIENTATION); thickness default 0.06 in on {8} frames\nNEW flag groups (frames): {9}",
+        return F("NEW SAP model {0}: {1} frames, {2} joints, {3} sections{4}; material {5} (PLACEHOLDER)\nNEW orientation: {6} rect frames oriented, {7} without a width direction (FLAG_NO_ORIENTATION); thickness default 0.06 in on {8} frames\nNEW flag groups (frames): {9}{10}",
             Path.GetFileName(savePath), groups["DUCT_ALL"].Count, joints.Count, sections.Count + 1,
-            skipped > 0 ? F(", {0} zero-length rows skipped", skipped) : "", Mat, oriented, noDir, defThk, parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "none");
+            skipped > 0 ? F(", {0} zero-length rows skipped ({1})", skipped, string.Join(" ", zeroRows.Take(10).ToArray()) + (zeroRows.Count > 10 ? " ..." : "")) : "",
+            Mat, oriented, noDir, defThk, parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "none",
+            failed.Count > 0 ? F("\nNEW SAP refused {0} frames (not in the model): {1}", failed.Count, string.Join("; ", failed.Take(10).ToArray()) + (failed.Count > 10 ? " ..." : "")) : "");
     }
 
     // SAP's local-axis angle (degrees) that puts local 3 along the width direction w. Default axes (SAP): local 1 = I->J;
