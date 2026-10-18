@@ -392,6 +392,12 @@ public partial class DuctsToPluto
         foreach (KeyValuePair<RvConn, RvConn> kv in attach) nearPairs.Add(new[] { kv.Key, kv.Value });   // systems: attached = joined
         var loose = new List<RvConn>();
         foreach (RvConn k in open) if (!touch.ContainsKey(k) && !attach.ContainsKey(k)) loose.Add(k);
+        // end pieces (2026-10-17, test room: a duct end and a one-connector flange / end piece on it touch each other, so
+        // neither was loose, and a 10 in hole to the next end piece, facing it, never got a near link; the systems
+        // split there): a ONE-connector part's touching connector stands for the duct end it sits on. Its links
+        // take gaps only (no overlap: two pieces at both ends of a short straight face apart and must not link)
+        var endPiece = new HashSet<RvConn>();
+        foreach (RvConn k in open) if (k.Owner.Conns.Count == 1 && touch.ContainsKey(k)) { endPiece.Add(k); loose.Add(k); }
         foreach (RvConn k in loose)
         {
             if (linked.Contains(k)) continue;
@@ -403,17 +409,25 @@ public partial class DuctsToPluto
                 double d = Math.Sqrt(Dist2(k.P, q.P)); if (d > bd) continue;
                 double along = (q.P[0] - k.P[0]) * k.D[0] + (q.P[1] - k.P[1]) * k.D[1] + (q.P[2] - k.P[2]) * k.D[2];
                 if (Math.Sqrt(Math.Max(0, d * d - along * along)) * 12 > 1) continue;
+                if ((endPiece.Contains(k) || endPiece.Contains(q)) && along * 12 < 0.5) continue;
                 bd = d; best = q; bAlong = along;
             }
             if (best == null) continue;
             linked.Add(k); linked.Add(best); nearSet.Add(k); nearSet.Add(best); nearPairs.Add(new[] { k, best });
-            int id = RvBeam(beams, labels, ref nb, node(k), node(best), nodes, string.Format(Inv, "near: {0} {1:0.#} in | Revit {2} -> {3}",
-                bAlong >= 0 ? "gap" : "overlap", Math.Abs(bAlong) * 12, k.Owner.Id, best.Owner.Id));
+            bool viaPiece = endPiece.Contains(k) || endPiece.Contains(best);
+            if (viaPiece)
+                foreach (RvConn c in new[] { k, best })
+                {
+                    RvEl host = endPiece.Contains(c) ? touch[c].Owner : c.Owner;
+                    AddFlag(host, "NEAR_ACROSS_END_PIECES", string.Format(Inv, "{0:0.#} in gap to Revit {1}", bAlong * 12, (c == k ? best : k).Owner.Id));
+                }
+            int id = RvBeam(beams, labels, ref nb, node(k), node(best), nodes, string.Format(Inv, "near: {0} {1:0.#} in | Revit {2} -> {3}{4}",
+                bAlong >= 0 ? "gap" : "overlap", Math.Abs(bAlong) * 12, k.Owner.Id, best.Owner.Id, viaPiece ? " | across end pieces" : ""));
             if (id > 0) gNear.Add((uint)id);
         }
         foreach (RvConn k in loose)
         {
-            if (linked.Contains(k)) continue;
+            if (linked.Contains(k) || endPiece.Contains(k)) continue;   // end pieces: near links only
             double[] bestF = null; RvConn[] bestM = null; double bd = double.MaxValue;
             foreach (RvConn[] m in mains)
             {
