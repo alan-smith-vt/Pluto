@@ -7,12 +7,15 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using SAP2000v1;
 
 public class SapDucts
 {
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
-    public const string Mat = "DUCT_STEEL", NoSize = "DUCT_NOSIZE", Stub = "TAP_STUB", StubMat = "RIGID_STUB";
+    // Mat: PLACEHOLDER (2026-10-17, user: material is a major open TODO): galvanized-steel values under a name that
+    // says so; replace with the engineers' material before the model goes out
+    public const string Mat = "DUCT_MAT_TBD", NoSize = "DUCT_NOSIZE", Stub = "TAP_STUB", StubMat = "RIGID_STUB";
 
     public SapSurvey S;
     cSapModel M { get { return S.Model; } }
@@ -35,7 +38,7 @@ public class SapDucts
         var joints = new Dictionary<string, string>(StringComparer.Ordinal);
         var groups = new Dictionary<string, List<string>>(StringComparer.Ordinal);
         Action<string, string> addTo = (g, f) => { List<string> l; if (!groups.TryGetValue(g, out l)) { l = new List<string>(); groups[g] = l; } l.Add(f); };
-        int skipped = 0;
+        int skipped = 0, oriented = 0, noDir = 0;
         foreach (Dictionary<string, string> r in rows)
         {
             string ji = Joint(joints, r["JointI"], Num(r, "XI_in"), Num(r, "YI_in"), Num(r, "ZI_in"));
@@ -44,6 +47,14 @@ public class SapDucts
             string sec = Section(sections, r);
             string name = "";
             Check(M.FrameObj.AddByPoint(ji, jj, ref name, sec, r["Frame"]), "FrameObj.AddByPoint " + r["Frame"]);
+            // orientation (2026-10-17): the box's width (W_in) along local 3, from the frame's width direction
+            if (r["Shape"] == "rect" && sec != NoSize)
+            {
+                double ang;
+                if (LocalAngle(Num(r, "XI_in"), Num(r, "YI_in"), Num(r, "ZI_in"), Num(r, "XJ_in"), Num(r, "YJ_in"), Num(r, "ZJ_in"), Num(r, "WX"), Num(r, "WY"), Num(r, "WZ"), out ang))
+                { if (Math.Abs(ang) > 1e-6) Check(M.FrameObj.SetLocalAxes(name, ang), "SetLocalAxes " + name); oriented++; }
+                else { noDir++; addTo("FLAG_NO_ORIENTATION", name); }
+            }
             addTo("DUCT_ALL", name);
             addTo("SRC_" + Clean(r["Source"]), name);
             string sys; if (r.TryGetValue("System", out sys) && !string.IsNullOrEmpty(sys)) addTo("SYS_" + Clean(sys.Replace(":", "")), name);
@@ -59,10 +70,32 @@ public class SapDucts
         Check(M.File.Save(savePath), "Save " + savePath);
         var parts = new List<string>();
         foreach (KeyValuePair<string, List<string>> kv in groups) if (kv.Key.StartsWith("FLAG_")) parts.Add(kv.Key.Substring(5) + " " + kv.Value.Count);
-        return F("NEW SAP model {0}: {1} frames, {2} joints, {3} sections{4}\nNEW flag groups (frames): {5}",
+        int defThk = rows.Count(r => r["Shape"] != "rigid" && (r.ContainsKey("ThkSource") ? r["ThkSource"] : "default") == "default");
+        return F("NEW SAP model {0}: {1} frames, {2} joints, {3} sections{4}; material {5} (PLACEHOLDER)\nNEW orientation: {6} rect frames oriented, {7} without a width direction (FLAG_NO_ORIENTATION); thickness default 0.06 in on {8} frames\nNEW flag groups (frames): {9}",
             Path.GetFileName(savePath), groups["DUCT_ALL"].Count, joints.Count, sections.Count + 1,
-            skipped > 0 ? F(", {0} zero-length rows skipped", skipped) : "", parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "none");
+            skipped > 0 ? F(", {0} zero-length rows skipped", skipped) : "", Mat, oriented, noDir, defThk, parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "none");
     }
+
+    // SAP's local-axis angle (degrees) that puts local 3 along the width direction w. Default axes (SAP): local 1 = I->J;
+    // local 2 = the upward (+Z) direction square to it, or global +X when the frame is vertical; local 3 = 1 x 2. The
+    // angle turns 2 and 3 about +1, right-handed: 3' = -sin(a) 2 + cos(a) 3, so a = atan2(-w.2, w.3).
+    public static bool LocalAngle(double xi, double yi, double zi, double xj, double yj, double zj, double wx, double wy, double wz, out double ang)
+    {
+        ang = 0;
+        double[] x1 = Unit(new[] { xj - xi, yj - yi, zj - zi }), w = { wx, wy, wz };
+        if (x1 == null || double.IsNaN(wx) || double.IsNaN(wy) || double.IsNaN(wz)) return false;
+        double dw = Dot(w, x1); w = Unit(new[] { w[0] - dw * x1[0], w[1] - dw * x1[1], w[2] - dw * x1[2] });
+        if (w == null) return false;
+        bool vertical = Math.Sqrt(x1[0] * x1[0] + x1[1] * x1[1]) < 1e-3;
+        double[] l2 = vertical ? new double[] { 1, 0, 0 } : new[] { 0.0, 0.0, 1.0 };
+        double d2 = Dot(l2, x1); l2 = Unit(new[] { l2[0] - d2 * x1[0], l2[1] - d2 * x1[1], l2[2] - d2 * x1[2] });
+        double[] l3 = { x1[1] * l2[2] - x1[2] * l2[1], x1[2] * l2[0] - x1[0] * l2[2], x1[0] * l2[1] - x1[1] * l2[0] };
+        ang = Math.Atan2(-Dot(w, l2), Dot(w, l3)) * 180 / Math.PI;
+        return true;
+    }
+
+    static double Dot(double[] a, double[] b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+    static double[] Unit(double[] a) { double l = Math.Sqrt(Dot(a, a)); return l < 1e-9 ? null : new[] { a[0] / l, a[1] / l, a[2] / l }; }
 
     string Joint(Dictionary<string, string> joints, string key, double x, double y, double z)
     {

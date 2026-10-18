@@ -26,6 +26,7 @@ public partial class DuctsToPluto
         public int A, B; public bool Rigid; public double[] Dim, DimB, Y;   // Dim / DimB: { round 1/0, W, H, Dia } inches
         public List<RvEl> Src = new List<RvEl>(); public HashSet<string> Flags = new HashSet<string>(StringComparer.Ordinal);
         public string Source = "revit"; public string NavisId = ""; public bool Dead;
+        public double Thk = double.NaN;   // wall thickness (in) from Navisworks; NaN = not stated (frames.csv: 0.06 default)
         public int Sys { get { return Src.Count > 0 ? Src[0].Sys : -1; } }
     }
 
@@ -41,7 +42,7 @@ public partial class DuctsToPluto
             foreach (int[] g in e.Segs)
             {
                 if (g[0] == g[1]) continue;
-                var ce = new CEdge { A = g[0], B = g[1] }; ce.Src.Add(e);
+                var ce = new CEdge { A = g[0], B = g[1], Thk = e.Thk }; ce.Src.Add(e);
                 ce.Source = e.Only && e.LocRow < 0 ? "revit-only" : "revit";
                 double[] da = pos0(g[0]), db = pos0(g[1]);
                 double[] dir = Unit(Sub3(db, da));
@@ -71,7 +72,7 @@ public partial class DuctsToPluto
         {
             RawViewerWriter.BeamMember m = beams[kv.Key]; Row r = rows[kv.Value];
             string shape; double w, h, d;
-            var ce = new CEdge { A = m.NodeA, B = m.NodeB, Source = "navisworks-only", NavisId = r.NavisId, Y = m.LocalY };
+            var ce = new CEdge { A = m.NodeA, B = m.NodeB, Source = "navisworks-only", NavisId = r.NavisId, Y = m.LocalY, Thk = !double.IsNaN(r.T) && r.T > 0 ? r.T : double.NaN };
             ce.Dim = NavSize(r, out shape, out w, out h, out d) ? new[] { shape == "round" ? 1.0 : 0.0, w, h, d } : new[] { 0.0, double.NaN, double.NaN, double.NaN };
             ce.Flags.Add("NAVIS_ONLY");
             edges.Add(ce);
@@ -203,7 +204,7 @@ public partial class DuctsToPluto
                     if (lb0 * 12 > LatTolIn || lb1 * 12 > LatTolIn) continue;
                     double La = Len(P[a.A], P[a.B]), lo = Math.Max(0, Math.Min(tb0, tb1)) * La, hi = Math.Min(1, Math.Max(tb0, tb1)) * La;
                     if ((hi - lo) * 12 <= MergeIn) continue;   // end to end or apart: not an overlap
-                    if (!SameDim(a, b))
+                    if (!SameDim(a, b) || !SameThk(a, b))
                     {
                         if (!a.Flags.Contains("OVERLAP_SIZE_CONFLICT")) overlapConflict++;
                         a.Flags.Add("OVERLAP_SIZE_CONFLICT"); b.Flags.Add("OVERLAP_SIZE_CONFLICT");
@@ -236,7 +237,7 @@ public partial class DuctsToPluto
             {
                 if (kv.Value.Count != 2) continue;
                 CEdge a = kv.Value[0], b = kv.Value[1]; int n = kv.Key;
-                if (a.Rigid || b.Rigid || a.DimB != null || b.DimB != null || a.Sys != b.Sys || !SameDim(a, b) || a.Source == "navisworks-only" || b.Source == "navisworks-only") continue;
+                if (a.Rigid || b.Rigid || a.DimB != null || b.DimB != null || a.Sys != b.Sys || !SameDim(a, b) || !SameThk(a, b) || a.Source == "navisworks-only" || b.Source == "navisworks-only") continue;
                 int oa = a.A == n ? a.B : a.A, ob = b.A == n ? b.B : b.A;
                 if (oa == ob || Dot3(Unit(Sub3(P[oa], P[n])), Unit(Sub3(P[ob], P[n]))) > -CollinearCos) continue;
                 CEdge ne = CopyEdge(a, oa, ob);
@@ -271,7 +272,7 @@ public partial class DuctsToPluto
 
     static CEdge CopyEdge(CEdge s, int a, int b)
     {
-        var e = new CEdge { A = a, B = b, Rigid = s.Rigid, Dim = s.Dim, DimB = s.DimB, Y = s.Y, Source = s.Source, NavisId = s.NavisId };
+        var e = new CEdge { A = a, B = b, Rigid = s.Rigid, Dim = s.Dim, DimB = s.DimB, Y = s.Y, Source = s.Source, NavisId = s.NavisId, Thk = s.Thk };
         e.Src.AddRange(s.Src); e.Flags.UnionWith(s.Flags);
         return e;
     }
@@ -288,6 +289,14 @@ public partial class DuctsToPluto
         if (a.Dim[0] == 1) return Math.Abs(a.Dim[3] - b.Dim[3]) <= 0.5;
         double a1 = Math.Max(a.Dim[1], a.Dim[2]), a2 = Math.Min(a.Dim[1], a.Dim[2]), b1 = Math.Max(b.Dim[1], b.Dim[2]), b2 = Math.Min(b.Dim[1], b.Dim[2]);
         return Math.Abs(a1 - b1) <= 0.5 && Math.Abs(a2 - b2) <= 0.5;
+    }
+
+    // same wall thickness (2026-10-17): chains collapse and overlaps merge only within one thickness, so each SAP
+    // frame keeps its parts' gauge; a different thickness on an overlap is an OVERLAP_SIZE_CONFLICT like a size
+    static bool SameThk(CEdge a, CEdge b)
+    {
+        if (double.IsNaN(a.Thk) || double.IsNaN(b.Thk)) return double.IsNaN(a.Thk) && double.IsNaN(b.Thk);
+        return Math.Abs(a.Thk - b.Thk) <= 0.001;
     }
 
     static double Dot3(double[] a, double[] b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
@@ -329,18 +338,19 @@ public partial class DuctsToPluto
                 bool round = d[0] == 1 && !double.IsNaN(d[3]), rect = d[0] == 0 && !double.IsNaN(d[1]) && !double.IsNaN(d[2]);
                 if (round || rect)
                 {
-                    string name = DimText(d);
+                    double t = double.IsNaN(ce.Thk) ? 0.06 : ce.Thk;
+                    string name = DimText(d) + string.Format(Inv, " t{0:0.###}", t);
                     if (!secIx.TryGetValue(name, out s))
                     {
-                        sections.Add(round ? RawViewerWriter.SectionDef.Pipe(name, (float)(d[3] * ft), (float)(0.06 * ft))
-                                           : RawViewerWriter.SectionDef.Box(name, (float)(d[1] * ft), (float)(d[2] * ft), (float)(0.06 * ft)));
+                        sections.Add(round ? RawViewerWriter.SectionDef.Pipe(name, (float)(d[3] * ft), (float)(t * ft))
+                                           : RawViewerWriter.SectionDef.Box(name, (float)(d[1] * ft), (float)(d[2] * ft), (float)(t * ft)));
                         s = sections.Count - 1; secIx[name] = s;
                     }
                 }
             }
             int a = nd(ce.A), b = nd(ce.B); if (a == b) continue;
             var m = Beam(nb, a, b, s, nodes);
-            if (ce.Y != null && !ce.Rigid) { double[] y = ce.Y; double[] x = Unit(Sub3(P[ce.B], P[ce.A])); double dt = Dot3(y, x); double[] yy = Unit(new[] { y[0] - dt * x[0], y[1] - dt * x[1], y[2] - dt * x[2] }); if (Dot3(yy, yy) > 0.5) m.LocalY = yy; }
+            m.LocalY = WidthDir(ce, P);
             beams[nb] = m;
             string sys = ce.Src.Count > 0 ? ce.Src[0].SysName : (ce.Source == "navisworks-only" ? "navisworks-only" : "?");
             labels[nb] = string.Format(Inv, "clean | system {0} | {1}{2} | {3:0.##} ft | parts {4}{5}",
@@ -369,24 +379,39 @@ public partial class DuctsToPluto
             File.WriteAllText(outBase + ".features.json", sc.ToJson(), new UTF8Encoding(false));
     }
 
-    // the SAP input: one frame per clean element, inches, Navisworks frame; W2 / H2 / Dia2 = a transition's other end
+    // a rectangular edge's width direction (W_in lies along it), unit and square to the edge; null = not known (rigid,
+    // round, or the run had no connector width directions)
+    static double[] WidthDir(CEdge ce, Dictionary<int, double[]> P)
+    {
+        if (ce.Y == null || ce.Rigid || (ce.Dim != null && ce.Dim[0] == 1)) return null;
+        double[] y = ce.Y, x = Unit(Sub3(P[ce.B], P[ce.A])); double dt = Dot3(y, x);
+        double[] yy = Unit(new[] { y[0] - dt * x[0], y[1] - dt * x[1], y[2] - dt * x[2] });
+        return Dot3(yy, yy) > 0.5 ? yy : null;
+    }
+
+    // the SAP input: one frame per clean element, inches, Navisworks frame; W2 / H2 / Dia2 = a transition's other end;
+    // WX / WY / WZ = the width direction (SapDucts sets the local axis angle from it); Thk_in = the parts' Navisworks
+    // wall thickness, else 0.06 (ThkSource "default")
     static void WriteCleanFrames(string path, List<CEdge> clean, Dictionary<int, double[]> P)
     {
         var s = new StringBuilder();
-        s.AppendLine("Frame,JointI,JointJ,XI_in,YI_in,ZI_in,XJ_in,YJ_in,ZJ_in,Shape,W_in,H_in,Dia_in,W2_in,H2_in,Dia2_in,Thk_in,ThkSource,SizeSource,Source,RevitElementId,NavisId,Flags,System");
+        s.AppendLine("Frame,JointI,JointJ,XI_in,YI_in,ZI_in,XJ_in,YJ_in,ZJ_in,Shape,W_in,H_in,Dia_in,W2_in,H2_in,Dia2_in,Thk_in,ThkSource,SizeSource,Source,RevitElementId,NavisId,Flags,System,WX,WY,WZ");
         int f = 0;
         foreach (CEdge ce in clean)
         {
             double[] a = P[ce.A], b = P[ce.B]; double[] d = ce.Dim ?? new[] { 0.0, double.NaN, double.NaN, double.NaN }, d2 = ce.DimB;
             string shape = ce.Rigid ? "rigid" : d[0] == 1 ? "round" : "rect";
+            double[] wd = WidthDir(ce, P);
             s.AppendLine(string.Join(",", new[] { "F" + (++f), "N" + ce.A, "N" + ce.B,
                 R3(a[0] * 12), R3(a[1] * 12), R3(a[2] * 12), R3(b[0] * 12), R3(b[1] * 12), R3(b[2] * 12), shape,
                 ce.Rigid ? "" : R3(d[1]), ce.Rigid ? "" : R3(d[2]), ce.Rigid ? "" : R3(d[3]),
                 d2 != null ? R3(d2[1]) : "", d2 != null ? R3(d2[2]) : "", d2 != null ? R3(d2[3]) : "",
-                "0.06", "default", ce.Rigid ? "rigid" : d2 != null ? "transition" : "revit", ce.Source,
+                ce.Rigid ? "" : double.IsNaN(ce.Thk) ? "0.06" : R3(ce.Thk), ce.Rigid ? "" : double.IsNaN(ce.Thk) ? "default" : "navisworks",
+                ce.Rigid ? "rigid" : d2 != null ? "transition" : "revit", ce.Source,
                 string.Join(";", ce.Src.Select(x => x.Id).ToArray()), ce.NavisId,
                 string.Join(" ", ce.Flags.OrderBy(x => x, StringComparer.Ordinal).ToArray()),
-                ce.Src.Count > 0 ? ce.Src[0].SysName : ce.Source }.Select(CsvCell).ToArray()));
+                ce.Src.Count > 0 ? ce.Src[0].SysName : ce.Source,
+                wd != null ? wd[0].ToString("0.######", Inv) : "", wd != null ? wd[1].ToString("0.######", Inv) : "", wd != null ? wd[2].ToString("0.######", Inv) : "" }.Select(CsvCell).ToArray()));
         }
         File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));
     }

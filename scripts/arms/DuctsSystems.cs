@@ -181,6 +181,24 @@ public partial class DuctsToPluto
                 else s.Name = "other: " + s.Name;
                 foreach (RvEl e in s.Els) e.SysName = s.Name;
             }
+            // pinned mains (2026-10-17, user: a room boundary cut one run in two; the smaller piece is a second main, not
+            // a fragment): DuctMains "<name>=<Revit id>" promotes the fragment holding that part to "<name> 2", "<name> 3", ...
+            PinNotes.Clear();
+            foreach (KeyValuePair<string, string> pin in PrimaryPins)
+            {
+                DuctSystem s = res.FirstOrDefault(x => x.Els.Exists(e => e.Id == pin.Value));
+                if (s == null) { PinNotes.Add(pin.Key + "=" + pin.Value + ": part not in scope"); continue; }
+                if (s.Name == pin.Key) { PinNotes.Add(pin.Key + "=" + pin.Value + ": already in the main"); continue; }
+                if (s.Name != pin.Key + " fragments")
+                {
+                    PinNotes.Add(pin.Key + "=" + pin.Value + (s.Primary ? ": already a pinned main (" + s.Name + ")" : ": the part is in '" + s.Name + "', not a " + pin.Key + " fragment"));
+                    continue;
+                }
+                int k = 2; while (res.Exists(x => x.Name == pin.Key + " " + k)) k++;
+                s.Name = pin.Key + " " + k; s.Primary = true;
+                foreach (RvEl e in s.Els) e.SysName = s.Name;
+                PinNotes.Add(string.Format(Inv, "{0}={1}: C{2} ({3} parts) -> {4}", pin.Key, pin.Value, s.Id, s.Els.Count, s.Name));
+            }
         }
         return res;
     }
@@ -189,6 +207,19 @@ public partial class DuctsToPluto
     // Colours: "<name>=#rrggbb" entries; the fragments group gets a desaturated variant
     public static readonly List<string> PrimarySystems = new List<string>();
     public static readonly Dictionary<string, string> PrimaryColors = new Dictionary<string, string>(StringComparer.Ordinal);
+    // DuctMains: (system name, Revit id) pins, set by Export-DuctsViewer.ps1; PinNotes: what each did (match.txt)
+    public static readonly List<KeyValuePair<string, string>> PrimaryPins = new List<KeyValuePair<string, string>>();
+    static readonly List<string> PinNotes = new List<string>();
+
+    // a configured primary name, or a pinned main "<name> <n>"; base = the configured name (colour)
+    static bool IsPrimaryName(string n, out string baseName)
+    {
+        baseName = n;
+        if (PrimarySystems.Contains(n)) return true;
+        Match m = Regex.Match(n ?? "", @"^(.+) (\d+)$");
+        if (m.Success && PrimarySystems.Contains(m.Groups[1].Value)) { baseName = m.Groups[1].Value; return true; }
+        return false;
+    }
 
     // the system view (2026-10-15, user): with primary systems configured, each system group in its configured colour
     // (fragments desaturated), "other: <name>" groups not drawn, every other group (categories, links, joints, flags)
@@ -200,9 +231,10 @@ public partial class DuctsToPluto
         {
             if (!g.Tags.Contains("system")) { g.Hidden = true; continue; }
             string n = Regex.Replace(Regex.Replace(g.Name ?? "", @"^(System |Clean: )", ""), @" \(\d+ parts\)$", "");
-            if (n.StartsWith("other: ") || !(PrimarySystems.Contains(n) || n.EndsWith(" fragments"))) { g.Hidden = true; g.Invisible = true; continue; }
+            string bn; bool prim = IsPrimaryName(n, out bn);
+            if (n.StartsWith("other: ") || !(prim || n.EndsWith(" fragments"))) { g.Hidden = true; g.Invisible = true; continue; }
             bool frag = n.EndsWith(" fragments"); string c;
-            if (PrimaryColors.TryGetValue(frag ? n.Substring(0, n.Length - 10) : n, out c)) g.Color = frag ? Desaturate(c) : c;
+            if (PrimaryColors.TryGetValue(frag ? n.Substring(0, n.Length - 10) : bn, out c)) g.Color = frag ? Desaturate(c) : c;
         }
     }
 
@@ -299,9 +331,12 @@ public partial class DuctsToPluto
                 {
                     DuctSystem m = systems.FirstOrDefault(s => s.Primary && s.Name == p);
                     var fr = systems.Where(s => s.Name == p + " fragments").ToList();
-                    return string.Format(Inv, "{0} {1} parts + {2} fragments ({3} parts)", p, m != null ? m.Els.Count : 0, fr.Count, fr.Sum(s => s.Els.Count));
+                    var pinned = systems.Where(s => s.Primary && s.Name != p && s.Name.StartsWith(p + " ")).ToList();
+                    return string.Format(Inv, "{0} {1} parts{4} + {2} fragments ({3} parts)", p, m != null ? m.Els.Count : 0, fr.Count, fr.Sum(s => s.Els.Count),
+                        string.Concat(pinned.Select(s => string.Format(Inv, " + {0} {1} parts", s.Name, s.Els.Count)).ToArray()));
                 }).ToArray()),
-                systems.Count(s => s.Name.StartsWith("other: ")), systems.Where(s => s.Name.StartsWith("other: ")).Sum(s => s.Els.Count)) + line;
+                systems.Count(s => s.Name.StartsWith("other: ")), systems.Where(s => s.Name.StartsWith("other: ")).Sum(s => s.Els.Count))
+                + (PinNotes.Count > 0 ? "pinned mains (DuctMains): " + string.Join("; ", PinNotes.ToArray()) + "\n" : "") + line;
         var sb = new StringBuilder();
         sb.AppendLine("system name -> components (parts):");
         foreach (KeyValuePair<string, List<string>> kv in byName) sb.AppendLine("  " + kv.Key + ": " + string.Join(", ", kv.Value.ToArray()));

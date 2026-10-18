@@ -98,6 +98,14 @@ if ($Box) {
         [DuctsToPluto]::PrimarySystems.Add($n)
         if ($c) { [DuctsToPluto]::PrimaryColors[$n] = $c }
     }
+    # pinned mains: "<name>=<Revit id>" (a fragment holding that part becomes "<name> 2", ...)
+    [DuctsToPluto]::PrimaryPins.Clear()
+    if (Test-Path $cfg) {
+        foreach ($p in @((Import-PowerShellDataFile $cfg).DuctMains | Where-Object { $_ })) {
+            $n, $id = $p -split '=', 2
+            if ($id) { [DuctsToPluto]::PrimaryPins.Add((New-Object 'System.Collections.Generic.KeyValuePair[string,string]' $n.Trim(), $id.Trim())) }
+        }
+    }
     Write-Output ("primary systems: " + $(if ([DuctsToPluto]::PrimarySystems.Count) { [DuctsToPluto]::PrimarySystems -join ", " } else { "none configured (DuctSystems in duct-config.psd1 or -Systems)" }))
     $r = [DuctsToPluto]::ExportRevit($Run, [IO.Path]::GetFullPath($Revit), $Out, $ModelId, $Unit, $Room, $Part)
     Write-Output $r.Note

@@ -35,6 +35,7 @@ public partial class DuctsToPluto
         public string Kind = "";  // DuctsRunGraph: straight / bend / transition / branch / end / equipment
         public int Run = -1, Seg = -1;   // DuctsRunGraph run and segment ids (-1 = none)
         public int Sys = -1; public string SysName = "";   // DuctsSystems: connected component and its name
+        public double Thk = double.NaN;   // wall thickness (in) from its Navisworks row's WallThk_in; NaN = not stated
         public double[] Voted;    // the segment's voted size { round 1/0, big side or dia, small side } (null = none)
     }
 
@@ -557,6 +558,7 @@ public partial class DuctsToPluto
         {
             int nr = NavRow(e, rowsOf(e)); Row r = nr >= 0 ? rows[nr] : null;
             double t = r != null && !double.IsNaN(r.T) && r.T > 0 ? r.T : 0.06;
+            e.Thk = r != null && !double.IsNaN(r.T) && r.T > 0 ? r.T : double.NaN;
             var connOf = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach (int[] g in e.Segs) if (g[2] >= 0) { connOf[g[0] + "-" + g[1]] = g[2]; connOf[g[1] + "-" + g[0]] = g[2]; }
             foreach (int id in e.Beams)

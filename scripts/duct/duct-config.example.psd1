@@ -14,6 +14,9 @@
     # Room codes for Export-DuctsViewer.ps1 -Revit when -Room is not given (each also takes its variants: values that
     # start with it). -Room overrides; -Room '*' = the whole building. @() = no default (whole building).
     DuctRooms = @('R101', 'R102')
+    # Second mains: '<name>=<Revit ElementId>' promotes the '<name> fragments' component holding that part to a main
+    # of its own ('<name> 2', '<name> 3', ...), e.g. a run cut in two by the room scope. match.txt says what each did.
+    DuctMains = @()
     Group = 'DUCT_ALL'                # SAP frame group holding every duct member
 
     # Output case names exactly as SAP lists them (copy from SAP, not from Excel).
