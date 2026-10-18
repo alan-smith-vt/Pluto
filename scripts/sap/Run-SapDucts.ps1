@@ -3,11 +3,17 @@
 # Builds a NEW blank model (geometry, sections with the parts' wall thickness, box width along local 3 from the
 # frames' width direction, PLACEHOLDER material DUCT_MAT_TBD, DUCT_ALL / SRC_ / SYS_ / FLAG_ groups; no supports or loads) and saves
 # it at -SavePath. If a model is open in SAP it is reopened afterwards so SAP is left where it was.
+# Only the primary systems (mains and pinned mains) go in by default; -Fragments, -Other (other systems) and
+# -NavisOnly (Navisworks rows with no Revit part) add those. Each frame's GUID field names its Revit / Navisworks ids.
 param(
     [Parameter(Mandatory = $true)][string]$Frames,
     [Parameter(Mandatory = $true)][string]$SavePath,
+    [switch]$Fragments,
+    [switch]$Other,
+    [switch]$NavisOnly,
     [string]$SapDir = $env:PLUTO_SAP_DIR
 )
+$include = @($(if ($Fragments) { "fragment" }), $(if ($Other) { "other" }), $(if ($NavisOnly) { "navisworks-only" })) -join ","
 $ErrorActionPreference = "Stop"
 $Frames = [IO.Path]::GetFullPath($Frames); $SavePath = [IO.Path]::GetFullPath($SavePath)
 if (-not (Test-Path $Frames)) { throw "No $Frames" }
@@ -19,7 +25,7 @@ $original = $null
 try { $original = $d.ModelPath() } catch { }   # PowerShell cannot call the COM model directly
 if ($original -and [IO.Path]::GetFullPath($original) -eq $SavePath) { throw "-SavePath must differ from the open model ($original)" }
 try {
-    $d.Build($Frames, $SavePath)
+    $d.Build($Frames, $SavePath, $include)
 } finally {
     if ($original -and (Test-Path $original)) { $sap.OpenModel($original, $false) }
     $sap.Close()

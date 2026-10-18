@@ -22,10 +22,14 @@ public class SapDucts
     public SapDucts(SapSurvey s) { S = s; }
     public string ModelPath() { return M.GetModelFilename(true); }
 
-    public string Build(string framesCsv, string savePath)
+    public string Build(string framesCsv, string savePath) { return Build(framesCsv, savePath, ""); }
+
+    // include: extra SystemRole values to keep besides "main" ("fragment", "other", "navisworks-only"; comma separated)
+    public string Build(string framesCsv, string savePath, string include)
     {
         List<Dictionary<string, string>> rows = ReadCsv(framesCsv);
         if (rows.Count == 0) throw new Exception("no frames in " + framesCsv);
+        string filterNote = FilterRoles(rows, include);
         Check(M.InitializeNewModel(eUnits.kip_in_F), "InitializeNewModel");
         Check(M.File.NewBlank(), "NewBlank");
         // galvanized sheet steel: E 29000 ksi, alpha 6.5e-6 /F, 0.2836 lb/in3
@@ -64,6 +68,11 @@ public class SapDucts
                 { if (Math.Abs(ang) > 1e-6) Check(M.FrameObj.SetLocalAxes(name, ang), "SetLocalAxes " + name); oriented++; }
                 else { noDir++; addTo("FLAG_NO_ORIENTATION", name); }
             }
+            // where the frame came from, readable in SAP's object information (2026-10-17, user: finding the Revit id
+            // meant looking the frame up in frames.csv)
+            string rid = Val(r, "RevitElementId"), nid = Val(r, "NavisId");
+            string src = (rid != "" ? "Revit " + rid : "") + (rid != "" && nid != "" ? " | " : "") + (nid != "" ? "Navisworks #" + nid : "");
+            if (src != "") M.FrameObj.SetGUID(name, src.Length > 250 ? src.Substring(0, 247) + "..." : src);
             addTo("DUCT_ALL", name);
             addTo("SRC_" + Clean(r["Source"]), name);
             string sys; if (r.TryGetValue("System", out sys) && !string.IsNullOrEmpty(sys))
@@ -86,7 +95,7 @@ public class SapDucts
         var parts = new List<string>();
         foreach (KeyValuePair<string, List<string>> kv in groups) if (kv.Key.StartsWith("FLAG_")) parts.Add(kv.Key.Substring(5) + " " + kv.Value.Count);
         int defThk = rows.Count(r => r["Shape"] != "rigid" && (r.ContainsKey("ThkSource") ? r["ThkSource"] : "default") == "default");
-        return F("NEW SAP model {0}: {1} frames, {2} joints, {3} sections{4}; material {5} (PLACEHOLDER)\nNEW orientation: {6} rect frames oriented, {7} without a width direction (FLAG_NO_ORIENTATION); thickness default 0.06 in on {8} frames\nNEW flag groups (frames): {9}{10}",
+        return F("NEW kept: " + filterNote + "\nNEW SAP model {0}: {1} frames, {2} joints, {3} sections{4}; material {5} (PLACEHOLDER)\nNEW orientation: {6} rect frames oriented, {7} without a width direction (FLAG_NO_ORIENTATION); thickness default 0.06 in on {8} frames\nNEW flag groups (frames): {9}{10}",
             Path.GetFileName(savePath), groups["DUCT_ALL"].Count, joints.Count, sections.Count + 1,
             skipped > 0 ? F(", {0} zero-length rows skipped ({1})", skipped, string.Join(" ", zeroRows.Take(10).ToArray()) + (zeroRows.Count > 10 ? " ..." : "")) : "",
             Mat, oriented, noDir, defThk, parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "none",
@@ -110,6 +119,41 @@ public class SapDucts
         ang = Math.Atan2(-Dot(w, l2), Dot(w, l3)) * 180 / Math.PI;
         return true;
     }
+
+    // Keeps the frames whose SystemRole is "main" or listed in include (2026-10-17, user: one-frame fragments and
+    // Navisworks-only accessories speared the real ducts all over the SAP model). Frames with no role (rigid / side
+    // links) stay when both their joints lie on kept frames. frames.csv without SystemRole: everything kept.
+    static string FilterRoles(List<Dictionary<string, string>> rows, string include)
+    {
+        if (rows.Count == 0 || !rows[0].ContainsKey("SystemRole")) return "all (frames.csv has no SystemRole column: rerun the overlay)";
+        var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "main" };
+        foreach (string s in (include ?? "").Split(new[] { ',', ';', ' ' }, StringSplitOptions.RemoveEmptyEntries)) keep.Add(s.Trim());
+        var drop = new Dictionary<string, int>(StringComparer.Ordinal);
+        var kept = new List<Dictionary<string, string>>(); var noRole = new List<Dictionary<string, string>>();
+        foreach (Dictionary<string, string> r in rows)
+        {
+            string role = Val(r, "SystemRole");
+            if (role == "") noRole.Add(r);
+            else if (keep.Contains(role)) kept.Add(r);
+            else { int c; drop.TryGetValue(role, out c); drop[role] = c + 1; }
+        }
+        // links: repeat, a link can hang off another link (tap stub -> side link)
+        var on = new HashSet<string>(StringComparer.Ordinal);
+        foreach (Dictionary<string, string> r in kept) { on.Add(r["JointI"]); on.Add(r["JointJ"]); }
+        int links = 0; bool more = true;
+        while (more)
+        {
+            more = false;
+            foreach (Dictionary<string, string> r in noRole.ToList())
+                if (on.Contains(r["JointI"]) && on.Contains(r["JointJ"])) { kept.Add(r); noRole.Remove(r); links++; more = true; }
+        }
+        if (noRole.Count > 0) drop["links to dropped frames"] = noRole.Count;
+        rows.Clear(); rows.AddRange(kept);
+        return F("{0} frames ({1}{2}); left out: {3}", kept.Count, string.Join(" + ", keep.ToArray()), links > 0 ? F(", {0} links", links) : "",
+            drop.Count == 0 ? "none" : string.Join(", ", drop.Select(kv => kv.Key + " " + kv.Value).ToArray()));
+    }
+
+    static string Val(Dictionary<string, string> r, string k) { string v; return r.TryGetValue(k, out v) && v != null ? v : ""; }
 
     // "#rrggbb" -> SAP / OLE colour (red in the low byte)
     static bool OleColor(string hex, out int col)

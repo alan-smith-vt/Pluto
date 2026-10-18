@@ -247,6 +247,16 @@ public partial class DuctsToPluto
         return PrimaryColors.TryGetValue(bn, out c) ? (frag ? Desaturate(c) : c) : "";
     }
 
+    // frames.csv SystemRole (2026-10-17, the SAP export keeps mains by default): "main" (configured or pinned),
+    // "fragment", "other"; with no primary systems configured every system is a "main"
+    static string SystemRole(string n)
+    {
+        string bn;
+        if (PrimarySystems.Count == 0) return "main";
+        if ((n ?? "").EndsWith(" fragments")) return "fragment";
+        return IsPrimaryName(n, out bn) ? "main" : "other";
+    }
+
     // "#rrggbb" -> same hue, saturation x 0.35, lightness pulled toward 0.65
     static string Desaturate(string hex)
     {
