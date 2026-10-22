@@ -54,7 +54,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > | Restraints | restraint | Id, node, type (CAESAR's), CNODE, stiffness (blank = rigid), gap, friction, cosines (blank = the type's own axis), tag |
 > | SIFs | SIF / tee | Id, node, type (3 = welding tee, 0 = user SIFs), SIF in / out, surface node |
 > | Forces / Displacements | node and load vector | Id, node, vector (1–9), FX…MZ / DX…RZ. A blank displacement DOF is free; 0 holds it |
-> | Uniform / Wind | entry, on the element where entered (CAESAR carries it forward) | element Id (or From and To), vector, UX UY UZ, in g's / type, shape factor, wave data |
+> | Uniform / Wind | element, or a range of elements with the same values | Element (`E4`, a range `E3:E9`, or blank with From and To), vector, UX UY UZ, in g's / type, shape factor, wave data |
 > | Joints | joint | Id, node, CNODE, kind, frame (pipe / global), DOFs (`axial gap=0.125 k=5000; shear; torsion; bending gap=2`), SIF, tag |
 > | Coords | COORDS entry | node, X Y Z |
 > | Nodes, Carried, Help | — | read-only: rebuilt on every export, never read |
@@ -76,6 +76,13 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >   - **Coded radii:** CAESAR may write a radius as a negative coded value, a multiple of −1.0101 such as −4.0404. It is the same kind of code as −2.0202 for "M" in the angle fields; most likely a radius chosen by name in CAESAR's input.
 >   - Such a value is read and written as it is, so CAESAR resolves it as before. Do not make it positive: +4.0404 is a literal 4.04 in radius, a different bend.
 >   - Until the codes are confirmed, the viewer and compare's node positions treat these bends as sharp corners. The import and the reader say so (first seen 2026-10-22 on a real job; the public samples have none).
+> - **Uniform / Wind are per element.** An element no row names has none: CAESAR's file does not carry them forward.
+>   - **Element:**
+>     - an Id;
+>     - a range in the Elements sheet's order (`E3:E9`), including new rows between;
+>     - or blank, with From and To: one element, or the chain of consecutive elements from the one starting at From to the one ending at To.
+>   - **Export:** consecutive elements with the same values, each starting where the last ended, share one row.
+>   - **Refused:** the same vector given twice on an element, a range given backwards, and a From / To that no chain joins.
 > - **Bend nodes:** `angle:node` pairs, where `M` is CAESAR's mid point (`M:19; 0:18`).
 > - **A blank bend fitting thickness** follows the wall.
 > - **Headers:** a length column's header may say another unit (`DX (ft)`; in, ft, mm, cm, m) and its values are converted. Any other unit change is an error. Columns are found by name, so they may be reordered.
@@ -141,6 +148,10 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
   | a copied row | new, with a warning |
   | no `_pluto` sheet | the same geometry |
   | uniform, wind and displacement edits | applied |
+  | a uniform range extended by one element (a CAESAR-written job) | that element gains it, one new block |
+  | wind by From and To over the whole chain | on every element; only those that had none change |
+  | a range split, U1 changed on its second part | 3 elements, 3 lines of the `.cii` |
+  | a vector twice, a range backwards, a From / To no chain joins | refused, with the row |
   | a new row on the template | builds |
   | `SR` | the radius |
 - **Runner under pwsh:**

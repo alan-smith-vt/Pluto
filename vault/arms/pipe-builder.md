@@ -190,7 +190,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 > - `uniform = [x, y, z]` in lb/in is U1; a list of them gives U1, U2 …; `0` means none.
 > - `g_load = [x, y, z]` in g's (seismic, for example) takes the next vector after `uniform`'s. At most 9 together.
 > - `wind_shape = 0.7`: the wind shape factor; `0` means no wind on that run.
-> - CAESAR carries a uniform or wind entry forward through the following elements. So the builder writes an entry only where the value changes, in element order, and a zero (uniform) or off (wind) entry where a run has none after one that had.
+> - Every element of the run gets its own uniform and wind block, as CAESAR writes them. The neutral file does not carry them forward, so an element without a block has none.
 >
 > Load cases are not in the neutral file: CAESAR builds them and recommends a set on import. The layouts and what is confirmed: [[vault/format/caesar-neutral-loads|caesar-neutral-loads]].
 
@@ -257,9 +257,10 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 >   - welding tees and user SIFs;
 >   - COORDS;
 >   - the ambient field.
+> - **Confirmed by a CAESAR 15.01 export (2026-10-22):** FORCMNT, UNIFORM and WIND (wind type and shape factor), one uniform / wind block per loaded element.
 > - **From CAESAR's documentation of the neutral file; no CAESAR-written file has shown them yet.** Each is listed as a `[notice ]` line when written; check them after the first import:
 >   - restraint codes beyond 1–9, 14, 15 (`+X` 13, `-X -Y -Z` 16–18, one-way rotations, `±LIM`, snubbers);
->   - FORCMNT, UNIFORM and WIND blocks;
+>   - wave data in WIND;
 >   - DISPLMNT in 15.01's number format (its layout is confirmed by 11.00 jobs).
 > - **Written, but neither documented nor shown:**
 >   - skewed restraints (X / RX with the direction's cosines), also a `[notice ]`;
@@ -294,10 +295,11 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 - **A test config with every load kind**, on a header, a branch and a tail:
   - forces in two vectors;
   - a displacement with every DOF imposed in D1 and one DOF in D2;
-  - uniform loads per length, a g load on the branch, wind on and off.
+  - uniform loads per length, a g load on the branch, wind on the header and tail and none on the branch.
 - **What is checked:**
   - It builds, writes, and reads back with no reader warnings, and the CONTROL counts are right.
   - Every block has the documented layout: the node alone, then one line per vector; 9999.99 for free DOFs and for the unused slot; 36 uniform values with the g flags; one wind line.
+  - Every element has its own uniform block; wind blocks only on the header and tail elements.
   - Read back, it is byte-identical. Compare against the built model finds no differences.
 - **Edits on the imported file:**
   - Changing a force, a uniform value, the wind, a freed DOF or a g flag changes one line each.

@@ -49,7 +49,7 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 > |---|---|---|
 > | Owned by an element | BEND, RIGID, EXPJT, REDUCERS | read into the model; raw lines overlaid |
 > | Carried with an element | OFFSETS, ALLOWBLS, NODENAME, FLANGES, EQUIPMNT; a load block in a layout the model does not know | not read; travel with their element as written (`CaesarNeutralWriter.CarriedSections`) |
-> | Owned by an element, carried forward by CAESAR | UNIFORM, WIND | read into the model (`Uniform`, `Wind`); raw lines overlaid |
+> | Owned by an element, one block per loaded element | UNIFORM, WIND | read into the model (`Uniform`, `Wind`); raw lines overlaid. The file does not carry them forward |
 > | Tied to a node, in slots | RESTRANT (6 per block), SIF&TEES (2), DISPLMNT (2), FORCMNT (2) | each item knows its owner element and slot |
 >
 > - **Block numbers:** each block keeps its number in the source (`Seq`). CAESAR numbers them in its own order, not element order, so the writer orders a section's blocks by `Seq`, then element order; a new block goes after them. The pointers in the element records follow.
@@ -105,7 +105,7 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 - **Elements** matched by FROM–TO: added, removed, and every changed field.
 - **Node positions** by CAESAR's own geometry rules (`CaesarGeometry`), within `lengthTol`.
 - **Restraints** as a multiset per node: rigid stiffness normalized, CAESAR's default cosines filled in.
-- **Loads:** forces and displacements per node and vector, as a multiset. Uniform loads and wind as each matched element carries them, carry-forward applied, so a re-export that restates an entry elsewhere is not a difference.
+- **Loads:** forces and displacements per node and vector, as a multiset. Uniform loads and wind on each matched element.
 - **SIFs / tees**, **carried blocks** (by section and owner), and **settings** (title, ambient, Z-up, units).
 
 The result lists each kind, a one-line `Summary()` and `ToJson()`.

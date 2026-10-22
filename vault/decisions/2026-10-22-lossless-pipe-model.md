@@ -38,6 +38,8 @@ Format and rules: [[vault/format/pipe-model|pipe-model]]. Usage: [[vault/arms/pi
 
 - **Stage A (2026-10-22):** the lossless import, the overlay-and-carry writer, the model JSON, Compare and the runner switches are on branch `pipestress`. Verified on Linux: an unedited import is byte-identical for the fixture and 20 of 22 public samples; the other two are expected.
 - **Stage C (2026-10-22):** loads in the model, from CAESAR's documentation of the neutral file ([[vault/format/caesar-neutral-loads|caesar-neutral-loads]]).
+  - A CAESAR 15.01 export confirmed FORCMNT, UNIFORM and WIND the same day.
+  - It also showed that uniform loads and wind are stored per element, with no carry-forward. The model, the builder, the workbook and Compare follow that.
 - **Stage B (2026-10-22):** the workbook as the model's master, `-Watch`, the viewer's Reload / Auto-reload ([[vault/arms/pipe-workbook|pipe-workbook]]).
 - **Next:** D, the viewer as the confirmation step (loads drawn, properties, checks); E, the SAP check model.
 - **Still to do on the production machine:** the PS 5.1 compile, and a real 15.01 job round-tripped and re-imported into CAESAR.

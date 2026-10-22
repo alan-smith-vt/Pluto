@@ -18,8 +18,7 @@ using System.Text;
 //
 // Loads: [[forces]] and [[displacements]] at nodes (node, or run + at), per load vector (CAESAR's F1..F9 /
 // D1..D9); a displacement DOF not given stays free, a 0 holds it. uniform / g_load / wind_shape on a run or in
-// [defaults]: the builder writes an entry where the value changes along the elements (CAESAR carries each
-// entry forward), and a zero / off entry where a run has none after one that had.
+// [defaults]: every element of the run gets its own block (CAESAR's neutral file does not carry them forward).
 //
 // Any number may be an expression string over [parameters] ("3*span + 2"); positions along a run may
 // also use L, the run's length. Build-Pipe.ps1 -Set "span=25" overrides a parameter.
@@ -45,7 +44,7 @@ public class PipeBuildResult
     public readonly Dictionary<string, int> RestraintsByType = new Dictionary<string, int>();
     public readonly List<PipeBuildNode> NodeTable = new List<PipeBuildNode>();   // every node: where it is and why
     public int Runs, Nodes, Elements, Bends, Couplings, Ties, Restraints, RestraintNodes, Sifs, Tees;
-    public int Forces, Displacements, UniformEntries, WindEntries;
+    public int Forces, Displacements, UniformElements, WindElements;
     public double PipeLength;          // ft, along the leg lines
     public double Ambient;
     public int Material;
@@ -62,9 +61,9 @@ public class PipeBuildResult
                       string.Join(", ", RestraintsByType.OrderBy(k => k.Key, StringComparer.Ordinal).Select(k => k.Key + " " + k.Value).ToArray()) : "") +
                       (Couplings > 0 ? "; " + Couplings + " coupling(s)" : "") + (Ties > 0 ? "; " + Ties + " tie(s)" : ""));
         sb.AppendLine("  SIF / tee entries: " + Sifs + " (" + Tees + " branch tee(s)); bends: " + Bends);
-        if (Forces + Displacements + UniformEntries + WindEntries > 0)
-            sb.AppendLine("  loads: forces / moments at " + Forces + " node(s), imposed displacements at " + Displacements + " node(s), " +
-                          UniformEntries + " uniform-load and " + WindEntries + " wind entr" + (UniformEntries + WindEntries == 1 ? "y" : "ies") + " (carried forward by CAESAR)");
+        if (Forces + Displacements + UniformElements + WindElements > 0)
+            sb.AppendLine("  loads: forces / moments at " + Forces + " node(s), imposed displacements at " + Displacements + " node(s), uniform loads on " +
+                          UniformElements + " element(s), wind on " + WindElements + " element(s)");
         sb.AppendLine("  ambient " + Ambient.ToString("0.###", CultureInfo.InvariantCulture) + " F (thermal strain from T - ambient); material " + Material +
                       " (CAESAR database: E, density and allowables come from it)");
         if (Overrides.Count > 0) sb.AppendLine("  overrides: " + string.Join(", ", Overrides.ToArray()));
@@ -79,7 +78,7 @@ public class PipeBuildResult
         Prop(sb, "title", Title); sb.Append(",");
         sb.Append("\"counts\":{\"runs\":" + Runs + ",\"nodes\":" + Nodes + ",\"elements\":" + Elements + ",\"bends\":" + Bends + ",\"restraints\":" + Restraints +
                   ",\"restraintNodes\":" + RestraintNodes + ",\"couplings\":" + Couplings + ",\"ties\":" + Ties + ",\"sifs\":" + Sifs + ",\"tees\":" + Tees +
-                  ",\"forces\":" + Forces + ",\"displacements\":" + Displacements + ",\"uniformEntries\":" + UniformEntries + ",\"windEntries\":" + WindEntries + "},");
+                  ",\"forces\":" + Forces + ",\"displacements\":" + Displacements + ",\"uniformElements\":" + UniformElements + ",\"windElements\":" + WindElements + "},");
         sb.Append("\"pipeLengthFt\":" + PipeLength.ToString("R", CultureInfo.InvariantCulture) + ",");
         sb.Append("\"ambientF\":" + Ambient.ToString("R", CultureInfo.InvariantCulture) + ",\"material\":" + Material + ",");
         sb.Append("\"elementsByKind\":{" + string.Join(",", ElementsByKind.OrderBy(k => k.Key, StringComparer.Ordinal).Select(k => Q(k.Key) + ":" + k.Value).ToArray()) + "},");
@@ -1501,29 +1500,25 @@ public static class PipeBuilder
             return f == 0 ? null : new PipeModelWind { Type = 0, Shape = f };
         }
 
-        // CAESAR carries a uniform / wind entry forward through the following elements: write one where the
-        // value changes, and a zero (uniform) / off (wind) entry where a run has none after one that had
+        // every element of a run with uniform loads / wind gets its own block (the neutral file holds them per
+        // element; an element without a block has none)
         void UniformAndWind()
         {
             var ur = new Dictionary<RunB, PipeModelUniform>();
             var wr = new Dictionary<RunB, PipeModelWind>();
             foreach (var r in runs) { ur[r] = UniformOf(r); wr[r] = WindOf(r); }
-            PipeModelUniform cu = null;
-            PipeModelWind cw = null;
             foreach (var e in m.Elements)
             {
                 var r = runOf[e];
                 var du = ur[r];
-                if (du == null) { if (cu != null) { e.Uniform = new PipeModelUniform(); cu = null; res.UniformEntries++; } }
-                else if (!du.SameAs(cu))
+                if (du != null)
                 {
                     var u = new PipeModelUniform();
                     for (int v = 0; v < 9; v++) { Array.Copy(du.Vectors[v], u.Vectors[v], 3); u.G[v] = du.G[v]; }
-                    e.Uniform = u; cu = du; res.UniformEntries++;
+                    e.Uniform = u; res.UniformElements++;
                 }
                 var dw = wr[r];
-                if (dw == null) { if (cw != null) { e.Wind = new PipeModelWind { Type = 2 }; cw = null; res.WindEntries++; } }
-                else if (!dw.SameAs(cw)) { e.Wind = new PipeModelWind { Type = dw.Type, Shape = dw.Shape }; cw = dw; res.WindEntries++; }
+                if (dw != null) { e.Wind = new PipeModelWind { Type = dw.Type, Shape = dw.Shape }; res.WindElements++; }
             }
         }
 

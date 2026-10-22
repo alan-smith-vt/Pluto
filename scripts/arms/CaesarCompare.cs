@@ -13,7 +13,7 @@ using System.Text;
 //   restraints  as written (joints expanded), matched as a multiset of node, type, CNODE, gap, stiffness
 //               (rigid however written), friction, direction; SIF / tee entries likewise
 //   loads       forces / moments and imposed displacements per node and vector, as a multiset; uniform loads
-//               and wind as each matched element carries them (CAESAR's carry-forward applied)
+//               and wind on each matched element
 //   carried     the blocks each element carries as written (allowables, node names ...), the file's units,
 //               the MISCEL_1 tail (nozzles, hangers, options)
 //   settings    ambient, vertical axis, title
@@ -125,8 +125,6 @@ public static class CaesarCompare
         var bByKey = new Dictionary<string, Queue<PipeModelElement>>();
         foreach (var e in b.Elements) { string k = Key(e); if (!bByKey.ContainsKey(k)) bByKey[k] = new Queue<PipeModelElement>(); bByKey[k].Enqueue(e); }
         var matched = new HashSet<PipeModelElement>();
-        var uniA = Effective(a, a.EffectiveUniform().Select(UKey).ToArray()); var uniB = Effective(b, b.EffectiveUniform().Select(UKey).ToArray());
-        var windA = Effective(a, a.EffectiveWind().Select(WKey).ToArray()); var windB = Effective(b, b.EffectiveWind().Select(WKey).ToArray());
         foreach (var ea in a.Elements)
         {
             Queue<PipeModelElement> q;
@@ -136,8 +134,9 @@ public static class CaesarCompare
             r.ElementsCompared++;
             var d = Fields(ea, eb);
             if (d.Count > 0) r.ElementsChanged.Add("element " + Key(ea) + ": " + string.Join("; ", d.ToArray()));
-            if (uniA[ea] != uniB[eb]) r.LoadsChanged.Add("element " + Key(ea) + ": uniform " + (uniA[ea].Length > 0 ? uniA[ea] : "none") + " -> " + (uniB[eb].Length > 0 ? uniB[eb] : "none"));
-            if (windA[ea] != windB[eb]) r.LoadsChanged.Add("element " + Key(ea) + ": wind " + (windA[ea].Length > 0 ? windA[ea] : "none") + " -> " + (windB[eb].Length > 0 ? windB[eb] : "none"));
+            string uniA = UKey(ea.Uniform), uniB = UKey(eb.Uniform), windA = WKey(ea.Wind), windB = WKey(eb.Wind);
+            if (uniA != uniB) r.LoadsChanged.Add("element " + Key(ea) + ": uniform " + (uniA.Length > 0 ? uniA : "none") + " -> " + (uniB.Length > 0 ? uniB : "none"));
+            if (windA != windB) r.LoadsChanged.Add("element " + Key(ea) + ": " + (windA.Length > 0 ? windA : "no wind") + " -> " + (windB.Length > 0 ? windB : "no wind"));
             var ca = Carried(a, ea); var cb = Carried(b, eb);
             foreach (var s in ca.Keys.Union(cb.Keys).OrderBy(x => x, StringComparer.Ordinal))
             {
@@ -195,13 +194,6 @@ public static class CaesarCompare
         if (def == null) return e.Carried;
         var d = new Dictionary<string, PipeModelBlock>(e.Carried);
         d["ALLOWBLS"] = new PipeModelBlock { Seq = 1, Lines = def };
-        return d;
-    }
-
-    static Dictionary<PipeModelElement, string> Effective(PipeModel m, string[] keys)
-    {
-        var d = new Dictionary<PipeModelElement, string>();
-        for (int i = 0; i < m.Elements.Count; i++) d[m.Elements[i]] = keys[i];
         return d;
     }
 

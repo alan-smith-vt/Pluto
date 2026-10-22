@@ -16,12 +16,14 @@ using System.Text;
 // file's VERSION, CONTROL, UNITS, AUX_DATA, MISCEL_1 tail (nozzles, hangers, execution options) and any
 // section it does not know. Values stay in the job's units.
 //
-// Load layouts (CAESAR II's documentation of the neutral file; DISPLMNT also seen in 11.00 jobs):
+// Load layouts (CAESAR II's documentation of the neutral file; FORCMNT, UNIFORM and WIND confirmed by a
+// CAESAR 15.01 export, DISPLMNT seen in 11.00 jobs):
 //   FORCMNT / DISPLMNT  2 slots per block, each the node (one value) then 9 lines, one per load vector:
 //                       FX FY FZ MX MY MZ / DX DY DZ RX RY RZ; 9999.99 = not given (a free DOF)
 //   UNIFORM             6 lines, 36 values in order: 9 vectors x (UX UY UZ, 1 = in g's)
 //   WIND                1 line: type (0 wind, 1 wave, 2 off), shape factor (wave: drag), added mass, lift,
 //                       marine growth, marine growth density
+// UNIFORM and WIND are per element: every loaded element has its own block, an element without one has none.
 //
 // Every import checks itself: the model is written back in memory and compared with the source, line by
 // line; the result says "identical" or names the lines that differ (and why it could not be identical).
@@ -48,7 +50,7 @@ public class CaesarPipeImportResult
                       ", " + m.Elements.Count + " elements, " + m.Restraints.Count + " restraints, " + m.Sifs.Count + " SIF / tee entries, units " +
                       (Caesar.Units.LengthUnit.Length > 0 ? Caesar.Units.LengthUnit : "?"));
         sb.AppendLine("  loads: " + m.Forces.Count() + " force / moment and " + m.Displacements.Count() + " imposed-displacement node(s), " +
-                      m.Elements.Count(e => e.Uniform != null) + " uniform-load and " + m.Elements.Count(e => e.Wind != null) + " wind entries");
+                      "uniform loads on " + m.Elements.Count(e => e.Uniform != null) + " element(s), wind on " + m.Elements.Count(e => e.Wind != null));
         var carried = new SortedDictionary<string, int>(StringComparer.Ordinal);
         foreach (var e in m.Elements) foreach (var kv in e.Carried) { int c; carried.TryGetValue(kv.Key, out c); carried[kv.Key] = c + 1; }
         sb.AppendLine("  carried as written: " + (carried.Count == 0 ? "no load or other blocks" : string.Join(", ", carried.Select(kv => kv.Key + " " + kv.Value).ToArray())) +

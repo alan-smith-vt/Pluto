@@ -19,9 +19,9 @@ using System.Linq;
 // has reached yet starts where the previous element ended (CAESAR's rule), unless it has a COORDS entry.
 //
 // Loads: forces / moments and imposed displacements at nodes (NodeLoads: FORCMNT, DISPLMNT), uniform loads
-// and wind / wave data on the element where they are entered (Uniform, Wind; CAESAR carries both forward to
-// the following elements until changed: EffectiveUniform / EffectiveWind). Load cases are not in the neutral
-// file: CAESAR builds them.
+// and wind / wave data per element (Uniform, Wind): the neutral file holds them on every element they act on,
+// one block each, and an element without a block has none (a CAESAR 15.01 export and its input screen show
+// it: no carry-forward in the file). Load cases are not in the neutral file: CAESAR builds them.
 //
 // Carried data (an imported .cii): everything the model does not edit stays as written -- the element
 // records, each block's lines and its number in CAESAR's own order (Seq), the restraint / SIF / load slots
@@ -71,24 +71,6 @@ public class PipeModel
 
     public IEnumerable<PipeModelNodeLoad> Forces { get { return NodeLoads.Where(x => !x.IsDisplacement); } }
     public IEnumerable<PipeModelNodeLoad> Displacements { get { return NodeLoads.Where(x => x.IsDisplacement); } }
-
-    // the uniform load / wind data each element carries, by CAESAR's carry-forward: an element's own entry,
-    // else the last one entered above it in element order (null: none yet)
-    public PipeModelUniform[] EffectiveUniform()
-    {
-        var r = new PipeModelUniform[Elements.Count];
-        PipeModelUniform cur = null;
-        for (int i = 0; i < Elements.Count; i++) { if (Elements[i].Uniform != null) cur = Elements[i].Uniform; r[i] = cur; }
-        return r;
-    }
-
-    public PipeModelWind[] EffectiveWind()
-    {
-        var r = new PipeModelWind[Elements.Count];
-        PipeModelWind cur = null;
-        for (int i = 0; i < Elements.Count; i++) { if (Elements[i].Wind != null) cur = Elements[i].Wind; r[i] = cur; }
-        return r;
-    }
 }
 
 public class PipeModelElement
@@ -112,8 +94,8 @@ public class PipeModelElement
     public PipeModelRigid Rigid;
     public PipeModelExpJoint ExpJoint;
     public PipeModelReducer Reducer;
-    public PipeModelUniform Uniform;                  // uniform loads entered here (carried forward by CAESAR)
-    public PipeModelWind Wind;                        // wind / wave data entered here (carried forward by CAESAR)
+    public PipeModelUniform Uniform;                  // uniform loads on this element (null = none)
+    public PipeModelWind Wind;                        // wind / wave data on this element (null = none)
     public string Kind = "pipe";                      // for summaries: pipe, bend, valve, flange, ...
     public List<string> Raw;                          // the record as written (import); null = new
     // blocks this element owns and the model does not read (OFFSETS ALLOWBLS NODENAME FLANGES EQUIPMNT, and a
@@ -244,9 +226,8 @@ public class PipeModelNodeLoad
     }
 }
 
-// Uniform loads entered on an element (UNIFORM): 9 vectors (CAESAR's U1..U9) of UX UY UZ, each in force per
-// length (job units) or in g's (G). CAESAR carries the entry forward to the following elements until another
-// entry changes it.
+// Uniform loads on an element (UNIFORM): 9 vectors (CAESAR's U1..U9) of UX UY UZ, each in force per length
+// (job units) or in g's (G). A run of loaded elements has one block per element, the same values in each.
 public class PipeModelUniform
 {
     public readonly double[][] Vectors = new double[9][];
@@ -270,7 +251,7 @@ public class PipeModelUniform
     }
 }
 
-// Wind / wave data entered on an element (WIND), carried forward by CAESAR like uniform loads.
+// Wind / wave data on an element (WIND), one block per element like uniform loads.
 public class PipeModelWind
 {
     public int Type;                          // 0 wind, 1 wave, 2 off

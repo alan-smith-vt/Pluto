@@ -32,10 +32,11 @@ using System.Text;
 //   SIF&TEES  2 slots of 7 lines: NODE TYPE SIF-IN SIF-OUT ... (welding tee surface node on line 5)
 //   DISPLMNT, FORCMNT  2 slots of 10 lines: the NODE alone, then one line per load vector (9): DX DY DZ RX RY
 //             RZ / FX FY FZ MX MY MZ; 9999.99 = not given (a free DOF). An unused slot: node 0, then 9999.99
-//             (displacements, as 11.00 jobs show) or 0 (forces). CAESAR II's documented layout; DISPLMNT also
-//             seen in 11.00 jobs.
+//             (displacements, as 11.00 jobs show) or 0 (forces, as a CAESAR 15.01 export shows). CAESAR II's
+//             documented layout; FORCMNT confirmed by a 15.01 export, DISPLMNT seen in 11.00 jobs.
 //   UNIFORM   6 lines, 36 values in order: 9 vectors x (UX UY UZ, 1 = in g's / 0 = force per length)
 //   WIND      1 line: TYPE (0 wind, 1 wave, 2 off) SHAPE-FACTOR (wave: drag) ADDED-MASS LIFT MARINE-GROWTH DENSITY
+//             (UNIFORM and WIND confirmed by a 15.01 export, wind only: the wave fields are documented, not seen)
 //   REDUCERS  2 lines: OD2 WALL2 ALPHA R1 R2 / 0 x5
 //   MISCEL_1  one material number per element (6 per line), then 4 execution-option lines; the ambient
 //             temperature is line 2 field 3.
@@ -43,7 +44,7 @@ using System.Text;
 //   COORDS    count, then NODE X Y Z (ft) per segment start.
 // Restraints, SIF/tee entries, forces and displacements go to an element that has the node as its FROM or TO
 // (6 / 2 / 2 / 2 per element block); a node with more than its elements can hold is an error. Uniform loads
-// and wind go on the element they are entered on (CAESAR carries them forward).
+// and wind: one block on every element they act on (the file does not carry them forward).
 //
 // Overlay and carry (a model imported from a .cii, PipeModel.Source): every record, block and slot the model
 // carries as written is given back from its own lines, with only the fields that CHANGED rewritten in their
@@ -851,15 +852,14 @@ public static class CaesarNeutralWriter
 
     // What a written file holds that no CAESAR-written file has shown yet (layouts and codes from CAESAR's
     // documentation): one line each, for the caller to show -- check these in CAESAR after the import.
+    // Forces / moments, uniform loads and wind are confirmed by a CAESAR 15.01 export; wave data is not.
     public static List<string> Notices(PipeModel m)
     {
         var n = new List<string>();
-        int f = m.Forces.Count(x => x.Raw == null), d = m.Displacements.Count(x => x.Raw == null);
-        int u = m.Elements.Count(e => e.Uniform != null && e.Uniform.Raw == null), wi = m.Elements.Count(e => e.Wind != null && e.Wind.Raw == null);
-        if (f > 0) n.Add(f + " force / moment entr" + (f == 1 ? "y" : "ies") + " written in CAESAR's documented FORCMNT layout (the node, then one line per vector), which no CAESAR-written file here has shown yet: check them in CAESAR after the import");
+        int d = m.Displacements.Count(x => x.Raw == null);
+        int wv = m.Elements.Count(e => e.Wind != null && e.Wind.Raw == null && (e.Wind.Type == 1 || e.Wind.AddedMass != 0 || e.Wind.Lift != 0 || e.Wind.MarineGrowth != 0 || e.Wind.MarineGrowthDensity != 0));
         if (d > 0) n.Add(d + " imposed displacement entr" + (d == 1 ? "y" : "ies") + " written in the DISPLMNT layout CAESAR's documentation and 11.00 jobs show, in 15.01's number format: check them in CAESAR after the import");
-        if (u > 0) n.Add(u + " uniform-load entr" + (u == 1 ? "y" : "ies") + " written in CAESAR's documented UNIFORM layout (9 vectors x UX UY UZ and a g flag): check them in CAESAR after the import");
-        if (wi > 0) n.Add(wi + " wind entr" + (wi == 1 ? "y" : "ies") + " written in CAESAR's documented WIND layout (type, shape factor, wave data): check them in CAESAR after the import");
+        if (wv > 0) n.Add(wv + " wave entr" + (wv == 1 ? "y" : "ies") + " (WIND type 1 or wave data) written in CAESAR's documented layout, which no CAESAR-written file here has shown yet: check them in CAESAR after the import");
         var codes = Restraints(m).Where(r => r.Raw == null && Array.IndexOf(SeenCodes, r.Code) < 0).Select(r => r.Type + " (" + r.Code + ")").Distinct().ToList();
         if (codes.Count > 0) n.Add("restraint type(s) " + string.Join(", ", codes.ToArray()) + " written with the codes of CAESAR's documentation, which no CAESAR-written file here has shown yet: check them in CAESAR after the import");
         if (Restraints(m).Any(r => r.Raw == null && r.Cosines != null))

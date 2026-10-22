@@ -19,7 +19,9 @@ using System.Text;
 //   Sections      pipe sizes: OD, wall, insulation, corrosion, densities, material (an element names one)
 //   Processes     T1-T9, P1-P9, fluid density (an element names one)
 //   Restraints    node, type, CNODE, stiffness (blank = rigid), gap, friction, cosines (blank = the type's), tag
-//   SIFs, Joints, Forces, Displacements (blank = free), Uniform, Wind, Coords
+//   SIFs, Joints, Forces, Displacements (blank = free), Coords
+//   Uniform, Wind per element: a row names one element or a range of them (E3:E9, or From and To along a chain);
+//                 an element no row names has none (the neutral file does not carry them forward)
 //   Nodes, Carried, Help    read-only: rebuilt on every export, never read
 //   Lists (hidden), _pluto (veryHidden: the base model as exact JSON and its hash)
 // Reading: every row with an Id is that item of the base model, every row without one a new item, every base
@@ -386,18 +388,19 @@ public static class PipeWorkbook
         LoadRows(di, m.Displacements.ToList(), "D", true);
         for (int c = 3; c < 9; c++) { fo.Width(c, 12); di.Width(c, 12); }
 
-        // ---- Uniform, Wind (where entered; CAESAR carries them forward)
+        // ---- Uniform, Wind (per element; chained elements with the same values share a row: E3:E9)
         var un = b.Add("Uniform");
         un.FreezeRows = 1;
         Head(un, "Element", "From", "To", "Vector", "UX (" + u.Uni + " or g)", "UY (" + u.Uni + " or g)", "UZ (" + u.Uni + " or g)", "In g's");
         r = 1;
-        foreach (var e in m.Elements.Where(x => x.Uniform != null))
+        foreach (var g in SameRuns(m, q => q.Uniform != null, (p, q) => p.Uniform.SameAs(q.Uniform)))
         {
+            var e = g[0];
             var used = Enumerable.Range(0, 9).Where(v => e.Uniform.Used(v)).ToList();
             if (used.Count == 0) used.Add(0);
             foreach (int v in used)
             {
-                un.Set(r, 0, "E" + e.Uid); un.Set(r, 1, e.From, XlsxBook.ReadOnly); un.Set(r, 2, e.To, XlsxBook.ReadOnly); un.Set(r, 3, v + 1);
+                un.Set(r, 0, RangeId(g)); un.Set(r, 1, e.From, XlsxBook.ReadOnly); un.Set(r, 2, g[g.Count - 1].To, XlsxBook.ReadOnly); un.Set(r, 3, v + 1);
                 for (int k = 0; k < 3; k++) un.Set(r, 4 + k, e.Uniform.Vectors[v][k]);
                 un.Set(r, 7, e.Uniform.G[v] ? "yes" : "no");
                 r++;
@@ -409,10 +412,10 @@ public static class PipeWorkbook
         wi.FreezeRows = 1;
         Head(wi, "Element", "From", "To", "Type", "Shape factor (wave: drag)", "Added mass", "Lift", "Marine growth", "Growth density");
         r = 1;
-        foreach (var e in m.Elements.Where(x => x.Wind != null))
+        foreach (var g in SameRuns(m, q => q.Wind != null, (p, q) => p.Wind.SameAs(q.Wind)))
         {
-            var x = e.Wind;
-            wi.Set(r, 0, "E" + e.Uid); wi.Set(r, 1, e.From, XlsxBook.ReadOnly); wi.Set(r, 2, e.To, XlsxBook.ReadOnly);
+            var x = g[0].Wind;
+            wi.Set(r, 0, RangeId(g)); wi.Set(r, 1, g[0].From, XlsxBook.ReadOnly); wi.Set(r, 2, g[g.Count - 1].To, XlsxBook.ReadOnly);
             wi.Set(r, 3, x.Type >= 0 && x.Type < 3 ? WindTypes[x.Type] : x.Type.ToString(CultureInfo.InvariantCulture)); wi.Set(r, 4, x.Shape);
             if (x.Type == 1 || x.AddedMass != 0 || x.Lift != 0 || x.MarineGrowth != 0 || x.MarineGrowthDensity != 0)
             { wi.Set(r, 5, x.AddedMass); wi.Set(r, 6, x.Lift); wi.Set(r, 7, x.MarineGrowth); wi.Set(r, 8, x.MarineGrowthDensity); }
@@ -571,7 +574,7 @@ public static class PipeWorkbook
             "Section / Process: a name from those sheets; blank = the row above's. The grouped columns at the right (+) override one value for one element.",
             "Restraints: Stiffness blank = rigid; Cos blank = the type's own axis (guides and limit stops take the pipe axis). Types: CAESAR's (ANC X Y Z RX RY RZ GUI LIM +X ... +LIM -LIM ...).",
             "Forces / Displacements: one row per node and load vector (1-9 = CAESAR's F1-F9 / D1-D9). A displacement left blank is free; 0 holds it.",
-            "Uniform / Wind: entered on an element and carried forward by CAESAR to the elements after it until changed. Element = an Id (or blank, with From and To).",
+            "Uniform / Wind: per element; an element no row names has none (CAESAR's file does not carry them forward). Element = an Id, or a range in the Elements order (E3:E9); or blank, with From and To: one element, or the chain of elements from From to To.",
             "Joints: DOFs like 'axial gap=0.125 k=5000; shear; torsion; bending gap=2' (frame pipe) or 'X; Y; RZ k=1e6' (frame global); a DOF not listed is free.",
             "Nodes, Carried and Help are rebuilt on every export and never read. Settings rows marked read-only are not read either.",
             "The hidden _pluto sheet holds the model this workbook was written from: what you did not change is given back exactly, so CAESAR gets its own file back.",
@@ -1197,22 +1200,58 @@ public static class PipeWorkbook
         }
     }
 
-    // the element a Uniform / Wind row names: an element Id, else From and To
-    static PipeModelElement ElementOf(Cols c, int r, Ctx x, Dictionary<string, PipeModelElement> ids, string w)
+    // the elements a Uniform / Wind row names: an element Id, or a range of Ids in the Elements sheet's order
+    // ("E3:E9", new rows between included); else From and To: one element, or the chain of consecutive elements
+    // from the one starting at From to the one ending at To
+    static List<PipeModelElement> ElementsOf(Cols c, int r, Ctx x, Dictionary<string, PipeModelElement> ids, string w)
     {
+        var els = x.M.Elements;
         string id = Text(c, r, "Element", x);
-        PipeModelElement e;
         if (id.Length > 0)
         {
-            if (ids.TryGetValue(id, out e)) return e;
-            x.Err(w + ": element \"" + id + "\" is not on the Elements sheet");
-            return null;
+            string[] ends = id.Split(':').Select(q => q.Trim()).ToArray();
+            if (ends.Length > 2) { x.Err(w + ": element \"" + id + "\" (an Id, or a range like E3:E9)"); return null; }
+            var at = new List<int>();
+            foreach (string q in ends)
+            {
+                PipeModelElement e;
+                if (!ids.TryGetValue(q, out e)) { x.Err(w + ": element \"" + q + "\" is not on the Elements sheet"); return null; }
+                at.Add(els.IndexOf(e));
+            }
+            if (at[at.Count - 1] < at[0]) { x.Err(w + ": " + id + " runs backwards (" + ends[1] + " comes before " + ends[0] + " on the Elements sheet)"); return null; }
+            return els.GetRange(at[0], at[at.Count - 1] - at[0] + 1);
         }
         int from = Int(c, r, "From", x, 0), to = Int(c, r, "To", x, 0);
-        e = x.M.Elements.FirstOrDefault(q => q.From == from && q.To == to);
-        if (e == null) x.Err(w + ": no element " + from + "-" + to + " (give Element, or From and To)");
-        return e;
+        for (int i = 0; i < els.Count; i++)
+        {
+            if (els[i].From != from) continue;
+            for (int j = i; j < els.Count; j++)
+            {
+                if (els[j].To == to) return els.GetRange(i, j - i + 1);
+                if (j + 1 >= els.Count || els[j + 1].From != els[j].To) break;
+            }
+        }
+        x.Err(w + ": no element " + from + "-" + to + ", nor a chain of elements from " + from + " to " + to + " (give Element, or From and To)");
+        return null;
     }
+
+    // consecutive elements, each starting where the one before ends, with the same uniform load / wind: one
+    // row each on the sheet
+    static List<List<PipeModelElement>> SameRuns(PipeModel m, Func<PipeModelElement, bool> has, Func<PipeModelElement, PipeModelElement, bool> same)
+    {
+        var runs = new List<List<PipeModelElement>>();
+        List<PipeModelElement> cur = null;
+        foreach (var e in m.Elements)
+        {
+            if (!has(e)) { cur = null; continue; }
+            var last = cur == null ? null : cur[cur.Count - 1];
+            if (last != null && last.To == e.From && same(last, e)) cur.Add(e);
+            else { cur = new List<PipeModelElement> { e }; runs.Add(cur); }
+        }
+        return runs;
+    }
+
+    static string RangeId(List<PipeModelElement> g) { return "E" + g[0].Uid + (g.Count > 1 ? ":E" + g[g.Count - 1].Uid : ""); }
 
     static void ReadUniform(CaesarSheet s, Ctx x, Dictionary<string, PipeModelElement> ids)
     {
@@ -1222,27 +1261,42 @@ public static class PipeWorkbook
         if (s == null) return;
         var c = ColsOf(s, x, new[] { "Element", "From", "To", "Vector", "UX", "UY", "UZ", "In g's" });
         var built = new Dictionary<PipeModelElement, PipeModelUniform>();
+        var rowOf = new Dictionary<PipeModelElement, int[]>();     // the row that gave each vector (1-based)
         for (int r = 1; r < s.Rows.Count; r++)
         {
             if (Blank(s, r)) continue;
             string w = "Uniform row " + (r + 1);
-            var e = ElementOf(c, r, x, ids, w);
-            if (e == null) continue;
+            var es = ElementsOf(c, r, x, ids, w);
+            if (es == null) continue;
             int vec = Int(c, r, "Vector", x, 1);
             if (vec < 1 || vec > 9) { x.Err(w + ": vector 1 .. 9"); continue; }
             string gt = Text(c, r, "In g's", x).ToLowerInvariant();
             bool g = gt == "yes" || gt == "y" || gt == "true" || gt == "g" || gt == "1";
             if (!(g || gt.Length == 0 || gt == "no" || gt == "n" || gt == "false" || gt == "0")) { x.Err(w + ": In g's = yes or no (\"" + gt + "\")"); continue; }
-            PipeModelUniform u;
-            if (!built.TryGetValue(e, out u)) { u = new PipeModelUniform(); built[e] = u; }
-            for (int k = 0; k < 3; k++) u.Vectors[vec - 1][k] = Z(Num(c, r, new[] { "UX", "UY", "UZ" }[k], x, -1, null));
-            u.G[vec - 1] = g;
+            var val = new double[3];
+            for (int k = 0; k < 3; k++) val[k] = Z(Num(c, r, new[] { "UX", "UY", "UZ" }[k], x, -1, null));
+            int[] rows;
+            var twice = es.FirstOrDefault(e => rowOf.TryGetValue(e, out rows) && rows[vec - 1] > 0);
+            if (twice != null) { x.Err(w + ": vector " + vec + " on element " + twice.From + "-" + twice.To + " again (row " + rowOf[twice][vec - 1] + " gives it)"); continue; }
+            foreach (var e in es)
+            {
+                if (!rowOf.TryGetValue(e, out rows)) { rows = new int[9]; rowOf[e] = rows; }
+                rows[vec - 1] = r + 1;
+                PipeModelUniform u;
+                if (!built.TryGetValue(e, out u)) { u = new PipeModelUniform(); built[e] = u; }
+                Array.Copy(val, u.Vectors[vec - 1], 3);
+                u.G[vec - 1] = g;
+            }
         }
         foreach (var kv in built)
         {
             PipeModelUniform o;
             if (keep.TryGetValue(kv.Key, out o) && SameUniform(o, kv.Value)) { kv.Key.Uniform = o; continue; }   // unchanged: its text as written
-            if (o != null) { kv.Value.Seq = o.Seq; kv.Value.Raw = o.Raw; }
+            if (o != null)
+            {
+                kv.Value.Seq = o.Seq; kv.Value.Raw = o.Raw;
+                for (int v = 0; v < 9; v++) if (!kv.Value.Used(v)) kv.Value.G[v] = o.G[v];   // a g flag on an unused vector, as written
+            }
             kv.Key.Uniform = kv.Value;
         }
     }
@@ -1258,21 +1312,23 @@ public static class PipeWorkbook
         {
             if (Blank(s, r)) continue;
             string w = "Wind row " + (r + 1);
-            var e = ElementOf(c, r, x, ids, w);
-            if (e == null) continue;
-            if (e.Wind != null) { x.Err(w + ": a second wind entry on element " + e.From + "-" + e.To); continue; }
+            var es = ElementsOf(c, r, x, ids, w);
+            if (es == null) continue;
+            var twice = es.FirstOrDefault(e => e.Wind != null);
+            if (twice != null) { x.Err(w + ": a second wind entry on element " + twice.From + "-" + twice.To); continue; }
             string tt = Text(c, r, "Type", x);
             int type = tt.Length == 0 ? 0 : Array.FindIndex(WindTypes, t => t.Equals(tt, StringComparison.OrdinalIgnoreCase));
             if (type < 0 && !int.TryParse(tt, NumberStyles.Integer, CultureInfo.InvariantCulture, out type)) { x.Err(w + ": type \"" + tt + "\" (wind, wave or off)"); continue; }
-            var nw = new PipeModelWind
+            double shape = Z(Num(c, r, "Shape factor", x, -1, null)), mass = Z(Num(c, r, "Added mass", x, -1, null)), lift = Z(Num(c, r, "Lift", x, -1, null));
+            double growth = Z(Num(c, r, "Marine growth", x, -1, null)), density = Z(Num(c, r, "Growth density", x, -1, null));
+            foreach (var e in es)
             {
-                Type = type, Shape = Z(Num(c, r, "Shape factor", x, -1, null)), AddedMass = Z(Num(c, r, "Added mass", x, -1, null)), Lift = Z(Num(c, r, "Lift", x, -1, null)),
-                MarineGrowth = Z(Num(c, r, "Marine growth", x, -1, null)), MarineGrowthDensity = Z(Num(c, r, "Growth density", x, -1, null))
-            };
-            PipeModelWind o;
-            if (keep.TryGetValue(e, out o) && SameWind(o, nw)) { e.Wind = o; continue; }
-            if (o != null) { nw.Seq = o.Seq; nw.Raw = o.Raw; }
-            e.Wind = nw;
+                var nw = new PipeModelWind { Type = type, Shape = shape, AddedMass = mass, Lift = lift, MarineGrowth = growth, MarineGrowthDensity = density };
+                PipeModelWind o;
+                if (keep.TryGetValue(e, out o) && SameWind(o, nw)) { e.Wind = o; continue; }
+                if (o != null) { nw.Seq = o.Seq; nw.Raw = o.Raw; }
+                e.Wind = nw;
+            }
         }
     }
 
@@ -1280,7 +1336,7 @@ public static class PipeWorkbook
     {
         for (int v = 0; v < 9; v++)
         {
-            if (a.G[v] != b.G[v]) return false;
+            if (a.G[v] != b.G[v] && (a.Used(v) || b.Used(v))) return false;   // a g flag on an unused vector means nothing
             for (int k = 0; k < 3; k++) if (!Same(a.Vectors[v][k], b.Vectors[v][k])) return false;
         }
         return true;
