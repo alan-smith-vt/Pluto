@@ -365,8 +365,12 @@ public static class CaesarPipeImport
 
         var coded = m.Elements.Where(e => e.Bend != null && PipeModelBend.RadiusCode(e.Bend.Radius) > 0).ToList();
         if (coded.Count > 0)
-            res.Notes.Add(coded.Count + " bend(s) carry a coded radius CAESAR wrote (" + string.Join(", ", coded.Select(e => e.Bend.Radius.ToString("0.0###", CultureInfo.InvariantCulture)).Distinct().ToArray()) +
-                          ": a radius chosen by name, e.g. at element " + coded[0].From + "-" + coded[0].To + "): kept as written, so CAESAR resolves it as before; the viewer draws them as sharp corners until the code is confirmed");
+        {
+            var open = coded.Where(e => !PipeModelBend.NamedRadii.ContainsKey(PipeModelBend.RadiusCode(e.Bend.Radius))).ToList();
+            res.Notes.Add(coded.Count + " bend(s) carry a coded radius CAESAR wrote (" + string.Join(", ", coded.Select(e => e.Bend.Radius.ToString("0.0###", CultureInfo.InvariantCulture) + " = " +
+                          PipeModelBend.CodeName(PipeModelBend.RadiusCode(e.Bend.Radius))).Distinct().ToArray()) + ": a radius chosen by name, e.g. at element " + coded[0].From + "-" + coded[0].To +
+                          "): kept as written, so CAESAR resolves it as before; " + (open.Count > 0 ? "the viewer draws the " + open.Count + " with a code not confirmed yet as sharp corners" : "drawn with the radius each code names"));
+        }
         SelfCheck(res);
         return res;
     }

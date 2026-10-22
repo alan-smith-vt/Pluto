@@ -421,7 +421,7 @@ public static class CaesarGeometry
                 if (toOwner[e.To] != e.Index) continue;
                 var b = M.Bends[e.Bend - 1];
                 var bg = new CaesarBendGeom();
-                bg.Radius = b.Radius; bg.MiterPoints = b.MiterPoints; bg.Mitred = b.MiterPoints > 0 && b.MiterPoints <= MaxMiter;
+                bg.Radius = RadiusOf(e, b); bg.MiterPoints = b.MiterPoints; bg.Mitred = b.MiterPoints > 0 && b.MiterPoints <= MaxMiter;
                 _mute = true;
                 string why;
                 try { why = Arc(e, b, bg); } finally { _mute = false; }
@@ -484,7 +484,7 @@ public static class CaesarGeometry
                 var b = M.Bends[e.Bend - 1];
                 var bg = new CaesarBendGeom();
                 bg.ElementIndex = e.Index; bg.BendBlock = e.Bend; bg.FromNode = e.From; bg.ToNode = e.To;
-                bg.Radius = b.Radius; bg.MiterPoints = b.MiterPoints; bg.Mitred = b.MiterPoints > 0 && b.MiterPoints <= MaxMiter;
+                bg.Radius = RadiusOf(e, b); bg.MiterPoints = b.MiterPoints; bg.Mitred = b.MiterPoints > 0 && b.MiterPoints <= MaxMiter;
                 if (b.MiterPoints > MaxMiter || b.MiterPoints < 0) WarnAgg("miter", "miter point count not usable: drawn as a smooth bend", "element " + El(e) + " n=" + I(b.MiterPoints));
                 G.Bends.Add(bg);
                 G.BendByElement[e.Index] = bg;
@@ -510,16 +510,19 @@ public static class CaesarGeometry
             bg.AngleDeg = deg;
             bg.LeavingElement = outEl;
             if (deg < 1.0 || deg > 179.0) return "bend angle " + F(deg) + " deg outside 1..179";
-            if (PipeModelBend.RadiusCode(b.Radius) > 0) return "radius " + F(b.Radius) + " is one of CAESAR's coded values (a radius chosen by name), not resolved yet";
-            if (!(b.Radius > 0) || b.Radius >= Huge) return "radius " + F(b.Radius) + " not usable";
-            double T = b.Radius * Math.Tan(theta / 2.0);
+            int radCode = PipeModelBend.RadiusCode(b.Radius);
+            if (radCode > 0 && double.IsNaN(bg.Radius))
+                return "radius " + F(b.Radius) + " is CAESAR's coded value " + radCode + " (a radius chosen by name), " +
+                       (PipeModelBend.NamedRadii.ContainsKey(radCode) ? "and the OD " + F(OdOf(e)) + " is not a standard pipe size" : "not confirmed yet");
+            if (!(bg.Radius > 0) || bg.Radius >= Huge) return "radius " + F(bg.Radius) + " not usable";
+            double T = bg.Radius * Math.Tan(theta / 2.0);
             bg.T = T;
             bg.Tip = Copy(tipTo); bg.UIn = Copy(uIn); bg.UOut = Copy(uOut);
             bg.Near = Sub(tipTo, Mul(uIn, T));
             bg.Far = Add(tipTo, Mul(uOut, T));
             bg.Normal = Unit(Sub(uOut, Mul(uIn, cosT)));
             if (bg.Normal == null) return "bend plane undefined";
-            bg.Centre = Add(bg.Near, Mul(bg.Normal, b.Radius));
+            bg.Centre = Add(bg.Near, Mul(bg.Normal, bg.Radius));
             foreach (var an in b.AngleNodes)
             {
                 int node = (int)Math.Round(an[1]);
@@ -681,6 +684,14 @@ public static class CaesarGeometry
         // ---------------- pieces
 
         double OdOf(CaesarElement e) { return M.Units.Convert(e.Od, CaesarUnits.Diameter, CaesarUnits.Length); }
+
+        // the bend radius in LENGTH units: as written, or a coded radius (a radius chosen by name) as its multiple
+        // of the nominal size; NaN for a code not confirmed yet, or an OD that is no standard size
+        double RadiusOf(CaesarElement e, CaesarBend b)
+        {
+            int code = PipeModelBend.RadiusCode(b.Radius);
+            return code == 0 ? b.Radius : PipeModelBend.ResolveCode(code, OdOf(e) / _inch) * _inch;
+        }
         double WallOf(CaesarElement e) { return M.Units.Convert(e.Wall, CaesarUnits.Wall, CaesarUnits.Length); }
         double InsOf(CaesarElement e) { return M.Units.Convert(e.Insulation, CaesarUnits.Wall, CaesarUnits.Length); }
 

@@ -75,7 +75,11 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > - **Bend radius:** a number, or `LR` / `SR` (1.5 / 1 × nominal, for a standard size in inches).
 >   - **Coded radii:** CAESAR may write a radius as a negative coded value, a multiple of −1.0101 such as −4.0404. It is the same kind of code as −2.0202 for "M" in the angle fields; most likely a radius chosen by name in CAESAR's input.
 >   - Such a value is read and written as it is, so CAESAR resolves it as before. Do not make it positive: +4.0404 is a literal 4.04 in radius, a different bend.
->   - Until the codes are confirmed, the viewer and compare's node positions treat these bends as sharp corners. The import and the reader say so (first seen 2026-10-22 on a real job; the public samples have none).
+>   - **Drawing them:** each code confirmed against CAESAR goes into `PipeModelBend.NamedRadii` as a multiple of the nominal size. The nominal size comes from the bend's OD, inch or metric.
+    - From then on, the viewer and compare's node positions use that radius.
+    - A code not confirmed yet is drawn as a sharp corner, and the import and the reader say so (first seen 2026-10-22 on a real job; the public samples, the fixture and a fresh 15.01 job write plain radii).
+  - **How a code is confirmed:** a probe job with one 90° bend per code on 6 in pipe, imported into CAESAR. CAESAR's bend list, or the input data export's BEND DATA, shows what each code became.
+    - The table's order is a candidate only: CAESAR's list is Long, Short, 3D, 5D, which would make −4.0404 = 5D.
 > - **Uniform / Wind are per element.** An element no row names has none: CAESAR's file does not carry them forward.
 >   - **Element:**
 >     - an Id;

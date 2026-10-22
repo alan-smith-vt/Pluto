@@ -123,14 +123,33 @@ public class PipeModelBend
 
     // A negative radius CAESAR writes as a multiple of -1.0101 (-1.0101 .. -9.0909) is one of its coded values
     // (like -2.0202 = "M" in the angle fields), not a length: most likely a radius picked by name in CAESAR's
-    // input. Which code means which radius is not confirmed yet, so a coded radius is carried as written and
-    // drawn as a sharp corner. Returns the code's number (1-9), or 0 for an ordinary radius.
+    // input (its list: Long 1.5, Short 1, 3D, 5D x the nominal size). It is always carried as written, so
+    // CAESAR resolves it as before. Returns the code's number (1-9), or 0 for an ordinary radius.
     public static int RadiusCode(double radius)
     {
         if (!(radius < 0)) return 0;
         double k = -radius / 1.0101;
         int n = (int)Math.Round(k);
         return n >= 1 && n <= 9 && Math.Abs(k - n) < 1e-4 ? n : 0;
+    }
+
+    // The codes confirmed against CAESAR, as multiples of the nominal pipe size (a probe job with one bend per
+    // code, imported into CAESAR and read back). A code not here stays unresolved: drawn as a sharp corner.
+    public static readonly Dictionary<int, double> NamedRadii = new Dictionary<int, double>();
+
+    // a coded radius in inches for a pipe of this OD (inches); NaN when the code is not confirmed or the OD is
+    // not a standard size
+    public static double ResolveCode(int code, double odInches)
+    {
+        double f, nps = PipeBuilder.NominalOf(odInches);
+        return NamedRadii.TryGetValue(code, out f) && !double.IsNaN(nps) ? f * nps : double.NaN;
+    }
+
+    public static string CodeName(int code)
+    {
+        double f;
+        if (!NamedRadii.TryGetValue(code, out f)) return "code " + code;
+        return f == 1.5 ? "Long" : f == 1 ? "Short" : f.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "D";
     }
     public int Seq;                           // block number in the source file; 0 = new
     public List<string> Raw;                  // the block as written; null = new

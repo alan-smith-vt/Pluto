@@ -169,11 +169,14 @@ public static class PipeBuilder
         return true;
     }
 
-    // nominal size from an OD (for the bend radius of a section given by OD); NaN when not a standard OD
+    // nominal size from an OD in inches (a bend radius by name: LR / SR, CAESAR's coded radii); NaN when not a
+    // standard OD. 14 in and up: the OD is the size. A metric OD finds its size too (168.3 mm, 610 mm).
     public static double NominalOf(double od)
     {
         for (int k = 0; k < OdList.Length; k++) if (Math.Abs(OdList[k] - od) < 0.01) return NpsList[k];
-        return od >= 14 && Math.Abs(od - Math.Round(od)) < 1e-9 ? od : double.NaN;
+        if (Math.Abs(od - 1.660) < 0.01) return 1.25;
+        if (Math.Abs(od - 4.000) < 0.01) return 3.5;
+        return od >= 13.9 && Math.Abs(od - Math.Round(od)) < 0.02 ? Math.Round(od) : double.NaN;
     }
 
     // ---------------------------------------------------------------- the builder

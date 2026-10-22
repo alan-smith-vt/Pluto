@@ -103,6 +103,7 @@ Code: `scripts/arms/CaesarNeutralReader.cs` → `CaesarGeometry.cs` → [`Caesar
 >   - The deltas of the element carrying the bend run to the tangent intersection point.
 >   - Only that element's TO node moves to the far point; downstream nodes are still measured from the tangent intersection point.
 >   - Bend-node angles count from the near point (−2.0202 = midpoint).
+>   - A coded radius (a multiple of −1.0101, a radius chosen by name) is drawn with the radius its code names once that code is confirmed (`PipeModelBend.NamedRadii`, a multiple of the nominal size from the OD). Until then it is drawn as a sharp corner ([[vault/arms/pipe-workbook|pipe-workbook]]).
 >   - Arcs are drawn as chords of ≤ `ArcStepDeg`. Mitred bends are a polyline through the cut points.
 > - **Bend guards:** zero-length elements, bends under 1° or over 179°, and overlapping tangents. CAESAR's 1 % attachment tolerance leaves tiny backward pieces, which are flagged.
 > - **Synthetic nodes** (near points, arc vertices, valve mids) have ids from 10,000,000. Each records its two bracketing real nodes, which the results use for interpolation. Use `IsSynthetic`, not the id range.
