@@ -53,12 +53,15 @@ public class SapSession
 
     protected void Attach(string exePath, bool attachOnly)
     {
-        try { Sap = (cOAPI)Marshal.GetActiveObject(ProgId); Model = Sap.SapModel; }
-        catch (COMException)
-        {
-            if (attachOnly) throw new Exception("No running SAP2000 to attach to: open the model in SAP first.");
-            Start(exePath);
-        }
+        // CSI's helper first (2026-10-22: on SAP 26 here GetActiveObject returned an object without a model for a
+        // SAP left open by -KeepOpen and the run hung; on production it missed a running SAP and a blank one was
+        // started in its place); GetActiveObject kept as the second route
+        try { cHelper h = new Helper(); Sap = h.GetObject(ProgId); if (Sap != null && Sap.SapModel != null) { Model = Sap.SapModel; return; } }
+        catch (Exception) { }
+        try { Sap = (cOAPI)Marshal.GetActiveObject(ProgId); Model = Sap.SapModel; if (Model != null) return; }
+        catch (COMException) { }
+        if (attachOnly) throw new Exception("Could not attach to a running SAP2000 (none running, or it runs elevated / was started by the API). Pass -Open <model>, or start SAP from the Start menu (not as administrator) and open the model.");
+        Start(exePath);
     }
 
     protected void Start(string exePath)

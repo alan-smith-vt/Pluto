@@ -52,7 +52,8 @@ $out = [ordered]@{}
 function Say([string]$step, [string]$text) { Write-Output ("[{0}] {1}" -f $step.PadRight(7), $text) }
 function Full([string]$p) { [IO.Path]::GetFullPath($p) }
 
-if ($NewInstance) { $sap = [SapSession]::NewInstance($SapExe) } else { $sap = [SapSession]::AttachOrStart($SapExe, $false) }
+# no -Open / -SelfTest: the open model is the input, so attach only (a blank SAP started instead read 0 points)
+if ($NewInstance) { $sap = [SapSession]::NewInstance($SapExe) } else { $sap = [SapSession]::AttachOrStart($SapExe, -not ($Open -or $SelfTest)) }
 $out.version = $sap.Version()
 $out.started = $sap.Started
 Say "sap" ("SAP2000 {0} ({1})" -f $out.version, $(if ($sap.Started) { "started $SapExe" } else { "attached to the running instance" }))
