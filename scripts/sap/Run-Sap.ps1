@@ -90,6 +90,8 @@ try {
         $missing = $sap.WritePoints((Full $PointsOut), $names)
         $out.points = Full $PointsOut
         Say "points" ("{0} of {1} found -> {2}{3}" -f ($names.Count - $missing.Count), $names.Count, $PointsOut, $(if ($missing.Count) { "; NOT in the model: " + ($missing -join " ") } else { "" }))
+        # misses: which model was read, and what its point names look like (wrong SAP attached, or another naming)
+        if ($missing.Count) { foreach ($l in $sap.PointNameHints($missing)) { Say "points" $l } }
     }
     if ($AreaAxes) {
         $n = $sap.WriteAreaLocal1((Full $AreaAxes))

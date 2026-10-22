@@ -17,6 +17,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using SAP2000v1;
@@ -197,6 +198,26 @@ public class SapSession
         finally { Model.SetPresentUnits(units); }
         File.WriteAllText(path, sb.ToString());
         return missing;
+    }
+
+    // For names WritePoints did not find: the model read, its point count and first names, and per missing name the
+    // point names that equal it ignoring case / a letter prefix / leading zeros (e.g. "3710" or "n3710" for "N3710").
+    public List<string> PointNameHints(IEnumerable<string> missing)
+    {
+        int n = 0; string[] all = null;
+        Model.PointObj.GetNameList(ref n, ref all);
+        all = all ?? new string[0];
+        var lines = new List<string>();
+        lines.Add(F("model read: {0} ({1} points; SAP {2})", ModelPath(), n, Version()));
+        lines.Add("first point names: " + string.Join(" ", all.Take(10).ToArray()));
+        Func<string, string> core = s => s.Trim().TrimStart("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_-".ToCharArray()).TrimStart('0');
+        var byCore = all.GroupBy(core).ToDictionary(g => g.Key, g => g.ToList());
+        foreach (string m in missing)
+        {
+            List<string> near;
+            if (byCore.TryGetValue(core(m), out near)) lines.Add(F("{0}: close names in the model: {1}", m, string.Join(" ", near.Take(5).ToArray())));
+        }
+        return lines;
     }
 
     // Inches per length unit of a SAP unit set (from its CurrUnits name: in, ft, mm, cm, m).
