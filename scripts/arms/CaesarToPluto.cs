@@ -288,6 +288,14 @@ public static class CaesarToPluto
     public static CaesarExportResult Export(string ciiPath, string resultsPath, string outBase, string modelId, CaesarOptions options)
     {
         if (string.IsNullOrEmpty(ciiPath) || !File.Exists(ciiPath)) throw new Exception("CaesarToPluto: neutral file not found: " + ciiPath);
+        return Export(CaesarNeutralReader.Read(ciiPath), ciiPath, resultsPath, outBase, modelId, options);
+    }
+
+    // a model already read (Build-Pipe.ps1 -Preview reads back the text it built, without writing it first);
+    // ciiPath only names the source in messages and the result
+    public static CaesarExportResult Export(CaesarModel m, string ciiPath, string resultsPath, string outBase, string modelId, CaesarOptions options)
+    {
+        if (m == null) throw new ArgumentNullException("m");
         if (string.IsNullOrEmpty(outBase)) throw new Exception("CaesarToPluto: no output base path.");
         if (outBase.EndsWith(".bin", StringComparison.OrdinalIgnoreCase)) outBase = outBase.Substring(0, outBase.Length - 4);
         if (string.IsNullOrEmpty(Path.GetFileName(outBase)))
@@ -300,7 +308,6 @@ public static class CaesarToPluto
         res.NeutralPath = ciiPath; res.ResultsPath = resultsPath; res.ModelId = modelId;
 
         // ---- read + geometry ----
-        CaesarModel m = CaesarNeutralReader.Read(ciiPath);
         foreach (string w0 in m.Warnings) res.Warnings.Add("reader: " + w0);
         if (m.Elements.Count == 0) throw new Exception("CaesarToPluto: no ELEMENTS in " + ciiPath + " (not a CAESAR II neutral file?)");
         // a file read wrongly (damaged line endings, a cut-off section) is refused, not drawn as nonsense

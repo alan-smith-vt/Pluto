@@ -1403,6 +1403,7 @@ public static class PipeBuilder
         void Finish()
         {
             res.Model = m;
+            m.AssignUids();
             var errs = CaesarNeutralWriter.Validate(m);
             if (errs.Count > 0) throw Err(string.Join("; ", errs.ToArray()));
             var nodes = new HashSet<int>();

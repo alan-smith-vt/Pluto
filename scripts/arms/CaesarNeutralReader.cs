@@ -128,6 +128,7 @@ public class CaesarElement
     public string LineNumber = "";       // line-number text, carried forward from the last element that has one
     public string LineNumberRaw = "";    // line-number text as written on this element ("" when blank)
     public List<int[]> ExtraIntRows = new List<int[]>();   // integer rows between the text rows and the pointers ("-1 -1")
+    public List<string> RecordLines = new List<string>();  // the record as written: its first real row up to the next record (blank lines included)
     // pointers: 1-based block index into the section, 0 = none (out-of-range values are reset to 0 with a warning)
     public int Bend, Rigid, ExpJt, Restraint, Displmnt, Forcmnt;
     public int Uniform, Wind, Offsets, Allowbls, SifTee, NodeName;
@@ -350,6 +351,16 @@ public class CaesarModel
     public Dictionary<string, int> LinesPerBlock = new Dictionary<string, int>();  // section -> lines per block / element / slot
     public int NumberFallbacks;              // lines that did not split by 13-character columns
     public List<string> Warnings = new List<string>();
+    // the text as written, for a lossless rewrite (CaesarPipeImport): every section's lines, the "#$" header
+    // line of each (trailing blanks kept), the sections in file order, lines before the first header, and the
+    // line ending / final newline of the source
+    public Dictionary<string, List<string>> RawSections = new Dictionary<string, List<string>>();
+    public Dictionary<string, string> RawHeaders = new Dictionary<string, string>();
+    public List<string> SectionOrder = new List<string>();
+    public List<string> Prelude = new List<string>();
+    public List<string> DuplicateSections = new List<string>();   // names of repeated sections (ignored by the reader)
+    public string LineEnding = "\r\n";
+    public bool FinalNewline = true;
 
     public string Summary()
     {
@@ -401,6 +412,7 @@ public static class CaesarNeutralReader
         }
         var p = new Ctx();
         p.M.CodePage = bomEnc != null ? 65001 : (enc != null ? cp : 28591);
+        NoteEndings(p.M, text);
         p.Run(SplitLines(text));
         if (bomEnc == null && cp > 0 && cp != 28591 && enc == null)
             p.M.Warnings.Insert(0, "code page " + cp.ToString(CultureInfo.InvariantCulture) + " is not available here; text was read as Latin-1");
@@ -411,8 +423,29 @@ public static class CaesarNeutralReader
     public static CaesarModel ParseText(string text)
     {
         var p = new Ctx();
+        NoteEndings(p.M, text ?? "");
         p.Run(SplitLines(text ?? ""));
         return p.M;
+    }
+
+    // the source's line ending (CRLF unless the text uses bare LF) and whether it ends with one
+    static void NoteEndings(CaesarModel m, string text)
+    {
+        int lf = text.IndexOf('\n');
+        m.LineEnding = lf > 0 && text[lf - 1] == '\r' ? "\r\n" : (lf >= 0 ? "\n" : "\r\n");
+        m.FinalNewline = text.Length == 0 || text[text.Length - 1] == '\n' || text[text.Length - 1] == '\r';
+    }
+
+    // a section's lines in `count` blocks of equal size (the reader's rule: lines / count); null when the count
+    // is 0, the section is empty, or a block would have no line
+    public static List<List<string>> SliceBlocks(List<string> lines, int count)
+    {
+        if (lines == null || count <= 0 || lines.Count == 0) return null;
+        int per = lines.Count / count;
+        if (per < 1) return null;
+        var blocks = new List<List<string>>(count);
+        for (int b = 0; b < count; b++) blocks.Add(lines.GetRange(b * per, per));
+        return blocks;
     }
 
     // CRLF, LF or CR; a final newline does not make an extra line; blank lines are kept. A run of CRs
@@ -662,13 +695,16 @@ public static class CaesarNeutralReader
                 if (l.StartsWith("#$", StringComparison.Ordinal))
                 {
                     string name = l.Substring(2).Trim().ToUpperInvariant();
-                    if (_sec.ContainsKey(name)) { Warn("section #$ " + name + " appears twice; the second one is ignored"); cur = new Section(); cur.Name = name; continue; }
+                    if (_sec.ContainsKey(name)) { Warn("section #$ " + name + " appears twice; the second one is ignored"); M.DuplicateSections.Add(name); cur = new Section(); cur.Name = name; continue; }
                     cur = new Section();
                     cur.Name = name;
                     _sec[name] = cur;
+                    M.SectionOrder.Add(name);
+                    M.RawHeaders[name] = l;
+                    M.RawSections[name] = cur.Lines;
                     continue;
                 }
-                if (cur == null) { if (l.Trim().Length > 0) stray++; continue; }
+                if (cur == null) { M.Prelude.Add(l); if (l.Trim().Length > 0) stray++; continue; }
                 cur.Lines.Add(l);
             }
             if (stray > 0) Warn(I(stray) + " non-blank lines before the first #$ section header were ignored");
@@ -793,12 +829,14 @@ public static class CaesarNeutralReader
             while (i < n)
             {
                 if (!rows[i].IsReal) { if (!rows[i].Blank) skipped++; i++; continue; }
+                int start = i;
                 var real = new List<Row>();
                 while (i < n && rows[i].IsReal) real.Add(rows[i++]);
                 var tail = new List<Row>();
                 while (i < n && !rows[i].IsReal) { if (!rows[i].Blank) tail.Add(rows[i]); i++; }
                 var e = new CaesarElement();
                 e.Index = M.Elements.Count;
+                for (int q = start; q < i; q++) e.RecordLines.Add(rows[q].Line);
                 e.RealRows = real.Select(x => x.V).ToArray();
                 int rc;
                 realRowCounts.TryGetValue(real.Count, out rc);

@@ -20,7 +20,7 @@ A CAESAR II pipe-stress model becomes a Pluto viewer model, `<base>.bin` + `<bas
 
 Verified on the generic fixture and in the browser. The production-machine check (PS 5.1 compile, a real job) is still to do, so this note stays `draft`.
 
-The other direction, a `.cii` built from a TOML config, is the [[vault/arms/pipe-builder|pipe-builder]]. Its `-Preview` runs this arm on the file it writes.
+The other direction, a `.cii` built from a TOML config or an existing job carried losslessly, is the [[vault/arms/pipe-builder|pipe-builder]] ([[vault/format/pipe-model|pipe-model]]). Its `-Preview` runs this arm on the file it writes.
 
 ## Run
 
@@ -43,7 +43,7 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\
 - **Output:** progress lines start with `[step]`; the last line is `RESULT {json}` (paths, load cases, counts, warnings). The export refuses a neutral file it could not read cleanly (a VERSION line that is not a number, or an element count that differs from CONTROL) and writes nothing.
 - **Open it:** pick the `.bin` and the `.features.json` together, or use `viewer/index.html?bin=…&features=…`. The groups and the support symbols live in the sidecar. CAESAR models are Y-up, and the file says so (META `upAxis`), so the viewer opens them Y-up without changing your Z-up setting.
 
-From C#: `CaesarToPluto.Export(cii, resultsOrNull, outBase, modelId[, CaesarOptions])` returns a `CaesarExportResult` with `Summary()`, `ToJson()` and `Warnings`.
+From C#: `CaesarToPluto.Export(cii, resultsOrNull, outBase, modelId[, CaesarOptions])` returns a `CaesarExportResult` with `Summary()`, `ToJson()` and `Warnings`. `Export(CaesarModel, ciiPath, resultsOrNull, outBase, modelId, options)` does the same from a model already read, e.g. one parsed in memory from a `.cii` text that was never saved (the pipe builder's `-Preview`).
 
 ## In the viewer
 

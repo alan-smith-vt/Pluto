@@ -22,6 +22,8 @@ The config describes:
 
 `-Preview` also shows the model in the viewer through the CAESAR arm ([[vault/arms/caesar-to-viewer|caesar-to-viewer]]), support symbols included, before CAESAR sees it.
 
+The same runner takes an **existing CAESAR job** too: `-In job.cii` imports it losslessly (everything the model does not edit is carried as written, and an unedited job is written back byte for byte), and `-In x.pipe.json` reads a model saved with `-Json`. The model, the carry rules and the JSON: [[vault/format/pipe-model|pipe-model]].
+
 **Status: verified on Linux, still `draft`.**
 - **Checked:**
   - a strict C# 5 compile;
@@ -33,29 +35,38 @@ The config describes:
   - the PS 5.1 compile on the production machine;
   - the first import into CAESAR II.
 
-Same model, other solver: a SAP2000 `.s2k` writer from the same `PipeModel` is the next stage (see *Next*).
+Same model, other solver: a SAP2000 `.s2k` from the same `PipeModel`, as a check model of CAESAR's, comes after the workbook and the loads (see *Next*).
 
 ## Run
 
 ```powershell
 powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\caesar\Build-Pipe.ps1 `
-  -Config "<project dir>\line.toml" -Out "<project dir>\line" -Preview
+  -In "<project dir>\line.toml" -Out "<project dir>\line" -Cii -Preview
+
+powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.cii" -Compare "<project dir>\job_from_caesar.cii"
 ```
 
-- **`-Config`** is the TOML. Every key is shown, with its unit, in `scripts/caesar/examples/pipe-example.toml`.
-- **`-Out <base>`** writes:
-  - `<base>.cii`, to import in CAESAR II through File → Import → CAESAR II Neutral File;
-  - `<base>.nodes.csv`, with every node's run, position along it, x y z, and what is there.
-  - Default: beside the config, same name.
+- **`-In`** (alias `-Config`), one of:
+  - a `.toml` config. Every key is shown, with its unit, in `scripts/caesar/examples/pipe-example.toml`;
+  - a `.cii`, an existing CAESAR job. The report says whether writing it back gives the source identically;
+  - a `.pipe.json`, a model saved with `-Json`.
+- **Outputs**, in any combination:
+  - **`-Cii`**: `<base>.cii`, to import in CAESAR II through File → Import → CAESAR II Neutral File, and for a `.toml` `<base>.nodes.csv`, with every node's run, position along it, x y z, and what is there. The default for a `.toml` when no output is chosen. Never written over the input.
+  - **`-Json`**: `<base>.pipe.json`, the whole model, exactly.
+  - **`-Preview`**: `<base>.bin` + `<base>.features.json`, built in memory from exactly the `.cii` that `-Cii` writes (what `Run-Caesar.ps1` would make of it).
+  - With none of them, a `.cii` or `.pipe.json` gives a report only.
+- **`-Compare <file>`**: the model against another `.cii`, `.toml` or `.pipe.json`, by meaning: elements, node positions, restraints, SIFs, carried blocks, settings. For example, against CAESAR's own re-export of the job.
+- **`-Seed <job.cii>`**: a `.toml` model takes that job's VERSION lines, UNITS (English only), execution options and first allowables block.
+- **`-Out <base>`**:
+  - Default: beside the input, same name.
   - An existing folder, or a path ending in `\` or `/`, means `<folder>\<name>`.
   - **Output inside the Pluto repo is refused.**
-- **`-Set "span=25;dT=250"`** overrides `[parameters]` values, as numbers or expressions.
-- **`-Preview`** also writes `<base>.bin` + `<base>.features.json`. These are exactly what `Run-Caesar.ps1` makes of the written `.cii`.
+- **`-Set "span=25;dT=250"`** overrides a `.toml`'s `[parameters]` values, as numbers or expressions.
 - **`-ModelId`**: default `pipe/<name>`.
 - **Output:**
   - Progress lines start with `[step]`.
   - The last line is `RESULT {json}`: paths, counts and warnings.
-  - A config that does not build prints `[error  ] <message>` and `RESULT {"error": …}`, and exits 1.
+  - An input that does not build or import, or a file that cannot be written, prints `[error  ] <message>` and `RESULT {"error": …}`, and exits 1.
   - Every message names the config item it comes from, e.g. `run "header": support at 39.5 ft is inside the bend at corner 1 (its arc runs 39 ft .. 41 ft; …)`.
   - **An unknown key is an error**, so a typo never passes silently.
 
@@ -247,12 +258,10 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\
 
 ## Next
 
-- **SAP2000 `.s2k` writer** from the same `PipeModel`:
-  - frames with pipe sections;
-  - bends as chord frames;
-  - restraints as joint restraints / springs / links (gaps as gap links);
-  - temperature loads from ΔT.
-
-  It is a structural model only: no code stresses, SIFs or pressure effects. It is run through the one SAP controller, `Run-Sap.ps1 -Open x.s2k -Run` ([[vault/arms/sap-controller|sap-controller]]); no second driver.
-- **Loads, displacements, hangers and nozzles** once a seed export confirms their layout.
-- The first CAESAR import of the example, then a real line, on the production machine.
+The plan, in stages ([[vault/decisions/2026-10-22-lossless-pipe-model|2026-10-22-lossless-pipe-model]]):
+- **A, done (2026-10-22):** the lossless `.cii` import, the overlay-and-carry writer, the model JSON, compare, and `-In` / `-Json` / `-Compare` / `-Seed` ([[vault/format/pipe-model|pipe-model]]).
+- **B: the Excel workbook** as the model's master: sheets for settings, sections, processes, materials, elements, restraints, SIFs and coordinates; a `.cii` or `.toml` into a workbook and back with nothing lost; `-Watch` to rebuild the preview on every save; Reload / Auto-reload in the viewer.
+- **C: loads**, from CAESAR's documentation of the neutral file: forces and moments, imposed displacements, uniform and g-loads, wind.
+- **D: the viewer as the confirmation step:** loads drawn, element properties on hover, node numbers, temperature / pressure / material groups, and a list of build checks.
+- **E: a SAP2000 `.s2k`** as a check on CAESAR: the same pipe and loads, with equivalent fixities, supports, restraints and releases (gaps and one-ways as gap links; friction reported, as SAP cannot model it as CAESAR does). It runs through the one SAP controller, `Run-Sap.ps1 -Open x.s2k -Run` ([[vault/arms/sap-controller|sap-controller]]); no second driver.
+- **On the production machine:** the first CAESAR import of the example, then a real line.

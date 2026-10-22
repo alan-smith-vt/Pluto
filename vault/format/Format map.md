@@ -9,5 +9,6 @@ the `LABL` block, categories are sidecar groups.
 
 - [[vault/format/v4-schema|v4-schema]] — **current target**: block directory, element domains (shells, beams; tapered beams via `ELEM` slot 4), `LABL`, META `upAxis`, profiles (results / geometry-only), decisions log.
 - [[vault/format/features-sidecar|features-sidecar]] — the sidecar: groups (explicit IDs or `predicateId`), predicates in the production dialect, section cuts, supports (drawn as 3D symbols; exporter items merged by name), units and `worldOffset`.
+- [[vault/format/pipe-model|pipe-model]] — the one pipe-stress model (`PipeModel`, CAESAR's terms) from a TOML, a `.cii` or a `.pipe.json`: lossless CAESAR import (overlay-and-carry: raw text per record, block and slot, only changed columns rewritten, carried sections travel with their element, an unedited job comes back byte for byte), joints, seeds, units, the exact model JSON (`pluto-pipe-model` v1) and compare by meaning (branch `pipestress`).
 - [[vault/format/raw-viewer-writer|raw-viewer-writer]] — the C# writer (`scripts/lib/writers/RawViewerWriter.cs`): two-phase Write / Append usage, beams and sections, labels, geometry-only, the append methods, the arms that call it.
 - [[vault/format/v3-schema|v3-schema]] — legacy fixed-header format, frozen; loads through the viewer shim (`v3Reader.js`). Reference for old files only.
