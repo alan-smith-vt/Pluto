@@ -34,6 +34,7 @@ This is the only route that runs on the production machine (SAP 22, no Python). 
 | attach to the running SAP, else start one | `SapSession.AttachOrStart` | every runner | all |
 | a second SAP whatever is running | `SapSession.NewInstance` | `Run-Sap.ps1 -NewInstance [-KeepOpen]` | `export_model.py --new-instance` |
 | open `.sdb` / import `.s2k` (+ save `.sdb`) | `Open` | `-Open X [-NoSaveSdb]` | `run_sap.py`, `offset_study.py`, `export_model.py` |
+| point coordinates by name (global, inches, full precision) + frames meeting there | `WritePoints` | `-Points <names\|file> -PointsOut <csv>` | duct cut points |
 | run; run on a saved copy; only if results are missing | `Run`, `RunOnCopy`, `AllCasesFinished` | `-Run`, `-RunOnCopy <sdb>\|auto`, `-RunIfNeeded` | tank, export |
 | shell local 1 axis in global | `AreaLocal1`, `WriteAreaLocal1` | `-AreaAxes <tsv>` | `run_sap.py` axes check |
 | input tables read back (display precision) | `TableRows`, `WriteTablesS2k` | `-Tables "a;b" -TablesOut <s2k>` | `offset_study.py` (insertion points, gap props) |
@@ -45,7 +46,7 @@ This is the only route that runs on the production machine (SAP 22, no Python). 
 | self test: 20 ft beam, 10 kip midspan → 5 kip, 50 kip-ft | `WriteTestBeamS2k` | `-SelfTest <dir>` | install check |
 
 `Run-Sap.ps1` prints `[step]` progress lines and ends with `RESULT {json}` (version, counts,
-groups, units, cases, output paths). Steps run in a fixed order: attach → open → axes → run → tables → results → export.
+groups, units, cases, output paths). Steps run in a fixed order: attach → open → points → axes → run → tables → results → export.
 
 ## Facts the code relies on
 

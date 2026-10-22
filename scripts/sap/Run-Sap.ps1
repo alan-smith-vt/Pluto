@@ -5,6 +5,9 @@
 #   attach   the running SAP2000, or start one (-NewInstance: always a second SAP, closed at the end
 #            unless -KeepOpen; a SAP this script started is closed at the end unless -KeepOpen)
 #   open     -Open <.s2k|.sdb>: OpenFile; an imported .s2k is saved beside it as .sdb (-NoSaveSdb: not)
+#   points   -Points <names|file> -PointsOut <csv>: point objects' global coordinates (inches, full precision)
+#            and the frames meeting there; names comma separated, or a text file with names (comma / space /
+#            line separated). Names not in the model are listed (Found 0)
 #   axes     -AreaAxes <tsv>: local 1 of every area object, global direction cosines
 #   run      -Run: RunAnalysis on the file SAP holds (it saves it). -RunOnCopy <sdb>: save AS that copy
 #            first and run every case there (the opened file is never written; "auto" = <export base>.sdb).
@@ -25,6 +28,8 @@ param(
     [switch]$NoSaveSdb,
     [switch]$NewInstance,
     [switch]$KeepOpen,
+    [string]$Points,
+    [string]$PointsOut,
     [string]$AreaAxes,
     [switch]$Run,
     [string]$RunOnCopy,
@@ -77,6 +82,14 @@ try {
     if ($RunOnCopy -eq "auto") {
         if (-not $base) { throw "-RunOnCopy auto needs -Export." }
         $RunOnCopy = "$base.sdb"
+    }
+    if ($Points) {
+        if (-not $PointsOut) { throw "-Points needs -PointsOut <csv>." }
+        $src = $(if (Test-Path $Points -PathType Leaf) { Get-Content $Points -Raw } else { $Points })
+        $names = [string[]]@($src -split '[,;\s]+' | Where-Object { $_ } | Select-Object -Unique)
+        $missing = $sap.WritePoints((Full $PointsOut), $names)
+        $out.points = Full $PointsOut
+        Say "points" ("{0} of {1} found -> {2}{3}" -f ($names.Count - $missing.Count), $names.Count, $PointsOut, $(if ($missing.Count) { "; NOT in the model: " + ($missing -join " ") } else { "" }))
     }
     if ($AreaAxes) {
         $n = $sap.WriteAreaLocal1((Full $AreaAxes))

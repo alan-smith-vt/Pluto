@@ -162,6 +162,51 @@ public class SapSession
         return new double[] { v[0], v[3], v[6] };
     }
 
+    // Point objects by name -> CSV Name,Found,X_in,Y_in,Z_in,Frames,FrameNames (global, inches, full precision;
+    // present units restored after). Frames = frame objects meeting there (2 = inline, 1 = free end, 3+ = branch).
+    // Names not in the model are written with Found 0. Returns the names not found.
+    public List<string> WritePoints(string path, IEnumerable<string> names)
+    {
+        eUnits units = Model.GetPresentUnits();
+        var missing = new List<string>();
+        StringBuilder sb = new StringBuilder("Name,Found,X_in,Y_in,Z_in,Frames,FrameNames\r\n");
+        Check(Model.SetPresentUnits(eUnits.kip_in_F), "SetPresentUnits");
+        // SAP 26, 2026-10-22: right after a .s2k import SetPresentUnits returns 0 and changes nothing (a Kip, ft
+        // test beam read 10 for 120 in); the length unit actually in force is read back and scaled by hand
+        double k = InchesPer(Model.GetPresentUnits());
+        try
+        {
+            foreach (string name in names)
+            {
+                double x = 0, y = 0, z = 0;
+                if (Model.PointObj.GetCoordCartesian(name, ref x, ref y, ref z, "Global") == 0) { x *= k; y *= k; z *= k; }
+                else
+                {
+                    missing.Add(name);
+                    sb.Append(Q(name)).Append(",0,,,,,\r\n");
+                    continue;
+                }
+                int n = 0; int[] types = null; string[] objs = null; int[] pn = null;
+                Model.PointObj.GetConnectivity(name, ref n, ref types, ref objs, ref pn);
+                var fr = new List<string>();
+                for (int i = 0; i < n; i++) if (types[i] == 2) fr.Add(objs[i]);
+                sb.Append(Q(name)).Append(",1,").Append(R(x)).Append(',').Append(R(y)).Append(',').Append(R(z)).Append(',')
+                  .Append(fr.Count).Append(',').Append(Q(string.Join(" ", fr.ToArray()))).Append("\r\n");
+            }
+        }
+        finally { Model.SetPresentUnits(units); }
+        File.WriteAllText(path, sb.ToString());
+        return missing;
+    }
+
+    // Inches per length unit of a SAP unit set (from its CurrUnits name: in, ft, mm, cm, m).
+    public static double InchesPer(eUnits u)
+    {
+        string len = UnitsName(u).Split(',')[1].Trim();
+        switch (len) { case "in": return 1; case "ft": return 12; case "mm": return 1 / 25.4; case "cm": return 1 / 2.54; case "m": return 1 / 0.0254; }
+        throw new Exception("unknown length unit " + len);
+    }
+
     // Area<TAB>L1x<TAB>L1y<TAB>L1z for every area object.
     public int WriteAreaLocal1(string path)
     {
