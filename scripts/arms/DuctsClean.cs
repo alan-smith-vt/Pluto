@@ -248,6 +248,7 @@ public partial class DuctsToPluto
         }
         var clean = edges.Where(x => !x.Dead && x.A != x.B).ToList();
         foreach (CEdge ce in clean) foreach (RvEl s in ce.Src) foreach (string f in s.Flags) ce.Flags.Add(f);
+        string cutNote = ApplyCuts(clean, P);
 
         // checks: length, deviation of the original connectors from the clean centreline
         double cleanLen = clean.Where(x => !x.Rigid && x.Source != "navisworks-only").Sum(x => Len(P[x.A], P[x.B]));
@@ -267,7 +268,78 @@ public partial class DuctsToPluto
 
         return string.Format(Inv, "clean model (<out>_clean.bin, <out>.frames.csv): {0} elements ({1} rigid links) from {2} pieces; duct length {3:0.#} ft -> {4:0.#} ft, overlaps merged {5} ({6:0.#} ft), different-size overlaps {7} (OVERLAP_SIZE_CONFLICT), gaps closed {10}; connectors > 1 in from the clean line {8}{9}",
             clean.Count, clean.Count(x => x.Rigid), edges.Count(x => x.Src.Count > 0 || x.Source != "revit"), rawLen, cleanLen, overlapMerged, overlapFt, overlapConflict, dev.Count,
-            dev.Count > 0 ? " (worst: " + string.Join(", ", dev.Take(5).Select(x => x.Value + " " + x.Key.ToString("0.#", Inv) + " in").ToArray()) + ")" : "", gapsClosed);
+            dev.Count > 0 ? " (worst: " + string.Join(", ", dev.Take(5).Select(x => x.Value + " " + x.Key.ToString("0.#", Inv) + " in").ToArray()) + ")" : "", gapsClosed)
+            + (cutNote != "" ? "\n" + cutNote : "");
+    }
+
+    // Scope cut points (2026-10-22, the SAP reviewer's cut nodes read from the reviewed SAP model: Run-Sap.ps1
+    // -Points -> cut-points.csv, DuctCuts in duct-config.psd1): global inches, the Navisworks frame frames.csv uses
+    public static readonly List<KeyValuePair<string, double[]>> CutPoints = new List<KeyValuePair<string, double[]>>();
+    public static double CutSnapIn = 6;
+
+    // Each cut point snaps to a clean joint within CutSnapIn, else to a point on a prismatic duct edge (split there).
+    // The model is then cut at those joints: per system the largest connected piece (duct length) is kept, and every
+    // other piece meeting a cut joint is dropped. Edges of the kept piece ending at a cut get CUT_END.
+    static string ApplyCuts(List<CEdge> clean, Dictionary<int, double[]> P)
+    {
+        if (CutPoints.Count == 0) return "";
+        double snap = CutSnapIn / 12;
+        var cutNodes = new HashSet<int>(); var report = new List<string>(); var notFound = new List<string>();
+        int nextNode = P.Keys.Count > 0 ? P.Keys.Max() + 1 : 1;
+        foreach (KeyValuePair<string, double[]> cp in CutPoints)
+        {
+            double[] p = { cp.Value[0] / 12, cp.Value[1] / 12, cp.Value[2] / 12 };
+            var used = new HashSet<int>(clean.SelectMany(x => new[] { x.A, x.B }));
+            int bestN = -1; double bestD = double.MaxValue;
+            foreach (int n in used) { double d = Len(P[n], p); if (d < bestD) { bestD = d; bestN = n; } }
+            if (bestD <= snap) { cutNodes.Add(bestN); report.Add(string.Format(Inv, "{0} joint N{1} ({2:0.##} in)", cp.Key, bestN, bestD * 12)); continue; }
+            CEdge bestE = null; double bestT = 0, bestLat = double.MaxValue;
+            foreach (CEdge ce in clean)
+            {
+                if (ce.Rigid || ce.DimB != null) continue;
+                double t, lat; Project(P[ce.A], P[ce.B], p, out t, out lat);
+                if (t > 0 && t < 1 && lat < bestLat) { bestLat = lat; bestT = t; bestE = ce; }
+            }
+            if (bestE == null || bestLat > snap) { notFound.Add(string.Format(Inv, "{0} (nearest joint {1:0.#} in)", cp.Key, bestD * 12)); continue; }
+            int m = nextNode++; P[m] = Lerp(P[bestE.A], P[bestE.B], bestT);
+            clean.Remove(bestE); clean.Add(CopyEdge(bestE, bestE.A, m)); clean.Add(CopyEdge(bestE, m, bestE.B));
+            cutNodes.Add(m);
+            report.Add(string.Format(Inv, "{0} on a duct, split ({1:0.##} in)", cp.Key, bestLat * 12));
+        }
+        // pieces: edges joined through joints that are not cuts
+        var byNode = new Dictionary<int, List<CEdge>>();
+        foreach (CEdge ce in clean) foreach (int n in new[] { ce.A, ce.B }) { List<CEdge> l; if (!byNode.TryGetValue(n, out l)) { l = new List<CEdge>(); byNode[n] = l; } l.Add(ce); }
+        var piece = new Dictionary<CEdge, int>(); var pieces = new List<List<CEdge>>();
+        foreach (CEdge s0 in clean)
+        {
+            if (piece.ContainsKey(s0)) continue;
+            var l = new List<CEdge>(); var q = new Queue<CEdge>(); q.Enqueue(s0); piece[s0] = pieces.Count;
+            while (q.Count > 0)
+            {
+                CEdge e = q.Dequeue(); l.Add(e);
+                foreach (int n in new[] { e.A, e.B })
+                {
+                    if (cutNodes.Contains(n)) continue;
+                    foreach (CEdge o in byNode[n]) if (!piece.ContainsKey(o)) { piece[o] = pieces.Count; q.Enqueue(o); }
+                }
+            }
+            pieces.Add(l);
+        }
+        Func<List<CEdge>, double> len = l => l.Where(x => !x.Rigid).Sum(x => Len(P[x.A], P[x.B]));
+        Func<List<CEdge>, string> sysOf = l => { CEdge e = l.FirstOrDefault(x => x.Src.Count > 0); return e != null ? e.Src[0].SysName : ""; };
+        var keep = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (int i = 0; i < pieces.Count; i++) { string s = sysOf(pieces[i]); int k; if (!keep.TryGetValue(s, out k) || len(pieces[i]) > len(pieces[k])) keep[s] = i; }
+        var drop = new HashSet<int>();
+        foreach (int n in cutNodes)
+            foreach (CEdge e in byNode[n]) { int i = piece[e]; if (keep[sysOf(pieces[i])] != i) drop.Add(i); }
+        double dropFt = drop.Sum(i => len(pieces[i])); int dropN = drop.Sum(i => pieces[i].Count);
+        clean.RemoveAll(e => drop.Contains(piece[e]));
+        int ends = 0;
+        foreach (CEdge e in clean) if (cutNodes.Contains(e.A) || cutNodes.Contains(e.B)) { e.Flags.Add("CUT_END"); ends++; }
+        return string.Format(Inv, "NEW cuts: {0} of {1} placed, {2} elements ({3:0.#} ft of duct) dropped beyond them, {4} kept elements end at a cut (CUT_END){5}\nNEW cut points: {6}",
+            CutPoints.Count - notFound.Count, CutPoints.Count, dropN, dropFt, ends,
+            notFound.Count > 0 ? "; NOT placed (no joint / duct within " + CutSnapIn.ToString("0.#", Inv) + " in): " + string.Join(", ", notFound.ToArray()) : "",
+            string.Join("; ", report.ToArray()));
     }
 
     static CEdge CopyEdge(CEdge s, int a, int b)
@@ -326,7 +398,7 @@ public partial class DuctsToPluto
         sections.Add(RawViewerWriter.SectionDef.Pipe("rigid link", (float)(1.5 * scale / 12), (float)(0.375 * scale / 12)));
         var secIx = new Dictionary<string, int>(StringComparer.Ordinal);
         var beams = new Dictionary<int, RawViewerWriter.BeamMember>(); var labels = new Dictionary<int, string>();
-        var bySys = new SortedDictionary<string, List<uint>>(StringComparer.Ordinal); var gRigid = new List<uint>(); var gTrans = new List<uint>(); var gConf = new List<uint>();
+        var bySys = new SortedDictionary<string, List<uint>>(StringComparer.Ordinal); var gRigid = new List<uint>(); var gTrans = new List<uint>(); var gConf = new List<uint>(); var gCut = new List<uint>();
         int nb = 1; double ft = scale / 12;
         foreach (CEdge ce in clean)
         {
@@ -361,6 +433,7 @@ public partial class DuctsToPluto
             if (ce.Rigid) gRigid.Add((uint)nb);
             if (ce.DimB != null) gTrans.Add((uint)nb);
             if (ce.Flags.Contains("OVERLAP_SIZE_CONFLICT")) gConf.Add((uint)nb);
+            if (ce.Flags.Contains("CUT_END")) gCut.Add((uint)nb);
             nb++;
         }
         if (beams.Count == 0) return;
@@ -375,6 +448,7 @@ public partial class DuctsToPluto
         if (gRigid.Count > 0) sc.AddGroup("Clean: rigid links", "#ff3b3b", "beams", gRigid, new[] { "duct", "clean", "link" }, "RIGID");
         if (gTrans.Count > 0) sc.AddGroup("Clean: transitions", "#ffd23f", "beams", gTrans, new[] { "duct", "clean", "transition" }, null);
         if (gConf.Count > 0) sc.AddGroup("Flag: OVERLAP_SIZE_CONFLICT", "#ff5fa2", "beams", gConf, new[] { "duct", "clean", "flag" }, "FLAG_OVERLAP_SIZE_CONFLICT");
+        if (gCut.Count > 0) sc.AddGroup("Clean: cut ends", "#ffffff", "beams", gCut, new[] { "duct", "clean", "cut" }, "FLAG_CUT_END");
         ApplySystemView(sc);
             File.WriteAllText(outBase + ".features.json", sc.ToJson(), new UTF8Encoding(false));
     }

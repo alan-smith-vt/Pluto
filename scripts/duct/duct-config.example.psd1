@@ -17,6 +17,9 @@
     # Second mains: '<name>=<Revit ElementId>' promotes the '<name> fragments' component holding that part to a main
     # of its own ('<name> 2', '<name> 3', ...), e.g. a run cut in two by the room scope. match.txt says what each did.
     DuctMains = @()
+    # Scope cut points: the CSV of scripts\sap\Run-Sap.ps1 -Points <cut nodes> (read from the reviewed SAP model).
+    # Export-DuctsViewer.ps1 -Revit cuts the clean model there (-Cuts overrides; -Cuts none = no cuts). '' = none.
+    DuctCuts = ''
     Group = 'DUCT_ALL'                # SAP frame group holding every duct member
 
     # Output case names exactly as SAP lists them (copy from SAP, not from Excel).

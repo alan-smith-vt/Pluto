@@ -27,6 +27,10 @@
 #                        scripts\duct\duct-config.psd1). A part whose run / system name contains one belongs to it;
 #                        per name the largest connected component is the system, the rest "<name> fragments",
 #                        anything else "other: <name>" (viewer groups, frames.csv System column, SAP SYS_ groups)
+#                        [-Cuts <csv>|none]: scope cut points (default: DuctCuts in the duct config), the CSV of
+#                        scripts\sap\Run-Sap.ps1 -Points (cut nodes read from a SAP model): each snaps to a clean
+#                        joint or duct within 6 in; per system the largest piece is kept, pieces beyond a cut dropped;
+#                        kept frames ending at a cut get CUT_END (viewer "Clean: cut ends", SAP FLAG_CUT_END)
 #     [-Out <base>]      default <run>\ducts  ->  <run>\ducts.bin + <run>\ducts.features.json
 #     [-Unit in]         file length unit; "in" matches the plant export
 #     [-ModelId <id>]    default hvac/ducts/<run folder name> (+ "/mesh")
@@ -52,7 +56,8 @@ param(
     [string]$Unit = "in",
     [string]$ModelId,
     [string]$Services,
-    [string]$Systems
+    [string]$Systems,
+    [string]$Cuts
 )
 $ErrorActionPreference = "Stop"
 $Part = $(if ($Part) { $Part -join "," } else { $null })
@@ -105,6 +110,18 @@ if ($Box) {
             $n, $id = $p -split '=', 2
             if ($id) { [DuctsToPluto]::PrimaryPins.Add((New-Object 'System.Collections.Generic.KeyValuePair[string,string]' $n.Trim(), $id.Trim())) }
         }
+    }
+    # scope cut points: a Run-Sap.ps1 -Points CSV (Name, Found, X_in, Y_in, Z_in) from -Cuts or DuctCuts in the config
+    [DuctsToPluto]::CutPoints.Clear()
+    if (-not $Cuts -and (Test-Path $cfg)) { $Cuts = (Import-PowerShellDataFile $cfg).DuctCuts }
+    if ($Cuts -and $Cuts -ne "none") {
+        if (-not (Test-Path $Cuts)) { throw "cut points file not found: $Cuts (DuctCuts in duct-config.psd1 or -Cuts; -Cuts none = no cuts)" }
+        $inv = [Globalization.CultureInfo]::InvariantCulture
+        foreach ($c in (Import-Csv $Cuts | Where-Object { $_.Found -eq "1" })) {
+            $xyz = [double[]]@([double]::Parse($c.X_in, $inv), [double]::Parse($c.Y_in, $inv), [double]::Parse($c.Z_in, $inv))
+            [DuctsToPluto]::CutPoints.Add((New-Object 'System.Collections.Generic.KeyValuePair[string,double[]]' $c.Name, $xyz))
+        }
+        Write-Output ("cut points: {0} from {1}" -f [DuctsToPluto]::CutPoints.Count, $Cuts)
     }
     Write-Output ("primary systems: " + $(if ([DuctsToPluto]::PrimarySystems.Count) { [DuctsToPluto]::PrimarySystems -join ", " } else { "none configured (DuctSystems in duct-config.psd1 or -Systems)" }))
     $r = [DuctsToPluto]::ExportRevit($Run, [IO.Path]::GetFullPath($Revit), $Out, $ModelId, $Unit, $Room, $Part)
