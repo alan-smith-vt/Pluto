@@ -73,6 +73,9 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > - **Unchanged values stay exact.** A value equal to the base's (to 1e-9) keeps the base's exact value. That is why an unedited workbook gives back its source, even after Excel saves numbers its own way.
 > - **Section / Process:** a blank cell takes the row above's. An override cell wins over the section's or process's value for that one element.
 > - **Bend radius:** a number, or `LR` / `SR` (1.5 / 1 × nominal, for a standard size in inches).
+>   - **Coded radii:** CAESAR may write a radius as a negative coded value, a multiple of −1.0101 such as −4.0404. It is the same kind of code as −2.0202 for "M" in the angle fields; most likely a radius chosen by name in CAESAR's input.
+>   - Such a value is read and written as it is, so CAESAR resolves it as before. Do not make it positive: +4.0404 is a literal 4.04 in radius, a different bend.
+>   - Until the codes are confirmed, the viewer and compare's node positions treat these bends as sharp corners. The import and the reader say so (first seen 2026-10-22 on a real job; the public samples have none).
 > - **Bend nodes:** `angle:node` pairs, where `M` is CAESAR's mid point (`M:19; 0:18`).
 > - **A blank bend fitting thickness** follows the wall.
 > - **Headers:** a length column's header may say another unit (`DX (ft)`; in, ft, mm, cm, m) and its values are converted. Any other unit change is an error. Columns are found by name, so they may be reordered.

@@ -361,6 +361,10 @@ public static class CaesarPipeImport
         }
         catch (Exception ex) { res.Notes.Add("node positions not computed: " + ex.Message); }
 
+        var coded = m.Elements.Where(e => e.Bend != null && PipeModelBend.RadiusCode(e.Bend.Radius) > 0).ToList();
+        if (coded.Count > 0)
+            res.Notes.Add(coded.Count + " bend(s) carry a coded radius CAESAR wrote (" + string.Join(", ", coded.Select(e => e.Bend.Radius.ToString("0.0###", CultureInfo.InvariantCulture)).Distinct().ToArray()) +
+                          ": a radius chosen by name, e.g. at element " + coded[0].From + "-" + coded[0].To + "): kept as written, so CAESAR resolves it as before; the viewer draws them as sharp corners until the code is confirmed");
         SelfCheck(res);
         return res;
     }

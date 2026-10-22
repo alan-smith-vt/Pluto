@@ -567,6 +567,7 @@ public static class PipeWorkbook
             "Id: keep it. A row without an Id is a new item; a deleted row deletes the item; moving rows reorders the elements (CAESAR's order).",
             "Elements: Type = Pipe, Rigid, Valve, Flange, Flange pair, Flanged valve, Reducer, Exp joint. A bend radius makes the element a bend at its TO node (LR / SR = 1.5 / 1 x nominal).",
             "Bend nodes: angle:node pairs, M = the mid point (CAESAR's M), e.g. M:19; 0:18.",
+            "A negative bend radius (-1.0101, -2.0202 ... -9.0909) is a coded value CAESAR wrote for a radius chosen by name; keep it, and CAESAR resolves it as before.",
             "Section / Process: a name from those sheets; blank = the row above's. The grouped columns at the right (+) override one value for one element.",
             "Restraints: Stiffness blank = rigid; Cos blank = the type's own axis (guides and limit stops take the pipe axis). Types: CAESAR's (ANC X Y Z RX RY RZ GUI LIM +X ... +LIM -LIM ...).",
             "Forces / Displacements: one row per node and load vector (1-9 = CAESAR's F1-F9 / D1-D9). A displacement left blank is free; 0 holds it.",
@@ -922,7 +923,7 @@ public static class PipeWorkbook
                     rad = (br.Equals("LR", StringComparison.OrdinalIgnoreCase) ? 1.5 : 1.0) * nps;
                 }
                 else rad = Num(c, r, "Bend radius", x, 0, u.Len);
-                if (!(rad > 0)) { x.Err(w + ": the bend radius must be positive"); continue; }
+                if (!(rad > 0) && PipeModelBend.RadiusCode(rad) == 0) { x.Err(w + ": the bend radius must be positive, or one of CAESAR's coded values as the job wrote it (-1.0101, -2.0202 ... -9.0909)"); continue; }
                 bool fresh = e.Bend == null;
                 if (fresh) e.Bend = new PipeModelBend();
                 var b = e.Bend;

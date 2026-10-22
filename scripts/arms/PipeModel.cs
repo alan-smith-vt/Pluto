@@ -138,6 +138,18 @@ public class PipeModelBend
     public int MiterPoints;
     public double FittingThickness, KFactor;  // the wall (as CAESAR writes it), the code's k (0)
     public const double MidPoint = -2.0202;   // CAESAR's code for the "M" (mid point) bend node
+
+    // A negative radius CAESAR writes as a multiple of -1.0101 (-1.0101 .. -9.0909) is one of its coded values
+    // (like -2.0202 = "M" in the angle fields), not a length: most likely a radius picked by name in CAESAR's
+    // input. Which code means which radius is not confirmed yet, so a coded radius is carried as written and
+    // drawn as a sharp corner. Returns the code's number (1-9), or 0 for an ordinary radius.
+    public static int RadiusCode(double radius)
+    {
+        if (!(radius < 0)) return 0;
+        double k = -radius / 1.0101;
+        int n = (int)Math.Round(k);
+        return n >= 1 && n <= 9 && Math.Abs(k - n) < 1e-4 ? n : 0;
+    }
     public int Seq;                           // block number in the source file; 0 = new
     public List<string> Raw;                  // the block as written; null = new
 }

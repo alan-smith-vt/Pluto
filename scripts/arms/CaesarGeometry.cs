@@ -510,6 +510,7 @@ public static class CaesarGeometry
             bg.AngleDeg = deg;
             bg.LeavingElement = outEl;
             if (deg < 1.0 || deg > 179.0) return "bend angle " + F(deg) + " deg outside 1..179";
+            if (PipeModelBend.RadiusCode(b.Radius) > 0) return "radius " + F(b.Radius) + " is one of CAESAR's coded values (a radius chosen by name), not resolved yet";
             if (!(b.Radius > 0) || b.Radius >= Huge) return "radius " + F(b.Radius) + " not usable";
             double T = b.Radius * Math.Tan(theta / 2.0);
             bg.T = T;
