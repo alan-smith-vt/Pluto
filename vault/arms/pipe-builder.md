@@ -23,7 +23,7 @@ The config describes:
 
 `-Preview` also shows the model in the viewer through the CAESAR arm ([[vault/arms/caesar-to-viewer|caesar-to-viewer]]), support symbols included, before CAESAR sees it.
 
-The same runner takes an **existing CAESAR job** too: `-In job.cii` imports it losslessly (everything the model does not edit is carried as written, and an unedited job is written back byte for byte), and `-In x.pipe.json` reads a model saved with `-Json`. The model, the carry rules and the JSON: [[vault/format/pipe-model|pipe-model]].
+The same runner takes an **existing CAESAR job** too: `-In job.cii` imports it losslessly (everything the model does not edit is carried as written, and an unedited job is written back byte for byte), and `-In x.pipe.json` reads a model saved with `-Json`. The model, the carry rules and the JSON: [[vault/format/pipe-model|pipe-model]]. **An Excel workbook** is the model's editable master copy: `-Xlsx` writes one, `-In x.xlsx` reads it back, `-Watch` rebuilds the preview on every save ([[vault/arms/pipe-workbook|pipe-workbook]]).
 
 **Status: verified on Linux, still `draft`.**
 - **Checked:**
@@ -48,16 +48,19 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 ```
 
 - **`-In`** (alias `-Config`), one of:
+  - a `.xlsx` workbook ([[vault/arms/pipe-workbook|pipe-workbook]]); the report lists its edits;
   - a `.toml` config. Every key is shown, with its unit, in `scripts/caesar/examples/pipe-example.toml`;
   - a `.cii`, an existing CAESAR job. The report says whether writing it back gives the source identically;
   - a `.pipe.json`, a model saved with `-Json`.
 - **Outputs**, in any combination:
   - **`-Cii`**: `<base>.cii`, to import in CAESAR II through File → Import → CAESAR II Neutral File, and for a `.toml` `<base>.nodes.csv`, with every node's run, position along it, x y z, and what is there. The default for a `.toml` when no output is chosen. Never written over the input.
+  - **`-Xlsx`**: `<base>.xlsx`, the model as a workbook to edit.
   - **`-Json`**: `<base>.pipe.json`, the whole model, exactly.
   - **`-Preview`**: `<base>.bin` + `<base>.features.json`, built in memory from exactly the `.cii` that `-Cii` writes (what `Run-Caesar.ps1` would make of it).
   - With none of them, a `.cii` or `.pipe.json` gives a report only.
 - **`-Compare <file>`**: the model against another `.cii`, `.toml` or `.pipe.json`, by meaning: elements, node positions, restraints, SIFs, carried blocks, settings. For example, against CAESAR's own re-export of the job.
-- **`-Seed <job.cii>`**: a `.toml` model takes that job's VERSION lines, UNITS (English only), execution options and first allowables block.
+- **`-Seed <job.cii>`**: a `.toml` model (or `-NewWorkbook`) takes that job's VERSION lines, UNITS (English only), execution options and first allowables block.
+- **`-Watch`**, **`-NewWorkbook`**, **`-Force`** and the `-Cii` guard: [[vault/arms/pipe-workbook|pipe-workbook]].
 - **`-Out <base>`**:
   - Default: beside the input, same name.
   - An existing folder, or a path ending in `\` or `/`, means `<folder>\<name>`.
@@ -308,7 +311,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 
 The plan, in stages ([[vault/decisions/2026-10-22-lossless-pipe-model|2026-10-22-lossless-pipe-model]]):
 - **A, done (2026-10-22):** the lossless `.cii` import, the overlay-and-carry writer, the model JSON, compare, and `-In` / `-Json` / `-Compare` / `-Seed` ([[vault/format/pipe-model|pipe-model]]).
-- **B: the Excel workbook** as the model's master: sheets for settings, sections, processes, materials, elements, restraints, SIFs and coordinates; a `.cii` or `.toml` into a workbook and back with nothing lost; `-Watch` to rebuild the preview on every save; Reload / Auto-reload in the viewer.
+- **B, done (2026-10-22): the Excel workbook** as the model's master, a `.cii`, `.toml` or template into a workbook and back with nothing lost; `-Watch`; Reload / Auto-reload in the viewer ([[vault/arms/pipe-workbook|pipe-workbook]]).
 - **C, done (2026-10-22): loads**, from CAESAR's documentation of the neutral file: forces and moments, imposed displacements, uniform and g-loads, wind, in the model, the importer, the writer, the TOML (`[[forces]]`, `[[displacements]]`, `uniform` / `g_load` / `wind_shape`), the model JSON and compare ([[vault/format/caesar-neutral-loads|caesar-neutral-loads]]).
 - **D: the viewer as the confirmation step:** loads drawn, element properties on hover, node numbers, temperature / pressure / material groups, and a list of build checks.
 - **E: a SAP2000 `.s2k`** as a check on CAESAR: the same pipe and loads, with equivalent fixities, supports, restraints and releases (gaps and one-ways as gap links; friction reported, as SAP cannot model it as CAESAR does). It runs through the one SAP controller, `Run-Sap.ps1 -Open x.s2k -Run` ([[vault/arms/sap-controller|sap-controller]]); no second driver.

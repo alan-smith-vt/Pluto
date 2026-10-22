@@ -19,6 +19,15 @@
 // Legacy files merge into the current sidecar (a fresh one is created if
 // none is loaded) and mark it unsaved.
 //
+// Reload / Auto-reload (a model a runner rebuilds, e.g. Build-Pipe.ps1
+// -Watch): the model and its sidecar are read again from where they came
+// from -- the picked files' handles, or the ?bin= / &features= URLs -- with
+// the camera and the load case kept. Auto polls every 2 s and reloads once a
+// change has held still for one poll; it waits while the features have
+// unsaved edits (a reload would drop them). Files given through the plain
+// file input are snapshots the browser cannot read again: pick them with
+// "Choose files" in Chrome / Edge to reload.
+//
 // Depends on viewer.js: loadModels(entries), log(); FEAFeatures for the
 // envelope + dirty state; the ids in index.html's Model section.
 // ================================================================
@@ -30,9 +39,18 @@ var FEAFiles = (function () {
     var elSave = document.getElementById('feaSave');
     var elName = document.getElementById('featName');
 
+    var elReload = document.getElementById('feaReload');
+    var elAuto = document.getElementById('feaAuto');
+
     var binHandle = null;       // FileSystemFileHandle of the primary model, if picked with the API
     var featHandle = null;      // handle of the loaded / last-saved sidecar
     var primaryName = '';       // base name of the primary model ("TANK-A")
+    // where the loaded model came from, to read it again:
+    //   { kind: 'handles', bins: [{ handle, name }], feat: handle | null }
+    //   { kind: 'urls', bin: url, feat: url | null }
+    //   { kind: 'snapshot' } (the plain file input: cannot be read again)
+    var source = null;
+    var autoTimer = null, lastSig = null, pendingSig = null, busy = false, waitNoted = false;
 
     var hasFS = typeof window !== 'undefined' && typeof window.showOpenFilePicker === 'function';
 
@@ -111,6 +129,100 @@ var FEAFiles = (function () {
         await ingest(files);
     }
 
+    // ---- reloading -------------------------------------------------------
+    function setSource(s) { source = s; lastSig = null; pendingSig = null; syncUI(); }
+
+    function setUrlSource(bin, feat) { setSource({ kind: 'urls', bin: bin, feat: feat || null }); }
+
+    function canReload() { return !!source && (source.kind === 'handles' || source.kind === 'urls'); }
+
+    function bust(u) { return u + (u.indexOf('?') >= 0 ? '&' : '?') + '_t=' + Date.now(); }
+
+    // a fingerprint of the source files' state (time + size), to see a rebuild
+    async function signature() {
+        if (!canReload()) return null;
+        var parts = [];
+        if (source.kind === 'handles') {
+            var hs = source.bins.map(function (b) { return b.handle; });
+            if (source.feat) hs.push(source.feat);
+            for (var i = 0; i < hs.length; i++) { var f = await hs[i].getFile(); parts.push(f.lastModified + ':' + f.size); }
+        } else {
+            var us = [source.bin];
+            if (source.feat) us.push(source.feat);
+            for (var j = 0; j < us.length; j++) {
+                var r = await fetch(bust(us[j]), { method: 'HEAD', cache: 'no-store' });
+                if (!r.ok) throw new Error(r.status + ' for ' + us[j]);
+                parts.push((r.headers.get('last-modified') || '') + ':' + (r.headers.get('content-length') || '') + ':' + (r.headers.get('etag') || ''));
+            }
+        }
+        return parts.join('|');
+    }
+
+    // read the model and its sidecar again; the camera and load case stay
+    async function reload(auto) {
+        if (!canReload()) {
+            say(source && source.kind === 'snapshot' ? 'Reload: these files came through the plain file input, which the browser cannot read again; pick them with "Choose files" (Chrome / Edge) to reload.' : 'Reload: no model to reload.');
+            return false;
+        }
+        if (window.FEAFeatures && FEAFeatures.isDirty()) {
+            if (auto) {
+                if (!waitNoted) say('Auto-reload: the model changed, but the features have unsaved edits; save them (Ctrl+S) and it reloads.');
+                waitNoted = true;
+                return false;
+            }
+            if (typeof confirm === 'function' && !confirm('The features have unsaved edits; reloading drops them. Reload anyway?')) return false;
+        }
+        waitNoted = false;
+        busy = true;
+        try {
+            var entries = [], featFile = null;
+            if (source.kind === 'handles') {
+                for (var i = 0; i < source.bins.length; i++) entries.push({ file: await source.bins[i].handle.getFile(), name: source.bins[i].name });
+                if (source.feat) featFile = await source.feat.getFile();
+            } else {
+                var base = function (u) { return decodeURIComponent(u.split('?')[0].split('/').pop()); };
+                var rb = await fetch(bust(source.bin), { cache: 'no-store' });
+                if (!rb.ok) throw new Error(rb.status + ' for ' + source.bin);
+                entries.push({ file: await rb.blob(), name: baseName(base(source.bin)) });
+                if (source.feat) {
+                    var rf = await fetch(bust(source.feat), { cache: 'no-store' });
+                    if (!rf.ok) throw new Error(rf.status + ' for ' + source.feat);
+                    featFile = new File([await rf.blob()], base(source.feat), { type: 'application/json' });
+                }
+            }
+            await loadModels(entries, { keepView: true });
+            if (featFile && window.FEAFeatures) {
+                var obj = JSON.parse(await featFile.text());
+                if (classify(obj) === 'features') FEAFeatures.setEnvelope(obj, featFile.name);
+            }
+            lastSig = await signature();
+            say((auto ? 'Auto-reload: ' : 'Reload: ') + entries.map(function (e) { return e.name; }).join(' + ') + ' read again ' + new Date().toLocaleTimeString() + '.');
+            syncUI();
+            return true;
+        } catch (err) {
+            say('Reload failed: ' + err.message);
+            return false;
+        } finally { busy = false; }
+    }
+
+    // one Auto-reload poll: reload once a new state has held still for a poll
+    async function poll() {
+        if (busy || !canReload()) return;
+        var sig;
+        try { sig = await signature(); } catch (err) { return; }   // a file mid-replace: next poll
+        if (lastSig === null) { lastSig = sig; return; }
+        if (sig === lastSig) { pendingSig = null; return; }
+        if (sig !== pendingSig) { pendingSig = sig; return; }
+        pendingSig = null;
+        if (await reload(true)) lastSig = await signature();
+    }
+
+    function setAuto(on) {
+        if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+        if (on) { lastSig = null; pendingSig = null; autoTimer = setInterval(poll, 2000); poll(); }
+        if (elAuto) elAuto.checked = !!on;
+    }
+
     // files: [{ file: File, handle?: FileSystemFileHandle }]
     async function ingest(files) {
         var bins = files.filter(function (f) { return !isJson(f.file.name); });
@@ -121,6 +233,10 @@ var FEAFiles = (function () {
             primaryName = entries[0].name;
             binHandle = bins[0].handle || null;
             featHandle = null;
+            source = bins.every(function (f) { return !!f.handle; })
+                ? { kind: 'handles', bins: bins.map(function (f) { return { handle: f.handle, name: baseName(f.file.name) }; }), feat: null }
+                : { kind: 'snapshot' };
+            lastSig = null; pendingSig = null;
         }
         // a sidecar first (so legacy files merge into it), matched to the model by name
         var sidecars = jsons.filter(function (f) { return f._kind === undefined; });
@@ -137,6 +253,7 @@ var FEAFiles = (function () {
             if (feats.length > 1) say('Files: ' + feats.length + ' sidecars picked; using ' + pickF.file.name + '.');
             FEAFeatures.setEnvelope(pickF._obj, pickF.file.name);
             featHandle = pickF.handle || null;
+            if (source && source.kind === 'handles') source.feat = featHandle;
         }
         sidecars.forEach(function (f) {
             if (f._kind === 'legacy-cuts') {
@@ -218,9 +335,21 @@ var FEAFiles = (function () {
             elName.textContent = n + (dirty ? '  *' : '');
             elName.classList.toggle('dirty', dirty);
         }
+        var can = canReload();
+        if (elReload) {
+            elReload.disabled = !can;
+            elReload.title = can ? 'Read the model and its features again (the view stays)' :
+                source && source.kind === 'snapshot' ? 'These files came through the plain file input; pick them with Choose files (Chrome / Edge) to reload' : 'No model to reload';
+        }
+        if (elAuto) {
+            elAuto.disabled = !can;
+            if (!can && autoTimer) setAuto(false);
+        }
     }
 
     if (elPick) elPick.addEventListener('click', function () { pick(); });
+    if (elReload) elReload.addEventListener('click', function () { reload(false); });
+    if (elAuto) elAuto.addEventListener('change', function () { setAuto(elAuto.checked); });
     if (elSave) elSave.addEventListener('click', function () { save(); });
     if (elInput) elInput.addEventListener('change', function (e) {
         var files = Array.prototype.slice.call(e.target.files).map(function (f) { return { file: f }; });
@@ -237,9 +366,16 @@ var FEAFiles = (function () {
         ingest: ingest,
         save: save,
         syncUI: syncUI,
+        reload: reload,
+        setAuto: setAuto,
+        setUrlSource: setUrlSource,
+        canReload: canReload,
         classify: classify,
         hasFileSystemAccess: function () { return hasFS; },
         // test hooks
-        _sidecarModel: sidecarModel
+        _sidecarModel: sidecarModel,
+        _setSource: setSource,
+        _poll: poll,
+        _source: function () { return source; }
     };
 })();

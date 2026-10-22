@@ -101,6 +101,12 @@ Three.js r128 and OrbitControls are vendored under `lib/`.
 
 ## Recent additions (newest first)
 
+Reload and Auto-reload (2026-10-22, branch `pipestress`, pipe workbook):
+- **Reload** (Model section) reads the model and its sidecar again from where they came from: the picked files' handles (Choose files…, Chrome / Edge) or the `?bin=` / `&features=` URLs. The camera and the load case stay (`loadModels(entries, { keepView: true })`).
+- **Auto-reload** checks every 2 s (file time and size, or the URLs' Last-Modified / length) and reloads once a change has held still for one check; it waits while the features have unsaved edits. It follows `Build-Pipe.ps1 -Watch` ([[vault/arms/pipe-workbook|pipe-workbook]]).
+- Files from the plain file input are snapshots the browser cannot read again: Reload says so.
+- Test: `viewer/tests/test_reload.js`.
+
 Support symbols (2026-10-04, branch `pipestress`, CAESAR II arm stage 2):
 - **`supports.js`** draws the sidecar `supports` items as symbols in CAESAR II's language: a square
   plate through the pipe for an anchor, slim arrows pointing at the pipe for the rest. A hanger is

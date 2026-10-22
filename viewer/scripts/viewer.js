@@ -492,7 +492,11 @@ function recenterModel(model) {
 // file is the primary (geometry / components / strengths source);
 // later files are validated against it and their LCs concatenated
 // into one globally indexed list.
-async function loadModels(entriesIn) {
+// opts.keepView: a reload of the same model (files.js Reload / Auto-reload):
+// the camera stays where it is and the load case stays selected.
+async function loadModels(entriesIn, opts) {
+    var keepView = !!(opts && opts.keepView) && !!feaModel;
+    var prevLC = currentLC;
     try {
         var accepted = [], skipped = [], warns = [];
         for (var i = 0; i < entriesIn.length; i++) {
@@ -659,8 +663,9 @@ async function loadModels(entriesIn) {
         setPinned(false);
         updateDeformAvailability();
 
-        await selectLC(0);
-        fitView();
+        if (keepView && prevLC > 0 && feaSet.nLC > prevLC) { elLC.value = String(prevLC); await selectLC(prevLC); }
+        else await selectLC(0);
+        if (!keepView) fitView();
         var perFile = accepted.map(function (a) {
             return a.model.header.nFieldLC;
         }).join('+');
@@ -2437,6 +2442,7 @@ updateViewCaption();
         return loadModels([{ file: blob, name: trimExt(base(binUrl)) }]);
     }).then(function () {
         var fUrl = q.get('features');
+        if (window.FEAFiles && FEAFiles.setUrlSource) FEAFiles.setUrlSource(binUrl, fUrl);
         if (!fUrl || !window.FEAFeatures) return;
         return fetch(fUrl).then(function (r) {
             if (!r.ok) throw new Error(r.status + ' ' + r.statusText + ' for ' + fUrl);

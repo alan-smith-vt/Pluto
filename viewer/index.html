@@ -31,6 +31,13 @@
             <input type="file" id="feaFile" class="fea-file" multiple style="display:none;"
                    accept=".bin,.json,.feabin,.dat,.rbnl,application/octet-stream,application/json">
         </div>
+        <div class="fea-row">
+            <button id="feaReload" class="fea-btn" disabled
+                    title="Read the model and its features again (the view stays)">Reload</button>
+            <input type="checkbox" id="feaAuto" class="fea-check" disabled style="margin-left:6px;"
+                   title="Reload by itself whenever the files change (a runner rebuilding them, e.g. Build-Pipe.ps1 -Watch); checked every 2 s">
+            <label class="fea-label" for="feaAuto" style="width:auto;">Auto-reload</label>
+        </div>
         <div class="fea-hint" id="featName">no features file</div>
         <div class="fea-hint" id="featHint"></div>
         <div class="fea-sub" style="margin-top:8px;">Models</div>

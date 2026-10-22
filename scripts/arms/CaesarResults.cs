@@ -16,7 +16,9 @@ using System.Xml;
 // still open in Excel reads too: the officeDocument part from _rels/.rels, sheets in workbook order through the
 // workbook relationships (relative or absolute targets), shared strings (rich text runs joined, phonetic runs
 // skipped) and inline strings, every cell at its true row / column (the r reference; a missing r = the next
-// one), blank rows kept. Elements are matched by local name, so transitional and strict files both read.
+// one), blank rows kept. Elements are matched by local name, so transitional and strict files both read. A
+// formula reads as its saved value; an error value or a formula with no saved value is listed in the sheet's
+// Problems by address; booleans read TRUE / FALSE; "_xHHHH_" escapes are decoded.
 // A text file reads as CSV (one sheet; the separator , ; or tab by count). An .xls (BIFF) or an .xlsb (binary
 // parts in the zip) is refused with a message: Run-Caesar.ps1 converts both to .xlsx through Excel first.
 //
@@ -43,6 +45,8 @@ public class CaesarSheet
 {
     public string Name = "";
     public readonly List<string[]> Rows = new List<string[]>();   // Rows[r] = cells of spreadsheet row r+1 (null = no cells)
+    // cells that hold no usable value, by address ("D12"): an error value (#DIV/0!), a formula never calculated
+    public readonly Dictionary<string, string> Problems = new Dictionary<string, string>();
 
     public string Cell(int row, int col)
     {
@@ -263,7 +267,7 @@ public static class CaesarWorkbook
     {
         int row = -1, col = -1;
         string type = null;
-        bool inCell = false, inV = false, inT = false, inSheetData = false;
+        bool inCell = false, inV = false, inT = false, inSheetData = false, formula = false;
         int phonetic = 0;
         var v = new StringBuilder();
         var t = new StringBuilder();
@@ -290,9 +294,10 @@ public static class CaesarWorkbook
                                 if (ParseRef(cr, out cc, out crow)) { col = cc; if (crow >= 0) row = crow; } else col++;
                                 if (row < 0) row = 0;
                                 type = xr.GetAttribute("t");
-                                v.Length = 0; t.Length = 0;
+                                v.Length = 0; t.Length = 0; formula = false;
                                 inCell = !xr.IsEmptyElement;
                                 break;
+                            case "f": if (inCell) formula = true; break;
                             case "v": if (inCell && !xr.IsEmptyElement) inV = true; break;
                             case "t": if (inCell && !xr.IsEmptyElement) inT = true; break;
                             case "rPh": if (inCell && !xr.IsEmptyElement) phonetic++; break;
@@ -322,9 +327,12 @@ public static class CaesarWorkbook
                                         if (int.TryParse(v.ToString().Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out si) && si >= 0 && si < shared.Count) val = shared[si];
                                     }
                                     else if (type == "inlineStr") val = t.ToString();
+                                    else if (type == "e") { sheet.Problems[XlsxBook.Ref(row, col)] = "the error value " + v.ToString().Trim(); val = null; }
+                                    else if (type == "b") val = v.ToString().Trim() == "1" ? "TRUE" : v.Length > 0 ? "FALSE" : null;
                                     else if (v.Length > 0) val = v.ToString();
                                     else if (t.Length > 0) val = t.ToString();
-                                    if (val != null) sheet.Set(row, col, val);
+                                    if (val == null && formula && type != "e") sheet.Problems[XlsxBook.Ref(row, col)] = "a formula with no saved value (open the workbook in Excel and save it)";
+                                    if (val != null) sheet.Set(row, col, XlsxBook.Unescape(val));
                                 }
                                 inCell = false;
                                 break;
