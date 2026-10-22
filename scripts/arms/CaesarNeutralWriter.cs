@@ -30,13 +30,20 @@ using System.Text;
 //   ALLOWBLS  one block, on the first element (carried forward): the fixture's B31.1 block (allowables
 //             from the material database), or a seed file's block verbatim.
 //   SIF&TEES  2 slots of 7 lines: NODE TYPE SIF-IN SIF-OUT ... (welding tee surface node on line 5)
+//   DISPLMNT, FORCMNT  2 slots of 10 lines: the NODE alone, then one line per load vector (9): DX DY DZ RX RY
+//             RZ / FX FY FZ MX MY MZ; 9999.99 = not given (a free DOF). An unused slot: node 0, then 9999.99
+//             (displacements, as 11.00 jobs show) or 0 (forces). CAESAR II's documented layout; DISPLMNT also
+//             seen in 11.00 jobs.
+//   UNIFORM   6 lines, 36 values in order: 9 vectors x (UX UY UZ, 1 = in g's / 0 = force per length)
+//   WIND      1 line: TYPE (0 wind, 1 wave, 2 off) SHAPE-FACTOR (wave: drag) ADDED-MASS LIFT MARINE-GROWTH DENSITY
 //   REDUCERS  2 lines: OD2 WALL2 ALPHA R1 R2 / 0 x5
 //   MISCEL_1  one material number per element (6 per line), then 4 execution-option lines; the ambient
 //             temperature is line 2 field 3.
 //   UNITS     CAESAR's English set (in, lb, F, psi, lb/cu.in., COORDS in ft), the fixture's block.
 //   COORDS    count, then NODE X Y Z (ft) per segment start.
-// Restraints and SIF/tee entries go to an element that has the node as its FROM or TO (6 / 2 per
-// element block); a node with more than its elements can hold is an error.
+// Restraints, SIF/tee entries, forces and displacements go to an element that has the node as its FROM or TO
+// (6 / 2 / 2 / 2 per element block); a node with more than its elements can hold is an error. Uniform loads
+// and wind go on the element they are entered on (CAESAR carries them forward).
 //
 // Overlay and carry (a model imported from a .cii, PipeModel.Source): every record, block and slot the model
 // carries as written is given back from its own lines, with only the fields that CHANGED rewritten in their
@@ -44,7 +51,7 @@ using System.Text;
 // layout, line ending and code page. Blocks keep CAESAR's numbering (each block's Seq); a new block goes after
 // them. A restraint / SIF / displacement slot goes back to the element block that held it while that element
 // still has its node, otherwise to the first element at the node with room. The blocks the model does not read
-// (forces, uniform loads, wind, offsets, allowables, node names, flanges, equipment) travel with their element.
+// (offsets, allowables, node names, flanges, equipment) travel with their element.
 // VERSION, CONTROL (counts recomputed), UNITS and the MISCEL_1 tail (nozzles, hangers, options; the ambient
 // overlaid) come from the file. A new model gets the 15.01 English templates throughout.
 
@@ -204,8 +211,12 @@ public static class CaesarNeutralWriter
         "WIND", "OFFSETS", "ALLOWBLS", "SIF&TEES", "REDUCERS", "FLANGES", "EQUIPMNT", "MISCEL_1", "UNITS", "COORDS"
     };
 
-    // blocks carried verbatim with their element; ALLOWBLS / NODENAME placed where a 15.01 file has them
-    public static readonly string[] CarriedSections = { "FORCMNT", "UNIFORM", "WIND", "OFFSETS", "ALLOWBLS", "NODENAME", "FLANGES", "EQUIPMNT" };
+    // blocks carried verbatim with their element; ALLOWBLS / NODENAME placed where a 15.01 file has them. A
+    // FORCMNT / UNIFORM / WIND block in a layout the model does not read is carried too (their own writers).
+    public static readonly string[] CarriedSections = { "OFFSETS", "ALLOWBLS", "NODENAME", "FLANGES", "EQUIPMNT" };
+
+    // codes seen in CAESAR-written files (the rest of CAESAR's table comes from its documentation)
+    static readonly int[] SeenCodes = { 1, 2, 3, 4, 5, 6, 7, 8, 9, 14, 15 };
 
     // the 15 pointer fields: section -> (pointer row, column)
     static readonly string[] PointerOrder =
@@ -251,8 +262,8 @@ public static class CaesarNeutralWriter
         public PipeModelSource Seed;         // a seed's global sections (UNITS, options, VERSION)
         public List<PipeModelRestraint> Restraints;
         public List<PipeModelSif> Sifs;
-        public object[][] ResSlots, SifSlots, DispSlots;
-        public int ResPer = 6, SifPer = 2, DispPer = 2, ResLines = 4, SifLines = 7, DispLines = 10;
+        public object[][] ResSlots, SifSlots, DispSlots, ForceSlots;
+        public int ResPer = 6, SifPer = 2, DispPer = 2, ForcePer = 2, ResLines = 4, SifLines = 7, DispLines = 10, ForceLines = 10;
         public Dictionary<string, int[]> Ptr = new Dictionary<string, int[]>();
         public Dictionary<string, List<int>> BlockOrder = new Dictionary<string, List<int>>();   // section -> element indices in pointer order
         public List<string> DefaultAllowables;   // written on element 0 when no element carries an allowables block
@@ -274,6 +285,8 @@ public static class CaesarNeutralWriter
             if (per > 0 && sl > 0) { p.SifPer = per / sl; p.SifLines = sl; }
             per = p.Src.Lines("DISPLMNT", 0); sl = p.Src.Lines("DISPLMNT/slot", 0);
             if (per > 0 && sl > 0) { p.DispPer = per / sl; p.DispLines = sl; }
+            per = p.Src.Lines("FORCMNT", 0);
+            if (per >= 4 && per % 2 == 0) p.ForceLines = per / 2;
         }
 
         // restraints (joints expanded) and SIFs, assigned to element blocks
@@ -283,8 +296,11 @@ public static class CaesarNeutralWriter
         var touching = Touching(m);
         p.ResSlots = AssignSlots(m, p.Restraints.Select(r => new SlotItem { Item = r, Node = r.Node, OwnerUid = r.OwnerUid, Slot = r.Slot }).ToList(), p.ResPer, touching, "restraints");
         p.SifSlots = AssignSlots(m, p.Sifs.Select(s => new SlotItem { Item = s, Node = s.Node, OwnerUid = s.OwnerUid, Slot = s.Slot }).ToList(), p.SifPer, touching, "SIF / tee entries");
-        // a displacement stays with its element even off its ends (CAESAR imposes them on CNODEs too)
-        p.DispSlots = AssignSlots(m, m.NodeItems.Where(x => x.Section == "DISPLMNT").Select(x => new SlotItem { Item = x, Node = x.Node, OwnerUid = x.OwnerUid, Slot = x.Slot, AnyNode = true }).ToList(), p.DispPer, touching, "imposed displacements");
+        // a load stays with its element even off its ends (CAESAR imposes displacements on CNODEs too)
+        p.DispSlots = AssignSlots(m, m.Displacements.Select(x => new SlotItem { Item = x, Node = x.Node, OwnerUid = x.OwnerUid, Slot = x.Slot, AnyNode = true }).ToList(), p.DispPer, touching, "imposed displacements");
+        if (m.Forces.Any() && m.Elements.Any(e => e.Carried.ContainsKey("FORCMNT")))
+            throw new InvalidOperationException("CaesarNeutralWriter: the source's FORCMNT blocks are in a layout the model does not read, so forces cannot be added: re-export the job from CAESAR 15.01 first");
+        p.ForceSlots = AssignSlots(m, m.Forces.Select(x => new SlotItem { Item = x, Node = x.Node, OwnerUid = x.OwnerUid, Slot = x.Slot, AnyNode = true }).ToList(), p.ForcePer, touching, "force / moment entries");
 
         // block numbering per section: CAESAR's own numbers (Seq) first, new blocks after, in element order
         p.DefaultAllowables = DefaultAllowables(m);
@@ -302,9 +318,6 @@ public static class CaesarNeutralWriter
             p.Ptr[s] = ptr;
             p.BlockOrder[s] = ordered;
         }
-        foreach (string s in new[] { "DISPLMNT" })
-            if (p.BlockOrder[s].Any(i => !m.Elements[i].SlotBlocks.ContainsKey(s)))
-                throw new InvalidOperationException("CaesarNeutralWriter: an imposed displacement needs a new DISPLMNT block, whose 15.01 layout is not confirmed yet");
         if (p.Src == null && m.Elements.Any(e => e.Carried.Count > 0))
             throw new InvalidOperationException("CaesarNeutralWriter: carried blocks without their source file");
 
@@ -322,7 +335,10 @@ public static class CaesarNeutralWriter
                 case "RIGID": WriteRigids(p, w); break;
                 case "EXPJT": WriteExpJoints(p, w); break;
                 case "RESTRANT": WriteRestraints(p, w); break;
-                case "DISPLMNT": WriteDisplacements(p, w); break;
+                case "DISPLMNT": WriteNodeLoads(p, w, "DISPLMNT"); break;
+                case "FORCMNT": WriteNodeLoads(p, w, "FORCMNT"); break;
+                case "UNIFORM": WriteUniform(p, w); break;
+                case "WIND": WriteWind(p, w); break;
                 case "SIF&TEES": WriteSifs(p, w); break;
                 case "REDUCERS": WriteReducers(p, w); break;
                 case "MISCEL_1": WriteMiscel(p, w); break;
@@ -353,6 +369,17 @@ public static class CaesarNeutralWriter
             case "RESTRANT": if (p.ResSlots[i] == null) return false; if (e.SlotBlocks.TryGetValue(s, out b)) seq = b.Seq; return true;
             case "SIF&TEES": if (p.SifSlots[i] == null) return false; if (e.SlotBlocks.TryGetValue(s, out b)) seq = b.Seq; return true;
             case "DISPLMNT": if (p.DispSlots[i] == null) return false; if (e.SlotBlocks.TryGetValue(s, out b)) seq = b.Seq; return true;
+            case "FORCMNT":
+                if (e.Carried.TryGetValue(s, out b)) { seq = b.Seq; return true; }
+                if (p.ForceSlots[i] == null) return false; if (e.SlotBlocks.TryGetValue(s, out b)) seq = b.Seq; return true;
+            case "UNIFORM":
+                if (e.Uniform != null) { seq = e.Uniform.Seq; return true; }
+                if (e.Carried.TryGetValue(s, out b)) { seq = b.Seq; return true; }
+                return false;
+            case "WIND":
+                if (e.Wind != null) { seq = e.Wind.Seq; return true; }
+                if (e.Carried.TryGetValue(s, out b)) { seq = b.Seq; return true; }
+                return false;
             case "ALLOWBLS":
                 if (e.Carried.TryGetValue(s, out b)) { seq = b.Seq; return true; }
                 return i == 0 && p.DefaultAllowables != null;
@@ -720,21 +747,124 @@ public static class CaesarNeutralWriter
         }
     }
 
-    static void WriteDisplacements(Plan p, List<string> w)
+    // FORCMNT / DISPLMNT: 2 slots per block, each the node and then one line per vector
+    static void WriteNodeLoads(Plan p, List<string> w, string s)
     {
-        foreach (int i in p.BlockOrder["DISPLMNT"])
+        bool disp = s == "DISPLMNT";
+        int per = disp ? p.DispPer : p.ForcePer, sl = disp ? p.DispLines : p.ForceLines;
+        foreach (int i in p.BlockOrder[s])
         {
             var e = p.M.Elements[i];
-            var slots = p.DispSlots[i];
-            for (int s = 0; s < p.DispPer; s++)
+            PipeModelBlock carried;
+            if (e.Carried.TryGetValue(s, out carried)) { w.AddRange(carried.Lines); continue; }
+            var slots = (disp ? p.DispSlots : p.ForceSlots)[i];
+            for (int q = 0; q < per; q++)
             {
-                var d = slots[s] as PipeModelNodeItem;
-                if (d != null) { w.AddRange(d.Raw); continue; }
-                var old = UnusedSourceSlot(e, "DISPLMNT", s, p.DispLines);
-                if (old == null) throw new InvalidOperationException("CaesarNeutralWriter: element " + e.From + "-" + e.To + ": an emptied imposed-displacement slot, whose 15.01 layout is not confirmed yet");
-                w.AddRange(old);
+                var d = slots == null ? null : slots[q] as PipeModelNodeLoad;
+                if (d == null)
+                {
+                    var old = UnusedSourceSlot(e, s, q, sl);
+                    if (old != null) { w.AddRange(old); continue; }
+                    if (sl != 10) throw new InvalidOperationException("CaesarNeutralWriter: an empty " + s + " slot in a " + sl + "-line layout (10 documented): re-export the job from CAESAR 15.01 first");
+                    w.Add(RealRow(0));
+                    for (int v = 0; v < 9; v++) w.Add(disp ? RealRow(Free6()) : RealRow(0, 0, 0, 0, 0, 0));
+                    continue;
+                }
+                w.AddRange(NodeLoadLines(d, sl));
             }
         }
+    }
+
+    static double[] Free6() { return new[] { PipeModelNodeLoad.Free, PipeModelNodeLoad.Free, PipeModelNodeLoad.Free, PipeModelNodeLoad.Free, PipeModelNodeLoad.Free, PipeModelNodeLoad.Free }; }
+
+    // a load value as written: not given (NaN) = 9999.99
+    static double LoadValue(double v) { return double.IsNaN(v) ? PipeModelNodeLoad.Free : v; }
+
+    static List<string> NodeLoadLines(PipeModelNodeLoad d, int sl)
+    {
+        string what = (d.IsDisplacement ? "imposed displacement" : "force / moment") + " at node " + d.Node;
+        if (d.Raw != null && d.Raw.Count >= 2)
+        {
+            var l = new List<string>(d.Raw);
+            l[0] = SetInt(l[0], 0, d.Node);
+            for (int v = 0; v < 9; v++)
+            {
+                if (v + 1 >= l.Count)
+                {
+                    if (d.Used(v)) throw new InvalidOperationException("CaesarNeutralWriter: " + what + ": vector " + (v + 1) + " does not fit the source's " + l.Count + "-line slot: re-export the job from CAESAR 15.01 first");
+                    continue;
+                }
+                for (int k = 0; k < 6; k++) l[v + 1] = SetReal(l[v + 1], k, LoadValue(d.Vectors[v][k]));
+            }
+            return l;
+        }
+        if (sl != 10) throw new InvalidOperationException("CaesarNeutralWriter: a new " + what + " in a " + sl + "-line slot layout (10 documented): re-export the job from CAESAR 15.01 first");
+        var n = new List<string> { RealRow(d.Node) };
+        for (int v = 0; v < 9; v++) n.Add(RealRow(d.Vectors[v].Select(LoadValue).ToArray()));
+        return n;
+    }
+
+    static void WriteUniform(Plan p, List<string> w)
+    {
+        foreach (int i in p.BlockOrder["UNIFORM"])
+        {
+            var e = p.M.Elements[i];
+            PipeModelBlock carried;
+            if (e.Uniform == null && e.Carried.TryGetValue("UNIFORM", out carried)) { w.AddRange(carried.Lines); continue; }
+            var u = e.Uniform;
+            var vals = new double[36];
+            for (int v = 0; v < 9; v++)
+            {
+                for (int k = 0; k < 3; k++) vals[4 * v + k] = u.Vectors[v][k];
+                vals[4 * v + 3] = u.G[v] ? 1 : 0;
+            }
+            if (u.Raw != null && u.Raw.Count == 6)
+            {
+                var l = new List<string>(u.Raw);
+                for (int k = 0; k < 36; k++) l[k / 6] = k % 4 == 3 ? SetInt(l[k / 6], k % 6, (long)vals[k]) : SetReal(l[k / 6], k % 6, vals[k]);   // the g flags as integers
+                w.AddRange(l);
+                continue;
+            }
+            for (int r = 0; r < 6; r++) w.Add(RealRow(vals.Skip(6 * r).Take(6).ToArray()));
+        }
+    }
+
+    static void WriteWind(Plan p, List<string> w)
+    {
+        foreach (int i in p.BlockOrder["WIND"])
+        {
+            var e = p.M.Elements[i];
+            PipeModelBlock carried;
+            if (e.Wind == null && e.Carried.TryGetValue("WIND", out carried)) { w.AddRange(carried.Lines); continue; }
+            var x = e.Wind;
+            double[] v = { x.Type, x.Shape, x.AddedMass, x.Lift, x.MarineGrowth, x.MarineGrowthDensity };
+            if (x.Raw != null && x.Raw.Count == 1)
+            {
+                string l = SetInt(x.Raw[0], 0, x.Type);
+                for (int k = 1; k < 6; k++) l = SetReal(l, k, v[k]);
+                w.Add(l);
+                continue;
+            }
+            w.Add(RealRow(v));
+        }
+    }
+
+    // What a written file holds that no CAESAR-written file has shown yet (layouts and codes from CAESAR's
+    // documentation): one line each, for the caller to show -- check these in CAESAR after the import.
+    public static List<string> Notices(PipeModel m)
+    {
+        var n = new List<string>();
+        int f = m.Forces.Count(x => x.Raw == null), d = m.Displacements.Count(x => x.Raw == null);
+        int u = m.Elements.Count(e => e.Uniform != null && e.Uniform.Raw == null), wi = m.Elements.Count(e => e.Wind != null && e.Wind.Raw == null);
+        if (f > 0) n.Add(f + " force / moment entr" + (f == 1 ? "y" : "ies") + " written in CAESAR's documented FORCMNT layout (the node, then one line per vector), which no CAESAR-written file here has shown yet: check them in CAESAR after the import");
+        if (d > 0) n.Add(d + " imposed displacement entr" + (d == 1 ? "y" : "ies") + " written in the DISPLMNT layout CAESAR's documentation and 11.00 jobs show, in 15.01's number format: check them in CAESAR after the import");
+        if (u > 0) n.Add(u + " uniform-load entr" + (u == 1 ? "y" : "ies") + " written in CAESAR's documented UNIFORM layout (9 vectors x UX UY UZ and a g flag): check them in CAESAR after the import");
+        if (wi > 0) n.Add(wi + " wind entr" + (wi == 1 ? "y" : "ies") + " written in CAESAR's documented WIND layout (type, shape factor, wave data): check them in CAESAR after the import");
+        var codes = Restraints(m).Where(r => r.Raw == null && Array.IndexOf(SeenCodes, r.Code) < 0).Select(r => r.Type + " (" + r.Code + ")").Distinct().ToList();
+        if (codes.Count > 0) n.Add("restraint type(s) " + string.Join(", ", codes.ToArray()) + " written with the codes of CAESAR's documentation, which no CAESAR-written file here has shown yet: check them in CAESAR after the import");
+        if (Restraints(m).Any(r => r.Raw == null && r.Cosines != null))
+            n.Add("skewed restraints (off the global axes) written as CAESAR writes an axis restraint, type X / RX with the direction's cosines, which no CAESAR-written file here has shown yet: check them after the import");
+        return n;
     }
 
     // ---------------- MISCEL_1, UNITS, COORDS
@@ -1005,6 +1135,13 @@ public static class CaesarNeutralWriter
         if (m.Coords.Count == 0) err.Add("no COORDS entry (the first node needs a position)");
         foreach (var j in m.Joints)
             if (j.Node <= 0 || j.CNode <= 0 || j.Node == j.CNode) err.Add("joint " + j.Node + "-" + j.CNode + ": two different nodes are needed");
+        foreach (var d in m.NodeLoads)
+        {
+            if (d.Node <= 0) err.Add((d.IsDisplacement ? "an imposed displacement" : "a force / moment") + " without a node");
+            for (int v = 0; v < 9; v++) foreach (double x in d.Vectors[v])
+                    if (double.IsInfinity(x) || (!double.IsNaN(x) && Math.Abs(x - PipeModelNodeLoad.Free) < 0.01 && !d.IsDisplacement))
+                    { err.Add("node " + d.Node + ": load vector " + (v + 1) + " holds " + x + ", CAESAR's \"not given\" mark"); break; }
+        }
         return err;
     }
 }

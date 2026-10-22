@@ -8,7 +8,13 @@ created: 2026-10-22
 
 # Pipe model
 
-`PipeModel` (`scripts/arms/PipeModel.cs`) is the one pipe-stress model every pipe path goes through. It is held in CAESAR II's terms: elements FROM–TO with deltas, bends, rigids, expansion joints, reducers, restraints, SIFs and tees, and COORDS. Three things become one:
+`PipeModel` (`scripts/arms/PipeModel.cs`) is the one pipe-stress model every pipe path goes through. It is held in CAESAR II's terms:
+- elements FROM–TO with deltas, bends, rigids, expansion joints and reducers;
+- restraints, SIFs and tees;
+- loads: forces and moments, imposed displacements, uniform loads and wind ([[vault/format/caesar-neutral-loads|caesar-neutral-loads]]);
+- COORDS.
+
+Three things become one:
 
 | Source | Code | What it gives |
 |---|---|---|
@@ -42,12 +48,13 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 > | Kind | Sections | Rule |
 > |---|---|---|
 > | Owned by an element | BEND, RIGID, EXPJT, REDUCERS | read into the model; raw lines overlaid |
-> | Carried with an element | FORCMNT, UNIFORM, WIND, OFFSETS, ALLOWBLS, NODENAME, FLANGES, EQUIPMNT | not read; travel with their element as written (`CaesarNeutralWriter.CarriedSections`) |
-> | Tied to a node, in slots | RESTRANT (6 per block), SIF&TEES (2), DISPLMNT | each item knows its owner element and slot |
+> | Carried with an element | OFFSETS, ALLOWBLS, NODENAME, FLANGES, EQUIPMNT; a load block in a layout the model does not know | not read; travel with their element as written (`CaesarNeutralWriter.CarriedSections`) |
+> | Owned by an element, carried forward by CAESAR | UNIFORM, WIND | read into the model (`Uniform`, `Wind`); raw lines overlaid |
+> | Tied to a node, in slots | RESTRANT (6 per block), SIF&TEES (2), DISPLMNT (2), FORCMNT (2) | each item knows its owner element and slot |
 >
 > - **Block numbers:** each block keeps its number in the source (`Seq`). CAESAR numbers them in its own order, not element order, so the writer orders a section's blocks by `Seq`, then element order; a new block goes after them. The pointers in the element records follow.
 > - **Slots:** an item goes back to the slot it came from while its owner element still has its node; otherwise to the first element at the node with a free slot. A slot no item fills keeps the source's text (an empty slot stays as CAESAR wrote it).
-> - **DISPLMNT** items are carried by owner and slot only; a displacement may sit on a CNODE no element has. A new DISPLMNT block is refused until its 15.01 layout is confirmed (Stage C).
+> - **Loads at nodes** (FORCMNT, DISPLMNT) stay with their owner element even when it does not have the node: a displacement may sit on a node only a CNODE names. A new entry goes to an element at its node with a free slot.
 
 > [!info]- Units
 > - Values stay **as written, in the job's units.** `PipeModel.UnitFactors` holds the file's English → job factors (CAESAR's UNITS order); a new model has the English set.
@@ -70,21 +77,23 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 > - the 4 execution-option lines of MISCEL_1;
 > - the first ALLOWBLS block.
 
-## The model JSON (`pluto-pipe-model`, version 1)
+## The model JSON (`pluto-pipe-model`, version 2)
 
 `PipeModelJson.Write` / `Read`, written by `Build-Pipe.ps1 -Json` as `<base>.pipe.json`. It is the internal base model: the Excel workbook (Stage B) keeps one to diff edits against. It holds the whole model, carried text included, so `.cii` → JSON → `.cii` is identical too.
 
 - **Exact:** numbers are written with 17 significant digits and parsed back to the same double. A hand-written writer and a strict reader, not `JavaScriptSerializer` (which turns fractions into decimals and caps the text at 2 MB).
 - **Deterministic:** keys in a fixed order; dictionaries sorted by key. The same model always gives the same text.
+- **NaN is `null`** (a free displacement DOF).
+- **Version 2** (Stage C) adds the loads. A version 1 file, whose displacements were carried as slot lines (`nodeItems`), still reads.
 
 > [!info]- Keys
-> - **Top level:** `format`, `version`, `title`, `notes`, `zUp`, `ambient`, `code`, `unitFactors`, `allowablesBlock`, `source`, `elements`, `restraints`, `joints`, `sifs`, `nodeItems`, `coords`.
+> - **Top level:** `format`, `version`, `title`, `notes`, `zUp`, `ambient`, `code`, `unitFactors`, `allowablesBlock`, `source`, `elements`, `restraints`, `joints`, `sifs`, `nodeLoads`, `coords`.
 > - **`source`** (imported or seeded models only): `fileName`, `version`, `versionLine`, `codePage`, `lineEnding`, `finalNewline`, `seed`, `prelude`, `sectionOrder`, `headers`, `sections` (raw lines per section), `linesPerBlock`, `trailing`, `miscelMaterialLines`, `miscelTail`, `coordsCountLine`, `originalTitle`, `originalNotes`, `elementCount`.
-> - **`elements[]`:** `uid`, `from`, `to`, `d` [dx dy dz], `od`, `wall`, `insul`, `corr`, `t` [T1–T9], `p` [P1–P9], `e`, `poisson`, `pipeDensity`, `insulDensity`, `fluidDensity`, `material`, `teeAngles`, `name`, `line`, `kind`; optional `bend` {`radius`, `type`, `nodes`, `miter`, `fittingThk`, `k`, `seq`, `raw`}, `rigid` {`weight`, `type`, `seq`, `raw`}, `expJoint` {`axial`, `transverse`, `bending`, `torsion`, `effId`, `seq`, `raw`}, `reducer` {`od2`, `wall2`, `alpha`, `r1`, `r2`, `seq`, `raw`}; `raw` (the record); `carried` and `slotBlocks` {section: {`seq`, `lines`}}.
+> - **`elements[]`:** `uid`, `from`, `to`, `d` [dx dy dz], `od`, `wall`, `insul`, `corr`, `t` [T1–T9], `p` [P1–P9], `e`, `poisson`, `pipeDensity`, `insulDensity`, `fluidDensity`, `material`, `teeAngles`, `name`, `line`, `kind`; optional `bend` {`radius`, `type`, `nodes`, `miter`, `fittingThk`, `k`, `seq`, `raw`}, `rigid` {`weight`, `type`, `seq`, `raw`}, `expJoint` {`axial`, `transverse`, `bending`, `torsion`, `effId`, `seq`, `raw`}, `reducer` {`od2`, `wall2`, `alpha`, `r1`, `r2`, `seq`, `raw`}, `uniform` {`vectors` [9 × [ux, uy, uz]], `g` [9 flags], `seq`, `raw`}, `wind` {`type`, `shape`, `addedMass`, `lift`, `marineGrowth`, `marineGrowthDensity`, `seq`, `raw`}; `raw` (the record); `carried` and `slotBlocks` {section: {`seq`, `lines`}}.
 > - **`restraints[]`:** `node`, `type`, `code`, `k`, `gap`, `mu`, `cnode`, `cos`, `tag`, `guid`, `source`, `owner` (element uid), `slot`, `raw`.
 > - **`joints[]`:** `uid`, `kind`, `node`, `cnode`, `frame`, `dofs` [{`dof`, `gap`, `k`}], `sif`, `tag`.
 > - **`sifs[]`:** `node`, `type`, `sifIn`, `sifOut`, `surfaceNode`, `owner`, `slot`, `raw`.
-> - **`nodeItems[]`** (carried DISPLMNT slots): `section`, `node`, `owner`, `slot`, `raw`.
+> - **`nodeLoads[]`:** `kind` (force | displacement), `node`, `vectors` [9 × 6, `null` = free], `source`, `owner`, `slot`, `raw`.
 > - **`coords[]`:** `node`, `x`, `y`, `z` (in), `raw`, `imported`.
 >
 > Element `uid`s are stable ids (1..n on import or build) that restraints, SIFs and node items name as their `owner`. `raw` is null for anything new.
@@ -96,6 +105,7 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 - **Elements** matched by FROM–TO: added, removed, and every changed field.
 - **Node positions** by CAESAR's own geometry rules (`CaesarGeometry`), within `lengthTol`.
 - **Restraints** as a multiset per node: rigid stiffness normalized, CAESAR's default cosines filled in.
+- **Loads:** forces and displacements per node and vector, as a multiset. Uniform loads and wind as each matched element carries them, carry-forward applied, so a re-export that restates an entry elsewhere is not a difference.
 - **SIFs / tees**, **carried blocks** (by section and owner), and **settings** (title, ambient, Z-up, units).
 
 The result lists each kind, a one-line `Summary()` and `ToJson()`.
@@ -111,3 +121,4 @@ The result lists each kind, a one-line `Summary()` and `ToJson()`.
 - **Builder harnesses:** the three-config round trip and the 32 failure cases pass.
 - **Runner under pwsh:** TOML → `.cii` / JSON / preview, the `.cii` report, a rewritten copy byte-identical, `-Compare`, `-Seed`, `.pipe.json` in, and the refusals (overwrite, output in the repo, argument errors).
 - **Viewer tests** all pass.
+- **Loads (Stage C, the same day):** see the pipe builder's load verification ([[vault/arms/pipe-builder|pipe-builder]]). Every check above still passes with the loads read, and the 11.00 samples' displacements come back byte for byte.

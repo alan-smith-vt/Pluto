@@ -18,11 +18,16 @@ using System.Linq;
 // point; the next element is measured from the tangent intersection point too. A node that no element
 // has reached yet starts where the previous element ended (CAESAR's rule), unless it has a COORDS entry.
 //
+// Loads: forces / moments and imposed displacements at nodes (NodeLoads: FORCMNT, DISPLMNT), uniform loads
+// and wind / wave data on the element where they are entered (Uniform, Wind; CAESAR carries both forward to
+// the following elements until changed: EffectiveUniform / EffectiveWind). Load cases are not in the neutral
+// file: CAESAR builds them.
+//
 // Carried data (an imported .cii): everything the model does not edit stays as written -- the element
-// records, each block's lines and its number in CAESAR's own order (Seq), the restraint / SIF / displacement
-// slots with the element block that held them, the load and other blocks the model does not read
-// (Carried), and the file's VERSION, CONTROL, UNITS and MISCEL_1 tail (Source). The writer overlays only
-// the fields that changed, so an unedited import is written back identically (CaesarPipeImport checks it).
+// records, each block's lines and its number in CAESAR's own order (Seq), the restraint / SIF / load slots
+// with the element block that held them, the blocks the model does not read (Carried), and the file's
+// VERSION, CONTROL, UNITS and MISCEL_1 tail (Source). The writer overlays only the fields that changed, so
+// an unedited import is written back identically (CaesarPipeImport checks it).
 
 public class PipeModel
 {
@@ -38,7 +43,7 @@ public class PipeModel
     public readonly List<PipeModelRestraint> Restraints = new List<PipeModelRestraint>();
     public readonly List<PipeModelJoint> Joints = new List<PipeModelJoint>();     // expanded to CNODE restraints when written
     public readonly List<PipeModelSif> Sifs = new List<PipeModelSif>();
-    public readonly List<PipeModelNodeItem> NodeItems = new List<PipeModelNodeItem>();   // carried node slots (DISPLMNT)
+    public readonly List<PipeModelNodeLoad> NodeLoads = new List<PipeModelNodeLoad>();   // forces / moments and imposed displacements
     public readonly List<PipeModelCoord> Coords = new List<PipeModelCoord>();
     public readonly Dictionary<int, double[]> Positions = new Dictionary<int, double[]>();   // node -> x y z (in), as built
     public readonly List<string> Warnings = new List<string>();
@@ -63,6 +68,27 @@ public class PipeModel
         int next = Elements.Count == 0 ? 1 : Math.Max(1, Elements.Max(e => e.Uid) + 1);
         foreach (var e in Elements) if (e.Uid <= 0) e.Uid = next++;
     }
+
+    public IEnumerable<PipeModelNodeLoad> Forces { get { return NodeLoads.Where(x => !x.IsDisplacement); } }
+    public IEnumerable<PipeModelNodeLoad> Displacements { get { return NodeLoads.Where(x => x.IsDisplacement); } }
+
+    // the uniform load / wind data each element carries, by CAESAR's carry-forward: an element's own entry,
+    // else the last one entered above it in element order (null: none yet)
+    public PipeModelUniform[] EffectiveUniform()
+    {
+        var r = new PipeModelUniform[Elements.Count];
+        PipeModelUniform cur = null;
+        for (int i = 0; i < Elements.Count; i++) { if (Elements[i].Uniform != null) cur = Elements[i].Uniform; r[i] = cur; }
+        return r;
+    }
+
+    public PipeModelWind[] EffectiveWind()
+    {
+        var r = new PipeModelWind[Elements.Count];
+        PipeModelWind cur = null;
+        for (int i = 0; i < Elements.Count; i++) { if (Elements[i].Wind != null) cur = Elements[i].Wind; r[i] = cur; }
+        return r;
+    }
 }
 
 public class PipeModelElement
@@ -86,13 +112,15 @@ public class PipeModelElement
     public PipeModelRigid Rigid;
     public PipeModelExpJoint ExpJoint;
     public PipeModelReducer Reducer;
+    public PipeModelUniform Uniform;                  // uniform loads entered here (carried forward by CAESAR)
+    public PipeModelWind Wind;                        // wind / wave data entered here (carried forward by CAESAR)
     public string Kind = "pipe";                      // for summaries: pipe, bend, valve, flange, ...
     public List<string> Raw;                          // the record as written (import); null = new
-    // blocks this element owns and the model does not read (FORCMNT UNIFORM WIND OFFSETS ALLOWBLS NODENAME
-    // FLANGES EQUIPMNT), as written, with their number in the file
+    // blocks this element owns and the model does not read (OFFSETS ALLOWBLS NODENAME FLANGES EQUIPMNT, and a
+    // FORCMNT / UNIFORM / WIND block in a layout the model does not know), as written, with their number
     public readonly Dictionary<string, PipeModelBlock> Carried = new Dictionary<string, PipeModelBlock>();
-    // this element's RESTRANT / SIF&TEES / DISPLMNT block as written: its number orders the blocks, its
-    // lines give back the slots no item fills
+    // this element's RESTRANT / SIF&TEES / DISPLMNT / FORCMNT block as written: its number orders the blocks,
+    // its lines give back the slots no item fills
     public readonly Dictionary<string, PipeModelBlock> SlotBlocks = new Dictionary<string, PipeModelBlock>();
 }
 
@@ -140,7 +168,7 @@ public class PipeModelReducer
 public class PipeModelRestraint
 {
     public int Node;
-    public string Type = "";                  // ANC X Y Z RX RY RZ GUI LIM +X +Y +Z -X -Y -Z (OTHER(n) when imported unconfirmed)
+    public string Type = "";                  // CAESAR's name: ANC X Y Z RX RY RZ GUI LIM +X +Y ... (OTHER(n): a code not in its table)
     public int Code;                          // CAESAR's type code
     public double Stiffness;                  // 0 = rigid (written as 1e12 in the job's stiffness unit)
     public double Gap;                        // length units, or deg for a rotation
@@ -166,14 +194,86 @@ public class PipeModelSif
     public List<string> Raw;
 }
 
-// a node slot the model carries without reading it (an imposed displacement: DISPLMNT)
-public class PipeModelNodeItem
+// Forces / moments (FORCMNT: FX FY FZ MX MY MZ) or imposed displacements (DISPLMNT: DX DY DZ RX RY RZ) at a
+// node, in up to 9 load vectors (CAESAR's F1..F9 / D1..D9). Job units: force, moment-input, length, degrees.
+// A displacement DOF that is not imposed is NaN (CAESAR writes 9999.99: free); an imposed 0 holds the DOF.
+// A force component not given is 0 (NaN when the file wrote 9999.99 there; it acts as 0).
+public class PipeModelNodeLoad
 {
-    public string Section = "DISPLMNT";
+    public const double Free = 9999.99;       // CAESAR's "not specified"
+    public string Kind = "force";             // force | displacement
     public int Node;
-    public int OwnerUid;
+    public readonly double[][] Vectors = new double[9][];
+    public string Source = "";                // which config item made it (messages)
+    public int OwnerUid;                      // element whose block held it in the source (0 = none)
     public int Slot = -1;
-    public List<string> Raw = new List<string>();
+    public List<string> Raw;                  // the slot as written (node line + 9 vector lines); null = new
+
+    public PipeModelNodeLoad() : this("force") { }
+
+    public PipeModelNodeLoad(string kind)
+    {
+        Kind = kind;
+        for (int v = 0; v < 9; v++)
+        {
+            Vectors[v] = new double[6];
+            if (IsDisplacement) for (int k = 0; k < 6; k++) Vectors[v][k] = double.NaN;
+        }
+    }
+
+    public bool IsDisplacement { get { return string.Equals(Kind, "displacement", StringComparison.OrdinalIgnoreCase); } }
+    public string Section { get { return IsDisplacement ? "DISPLMNT" : "FORCMNT"; } }
+
+    // a vector carries something: an imposed DOF (displacement) or a non-zero component (force)
+    public bool Used(int v)
+    {
+        foreach (double x in Vectors[v]) if (IsDisplacement ? !double.IsNaN(x) : !double.IsNaN(x) && x != 0) return true;
+        return false;
+    }
+}
+
+// Uniform loads entered on an element (UNIFORM): 9 vectors (CAESAR's U1..U9) of UX UY UZ, each in force per
+// length (job units) or in g's (G). CAESAR carries the entry forward to the following elements until another
+// entry changes it.
+public class PipeModelUniform
+{
+    public readonly double[][] Vectors = new double[9][];
+    public readonly bool[] G = new bool[9];
+    public int Seq;
+    public List<string> Raw;                  // the block as written (6 lines); null = new
+
+    public PipeModelUniform() { for (int v = 0; v < 9; v++) Vectors[v] = new double[3]; }
+
+    public bool Used(int v) { return Vectors[v][0] != 0 || Vectors[v][1] != 0 || Vectors[v][2] != 0; }
+
+    public bool SameAs(PipeModelUniform o)
+    {
+        if (o == null) return false;
+        for (int v = 0; v < 9; v++)
+        {
+            if (G[v] != o.G[v] && (Used(v) || o.Used(v))) return false;
+            for (int k = 0; k < 3; k++) if (Vectors[v][k] != o.Vectors[v][k]) return false;
+        }
+        return true;
+    }
+}
+
+// Wind / wave data entered on an element (WIND), carried forward by CAESAR like uniform loads.
+public class PipeModelWind
+{
+    public int Type;                          // 0 wind, 1 wave, 2 off
+    public double Shape;                      // wind shape factor (wave: drag coefficient)
+    public double AddedMass, Lift, MarineGrowth, MarineGrowthDensity;   // wave only
+    public int Seq;
+    public List<string> Raw;                  // the block as written (1 line); null = new
+
+    public bool SameAs(PipeModelWind o)
+    {
+        return o != null && Type == o.Type && Shape == o.Shape && AddedMass == o.AddedMass && Lift == o.Lift &&
+               MarineGrowth == o.MarineGrowth && MarineGrowthDensity == o.MarineGrowthDensity;
+    }
+
+    public static string TypeName(int t) { return t == 0 ? "wind" : t == 1 ? "wave" : t == 2 ? "off" : "type " + t.ToString(System.Globalization.CultureInfo.InvariantCulture); }
 }
 
 public class PipeModelCoord
@@ -236,18 +336,36 @@ public class PipeModelSource
     }
 }
 
-// CAESAR restraint type codes. Confirmed by CAESAR-written files (the fixture, four 11.00 jobs):
-// 1 ANC, 2-4 X/Y/Z, 5-7 RX/RY/RZ, 8 GUI, 9 LIM, 14 +Y, 15 +Z. +X and the negative one-ways follow
-// the same list (+X between ZROD and +Y; -X -Y -Z after +Z) but no CAESAR file has shown them yet:
-// the builder writes them with a warning until an import confirms them.
+// CAESAR restraint type codes: the neutral file's table in CAESAR II's own documentation (1-62; codes 1-9,
+// 14 and 15 also seen in CAESAR-written files). Types the builder and the workbook write: the plain ones
+// (BuildTypes); rods, bilinear supports and springs need data the restraint record does not hold.
 public static class PipeModelCodes
 {
-    public static readonly Dictionary<string, int> Restraint = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase)
+    static readonly string[] Names =
     {
-        { "ANC", 1 }, { "X", 2 }, { "Y", 3 }, { "Z", 4 }, { "RX", 5 }, { "RY", 6 }, { "RZ", 7 },
-        { "GUI", 8 }, { "LIM", 9 }, { "+X", 13 }, { "+Y", 14 }, { "+Z", 15 }, { "-X", 16 }, { "-Y", 17 }, { "-Z", 18 }
+        null, "ANC", "X", "Y", "Z", "RX", "RY", "RZ", "GUI", "LIM", "XSNB", "YSNB", "ZSNB", "+X", "+Y", "+Z", "-X", "-Y", "-Z",
+        "+RX", "+RY", "+RZ", "-RX", "-RY", "-RZ", "+LIM", "-LIM", "XROD", "YROD", "ZROD", "+XROD", "+YROD", "+ZROD", "-XROD", "-YROD", "-ZROD",
+        "X2", "Y2", "Z2", "RX2", "RY2", "RZ2", "+X2", "+Y2", "+Z2", "-X2", "-Y2", "-Z2", "+RX2", "+RY2", "+RZ2", "-RX2", "-RY2", "-RZ2",
+        "XSPR", "YSPR", "ZSPR", "+XSNB", "+YSNB", "+ZSNB", "-XSNB", "-YSNB", "-ZSNB"
     };
-    public static readonly HashSet<string> Unconfirmed = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "+X", "-X", "-Y", "-Z" };
+
+    public static readonly Dictionary<string, int> Restraint = BuildTable();
+
+    static Dictionary<string, int> BuildTable()
+    {
+        var d = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        for (int i = 1; i < Names.Length; i++) d[Names[i]] = i;
+        return d;
+    }
+
+    // the types a config or a workbook may give (their records hold everything they need)
+    public static readonly string[] BuildTypes =
+    {
+        "ANC", "X", "Y", "Z", "RX", "RY", "RZ", "GUI", "LIM", "+X", "+Y", "+Z", "-X", "-Y", "-Z",
+        "+RX", "+RY", "+RZ", "-RX", "-RY", "-RZ", "+LIM", "-LIM", "XSNB", "YSNB", "ZSNB"
+    };
+
+    public static string NameOf(int code) { return code > 0 && code < Names.Length ? Names[code] : null; }
 
     // CAESAR's English UNITS factors (the fixture's block): what PipeModel.Factor gives without UnitFactors
     public static readonly double[] EnglishFactors =
@@ -255,23 +373,29 @@ public static class PipeModelCodes
         1, 1, 1, 1, 8.33333e-2, 1, 1, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 144, 8.33333e-2, 8.33333e-2, 1, 1
     };
 
+    // a rotational restraint (RX, +RY, RZ2 ...): stiffness in the rotational unit, gap in degrees
     public static bool IsRotation(string type)
     {
-        return string.Equals(type, "RX", StringComparison.OrdinalIgnoreCase) || string.Equals(type, "RY", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(type, "RZ", StringComparison.OrdinalIgnoreCase);
+        string t = (type ?? "").Trim().ToUpperInvariant().TrimStart('+', '-');
+        return t.Length >= 2 && t[0] == 'R' && (t[1] == 'X' || t[1] == 'Y' || t[1] == 'Z');
     }
 
-    public static bool IsRotationCode(int code) { return code >= 5 && code <= 7; }
+    public static bool IsRotationCode(int code) { return IsRotation(NameOf(code)); }
 
     // The cosines CAESAR 15.01 writes for a restraint given by its type alone (the fixture's 112 restraints):
     // ANC none (0 0 0); every other type its axis (X RX 1 0 0, Y RY +Y 0 1 0, Z RZ 0 0 1); GUI and LIM a dummy
-    // 1 0 0 (CAESAR takes the pipe axis). The one-ways not seen yet (+X -X -Y -Z) follow their axis.
+    // 1 0 0 (CAESAR takes the pipe axis). The types not seen in a file yet follow their axis the same way.
     public static double[] DefaultCosines(string type)
     {
         string t = (type ?? "").Trim().ToUpperInvariant().TrimStart('+', '-');
         if (t.Length == 0 || t == "ANC") return new double[3];
-        if (t == "Y" || t == "RY") return new[] { 0.0, 1.0, 0.0 };
-        if (t == "Z" || t == "RZ") return new[] { 0.0, 0.0, 1.0 };
+        if (t.StartsWith("R", StringComparison.Ordinal) && t.Length >= 2 && "XYZ".IndexOf(t[1]) >= 0) t = t.Substring(1);
+        if (t.StartsWith("Y", StringComparison.Ordinal)) return new[] { 0.0, 1.0, 0.0 };
+        if (t.StartsWith("Z", StringComparison.Ordinal)) return new[] { 0.0, 0.0, 1.0 };
         return new[] { 1.0, 0.0, 0.0 };
     }
+
+    // the DOF of a load vector component: 0..5 = X Y Z RX RY RZ
+    public static readonly string[] ForceDofs = { "FX", "FY", "FZ", "MX", "MY", "MZ" };
+    public static readonly string[] DisplacementDofs = { "DX", "DY", "DZ", "RX", "RY", "RZ" };
 }

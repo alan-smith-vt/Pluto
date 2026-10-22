@@ -13,7 +13,13 @@ using System.Text;
 // Units: geometry (leg lengths, positions along a run, start points) in model.length_unit, "ft" (default)
 // or "in"; diameters, walls, insulation, corrosion, bend radii and translational gaps in inches; rotational
 // gaps and coupling deflections in degrees; temperatures F; pressures psi; densities lb/cu.ft; weights lb;
-// stiffness lb/in and in.lb/deg. The model goes out in CAESAR's English set (PipeModel).
+// stiffness lb/in and in.lb/deg; forces lb, moments in.lb, imposed displacements in and deg, uniform loads
+// lb/in (or g's). The model goes out in CAESAR's English set (PipeModel).
+//
+// Loads: [[forces]] and [[displacements]] at nodes (node, or run + at), per load vector (CAESAR's F1..F9 /
+// D1..D9); a displacement DOF not given stays free, a 0 holds it. uniform / g_load / wind_shape on a run or in
+// [defaults]: the builder writes an entry where the value changes along the elements (CAESAR carries each
+// entry forward), and a zero / off entry where a run has none after one that had.
 //
 // Any number may be an expression string over [parameters] ("3*span + 2"); positions along a run may
 // also use L, the run's length. Build-Pipe.ps1 -Set "span=25" overrides a parameter.
@@ -39,6 +45,7 @@ public class PipeBuildResult
     public readonly Dictionary<string, int> RestraintsByType = new Dictionary<string, int>();
     public readonly List<PipeBuildNode> NodeTable = new List<PipeBuildNode>();   // every node: where it is and why
     public int Runs, Nodes, Elements, Bends, Couplings, Ties, Restraints, RestraintNodes, Sifs, Tees;
+    public int Forces, Displacements, UniformEntries, WindEntries;
     public double PipeLength;          // ft, along the leg lines
     public double Ambient;
     public int Material;
@@ -55,6 +62,9 @@ public class PipeBuildResult
                       string.Join(", ", RestraintsByType.OrderBy(k => k.Key, StringComparer.Ordinal).Select(k => k.Key + " " + k.Value).ToArray()) : "") +
                       (Couplings > 0 ? "; " + Couplings + " coupling(s)" : "") + (Ties > 0 ? "; " + Ties + " tie(s)" : ""));
         sb.AppendLine("  SIF / tee entries: " + Sifs + " (" + Tees + " branch tee(s)); bends: " + Bends);
+        if (Forces + Displacements + UniformEntries + WindEntries > 0)
+            sb.AppendLine("  loads: forces / moments at " + Forces + " node(s), imposed displacements at " + Displacements + " node(s), " +
+                          UniformEntries + " uniform-load and " + WindEntries + " wind entr" + (UniformEntries + WindEntries == 1 ? "y" : "ies") + " (carried forward by CAESAR)");
         sb.AppendLine("  ambient " + Ambient.ToString("0.###", CultureInfo.InvariantCulture) + " F (thermal strain from T - ambient); material " + Material +
                       " (CAESAR database: E, density and allowables come from it)");
         if (Overrides.Count > 0) sb.AppendLine("  overrides: " + string.Join(", ", Overrides.ToArray()));
@@ -68,7 +78,8 @@ public class PipeBuildResult
         Prop(sb, "source", Source); sb.Append(",");
         Prop(sb, "title", Title); sb.Append(",");
         sb.Append("\"counts\":{\"runs\":" + Runs + ",\"nodes\":" + Nodes + ",\"elements\":" + Elements + ",\"bends\":" + Bends + ",\"restraints\":" + Restraints +
-                  ",\"restraintNodes\":" + RestraintNodes + ",\"couplings\":" + Couplings + ",\"ties\":" + Ties + ",\"sifs\":" + Sifs + ",\"tees\":" + Tees + "},");
+                  ",\"restraintNodes\":" + RestraintNodes + ",\"couplings\":" + Couplings + ",\"ties\":" + Ties + ",\"sifs\":" + Sifs + ",\"tees\":" + Tees +
+                  ",\"forces\":" + Forces + ",\"displacements\":" + Displacements + ",\"uniformEntries\":" + UniformEntries + ",\"windEntries\":" + WindEntries + "},");
         sb.Append("\"pipeLengthFt\":" + PipeLength.ToString("R", CultureInfo.InvariantCulture) + ",");
         sb.Append("\"ambientF\":" + Ambient.ToString("R", CultureInfo.InvariantCulture) + ",\"material\":" + Material + ",");
         sb.Append("\"elementsByKind\":{" + string.Join(",", ElementsByKind.OrderBy(k => k.Key, StringComparer.Ordinal).Select(k => Q(k.Key) + ":" + k.Value).ToArray()) + "},");
@@ -242,6 +253,7 @@ public static class PipeBuilder
         readonly List<RunB> runs = new List<RunB>();
         readonly Dictionary<string, RunB> runByName = new Dictionary<string, RunB>(StringComparer.OrdinalIgnoreCase);
         readonly HashSet<int> used = new HashSet<int>();
+        readonly Dictionary<PipeModelElement, RunB> runOf = new Dictionary<PipeModelElement, RunB>();
         TomlTable defaults;
         double lenUnit = 12.0;        // inches per geometry unit
         string lenName = "ft";
@@ -332,14 +344,16 @@ public static class PipeBuilder
         public PipeBuildResult Run()
         {
             foreach (string k in root.Order)
-                if (k == "loads" || k == "forces" || k == "displacements" || k == "uniform" || k == "wind" || k == "hangers")
-                    throw Err("[" + k + "]: loads, imposed displacements, uniform loads, wind and hangers are not written yet: their layout in a CAESAR 15.01 neutral file " +
-                              "is unconfirmed (a small job exported from CAESAR with one of each confirms it); add them in CAESAR after the import for now");
-            Allowed(root, "the config", "model parameters defaults sections runs components supports ties sifs");
+            {
+                if (k == "hangers") throw Err("[hangers]: spring hangers are not written (CAESAR designs them): add them in CAESAR after the import");
+                if (k == "loads" || k == "uniform" || k == "wind" || k == "g_load")
+                    throw Err("[" + k + "]: loads go in [[forces]] and [[displacements]] (at nodes), and uniform / g_load / wind_shape on a run or in [defaults]");
+            }
+            Allowed(root, "the config", "model parameters defaults sections runs components supports ties sifs forces displacements");
             var model = Tbl(root, "model", "[model]") ?? new TomlTable();
             Allowed(model, "[model]", "title notes length_unit node_step material ambient y_up code allowables_from");
             defaults = Tbl(root, "defaults", "[defaults]");
-            Allowed(defaults, "[defaults]", "section temperature delta_t pressure bend bend_nodes max_length");
+            Allowed(defaults, "[defaults]", "section temperature delta_t pressure bend bend_nodes max_length uniform g_load wind_shape");
             res.Source = source;
             res.Title = Str(model, "title", "", "model");
             m.Title = res.Title;
@@ -377,6 +391,9 @@ public static class PipeBuilder
             Supports();
             Ties();
             Sifs();
+            NodeLoads("forces", "force", new[] { "fx", "fy", "fz", "mx", "my", "mz" });
+            NodeLoads("displacements", "displacement", new[] { "dx", "dy", "dz", "rx", "ry", "rz" });
+            UniformAndWind();
             Finish();
             return res;
         }
@@ -511,7 +528,7 @@ public static class PipeBuilder
                 var r = new RunB { Item = t, Name = Str(t, "name", "run" + (i + 1).ToString(CultureInfo.InvariantCulture), "[[runs]]") };
                 string w = "run \"" + r.Name + "\"";
                 r.Where = w;
-                Allowed(t, w, "name start from tee legs section temperature delta_t pressure bend bend_nodes max_length line fluid_density fluid_sg first_node");
+                Allowed(t, w, "name start from tee legs section temperature delta_t pressure bend bend_nodes max_length line fluid_density fluid_sg first_node uniform g_load wind_shape");
                 if (runByName.ContainsKey(r.Name)) throw Err("two runs named \"" + r.Name + "\"");
                 r.Section = SectionNamed(RunVal(r, "section"), w);
                 object from = Get(t, "from");
@@ -872,6 +889,17 @@ public static class PipeBuilder
                 var r = RunRef(t, "[[sifs]] " + i);
                 foreach (double s in Positions(r, t, "[[sifs]] " + i + " on run \"" + r.Name + "\"")) St(r, s, "SIF");
             }
+            foreach (string key in new[] { "forces", "displacements" })
+            {
+                i = 0;
+                foreach (var t in Items(key))
+                {
+                    i++;
+                    if (Get(t, "node") != null) continue;
+                    var r = RunRef(t, "[[" + key + "]] " + i);
+                    foreach (double s in Positions(r, t, "[[" + key + "]] " + i + " on run \"" + r.Name + "\"")) St(r, s, key == "forces" ? "force" : "displacement");
+                }
+            }
             i = 0;
             foreach (var t in Items("ties"))
             {
@@ -1072,6 +1100,7 @@ public static class PipeBuilder
                 var span = r.Spans.FirstOrDefault(x => Math.Abs(x.A - a.S) < 1e-6 && Math.Abs(x.B - b.S) < 1e-6);
                 if (span != null) Component(e, span, ref sec);
                 m.Elements.Add(e);
+                runOf[e] = r;
                 res.PipeLength += Math.Sqrt(e.Dx * e.Dx + e.Dy * e.Dy + e.Dz * e.Dz) / 12.0;
             }
             foreach (var cp in r.Couplings) MakeCoupling(r, r.Stations[Math.Round(cp.S, 6)], cp);
@@ -1235,14 +1264,15 @@ public static class PipeBuilder
         {
             string t = type.Trim().ToUpperInvariant();
             int code;
-            if (!PipeModelCodes.Restraint.TryGetValue(t, out code)) throw Err(w + ": restraint type \"" + type + "\" (ANC X Y Z RX RY RZ GUI LIM +X +Y +Z -X -Y -Z)");
+            if (Array.IndexOf(PipeModelCodes.BuildTypes, t) < 0 || !PipeModelCodes.Restraint.TryGetValue(t, out code))
+                throw Err(w + ": restraint type \"" + type + "\" (" + string.Join(" ", PipeModelCodes.BuildTypes) + ")");
             if (gap < 0) throw Err(w + ": a gap must not be negative");
             if (k < 0) throw Err(w + ": a stiffness must not be negative");
             if (mu < 0) throw Err(w + ": a friction coefficient must not be negative");
             var r = new PipeModelRestraint { Node = node, Type = t, Code = code, Gap = gap, Stiffness = k, Mu = mu, CNode = cnode, Tag = tag ?? "", Source = w };
             if (dir != null)
             {
-                bool rot = PipeModelCodes.IsRotation(t);
+                bool rot = t == "RX" || t == "RY" || t == "RZ";
                 if (!rot && t != "X" && t != "Y" && t != "Z") throw Err(w + ": a direction goes with X / Y / Z (along it) or RX / RY / RZ (about it), not " + t);
                 double l = Norm(dir);
                 if (!(l > 1e-12)) throw Err(w + ": a zero direction");
@@ -1252,12 +1282,9 @@ public static class PipeBuilder
                 {
                     r.Type = rot ? "RX" : "X";
                     r.Cosines = Scale(dir, 1 / l);
-                    Warn("skewed restraints (a direction off the global axes) are written as CAESAR writes an axis restraint, type X / RX with the direction's cosines; " +
-                         "no CAESAR file has shown a skewed one yet: check them after the import");
                 }
                 r.Code = PipeModelCodes.Restraint[r.Type];
             }
-            if (PipeModelCodes.Unconfirmed.Contains(r.Type)) Warn("restraint type " + r.Type + " is written with code " + r.Code + ", which no CAESAR file has confirmed yet: check it in CAESAR after the import");
             return r;
         }
 
@@ -1398,6 +1425,108 @@ public static class PipeBuilder
             }
         }
 
+        // ---------------- loads
+
+        // [[forces]] / [[displacements]]: one entry per node (CAESAR's spec), vectors filled from the items
+        void NodeLoads(string key, string kind, string[] comps)
+        {
+            int i = 0;
+            var byNode = new Dictionary<int, PipeModelNodeLoad>();
+            var given = new HashSet<string>();
+            foreach (var t in Items(key))
+            {
+                i++;
+                string w = "[[" + key + "]] " + i;
+                Allowed(t, w, "node run at every from to vector " + string.Join(" ", comps));
+                int vec = (int)Math.Round(NumOpt(t, "vector", 1, w));
+                if (vec < 1 || vec > 9) throw Err(w + ": vector = 1 .. 9 (CAESAR's " + (kind == "force" ? "F1 .. F9" : "D1 .. D9") + ")");
+                if (!comps.Any(c => Get(t, c) != null)) throw Err(w + ": give at least one of " + string.Join(", ", comps));
+                foreach (int n in NodesOf(t, w))
+                {
+                    if (!given.Add(n + "/" + vec)) throw Err(w + ": node " + n + " vector " + vec + " is given twice");
+                    PipeModelNodeLoad d;
+                    if (!byNode.TryGetValue(n, out d)) { d = new PipeModelNodeLoad(kind) { Node = n, Source = w }; byNode[n] = d; m.NodeLoads.Add(d); }
+                    for (int k = 0; k < 6; k++)
+                    {
+                        object v = Get(t, comps[k]);
+                        if (v != null) d.Vectors[vec - 1][k] = Num(v, w + "." + comps[k]);
+                    }
+                }
+            }
+        }
+
+        // uniform / g_load on a run (else [defaults]) -> its uniform load (null: none)
+        PipeModelUniform UniformOf(RunB r)
+        {
+            var u = new PipeModelUniform();
+            int v = 0;
+            foreach (string key in new[] { "uniform", "g_load" })
+            {
+                object o = RunVal(r, key);
+                string w = (Get(r.Item, key) != null ? r.Where : "[defaults]") + "." + key;
+                foreach (var vec in Vectors(o, w))
+                {
+                    if (v >= 9) throw Err(w + ": more than 9 uniform-load vectors (uniform and g_load together)");
+                    for (int k = 0; k < 3; k++) u.Vectors[v][k] = vec[k];
+                    u.G[v] = key == "g_load";
+                    v++;
+                }
+            }
+            return v == 0 ? null : u;
+        }
+
+        // [x, y, z] (one vector), [[x, y, z], ...] (several), 0 or [] (none)
+        List<double[]> Vectors(object o, string w)
+        {
+            var list = new List<double[]>();
+            if (o == null) return list;
+            var a = o as List<object>;
+            if (a == null)
+            {
+                if (Num(o, w) == 0) return list;
+                throw Err(w + ": [x, y, z], a list of them, or 0 for none");
+            }
+            if (a.Count == 0) return list;
+            if (a[0] is List<object>) { int k = 0; foreach (object x in a) list.Add(Vec(x as List<object>, w + "[" + (++k) + "]", 1.0)); }
+            else list.Add(Vec(a, w, 1.0));
+            return list;
+        }
+
+        PipeModelWind WindOf(RunB r)
+        {
+            object o = RunVal(r, "wind_shape");
+            if (o == null) return null;
+            double f = Num(o, (Get(r.Item, "wind_shape") != null ? r.Where : "[defaults]") + ".wind_shape");
+            if (f < 0) throw Err(r.Where + ": a negative wind_shape");
+            return f == 0 ? null : new PipeModelWind { Type = 0, Shape = f };
+        }
+
+        // CAESAR carries a uniform / wind entry forward through the following elements: write one where the
+        // value changes, and a zero (uniform) / off (wind) entry where a run has none after one that had
+        void UniformAndWind()
+        {
+            var ur = new Dictionary<RunB, PipeModelUniform>();
+            var wr = new Dictionary<RunB, PipeModelWind>();
+            foreach (var r in runs) { ur[r] = UniformOf(r); wr[r] = WindOf(r); }
+            PipeModelUniform cu = null;
+            PipeModelWind cw = null;
+            foreach (var e in m.Elements)
+            {
+                var r = runOf[e];
+                var du = ur[r];
+                if (du == null) { if (cu != null) { e.Uniform = new PipeModelUniform(); cu = null; res.UniformEntries++; } }
+                else if (!du.SameAs(cu))
+                {
+                    var u = new PipeModelUniform();
+                    for (int v = 0; v < 9; v++) { Array.Copy(du.Vectors[v], u.Vectors[v], 3); u.G[v] = du.G[v]; }
+                    e.Uniform = u; cu = du; res.UniformEntries++;
+                }
+                var dw = wr[r];
+                if (dw == null) { if (cw != null) { e.Wind = new PipeModelWind { Type = 2 }; cw = null; res.WindEntries++; } }
+                else if (!dw.SameAs(cw)) { e.Wind = new PipeModelWind { Type = dw.Type, Shape = dw.Shape }; cw = dw; res.WindEntries++; }
+            }
+        }
+
         // ---------------- checks and counts
 
         void Finish()
@@ -1433,6 +1562,9 @@ public static class PipeBuilder
             res.Restraints = m.Restraints.Count;
             res.RestraintNodes = m.Restraints.Select(x => x.Node).Distinct().Count();
             res.Sifs = m.Sifs.Count;
+            res.Forces = m.Forces.Count();
+            res.Displacements = m.Displacements.Count();
+            foreach (var d in m.NodeLoads) if (!nodes.Contains(d.Node)) throw Err(d.Source + ": a load at node " + d.Node + ", which is on no element");
             m.Warnings.AddRange(res.Warnings);
             // CAESAR puts a node no element has reached yet at the previous element's end: check that holds
             var seen = new HashSet<int>(m.Coords.Select(c => c.Node));

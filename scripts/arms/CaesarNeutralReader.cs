@@ -206,8 +206,8 @@ public class CaesarRestraint
     public int Slot;                         // 0-based slot inside the block
     public int Node;
     public int TypeCode;                     // neutral-file code (NOT the XML numbering)
-    public string TypeName = "";             // ANC, X, Y, Z, RX, RY, RZ, GUI, LIM, +Y, +Z, or OTHER(code)
-    public bool Confirmed;                   // TypeName comes from a confirmed code
+    public string TypeName = "";             // ANC, X, Y, Z, RX, RY, RZ, GUI, LIM, +Y, ... (CAESAR's table), or OTHER(code)
+    public bool Confirmed;                   // TypeName comes from CAESAR's table
     public double Stiffness;                 // as written (rigid default ~1e12 English, scaled by the units)
     public bool IsRigid;                     // K >= 1e11 x the stiffness factor, or K <= 0 (blank)
     public bool IsRotational;                // RX / RY / RZ
@@ -219,36 +219,22 @@ public class CaesarRestraint
     public double[] Raw;                     // numeric values of the slot, flattened
     public int ElementIndex = -1;            // element whose RESTRANT pointer names the block
 
-    // codes confirmed by CAESAR-written files and the 15.01 fixture's input echo
-    public static string ConfirmedName(int code)
-    {
-        switch (code)
-        {
-            case 1: return "ANC";
-            case 2: return "X";
-            case 3: return "Y";
-            case 4: return "Z";
-            case 5: return "RX";
-            case 6: return "RY";
-            case 7: return "RZ";
-            case 8: return "GUI";
-            case 9: return "LIM";
-            case 14: return "+Y";
-            case 15: return "+Z";
-        }
-        return null;
-    }
+    // the restraint type codes of CAESAR II's documentation for the neutral file (1-62); codes 1-9, 14 and 15
+    // are also seen in CAESAR-written files (the fixture's input echo, 11.00 jobs)
+    static readonly string[] Table = { null, "ANC", "X", "Y", "Z", "RX", "RY", "RZ", "GUI", "LIM",
+        "XSNB", "YSNB", "ZSNB", "+X", "+Y", "+Z", "-X", "-Y", "-Z", "+RX", "+RY", "+RZ", "-RX", "-RY", "-RZ",
+        "+LIM", "-LIM", "XROD", "YROD", "ZROD", "+XROD", "+YROD", "+ZROD", "-XROD", "-YROD", "-ZROD",
+        "X2", "Y2", "Z2", "RX2", "RY2", "RZ2", "+X2", "+Y2", "+Z2", "-X2", "-Y2", "-Z2",
+        "+RX2", "+RY2", "+RZ2", "-RX2", "-RY2", "-RZ2", "XSPR", "YSPR", "ZSPR",
+        "+XSNB", "+YSNB", "+ZSNB", "-XSNB", "-YSNB", "-ZSNB" };
 
-    // third-party table, NOT confirmed: only quoted in warnings so the user can check a restraint report
-    public static string Guess(int code)
+    public static string ConfirmedName(int code) { return code > 0 && code < Table.Length ? Table[code] : null; }
+
+    // a rotational type: RX RY RZ, the one-way and bilinear rotations
+    public static bool IsRotationName(string name)
     {
-        string[] g = { null, null, null, null, null, null, null, null, null, null,
-            "XSNB", "YSNB", "ZSNB", "+X", null, null, "-X", "-Y", "-Z", "+RX", "+RY", "+RZ", "-RX", "-RY", "-RZ",
-            "+LIM", "-LIM", "XROD", "YROD", "ZROD", "+XROD", "+YROD", "+ZROD", "-XROD", "-YROD", "-ZROD",
-            "X2", "Y2", "Z2", "RX2", "RY2", "RZ2", "+X2", "+Y2", "+Z2", "-X2", "-Y2", "-Z2",
-            "+RX2", "+RY2", "+RZ2", "-RX2", "-RY2", "-RZ2", "XSPR", "YSPR", "ZSPR",
-            "+XSNB", "+YSNB", "+ZSNB", "-XSNB", "-YSNB", "-ZSNB" };
-        return (code >= 0 && code < g.Length) ? g[code] : null;
+        string t = (name ?? "").TrimStart('+', '-');
+        return t.Length >= 2 && t[0] == 'R' && "XYZ".IndexOf(t[1]) >= 0;
     }
 }
 
@@ -1085,12 +1071,10 @@ public static class CaesarNeutralReader
                     if (name == null)
                     {
                         name = "OTHER(" + I(r.TypeCode) + ")";
-                        string guess = CaesarRestraint.Guess(r.TypeCode);
-                        WarnAgg("rtype-" + I(r.TypeCode), "RESTRANT: type code " + I(r.TypeCode) + " is not confirmed" +
-                            (guess != null ? " (a third-party table says " + guess + ")" : "") + "; kept as " + name + " until a restraint report confirms it", "node " + I(node));
+                        WarnAgg("rtype-" + I(r.TypeCode), "RESTRANT: type code " + I(r.TypeCode) + " is not in CAESAR's table (1-62); kept as " + name, "node " + I(node));
                     }
                     r.TypeName = name;
-                    r.IsRotational = r.TypeCode >= 5 && r.TypeCode <= 7;
+                    r.IsRotational = CaesarRestraint.IsRotationName(name);
                     double kf = r.IsRotational ? kRot : kTrans;
                     r.IsRigid = r.Stiffness <= 0 || r.Stiffness >= 1e11 * kf;
                     M.Restraints.Add(r);

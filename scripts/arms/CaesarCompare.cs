@@ -12,8 +12,10 @@ using System.Text;
 //   nodes       positions by CAESAR's rules (CaesarGeometry on what each model writes), moves beyond a tolerance
 //   restraints  as written (joints expanded), matched as a multiset of node, type, CNODE, gap, stiffness
 //               (rigid however written), friction, direction; SIF / tee entries likewise
-//   carried     the blocks each element carries as written (loads, allowables, node names ...), the file's
-//               units, the MISCEL_1 tail (nozzles, hangers, options)
+//   loads       forces / moments and imposed displacements per node and vector, as a multiset; uniform loads
+//               and wind as each matched element carries them (CAESAR's carry-forward applied)
+//   carried     the blocks each element carries as written (allowables, node names ...), the file's units,
+//               the MISCEL_1 tail (nozzles, hangers, options)
 //   settings    ambient, vertical axis, title
 
 public class CaesarCompareResult
@@ -28,6 +30,9 @@ public class CaesarCompareResult
     public readonly List<string> RestraintsRemoved = new List<string>();
     public readonly List<string> SifsAdded = new List<string>();
     public readonly List<string> SifsRemoved = new List<string>();
+    public readonly List<string> LoadsAdded = new List<string>();     // node loads in B, not in A
+    public readonly List<string> LoadsRemoved = new List<string>();
+    public readonly List<string> LoadsChanged = new List<string>();   // uniform / wind on matched elements
     public readonly List<string> Carried = new List<string>();
     public int ElementsCompared, NodesCompared, RestraintsCompared;
     public double WorstMove;
@@ -37,7 +42,7 @@ public class CaesarCompareResult
         get
         {
             return Settings.Count + ElementsAdded.Count + ElementsRemoved.Count + ElementsChanged.Count + NodesMoved.Count + RestraintsAdded.Count +
-                   RestraintsRemoved.Count + SifsAdded.Count + SifsRemoved.Count + Carried.Count;
+                   RestraintsRemoved.Count + SifsAdded.Count + SifsRemoved.Count + LoadsAdded.Count + LoadsRemoved.Count + LoadsChanged.Count + Carried.Count;
         }
     }
 
@@ -56,6 +61,9 @@ public class CaesarCompareResult
         List("restraints only in " + NameA, RestraintsRemoved, sb, maxPerList);
         List("SIF / tees only in " + NameB, SifsAdded, sb, maxPerList);
         List("SIF / tees only in " + NameA, SifsRemoved, sb, maxPerList);
+        List("node loads only in " + NameB, LoadsAdded, sb, maxPerList);
+        List("node loads only in " + NameA, LoadsRemoved, sb, maxPerList);
+        List("uniform / wind changed", LoadsChanged, sb, maxPerList);
         List("carried data", Carried, sb, maxPerList);
         return sb.ToString();
     }
@@ -76,7 +84,8 @@ public class CaesarCompareResult
         sb.Append(",\"worstMove\":" + WorstMove.ToString("R", CultureInfo.InvariantCulture));
         Arr(sb, "settings", Settings); Arr(sb, "elementsAdded", ElementsAdded); Arr(sb, "elementsRemoved", ElementsRemoved); Arr(sb, "elementsChanged", ElementsChanged);
         Arr(sb, "nodesMoved", NodesMoved); Arr(sb, "restraintsAdded", RestraintsAdded); Arr(sb, "restraintsRemoved", RestraintsRemoved);
-        Arr(sb, "sifsAdded", SifsAdded); Arr(sb, "sifsRemoved", SifsRemoved); Arr(sb, "carried", Carried);
+        Arr(sb, "sifsAdded", SifsAdded); Arr(sb, "sifsRemoved", SifsRemoved);
+        Arr(sb, "loadsAdded", LoadsAdded); Arr(sb, "loadsRemoved", LoadsRemoved); Arr(sb, "loadsChanged", LoadsChanged); Arr(sb, "carried", Carried);
         return sb.Append('}').ToString();
     }
 
@@ -116,6 +125,8 @@ public static class CaesarCompare
         var bByKey = new Dictionary<string, Queue<PipeModelElement>>();
         foreach (var e in b.Elements) { string k = Key(e); if (!bByKey.ContainsKey(k)) bByKey[k] = new Queue<PipeModelElement>(); bByKey[k].Enqueue(e); }
         var matched = new HashSet<PipeModelElement>();
+        var uniA = Effective(a, a.EffectiveUniform().Select(UKey).ToArray()); var uniB = Effective(b, b.EffectiveUniform().Select(UKey).ToArray());
+        var windA = Effective(a, a.EffectiveWind().Select(WKey).ToArray()); var windB = Effective(b, b.EffectiveWind().Select(WKey).ToArray());
         foreach (var ea in a.Elements)
         {
             Queue<PipeModelElement> q;
@@ -125,6 +136,8 @@ public static class CaesarCompare
             r.ElementsCompared++;
             var d = Fields(ea, eb);
             if (d.Count > 0) r.ElementsChanged.Add("element " + Key(ea) + ": " + string.Join("; ", d.ToArray()));
+            if (uniA[ea] != uniB[eb]) r.LoadsChanged.Add("element " + Key(ea) + ": uniform " + (uniA[ea].Length > 0 ? uniA[ea] : "none") + " -> " + (uniB[eb].Length > 0 ? uniB[eb] : "none"));
+            if (windA[ea] != windB[eb]) r.LoadsChanged.Add("element " + Key(ea) + ": wind " + (windA[ea].Length > 0 ? windA[ea] : "none") + " -> " + (windB[eb].Length > 0 ? windB[eb] : "none"));
             var ca = Carried(a, ea); var cb = Carried(b, eb);
             foreach (var s in ca.Keys.Union(cb.Keys).OrderBy(x => x, StringComparer.Ordinal))
             {
@@ -145,6 +158,7 @@ public static class CaesarCompare
         var sa = CaesarNeutralWriter.Sifs(a).Select(SKey).ToList();
         var sb2 = CaesarNeutralWriter.Sifs(b).Select(SKey).ToList();
         Diff(sa, sb2, r.SifsRemoved, r.SifsAdded);
+        Diff(a.NodeLoads.SelectMany(LKeys).ToList(), b.NodeLoads.SelectMany(LKeys).ToList(), r.LoadsRemoved, r.LoadsAdded);
 
         // carried global data
         if (a.Source != null && b.Source != null && !a.Source.Seed && !b.Source.Seed)
@@ -184,6 +198,47 @@ public static class CaesarCompare
         return d;
     }
 
+    static Dictionary<PipeModelElement, string> Effective(PipeModel m, string[] keys)
+    {
+        var d = new Dictionary<PipeModelElement, string>();
+        for (int i = 0; i < m.Elements.Count; i++) d[m.Elements[i]] = keys[i];
+        return d;
+    }
+
+    // the vectors of a uniform load that carry something ("" for none)
+    static string UKey(PipeModelUniform u)
+    {
+        if (u == null) return "";
+        var parts = new List<string>();
+        for (int v = 0; v < 9; v++)
+            if (u.Used(v)) parts.Add("U" + (v + 1) + " " + G(u.Vectors[v][0]) + "," + G(u.Vectors[v][1]) + "," + G(u.Vectors[v][2]) + (u.G[v] ? " g" : ""));
+        return string.Join("; ", parts.ToArray());
+    }
+
+    static string WKey(PipeModelWind x)
+    {
+        if (x == null || x.Type == 2) return "";
+        return PipeModelWind.TypeName(x.Type) + " " + G(x.Shape) + (x.Type == 1 ? " added mass " + G(x.AddedMass) + " lift " + G(x.Lift) + " growth " + G(x.MarineGrowth) + "/" + G(x.MarineGrowthDensity) : "");
+    }
+
+    // one key per used vector: "node 30 force F1 FX 100 FY -50" / "node 40 displacement D1 DX 0.5 DY 0"
+    static IEnumerable<string> LKeys(PipeModelNodeLoad d)
+    {
+        var dofs = d.IsDisplacement ? PipeModelCodes.DisplacementDofs : PipeModelCodes.ForceDofs;
+        for (int v = 0; v < 9; v++)
+        {
+            if (!d.Used(v)) continue;
+            var sb = new StringBuilder("node " + d.Node + " " + d.Kind + " " + (d.IsDisplacement ? "D" : "F") + (v + 1));
+            for (int k = 0; k < 6; k++)
+            {
+                double x = d.Vectors[v][k];
+                if (double.IsNaN(x) || (!d.IsDisplacement && x == 0)) continue;
+                sb.Append(" " + dofs[k] + " " + G(x));
+            }
+            yield return sb.ToString();
+        }
+    }
+
     // the ambient overlay aside, the tails are the same
     static bool SameTail(PipeModel a, PipeModel b)
     {
@@ -220,7 +275,7 @@ public static class CaesarCompare
         double kf = m.Factor(PipeModelCodes.IsRotationCode(x.Code) ? 14 : 13);
         bool rigid = x.Stiffness <= 0 || x.Stiffness >= 1e11 * kf;
         var c = x.Cosines ?? PipeModelCodes.DefaultCosines(x.Type);
-        string name = PipeModelCodes.Restraint.Where(kv => kv.Value == x.Code).Select(kv => kv.Key).FirstOrDefault() ?? ("code " + x.Code);
+        string name = PipeModelCodes.NameOf(x.Code) ?? ("code " + x.Code);
         return "node " + x.Node + " " + name + (x.CNode > 0 ? " cnode " + x.CNode : "") + (rigid ? "" : " K " + G(x.Stiffness)) +
                (x.Gap != 0 ? " gap " + G(x.Gap) : "") + (x.Mu != 0 ? " mu " + G(x.Mu) : "") +
                (x.Code == 1 ? "" : " dir " + G(c[0]) + "," + G(c[1]) + "," + G(c[2])) + (string.IsNullOrEmpty(x.Tag) ? "" : " tag " + x.Tag);

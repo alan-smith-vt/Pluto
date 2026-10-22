@@ -37,5 +37,6 @@ Format and rules: [[vault/format/pipe-model|pipe-model]]. Usage: [[vault/arms/pi
 ## Status
 
 - **Stage A (2026-10-22):** the lossless import, the overlay-and-carry writer, the model JSON, Compare and the runner switches are on branch `pipestress`. Verified on Linux: an unedited import is byte-identical for the fixture and 20 of 22 public samples; the other two are expected.
-- **Next:** Stage B, the workbook; C, loads; D, the viewer as the confirmation step; E, the SAP check model.
+- **Stage C (2026-10-22):** loads in the model, from CAESAR's documentation of the neutral file ([[vault/format/caesar-neutral-loads|caesar-neutral-loads]]).
+- **Next:** Stage B, the workbook; D, the viewer as the confirmation step; E, the SAP check model.
 - **Still to do on the production machine:** the PS 5.1 compile, and a real 15.01 job round-tripped and re-imported into CAESAR.

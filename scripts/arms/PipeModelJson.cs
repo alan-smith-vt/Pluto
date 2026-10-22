@@ -4,18 +4,19 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 
-// PipeModelJson  --  PipeModel <-> JSON text (format "pluto-pipe-model", version 1): the whole model, its carried
+// PipeModelJson  --  PipeModel <-> JSON text (format "pluto-pipe-model", version 2): the whole model, its carried
 // CAESAR text included, so a model can be stored (the Excel workbook's base model, a debug dump) and read back
 // EXACTLY: numbers are written with 17 significant digits and parsed by double.Parse (no JavaScriptSerializer:
 // it turns fractions into decimal and caps the text at 2 MB). Keys are written in a fixed order, so the same
-// model always gives the same text. C# 5.
+// model always gives the same text. NaN (a free displacement DOF) is null. Version 2 adds the loads (nodeLoads,
+// an element's uniform / wind); a version 1 file (Stage A: displacements carried as nodeItems) still reads. C# 5.
 //
 //   string json = PipeModelJson.Write(model);   PipeModel back = PipeModelJson.Read(json);
 
 public static class PipeModelJson
 {
     public const string Format = "pluto-pipe-model";
-    public const int Version = 1;
+    public const int Version = 2;
 
     // ---------------------------------------------------------------- write
 
@@ -80,6 +81,22 @@ public static class PipeModelJson
                 w.Num("od2", r.Od2); w.Num("wall2", r.Wall2); w.Num("alpha", r.Alpha); w.Num("r1", r.R1); w.Num("r2", r.R2); w.Num("seq", r.Seq); w.Lines("raw", r.Raw);
                 w.Close();
             }
+            if (e.Uniform != null)
+            {
+                var u = e.Uniform;
+                w.Key("uniform"); w.Open();
+                w.Key("vectors"); w.OpenArr(); foreach (var v in u.Vectors) w.NumArr(v); w.CloseArr();
+                w.Nums("g", u.G.Select(x => x ? 1.0 : 0.0).ToArray()); w.Num("seq", u.Seq); w.Lines("raw", u.Raw);
+                w.Close();
+            }
+            if (e.Wind != null)
+            {
+                var x = e.Wind;
+                w.Key("wind"); w.Open();
+                w.Num("type", x.Type); w.Num("shape", x.Shape); w.Num("addedMass", x.AddedMass); w.Num("lift", x.Lift);
+                w.Num("marineGrowth", x.MarineGrowth); w.Num("marineGrowthDensity", x.MarineGrowthDensity); w.Num("seq", x.Seq); w.Lines("raw", x.Raw);
+                w.Close();
+            }
             w.Lines("raw", e.Raw);
             Blocks(w, "carried", e.Carried);
             Blocks(w, "slotBlocks", e.SlotBlocks);
@@ -117,10 +134,14 @@ public static class PipeModelJson
             w.Close();
         }
         w.CloseArr();
-        w.Key("nodeItems"); w.OpenArr();
-        foreach (var d in m.NodeItems)
+        w.Key("nodeLoads"); w.OpenArr();
+        foreach (var d in m.NodeLoads)
         {
-            w.Open(); w.Str("section", d.Section); w.Num("node", d.Node); w.Num("owner", d.OwnerUid); w.Num("slot", d.Slot); w.Lines("raw", d.Raw); w.Close();
+            w.Open();
+            w.Str("kind", d.Kind); w.Num("node", d.Node);
+            w.Key("vectors"); w.OpenArr(); foreach (var v in d.Vectors) w.NumArr(v); w.CloseArr();
+            w.Str("source", d.Source); w.Num("owner", d.OwnerUid); w.Num("slot", d.Slot); w.Lines("raw", d.Raw);
+            w.Close();
         }
         w.CloseArr();
         w.Key("coords"); w.OpenArr();
@@ -265,6 +286,20 @@ public static class PipeModelJson
             if (xo != null) e.ExpJoint = new PipeModelExpJoint { AxialStiffness = D(xo, "axial"), TransverseStiffness = D(xo, "transverse"), BendingStiffness = D(xo, "bending"), TorsionStiffness = D(xo, "torsion"), EffectiveId = D(xo, "effId"), Seq = I(xo, "seq"), Raw = L(xo, "raw") };
             var rdo = O(o, "reducer");
             if (rdo != null) e.Reducer = new PipeModelReducer { Od2 = D(rdo, "od2"), Wall2 = D(rdo, "wall2"), Alpha = D(rdo, "alpha"), R1 = D(rdo, "r1"), R2 = D(rdo, "r2"), Seq = I(rdo, "seq"), Raw = L(rdo, "raw") };
+            var uo = O(o, "uniform");
+            if (uo != null)
+            {
+                var u = new PipeModelUniform { Seq = I(uo, "seq"), Raw = L(uo, "raw") };
+                var vs = Arr(uo, "vectors");
+                for (int v = 0; v < 9 && v < vs.Count; v++) { var a = Nums(vs[v]); for (int k = 0; k < 3 && k < a.Length; k++) u.Vectors[v][k] = a[k]; }
+                var g = Ds(uo, "g");
+                for (int v = 0; g != null && v < 9 && v < g.Length; v++) u.G[v] = g[v] == 1;
+                e.Uniform = u;
+            }
+            var wo = O(o, "wind");
+            if (wo != null)
+                e.Wind = new PipeModelWind { Type = I(wo, "type"), Shape = D(wo, "shape"), AddedMass = D(wo, "addedMass"), Lift = D(wo, "lift"),
+                                             MarineGrowth = D(wo, "marineGrowth"), MarineGrowthDensity = D(wo, "marineGrowthDensity"), Seq = I(wo, "seq"), Raw = L(wo, "raw") };
             e.Raw = L(o, "raw");
             ReadBlocks(O(o, "carried"), e.Carried);
             ReadBlocks(O(o, "slotBlocks"), e.SlotBlocks);
@@ -291,10 +326,21 @@ public static class PipeModelJson
             var o = (Dictionary<string, object>)to;
             m.Sifs.Add(new PipeModelSif { Node = I(o, "node"), Type = I(o, "type"), SifIn = D(o, "sifIn"), SifOut = D(o, "sifOut"), SurfaceNode = I(o, "surfaceNode"), OwnerUid = I(o, "owner"), Slot = I(o, "slot"), Raw = L(o, "raw") });
         }
-        foreach (var no in Arr(root, "nodeItems"))
+        foreach (var no in Arr(root, "nodeLoads"))
         {
             var o = (Dictionary<string, object>)no;
-            m.NodeItems.Add(new PipeModelNodeItem { Section = S(o, "section") ?? "DISPLMNT", Node = I(o, "node"), OwnerUid = I(o, "owner"), Slot = I(o, "slot"), Raw = L(o, "raw") ?? new List<string>() });
+            var d = new PipeModelNodeLoad(S(o, "kind") ?? "force") { Node = I(o, "node"), Source = S(o, "source") ?? "", OwnerUid = I(o, "owner"), Slot = I(o, "slot"), Raw = L(o, "raw") };
+            var vs = Arr(o, "vectors");
+            for (int v = 0; v < 9 && v < vs.Count; v++) { var a = Nums(vs[v]); for (int k = 0; k < 6 && k < a.Length; k++) d.Vectors[v][k] = a[k]; }
+            m.NodeLoads.Add(d);
+        }
+        foreach (var no in Arr(root, "nodeItems"))   // version 1: displacements carried as their slot lines
+        {
+            var o = (Dictionary<string, object>)no;
+            var raw = L(o, "raw");
+            var d = CaesarPipeImport.NodeLoad("displacement", raw) ?? new PipeModelNodeLoad("displacement") { Node = I(o, "node"), Raw = raw };
+            d.OwnerUid = I(o, "owner"); d.Slot = I(o, "slot"); d.Source = "imported";
+            m.NodeLoads.Add(d);
         }
         foreach (var co in Arr(root, "coords"))
         {
@@ -325,6 +371,11 @@ public static class PipeModelJson
     {
         var a = Get(o, k) as List<object>;
         return a == null ? null : a.Select(x => x is double ? (double)x : double.NaN).ToArray();
+    }
+    static double[] Nums(object v)
+    {
+        var a = v as List<object>;
+        return a == null ? new double[0] : a.Select(x => x is double ? (double)x : double.NaN).ToArray();
     }
     static List<string> L(Dictionary<string, object> o, string k) { object v = Get(o, k); return v == null ? null : ToLines(v); }
     static List<string> ToLines(object v)

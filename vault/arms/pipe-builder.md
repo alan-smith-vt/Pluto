@@ -18,7 +18,8 @@ The config describes:
 - node-to-node ties;
 - SIFs;
 - temperatures, or a ΔT from the ambient;
-- pressures.
+- pressures;
+- loads: forces and moments, imposed displacements, uniform loads (per length or in g's) and wind.
 
 `-Preview` also shows the model in the viewer through the CAESAR arm ([[vault/arms/caesar-to-viewer|caesar-to-viewer]]), support symbols included, before CAESAR sees it.
 
@@ -81,7 +82,9 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 >   - pressures psi;
 >   - densities lb/ft³;
 >   - weights lb;
->   - stiffness lb/in (translation) and in·lb/deg (rotation).
+>   - stiffness lb/in (translation) and in·lb/deg (rotation);
+>   - forces lb, moments in·lb, imposed displacements in and deg;
+>   - uniform loads lb/in, or g's.
 > - **Expressions:** any number may be an expression string over `[parameters]`, e.g. `length = "3*span + 2"`.
 >   - Operators: `+ - * / ^` and parentheses.
 >   - Functions: `pi`, `sqrt abs min max round floor ceil hypot`, `sin cos tan asin acos atan atan2` (in degrees).
@@ -159,7 +162,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 > **`[[supports]]`:**
 > - **Where:** `node = n`, or `run` + `at = x | [x, …]`, or `run` + `every = d` (`from` = d and `to` = L unless given).
 > - **What:**
->   - `type = "+Y"` or a list (`ANC X Y Z RX RY RZ GUI LIM +X +Y +Z -X -Y -Z`);
+>   - `type = "+Y"` or a list (`ANC X Y Z RX RY RZ GUI LIM +X +Y +Z -X -Y -Z +RX +RY +RZ -RX -RY -RZ +LIM -LIM XSNB YSNB ZSNB`, CAESAR's codes 1–26);
 >   - or `dofs = ["X", "RY", …]`: single degrees of freedom, e.g. an equipment nozzle as six DOFs with rotational stiffness.
 > - **Options:** `gap`, `stiffness` (0 = rigid) and `mu`, each a number for every type, or a table per type: `gap = { GUI = 0.0625 }`, `stiffness = { RX = 2.5e6 }`. A key that is not one of the support's types is an error.
 > - `direction = [x, y, z]` with one translational or rotational type: along a global axis it gives that axis' type; any other direction gives a skewed restraint, X or RX with the direction's cosines.
@@ -168,6 +171,25 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 > **`[[ties]]`:** `node` and `cnode`, each a number or `{ run, at }`, plus the same `type` / `dofs` / `gap` / `stiffness` / `mu` / `direction` / `tag`. For example, a strut between two lines: `type = "Z"`, `gap = 0.125`.
 >
 > **`[[sifs]]`:** `type = "welding"` (a welding tee), or `sif_in` / `sif_out` alone (user SIFs; `sif_out` defaults to `sif_in`). One SIF / tee entry per node: a branch's automatic tee counts. Give the branch `tee = "none"` to write your own.
+
+> [!info]- [[forces]], [[displacements]], uniform loads and wind
+> **`[[forces]]`:** forces and moments at nodes.
+> - **Where:** `node = n`, or `run` + `at` (or `every`), like a support. A position makes a node there.
+> - `vector` (1–9, default 1): CAESAR's load vector F1…F9.
+> - `fx fy fz` (lb), `mx my mz` (in·lb); at least one.
+> - Entries at one node merge into one CAESAR entry; the same node and vector twice is an error.
+>
+> **`[[displacements]]`:** imposed displacements at nodes (anchor movements, equipment growth).
+> - The same `node` / `run` + `at` and `vector` (D1…D9).
+> - `dx dy dz` (in), `rx ry rz` (deg). **A DOF not given stays free; a 0 holds it** in that vector.
+>
+> **Uniform loads and wind**, on a run or in `[defaults]` (a run's own value wins):
+> - `uniform = [x, y, z]` in lb/in is U1; a list of them gives U1, U2 …; `0` means none.
+> - `g_load = [x, y, z]` in g's (seismic, for example) takes the next vector after `uniform`'s. At most 9 together.
+> - `wind_shape = 0.7`: the wind shape factor; `0` means no wind on that run.
+> - CAESAR carries a uniform or wind entry forward through the following elements. So the builder writes an entry only where the value changes, in element order, and a zero (uniform) or off (wind) entry where a run has none after one that had.
+>
+> Load cases are not in the neutral file: CAESAR builds them and recommends a set on import. The layouts and what is confirmed: [[vault/format/caesar-neutral-loads|caesar-neutral-loads]].
 
 ## Geometry rules (CAESAR's own)
 
@@ -215,6 +237,13 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 >   - **UNITS:** English;
 >   - **COORDS:** in ft.
 
+> [!info]- Loads
+> - **FORCMNT / DISPLMNT:** two entries per block, each the node and then one line per load vector.
+> - **UNIFORM:** 9 vectors of UX UY UZ and a g flag.
+> - **WIND:** type and shape factor.
+>
+> Layouts: [[vault/format/caesar-neutral-loads|caesar-neutral-loads]].
+
 > [!info]- Confirmed against a CAESAR-written file, and not yet
 > - **Confirmed by the 15.01 fixture** (`scripts/caesar/testdata`, read back by the CAESAR arm):
 >   - element rows;
@@ -225,13 +254,14 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 >   - welding tees and user SIFs;
 >   - COORDS;
 >   - the ambient field.
-> - **Written, but no CAESAR file has shown them yet.** Check these after the first import:
->   - the type codes of `+X` `-X` `-Y` `-Z` (13, 16, 17, 18, by CAESAR's type list). They are written with a warning.
->   - skewed restraints (X / RX with the direction's cosines). Written with a warning.
+> - **From CAESAR's documentation of the neutral file; no CAESAR-written file has shown them yet.** Each is listed as a `[notice ]` line when written; check them after the first import:
+>   - restraint codes beyond 1–9, 14, 15 (`+X` 13, `-X -Y -Z` 16–18, one-way rotations, `±LIM`, snubbers);
+>   - FORCMNT, UNIFORM and WIND blocks;
+>   - DISPLMNT in 15.01's number format (its layout is confirmed by 11.00 jobs).
+> - **Written, but neither documented nor shown:**
+>   - skewed restraints (X / RX with the direction's cosines), also a `[notice ]`;
 >   - a bend's near node at angle 0 (`bend_nodes = "near-mid"`).
-> - **Not written yet.** A small job exported from CAESAR with one of each confirms their 15.01 layout first. Until then a config table for them is refused with that message.
->   - loads: forces / moments, uniform loads, wind;
->   - imposed displacements;
+> - **Not written:**
 >   - hangers (CAESAR's hanger design);
 >   - nozzle flexibility (WRC 297);
 >   - load cases. CAESAR recommends cases on import.
@@ -256,12 +286,30 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 - **`Build-Pipe.ps1` under pwsh** with the compiled batch: build, write, `-Set` and `-Preview`.
 - **Viewer:** the preview opens with all 21 support symbols and no errors.
 
+## Verification of the loads (2026-10-22, Linux)
+
+- **A test config with every load kind**, on a header, a branch and a tail:
+  - forces in two vectors;
+  - a displacement with every DOF imposed in D1 and one DOF in D2;
+  - uniform loads per length, a g load on the branch, wind on and off.
+- **What is checked:**
+  - It builds, writes, and reads back with no reader warnings, and the CONTROL counts are right.
+  - Every block has the documented layout: the node alone, then one line per vector; 9999.99 for free DOFs and for the unused slot; 36 uniform values with the g flags; one wind line.
+  - Read back, it is byte-identical. Compare against the built model finds no differences.
+- **Edits on the imported file:**
+  - Changing a force, a uniform value, the wind, a freed DOF or a g flag changes one line each.
+  - A new force at a node without one adds one 20-line block. A second entry at a loaded node fills its block's free slot.
+  - Removing a node's forces removes its block, and compare reports exactly that.
+- **An 11.00 job's displacements:** read, edited and extended, one line each.
+- **Errors:** 8 config mistakes give their message.
+- **Unchanged:** every Stage A check (outputs of configs without loads, the 22 samples, JSON, compare, the 32 failure cases), and `Build-Pipe.ps1` under pwsh with the example (now with loads).
+
 ## Next
 
 The plan, in stages ([[vault/decisions/2026-10-22-lossless-pipe-model|2026-10-22-lossless-pipe-model]]):
 - **A, done (2026-10-22):** the lossless `.cii` import, the overlay-and-carry writer, the model JSON, compare, and `-In` / `-Json` / `-Compare` / `-Seed` ([[vault/format/pipe-model|pipe-model]]).
 - **B: the Excel workbook** as the model's master: sheets for settings, sections, processes, materials, elements, restraints, SIFs and coordinates; a `.cii` or `.toml` into a workbook and back with nothing lost; `-Watch` to rebuild the preview on every save; Reload / Auto-reload in the viewer.
-- **C: loads**, from CAESAR's documentation of the neutral file: forces and moments, imposed displacements, uniform and g-loads, wind.
+- **C, done (2026-10-22): loads**, from CAESAR's documentation of the neutral file: forces and moments, imposed displacements, uniform and g-loads, wind, in the model, the importer, the writer, the TOML (`[[forces]]`, `[[displacements]]`, `uniform` / `g_load` / `wind_shape`), the model JSON and compare ([[vault/format/caesar-neutral-loads|caesar-neutral-loads]]).
 - **D: the viewer as the confirmation step:** loads drawn, element properties on hover, node numbers, temperature / pressure / material groups, and a list of build checks.
 - **E: a SAP2000 `.s2k`** as a check on CAESAR: the same pipe and loads, with equivalent fixities, supports, restraints and releases (gaps and one-ways as gap links; friction reported, as SAP cannot model it as CAESAR does). It runs through the one SAP controller, `Run-Sap.ps1 -Open x.s2k -Run` ([[vault/arms/sap-controller|sap-controller]]); no second driver.
 - **On the production machine:** the first CAESAR import of the example, then a real line.

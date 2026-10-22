@@ -9,11 +9,19 @@ using System.Text;
 // IDENTICALLY when nothing is edited. C# 5 / PowerShell 5.1 (scripts/caesar/Build-Pipe.ps1 -In job.cii).
 //
 // The model reads what it edits (element rows, bends, rigids, expansion joints, reducers, restraints, SIF /
-// tees, COORDS, the ambient, title / notes) and carries the rest as written: every record and block with its
-// number in CAESAR's own order, the restraint / SIF / displacement slots with the element block that held
-// them, the blocks it does not read (forces, uniform loads, wind, offsets, allowables, node names, flanges,
-// equipment) with their element, and the file's VERSION, CONTROL, UNITS, AUX_DATA, MISCEL_1 tail (nozzles,
-// hangers, execution options) and any section it does not know. Values stay in the job's units.
+// tees, forces / moments, imposed displacements, uniform loads, wind, COORDS, the ambient, title / notes) and
+// carries the rest as written: every record and block with its number in CAESAR's own order, the restraint /
+// SIF / load slots with the element block that held them, the blocks it does not read (offsets, allowables,
+// node names, flanges, equipment; a load block in a layout it does not know) with their element, and the
+// file's VERSION, CONTROL, UNITS, AUX_DATA, MISCEL_1 tail (nozzles, hangers, execution options) and any
+// section it does not know. Values stay in the job's units.
+//
+// Load layouts (CAESAR II's documentation of the neutral file; DISPLMNT also seen in 11.00 jobs):
+//   FORCMNT / DISPLMNT  2 slots per block, each the node (one value) then 9 lines, one per load vector:
+//                       FX FY FZ MX MY MZ / DX DY DZ RX RY RZ; 9999.99 = not given (a free DOF)
+//   UNIFORM             6 lines, 36 values in order: 9 vectors x (UX UY UZ, 1 = in g's)
+//   WIND                1 line: type (0 wind, 1 wave, 2 off), shape factor (wave: drag), added mass, lift,
+//                       marine growth, marine growth density
 //
 // Every import checks itself: the model is written back in memory and compared with the source, line by
 // line; the result says "identical" or names the lines that differ (and why it could not be identical).
@@ -37,8 +45,10 @@ public class CaesarPipeImportResult
         var m = Model;
         var sb = new StringBuilder();
         sb.AppendLine("CaesarPipeImport: " + Path.GetFileName(SourcePath) + ", CAESAR " + Caesar.Version.ToString("0.00", CultureInfo.InvariantCulture) +
-                      ", " + m.Elements.Count + " elements, " + m.Restraints.Count + " restraints, " + m.Sifs.Count + " SIF / tee entries, " +
-                      m.NodeItems.Count + " imposed displacements, units " + (Caesar.Units.LengthUnit.Length > 0 ? Caesar.Units.LengthUnit : "?"));
+                      ", " + m.Elements.Count + " elements, " + m.Restraints.Count + " restraints, " + m.Sifs.Count + " SIF / tee entries, units " +
+                      (Caesar.Units.LengthUnit.Length > 0 ? Caesar.Units.LengthUnit : "?"));
+        sb.AppendLine("  loads: " + m.Forces.Count() + " force / moment and " + m.Displacements.Count() + " imposed-displacement node(s), " +
+                      m.Elements.Count(e => e.Uniform != null) + " uniform-load and " + m.Elements.Count(e => e.Wind != null) + " wind entries");
         var carried = new SortedDictionary<string, int>(StringComparer.Ordinal);
         foreach (var e in m.Elements) foreach (var kv in e.Carried) { int c; carried.TryGetValue(kv.Key, out c); carried[kv.Key] = c + 1; }
         sb.AppendLine("  carried as written: " + (carried.Count == 0 ? "no load or other blocks" : string.Join(", ", carried.Select(kv => kv.Key + " " + kv.Value).ToArray())) +
@@ -54,7 +64,9 @@ public class CaesarPipeImportResult
     {
         var sb = new StringBuilder("{");
         sb.Append("\"source\":" + Q(SourcePath) + ",\"caesarVersion\":" + Caesar.Version.ToString("R", CultureInfo.InvariantCulture));
-        sb.Append(",\"elements\":" + Model.Elements.Count + ",\"restraints\":" + Model.Restraints.Count + ",\"sifs\":" + Model.Sifs.Count + ",\"displacements\":" + Model.NodeItems.Count);
+        sb.Append(",\"elements\":" + Model.Elements.Count + ",\"restraints\":" + Model.Restraints.Count + ",\"sifs\":" + Model.Sifs.Count +
+                  ",\"forces\":" + Model.Forces.Count() + ",\"displacements\":" + Model.Displacements.Count() +
+                  ",\"uniform\":" + Model.Elements.Count(e => e.Uniform != null) + ",\"wind\":" + Model.Elements.Count(e => e.Wind != null));
         sb.Append(",\"identical\":" + (Identical ? "true" : "false") + ",\"byteIdentical\":" + (ByteIdentical ? "true" : "false") + ",\"sourceLines\":" + SourceLines + ",\"writtenLines\":" + WrittenLines);
         sb.Append(",\"differingLines\":[" + string.Join(",", DifferingLines.Select(x => x.ToString(CultureInfo.InvariantCulture)).ToArray()) + "]");
         sb.Append(",\"notes\":[" + string.Join(",", Notes.Select(Q).ToArray()) + "]");
@@ -78,7 +90,7 @@ public class CaesarPipeImportResult
 public static class CaesarPipeImport
 {
     // sections the writer builds from the model (the others are carried as written)
-    static readonly string[] Built = { "ELEMENTS", "BEND", "RIGID", "EXPJT", "RESTRANT", "DISPLMNT", "SIF&TEES", "REDUCERS", "MISCEL_1", "COORDS" };
+    static readonly string[] Built = { "ELEMENTS", "BEND", "RIGID", "EXPJT", "RESTRANT", "DISPLMNT", "FORCMNT", "UNIFORM", "WIND", "SIF&TEES", "REDUCERS", "MISCEL_1", "COORDS" };
 
     public static CaesarPipeImportResult FromCii(string path)
     {
@@ -183,6 +195,12 @@ public static class CaesarPipeImport
             return b != null && ptr > 0 && ptr <= b.Count ? new List<string>(b[ptr - 1]) : null;
         };
         var claimed = new HashSet<string>();   // section#block already given to an element
+        int forceLines = src.Lines("FORCMNT", 0), uniLines = src.Lines("UNIFORM", 0), windLines = src.Lines("WIND", 0);
+        bool forceSlots = forceLines >= 4 && forceLines % 2 == 0;   // 2 slots of node + vectors
+        if (cm.NumForceBlocks > 0 && !forceSlots) res.Notes.Add("FORCMNT: " + forceLines + "-line blocks (20 documented): carried as written, not read");
+        if (cm.NumUniform > 0 && uniLines != 6) res.Notes.Add("UNIFORM: " + uniLines + "-line blocks (6 documented): carried as written, not read");
+        if (cm.NumWind > 0 && windLines != 1) res.Notes.Add("WIND: " + windLines + "-line blocks (1 documented): carried as written, not read");
+        var forceOwner = new SortedDictionary<int, int>();   // FORCMNT block -> owner uid
 
         // elements
         for (int i = 0; i < ne; i++)
@@ -242,6 +260,9 @@ public static class CaesarPipeImport
                 if (ptrs[k] <= 0 || !Claim(claimed, names[k], ptrs[k], res, e)) continue;
                 var lines = block(names[k], ptrs[k]);
                 if (lines == null) { res.Notes.Add(names[k] + " block " + ptrs[k] + " of element " + e.From + "-" + e.To + " is not in the file"); continue; }
+                if (names[k] == "FORCMNT" && forceSlots) { e.SlotBlocks["FORCMNT"] = new PipeModelBlock { Seq = ptrs[k], Lines = lines }; forceOwner[ptrs[k]] = e.Uid; continue; }
+                if (names[k] == "UNIFORM" && uniLines == 6) { e.Uniform = Uniform(lines); e.Uniform.Seq = ptrs[k]; continue; }
+                if (names[k] == "WIND" && windLines == 1) { e.Wind = Wind(lines); e.Wind.Seq = ptrs[k]; continue; }
                 e.Carried[names[k]] = new PipeModelBlock { Seq = ptrs[k], Lines = lines };
             }
             int[] sptr = { ce.Restraint, ce.SifTee, ce.Displmnt };
@@ -280,11 +301,34 @@ public static class CaesarPipeImport
         int dsl = cm.LinesPerBlock.ContainsKey("DISPLMNT/slot") ? cm.LinesPerBlock["DISPLMNT/slot"] : 10;
         foreach (var cd in cm.Displacements)
         {
-            m.NodeItems.Add(new PipeModelNodeItem
+            var raw = SlotLines(slice("DISPLMNT", counts["DISPLMNT"]), cd.Block, cd.Slot, dsl);
+            var d = raw != null ? NodeLoad("displacement", raw) : null;
+            if (d == null)
             {
-                Section = "DISPLMNT", Node = cd.Node, OwnerUid = cd.ElementIndex >= 0 ? cd.ElementIndex + 1 : 0, Slot = cd.Slot,
-                Raw = SlotLines(slice("DISPLMNT", counts["DISPLMNT"]), cd.Block, cd.Slot, dsl) ?? new List<string>()
-            });
+                d = new PipeModelNodeLoad("displacement") { Node = cd.Node, Raw = raw };
+                for (int v = 0; v < 9 && cd.Vectors != null && v < cd.Vectors.Length; v++) for (int k = 0; k < 6; k++) d.Vectors[v][k] = cd.Vectors[v][k];
+            }
+            d.OwnerUid = cd.ElementIndex >= 0 ? cd.ElementIndex + 1 : 0;
+            d.Slot = cd.Slot;
+            d.Source = "imported";
+            if (raw == null) res.Notes.Add("imposed displacement at node " + cd.Node + ": its slot lines are not in the file; it is written anew");
+            m.NodeLoads.Add(d);
+        }
+        // forces / moments: the slots of the blocks elements name (CAESAR's documented layout: 2 slots per block)
+        var fblocks = forceSlots ? slice("FORCMNT", counts["FORCMNT"]) : null;
+        foreach (var kv in forceOwner)
+        {
+            if (fblocks == null || kv.Key > fblocks.Count) continue;
+            var b = fblocks[kv.Key - 1];
+            int sl = b.Count / 2;
+            for (int q = 0; q < 2; q++)
+            {
+                var raw = b.GetRange(q * sl, sl);
+                var f = NodeLoad("force", raw);
+                if (f == null) continue;   // an unused slot (node 0): given back as written
+                f.OwnerUid = kv.Value; f.Slot = q; f.Raw = raw; f.Source = "imported";
+                m.NodeLoads.Add(f);
+            }
         }
 
         // COORDS: the count line and each entry as written
@@ -393,6 +437,56 @@ public static class CaesarPipeImport
         while (end > 0 && lines[end - 1].Trim().Length == 0) end--;
         if (end < lines.Count) src.Trailing[section] = lines.Skip(end).ToList();
         return lines.Take(end).ToList();
+    }
+
+    // a FORCMNT / DISPLMNT slot: the node, then one line of 6 values per vector; null for an unused slot (node 0)
+    public static PipeModelNodeLoad NodeLoad(string kind, List<string> lines)
+    {
+        if (lines == null || lines.Count < 2) return null;
+        int fb = 0;
+        var first = CaesarNeutralReader.Nums(lines[0], ref fb);
+        if (first.Length < 1 || Math.Round(first[0]) <= 0) return null;
+        var d = new PipeModelNodeLoad(kind) { Node = (int)Math.Round(first[0]), Raw = new List<string>(lines) };
+        for (int v = 0; v < 9 && v + 1 < lines.Count; v++)
+        {
+            var x = CaesarNeutralReader.Nums(lines[v + 1], ref fb);
+            for (int k = 0; k < 6 && k < x.Length; k++)
+                d.Vectors[v][k] = Math.Abs(x[k] - PipeModelNodeLoad.Free) < 0.01 ? double.NaN : x[k];
+        }
+        return d;
+    }
+
+    // a UNIFORM block: 36 values in order, 9 vectors x (UX UY UZ, g flag)
+    public static PipeModelUniform Uniform(List<string> lines)
+    {
+        var u = new PipeModelUniform { Raw = new List<string>(lines) };
+        var vals = Values(lines, 36);
+        for (int v = 0; v < 9; v++)
+        {
+            for (int k = 0; k < 3; k++) u.Vectors[v][k] = vals[4 * v + k];
+            u.G[v] = Math.Round(vals[4 * v + 3]) == 1;
+        }
+        return u;
+    }
+
+    // a WIND block: type, shape factor (or drag), added mass, lift, marine growth, its density
+    public static PipeModelWind Wind(List<string> lines)
+    {
+        var x = Values(lines, 6);
+        return new PipeModelWind { Type = (int)Math.Round(x[0]), Shape = x[1], AddedMass = x[2], Lift = x[3], MarineGrowth = x[4], MarineGrowthDensity = x[5], Raw = new List<string>(lines) };
+    }
+
+    // the 13-column fields of a block's lines in order (6 per line), n of them (missing ones 0)
+    static double[] Values(List<string> lines, int n)
+    {
+        var r = new double[n];
+        for (int i = 0; i < n; i++)
+        {
+            int li = i / 6, col = i % 6;
+            double v;
+            if (li < lines.Count && TryField(lines[li], col, out v)) r[i] = v;
+        }
+        return r;
     }
 
     static List<string> SlotLines(List<List<string>> blocks, int block, int slot, int slotLines)

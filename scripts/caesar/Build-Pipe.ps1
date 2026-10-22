@@ -2,13 +2,16 @@
 # II needed.
 #   in    -In <file> (alias -Config):
 #           .toml       a parametric config (PipeBuilder: runs, bends, branches, components, supports by type or DOF,
-#                       ties, SIFs, temperatures / delta T, pressures; every key: scripts\caesar\examples\pipe-example.toml)
-#           .cii        an existing CAESAR II job (CaesarPipeImport: everything the model does not edit -- loads,
-#                       hangers, nozzles, allowables, node names, units, options -- is carried as written; every
+#                       ties, SIFs, temperatures / delta T, pressures, forces, imposed displacements, uniform loads,
+#                       wind; every key: scripts\caesar\examples\pipe-example.toml)
+#           .cii        an existing CAESAR II job (CaesarPipeImport: everything the model does not edit -- hangers,
+#                       nozzles, allowables, node names, offsets, units, options -- is carried as written; every
 #                       import checks that writing it back gives the source identically, and says so)
 #           .pipe.json  a model saved with -Json
 #   out   -Cii      <base>.cii, the CAESAR II neutral file (+ <base>.nodes.csv for a .toml: node numbers by position).
-#                   The default for a .toml when no output is chosen. Never written over the input file.
+#                   The default for a .toml when no output is chosen. Never written over the input file. What it holds
+#                   that no CAESAR-written file has shown yet (layouts and codes from CAESAR's documentation) is listed
+#                   as "[notice ]" lines: check those in CAESAR after the import.
 #         -Json     <base>.pipe.json, the whole model (PipeModelJson; exact, for tests and as the workbook's base)
 #         -Preview  <base>.bin + <base>.features.json for the viewer, built from the model in memory (what
 #                   Run-Caesar.ps1 makes of the .cii): look before CAESAR does
@@ -102,7 +105,7 @@ function Model-Of([string]$path) {
 
 # ---- build / import, write, compare: an input error is reported as such (the innermost message names it) ----
 $sw.Reset(); $sw.Start()
-$buildJson = "null"; $seedText = $null; $compareJson = "null"
+$buildJson = "null"; $seedText = $null; $compareJson = "null"; $notices = @()
 try {
     if ($kind -eq "toml") {
         $r = [PipeBuilder]::Build($inPath, $Set)
@@ -128,6 +131,8 @@ try {
             [IO.File]::WriteAllText($csvFile, $r.NodesCsv(), (New-Object Text.UTF8Encoding($false)))
             Say "write" ("{0}: node numbers by run and position" -f $csvFile)
         }
+        $notices = @([CaesarNeutralWriter]::Notices($model))
+        foreach ($n in $notices) { Say "notice" $n }
     }
     if ($Json) {
         [IO.File]::WriteAllText($jsonFile, [PipeModelJson]::Write($model), (New-Object Text.UTF8Encoding($false)))
@@ -164,5 +169,6 @@ $res = "RESULT {""input"":" + (Q $inPath) + ",""kind"":" + (Q $kind)
 $res += ",""cii"":" + $(if ($Cii) { Q $ciiFile } else { "null" })
 $res += ",""nodes"":" + $(if ($Cii -and $kind -eq "toml") { Q $csvFile } else { "null" })
 $res += ",""json"":" + $(if ($Json) { Q $jsonFile } else { "null" })
+$res += ",""notices"":[" + (($notices | ForEach-Object { Q $_ }) -join ",") + "]"
 $res += ",""seed"":" + (Q $seedText) + ",""build"":" + $buildJson + ",""compare"":" + $compareJson + ",""preview"":" + $previewJson + "}"
 Write-Output $res

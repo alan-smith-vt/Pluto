@@ -6,7 +6,8 @@
 #
 # Units: geometry in model.length_unit (ft here); diameters, walls, insulation, corrosion, bend radii and
 # translational gaps in inches; rotational gaps and coupling deflections in degrees; temperatures F;
-# pressures psi; densities lb/cu.ft; weights lb; stiffness lb/in (translation) and in.lb/deg (rotation).
+# pressures psi; densities lb/cu.ft; weights lb; stiffness lb/in (translation) and in.lb/deg (rotation);
+# forces lb, moments in.lb, imposed displacements in and deg, uniform loads lb/in (g_load in g's).
 # Any number may be an expression over [parameters]; a position along a run may also use L (its length).
 
 [model]
@@ -31,6 +32,7 @@ pressure = 150              # P1 (a list gives P1, P2, ...)
 bend = "LR"                 # LR = 1.5 x nominal, SR = 1 x nominal, a radius in inches, or "none" (a sharp corner)
 bend_nodes = "mid"          # nodes on each bend: "mid" (TO - 1), "near-mid" (TO - 1 and TO - 2) or "none"
 max_length = 10             # longest straight between nodes (more nodes are added)
+wind_shape = 0.7            # wind shape factor on every run (CAESAR's wind loads; 0 = none)
 
 [sections.8in]
 nps = 8
@@ -70,6 +72,7 @@ line = "LINE-B"
 temperature = 250                      # F (this run's own, instead of delta_t)
 pressure = [150, 225]                  # P1, P2
 bend_nodes = "near-mid"
+g_load = [0.3, 0, 0.3]                 # a uniform load in g's (its own load vector after any uniform)
 legs = [["+Z", 15], ["-Y", 8]]
 
 [[runs]]
@@ -80,6 +83,8 @@ line = "LINE-C"
 first_node = 1000                      # otherwise the next free hundred
 temperature = 120
 pressure = 50
+uniform = [0, -2.5, 0]                 # lb/in, U1 (a list of [x, y, z] gives U1, U2, ...; 0 = none)
+wind_shape = 0                         # no wind on this run
 legs = [["+X", 40]]
 
 # ---- in-line components: at = where it starts on the run, length = its own length
@@ -204,3 +209,23 @@ run = "return"
 at = 15
 sif_in = 1.8
 sif_out = 1.5
+
+# ---- loads at nodes: node = n, or run with at; vector = CAESAR's load vector (1-9, default 1)
+[[forces]]
+run = "header"
+at = 50
+fy = -800                              # lb: a weight hung on the pipe
+mz = 2400                              # in.lb
+
+[[forces]]
+run = "header"
+at = 50
+vector = 2                             # F2: a second load set at the same node
+fx = 300
+
+[[displacements]]
+run = "drop"
+at = "L"                               # the drop's anchor moves: equipment growth in D1
+dx = 0.05                              # in; a DOF not given stays free, a 0 holds it
+dy = 0.25
+dz = 0
