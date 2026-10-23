@@ -185,7 +185,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >   - the workbook is about 0.4–0.8 MB (the formulas).
 > - **Two LibreOffice quirks, worked around:**
 >   - It drops line segments when a chart has a manual plot-area layout, so the chart keeps its automatic layout and the key is in cells.
->   - It merges points closer than about 0.01 mm even across the empty row between elements, so each element's first point is moved by 0.1 % of the frame (under the line's width).
+>   - It merges points that nearly coincide even across the empty row between elements, and then drops that element's first segment. So each element is drawn from its end back to its start, so its first point is not where the element before it ended, and that point is also moved by 0.1 % of the frame (under the line's width).
 
 ## Verification (2026-10-22, Linux)
 

@@ -658,12 +658,11 @@ static class PipeWorkbookGui
             int cr = e + 2;
             for (int j = 0; j <= 5; j++)
             {
-                int row = 1 + e * 7 + j, xr = row + 1;
-                string u = calcR + col["U" + j] + cr, v = calcR + col["V" + j] + cr;
-                // an element's first point is moved by 0.1 % of the half frame (about 0.1 mm on the chart, under the
-                // line's width): LibreOffice merges points closer than about 0.01 mm even across the empty row that
-                // separates two elements, and so would drop the first segment of every element that starts where the
-                // one before it ended
+                // each element is drawn from its end back to its start, so its first point is never where the points
+                // of the element before it ended (LibreOffice merges such points across the empty row and drops the
+                // element's first segment); the first point is also moved by 0.1 % of the half frame, under the line
+                int row = 1 + e * 7 + j, xr = row + 1, pj = 5 - j;
+                string u = calcR + col["U" + pj] + cr, v = calcR + col["V" + pj] + cr;
                 pts.SetFormula(row, 0, "IF(ISNUMBER(" + u + ")," + u + "-pl_cu" + (j == 0 ? "+0.001*pl_h" : "") + ",0)", 0);
                 pts.SetFormula(row, 1, "IF(ISNUMBER(" + v + ")," + v + "-pl_cv,NA())", 0);
                 string hl = "AND(pl_hl<>\"\"," + calcR + col["Id"] + cr + "=pl_hl)";
