@@ -592,7 +592,7 @@ public static class PipeWorkbook
             new PipeWorkbookGui.Check("Error values (#N/A, #DIV/0! ...) on the input sheets",
                 errIn("Elements", "A:BA") + "+" + errIn("Sections", "A:J") + "+" + errIn("Processes", "A:T") + "+" + errIn("Restraints", "A:K") + "+" + errIn("Forces", "A:I") + "+" + errIn("Displacements", "A:I") + "+" +
                 errIn("Uniform", "A:H") + "+" + errIn("Wind", "A:I") + "+" + errIn("Coords", "A:D"), false),
-            new PipeWorkbookGui.Check("Elements: text where a number belongs", textIn("Elements", "B:F,J:J,M:T,W:BA") + "-SUMPRODUCT((UPPER(TRIM(" + col("J") + "))=\"LR\")+(UPPER(TRIM(" + col("J") + "))=\"SR\"))", false),
+            new PipeWorkbookGui.Check("Elements: text where a number belongs", textIn("Elements", "B:F,J:J,M:T,W:BA") + "-SUMPRODUCT(" + string.Join("+", PipeWorkbookGui.RadiusNames.Select(rn => "(UPPER(TRIM(" + col("J") + "))=\"" + rn + "\")").ToArray()) + ")", false),
             new PipeWorkbookGui.Check("Elements: rows without From or To", "SUMPRODUCT(((" + col("B") + "=\"\")+(" + col("C") + "=\"\")>0)*(LEN(" + col("A") + "&" + col("D") + "&" + col("E") + "&" + col("F") + "&" + col("G") + ")>0))", false),
             new PipeWorkbookGui.Check("Elements: unknown Type, Section or Process",
                 unknown(col("G"), PipeWorkbookGui.LType, "") + "+" + unknown(col("H"), secList, "") + "+" + unknown(col("I"), procList, ""), false),

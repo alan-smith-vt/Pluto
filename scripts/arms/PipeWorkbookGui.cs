@@ -315,7 +315,8 @@ static class PipeWorkbookGui
 
     internal static int RefRows = 5000;      // how far rules look into the Elements sheet
 
-    static readonly string[] RadiusNames = { "LR", "SR", "LONG", "SHORT", "3D", "5D" };
+    // the bend radius names the reader takes (the cell rule, the dropdown's check and Start's count all accept them)
+    internal static readonly string[] RadiusNames = { "LR", "SR", "LONG", "SHORT", "3D", "5D" };
 
     // a bend radius CAESAR reads as no radius (a code 2 or 6-9): amber
     internal static string NoRadiusRule(string at)

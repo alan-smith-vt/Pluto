@@ -237,7 +237,7 @@ var FEAPipe = (function () {
             });
             startHighlight(group, mats);
         }
-        if (typeof log === 'function') log('Check: ' + it.text.slice(0, 160));
+        if (typeof log === 'function' && it.text) log('Check: ' + it.text.slice(0, 160));
         return true;
     }
 
