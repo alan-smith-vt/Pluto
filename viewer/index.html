@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="styles/sectionCut.css">
 <link rel="stylesheet" href="styles/predicates.css">
 <link rel="stylesheet" href="styles/groups.css">
+<link rel="stylesheet" href="styles/pipe.css">
 </head>
 <body>
 
@@ -40,6 +41,7 @@
         </div>
         <div class="fea-hint" id="featName">no features file</div>
         <div class="fea-hint" id="featHint"></div>
+        <div class="fea-hint" id="featSource" style="display:none;" title="Where the model came from (the sidecar's model.source): the file, when it was saved, when this preview was written"></div>
         <div class="fea-sub" style="margin-top:8px;">Models</div>
         <div id="modelRail"><div class="fea-hint">no model loaded</div></div>
         <div class="fea-row" style="margin-top:4px;">
@@ -63,6 +65,10 @@
             <span class="fea-label" style="width:auto;">Z up</span>
             <input type="checkbox" id="beamXray" class="fea-check" style="margin-left:14px;" title="Additive translucent beams: brightness counts overlapping walls, so coincident pipes glow double-bright">
             <span class="fea-label" style="width:auto;">X-ray</span>
+        </div>
+        <div class="fea-row">
+            <input type="checkbox" id="feaNodeNums" class="fea-check" title="Show node numbers on screen (a readable subset when dense: zoom in for more). Bend and valve points are not numbered.">
+            <span class="fea-label" style="width:auto;">Node numbers</span>
         </div>
         <div class="fea-row">
             <select id="findKind" class="fea-select" style="flex:0 0 74px;">
@@ -183,6 +189,42 @@
             </div>
             <div class="fea-hint" id="supRange" style="margin-top:4px;">&mdash;</div>
             <div class="fea-hint" style="margin-top:2px;">Symbols from the sidecar <em>supports</em>, as in CAESAR II: square plate through the pipe = anchor; arrows pointing at the pipe = restraints (two = both directions, one = one-way, e.g. a rest or a hanger below the pipe); arrows across the pipe = guide; arrows along its top = limit stop; double-headed arrow = rotation. A node group unticked in Groups &rsaquo; Nodes hides its supports. Deformed shape: a line runs from each support to its displaced node.</div>
+        </div>
+    </details>
+
+    <details class="fea-section fea-details" id="ldSection" style="display:none;" open>
+        <summary class="fea-sub" style="margin-bottom:0;">Loads</summary>
+        <div class="fea-details-body">
+            <div class="fea-row" style="margin-top:8px;">
+                <label class="fea-label" for="ldShow">Show</label>
+                <input type="checkbox" id="ldShow" class="fea-check" checked>
+                <span class="fea-hint" id="ldCount" style="margin-left:6px;"></span>
+            </div>
+            <div class="ld-kinds">
+                <label class="ld-k ld-force"><input type="checkbox" id="ldKForce" checked> Forces <span class="ld-n-force"></span></label>
+                <label class="ld-k ld-moment"><input type="checkbox" id="ldKMoment" checked> Moments <span class="ld-n-moment"></span></label>
+                <label class="ld-k ld-displacement"><input type="checkbox" id="ldKDisplacement" checked> Displacements <span class="ld-n-displacement"></span></label>
+                <label class="ld-k ld-uniform"><input type="checkbox" id="ldKUniform" checked> Uniform <span class="ld-n-uniform"></span></label>
+                <label class="ld-k ld-wind"><input type="checkbox" id="ldKWind" checked> Wind <span class="ld-n-wind"></span></label>
+            </div>
+            <div class="fea-row">
+                <label class="fea-label" for="ldVector">Vector</label>
+                <select id="ldVector" class="fea-select" title="One load vector (CAESAR's F1 / D1 / U1 ...) or all of them"></select>
+            </div>
+            <div class="fea-row">
+                <label class="fea-label" for="ldWind">Wind</label>
+                <select id="ldWind" class="fea-select" title="The model holds where wind acts (its shape factor), not its direction: CAESAR sets that in the load cases. Pick the direction to draw."></select>
+            </div>
+            <div class="fea-row">
+                <label class="fea-label" for="ldSize">Size</label>
+                <input type="range" id="ldSize" min="0.25" max="4" step="0.05" value="1" style="flex:1;" title="Symbol size, relative to the pipe">
+            </div>
+            <div class="fea-row">
+                <input type="checkbox" id="ldLabels" class="fea-check" checked>
+                <span class="fea-label" style="width:auto;">Labels (vector, value, unit)</span>
+            </div>
+            <div class="fea-hint" style="margin-top:2px;">From the sidecar <em>loads</em>: arrows pushing on the pipe = forces; double-headed arrows = moments (right-hand rule) and imposed rotations; arrows out from the pipe = imposed displacements; rows of arrows = uniform loads (teal: in g's) and wind. Lengths grow with the value. Hover for the load, click for every vector.</div>
+            <div class="fea-hint" id="ldNote" style="margin-top:4px;"></div>
         </div>
     </details>
 
@@ -398,6 +440,25 @@
     <div id="grTab" title="Groups">&#9641;</div>
 </div>
 
+<!-- ============================================================
+     CHECKS FLYOUT  --  tab under the groups tab. The pipe model's
+     build checks (sidecar `review`): click one to fly to it.
+     ============================================================ -->
+<div id="rvPanel" class="collapsed" style="display:none;">
+    <div id="rvBody">
+        <div class="fea-sub">Checks</div>
+        <div class="fea-hint" id="rvSource"></div>
+        <div id="rvSummary"></div>
+        <div class="fea-hint" style="margin-bottom:6px;">
+            What the build found before CAESAR sees the model: <b>errors</b> stop CAESAR's error checker,
+            <b>warnings</b> need a look, <b>notices</b> are written from CAESAR's documentation (check them
+            after the import), <b>info</b> is often intended. Click a check to fly to it.
+        </div>
+        <div id="rvList"></div>
+    </div>
+    <div id="rvTab" title="Checks">&#10003;</div>
+</div>
+
 <!-- Active-view caption, overlaid top-center on the canvas -->
 <div id="viewCaption">&mdash;</div>
 
@@ -423,6 +484,7 @@
     <div id="roValue" class="ro-value">&mdash;</div>
     <div class="ro-row"><span class="ro-key">Component</span><span id="roComp" class="ro-val">&mdash;</span></div>
     <div class="ro-row"><span class="ro-key">Element ID</span><span id="roElem" class="ro-val">&mdash;</span></div>
+    <div class="ro-row" id="roPropsRow" style="display:none;"><span class="ro-key">Properties</span><span id="roProps" class="ro-val">&mdash;</span></div>
     <div class="ro-row"><span class="ro-key">Nearest node</span><span id="roNode" class="ro-val">&mdash;</span></div>
     <div class="ro-row"><span class="ro-key">Corner nodes</span><span id="roCorners" class="ro-val">&mdash;</span></div>
     <div class="ro-row" id="roControllingRow" style="display:none;"><span class="ro-key">Controlling</span><span id="roControlling" class="ro-val">&mdash;</span></div>
@@ -452,6 +514,9 @@
 <script src="scripts/viewer.js"></script>
 <script src="scripts/viewerBeams.js"></script>
 <script src="scripts/supports.js"></script>
+<script src="scripts/labels.js"></script>
+<script src="scripts/loads.js"></script>
+<script src="scripts/pipe.js"></script>
 <script src="scripts/overlays.js"></script>
 <script src="scripts/features.js"></script>
 <script src="scripts/sectionCut.js"></script>

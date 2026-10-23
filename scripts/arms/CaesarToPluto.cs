@@ -70,6 +70,8 @@ using System.Text;
 //   2 component groups, written after the sizes so they paint over them: Valve, Flange, Flange pair,
 //     Rigid, Rigid link, Expansion joint, Reducer (shown) and Bend (the chords; hidden)
 //   3 line-number groups "Line <text>" (CAESAR's line number, carried forward), hidden
+//   3b by property (PipeSidecar.AddGroups): "T1 300 F", "P1 150 lb./sq.in." per vector, "Mat 106", "Insulation 2 in.",
+//     "Fluid 0.036 lb./cu.in.", "Wind shape 0.7", hidden
 //   4 node groups: "Tee (welding)" / "SIF" / "SIF/tee type <n>" from SIF&TEES (hidden), then LAST (the
 //     last enabled node group wins a node) one group per distinct support COMBINATION at a node,
 //     e.g. "+Y + GUI", "ANC", "X + Y w/gap": RESTRANT type names in a fixed order (ANC +Y +Z X Y Z GUI
@@ -82,6 +84,12 @@ using System.Text;
 //   DisplacementJson below: type, kind, direction, axis, gap, friction, stiffness, cnode, tag) plus "source".
 //   The node groups above colour and show / hide them. WriteSupports is set, so MergeFrom keeps an exporter
 //   item's id and hidden flag by name and the user's own items verbatim.
+// Sidecar sections of the pipe model (PipeSidecar, 2026-10-23): "properties" (CAESAR's fields per element), "loads"
+//   (forces / moments and imposed displacements per node, uniform loads and wind per run, every vector) and "review"
+//   (PipeReview's checks, the caller's messages and this export's warnings, each with its nodes, elements and beams),
+//   plus model.source (the file it came from). The model is the caller's (CaesarPreview, Build-Pipe.ps1 -Preview) or
+//   imported from the .cii (CaesarPipeImport.FromCaesar); an import that stops leaves them out, with a warning. These
+//   sections belong to the exporter: a re-export replaces them.
 // The groups are built first, then MergeFrom(previous sidecar) restyles them by name and appends the
 // user's own groups and sections (the SapToPluto order: MergeFrom matches against the groups present).
 //
@@ -98,6 +106,18 @@ public class CaesarOptions
     // display sizes, multiples of the pipe OD (the neutral file has no component shapes)
     public double ValveEndFactor = 1.5, ValveWaistFactor = 0.6;
     public double FlangeFactor = 1.6, RigidFactor = 1.15, RigidLinkFactor = 0.25, ExpJointFactor = 1.3;
+}
+
+// What a caller knows beyond the .cii text (Build-Pipe.ps1 -Preview): the pipe model the text was written from, where it
+// came from, and the build's own messages for the viewer's Checks panel. Without it (Run-Caesar.ps1) the export imports
+// the model from the .cii itself (CaesarPipeImport) and takes the source from the file.
+public class CaesarPreview
+{
+    public PipeModel Model;                   // null = import it from the CaesarModel
+    public string SourceJson;                 // model.source as a raw JSON object (PipeSidecar.SourceOf); null = from the .cii path
+    public readonly List<PipeReviewItem> Messages = new List<PipeReviewItem>();
+
+    public void AddMessage(string level, string code, string text) { Messages.Add(new PipeReviewItem(level, code, text)); }
 }
 
 public class CaesarExportResult
@@ -122,6 +142,8 @@ public class CaesarExportResult
     public int Restraints, Hangers, ImposedDisplacements, RestraintNodes, RestraintCombos, SupportNodesOffModel;
     public int Tees, Sifs;                  // welding-tee nodes / other SIF&TEES nodes
     public int Groups, SizeGroups, ComponentGroups, LineGroups, SifTeeGroups;
+    public int PropertyGroups, PropertyItems, LoadItems, ReviewItems, ReviewErrors, ReviewWarnings;   // the pipe model's sidecar sections (PipeSidecar)
+    public bool ModelRead;                  // a pipe model gave properties, loads and checks (imported or the caller's)
     public Dictionary<string, int> BeamsByKind = new Dictionary<string, int>();   // CaesarPieceKind -> beams
     public Dictionary<string, int> ComboNodes = new Dictionary<string, int>();    // support combination -> nodes (group order)
     public List<string> Warnings = new List<string>();
@@ -164,8 +186,11 @@ public class CaesarExportResult
             ? string.Format(CultureInfo.InvariantCulture, "  coordinates: max |coord| {0} {1}, not recentred", F(MaxAbsCoord), LengthUnit)
             : string.Format(CultureInfo.InvariantCulture, "  coordinates: max |coord| {0} {1}, recentred by ({2} {3} {4}) -> sidecar model.units.worldOffset",
                 F(MaxAbsCoord), LengthUnit, F(WorldOffset[0]), F(WorldOffset[1]), F(WorldOffset[2])));
-        sb.AppendLine(string.Format("  groups {0}: {1} sizes, {2} components, {3} lines, {4} SIF/tee, {5} support combinations",
-            Groups, SizeGroups, ComponentGroups, LineGroups, SifTeeGroups, RestraintCombos));
+        sb.AppendLine(string.Format("  groups {0}: {1} sizes, {2} components, {3} lines, {4} SIF/tee, {5} support combinations, {6} by property (T, P, material, insulation, fluid, wind; hidden)",
+            Groups, SizeGroups, ComponentGroups, LineGroups, SifTeeGroups, RestraintCombos, PropertyGroups));
+        sb.AppendLine(ModelRead
+            ? string.Format("  model: properties of {0} element(s), {1} load item(s), {2} check(s) ({3} error(s), {4} warning(s)) -> the viewer's Loads and Checks", PropertyItems, LoadItems, ReviewItems, ReviewErrors, ReviewWarnings)
+            : "  model: not read (no properties, loads or checks in the sidecar)");
         if (!string.IsNullOrEmpty(SidecarMerge)) sb.AppendLine("  " + SidecarMerge);
         sb.AppendLine("  bin      -> " + BinPath);
         sb.AppendLine("  features -> " + SidecarPath);
@@ -201,6 +226,8 @@ public class CaesarExportResult
         Prop(sb, "restraintNodes", RestraintNodes); Prop(sb, "restraintCombos", RestraintCombos); Prop(sb, "supportNodesOffModel", SupportNodesOffModel);
         Prop(sb, "tees", Tees); Prop(sb, "sifs", Sifs); Prop(sb, "groups", Groups); Prop(sb, "sizeGroups", SizeGroups);
         Prop(sb, "componentGroups", ComponentGroups); Prop(sb, "lineGroups", LineGroups); Prop(sb, "sifTeeGroups", SifTeeGroups);
+        Prop(sb, "propertyGroups", PropertyGroups); Prop(sb, "propertyItems", PropertyItems); Prop(sb, "loadItems", LoadItems);
+        Prop(sb, "reviewItems", ReviewItems); Prop(sb, "reviewErrors", ReviewErrors); Prop(sb, "reviewWarnings", ReviewWarnings);
         Prop(sb, "components", Components); Prop(sb, "supports", Supports); Prop(sb, "dispCases", DispCases); Prop(sb, "dispCasesDropped", DispCasesDropped);
         Prop(sb, "dispNodesFilled", DispNodesFilled); Prop(sb, "dispNodesMissing", DispNodesMissing);
         Prop(sb, "forceCases", ForceCases); Prop(sb, "stressCases", StressCases); Prop(sb, "segmentsMapped", SegmentsMapped);
@@ -214,6 +241,7 @@ public class CaesarExportResult
         Key(sb, "supportCombos"); sb.Append("{");
         foreach (var kv in ComboNodes) Prop(sb, kv.Key, kv.Value);
         sb.Append("}");
+        Prop(sb, "modelRead", ModelRead);
         Prop(sb, "sidecarMerge", SidecarMerge);
         Key(sb, "warnings"); sb.Append("[");
         for (int i = 0; i < Warnings.Count; i++) { if (i > 0) sb.Append(","); Str(sb, Warnings[i]); }
@@ -294,6 +322,12 @@ public static class CaesarToPluto
     // a model already read (Build-Pipe.ps1 -Preview reads back the text it built, without writing it first);
     // ciiPath only names the source in messages and the result
     public static CaesarExportResult Export(CaesarModel m, string ciiPath, string resultsPath, string outBase, string modelId, CaesarOptions options)
+    {
+        return Export(m, ciiPath, resultsPath, outBase, modelId, options, null);
+    }
+
+    // preview: the pipe model, its source and the build's messages (Build-Pipe.ps1 -Preview); null = from the .cii
+    public static CaesarExportResult Export(CaesarModel m, string ciiPath, string resultsPath, string outBase, string modelId, CaesarOptions options, CaesarPreview preview)
     {
         if (m == null) throw new ArgumentNullException("m");
         if (string.IsNullOrEmpty(outBase)) throw new Exception("CaesarToPluto: no output base path.");
@@ -494,6 +528,22 @@ public static class CaesarToPluto
         if (nonFinite > 0) res.Warnings.Add(nonFinite + " piece(s) with a node position that is not a number: left out");
         if (members.Count == 0) throw new Exception("CaesarToPluto: no pipe piece with a length in " + ciiPath + ".");
         foreach (var kv in res.BeamsByKind.Where(x => x.Value == 0).ToList()) res.BeamsByKind.Remove(kv.Key);
+        var elementBeams = new List<uint>[m.Elements.Count];                 // element index -> its drawn beams
+        foreach (int bid in beamOrder) (elementBeams[beamElement[bid]] ?? (elementBeams[beamElement[bid]] = new List<uint>())).Add((uint)bid);
+
+        // ---- the pipe model: the caller's, else imported from the .cii (properties, loads, checks) ----
+        PipeModel pm = preview != null ? preview.Model : null;
+        if (pm != null && pm.Elements.Count != m.Elements.Count)
+        {
+            res.Warnings.Add("the pipe model has " + pm.Elements.Count + " elements and the neutral file " + m.Elements.Count + ": properties and loads taken from the file");
+            pm = null;
+        }
+        if (pm == null)
+        {
+            try { pm = CaesarPipeImport.FromCaesar(m, ciiPath).Model; }
+            catch (Exception ex) { res.Warnings.Add("the model's properties, loads and checks are not in the sidecar: the import stopped (" + ex.Message + ")"); pm = null; }
+        }
+        res.ModelRead = pm != null;
 
         // ---- nodes (after the valve mid points joined the graph) ----
         var nodes = new Dictionary<int, Node>();
@@ -612,6 +662,9 @@ public static class CaesarToPluto
             res.LineGroups++;
         }
 
+        // 3b by property: temperatures and pressures per vector, material, insulation, fluid, wind (hidden)
+        res.PropertyGroups = PipeSidecar.AddGroups(sc, pm, m, elementBeams, used);
+
         // 4a SIF & tees (hidden)
         var bySif = new Dictionary<string, List<uint>>();
         var sifRank = new Dictionary<string, int>();
@@ -710,6 +763,20 @@ public static class CaesarToPluto
         }
         res.Supports = sc.Supports.Count;
 
+        // 6 the pipe model's sections: properties per element, loads, and the checks (the model's, the caller's
+        // messages, this export's warnings), each with the nodes and beams it is about; where the model came from
+        if (pm != null)
+        {
+            var review = PipeReview.Check(pm, g, m);
+            if (preview != null) review.AddRange(preview.Messages);
+            foreach (string w0 in res.Warnings) review.Add(new PipeReviewItem(DrawingNote(w0) ? "info" : "warning", "export", w0));
+            var counts = PipeSidecar.AddSections(sc, pm, m, elementBeams, review);
+            res.PropertyItems = counts.Properties; res.LoadItems = counts.Loads;
+            res.ReviewItems = counts.Review; res.ReviewErrors = counts.Errors; res.ReviewWarnings = counts.Warnings;
+        }
+        sc.SourceJson = preview != null && preview.SourceJson != null ? preview.SourceJson
+                      : PipeSidecar.SourceOf(ciiPath, "cii", null);
+
         // the previous sidecar is the user's layer: section cuts, predicates, hand-made groups and the
         // colour / enable / id of our own groups survive a re-export (groups first, then merge: SapToPluto)
         string scPath = outBase + ".features.json";
@@ -718,6 +785,14 @@ public static class CaesarToPluto
         File.WriteAllText(scPath, sc.ToJson(), new UTF8Encoding(false));
         res.SidecarPath = scPath;
         return res;
+    }
+
+    // an export warning about how the model is drawn, not about the model: CAESAR's own default bend attachment, the
+    // recentring of large coordinates, a same-size reducer drawn straight (the Checks panel lists them as info)
+    static bool DrawingNote(string w)
+    {
+        return w.IndexOf("CAESAR's default", StringComparison.Ordinal) >= 0 || w.StartsWith("coordinates reach ", StringComparison.Ordinal) ||
+               w.IndexOf("drawn straight, still in the Reducer group", StringComparison.Ordinal) >= 0;
     }
 
     // ---- results -----------------------------------------------------------------------------

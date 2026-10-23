@@ -405,6 +405,9 @@ var FEAFeatures = (function () {
         if (typeof updateViewCaption === 'function') updateViewCaption();
         // Support symbols read the `supports` section and colour / show by the node groups.
         if (window.FEASupports && FEASupports.onFeatures) FEASupports.onFeatures();
+        // The pipe model's loads, checks and properties (2026-10-23): read-only sections, drawn by loads.js / pipe.js.
+        if (window.FEALoads && FEALoads.onFeatures) FEALoads.onFeatures();
+        if (window.FEAPipe && FEAPipe.onFeatures) FEAPipe.onFeatures();
         needsRender = true;
     }
 

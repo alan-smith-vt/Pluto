@@ -50,6 +50,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 ```
 
 1. **Open the preview in the viewer** with **Choose files…** (Chrome or Edge), picking `job_v2.bin` and `job_v2.features.json` together. Tick **Auto-reload**: every save in Excel rebuilds the preview, and the viewer reads it again with the camera and the load case kept.
+   - **Check what you are about to export** (Stage D): the **Loads** panel draws every force, moment, imposed displacement, uniform load and wind by vector; the **Checks** tab (✓) lists what the build found (an unsupported piece, a branch without a tee, a bend with no room, a load off the model, layouts to check in CAESAR) and flies to each; hovering a pipe shows its size, T1, P1, material; **Node numbers** labels the nodes; the Model panel names the workbook and when it was saved.
 2. **`-Cii` says where the model stands** (`[review ]`): it is the one you previewed, it changed since the preview, or no preview was made.
 3. **Every read lists what the workbook changed** against the model it was written from (a compare by meaning): elements, nodes moved, restraints, SIFs, loads.
 
@@ -253,4 +254,3 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 ## Not yet
 
 - **A merge mode:** applying a workbook's edits onto a job CAESAR has changed since. Today the guard stops, and the way on is a new workbook from the changed job.
-- **Provenance in the viewer's status line** (Stage D, with the loads drawn).

@@ -673,6 +673,7 @@ var FEASectionCut = (function () {
         if (window.FEABeams && FEABeams.writeVis) FEABeams.writeVis(nodeKeep, keep ? boxTest : null);
         if (window.FEAFeatures && FEAFeatures.writeVis) FEAFeatures.writeVis(nodeKeep);
         if (window.FEASupports && FEASupports.writeVis) FEASupports.writeVis(nodeKeep);
+        if (window.FEALoads && FEALoads.writeVis) FEALoads.writeVis(nodeKeep);
         requestRender();
     }
 

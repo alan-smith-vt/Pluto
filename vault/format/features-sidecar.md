@@ -32,9 +32,14 @@ type is a viewer tab that owns one section of the envelope.
   "predicates":  { "version": 1, "items": [] },
   "sectionCuts": { "version": 1, "items": [] },
   "supports":    { "version": 1, "items": [] },
-  "springs":     { "version": 1, "items": [] }
+  "springs":     { "version": 1, "items": [] },
+  "properties":  { "version": 1, "units": {}, "items": [] },
+  "loads":       { "version": 1, "units": {}, "items": [] },
+  "review":      { "version": 1, "summary": "", "items": [] }
 }
 ```
+
+The last three (and `model.source`) are a pipe model's, written by the CAESAR export (below).
 
 Rules:
 - Every section is `{ version, items[] }`, versioned independently so predicates can
@@ -283,6 +288,78 @@ or by hand. Decision: [[vault/decisions/2026-10-03-imported-restraints|2026-10-0
   - Test: `viewer/tests/test_supports.js`.
 - **C#:** `FeaturesSidecar.AddSupport(name, nodeIds, dof, tags, extraJson)` with
   `WriteSupports = true`; `extraJson` carries the extension keys. See the merge rules below.
+
+### The pipe model: loads, properties, review, model.source (live 2026-10-23)
+
+The viewer is the confirmation step for a pipe model ([[vault/arms/pipe-workbook|pipe-workbook]]): it shows
+everything the model holds before CAESAR imports it. The CAESAR export (`CaesarToPluto` with
+`PipeSidecar.cs`) writes these sections from the pipe model: the caller's (`Build-Pipe.ps1 -Preview`, through
+`CaesarPreview`), or one imported from the `.cii` itself (`Run-Caesar.ps1`). Decision:
+[[vault/decisions/2026-10-23-pipe-model-in-viewer|2026-10-23-pipe-model-in-viewer]].
+
+```json
+"model": { "modelId": "pipe/line", "geometryHash": "sha256:…", "units": { "length": "in", "worldOffset": "0 0 0" },
+           "source": { "file": "line.xlsx", "kind": "xlsx", "bytes": 48213, "saved": "2026-10-23T10:41:07Z",
+                       "sha256": "…", "model": "…", "written": "2026-10-23T10:41:09Z" } },
+"properties": { "version": 1, "units": { "length": "in.", "diameter": "in.", "temperature": "F", "pressure": "lb./sq.in.", … },
+  "items": [ { "element": 3, "from": 30, "to": 40, "kind": "Bend", "name": "", "line": "",
+               "members": [{ "domain": "beams", "ids": [300, 301, 302] }],
+               "values": { "dx": 0, "dy": 0, "dz": 120, "length": 120, "od": 6.625, "wall": 0.28, "T": [300], "P": [150],
+                           "material": 106, "bend": { "radius": -4.0404, "named": "Short", "code": 4, "type": 0, "nodes": [["M", 35]] } } } ] },
+"loads": { "version": 1, "units": { "force": "lb.", "moment": "in.lb.", "length": "in.", "rotation": "deg", "uniform": "lb./in.", "g": "g's" },
+  "items": [
+    { "id": "caesar-force-40", "name": "F 40", "kind": "force", "nodeIds": [40], "elements": [3, 4],
+      "vectors": [{ "v": 1, "values": [0, -1200, 0, 0, 0, 3000] }] },
+    { "id": "caesar-displacement-200", "name": "D 200", "kind": "displacement", "nodeIds": [200],
+      "vectors": [{ "v": 2, "values": [null, -0.25, null, null, null, null] }] },
+    { "id": "caesar-uniform-1", "name": "U 10-60", "kind": "uniform", "elements": [1, 2, 3], "nodeIds": [10, 20, 30, 60],
+      "members": [{ "domain": "beams", "ids": [100, 200, 300] }], "vectors": [{ "v": 1, "values": [0, -5, 0], "g": false }] },
+    { "id": "caesar-wind-1", "name": "Wind 10-60", "kind": "wind", "elements": [1, 2, 3], "members": [ … ],
+      "wind": { "type": "wind", "shape": 0.7 } } ] },
+"review": { "version": 1, "summary": "0 error(s), 1 warning(s), 2 notice(s), 1 info",
+  "items": [ { "id": "r1", "level": "warning", "code": "tee-no-sif", "text": "3 elements meet at node 30 with no SIF / tee entry …",
+               "nodeIds": [30], "elements": [2, 3, 6], "members": [{ "domain": "beams", "ids": [200, 300, 600] }] } ] }
+```
+
+- **Values are in the job's units**, as CAESAR writes them. Each section's `units` gives CAESAR's own labels
+  once (`in.`, `lb./sq.in.`). Element numbers are CAESAR's input order; `members` are the element's beams in
+  the binary (element × 100 + piece).
+- **`model.source`**: where the model came from. `file` is the name only (no folder), `kind` is
+  `xlsx | toml | cii | json`, `saved` is the file's last write (UTC), `sha256` is the file's, `model` is the
+  model hash the runner's build stamp uses, and `written` is when this preview was made.
+- **`properties`**: one item per element. `values` holds what is set: deltas and length, OD / wall,
+  insulation, corrosion, `T` and `P` (T1… / P1…, the unused tail cut), material, E, Poisson, densities, and
+  `bend` (radius, the name of a coded radius, the code, `noRadius` for a code CAESAR reads as none, angle
+  nodes), `rigid` (weight, type), `expJoint` (stiffnesses, effective ID), `reducer` (the TO end), `uniform`,
+  `wind`.
+- **`loads`**: forces / moments and imposed displacements per node (vectors F1–F9 / D1–D9, six values each;
+  a free displacement DOF is `null`, an imposed 0 holds it). Uniform loads and wind per run of consecutive
+  elements with the same values (U1–U9 with the g flag; wind type and shape factor). Only vectors that carry
+  something are written. **Load cases are not in the model**: CAESAR builds them. Wind's direction and
+  speed are in CAESAR's load cases too, so the viewer asks which way to draw it.
+- **`review`**: the build's checks, errors first (`error | warning | notice | info`), each with the nodes,
+  elements and beams it is about. Codes: `unsupported`, `tee-no-sif`, `free-end`, `element-self`,
+  `element-zero`, `element-twice`, `off-model`, `cnode-off-model`, `bend-corner`, `bend-room`, `bend-code`
+  (`PipeReview.cs`); `layout-displacement`, `layout-wave`, `restraint-code`, `restraint-skew` (layouts from the
+  documentation: `CaesarNeutralWriter.NoticeItems`); `build` (the builder's or the workbook reader's
+  warnings); `export` (this export's own warnings; how the model is drawn is `info`).
+- **The exporter owns these sections.** A re-export replaces them rather than passing the previous copy
+  through (`FeaturesSidecar.Sections`), so they always match the model. The viewer never edits them; they
+  round-trip verbatim.
+- **Property groups**: the same export writes hidden element groups `T1 300 F`, `P1 150 lb./sq.in.`
+  (per vector and value, blue → red), `Mat 106`, `Insulation 2 in.`, `Fluid 0.036 lb./cu.in.`,
+  `Wind shape 0.7` (tags `caesar` + `temperature | pressure | material | insulation | fluid | wind`). Tick
+  one in Groups to see where a value applies.
+- **Viewer**:
+  - `loads.js` (`FEALoads`, the **Loads** panel): arrows pushing on the pipe for forces, double-headed arrows
+    for moments and imposed rotations, arrows out from the pipe for imposed displacements, rows of arrows for
+    uniform loads (teal when in g's) and wind. Lengths grow with the value. The panel filters by type and
+    vector, sets the size, the wind direction to draw, and labels.
+  - `pipe.js` (`FEAPipe`): the **Checks** flyout (a click flies to the item and flashes it; the tab counts
+    errors and warnings), the source line in the Model panel, the **Properties** row in the readout and a
+    pinned element's card (every field, the loads on it, the checks about it), and **Node numbers**.
+  - `labels.js` (`FEALabels`): screen labels, culled where they would overlap.
+  - Tests: `viewer/tests/test_loads.js`, `viewer/tests/test_review.js`.
 
 ### springs (planned)
 Same envelope, one item per spring: `{ id, name, nodeIds, dof, stiffness }`.

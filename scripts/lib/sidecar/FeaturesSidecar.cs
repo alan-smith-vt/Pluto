@@ -50,6 +50,15 @@ public class FeaturesSidecar
     // Sections we don't model, kept as raw JSON text: name -> json value.
     public readonly Dictionary<string, string> PassThrough = new Dictionary<string, string>();
 
+    // Sections an exporter writes whole (2026-10-23: the pipe model's loads, properties, review), as raw JSON text in
+    // write order: a re-export replaces the previous file's copy instead of passing it through. Written after supports.
+    public readonly List<KeyValuePair<string, string>> Sections = new List<KeyValuePair<string, string>>();
+    public void AddSection(string name, string json) { Sections.Add(new KeyValuePair<string, string>(name, json)); }
+    bool OwnSection(string name) { return Sections.Any(kv => kv.Key == name); }
+
+    // model.source (2026-10-23): where the model came from, a raw JSON object ({file, kind, saved, sha256, ...}); null = not written
+    public string SourceJson;
+
     // SUPPORTS (2026-10-03): only an exporter that models them sets WriteSupports. Then ToJson writes the
     // "supports" section and MergeFrom treats a previous one like the groups (exporter items by name keep
     // their id and hidden flag, user items are kept verbatim). Without it a previous "supports" section
@@ -113,7 +122,7 @@ public class FeaturesSidecar
         int sections = 0, userGroups = 0, styled = 0, userSupports = 0, supportsStyled = 0;
         foreach (var kv in root)
         {
-            if (kv.Key == "format" || kv.Key == "version" || kv.Key == "model" || kv.Key == "groups") continue;
+            if (kv.Key == "format" || kv.Key == "version" || kv.Key == "model" || kv.Key == "groups" || OwnSection(kv.Key)) continue;
             if (kv.Key == "supports" && WriteSupports)
             {
                 MergeSupports(kv.Value as Dictionary<string, object>, exporterTag, ser, ref userSupports, ref supportsStyled);
@@ -260,7 +269,9 @@ public class FeaturesSidecar
         sb.Append("\"geometryHash\": ").Append(Q(GeometryHash)).Append(", ");
         sb.Append("\"units\": {");
         sb.Append(string.Join(", ", Units.Select(kv => Q(kv.Key) + ": " + Q(kv.Value))));
-        sb.Append("}},\n");
+        sb.Append("}");
+        if (SourceJson != null) sb.Append(", \"source\": ").Append(SourceJson);
+        sb.Append("},\n");
         sb.Append("  \"groups\": {\"version\": ").Append(GroupsVersion).Append(", \"items\": [\n");
         for (int i = 0; i < Groups.Count; i++)
         {
@@ -316,8 +327,10 @@ public class FeaturesSidecar
             }
             sb.Append("  ]}");
         }
-        foreach (var kv in PassThrough)
+        foreach (var kv in Sections)
             sb.Append(",\n  ").Append(Q(kv.Key)).Append(": ").Append(kv.Value);
+        foreach (var kv in PassThrough)
+            if (!OwnSection(kv.Key)) sb.Append(",\n  ").Append(Q(kv.Key)).Append(": ").Append(kv.Value);
         sb.Append("\n}\n");
         return sb.ToString();
     }

@@ -85,6 +85,9 @@ test file from `sampleModel.js`, then open it back through the picker.
 | `geometryBuilder.js` | duplicate-vertex shell mesh build, tri/quad triangulation |
 | `beamGeometry.js` | extruded cross-section beam mesh (parametric sections), axis param for picking |
 | `viewerBeams.js` | beam-domain display layered on viewer.js: own component/range, neutral in envelope views, pick readout; kind `restraint` stays out of its component list |
+| `loads.js` | applied loads from the sidecar `loads` (`FEALoads`, Loads panel): forces, moments, imposed displacements and rotations, uniform-load and wind rows as instanced arrows; type / vector filters, size, wind direction, labels; readout + pin card with every vector |
+| `pipe.js` | the pipe model (`FEAPipe`): Checks flyout from the sidecar `review` (click to fly to an item), the model's source line, the element property readout row and pin card from `properties`, node-number labels |
+| `labels.js` | screen-space labels (`FEALabels`): node numbers and load values, placed after each render by priority with overlap culling |
 | `supports.js` | support symbols from the sidecar `supports` items (`FEASupports`, Supports panel): one instanced shape per restraint kind, coloured by node group / kind / restraint load, deflection lines, readout + pin card with the loads per load case |
 | `attributeUpdaters.js` | rewrite `cornerVals` on component/LC swap (only per-update path) |
 | `shaders.js` | bilinear vertex/fragment GLSL, colormap LUTs |
@@ -100,6 +103,30 @@ test file from `sampleModel.js`, then open it back through the picker.
 Three.js r128 and OrbitControls are vendored under `lib/`.
 
 ## Recent additions (newest first)
+
+The pipe model as a confirmation step (2026-10-23, branch `pipestress`, Stage D; decision
+[[vault/decisions/2026-10-23-pipe-model-in-viewer|2026-10-23-pipe-model-in-viewer]]):
+- **Loads panel** (under Supports, `loads.js`): the sidecar `loads` as arrows in the colours of the panel's
+  type toggles:
+  - forces push on the pipe, their tip on its surface;
+  - moments and imposed rotations are double-headed arrows out from the pipe (the right-hand rule);
+  - imposed displacements are arrows out from the pipe along the movement;
+  - uniform loads are rows of arrows along the loaded pipe (teal when in g's);
+  - wind is a row of arrows from the side the panel's Wind setting names (the model has no wind direction).
+  - Lengths grow with the value (0.4 to 1 of the largest of the kind). Filters by type and by load vector;
+    Size; Labels (vector, value, unit). Hover for the load; click for every vector at that node or on that run.
+- **Checks flyout** (✓ tab under Groups, `pipe.js`): the build's checks by level with counts as filter chips.
+  A click flies to the item's nodes and beams and flashes them. The tab turns amber on warnings and shows `!`
+  on errors.
+- **Source line** (Model panel, and the Checks header): the file the model came from, when it was saved, when
+  the preview was written.
+- **Properties**: hovering a pipe beam adds its element's summary to the readout (size, bend radius, T1, P1,
+  material, insulation, loads). Pinning it gives a card: geometry, temperatures and pressures by vector,
+  material and densities, the component's data, the loads on it and at its ends, and the checks about it.
+- **Node numbers** (Model panel): every real node's number on screen, a readable subset when dense
+  (`labels.js`). Bend and valve points are not numbered.
+- Tests: `viewer/tests/test_loads.js`, `viewer/tests/test_review.js`; the CAESAR readback checks the new
+  sections against the export's counts.
 
 Reload and Auto-reload (2026-10-22, branch `pipestress`, pipe workbook):
 - **Reload** (Model section) reads the model and its sidecar again from where they came from: the picked files' handles (Choose files…, Chrome / Edge) or the `?bin=` / `&features=` URLs. The camera and the load case stay (`loadModels(entries, { keepView: true })`).

@@ -43,7 +43,7 @@ powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\
 - **Output:** progress lines start with `[step]`; the last line is `RESULT {json}` (paths, load cases, counts, warnings). The export refuses a neutral file it could not read cleanly (a VERSION line that is not a number, or an element count that differs from CONTROL) and writes nothing.
 - **Open it:** pick the `.bin` and the `.features.json` together, or use `viewer/index.html?bin=…&features=…`. The groups and the support symbols live in the sidecar. CAESAR models are Y-up, and the file says so (META `upAxis`), so the viewer opens them Y-up without changing your Z-up setting.
 
-From C#: `CaesarToPluto.Export(cii, resultsOrNull, outBase, modelId[, CaesarOptions])` returns a `CaesarExportResult` with `Summary()`, `ToJson()` and `Warnings`. `Export(CaesarModel, ciiPath, resultsOrNull, outBase, modelId, options)` does the same from a model already read, e.g. one parsed in memory from a `.cii` text that was never saved (the pipe builder's `-Preview`).
+From C#: `CaesarToPluto.Export(cii, resultsOrNull, outBase, modelId[, CaesarOptions])` returns a `CaesarExportResult` with `Summary()`, `ToJson()` and `Warnings`. `Export(CaesarModel, ciiPath, resultsOrNull, outBase, modelId, options[, CaesarPreview])` does the same from a model already read, e.g. one parsed in memory from a `.cii` text that was never saved (the pipe builder's `-Preview`). A `CaesarPreview` hands over the pipe model, its source and the build's messages; without one the export imports the model from the `.cii` (`CaesarPipeImport.FromCaesar`) for the properties, loads and checks.
 
 ## In the viewer
 
@@ -68,6 +68,12 @@ From C#: `CaesarToPluto.Export(cii, resultsOrNull, outBase, modelId[, CaesarOpti
   - Hover a symbol for its restraints and `|F|` / `|M|`. Click to pin a card with the loads on the restraint in every load case, and the node displacement.
   - Unticking a support combination in Groups › Nodes hides its symbols.
 - **The restraint loads** do not appear in the Beams component list: on the pipe they would sit only on the beam ends at supports.
+- **The model itself** (2026-10-23, Stage D; [[vault/decisions/2026-10-23-pipe-model-in-viewer|decision]]):
+  - **Loads panel**: the job's forces, moments, imposed displacements, uniform loads and wind as arrows, by type and load vector;
+  - **Checks** (✓ tab): the model's checks, a click flies to each;
+  - **Properties**: hover a pipe beam for its element's size, T1, P1, material ...; pin it for every field;
+  - **Node numbers** (Model panel); the file it came from under the features file's name;
+  - hidden groups `T1 …`, `P1 …`, `Mat …`, `Insulation …`, `Fluid …`, `Wind shape …` to see where a value applies.
 
 ## What the files become
 
@@ -192,6 +198,9 @@ Code: `scripts/arms/CaesarNeutralReader.cs` → `CaesarGeometry.cs` → [`Caesar
 >   5. **one node group per restraint combination at a node**, e.g. `+Y + GUI`, `ANC`, `Y w/gap + Z w/gap`. They colour and show / hide the support symbols, and draw as markers.
 >
 >   After the groups comes the `supports` section.
+>
+>   Between the line groups and the node groups sit the hidden **property groups** (Stage D): `T1 300 F` and `P1 150 lb./sq.in.` per vector and value, `Mat 106`, `Insulation …`, `Fluid …`, `Wind shape …`.
+> - **The pipe model's sections** (`PipeSidecar.cs`, Stage D): `properties` (CAESAR's fields per element), `loads` (per node, and per run of elements with the same uniform load or wind), `review` (`PipeReview.cs` checks, the documentation-layout notices, the build's and the export's warnings; drawing notes as info) and `model.source`. The export owns them: a re-export replaces them. Spec: [[vault/format/features-sidecar|features-sidecar]].
 
 ## Fixture result
 
@@ -220,8 +229,9 @@ The generic job in `scripts/caesar/testdata/` (README there, with the scrub chec
   - displacements finite at every beam end, one value per node, and `|D|` = hypot;
   - restraint loads only at support nodes, and the same on every end there;
   - `|V|` / `|M|` = hypot of their parts, and forces on ≥ 95 % of beam ends;
-  - the `supports` items.
-- **Symbols:** `node viewer/tests/test_supports.js`.
+  - the `supports` items;
+  - the pipe model's sections: property groups hidden on real beams, property items covering every beam once in element order, load items well formed on real nodes and beams, review items ordered by level, `model.source`; with `--expect`, their counts against the RESULT (`propertyGroups`, `propertyItems`, `loadItems`, `reviewItems`, `reviewErrors`).
+- **Symbols:** `node viewer/tests/test_supports.js`; loads and checks: `test_loads.js`, `test_review.js`.
 - **On the production machine, before the first real job:** dot-source `scripts\lib\Config.ps1` in a Windows PowerShell 5.1 `-NonInteractive` session (the compile check). Then run the runner on the fixture (`-Results` with the fixture workbook), with the output outside the repo, and open it. The `.xls` / `.xlsb` path through Excel has only had its no-Excel error path tested so far.
 
 ## Next (stage 3)

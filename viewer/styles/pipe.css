@@ -1,0 +1,119 @@
+/* ============================================================
+   pipe.css  --  the pipe model in the viewer (2026-10-23): the
+   Checks flyout (right edge, tab under the groups tab), the Loads
+   panel's type toggles, and the screen labels (node numbers, load
+   values). Matches groups.css.
+   ============================================================ */
+
+/* sits directly under the groups tab (42px tab + 8px gap) */
+:root { --rv-top: calc(var(--gr-top) + 50px); }
+
+#rvPanel {
+    position: fixed;
+    right: 0;
+    top: var(--rv-top);
+    z-index: 14;
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: flex-start;
+    max-height: calc(100vh - var(--rv-top) - 12px);
+}
+#rvTab {
+    width: 30px;
+    height: 42px;
+    background: rgba(16, 16, 20, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    color: #8fd18f;
+    user-select: none;
+    position: relative;
+}
+#rvTab:hover { background: rgba(40, 40, 50, 0.94); }
+#rvTab.rv-warn { color: #f2b84b; }
+#rvTab.rv-bad { color: #ff6b6b; font-weight: bold; }
+#rvTab[data-count]:not([data-count=""])::after {
+    content: attr(data-count);
+    position: absolute; right: 2px; bottom: 2px;
+    font-size: 9px; color: #fff; background: #b8862b; border-radius: 6px; padding: 0 3px;
+}
+#rvTab.rv-bad[data-count]:not([data-count=""])::after { background: #c62828; }
+
+#rvBody {
+    width: 300px;
+    background: rgba(16, 16, 20, 0.94);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-right: none;
+    padding: 12px 14px;
+    max-height: calc(100vh - var(--rv-top) - 12px);
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+#rvPanel.collapsed #rvBody { display: none; }
+#rvSource { margin: 2px 0 6px; color: #b8c0d0; overflow-wrap: anywhere; }
+#rvSummary { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px; }
+.rv-chip {
+    font: 10px 'Segoe UI', Tahoma, sans-serif; padding: 2px 6px; border-radius: 9px; cursor: pointer;
+    background: rgba(255, 255, 255, 0.04); border: 1px solid rgba(255, 255, 255, 0.14); color: #777;
+}
+.rv-chip.on.rv-error   { color: #ff8a80; border-color: #c62828; }
+.rv-chip.on.rv-warning { color: #ffd479; border-color: #b8862b; }
+.rv-chip.on.rv-notice  { color: #90caf9; border-color: #1e88e5; }
+.rv-chip.on.rv-info    { color: #cfd8dc; border-color: #78909c; }
+
+#rvList { max-height: 58vh; overflow-y: auto; }
+.rv-row {
+    display: flex; gap: 7px; align-items: flex-start;
+    padding: 5px 4px; border-radius: 3px; cursor: pointer;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.rv-row:hover { background: rgba(255, 255, 255, 0.06); }
+.rv-row.sel { background: rgba(242, 184, 75, 0.12); }
+.rv-row.rv-static { cursor: default; }
+.rv-dot { flex: none; width: 8px; height: 8px; border-radius: 50%; margin-top: 4px; background: #78909c; }
+.rv-error .rv-dot   { background: #ef5350; }
+.rv-warning .rv-dot { background: #f2b84b; }
+.rv-notice .rv-dot  { background: #42a5f5; }
+.rv-body { flex: 1; min-width: 0; }
+.rv-text { font-size: 11px; color: #ddd; line-height: 1.35; }
+.rv-meta { font-size: 9.5px; color: #8a8a95; margin-top: 2px; font-family: 'Consolas', monospace; overflow-wrap: anywhere; }
+#calcCard .rv-card { font-size: 10.5px; margin: 3px 0; padding-left: 6px; border-left: 3px solid #78909c; color: #ccc; }
+#calcCard .rv-card.rv-error { border-left-color: #ef5350; }
+#calcCard .rv-card.rv-warning { border-left-color: #f2b84b; }
+#calcCard .rv-card.rv-notice { border-left-color: #42a5f5; }
+
+/* Loads panel: one toggle per load type, coloured like its symbols */
+.ld-kinds { display: flex; flex-wrap: wrap; gap: 2px 10px; margin: 2px 0 6px; font-size: 11px; color: #ccc; }
+.ld-k { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.ld-k input { margin: 0; }
+.ld-k span { color: #8a8a95; font-size: 10px; }
+.ld-force::before, .ld-moment::before, .ld-displacement::before, .ld-uniform::before, .ld-wind::before {
+    content: ''; width: 8px; height: 8px; border-radius: 2px; display: inline-block; order: -1;
+}
+.ld-force::before { background: rgb(239, 83, 80); }
+.ld-moment::before { background: rgb(171, 71, 188); }
+.ld-displacement::before { background: rgb(236, 64, 122); }
+.ld-uniform::before { background: rgb(102, 187, 106); }
+.ld-wind::before { background: rgb(100, 181, 246); }
+
+/* screen labels (labels.js): placed by transform after each render */
+#labelLayer { position: fixed; left: 0; top: 0; width: 0; height: 0; pointer-events: none; z-index: 2; }
+#labelLayer .lbl {
+    position: absolute; left: 0; top: 0; white-space: nowrap;
+    font: 10px/13px 'Consolas', monospace; color: #e6e9ef;
+    padding: 0 3px; border-radius: 2px; background: rgba(12, 12, 16, 0.55);
+}
+#labelLayer .lbl-node { color: #d7dde8; background: rgba(12, 12, 16, 0.45); }
+#labelLayer .lbl-load { color: #fff; }
+#labelLayer .lbl-force { background: rgba(198, 40, 40, 0.8); }
+#labelLayer .lbl-moment { background: rgba(123, 31, 162, 0.8); }
+#labelLayer .lbl-displacement { background: rgba(173, 20, 87, 0.8); }
+#labelLayer .lbl-uniform { background: rgba(46, 125, 50, 0.8); }
+#labelLayer .lbl-wind { background: rgba(21, 101, 192, 0.8); }

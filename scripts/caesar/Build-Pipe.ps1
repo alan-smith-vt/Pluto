@@ -188,11 +188,12 @@ function Build-Once {
     $script:sw.Reset(); $script:sw.Start()
     $r = @{ build = "null"; seed = $null; compare = "null"; notices = @(); preview = "null"; review = $null }
     $base = $null; $csv = $null
+    $script:buildWarnings = New-Object System.Collections.Generic.List[string]   # the build's warnings, for the preview's Checks panel
     if ($kind -eq "toml") {
         $b = [PipeBuilder]::Build($inPath, $Set)
         $model = $b.Model
         Lines "build" $b.Summary()
-        foreach ($w in $b.Warnings) { Say "warn" $w }
+        foreach ($w in $b.Warnings) { Say "warn" $w; $script:buildWarnings.Add($w) }
         $r.build = $b.ToJson()
         $csv = $b.NodesCsv()
         if ($Seed) { $r.seed = [CaesarPipeImport]::ApplySeed($model, (Full $Seed), $true); Say "seed" $r.seed }
@@ -201,14 +202,14 @@ function Build-Once {
         $model = $imp.Model
         $base = ([CaesarPipeImport]::FromCii($inPath)).Model
         Lines "import" $imp.Summary()
-        foreach ($w in $imp.Warnings) { Say "warn" ("reader: " + $w) }
+        foreach ($w in $imp.Warnings) { Say "warn" ("reader: " + $w); $script:buildWarnings.Add("reader: " + $w) }
         $r.build = $imp.ToJson()
     } elseif ($kind -eq "xlsx") {
         $wb = [PipeWorkbook]::Read($inPath)
         $model = $wb.Model
         $base = $wb.Base
         Lines "read" $wb.Summary()
-        foreach ($w in $wb.Warnings) { Say "warn" $w }
+        foreach ($w in $wb.Warnings) { Say "warn" $w; $script:buildWarnings.Add($w) }
         $r.build = $wb.ToJson()
     } else {
         $model = [PipeModelJson]::Read([IO.File]::ReadAllText($inPath))
@@ -257,7 +258,13 @@ function Build-Once {
         $sidecar = $outBase + ".features.json"
         if (Test-Path -LiteralPath $sidecar -PathType Leaf) { Copy-Item -LiteralPath $sidecar -Destination ($tmp + ".features.json") -Force }
         $cm = [CaesarNeutralReader]::ParseText([CaesarNeutralWriter]::ToText($model))
-        $p = [CaesarToPluto]::Export($cm, ($outBase + ".cii"), $null, $tmp, $ModelId, (New-Object CaesarOptions))
+        # the viewer's confirmation step: the model itself (properties, loads, checks), where it came from, and this
+        # build's own messages for the Checks panel
+        $pv = New-Object CaesarPreview
+        $pv.Model = $model
+        $pv.SourceJson = [PipeSidecar]::SourceOf($inPath, $kind, $modelHash)
+        foreach ($w in $script:buildWarnings) { $pv.AddMessage("warning", "build", $w) }
+        $p = [CaesarToPluto]::Export($cm, ($outBase + ".cii"), $null, $tmp, $ModelId, (New-Object CaesarOptions), $pv)
         Move-Item -LiteralPath ($tmp + ".bin") -Destination ($outBase + ".bin") -Force
         Move-Item -LiteralPath ($tmp + ".features.json") -Destination $sidecar -Force
         Lines "preview" ($p.Summary() -replace [regex]::Escape($tmp), $outBase)

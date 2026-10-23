@@ -361,6 +361,64 @@ const COMPONENTS = ['Valve', 'Flange', 'Flange pair', 'Rigid', 'Rigid link', 'Ex
       console.log('support items: ' + cz.length + ' caesar, ' + (its.length - cz.length) + ' other; restraints ' +
         Object.keys(kindCount).map(k => k + ' ' + kindCount[k]).join(', '));
     }
+    // the pipe model (stage D, 2026-10-23): property groups hidden on real beams; properties, loads and review sections;
+    // model.source
+    const propTags = ['temperature', 'pressure', 'material', 'insulation', 'fluid', 'wind'];
+    const pgs = mine.filter(g => propTags.some(t => g.tags.indexOf(t) >= 0));
+    let pgBad = 0;
+    pgs.forEach(g => g.members.forEach(mm => (mm.ids || []).forEach(id => { if (!beamIdx.has(id)) pgBad++; })));
+    dflt(pgs.every(g => g.hidden === true), pgs.length + ' property groups (T, P, material, insulation, fluid, wind) hidden');
+    assert(pgBad === 0, 'property group members are real beams');
+    assert(pgs.every(g => sup.every(n => pos(g) < pos(n))), 'property groups before the support node groups');
+    if (ec && ec.propertyGroups !== undefined) assert(pgs.length === ec.propertyGroups, 'property groups = RESULT counts.propertyGroups');
+    if (sc.properties || (ec && ec.propertyItems > 0)) {
+      const pr = sc.properties, its2 = (pr && pr.items) || [];
+      assert(pr && pr.version === 1 && pr.units && its2.length > 0, 'properties section v1 with units and items');
+      const cov = new Map();
+      let badEl = 0;
+      its2.forEach((it, k) => {
+        if (it.element !== k + 1 || !(it.from > 0) || !(it.to > 0) || !it.kind || !it.values || !(it.values.od > 0)) badEl++;
+        (it.members || []).forEach(mm => (mm.ids || []).forEach(id => cov.set(id, (cov.get(id) || 0) + 1)));
+      });
+      let pm = 0, p2 = 0, pu = 0;
+      for (const id of beamIdx.keys()) { const c = cov.get(id) || 0; if (c === 0) pm++; if (c > 1) p2++; }
+      for (const id of cov.keys()) if (!beamIdx.has(id)) pu++;
+      assert(badEl === 0, 'property items numbered 1..n in element order, each with from / to / kind / OD (' + badEl + ' not)');
+      assert(pm === 0 && p2 === 0 && pu === 0, 'property items cover every beam exactly once (missing ' + pm + ', twice ' + p2 + ', unknown ' + pu + ')');
+      if (ec) assert(its2.length === ec.propertyItems, 'property items = RESULT counts.propertyItems (' + ec.propertyItems + ')');
+    }
+    if (sc.loads || (ec && ec.loadItems > 0)) {
+      const ld = sc.loads, li = (ld && ld.items) || [];
+      assert(ld && ld.version === 1 && ld.units && Array.isArray(ld.items), 'loads section v1 with units');
+      let bad = 0;
+      li.forEach(it => {
+        const vs = it.vectors || [];
+        if (it.kind === 'force' || it.kind === 'displacement') {
+          if (!(it.nodeIds && it.nodeIds.length === 1) || !vs.length || vs.some(v => !(v.v >= 1 && v.v <= 9) || v.values.length !== 6)) bad++;
+        } else if (it.kind === 'uniform') {
+          if (!vs.length || vs.some(v => !(v.v >= 1 && v.v <= 9) || v.values.length !== 3 || typeof v.g !== 'boolean')) bad++;
+          if ((it.members || []).some(mm => (mm.ids || []).some(id => !beamIdx.has(id)))) bad++;
+        } else if (it.kind === 'wind') {
+          if (!it.wind || !(it.wind.shape >= 0)) bad++;
+          if ((it.members || []).some(mm => (mm.ids || []).some(id => !beamIdx.has(id)))) bad++;
+        } else bad++;
+      });
+      assert(bad === 0, li.length + ' load items: kind force / displacement (one node, vectors 1-9 x 6) / uniform (vectors x 3, g flag) / wind (shape), beams real (' + bad + ' bad)');
+      if (ec) assert(li.length === ec.loadItems, 'load items = RESULT counts.loadItems (' + ec.loadItems + ')');
+      console.log('loads: ' + ['force', 'displacement', 'uniform', 'wind'].map(k => k + ' ' + li.filter(i => i.kind === k).length).join(', '));
+    }
+    if (sc.review || (ec && ec.reviewItems > 0)) {
+      const rv = sc.review, ri = (rv && rv.items) || [];
+      const rank = { error: 0, warning: 1, notice: 2, info: 3 };
+      assert(rv && rv.version === 1 && typeof rv.summary === 'string', 'review section v1 with a summary');
+      assert(ri.every(r => rank[r.level] !== undefined && r.text && r.id), 'review items: a known level, a text and an id each');
+      assert(ri.every((r, k) => k === 0 || rank[ri[k - 1].level] <= rank[r.level]), 'review items ordered error, warning, notice, info');
+      assert(ri.every(r => (r.members || []).every(mm => (mm.ids || []).every(id => beamIdx.has(id)))), 'review members are real beams');
+      if (ec) assert(ri.length === ec.reviewItems && ri.filter(r => r.level === 'error').length === ec.reviewErrors, 'review items / errors = RESULT counts');
+      console.log('review: ' + rv.summary);
+    }
+    if (sc.model.source) assert(typeof sc.model.source.file === 'string' && typeof sc.model.source.written === 'string', 'model.source names the file and when it was written');
+
     console.log('groups: ' + names.length + ' caesar (' + sizes.length + ' sizes, ' + comps.length + ' components, ' + lines.length +
       ' lines, ' + sif.length + ' SIF/tee, ' + sup.length + ' supports), ' + (items.length - mine.length) + ' other');
   }

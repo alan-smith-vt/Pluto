@@ -7,7 +7,7 @@ reads v4 and v3 through `viewer/scripts/format/pluto.js`, renders per-corner she
 and extruded beams, and hosts the user-authored features (groups, predicates, section cuts)
 that round-trip through the sidecar.
 
-- [[vault/viewer/Viewer overview|Viewer overview]] — what the viewer does today: predicates flyout, beam rendering, geometry-only mode, Color by groups, adaptive facets, Z-up. Headless test recipes.
+- [[vault/viewer/Viewer overview|Viewer overview]] — what the viewer does today: predicates flyout, beam rendering, geometry-only mode, Color by groups, adaptive facets, Z-up, support symbols, reload, and the pipe model's loads, checks, properties and node numbers. Headless test recipes.
 - [[vault/viewer/model-rail|model-rail]] — several models in one scene: the Models rail, overlays at true coordinates with their own sidecar groups (stage 1 done 2026-10-02); stages 2–3 (active-model switching, cuts across models) as tasks; open: the `worldOffset` path bug.
 - [[vault/viewer/old-viewer-merge-plan|old-viewer-merge-plan]] — porting the old production-side viewer's modules: Phase A predicates (done 2026-09-01, awaiting the user's browser check), Phase B section-cut persistence (next), Phase C reconciliation items.
 

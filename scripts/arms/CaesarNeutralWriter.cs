@@ -855,15 +855,40 @@ public static class CaesarNeutralWriter
     // Forces / moments, uniform loads and wind are confirmed by a CAESAR 15.01 export; wave data is not.
     public static List<string> Notices(PipeModel m)
     {
-        var n = new List<string>();
-        int d = m.Displacements.Count(x => x.Raw == null);
-        int wv = m.Elements.Count(e => e.Wind != null && e.Wind.Raw == null && (e.Wind.Type == 1 || e.Wind.AddedMass != 0 || e.Wind.Lift != 0 || e.Wind.MarineGrowth != 0 || e.Wind.MarineGrowthDensity != 0));
-        if (d > 0) n.Add(d + " imposed displacement entr" + (d == 1 ? "y" : "ies") + " written in the DISPLMNT layout CAESAR's documentation and 11.00 jobs show, in 15.01's number format: check them in CAESAR after the import");
-        if (wv > 0) n.Add(wv + " wave entr" + (wv == 1 ? "y" : "ies") + " (WIND type 1 or wave data) written in CAESAR's documented layout, which no CAESAR-written file here has shown yet: check them in CAESAR after the import");
-        var codes = Restraints(m).Where(r => r.Raw == null && Array.IndexOf(SeenCodes, r.Code) < 0).Select(r => r.Type + " (" + r.Code + ")").Distinct().ToList();
-        if (codes.Count > 0) n.Add("restraint type(s) " + string.Join(", ", codes.ToArray()) + " written with the codes of CAESAR's documentation, which no CAESAR-written file here has shown yet: check them in CAESAR after the import");
-        if (Restraints(m).Any(r => r.Raw == null && r.Cosines != null))
-            n.Add("skewed restraints (off the global axes) written as CAESAR writes an axis restraint, type X / RX with the direction's cosines, which no CAESAR-written file here has shown yet: check them after the import");
+        return NoticeItems(m).Select(x => x.Text).ToList();
+    }
+
+    // the same, with the nodes and elements each is about (the viewer's Checks panel, PipeReview)
+    public static List<PipeReviewItem> NoticeItems(PipeModel m)
+    {
+        var n = new List<PipeReviewItem>();
+        var d = m.Displacements.Where(x => x.Raw == null).ToList();
+        var wv = Enumerable.Range(0, m.Elements.Count).Where(i =>
+        {
+            var e = m.Elements[i];
+            return e.Wind != null && e.Wind.Raw == null && (e.Wind.Type == 1 || e.Wind.AddedMass != 0 || e.Wind.Lift != 0 || e.Wind.MarineGrowth != 0 || e.Wind.MarineGrowthDensity != 0);
+        }).ToList();
+        if (d.Count > 0)
+            n.Add(new PipeReviewItem("notice", "layout-displacement", d.Count + " imposed displacement entr" + (d.Count == 1 ? "y" : "ies") +
+                " written in the DISPLMNT layout CAESAR's documentation and 11.00 jobs show, in 15.01's number format: check them in CAESAR after the import")
+                .WithNodes(d.Select(x => x.Node)));
+        if (wv.Count > 0)
+            n.Add(new PipeReviewItem("notice", "layout-wave", wv.Count + " wave entr" + (wv.Count == 1 ? "y" : "ies") +
+                " (WIND type 1 or wave data) written in CAESAR's documented layout, which no CAESAR-written file here has shown yet: check them in CAESAR after the import")
+                .WithElements(wv.Select(i => i + 1)));
+        List<PipeModelRestraint> all;
+        try { all = Restraints(m); }
+        catch (InvalidOperationException) { all = new List<PipeModelRestraint>(m.Restraints); }
+        var unseen = all.Where(r => r.Raw == null && Array.IndexOf(SeenCodes, r.Code) < 0).ToList();
+        if (unseen.Count > 0)
+            n.Add(new PipeReviewItem("notice", "restraint-code", "restraint type(s) " + string.Join(", ", unseen.Select(r => r.Type + " (" + r.Code + ")").Distinct().ToArray()) +
+                " written with the codes of CAESAR's documentation, which no CAESAR-written file here has shown yet: check them in CAESAR after the import")
+                .WithNodes(unseen.Select(r => r.Node)));
+        var skew = all.Where(r => r.Raw == null && r.Cosines != null).ToList();
+        if (skew.Count > 0)
+            n.Add(new PipeReviewItem("notice", "restraint-skew",
+                "skewed restraints (off the global axes) written as CAESAR writes an axis restraint, type X / RX with the direction's cosines, which no CAESAR-written file here has shown yet: check them after the import")
+                .WithNodes(skew.Select(r => r.Node)));
         return n;
     }
 

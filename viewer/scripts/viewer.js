@@ -359,6 +359,7 @@ function animate() {
     if (needsRender) {
         renderer.render(scene, camera);
         if (viewCube) viewCube.render();
+        if (window.FEALabels) FEALabels.update();      // node numbers, load labels: placed after each render
         needsRender = false;
     }
 }
@@ -646,6 +647,8 @@ async function loadModels(entriesIn, opts) {
 
         if (window.FEABeams) FEABeams.onModelLoaded(model);
         if (window.FEASupports) FEASupports.onModelLoaded();   // before features: its sync draws the symbols
+        if (window.FEALoads) FEALoads.onModelLoaded();         // the same for the load symbols
+        if (window.FEAPipe) FEAPipe.onModelLoaded();
         // Beam-only file (CAESAR / frame-only exports): the shell-only controls are
         // inert, so they hide and the Beams panel carries the field (viewer.css).
         document.body.classList.toggle('beam-only',
@@ -721,6 +724,8 @@ function disposeCurrentModel() {
     document.body.classList.remove('beam-only');
     if (window.FEABeams) FEABeams.onModelCleared();
     if (window.FEASupports) FEASupports.onModelCleared();
+    if (window.FEALoads) FEALoads.onModelCleared();
+    if (window.FEAPipe) FEAPipe.onModelCleared();
     if (window.FEAFeatures) FEAFeatures.onModelCleared();
     if (window.FEASectionCut) FEASectionCut.onModelCleared();
     if (window.FEAPredicates) FEAPredicates.onModelCleared();
@@ -1681,6 +1686,9 @@ function feaPick(clientX, clientY) {
     // support symbols (sidecar supports): a symbol in front of the pipe wins
     var spHit = window.FEASupports ? FEASupports.pick(feaRaycaster) : null;
     if (spHit && (!hit || spHit.distance < hit.distance)) hit = spHit;
+    // load symbols (sidecar loads), likewise
+    var ldHit = window.FEALoads ? FEALoads.pick(feaRaycaster) : null;
+    if (ldHit && (!hit || ldHit.distance < hit.distance)) hit = ldHit;
     return hit;
 }
 
@@ -1719,6 +1727,7 @@ function roPosText(p) {
 })();
 
 function clearReadout() {
+    if (window.FEAPipe) FEAPipe.clearReadout();
     elRoValue.textContent = '—';
     elRoValue.className = 'ro-value';
     elRoElem.textContent = '—';
@@ -1742,9 +1751,11 @@ function showReadout(clientX, clientY) {
 
     var hit = feaPick(clientX, clientY);
     if (!hit) { clearReadout(); return null; }
+    if (window.FEAPipe) FEAPipe.clearReadout();
     if (hit.overlay) { FEAOverlays.fillReadout(hit); return hit; }
     if (hit.support) { FEASupports.fillReadout(hit); return hit; }
-    if (hit.beam) { FEABeams.fillReadout(hit); return hit; }
+    if (hit.load) { FEALoads.fillReadout(hit); return hit; }
+    if (hit.beam) { FEABeams.fillReadout(hit); if (window.FEAPipe) FEAPipe.fillBeamReadout(hit.elem); return hit; }
     var q = FEAQuery.query({
         model: feaModel, buildResult: feaBuild,
         lcData: inStr ? feaModel.strData : feaLCData,
@@ -1863,6 +1874,8 @@ renderer.domElement.addEventListener('pointerup', function (e) {
             if (s > 0) feaMarker.scale.setScalar(s);
             setPinned(true);
             if (hit.support) FEASupports.showPinCard(hit);     // restraints + loads per LC
+            else if (hit.load) FEALoads.showPinCard(hit);      // every vector of the load
+            else if (hit.beam && window.FEAPipe && FEAPipe.hasProperties()) FEAPipe.showBeamCard(hit);   // the element's fields
             else if (lastQuery) {
                 if (inDsrMode()) showCalcCard(lastQuery);       // includes strengths
                 else showPinCard(lastQuery);
