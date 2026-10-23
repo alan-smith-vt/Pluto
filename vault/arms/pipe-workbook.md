@@ -17,9 +17,18 @@ A pipe-stress model as an Excel workbook you edit, built back into the model by 
 - **An unedited workbook gives back its source exactly.** For a CAESAR job, that is the `.cii` byte for byte: what the sheets do not show is carried as written ([[vault/format/pipe-model|pipe-model]]).
 - **Requirements:** Windows PowerShell 5.1 and C# 5 through `Config.ps1`. Excel is needed only to edit the workbook; nothing here opens Excel.
 
+The workbook is also the form you edit the model in:
+- **Guidance:** coloured headers by kind of column, a note on every header, a hint on every input cell, and dropdowns.
+- **Highlighting:** red where the build would stop, amber where a look is worth it.
+- **A Start page** with live checks.
+- **A 3D View:** a chart of the model that follows every edit.
+
 Code:
 - `scripts/arms/PipeWorkbook.cs`: the sheets, both ways.
-- `scripts/lib/writers/XlsxWriter.cs` (`XlsxBook`): a plain OOXML writer, with no document properties and a fixed entry time, so the same model gives the same bytes.
+- `scripts/arms/PipeWorkbookGui.cs`: the form: column kinds, hints, rules, the Start page, the 3D View and its formula sheets.
+- `scripts/lib/writers/XlsxWriter.cs` (`XlsxBook`): a plain OOXML writer:
+  - styles, formulas, conditional formatting, data validations with hints, notes, links, merged cells, auto-filters and XY charts;
+  - no document properties and a fixed entry time, so the same model gives the same bytes.
 - The reader is the CAESAR arm's `CaesarWorkbook`. It reports error values and formulas with no saved value by their address.
 
 **Status: verified on Linux (2026-10-22), still `draft`.** Still to do on the production machine:
@@ -57,8 +66,10 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > | Uniform / Wind | element, or a range of elements with the same values | Element (`E4`, a range `E3:E9`, or blank with From and To), vector, UX UY UZ, in g's / type, shape factor, wave data |
 > | Joints | joint | Id, node, CNODE, kind, frame (pipe / global), DOFs (`axial gap=0.125 k=5000; shear; torsion; bending gap=2`), SIF, tag |
 > | Coords | COORDS entry | node, X Y Z |
-> | Nodes, Carried, Help | — | read-only: rebuilt on every export, never read |
-> | Lists (hidden), `_pluto` (very hidden) | — | dropdown sources; the base model as exact JSON and its fingerprint |
+> | Start | — | the landing page: how to use the workbook, links to the sheets with their row counts, the live checks, the colour key, a reference |
+> | 3D View | — | the model drawn live; its controls (view, highlight, labels, restraints), figures, key |
+> | Nodes, Carried | — | read-only: rebuilt on every export, never read |
+> | Lists, PlotCalc, PlotPts (hidden); `_pluto` (very hidden) | — | dropdown sources; the 3D View's formulas (one row per element) and the chart's points; the base model as exact JSON and its fingerprint |
 >
 > - **Units are the job's.** Each header says which (`DX (in)`).
 > - **Sections and Processes** are named from what they hold (`8in STD ins2`, `T300 P150`).
@@ -124,6 +135,58 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > - **Unsaved features:** Auto-reload waits while the features have unsaved edits, and says why; a manual Reload asks first.
 > - **The plain file input** (browsers without the File System Access API) gives snapshots that cannot be read again: Reload says so.
 
+> [!info]- The workbook as a form
+> - **Headers** are coloured by kind of column; the Start sheet's colour key explains them.
+>   - Kinds: Ids and nodes, geometry, properties, bends, components, loads, names, overrides, read-only.
+>   - Each header carries a **note** (hover for the red corner) explaining the column.
+> - **Every input column has a hint and a rule**: the hint shows when a cell is selected, and the rule gives a warning that can be overridden.
+>   - **Number columns** take numbers. Positive-only columns, whole numbers, node numbers and cosines (−1..1) each have their own rule.
+>   - **Dropdowns:**
+>     - with a warning for a value not on the list: element type, bend type, restraint type, SIF type, load vector, In g's, wind type, joint frame, vertical axis;
+>     - free entry allowed: Section, Process, joint kind;
+>     - the bend radius takes a number, `LR` or `SR`.
+> - **Highlighting (conditional formatting):**
+>   - **Red** = the build would refuse it:
+>     - text or an error where a number belongs;
+>     - a value not on its list, an unknown Section / Process, an unknown element Id or range (Uniform, Wind);
+>     - a missing From / To, From = To, a missing section on the first row;
+>     - a reducer without OD2 / Wall2, bend nodes without `angle:node`;
+>     - a vector outside 1–9, the same node and vector twice;
+>     - a duplicate section or process name, a cosine above 1.
+>   - **Amber** = worth a look: a node no element has (bend nodes count), a copied Id, a zero-length element.
+> - **Start's checks** count those cells live: error values; text where a number belongs (per sheet); rows without From / To; unknown names and types; unknown element Ids; vectors outside 1–9; nodes on no element; Ids used twice. Each shows OK, check (amber) or fix (red).
+> - **Kept as before:** the input sheets keep their columns, values and order, so the reader is unchanged. Start, 3D View, Nodes, Carried and the hidden sheets are never read. Only the input sheets' cells are read, so the plot's formulas never trip the "formula with no saved value" check. The workbook asks Excel to calculate everything when it opens.
+
+> [!info]- The 3D View
+> - **Controls:**
+>   - **View:** Iso (CAESAR's), Plan, Front, Side, or Custom with an azimuth and elevation.
+>   - **Highlight element:** an Id, drawn thick and orange with a marker; Figures names its nodes, length and type.
+>   - **Node numbers:** yes / no. Labels taken from cells need Excel 2013 or later; LibreOffice does not show them.
+>   - **Restraints:** yes / no.
+> - **Drawn:**
+>   - the pipe;
+>   - rigids, valves and flanges as thick dark lines;
+>   - expansion joints dashed green;
+>   - bends as curves with their radius (LR / SR from the section's OD, through a nominal-size table);
+>   - anchors as squares, vertical supports as triangles, other restraints as diamonds;
+>   - an X / Y / Z triad.
+>
+>   Figures: elements drawn, rows not drawn, pipe length, extents.
+> - **How it is computed** (PlotCalc, one row per Elements row; all plain Excel 2007 functions, no macros, no array formulas):
+>   - **Columns** are found by header name, so the sheet follows reordered columns.
+>   - **Positions** follow CAESAR's rules. A From node is where an element above reached it, else its Coords entry, else where the element above ended. A bend's element runs to the corner and the next element starts there, trimmed by the bend's tangent.
+>   - **Backward branches:** a piece of the model that meets an already placed piece further down the sheet (a branch entered from its far end) is moved onto it, in two passes.
+>   - **Projection:** azimuth, then elevation, with Z-up jobs turned first. The chart is square and a hidden square frame keeps both scales equal.
+> - **Limits:**
+>   - nodes on a bend's curve (M, angle nodes) are not drawn;
+>   - a coded CAESAR radius is drawn as a corner until its code is confirmed;
+>   - the formula rows end 300 elements past the job's count, so a much longer model needs the workbook written again (`-Xlsx`);
+>   - where a loop of the model does not close, the place it is closed may differ from Pluto's viewer by that gap;
+>   - the workbook is about 0.4–0.8 MB (the formulas).
+> - **Two LibreOffice quirks, worked around:**
+>   - It drops line segments when a chart has a manual plot-area layout, so the chart keeps its automatic layout and the key is in cells.
+>   - It merges points closer than about 0.01 mm even across the empty row between elements, so each element's first point is moved by 0.1 % of the frame (under the line's width).
+
 ## Verification (2026-10-22, Linux)
 
 - **Round trips:** workbook → model is exact (the same model fingerprint), and the `.cii` is unchanged, for:
@@ -170,6 +233,25 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
   - Chromium: a rebuilt model (17 → 18 beams) picked up by Auto-reload in about 4 s, the camera unmoved, no errors;
   - all other viewer tests.
 - **Not checked here:** Excel itself (no Excel on Linux; LibreOffice here could not load files). openpyxl reads the structure as intended: sheet states, frozen panes, lists and the collapsed group.
+
+## Verification of the form (2026-10-23, Linux)
+
+- **Schema:** 11 workbooks are valid against Excel's schemas (Microsoft's Open XML SDK validator, Office 2013): the samples, the fixture, a job exported by CAESAR 15.01, the TOML configs, the template.
+- **The 3D View's formulas, recalculated by LibreOffice**, against Pluto's geometry on the same 11 models:
+  - every element end and every bend's near and far point agree to 10⁻⁴ (fixture: 125 element ends, 13 bends, within 10⁻¹¹), except for:
+    - the `.cii`'s 7-digit COORDS (≤ 6×10⁻⁴), where the workbook holds the exact value;
+    - one public sample whose loop misses by 8.4 mm, closed 6 mm differently.
+  - Z-up, metric, a backward branch, and branches from Coords are all covered.
+- **Rendered by LibreOffice** (PDF / PNG):
+  - Start's links, counts and checks;
+  - headers and highlighting with deliberate errors (text in DX, an unknown type and section, From = To, a radius of −3, a row without nodes, a copied Id, an unknown restraint type, a cosine of 1.5, a node on no element, a vector of 12, an unknown element Id, 'maybe' in In g's);
+  - the 3D View in Iso and Plan, with a highlighted element.
+- **Round trips and edits as before:** every workbook reads back to its exact model and its source `.cii` byte for byte; the openpyxl edit tests and `-Watch` pass.
+- **Not checked here:** Excel itself. On the production machine:
+  - open a written workbook (no repair prompt);
+  - the 3D View draws;
+  - node numbers show;
+  - recalculation is quick on a real job.
 
 ## Not yet
 

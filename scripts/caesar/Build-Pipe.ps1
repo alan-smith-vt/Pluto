@@ -237,7 +237,7 @@ function Build-Once {
     }
     if ($Xlsx) {
         [PipeWorkbook]::Write($model, $xlsxFile, [IO.Path]::GetFileName($inPath))
-        Say "write" ("{0}: the model as a workbook to edit (Help sheet inside)" -f $xlsxFile)
+        Say "write" ("{0}: the model as a workbook to edit (open it on its Start sheet)" -f $xlsxFile)
     }
     if ($Json) {
         [IO.File]::WriteAllText($jsonFile, [PipeModelJson]::Write($model), (New-Object Text.UTF8Encoding($false)))

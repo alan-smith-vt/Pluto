@@ -245,17 +245,24 @@ public static class PipeWorkbook
         string hash = Sha(json);
         var u = UnitsOf(m);
         var b = new XlsxBook();
+        var t = PipeWorkbookGui.MakeTheme(b);
+        int n = m.Elements.Count;
+        int lim = Math.Max(2000, n + 1500);                   // rows the hints, dropdowns and checks cover
+        PipeWorkbookGui.RefRows = lim;
+        var start = b.Add("Start");                           // filled last: it counts and checks the others
 
         // ---- Settings
         var st = b.Add("Settings");
-        st.FreezeRows = 1;
+        st.FreezeRows = 1; st.TabColor = "37474F";
         st.Width(0, 26); st.Width(1, 44); st.Width(2, 70);
-        Head(st, "Setting", "Value", "Note");
+        st.Set(0, 0, "Setting", t.Head["key"]); st.Set(0, 1, "Value", t.Head["prop"]); st.Set(0, 2, "Note", t.Head["text"]); st.Height(0, 24);
         int r = 1;
-        Row(st, r++, "Title", m.Title, "CAESAR's job title (VERSION PROJECT line)");
-        Row(st, r++, "Notes", m.Notes, "VERSION NOTES line");
-        Row(st, r++, "Vertical axis", m.ZUp ? "Z" : "Y", "Y (CAESAR's default) or Z");
-        st.Set(r, 0, "Ambient (" + u.Temp + ")"); st.Set(r, 1, m.Ambient); st.Set(r, 2, "installation temperature: thermal strain from T - ambient", XlsxBook.Note); r++;
+        Row(st, t, r++, "Title", m.Title, "CAESAR's job title (the VERSION PROJECT line)", "text");
+        Row(st, t, r++, "Notes", m.Notes, "the VERSION NOTES line", "text");
+        Row(st, t, r++, "Vertical axis", m.ZUp ? "Z" : "Y", "Y (CAESAR's default) or Z", "axis");
+        st.Set(r, 0, "Ambient (" + u.Temp + ")", t.Label); st.Set(r, 1, m.Ambient, t.Value); st.Set(r, 2, "installation temperature: thermal strain from T - ambient", XlsxBook.Note);
+        st.Validate("B5", new XlsxValidation { Type = "decimal", Operator = "between", Formula1 = "-1E+307", Formula2 = "1E+307", PromptTitle = "Ambient", Prompt = "The installation temperature (" + u.Temp + ").", ErrorTitle = "A number", Error = "The ambient temperature is a number." });
+        st.Conditional("B5", "AND(B5<>\"\",NOT(ISNUMBER(B5)))", t.Red); r++;
         RowRo(st, r++, "Units", (u.L[0] ?? "").Trim() + ": length " + u.Len + ", force " + u.Force + ", temperature " + u.Temp + ", pressure " + u.Press, "the job's (read-only)");
         RowRo(st, r++, "Source", sourceName ?? "", "what this workbook was made from (read-only)");
         RowRo(st, r++, "Base", hash.Substring(0, 16), "the base model's fingerprint (read-only)");
@@ -276,12 +283,14 @@ public static class PipeWorkbook
             if (!procByKey.TryGetValue(p.Key(), out p0)) { p.Name = ProcName(p, usedP); procByKey[p.Key()] = p; procs.Add(p); p0 = p; }
             eProc[e] = p0;
         }
+        int limS = Math.Max(500, secs.Count + 300), limP = Math.Max(500, procs.Count + 300);
 
         // ---- Elements
         var el = b.Add("Elements");
-        el.FreezeRows = 1; el.FreezeCols = 3;
+        el.FreezeRows = 1; el.FreezeCols = 3; el.TabColor = "1565C0";
+        var view = b.Add(PipeWorkbookGui.View);
         var eh = ElementHeaders(u);
-        for (int c = 0; c < eh.Length; c++) { el.Set(0, c, eh[c], XlsxBook.Header); el.Width(c, c == cId || c == cFrom || c == cTo ? 7 : c == cBendN ? 14 : c == cSec || c == cProc ? 16 : c == cName || c == cLine ? 14 : 11); }
+        for (int c = 0; c < eh.Length; c++) el.Width(c, c == cId || c == cFrom || c == cTo ? 8 : c == cBendN ? 15 : c == cSec || c == cProc ? 17 : c == cName || c == cLine ? 14 : c == cType ? 13 : 11);
         el.Group(cOd, cK);
         r = 1;
         foreach (var e in m.Elements)
@@ -308,16 +317,26 @@ public static class PipeWorkbook
             el.Set(r, cName, e.Name); el.Set(r, cLine, e.LineNumber);
             r++;
         }
-        el.List("G2:G5000", "Lists!$A$2:$A$" + (1 + ElementTypes.Length));
-        el.List("H2:H5000", "Sections!$A$2:$A$500");
-        el.List("I2:I5000", "Processes!$A$2:$A$500");
-        el.List("L2:L5000", "Lists!$C$2:$C$4");
+        string secList = "Sections!$A$2:$A$" + limS, procList = "Processes!$A$2:$A$" + limP;
+        PipeWorkbookGui.Table(el, t, eh, PipeWorkbookGui.ElementCols(secList, procList), n, lim);
+        {
+            string L = lim.ToString(CultureInfo.InvariantCulture);
+            // a row with anything on it needs From and To; an element from a node to itself; nothing to stand on
+            PipeWorkbookGui.Rule(el, "B2:C" + L, "AND(B2=\"\",COUNTA($A2,$D2:$J2)>0)", t.Red);
+            PipeWorkbookGui.Rule(el, "B2:C" + L, "AND(ISNUMBER($B2),$B2=$C2)", t.Red);
+            PipeWorkbookGui.Rule(el, "H2:H" + L, "AND(H2<>\"\",COUNTIF(" + secList + ",H2)=0)", t.Red);
+            PipeWorkbookGui.Rule(el, "I2:I" + L, "AND(I2<>\"\",COUNTIF(" + procList + ",I2)=0)", t.Red);
+            PipeWorkbookGui.Rule(el, "H2:I2", "AND(H2=\"\",$B2<>\"\")", t.Red);
+            PipeWorkbookGui.Rule(el, "N2:O" + L, "AND($G2=\"Reducer\",N2=\"\")", t.Red);
+            PipeWorkbookGui.Rule(el, "K2:K" + L, "AND(K2<>\"\",ISERROR(FIND(\":\",K2)))", t.Red);
+            PipeWorkbookGui.Rule(el, "D2:F" + L, "AND(ISNUMBER($B2),N($D2)=0,N($E2)=0,N($F2)=0,ISNUMBER($D2)+ISNUMBER($E2)+ISNUMBER($F2)+($D2=\"\")+($E2=\"\")+($F2=\"\")>=3)", t.Amber);
+        }
 
         // ---- Sections, Processes
         var se = b.Add("Sections");
-        se.FreezeRows = 1;
+        se.FreezeRows = 1; se.TabColor = "00796B";
         var sh = SectionHeaders(u);
-        for (int c = 0; c < sh.Length; c++) { se.Set(0, c, sh[c], XlsxBook.Header); se.Width(c, c == 0 ? 20 : 13); }
+        for (int c = 0; c < sh.Length; c++) se.Width(c, c == 0 ? 22 : 13);
         r = 1;
         foreach (var s in secs)
         {
@@ -327,10 +346,14 @@ public static class PipeWorkbook
             if (s.PipeDens != 0) se.Set(r, 9, s.PipeDens);
             r++;
         }
+        PipeWorkbookGui.Table(se, t, sh, PipeWorkbookGui.SectionCols(), secs.Count, limS);
+        PipeWorkbookGui.Rule(se, "A2:A" + limS, "AND(A2<>\"\",COUNTIF($A$2:$A$" + limS + ",A2)>1)", t.Red);
+        PipeWorkbookGui.Rule(se, "A2:A" + limS, "AND(A2=\"\",COUNTA($B2:$J2)>0)", t.Red);
+        PipeWorkbookGui.Rule(se, "B2:C" + limS, "AND(B2=\"\",$A2<>\"\")", t.Red);
         var pr = b.Add("Processes");
-        pr.FreezeRows = 1; pr.FreezeCols = 1;
+        pr.FreezeRows = 1; pr.FreezeCols = 1; pr.TabColor = "00796B";
         var ph = ProcessHeaders(u);
-        for (int c = 0; c < ph.Length; c++) { pr.Set(0, c, ph[c], XlsxBook.Header); pr.Width(c, c == 0 ? 18 : 10); }
+        for (int c = 0; c < ph.Length; c++) pr.Width(c, c == 0 ? 18 : 10);
         pr.Group(4, 9); pr.Group(13, 18);
         r = 1;
         foreach (var p in procs)
@@ -340,12 +363,19 @@ public static class PipeWorkbook
             pr.Set(r, 19, p.Fluid);
             r++;
         }
+        PipeWorkbookGui.Table(pr, t, ph, PipeWorkbookGui.ProcessCols(), procs.Count, limP);
+        PipeWorkbookGui.Rule(pr, "A2:A" + limP, "AND(A2<>\"\",COUNTIF($A$2:$A$" + limP + ",A2)>1)", t.Red);
+        PipeWorkbookGui.Rule(pr, "A2:A" + limP, "AND(A2=\"\",COUNTA($B2:$T2)>0)", t.Red);
+
+        // nodes the model has (amber when a row names another): From / To and the bend nodes
+        string L2 = lim.ToString(CultureInfo.InvariantCulture);
+        string nFrom = "Elements!$B$2:$B$" + L2, nTo = "Elements!$C$2:$C$" + L2, nBend = "Elements!$K$2:$K$" + L2;
 
         // ---- Restraints
         var rs = b.Add("Restraints");
-        rs.FreezeRows = 1;
+        rs.FreezeRows = 1; rs.TabColor = "B45309";
         var rh = RestraintHeaders(u);
-        for (int c = 0; c < rh.Length; c++) { rs.Set(0, c, rh[c], XlsxBook.Header); rs.Width(c, c == 4 ? 18 : c == 10 ? 16 : 9); }
+        for (int c = 0; c < rh.Length; c++) rs.Width(c, c == 4 ? 20 : c == 5 ? 13 : c == 10 ? 16 : 9);
         r = 1;
         for (int i = 0; i < m.Restraints.Count; i++)
         {
@@ -359,39 +389,56 @@ public static class PipeWorkbook
             r++;
         }
         var types = PipeModelCodes.BuildTypes.Concat(m.Restraints.Select(x => x.Type)).Distinct().ToList();
-        rs.List("C2:C20000", "Lists!$B$2:$B$" + (1 + types.Count));
+        int limR = Math.Max(1000, m.Restraints.Count + 500);
+        string typeList = "Lists!$B$2:$B$" + (1 + types.Count);
+        PipeWorkbookGui.Table(rs, t, rh, PipeWorkbookGui.RestraintCols(typeList), m.Restraints.Count, limR);
+        PipeWorkbookGui.Rule(rs, "B2:B" + limR, "AND(B2=\"\",COUNTA($A2,$C2:$J2)>0)", t.Red);
+        PipeWorkbookGui.Rule(rs, "B2:B" + limR, PipeWorkbookGui.NodeMissing("B2", nFrom, nTo, nBend), t.Amber);
+        PipeWorkbookGui.Rule(rs, "D2:D" + limR, PipeWorkbookGui.NodeMissing("D2", nFrom, nTo, nBend), t.Amber);
 
         // ---- SIFs
         var sf = b.Add("SIFs");
-        sf.FreezeRows = 1;
-        Head(sf, "Id", "Node", "Type (3 = welding tee, 0 = user SIFs)", "SIF in", "SIF out", "Surface node");
-        sf.Width(2, 30);
+        sf.FreezeRows = 1; sf.TabColor = "B45309";
+        string[] sfh = { "Id", "Node", "Type (3 = welding tee, 0 = user SIFs)", "SIF in", "SIF out", "Surface node" };
+        sf.Width(0, 8); sf.Width(1, 9); sf.Width(2, 22); sf.Width(3, 10); sf.Width(4, 10); sf.Width(5, 12);
         r = 1;
         for (int i = 0; i < m.Sifs.Count; i++)
         {
-            var t = m.Sifs[i];
-            sf.Set(r, 0, "S" + (i + 1)); sf.Set(r, 1, t.Node); sf.Set(r, 2, t.Type);
-            if (t.SifIn != 0) sf.Set(r, 3, t.SifIn);
-            if (t.SifOut != 0) sf.Set(r, 4, t.SifOut);
-            if (t.SurfaceNode != 0) sf.Set(r, 5, t.SurfaceNode);
+            var x = m.Sifs[i];
+            sf.Set(r, 0, "S" + (i + 1)); sf.Set(r, 1, x.Node); sf.Set(r, 2, x.Type);
+            if (x.SifIn != 0) sf.Set(r, 3, x.SifIn);
+            if (x.SifOut != 0) sf.Set(r, 4, x.SifOut);
+            if (x.SurfaceNode != 0) sf.Set(r, 5, x.SurfaceNode);
             r++;
         }
+        var sifTypes = new[] { 0, 3 }.Concat(m.Sifs.Select(x => x.Type)).Distinct().OrderBy(v => v).ToList();
+        int limF = Math.Max(1000, m.Sifs.Count + 500);
+        PipeWorkbookGui.Table(sf, t, sfh, PipeWorkbookGui.SifCols("Lists!$J$2:$J$" + (1 + sifTypes.Count)), m.Sifs.Count, limF);
+        PipeWorkbookGui.Rule(sf, "B2:B" + limF, PipeWorkbookGui.NodeMissing("B2", nFrom, nTo, nBend), t.Amber);
 
         // ---- Forces, Displacements
         var fo = b.Add("Forces");
-        fo.FreezeRows = 1;
-        Head(fo, "Id", "Node", "Vector", "FX (" + u.Force + ")", "FY (" + u.Force + ")", "FZ (" + u.Force + ")", "MX (" + u.MomIn + ")", "MY (" + u.MomIn + ")", "MZ (" + u.MomIn + ")");
-        LoadRows(fo, m.Forces.ToList(), "F", false);
+        fo.FreezeRows = 1; fo.TabColor = "9A3412";
+        string[] foh = { "Id", "Node", "Vector", "FX (" + u.Force + ")", "FY (" + u.Force + ")", "FZ (" + u.Force + ")", "MX (" + u.MomIn + ")", "MY (" + u.MomIn + ")", "MZ (" + u.MomIn + ")" };
+        int nf = LoadRows(fo, m.Forces.ToList(), "F", false);
         var di = b.Add("Displacements");
-        di.FreezeRows = 1;
-        Head(di, "Id", "Node", "Vector", "DX (" + u.Len + ")", "DY (" + u.Len + ")", "DZ (" + u.Len + ")", "RX (deg)", "RY (deg)", "RZ (deg)");
-        LoadRows(di, m.Displacements.ToList(), "D", true);
-        for (int c = 3; c < 9; c++) { fo.Width(c, 12); di.Width(c, 12); }
+        di.FreezeRows = 1; di.TabColor = "9A3412";
+        string[] dih = { "Id", "Node", "Vector", "DX (" + u.Len + ")", "DY (" + u.Len + ")", "DZ (" + u.Len + ")", "RX (deg)", "RY (deg)", "RZ (deg)" };
+        int nd = LoadRows(di, m.Displacements.ToList(), "D", true);
+        foreach (var q in new[] { new { S = fo, H = foh, N = nf, D = false }, new { S = di, H = dih, N = nd, D = true } })
+        {
+            for (int c = 0; c < 9; c++) q.S.Width(c, c < 3 ? 9 : 12);
+            int limL = Math.Max(1000, q.N + 500);
+            PipeWorkbookGui.Table(q.S, t, q.H, PipeWorkbookGui.NodeLoadCols(q.D), q.N, limL);
+            PipeWorkbookGui.Rule(q.S, "B2:C" + limL, "AND(B2=\"\",COUNTA($A2,$D2:$I2)>0)", t.Red);
+            PipeWorkbookGui.Rule(q.S, "B2:B" + limL, PipeWorkbookGui.NodeMissing("B2", nFrom, nTo, nBend), t.Amber);
+            PipeWorkbookGui.Rule(q.S, "C2:C" + limL, "AND(ISNUMBER($B2),ISNUMBER($C2),COUNTIFS($B$2:$B$" + limL + ",$B2,$C$2:$C$" + limL + ",$C2)>1)", t.Red);
+        }
 
         // ---- Uniform, Wind (per element; chained elements with the same values share a row: E3:E9)
         var un = b.Add("Uniform");
-        un.FreezeRows = 1;
-        Head(un, "Element", "From", "To", "Vector", "UX (" + u.Uni + " or g)", "UY (" + u.Uni + " or g)", "UZ (" + u.Uni + " or g)", "In g's");
+        un.FreezeRows = 1; un.TabColor = "9A3412";
+        string[] unh = { "Element", "From", "To", "Vector", "UX (" + u.Uni + " or g)", "UY (" + u.Uni + " or g)", "UZ (" + u.Uni + " or g)", "In g's" };
         r = 1;
         foreach (var g in SameRuns(m, q => q.Uniform != null, (p, q) => p.Uniform.SameAs(q.Uniform)))
         {
@@ -406,11 +453,14 @@ public static class PipeWorkbook
                 r++;
             }
         }
-        un.List("H2:H20000", "Lists!$E$2:$E$3");
-        for (int c = 4; c < 7; c++) un.Width(c, 16);
+        int nu = r - 1, limU = Math.Max(1000, nu + 500);
+        un.Width(0, 12); un.Width(1, 8); un.Width(2, 8); un.Width(3, 8); for (int c = 4; c < 7; c++) un.Width(c, 16); un.Width(7, 9);
+        PipeWorkbookGui.Table(un, t, unh, PipeWorkbookGui.UniformCols(), nu, limU);
+        PipeWorkbookGui.Rule(un, "B2:C" + limU, "AND($A2=\"\",B2=\"\",COUNTA($D2:$H2)>0)", t.Red);
+        PipeWorkbookGui.Rule(un, "D2:D" + limU, "AND(D2=\"\",COUNTA($A2:$C2,$E2:$H2)>0)", t.Red);
         var wi = b.Add("Wind");
-        wi.FreezeRows = 1;
-        Head(wi, "Element", "From", "To", "Type", "Shape factor (wave: drag)", "Added mass", "Lift", "Marine growth", "Growth density");
+        wi.FreezeRows = 1; wi.TabColor = "9A3412";
+        string[] wih = { "Element", "From", "To", "Type", "Shape factor (wave: drag)", "Added mass", "Lift", "Marine growth", "Growth density" };
         r = 1;
         foreach (var g in SameRuns(m, q => q.Wind != null, (p, q) => p.Wind.SameAs(q.Wind)))
         {
@@ -421,14 +471,16 @@ public static class PipeWorkbook
             { wi.Set(r, 5, x.AddedMass); wi.Set(r, 6, x.Lift); wi.Set(r, 7, x.MarineGrowth); wi.Set(r, 8, x.MarineGrowthDensity); }
             r++;
         }
-        wi.List("D2:D20000", "Lists!$D$2:$D$4");
-        wi.Width(4, 22);
+        int nw = r - 1, limW = Math.Max(1000, nw + 500);
+        wi.Width(0, 12); wi.Width(1, 8); wi.Width(2, 8); wi.Width(3, 9); wi.Width(4, 16); for (int c = 5; c < 9; c++) wi.Width(c, 12);
+        PipeWorkbookGui.Table(wi, t, wih, PipeWorkbookGui.WindCols(), nw, limW);
+        PipeWorkbookGui.Rule(wi, "B2:C" + limW, "AND($A2=\"\",B2=\"\",COUNTA($D2:$I2)>0)", t.Red);
 
         // ---- Joints
         var jo = b.Add("Joints");
-        jo.FreezeRows = 1;
-        Head(jo, "Id", "Node", "CNode", "Kind", "Frame", "DOFs", "SIF", "Tag");
-        jo.Width(5, 48);
+        jo.FreezeRows = 1; jo.TabColor = "B45309";
+        string[] joh = { "Id", "Node", "CNode", "Kind", "Frame", "DOFs", "SIF", "Tag" };
+        jo.Width(0, 8); jo.Width(1, 8); jo.Width(2, 8); jo.Width(3, 12); jo.Width(4, 9); jo.Width(5, 50); jo.Width(6, 8); jo.Width(7, 14);
         r = 1;
         foreach (var j in m.Joints)
         {
@@ -437,49 +489,147 @@ public static class PipeWorkbook
             jo.Set(r, 7, j.Tag);
             r++;
         }
-        jo.List("E2:E20000", "Lists!$G$2:$G$3");
+        int limJ = Math.Max(500, m.Joints.Count + 300);
+        PipeWorkbookGui.Table(jo, t, joh, PipeWorkbookGui.JointCols(), m.Joints.Count, limJ);
+        PipeWorkbookGui.Rule(jo, "B2:C" + limJ, PipeWorkbookGui.NodeMissing("B2", nFrom, nTo, nBend), t.Amber);
 
         // ---- Coords
         var co = b.Add("Coords");
-        co.FreezeRows = 1;
-        Head(co, "Node", "X (" + u.Len + ")", "Y (" + u.Len + ")", "Z (" + u.Len + ")");
+        co.FreezeRows = 1; co.TabColor = "1565C0";
+        string[] coh = { "Node", "X (" + u.Len + ")", "Y (" + u.Len + ")", "Z (" + u.Len + ")" };
         r = 1;
         foreach (var c in m.Coords) { co.Set(r, 0, c.Node); co.Set(r, 1, c.X); co.Set(r, 2, c.Y); co.Set(r, 3, c.Z); r++; }
-        for (int c = 1; c < 4; c++) co.Width(c, 13);
+        co.Width(0, 9); for (int c = 1; c < 4; c++) co.Width(c, 14);
+        int limC = Math.Max(500, m.Coords.Count + 300);
+        PipeWorkbookGui.Table(co, t, coh, PipeWorkbookGui.CoordCols(), m.Coords.Count, limC);
 
-        // ---- read-only: Nodes, Carried, Help
-        NodesSheet(b.Add("Nodes"), m, u);
-        CarriedSheet(b.Add("Carried"), m);
-        HelpSheet(b.Add("Help"), u);
+        // ---- read-only: Nodes, Carried
+        var nodes = b.Add("Nodes");
+        NodesSheet(nodes, m, u);
+        var carried = b.Add("Carried");
+        CarriedSheet(carried, m);
+        foreach (var ro in new[] { nodes, carried }) { for (int c = 0; c < 7; c++) ro.Style(0, c, t.Head["ro"]); ro.Height(0, 24); }
 
-        // ---- Lists (hidden), _pluto (veryHidden)
+        // ---- Lists (hidden), the 3D view's sheets (hidden), _pluto (veryHidden)
         var li = b.Add("Lists");
         li.State = "hidden";
-        Head(li, "Element types", "Restraint types", "Bend types", "Wind types", "Yes / no", "Vertical axis", "Joint frame");
+        Head(li, "Element types", "Restraint types", "Bend types", "Wind types", "Yes / no", "Vertical axis", "Joint frame", "Views", "Vectors", "SIF types", "Joint kinds",
+             "NPS OD (in)", "NPS", "Coded radius (x NPS)", "View azimuth", "View elevation");
         for (int k = 0; k < ElementTypes.Length; k++) li.Set(1 + k, 0, ElementTypes[k]);
         for (int k = 0; k < types.Count; k++) li.Set(1 + k, 1, types[k]);
         for (int k = 0; k < BendTypes.Length; k++) li.Set(1 + k, 2, BendTypes[k]);
         for (int k = 0; k < WindTypes.Length; k++) li.Set(1 + k, 3, WindTypes[k]);
         li.Set(1, 4, "yes"); li.Set(2, 4, "no"); li.Set(1, 5, "Y"); li.Set(2, 5, "Z"); li.Set(1, 6, "pipe"); li.Set(2, 6, "global");
+        string[] views = { "Iso", "Plan", "Front", "Side", "Custom" };
+        double[] az = { 45, 0, 0, 90, 45 }, elv = { 35.264, 90, 0, 0, 35.264 };
+        for (int k = 0; k < views.Length; k++) { li.Set(1 + k, 7, views[k]); li.Set(1 + k, 14, az[k]); li.Set(1 + k, 15, elv[k]); }
+        for (int k = 1; k <= 9; k++) li.Set(k, 8, k);
+        for (int k = 0; k < sifTypes.Count; k++) li.Set(1 + k, 9, sifTypes[k]);
+        string[] kinds = { "coupling", "hinge", "slip", "ball", "link", "custom" };
+        for (int k = 0; k < kinds.Length; k++) li.Set(1 + k, 10, kinds[k]);
+        var npsOd = new SortedDictionary<double, double>();
+        foreach (double nps in new[] { 0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 3.5, 4, 5, 6, 8, 10, 12 })
+        {
+            double od, w;
+            if (PipeBuilder.PipeSize(nps, null, out od, out w)) npsOd[od] = nps;
+            else if (nps == 1.25) npsOd[1.660] = nps;
+            else if (nps == 3.5) npsOd[4.000] = nps;
+        }
+        int ko = 1;
+        foreach (var kv in npsOd) { li.Set(ko, 11, kv.Key); li.Set(ko, 12, kv.Value); ko++; }
+        for (int k = 1; k <= 9; k++) { double f; if (PipeModelBend.NamedRadii.TryGetValue(k, out f)) li.Set(k, 13, f); }
         st.List("B4", "Lists!$F$2:$F$3");
+        st.Validate("B4", new XlsxValidation { PromptTitle = "Vertical axis", Prompt = "Y (CAESAR's default) or Z." });
+
+        var calc = b.Add(PipeWorkbookGui.Calc);
+        var pts = b.Add(PipeWorkbookGui.Pts);
+        PipeWorkbookGui.ViewSheets(b, t, view, calc, pts, n, m.Restraints.Count, m.Factor(0), 1.0 / m.Factor(20), u.Len);
+
         var pl = b.Add("_pluto");
         pl.State = "veryHidden";
         string compact = Compact(json);
-        int n = (compact.Length + Chunk - 1) / Chunk;
+        int nc = (compact.Length + Chunk - 1) / Chunk;
         pl.Set(0, 0, Format); pl.Set(0, 1, Version);
         pl.Set(1, 0, "base"); pl.Set(1, 1, hash);
         pl.Set(2, 0, "source"); pl.Set(2, 1, sourceName ?? "");
-        pl.Set(3, 0, "chunks"); pl.Set(3, 1, n);
-        for (int k = 0; k < n; k++) pl.Set(4 + k, 0, compact.Substring(k * Chunk, Math.Min(Chunk, compact.Length - k * Chunk)));
+        pl.Set(3, 0, "chunks"); pl.Set(3, 1, nc);
+        for (int k = 0; k < nc; k++) pl.Set(4 + k, 0, compact.Substring(k * Chunk, Math.Min(Chunk, compact.Length - k * Chunk)));
+
+        // ---- Start: how to use it, the sheets, the live checks, the colour key, the reference
+        Func<string, string, string> rowsOf = (sheet, cols) => "SUMPRODUCT(--(LEN(" + string.Join("&", cols.Split(',').Select(c => sheet + "!$" + c + "$2:$" + c + "$" + L2).ToArray()) + ")>0))";
+        var sheets = new List<PipeWorkbookGui.SheetInfo>
+        {
+            new PipeWorkbookGui.SheetInfo("Settings", "title, notes, vertical axis, ambient temperature", null),
+            new PipeWorkbookGui.SheetInfo("Elements", "one row per element, in CAESAR's order: nodes, lengths, type, section, process, bend, components", rowsOf("Elements", "B,C")),
+            new PipeWorkbookGui.SheetInfo(PipeWorkbookGui.View, "the model drawn live as you edit it", null),
+            new PipeWorkbookGui.SheetInfo("Sections", "pipe sizes: OD, wall, insulation, corrosion, material", rowsOf("Sections", "A,B")),
+            new PipeWorkbookGui.SheetInfo("Processes", "operating conditions: T1-T9, P1-P9, fluid density", rowsOf("Processes", "A,B")),
+            new PipeWorkbookGui.SheetInfo("Restraints", "anchors, supports, guides, limit stops, springs, ties to other nodes", rowsOf("Restraints", "B,C")),
+            new PipeWorkbookGui.SheetInfo("SIFs", "SIFs and tees at nodes", rowsOf("SIFs", "B,C")),
+            new PipeWorkbookGui.SheetInfo("Forces", "forces and moments at nodes, per load vector", rowsOf("Forces", "B,C")),
+            new PipeWorkbookGui.SheetInfo("Displacements", "imposed displacements at nodes, per load vector", rowsOf("Displacements", "B,C")),
+            new PipeWorkbookGui.SheetInfo("Uniform", "uniform loads (weight, seismic g's) on elements", rowsOf("Uniform", "A,B")),
+            new PipeWorkbookGui.SheetInfo("Wind", "wind / wave data on elements", rowsOf("Wind", "A,B")),
+            new PipeWorkbookGui.SheetInfo("Joints", "couplings, hinges, slip joints: ties between two nodes per DOF", rowsOf("Joints", "B,C")),
+            new PipeWorkbookGui.SheetInfo("Coords", "where pieces of the model start", rowsOf("Coords", "A")),
+            new PipeWorkbookGui.SheetInfo("Nodes", "read-only: every node, its position and what is on it", null),
+            new PipeWorkbookGui.SheetInfo("Carried", "read-only: what the job holds that the sheets do not show (kept as written)", null),
+        };
+        Func<string, string, string> textIn = (sheet, cols) => string.Join("+", cols.Split(',').Select(c => "SUMPRODUCT(--ISTEXT(" + sheet + "!$" + c.Split(':')[0] + "$2:$" + c.Split(':')[c.Split(':').Length - 1] + "$" + L2 + "))").ToArray());
+        Func<string, string, string> errIn = (sheet, cols) => "SUMPRODUCT(--ISERROR(" + sheet + "!$" + cols.Split(':')[0] + "$2:$" + cols.Split(':')[1] + "$" + L2 + "))";
+        Func<string, string, string, string> unknown = (rng, list, what) => "SUMPRODUCT((" + rng + "<>\"\")*(COUNTIF(" + list + "," + rng + ")=0))";
+        Func<string, string> col = c => "Elements!$" + c + "$2:$" + c + "$" + L2;
+        Func<string, string, string> missingNodes = (sheet, c) => "SUMPRODUCT(ISNUMBER(" + sheet + "!$" + c + "$2:$" + c + "$" + L2 + ")*(COUNTIF(" + nFrom + "," + sheet + "!$" + c + "$2:$" + c + "$" + L2 + ")+COUNTIF(" + nTo + "," + sheet + "!$" + c + "$2:$" + c + "$" + L2 + ")=0))";
+        var checks = new List<PipeWorkbookGui.Check>
+        {
+            new PipeWorkbookGui.Check("Error values (#N/A, #DIV/0! ...) on the input sheets",
+                errIn("Elements", "A:BA") + "+" + errIn("Sections", "A:J") + "+" + errIn("Processes", "A:T") + "+" + errIn("Restraints", "A:K") + "+" + errIn("Forces", "A:I") + "+" + errIn("Displacements", "A:I") + "+" +
+                errIn("Uniform", "A:H") + "+" + errIn("Wind", "A:I") + "+" + errIn("Coords", "A:D"), false),
+            new PipeWorkbookGui.Check("Elements: text where a number belongs", textIn("Elements", "B:F,J:J,M:T,W:BA") + "-SUMPRODUCT((UPPER(TRIM(" + col("J") + "))=\"LR\")+(UPPER(TRIM(" + col("J") + "))=\"SR\"))", false),
+            new PipeWorkbookGui.Check("Elements: rows without From or To", "SUMPRODUCT(((" + col("B") + "=\"\")+(" + col("C") + "=\"\")>0)*(LEN(" + col("A") + "&" + col("D") + "&" + col("E") + "&" + col("F") + "&" + col("G") + ")>0))", false),
+            new PipeWorkbookGui.Check("Elements: unknown Type, Section or Process",
+                unknown(col("G"), PipeWorkbookGui.LType, "") + "+" + unknown(col("H"), secList, "") + "+" + unknown(col("I"), procList, ""), false),
+            new PipeWorkbookGui.Check("Sections / Processes: text where a number belongs", textIn("Sections", "B:J") + "+" + textIn("Processes", "B:T"), false),
+            new PipeWorkbookGui.Check("Restraints: unknown type, or text where a number belongs", unknown("Restraints!$C$2:$C$" + L2, typeList, "") + "+" + textIn("Restraints", "B:B,D:J"), false),
+            new PipeWorkbookGui.Check("Forces / Displacements / Uniform: text where a number belongs, or a vector outside 1-9",
+                textIn("Forces", "B:I") + "+" + textIn("Displacements", "B:I") + "+" + textIn("Uniform", "B:G") + "+" +
+                string.Join("+", new[] { "Forces!$C", "Displacements!$C", "Uniform!$D" }.Select(c => "SUMPRODUCT(ISNUMBER(" + c + "$2:" + c.Substring(c.IndexOf('!') + 1) + "$" + L2 + ")*((" + c + "$2:" + c.Substring(c.IndexOf('!') + 1) + "$" + L2 + "<1)+(" + c + "$2:" + c.Substring(c.IndexOf('!') + 1) + "$" + L2 + ">9)>0))").ToArray()), false),
+            new PipeWorkbookGui.Check("Uniform / Wind: unknown element Ids (single Ids)",
+                "SUMPRODUCT((Uniform!$A$2:$A$" + L2 + "<>\"\")*ISERROR(FIND(\":\",Uniform!$A$2:$A$" + L2 + "))*(COUNTIF(" + col("A") + ",Uniform!$A$2:$A$" + L2 + ")=0))+SUMPRODUCT((Wind!$A$2:$A$" + L2 +
+                "<>\"\")*ISERROR(FIND(\":\",Wind!$A$2:$A$" + L2 + "))*(COUNTIF(" + col("A") + ",Wind!$A$2:$A$" + L2 + ")=0))", false),
+            new PipeWorkbookGui.Check("Restraints, SIFs, loads: nodes on no element's From / To (bend nodes are fine)",
+                missingNodes("Restraints", "B") + "+" + missingNodes("SIFs", "B") + "+" + missingNodes("Forces", "B") + "+" + missingNodes("Displacements", "B"), true),
+            new PipeWorkbookGui.Check("Ids used twice (a copied row is read as a new item)",
+                "SUMPRODUCT((" + col("A") + "<>\"\")*(COUNTIF(" + col("A") + "," + col("A") + ")>1))+SUMPRODUCT((Restraints!$A$2:$A$" + L2 + "<>\"\")*(COUNTIF(Restraints!$A$2:$A$" + L2 + ",Restraints!$A$2:$A$" + L2 + ")>1))", true),
+        };
+        string[] reference =
+        {
+            "Units are the job's, shown in each header: " + u.Len + ", " + u.Force + ", " + u.Temp + ", " + u.Press + ". A length header may name another length unit (in ft mm cm m): the column is read in that unit.",
+            "Id: keep it. A row without an Id is a new item; a deleted row deletes the item; moving rows reorders the elements (CAESAR's order). A copied row keeps its original's Id: clear it.",
+            "Elements: a bend radius makes the element a bend at its TO node (LR / SR = 1.5 / 1 x nominal). Bend nodes: angle:node pairs, M = the mid point (M:19; 0:18).",
+            "A negative bend radius (-1.0101, -2.0202 ... -9.0909) is a coded value CAESAR wrote for a radius chosen by name: keep it, and CAESAR resolves it as before.",
+            "Section / Process: a name from those sheets; blank = the row above's. The grouped columns at the right of Elements (+) override one value for one element.",
+            "Restraints: Stiffness blank = rigid; Cos blank = the type's own axis (guides and limit stops take the pipe's). Forces / Displacements: one row per node and load vector (1-9); a displacement left blank is free, 0 holds it.",
+            "Uniform / Wind: per element; an element no row names has none (CAESAR's file does not carry them forward). Element = an Id, a range in the Elements order (E3:E9), or blank with From and To (a chain of elements).",
+            "Joints: DOFs like 'axial gap=0.125 k=5000; shear; torsion; bending gap=2' (frame pipe) or 'X; Y; RZ k=1e6' (frame global); a DOF not listed is free.",
+            "Read back: only the input sheets. Start, 3D View, Nodes and Carried are rebuilt on every export. The hidden _pluto sheet holds the model this workbook was written from: what you did not change is given back exactly.",
+        };
+        PipeWorkbookGui.StartSheet(start, t, m.Title ?? "", sourceName ?? "", u.Len + ", " + u.Force + ", " + u.Temp + ", " + u.Press, sheets, checks, reference);
         return b.ToBytes();
     }
 
     static void Head(XlsxBookSheet s, params string[] h) { for (int c = 0; c < h.Length; c++) { s.Set(0, c, h[c], XlsxBook.Header); s.Width(c, Math.Max(8, Math.Min(30, h[c].Length + 2))); } }
-    static void Row(XlsxBookSheet s, int r, string k, string v, string note) { s.Set(r, 0, k, XlsxBook.Bold); s.Set(r, 1, v ?? ""); s.Set(r, 2, note, XlsxBook.Note); }
+    static void Row(XlsxBookSheet s, PipeWorkbookGui.Theme t, int r, string k, string v, string note, string kind)
+    {
+        s.Set(r, 0, k, t.Label); s.Set(r, 1, v ?? "", t.Value); s.Set(r, 2, note, XlsxBook.Note);
+        if (kind == "text") s.Validate(XlsxBook.Ref(r, 1), new XlsxValidation { PromptTitle = k, Prompt = note });
+        if (kind == "axis") s.Conditional(XlsxBook.Ref(r, 1), "AND(" + XlsxBook.Ref(r, 1) + "<>\"Y\"," + XlsxBook.Ref(r, 1) + "<>\"Z\")", t.Red);
+    }
+
     static void RowRo(XlsxBookSheet s, int r, string k, string v, string note) { s.Set(r, 0, k, XlsxBook.Bold); s.Set(r, 1, v ?? "", XlsxBook.ReadOnly); s.Set(r, 2, note, XlsxBook.Note); }
 
-    // one row per used vector (an entry with none: one row of vector 1)
-    static void LoadRows(XlsxBookSheet s, List<PipeModelNodeLoad> loads, string prefix, bool disp)
+    // one row per used vector (an entry with none: one row of vector 1); the rows written
+    static int LoadRows(XlsxBookSheet s, List<PipeModelNodeLoad> loads, string prefix, bool disp)
     {
         int r = 1;
         for (int i = 0; i < loads.Count; i++)
@@ -500,6 +650,7 @@ public static class PipeWorkbook
                 r++;
             }
         }
+        return r - 1;
     }
 
     static string BendNodesText(PipeModelBend b)
@@ -558,28 +709,6 @@ public static class PipeWorkbook
             { s.Set(r, 0, kv.Key, XlsxBook.ReadOnly); s.Set(r, 1, "the section as written", XlsxBook.ReadOnly); s.Set(r, 2, kv.Value.Count, XlsxBook.ReadOnly); r++; }
         }
         if (r == 1) s.Set(1, 0, "(nothing carried)", XlsxBook.Note);
-    }
-
-    static void HelpSheet(XlsxBookSheet s, Units u)
-    {
-        s.Width(0, 110);
-        string[] lines =
-        {
-            "Pipe model workbook (Pluto). Edit the white sheets; save; then Build-Pipe.ps1 -In <this>.xlsx -Preview (look) and -Cii (CAESAR).",
-            "Units are the job's, shown in each header: " + u.Len + ", " + u.Force + ", " + u.Temp + ", " + u.Press + ". A length header may say another length unit (in ft mm cm m): the column is converted.",
-            "Id: keep it. A row without an Id is a new item; a deleted row deletes the item; moving rows reorders the elements (CAESAR's order).",
-            "Elements: Type = Pipe, Rigid, Valve, Flange, Flange pair, Flanged valve, Reducer, Exp joint. A bend radius makes the element a bend at its TO node (LR / SR = 1.5 / 1 x nominal).",
-            "Bend nodes: angle:node pairs, M = the mid point (CAESAR's M), e.g. M:19; 0:18.",
-            "A negative bend radius (-1.0101, -2.0202 ... -9.0909) is a coded value CAESAR wrote for a radius chosen by name; keep it, and CAESAR resolves it as before.",
-            "Section / Process: a name from those sheets; blank = the row above's. The grouped columns at the right (+) override one value for one element.",
-            "Restraints: Stiffness blank = rigid; Cos blank = the type's own axis (guides and limit stops take the pipe axis). Types: CAESAR's (ANC X Y Z RX RY RZ GUI LIM +X ... +LIM -LIM ...).",
-            "Forces / Displacements: one row per node and load vector (1-9 = CAESAR's F1-F9 / D1-D9). A displacement left blank is free; 0 holds it.",
-            "Uniform / Wind: per element; an element no row names has none (CAESAR's file does not carry them forward). Element = an Id, or a range in the Elements order (E3:E9); or blank, with From and To: one element, or the chain of elements from From to To.",
-            "Joints: DOFs like 'axial gap=0.125 k=5000; shear; torsion; bending gap=2' (frame pipe) or 'X; Y; RZ k=1e6' (frame global); a DOF not listed is free.",
-            "Nodes, Carried and Help are rebuilt on every export and never read. Settings rows marked read-only are not read either.",
-            "The hidden _pluto sheet holds the model this workbook was written from: what you did not change is given back exactly, so CAESAR gets its own file back.",
-        };
-        for (int k = 0; k < lines.Length; k++) s.Set(k, 0, lines[k], k == 0 ? XlsxBook.Bold : XlsxBook.Wrap);
     }
 
     // the base JSON without its line breaks and indents (they are never inside a string: PipeModelJson escapes them)
