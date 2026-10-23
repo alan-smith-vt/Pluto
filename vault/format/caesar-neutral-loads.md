@@ -1,14 +1,14 @@
 ---
-title: CAESAR II neutral file, loads and restraint codes
+title: CAESAR II neutral file, loads, restraint codes and bend radius codes
 status: draft
 created: 2026-10-22
 ---
 
 *↑ [[vault/Pluto Home|Home]] › [[vault/format/Format map|Format map]]*
 
-# CAESAR II neutral file: loads and restraint codes
+# CAESAR II neutral file: loads, restraint codes and bend radius codes
 
-How the `.cii` holds applied loads (forces and moments, imposed displacements, uniform loads, wind), and CAESAR's restraint type codes, as Pluto reads and writes them (`CaesarPipeImport`, `CaesarNeutralWriter`, [[vault/format/pipe-model|pipe-model]]).
+How the `.cii` holds applied loads (forces and moments, imposed displacements, uniform loads, wind), CAESAR's restraint type codes, and the codes CAESAR writes for a bend radius chosen by name, as Pluto reads and writes them (`CaesarPipeImport`, `CaesarNeutralWriter`, [[vault/format/pipe-model|pipe-model]]).
 
 **Sources:**
 - The neutral-file chapter of CAESAR II's user's guide, supplied by the user (2026-10-22). It is summarised here in our own words, never copied.
@@ -118,6 +118,29 @@ CAESAR's table for the RESTRANT type field:
 
 - **Which table to trust:** the guide's database-export table lists different names from 48 on (a duplicated +RX2 run, no springs). The neutral-file table above is the one for `.cii` files.
 - **What the builder and the workbook write:** the plain types, codes 1–26 (`PipeModelCodes.BuildTypes`). Rods, bilinear supports and springs need data the restraint record does not hold, so they are read and carried but not built.
+
+## Bend radius codes
+
+A bend's radius (BEND, value 1) is a plain length, or a **negative code**, a multiple of −1.0101: a radius chosen by name in CAESAR's input, which follows the pipe size. The documentation does not mention them.
+
+**Confirmed with CAESAR 15.01 (2026-10-23).** Two probe jobs, each with one 90° bend per code on 6 in pipe, were imported into CAESAR, read on its bend list, and exported again:
+
+| Code | CAESAR shows | Radius | Written back as |
+|---|---|---|---|
+| −1.0101 | Long | 1.5 × nominal | the plain radius (9.0) |
+| −2.0202 | 0.000 | none | −2.0202 |
+| −3.0303 | 3D | 3 × nominal | −3.0303 |
+| −4.0404 | Short | 1 × nominal | −4.0404 |
+| −5.0505 | 5D | 5 × nominal | −5.0505 |
+| −6.0606 … −9.0909 | 0.000 | none | as written |
+
+- **CAESAR names plain radii too:** it shows a plain radius equal to 1.5 × nominal as "Long" (the 9.0 control bend). Its own files hold Long as a number, and 3D, Short and 5D as codes.
+- **How Pluto handles them:**
+  - **Kept as written**, so CAESAR resolves them as before.
+  - **Drawn with the radius they name** (`PipeModelBend.NamedRadii`); the nominal size comes from the bend's OD, inch or metric.
+  - **Compared by meaning:** a code and the plain radius it names are the same bend.
+  - **No-radius codes** (2, 6–9) are drawn as corners, and the reader warns about them.
+- **The probe's re-exports differ from it in one other way:** CAESAR fills in its default insulation density (0.0067 lb/in³) where the field was blank. It changes nothing without insulation.
 
 ## Other sections the documentation describes (carried as written)
 

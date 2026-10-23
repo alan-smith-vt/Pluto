@@ -366,10 +366,11 @@ public static class CaesarPipeImport
         var coded = m.Elements.Where(e => e.Bend != null && PipeModelBend.RadiusCode(e.Bend.Radius) > 0).ToList();
         if (coded.Count > 0)
         {
-            var open = coded.Where(e => !PipeModelBend.NamedRadii.ContainsKey(PipeModelBend.RadiusCode(e.Bend.Radius))).ToList();
-            res.Notes.Add(coded.Count + " bend(s) carry a coded radius CAESAR wrote (" + string.Join(", ", coded.Select(e => e.Bend.Radius.ToString("0.0###", CultureInfo.InvariantCulture) + " = " +
-                          PipeModelBend.CodeName(PipeModelBend.RadiusCode(e.Bend.Radius))).Distinct().ToArray()) + ": a radius chosen by name, e.g. at element " + coded[0].From + "-" + coded[0].To +
-                          "): kept as written, so CAESAR resolves it as before; " + (open.Count > 0 ? "the viewer draws the " + open.Count + " with a code not confirmed yet as sharp corners" : "drawn with the radius each code names"));
+            var none = coded.Where(e => PipeModelBend.NoRadiusCode(PipeModelBend.RadiusCode(e.Bend.Radius))).ToList();
+            res.Notes.Add(coded.Count + " bend(s) carry a radius CAESAR wrote by name (" + string.Join(", ", coded.Select(e => e.Bend.Radius.ToString("0.0###", CultureInfo.InvariantCulture) + " = " +
+                          PipeModelBend.CodeName(PipeModelBend.RadiusCode(e.Bend.Radius))).Distinct().ToArray()) + ", e.g. at element " + coded[0].From + "-" + coded[0].To +
+                          "): kept as written, so CAESAR resolves it as before, and drawn with the radius it names" +
+                          (none.Count > 0 ? "; " + none.Count + " carry a code CAESAR reads as no radius (0), e.g. at element " + none[0].From + "-" + none[0].To + ": check them in CAESAR" : ""));
         }
         SelfCheck(res);
         return res;

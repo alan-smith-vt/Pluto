@@ -300,7 +300,8 @@ public static class PipeWorkbook
             el.Set(r, cType, TypeOf(e)); el.Set(r, cSec, eSec[e].Name); el.Set(r, cProc, eProc[e].Name);
             if (e.Bend != null)
             {
-                el.Set(r, cBendR, e.Bend.Radius);
+                string rn = PipeModelBend.DisplayName(e.Bend.Radius);       // a radius CAESAR wrote by name shows its name
+                if (rn != null) el.Set(r, cBendR, rn); else el.Set(r, cBendR, e.Bend.Radius);
                 el.Set(r, cBendN, BendNodesText(e.Bend));
                 if (e.Bend.Type != 0) el.Set(r, cBendT, e.Bend.Type >= 0 && e.Bend.Type < 3 ? BendTypes[e.Bend.Type] : e.Bend.Type.ToString(CultureInfo.InvariantCulture));
                 if (e.Bend.MiterPoints != 0) el.Set(r, cMiter, e.Bend.MiterPoints);
@@ -329,6 +330,7 @@ public static class PipeWorkbook
             PipeWorkbookGui.Rule(el, "H2:I2", "AND(H2=\"\",$B2<>\"\")", t.Red);
             PipeWorkbookGui.Rule(el, "N2:O" + L, "AND($G2=\"Reducer\",N2=\"\")", t.Red);
             PipeWorkbookGui.Rule(el, "K2:K" + L, "AND(K2<>\"\",ISERROR(FIND(\":\",K2)))", t.Red);
+            PipeWorkbookGui.Rule(el, "J2:J" + L, PipeWorkbookGui.NoRadiusRule("J2"), t.Amber);
             PipeWorkbookGui.Rule(el, "D2:F" + L, "AND(ISNUMBER($B2),N($D2)=0,N($E2)=0,N($F2)=0,ISNUMBER($D2)+ISNUMBER($E2)+ISNUMBER($F2)+($D2=\"\")+($E2=\"\")+($F2=\"\")>=3)", t.Amber);
         }
 
@@ -607,7 +609,7 @@ public static class PipeWorkbook
             "Units are the job's, shown in each header: " + u.Len + ", " + u.Force + ", " + u.Temp + ", " + u.Press + ". A length header may name another length unit (in ft mm cm m): the column is read in that unit.",
             "Id: keep it. A row without an Id is a new item; a deleted row deletes the item; moving rows reorders the elements (CAESAR's order). A copied row keeps its original's Id: clear it.",
             "Elements: a bend radius makes the element a bend at its TO node (LR / SR = 1.5 / 1 x nominal). Bend nodes: angle:node pairs, M = the mid point (M:19; 0:18).",
-            "A negative bend radius (-1.0101, -2.0202 ... -9.0909) is a coded value CAESAR wrote for a radius chosen by name: keep it, and CAESAR resolves it as before.",
+            "Bend radius by name: LR or Long (1.5 x nominal), SR or Short (1 x), 3D, 5D. A radius CAESAR wrote by name shows its name and is written back as CAESAR's code. A negative number (-2.0202, -6.0606 ...) is a code CAESAR reads as no radius (amber): keep it or replace it.",
             "Section / Process: a name from those sheets; blank = the row above's. The grouped columns at the right of Elements (+) override one value for one element.",
             "Restraints: Stiffness blank = rigid; Cos blank = the type's own axis (guides and limit stops take the pipe's). Forces / Displacements: one row per node and load vector (1-9); a displacement left blank is free, 0 holds it.",
             "Uniform / Wind: per element; an element no row names has none (CAESAR's file does not carry them forward). Element = an Id, a range in the Elements order (E3:E9), or blank with From and To (a chain of elements).",
@@ -1047,15 +1049,24 @@ public static class PipeWorkbook
             if (br.Length == 0) e.Bend = null;
             else
             {
-                double rad;
-                if (br.Equals("LR", StringComparison.OrdinalIgnoreCase) || br.Equals("SR", StringComparison.OrdinalIgnoreCase))
+                double rad, mult = PipeModelBend.NamedMultiple(br);
+                if (!double.IsNaN(mult))
                 {
-                    double nps = x.U.English ? PipeBuilder.NominalOf(e.Od) : double.NaN;
-                    if (double.IsNaN(nps)) { x.Err(w + ": bend radius " + br + " needs a standard pipe size in inches (give the radius)"); continue; }
-                    rad = (br.Equals("LR", StringComparison.OrdinalIgnoreCase) ? 1.5 : 1.0) * nps;
+                    // a radius by name (LR / Long, SR / Short, 3D, 5D): a code CAESAR wrote for that name stays as written;
+                    // otherwise the multiple of the nominal size, as a plain radius
+                    int had = e.Bend != null ? PipeModelBend.RadiusCode(e.Bend.Radius) : 0;
+                    double f;
+                    if (had > 0 && PipeModelBend.NamedRadii.TryGetValue(had, out f) && f == mult) rad = e.Bend.Radius;
+                    else
+                    {
+                        double nps = PipeBuilder.NominalOf(e.Od / x.M.Factor(20));
+                        if (double.IsNaN(nps)) { x.Err(w + ": bend radius " + br + " needs a standard pipe size (give the radius)"); continue; }
+                        rad = mult * nps * x.M.Factor(0);
+                    }
                 }
                 else rad = Num(c, r, "Bend radius", x, 0, u.Len);
-                if (!(rad > 0) && PipeModelBend.RadiusCode(rad) == 0) { x.Err(w + ": the bend radius must be positive, or one of CAESAR's coded values as the job wrote it (-1.0101, -2.0202 ... -9.0909)"); continue; }
+                if (!(rad > 0) && PipeModelBend.RadiusCode(rad) == 0) { x.Err(w + ": the bend radius must be positive, a name (LR, SR, Long, Short, 3D, 5D), or a code CAESAR wrote (-1.0101 ... -9.0909)"); continue; }
+                if (PipeModelBend.NoRadiusCode(PipeModelBend.RadiusCode(rad))) x.Warnings.Add(w + ": bend radius " + R(rad) + " is a code CAESAR reads as no radius (0)");
                 bool fresh = e.Bend == null;
                 if (fresh) e.Bend = new PipeModelBend();
                 var b = e.Bend;

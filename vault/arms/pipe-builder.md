@@ -111,7 +111,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 > - `section`;
 > - `temperature` or `delta_t`;
 > - `pressure`;
-> - `bend` (`"LR"` = 1.5 × nominal, `"SR"` = 1 × nominal, a radius in inches, or `"none"` for a sharp corner);
+> - `bend` (`"LR"` or `"Long"` = 1.5 × nominal, `"SR"` or `"Short"` = 1 ×, `"3D"`, `"5D"`, a radius in inches, or `"none"` for a sharp corner); a name is written as the plain radius;
 > - `bend_nodes` (`"mid"`: the TO − 1 node at the bend's mid point, CAESAR's own default; `"near-mid"` adds TO − 2 at the near point; `"none"`);
 > - `max_length`: the longest straight between nodes.
 >

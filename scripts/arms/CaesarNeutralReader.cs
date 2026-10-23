@@ -951,7 +951,7 @@ public static class CaesarNeutralReader
                 bend.KFactor = At(rows, 1, 4);
                 bend.Raw = Flat(rows);
                 int radCode = PipeModelBend.RadiusCode(bend.Radius);
-                if (radCode > 0 && !PipeModelBend.NamedRadii.ContainsKey(radCode)) WarnAgg("bend-rc", "BEND: radius " + bend.Radius.ToString("0.0###", CultureInfo.InvariantCulture) + " is a coded value CAESAR wrote (a radius chosen by name), kept as written and drawn as a sharp corner until the code is confirmed", "block " + I(b + 1));
+                if (PipeModelBend.NoRadiusCode(radCode)) WarnAgg("bend-rc", "BEND: radius " + bend.Radius.ToString("0.0###", CultureInfo.InvariantCulture) + " is a code CAESAR reads as no radius (0): kept as written, drawn as a sharp corner", "block " + I(b + 1));
                 else if (!(bend.Radius > 0)) WarnAgg("bend-r", "BEND: radius not positive", "block " + I(b + 1));
                 M.Bends.Add(bend);
             }

@@ -25,7 +25,7 @@ using System.Text;
 //
 // Geometry: a run is a start (a point, or a position on an earlier run: a branch, with a welding tee
 // unless tee = "none") and legs (a direction and a length, or a point to go to). A corner between two
-// legs gets a bend (LR = 1.5 x nominal, SR = 1 x nominal, a radius, or none) in CAESAR's convention: the
+// legs gets a bend (LR / Long = 1.5 x nominal, SR / Short = 1 x, 3D, 5D, a radius, or none) in CAESAR's convention: the
 // element carrying the bend runs to the corner (the tangent intersection point) and its TO node is the
 // bend's far point. Positions along a run are measured along the leg lines through the corners, so a
 // position AT a corner is the bend's far point, and the arc occupies corner -/+ its tangent length
@@ -787,15 +787,16 @@ public static class PipeBuilder
             {
                 string k = s.Trim().ToUpperInvariant();
                 if (k == "NONE") return 0;
-                if (k == "LR" || k == "SR")
+                double mult = PipeModelBend.NamedMultiple(k);
+                if (!double.IsNaN(mult))
                 {
                     double nom = sec.Nps;
-                    if (double.IsNaN(nom)) { nom = sec.Od; Warn(w + ": OD " + Fmt(sec.Od) + " in is not a standard size: the " + k + " radius is taken from the OD"); }
-                    return (k == "LR" ? 1.5 : 1.0) * nom;
+                    if (double.IsNaN(nom)) { nom = sec.Od; Warn(w + ": OD " + Fmt(sec.Od) + " in is not a standard size: the " + s.Trim() + " radius is taken from the OD"); }
+                    return mult * nom;
                 }
             }
             double rad = Num(b, w + ".bend");
-            if (!(rad > 0)) throw Err(w + ": a bend radius must be positive (or \"LR\", \"SR\", \"none\")");
+            if (!(rad > 0)) throw Err(w + ": a bend radius must be positive (or \"LR\", \"SR\", \"Long\", \"Short\", \"3D\", \"5D\", \"none\")");
             return rad;
         }
 

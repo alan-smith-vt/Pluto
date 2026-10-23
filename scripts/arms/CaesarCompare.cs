@@ -132,7 +132,7 @@ public static class CaesarCompare
             var eb = q.Dequeue();
             matched.Add(eb);
             r.ElementsCompared++;
-            var d = Fields(ea, eb);
+            var d = Fields(a, ea, b, eb);
             if (d.Count > 0) r.ElementsChanged.Add("element " + Key(ea) + ": " + string.Join("; ", d.ToArray()));
             string uniA = UKey(ea.Uniform), uniB = UKey(eb.Uniform), windA = WKey(ea.Wind), windB = WKey(eb.Wind);
             if (uniA != uniB) r.LoadsChanged.Add("element " + Key(ea) + ": uniform " + (uniA.Length > 0 ? uniA : "none") + " -> " + (uniB.Length > 0 ? uniB : "none"));
@@ -195,6 +195,12 @@ public static class CaesarCompare
         var d = new Dictionary<string, PipeModelBlock>(e.Carried);
         d["ALLOWBLS"] = new PipeModelBlock { Seq = 1, Lines = def };
         return d;
+    }
+
+    static string RadiusText(double asWritten, double meaning)
+    {
+        string name = PipeModelBend.DisplayName(asWritten);
+        return name != null ? name + " (" + F(meaning) + ")" : PipeModelBend.RadiusCode(asWritten) > 0 ? F(asWritten) + " (no radius)" : F(asWritten);
     }
 
     // the vectors of a uniform load that carry something ("" for none)
@@ -278,7 +284,17 @@ public static class CaesarCompare
         return "node " + s.Node + " type " + s.Type + (s.SifIn != 0 ? " in " + G(s.SifIn) : "") + (s.SifOut != 0 ? " out " + G(s.SifOut) : "") + (s.SurfaceNode > 0 ? " surface " + s.SurfaceNode : "");
     }
 
-    static List<string> Fields(PipeModelElement a, PipeModelElement b)
+    // a bend radius by its meaning: a code CAESAR writes for a radius chosen by name, as the radius it names
+    // (CAESAR writes Long back as the plain radius); a code that is no radius as 0; a plain radius as written
+    static double Radius(PipeModel m, PipeModelElement e)
+    {
+        int code = PipeModelBend.RadiusCode(e.Bend.Radius);
+        if (code == 0) return e.Bend.Radius;
+        double r = PipeModelBend.ResolveCode(code, e.Od / m.Factor(20)) * m.Factor(0);
+        return double.IsNaN(r) ? e.Bend.Radius : r;
+    }
+
+    static List<string> Fields(PipeModel ma, PipeModelElement a, PipeModel mb, PipeModelElement b)
     {
         var d = new List<string>();
         Num(d, "DX", a.Dx, b.Dx); Num(d, "DY", a.Dy, b.Dy); Num(d, "DZ", a.Dz, b.Dz);
@@ -293,7 +309,8 @@ public static class CaesarCompare
         if ((a.Bend == null) != (b.Bend == null)) d.Add(a.Bend == null ? "bend added" : "bend removed");
         else if (a.Bend != null)
         {
-            Num(d, "bend radius", a.Bend.Radius, b.Bend.Radius);
+            double ra = Radius(ma, a), rb = Radius(mb, b);
+            if (!Same(ra, rb)) d.Add("bend radius " + RadiusText(a.Bend.Radius, ra) + " -> " + RadiusText(b.Bend.Radius, rb));
             if (a.Bend.Type != b.Bend.Type) d.Add("bend type " + a.Bend.Type + " -> " + b.Bend.Type);
             string na = string.Join(" ", a.Bend.AngleNodes.Select(x => G(x[0]) + "@" + G(x[1])).ToArray()), nb = string.Join(" ", b.Bend.AngleNodes.Select(x => G(x[0]) + "@" + G(x[1])).ToArray());
             if (na != nb) d.Add("bend nodes " + na + " -> " + nb);

@@ -111,8 +111,8 @@ static class PipeWorkbookGui
               "Section: the pipe size (OD, wall, insulation, material ...), named on the Sections sheet. Blank = the row above's. To change one value for one element, use the grouped columns at the right (click + above them)."),
             L("Process", "prop", "list?", processes, "Temperatures and pressures from the Processes sheet. Blank = the row above's.",
               "Process: the operating conditions (T1-T9, P1-P9, fluid density), named on the Processes sheet. Blank = the row above's."),
-            C("Bend radius", "bend", "radius", "Makes a bend at the TO node: a radius, LR (1.5 x nominal) or SR (1 x nominal). Blank = no bend.",
-              "Bend radius: makes this element a bend at its TO node (CAESAR's convention: the element runs to the corner). A radius in the header's unit, LR = 1.5 x the nominal size, SR = 1 x. A negative value like -4.0404 is a coded radius CAESAR wrote (a radius chosen by name): keep it as it is."),
+            C("Bend radius", "bend", "radius", "Makes a bend at the TO node: a radius, or a name: LR / Long (1.5 x nominal), SR / Short (1 x), 3D, 5D. Blank = no bend.",
+              "Bend radius: makes this element a bend at its TO node (CAESAR's convention: the element runs to the corner). A radius in the header's unit, or a name: LR or Long = 1.5 x the nominal size, SR or Short = 1 x, 3D, 5D. A radius CAESAR wrote by name shows its name and goes back to CAESAR as its code. A negative value such as -2.0202 is a code CAESAR reads as no radius (0): amber."),
             C("Bend nodes", "bend", "text", "Nodes on the bend: angle:node pairs, M = mid point. E.g. M:19; 0:18",
               "Bend nodes: the nodes CAESAR places on the bend's curve, as angle:node pairs separated by ';'. The angle is in degrees from the near end of the bend; M = the mid point. E.g. 'M:19; 0:18'. At most 3."),
             L("Bend type", "bend", "list!", LBendType, "Welded (or blank), Single flange or Double flange.", null),
@@ -304,7 +304,7 @@ static class PipeWorkbookGui
                 return "AND(" + at + "<>\"\",NOT(OR(" + string.Join(",", new[] { "yes", "y", "true", "g", "1", "no", "n", "false", "0" }.Select(w => lo + "=\"" + w + "\"").ToArray()) + ")))";
             case "radius":
                 return "IF(ISNUMBER(" + at + "),AND(" + at + "<=0,NOT(AND(" + at + "<0,ABS(-" + at + "/1.0101-ROUND(-" + at + "/1.0101,0))<0.0001,ROUND(-" + at + "/1.0101,0)<=9))),AND(" + at +
-                       "<>\"\",UPPER(TRIM(" + at + "))<>\"LR\",UPPER(TRIM(" + at + "))<>\"SR\"))";
+                       "<>\"\"," + string.Join(",", RadiusNames.Select(n => "UPPER(TRIM(" + at + "))<>\"" + n + "\"").ToArray()) + "))";
             case "elemref":
                 string t = "TRIM(" + at + ")", ids = "Elements!$A$2:$A$" + RefRows;
                 return "IF(" + t + "=\"\",FALSE,IF(ISNUMBER(FIND(\":\"," + t + ")),OR(COUNTIF(" + ids + ",TRIM(LEFT(" + t + ",FIND(\":\"," + t + ")-1)))=0,COUNTIF(" + ids + ",TRIM(MID(" + t + ",FIND(\":\"," + t +
@@ -314,6 +314,14 @@ static class PipeWorkbookGui
     }
 
     internal static int RefRows = 5000;      // how far rules look into the Elements sheet
+
+    static readonly string[] RadiusNames = { "LR", "SR", "LONG", "SHORT", "3D", "5D" };
+
+    // a bend radius CAESAR reads as no radius (a code 2 or 6-9): amber
+    internal static string NoRadiusRule(string at)
+    {
+        return "AND(ISNUMBER(" + at + ")," + at + "<0,ABS(-" + at + "/1.0101-ROUND(-" + at + "/1.0101,0))<0.0001,OR(ROUND(-" + at + "/1.0101,0)=2,AND(ROUND(-" + at + "/1.0101,0)>=6,ROUND(-" + at + "/1.0101,0)<=9)))";
+    }
 
     static XlsxValidation Validation(Col c, string at)
     {
@@ -330,8 +338,8 @@ static class PipeWorkbookGui
             case "list!": case "yesno": v.Type = "list"; v.Formula1 = c.List; v.ErrorTitle = "Not on the list"; v.Error = "Pick a value from the list (" + NameOf(c.Name) + ")."; break;
             case "list?": v.Type = "list"; v.Formula1 = c.List; v.ShowError = false; break;
             case "radius":
-                v.Type = "custom"; v.Formula1 = "OR(ISNUMBER(" + at + "),UPPER(TRIM(" + at + "))=\"LR\",UPPER(TRIM(" + at + "))=\"SR\")";
-                v.ErrorTitle = "A bend radius"; v.Error = "A radius (a number), LR or SR."; break;
+                v.Type = "custom"; v.Formula1 = "OR(ISNUMBER(" + at + ")," + string.Join(",", RadiusNames.Select(n => "UPPER(TRIM(" + at + "))=\"" + n + "\"").ToArray()) + ")";
+                v.ErrorTitle = "A bend radius"; v.Error = "A radius (a number), or LR, SR, Long, Short, 3D, 5D."; break;
         }
         return v;
     }
@@ -515,7 +523,7 @@ static class PipeWorkbookGui
             { "Mi", "IFERROR(MATCH([ODin]+0.02,pl_odl,1),0)" },
             { "NP", "IFERROR(IF([ODin]>=13.9,IF(ABS([ODin]-ROUND([ODin],0))<0.02,ROUND([ODin],0),\"\"),IF(ABS(INDEX(pl_odl,[Mi])-[ODin])<0.02,INDEX(pl_npl,[Mi]),\"\")),\"\")" },
             { "Rr", "IFERROR(" + E("pl_bend") + "&\"\",\"\")" },
-            { "R", "IFERROR(IF([Rr]=\"\",0,IF(ISNUMBER(--[Rr]),IF(--[Rr]>0,--[Rr],IF(--[Rr]<0,INDEX(pl_codes,ROUND(-[Rr]/1.0101,0))*[NP]*pl_i2l,0)),IF(UPPER(TRIM([Rr]))=\"LR\",1.5*[NP]*pl_i2l,IF(UPPER(TRIM([Rr]))=\"SR\",[NP]*pl_i2l,0)))),0)" },
+            { "R", "IFERROR(IF([Rr]=\"\",0,IF(ISNUMBER(--[Rr]),IF(--[Rr]>0,--[Rr],IF(--[Rr]<0,INDEX(pl_codes,ROUND(-[Rr]/1.0101,0))*[NP]*pl_i2l,0)),IF(OR(UPPER(TRIM([Rr]))=\"LR\",UPPER(TRIM([Rr]))=\"LONG\"),1.5,IF(OR(UPPER(TRIM([Rr]))=\"SR\",UPPER(TRIM([Rr]))=\"SHORT\"),1,IF(UPPER(TRIM([Rr]))=\"3D\",3,IF(UPPER(TRIM([Rr]))=\"5D\",5,0))))*[NP]*pl_i2l)),0)" },
             { "X1", "IF([OK],IFERROR(INDEX([X2:],MATCH([Fr],[To:],0)),IFERROR(INDEX([X1:],MATCH([Fr],[Fr:],0)),IFERROR(INDEX(Coords!$B:$B,MATCH([Fr],Coords!$A:$A,0))+0,[LX-]))),\"\")" },
             { "Y1", "IF([OK],IFERROR(INDEX([Y2:],MATCH([Fr],[To:],0)),IFERROR(INDEX([Y1:],MATCH([Fr],[Fr:],0)),IFERROR(INDEX(Coords!$C:$C,MATCH([Fr],Coords!$A:$A,0))+0,[LY-]))),\"\")" },
             { "Z1", "IF([OK],IFERROR(INDEX([Z2:],MATCH([Fr],[To:],0)),IFERROR(INDEX([Z1:],MATCH([Fr],[Fr:],0)),IFERROR(INDEX(Coords!$D:$D,MATCH([Fr],Coords!$A:$A,0))+0,[LZ-]))),\"\")" },
@@ -773,7 +781,7 @@ static class PipeWorkbookGui
             view.Set(23 + i, 1, legend[i][0], b.Style(new XlsxStyle { Bold = true, Color = legend[i][1], Align = "center" }));
             view.Set(23 + i, 2, legend[i][2], t.Body);
         }
-        view.Set(32, 1, "Bends are drawn with their radius (LR / SR from the section's OD). A coded CAESAR radius is drawn as a corner until its code is confirmed. " +
+        view.Set(32, 1, "Bends are drawn with their radius (a name - LR, SR, 3D, 5D, or one CAESAR wrote - from the section's OD). A CAESAR code that is no radius is drawn as a corner. " +
                         "Nodes placed on a bend's curve, and elements past the first " + cap + " rows, are not drawn. Rows not drawn: their From / To are missing or not numbers.", t.Small);
         view.Merge("B33:C41");
 

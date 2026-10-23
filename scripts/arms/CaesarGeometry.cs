@@ -511,9 +511,9 @@ public static class CaesarGeometry
             bg.LeavingElement = outEl;
             if (deg < 1.0 || deg > 179.0) return "bend angle " + F(deg) + " deg outside 1..179";
             int radCode = PipeModelBend.RadiusCode(b.Radius);
+            if (PipeModelBend.NoRadiusCode(radCode)) return "radius " + F(b.Radius) + " is CAESAR's code " + radCode + ", which CAESAR reads as no radius (0)";
             if (radCode > 0 && double.IsNaN(bg.Radius))
-                return "radius " + F(b.Radius) + " is CAESAR's coded value " + radCode + " (a radius chosen by name), " +
-                       (PipeModelBend.NamedRadii.ContainsKey(radCode) ? "and the OD " + F(OdOf(e)) + " is not a standard pipe size" : "not confirmed yet");
+                return "radius " + F(b.Radius) + " is CAESAR's " + PipeModelBend.CodeName(radCode) + " (a radius by name), and the OD " + F(OdOf(e)) + " is not a standard pipe size";
             if (!(bg.Radius > 0) || bg.Radius >= Huge) return "radius " + F(bg.Radius) + " not usable";
             double T = bg.Radius * Math.Tan(theta / 2.0);
             bg.T = T;

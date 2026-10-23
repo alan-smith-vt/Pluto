@@ -83,14 +83,11 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > - **Row order** on Elements is CAESAR's element order.
 > - **Unchanged values stay exact.** A value equal to the base's (to 1e-9) keeps the base's exact value. That is why an unedited workbook gives back its source, even after Excel saves numbers its own way.
 > - **Section / Process:** a blank cell takes the row above's. An override cell wins over the section's or process's value for that one element.
-> - **Bend radius:** a number, or `LR` / `SR` (1.5 / 1 × nominal, for a standard size in inches).
->   - **Coded radii:** CAESAR may write a radius as a negative coded value, a multiple of −1.0101 such as −4.0404. It is the same kind of code as −2.0202 for "M" in the angle fields; most likely a radius chosen by name in CAESAR's input.
->   - Such a value is read and written as it is, so CAESAR resolves it as before. Do not make it positive: +4.0404 is a literal 4.04 in radius, a different bend.
->   - **Drawing them:** each code confirmed against CAESAR goes into `PipeModelBend.NamedRadii` as a multiple of the nominal size. The nominal size comes from the bend's OD, inch or metric.
-    - From then on, the viewer and compare's node positions use that radius.
-    - A code not confirmed yet is drawn as a sharp corner, and the import and the reader say so (first seen 2026-10-22 on a real job; the public samples, the fixture and a fresh 15.01 job write plain radii).
-  - **How a code is confirmed:** a probe job with one 90° bend per code on 6 in pipe, imported into CAESAR. CAESAR's bend list, or the input data export's BEND DATA, shows what each code became.
-    - The table's order is a candidate only: CAESAR's list is Long, Short, 3D, 5D, which would make −4.0404 = 5D.
+> - **Bend radius:** a number, or a name: `LR` or `Long` (1.5 × nominal), `SR` or `Short` (1 ×), `3D`, `5D`. The nominal size comes from the element's OD, inch or metric.
+>   - **CAESAR's coded radii** (a negative multiple of −1.0101) show as their names: −3.0303 is `3D`, −4.0404 `Short`, −5.0505 `5D` (and −1.0101 `Long`, which CAESAR itself writes as a plain number).
+>     - A name read back over CAESAR's code for that name keeps the code, so CAESAR gets its own file back. Any other name becomes the plain radius.
+>     - The codes were confirmed with CAESAR 15.01: [[vault/format/caesar-neutral-loads|caesar-neutral-loads]].
+>   - **Codes CAESAR reads as no radius** (−2.0202, −6.0606 … −9.0909) stay numbers, are carried as written, and show amber. Do not make a code positive: +4.0404 is a literal 4.04 radius, a different bend.
 > - **Uniform / Wind are per element.** An element no row names has none: CAESAR's file does not carry them forward.
 >   - **Element:**
 >     - an Id;
@@ -144,7 +141,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >   - **Dropdowns:**
 >     - with a warning for a value not on the list: element type, bend type, restraint type, SIF type, load vector, In g's, wind type, joint frame, vertical axis;
 >     - free entry allowed: Section, Process, joint kind;
->     - the bend radius takes a number, `LR` or `SR`.
+>     - the bend radius takes a number, or `LR`, `SR`, `Long`, `Short`, `3D`, `5D`.
 > - **Highlighting (conditional formatting):**
 >   - **Red** = the build would refuse it:
 >     - text or an error where a number belongs;
@@ -167,7 +164,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >   - the pipe;
 >   - rigids, valves and flanges as thick dark lines;
 >   - expansion joints dashed green;
->   - bends as curves with their radius (LR / SR from the section's OD, through a nominal-size table);
+>   - bends as curves with their radius (a name or a CAESAR code from the section's OD, through a nominal-size table);
 >   - anchors as squares, vertical supports as triangles, other restraints as diamonds;
 >   - an X / Y / Z triad.
 >
@@ -179,7 +176,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >   - **Projection:** azimuth, then elevation, with Z-up jobs turned first. The chart is square and a hidden square frame keeps both scales equal.
 > - **Limits:**
 >   - nodes on a bend's curve (M, angle nodes) are not drawn;
->   - a coded CAESAR radius is drawn as a corner until its code is confirmed;
+>   - a CAESAR code that is no radius is drawn as a corner, as CAESAR treats it;
 >   - the formula rows end 300 elements past the job's count, so a much longer model needs the workbook written again (`-Xlsx`);
 >   - where a loop of the model does not close, the place it is closed may differ from Pluto's viewer by that gap;
 >   - the workbook is about 0.4–0.8 MB (the formulas).

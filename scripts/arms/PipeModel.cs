@@ -122,9 +122,9 @@ public class PipeModelBend
     public const double MidPoint = -2.0202;   // CAESAR's code for the "M" (mid point) bend node
 
     // A negative radius CAESAR writes as a multiple of -1.0101 (-1.0101 .. -9.0909) is one of its coded values
-    // (like -2.0202 = "M" in the angle fields), not a length: most likely a radius picked by name in CAESAR's
-    // input (its list: Long 1.5, Short 1, 3D, 5D x the nominal size). It is always carried as written, so
-    // CAESAR resolves it as before. Returns the code's number (1-9), or 0 for an ordinary radius.
+    // (like -2.0202 = "M" in the angle fields), not a length: a radius chosen by name in CAESAR's input, which
+    // follows the pipe size. It is always carried as written, so CAESAR resolves it as before. Returns the code's
+    // number (1-9), or 0 for an ordinary radius.
     public static int RadiusCode(double radius)
     {
         if (!(radius < 0)) return 0;
@@ -133,14 +133,18 @@ public class PipeModelBend
         return n >= 1 && n <= 9 && Math.Abs(k - n) < 1e-4 ? n : 0;
     }
 
-    // The codes confirmed against CAESAR, as multiples of the nominal pipe size (a probe job with one bend per
-    // code, imported into CAESAR and read back). A code not here stays unresolved: drawn as a sharp corner.
-    public static readonly Dictionary<int, double> NamedRadii = new Dictionary<int, double>();
+    // The codes as CAESAR 15.01 reads them, as multiples of the nominal pipe size: a probe job with one bend per
+    // code, imported into CAESAR and exported again (2026-10-23). CAESAR writes Long back as the plain radius and
+    // keeps the codes of 3D, Short and 5D. Codes 2 and 6-9 are no radius at all: CAESAR shows 0.
+    public static readonly Dictionary<int, double> NamedRadii = new Dictionary<int, double> { { 1, 1.5 }, { 3, 3.0 }, { 4, 1.0 }, { 5, 5.0 } };
 
-    // a coded radius in inches for a pipe of this OD (inches); NaN when the code is not confirmed or the OD is
-    // not a standard size
+    public static bool NoRadiusCode(int code) { return code > 0 && !NamedRadii.ContainsKey(code); }
+
+    // a coded radius in inches for a pipe of this OD (inches): 0 for a code CAESAR reads as no radius; NaN when
+    // the OD is not a standard size
     public static double ResolveCode(int code, double odInches)
     {
+        if (NoRadiusCode(code)) return 0;
         double f, nps = PipeBuilder.NominalOf(odInches);
         return NamedRadii.TryGetValue(code, out f) && !double.IsNaN(nps) ? f * nps : double.NaN;
     }
@@ -148,9 +152,31 @@ public class PipeModelBend
     public static string CodeName(int code)
     {
         double f;
-        if (!NamedRadii.TryGetValue(code, out f)) return "code " + code;
-        return f == 1.5 ? "Long" : f == 1 ? "Short" : f.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "D";
+        if (!NamedRadii.TryGetValue(code, out f)) return "code " + code + " (no radius)";
+        return NameOf(f);
     }
+
+    static string NameOf(double multiple)
+    {
+        return multiple == 1.5 ? "Long" : multiple == 1 ? "Short" : multiple.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture) + "D";
+    }
+
+    // a radius by name -> its multiple of the nominal size (LR / Long 1.5, SR / Short 1, 3D, 5D); NaN for another text
+    public static double NamedMultiple(string name)
+    {
+        string k = (name ?? "").Trim().ToUpperInvariant();
+        return k == "LR" || k == "LONG" ? 1.5 : k == "SR" || k == "SHORT" ? 1.0 : k == "3D" ? 3.0 : k == "5D" ? 5.0 : double.NaN;
+    }
+
+    // the name a radius shows in the workbook: a confirmed code's (Short, 3D, 5D, Long); null for a plain radius or a
+    // code CAESAR reads as no radius (kept as the number)
+    public static string DisplayName(double radius)
+    {
+        int code = RadiusCode(radius);
+        double f;
+        return code > 0 && NamedRadii.TryGetValue(code, out f) ? NameOf(f) : null;
+    }
+
     public int Seq;                           // block number in the source file; 0 = new
     public List<string> Raw;                  // the block as written; null = new
 }
