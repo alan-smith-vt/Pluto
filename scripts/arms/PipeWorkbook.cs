@@ -124,7 +124,10 @@ public static class PipeWorkbook
 
     // ======================================================================== write
 
-    public static void Write(PipeModel m, string path, string sourceName) { File.WriteAllBytes(path, ToBytes(m, sourceName)); }
+    public static void Write(PipeModel m, string path, string sourceName) { Write(m, path, sourceName, null); }
+
+    // run: the Start sheet's links to the launchers Build-Pipe.ps1 writes beside the workbook (PipeWorkbookRun); null = none
+    public static void Write(PipeModel m, string path, string sourceName, PipeWorkbookRun run) { File.WriteAllBytes(path, ToBytes(m, sourceName, run)); }
 
     sealed class Sec
     {
@@ -239,7 +242,9 @@ public static class PipeWorkbook
         return new[] { "Id", "Node", "Type", "CNode", "Stiffness (" + u.TransK + " or " + u.RotK + "; blank = rigid)", "Gap (" + u.Len + " or deg)", "Mu", "Cos X", "Cos Y", "Cos Z", "Tag" };
     }
 
-    public static byte[] ToBytes(PipeModel m, string sourceName)
+    public static byte[] ToBytes(PipeModel m, string sourceName) { return ToBytes(m, sourceName, null); }
+
+    public static byte[] ToBytes(PipeModel m, string sourceName, PipeWorkbookRun run)
     {
         string json = PipeModelJson.Write(m);
         string hash = Sha(json);
@@ -616,7 +621,7 @@ public static class PipeWorkbook
             "Joints: DOFs like 'axial gap=0.125 k=5000; shear; torsion; bending gap=2' (frame pipe) or 'X; Y; RZ k=1e6' (frame global); a DOF not listed is free.",
             "Read back: only the input sheets. Start, 3D View, Nodes and Carried are rebuilt on every export. The hidden _pluto sheet holds the model this workbook was written from: what you did not change is given back exactly.",
         };
-        PipeWorkbookGui.StartSheet(start, t, m.Title ?? "", sourceName ?? "", u.Len + ", " + u.Force + ", " + u.Temp + ", " + u.Press, sheets, checks, reference);
+        PipeWorkbookGui.StartSheet(start, t, m.Title ?? "", sourceName ?? "", u.Len + ", " + u.Force + ", " + u.Temp + ", " + u.Press, sheets, checks, reference, run);
         return b.ToBytes();
     }
 

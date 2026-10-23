@@ -121,6 +121,9 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >   - nothing in it would change.
 >
 >   Otherwise it was changed outside (CAESAR, a person): the run stops, shows the differences, and needs `-Force`.
+> - **Launchers beside the workbook** (2026-10-23, `PipeWorkbookRun`): `-Xlsx` and `-NewWorkbook` also write `<name> - preview.cmd` (`-Preview -Watch`) and `<name> - cii.cmd` (`-Cii -Preview`, then waits so the report can be read). They find the workbook beside themselves (`%~dp0`); the runner's path is the one at write time.
+>   - Outputs go beside the workbook under its name. A workbook made from a `.cii` of the same name in the same folder writes to `<name>_edit` instead, so the CAESAR job it came from is never written over.
+>   - Why not buttons in Excel: they need macros (an `.xlsm`), which production machines block, and the workbook would stop being plain data.
 > - **`<base>.build.json`** records what was written from what: the `.cii`'s bytes, the model and the input fingerprints, and the preview's model. It is how the runner knows its own `.cii` and the previewed model.
 
 > [!info]- Viewer: Reload and Auto-reload
@@ -152,6 +155,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >     - a vector outside 1–9, the same node and vector twice;
 >     - a duplicate section or process name, a cosine above 1.
 >   - **Amber** = worth a look: a node no element has (bend nodes count), a copied Id, a zero-length element.
+> - **Build it from here** (Start sheet, under the steps): links to the two launchers (relative, so they follow the folder), to Pluto's viewer page and to the folder, and the PowerShell command each launcher runs, built from `CELL("filename")` so it names the workbook where it is now (the path at write time where `CELL` gives none, e.g. in LibreOffice). Excel asks before it follows a link to a `.cmd` file; where policy stops it, double-click the file in the folder.
 > - **Start's checks** count those cells live: error values; text where a number belongs (per sheet); rows without From / To; unknown names and types; unknown element Ids; vectors outside 1–9; nodes on no element; Ids used twice. Each shows OK, check (amber) or fix (red).
 > - **Kept as before:** the input sheets keep their columns, values and order, so the reader is unchanged. Start, 3D View, Nodes, Carried and the hidden sheets are never read. Only the input sheets' cells are read, so the plot's formulas never trip the "formula with no saved value" check. The workbook asks Excel to calculate everything when it opens.
 

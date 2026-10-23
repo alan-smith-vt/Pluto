@@ -395,7 +395,7 @@ static class PipeWorkbookGui
         public Check(string what, string formula, bool warning) { What = what; Formula = formula; Warning = warning; }
     }
 
-    internal static void StartSheet(XlsxBookSheet s, Theme t, string title, string source, string units, List<SheetInfo> sheets, List<Check> checks, string[] reference)
+    internal static void StartSheet(XlsxBookSheet s, Theme t, string title, string source, string units, List<SheetInfo> sheets, List<Check> checks, string[] reference, PipeWorkbookRun run)
     {
         s.ShowGrid = false;
         s.TabColor = "1F2937";
@@ -410,11 +410,12 @@ static class PipeWorkbookGui
             "1   Edit the white cells on the input sheets. A dropdown offers the allowed values; selecting a cell shows a hint; the red corner on a header holds its note.",
             "2   Red cells will stop the build; amber ones are worth a look. The checks below count them as you type.",
             "3   3D View draws the model as you edit it: pipe, bends, rigids, expansion joints, restraints.",
-            "4   Save, then build: Build-Pipe.ps1 -In <this>.xlsx -Preview (the viewer) or -Cii (CAESAR). -Watch rebuilds on every save.",
+            "4   Save, then build: the links under Build it from here, or Build-Pipe.ps1 -In <this>.xlsx -Preview (the viewer) or -Cii (CAESAR). -Watch rebuilds on every save.",
             "5   Keep the Id column. It ties each row to the model this workbook was written from; leave it blank on a new row.",
         };
         foreach (string st in steps) { s.Set(r, 1, st, t.BodyWrap); s.Merge("B" + (r + 1) + ":E" + (r + 1)); s.Height(r, 18); r++; }
         r++;
+        if (run != null) r = RunBlock(s, t, r, run);
 
         s.Set(r, 1, "Sheets", t.Section); s.Set(r, 2, "", t.Section); s.Set(r, 3, "Rows", t.Section); s.Style(r, 4, t.Section); r++;
         foreach (var si in sheets)
@@ -456,6 +457,32 @@ static class PipeWorkbookGui
 
         s.Set(r, 1, "Reference", t.Section); s.Style(r, 2, t.Section); s.Style(r, 3, t.Section); s.Style(r, 4, t.Section); r++;
         foreach (string line in reference) { s.Set(r, 1, line, t.BodyWrap); s.Merge("B" + (r + 1) + ":E" + (r + 1)); s.Height(r, line.Length > 150 ? 32 : 18); r++; }
+    }
+
+    // "Build it from here": links to the launchers beside the workbook, the viewer and the folder, and the commands
+    // they run (PipeWorkbookRun); returns the next free row
+    static int RunBlock(XlsxBookSheet s, Theme t, int r, PipeWorkbookRun run)
+    {
+        s.Set(r, 1, "Build it from here", t.Section); s.Set(r, 2, "(save first: the build reads the saved file)", t.Section); s.Style(r, 3, t.Section); s.Style(r, 4, t.Section); r++;
+        Action<string, string, string> link = (target, label, what) =>
+        {
+            s.SetFormula(r, 1, "HYPERLINK(" + target + "," + PipeWorkbookRun.Lit(label) + ")", t.Link);
+            s.Set(r, 2, what, t.BodyWrap); s.Merge("C" + (r + 1) + ":E" + (r + 1)); s.Height(r, 30);
+            r++;
+        };
+        link(PipeWorkbookRun.Lit(run.PreviewCmd), "\u25B6  Live preview",
+             "Runs \"" + run.PreviewCmd + "\" beside this workbook: every save (Ctrl+S) rebuilds " + run.Out + ".bin and " + run.Out +
+             ".features.json for Pluto's viewer (tick Auto-reload there). Close its window to stop.");
+        link(PipeWorkbookRun.Lit(run.CiiCmd), "\u25B6  Write the .cii",
+             "Runs \"" + run.CiiCmd + "\": " + run.Out + ".cii for CAESAR II (File, Import, CAESAR II Neutral File) and the preview with it. Its report says whether the model is the one you previewed.");
+        if (run.Viewer != null)
+            link(PipeWorkbookRun.Lit(run.Viewer), "Open Pluto's viewer", "Then Choose files... and pick " + run.Out + ".bin and " + run.Out + ".features.json together (Chrome or Edge).");
+        link(run.FolderFormula(), "Open this folder", "The workbook, the two launchers and what they write.");
+        s.Set(r, 1, "Excel asks before it follows a link to a .cmd file; where it will not, double-click the file in the folder. Or paste a command into PowerShell:", t.Small);
+        s.Merge("B" + (r + 1) + ":E" + (r + 1)); s.Height(r, 26); r++;
+        s.Set(r, 1, "Preview command", t.Label); s.SetFormula(r, 2, run.CommandFormula(true), t.Small); s.Merge("C" + (r + 1) + ":E" + (r + 1)); s.Height(r, 40); r++;
+        s.Set(r, 1, ".cii command", t.Label); s.SetFormula(r, 2, run.CommandFormula(false), t.Small); s.Merge("C" + (r + 1) + ":E" + (r + 1)); s.Height(r, 40); r++;
+        return r + 1;
     }
 
     // ---------------------------------------------------------------- the 3D view

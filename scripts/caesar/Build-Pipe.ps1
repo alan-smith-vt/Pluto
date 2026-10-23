@@ -17,7 +17,9 @@
 #                   only when this runner wrote it, or it is the model's own source, or nothing would change in it;
 #                   otherwise (CAESAR or someone changed it) -Force is needed. The report says whether the model is
 #                   the one you previewed ("[review ]").
-#         -Xlsx     <base>.xlsx, the model as a workbook to edit (never written over the input)
+#         -Xlsx     <base>.xlsx, the model as a workbook to edit (never written over the input), with two launchers beside
+#                   it that the Start sheet links to: "<base> - preview.cmd" (-Preview -Watch) and "<base> - cii.cmd"
+#                   (-Cii -Preview); -NewWorkbook writes them too (PipeWorkbookRun)
 #         -Json     <base>.pipe.json, the whole model (PipeModelJson; exact)
 #         -Preview  <base>.bin + <base>.features.json for the viewer, built from the model in memory (what
 #                   Run-Caesar.ps1 makes of the .cii): look before CAESAR does. Written to temporary names and moved
@@ -136,8 +138,10 @@ if ($NewWorkbook) {
         $model = [PipeWorkbook]::Template()
         $seedText = $null
         if ($Seed) { $seedText = [CaesarPipeImport]::ApplySeed($model, (Full $Seed), $true); Say "seed" $seedText }
-        [PipeWorkbook]::Write($model, $xlsxFile, "the Pluto template" + $(if ($Seed) { " + seed " + [IO.Path]::GetFileName($Seed) } else { "" }))
+        $run = [PipeWorkbookRun]::For($xlsxFile, $repoRoot, $null)
+        [PipeWorkbook]::Write($model, $xlsxFile, "the Pluto template" + $(if ($Seed) { " + seed " + [IO.Path]::GetFileName($Seed) } else { "" }), $run)
         Say "write" ("{0}: a {1}-element template to edit in Excel; then Build-Pipe.ps1 -In ""{0}"" -Preview" -f $xlsxFile, $model.Elements.Count)
+        foreach ($l in $run.WriteLaunchers()) { Say "write" ("{0}: double-click it, or use the Start sheet's link" -f $l) }
         Write-Output ("RESULT {""kind"":""new"",""xlsx"":" + (Q $xlsxFile) + ",""seed"":" + (Q $seedText) + "}")
         exit 0
     } catch {
@@ -237,8 +241,10 @@ function Build-Once {
         Write-Stamp ("{""sha256"":" + (Q (Sha $bytes)) + ",""model"":" + (Q $modelHash) + ",""input"":" + (Q $inPath) + ",""inputSha256"":" + (Q $inSha) + ",""written"":" + (Q $now) + "}") $null
     }
     if ($Xlsx) {
-        [PipeWorkbook]::Write($model, $xlsxFile, [IO.Path]::GetFileName($inPath))
+        $run = [PipeWorkbookRun]::For($xlsxFile, $repoRoot, $inPath)
+        [PipeWorkbook]::Write($model, $xlsxFile, [IO.Path]::GetFileName($inPath), $run)
         Say "write" ("{0}: the model as a workbook to edit (open it on its Start sheet)" -f $xlsxFile)
+        foreach ($l in $run.WriteLaunchers()) { Say "write" ("{0}: double-click it, or use the Start sheet's link" -f $l) }
     }
     if ($Json) {
         [IO.File]::WriteAllText($jsonFile, [PipeModelJson]::Write($model), (New-Object Text.UTF8Encoding($false)))
