@@ -299,7 +299,9 @@ static class PipeWorkbookGui
             case "cos": return "IF(ISNUMBER(" + at + "),ABS(" + at + ")>1," + at + "<>\"\")";
             case "vector": return "IF(ISNUMBER(" + at + "),OR(" + at + "<1," + at + ">9," + at + "<>INT(" + at + "))," + at + "<>\"\")";
             case "list!": return "AND(" + at + "<>\"\",COUNTIF(" + c.List + "," + at + ")=0)";
-            case "yesno": return "AND(" + at + "<>\"\",ISERROR(MATCH(LOWER(" + at + "&\"\"),{\"yes\",\"y\",\"true\",\"g\",\"1\",\"no\",\"n\",\"false\",\"0\"},0)))";
+            case "yesno":   // no array constant: Excel refuses them in conditional formatting (and repairs the sheet away)
+                string lo = "LOWER(TRIM(" + at + "&\"\"))";
+                return "AND(" + at + "<>\"\",NOT(OR(" + string.Join(",", new[] { "yes", "y", "true", "g", "1", "no", "n", "false", "0" }.Select(w => lo + "=\"" + w + "\"").ToArray()) + ")))";
             case "radius":
                 return "IF(ISNUMBER(" + at + "),AND(" + at + "<=0,NOT(AND(" + at + "<0,ABS(-" + at + "/1.0101-ROUND(-" + at + "/1.0101,0))<0.0001,ROUND(-" + at + "/1.0101,0)<=9))),AND(" + at +
                        "<>\"\",UPPER(TRIM(" + at + "))<>\"LR\",UPPER(TRIM(" + at + "))<>\"SR\"))";
