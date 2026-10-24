@@ -555,6 +555,8 @@ public static class PipeWorkbook
             hg.Set(r, 20, h.Tag);
             r++;
         }
+        if (m.Source != null && !m.Source.Seed && m.Source.TailNozzleLines < 0 && m.Source.MiscelTail.Count > 4)
+            hg.Set(0, 22, "this job's MISCEL_1 tail (nozzles, hangers) is in a layout Pluto does not take apart: it is carried as written, so its hangers are not listed here and cannot be edited (CAESAR keeps them)", XlsxBook.Note);
         int limH = Math.Max(500, m.Hangers.Count + 300);
         PipeWorkbookGui.Table(hg, t, hgh, PipeWorkbookGui.HangerCols(), m.Hangers.Count, limH);
         PipeWorkbookGui.Rule(hg, "B2:B" + limH, "AND(B2=\"\",COUNTA($A2,$C2:$U2)>0)", t.Red);
@@ -1531,7 +1533,12 @@ public static class PipeWorkbook
             foreach (string q in ends)
             {
                 PipeModelElement e;
-                if (!ids.TryGetValue(q, out e)) { x.Err(w + ": element \"" + q + "\" is not on the Elements sheet"); return null; }
+                if (!ids.TryGetValue(q, out e))
+                {
+                    x.Err(w + ": element \"" + q + "\" is not on the Elements sheet" + (IdNum(q, 'E') > 0 ?
+                          " (rows you add have no Id until the workbook is written again: leave Element blank and give From and To)" : ""));
+                    return null;
+                }
                 at.Add(els.IndexOf(e));
             }
             if (at[at.Count - 1] < at[0]) { x.Err(w + ": " + id + " runs backwards (" + ends[1] + " comes before " + ends[0] + " on the Elements sheet)"); return null; }

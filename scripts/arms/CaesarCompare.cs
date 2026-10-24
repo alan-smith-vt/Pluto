@@ -121,7 +121,7 @@ public static class CaesarCompare
         if (lengthTol <= 0) lengthTol = 0.01;
 
         // settings
-        if (!Same(a.Ambient, b.Ambient)) r.Settings.Add("ambient " + F(a.Ambient) + " -> " + F(b.Ambient));
+        if (!Same(a.Ambient, b.Ambient)) r.Settings.Add("ambient " + Pair(a.Ambient, b.Ambient));
         if (a.ZUp != b.ZUp) r.Settings.Add("vertical axis " + (a.ZUp ? "Z" : "Y") + " -> " + (b.ZUp ? "Z" : "Y"));
         if ((a.Title ?? "") != (b.Title ?? "")) r.Settings.Add("title \"" + a.Title + "\" -> \"" + b.Title + "\"");
         for (int i = 0; i < 22; i++)
@@ -378,7 +378,15 @@ public static class CaesarCompare
         return d;
     }
 
-    static void Num(List<string> d, string what, double a, double b) { if (!Same(a, b)) d.Add(what + " " + F(a) + " -> " + F(b)); }
+    static void Num(List<string> d, string what, double a, double b) { if (!Same(a, b)) d.Add(what + " " + Pair(a, b)); }
+
+    // "a -> b" with enough digits to tell them apart
+    static string Pair(double a, double b)
+    {
+        string fa = F(a), fb = F(b);
+        for (int p = 6; fa == fb && p <= 17; p++) { fa = a.ToString("G" + p, CultureInfo.InvariantCulture); fb = b.ToString("G" + p, CultureInfo.InvariantCulture); }
+        return fa + " -> " + fb;
+    }
 
     static bool Same(double a, double b)
     {

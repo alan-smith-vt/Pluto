@@ -126,6 +126,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 > - **Start:** `start = [x, y, z]`, the first run's default being the origin. Or `from = { run = "header", at = 12 }`: a branch, starting at that position on an earlier run.
 >   - A branch gets a **welding tee** at the header node (SIF type 3, as CAESAR writes one).
 >   - Opt out with `tee = "none"`. That is the default when the branch starts at the other run's end, which makes it a continuation.
+> - **End on another run** (a loop: a bypass round a control valve, a return to the header): `end = { run = "header", at = 34 }`, an earlier run. The legs must reach that point (within 0.01 in; the error says by how much they miss); the run's last element ends at that run's node there, with a welding tee (`end_tee = "none"` for none; the default at the other run's end).
 > - **`legs`:** each leg is `["+X", 20]` (`±X ±Y ±Z`, or `[x, y, z]` for a skewed direction), or one of these tables:
 >   - `{ dir = …, length = …, bend = … }`;
 >   - `{ to = [x, y, z] }`;
@@ -154,8 +155,8 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 >   - `effective_id` (in) for the pressure thrust. Without it there is no thrust, and a warning.
 > - **`coupling`** (a mechanical coupling): nodes N and N + 1 at one point, tied by **6 CNODE restraints in the pipe's own axes**:
 >   - axial: `axial_gap` (in, free each way), then `axial_stiffness`, rigid unless given;
->   - two shears: rigid;
->   - torsion: rigid;
+>   - two shears: `shear_gap` (in, free each way), then `shear_stiffness`; rigid unless given;
+>   - torsion: `torsion_gap` (deg, free each way), then `torsion_stiffness` (in·lb/deg); rigid unless given;
 >   - two bendings: `deflection` (deg, free), then `rotational_stiffness`, rigid unless given;
 >   - optional `sif`.
 >

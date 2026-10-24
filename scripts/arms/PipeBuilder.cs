@@ -231,6 +231,9 @@ public static class PipeBuilder
         public double FromS;
         public bool IsBranch;
         public string Tee = "none";
+        public string EndRun;     // a loop: the run it ends on, and where (in); null = a free end
+        public double EndS;
+        public string EndTee = "none";
         public Sec Section;
         public readonly List<Leg> Legs = new List<Leg>();
         public readonly List<double[]> Points = new List<double[]>();   // start, corners, end (in)
@@ -531,7 +534,7 @@ public static class PipeBuilder
                 var r = new RunB { Item = t, Name = Str(t, "name", "run" + (i + 1).ToString(CultureInfo.InvariantCulture), "[[runs]]") };
                 string w = "run \"" + r.Name + "\"";
                 r.Where = w;
-                Allowed(t, w, "name start from tee legs section temperature delta_t pressure bend bend_nodes max_length line fluid_density fluid_sg first_node uniform g_load wind_shape");
+                Allowed(t, w, "name start from tee end end_tee legs section temperature delta_t pressure bend bend_nodes max_length line fluid_density fluid_sg first_node uniform g_load wind_shape");
                 if (runByName.ContainsKey(r.Name)) throw Err("two runs named \"" + r.Name + "\"");
                 r.Section = SectionNamed(RunVal(r, "section"), w);
                 object from = Get(t, "from");
@@ -565,7 +568,36 @@ public static class PipeBuilder
                 runByName[r.Name] = r;
                 runs.Add(r);
                 Legs(r);
+                EndOn(r, t, w);
             }
+        }
+
+        // end = { run, at }: the run closes a loop on an earlier run, its legs reaching that position; a welding tee there
+        // (end_tee = "none": none)
+        void EndOn(RunB r, TomlTable t, string w)
+        {
+            object end = Get(t, "end");
+            if (end == null) { if (Get(t, "end_tee") != null) throw Err(w + ": end_tee applies to a run that ends on another (end = {...})"); return; }
+            var et = end as TomlTable;
+            if (et == null) throw Err(w + ": end = { run = \"name\", at = position } expected");
+            Allowed(et, w + ".end", "run at");
+            r.EndRun = Str(et, "run", null, w + ".end");
+            RunB dst;
+            if (r.EndRun == null || r.EndRun == r.Name || !runByName.TryGetValue(r.EndRun, out dst)) throw Err(w + ": end.run must name an earlier run");
+            object at = Get(et, "at");
+            if (at == null) throw Err(w + ": end needs at (the position on run \"" + dst.Name + "\")");
+            r.EndS = Math.Round(NumL(at, w + ".end.at", dst.L / lenUnit) * lenUnit, 6);
+            if (r.EndS < -1e-6 || r.EndS > dst.L + 1e-6) throw Err(w + ": end.at is outside run \"" + dst.Name + "\" (0 .. " + U(dst.L) + ")");
+            r.EndS = Math.Max(0, Math.Min(dst.L, r.EndS));
+            if (r.IsBranch && r.FromRun == r.EndRun && Math.Abs(r.FromS - r.EndS) < 1e-6) throw Err(w + ": starts and ends at the same point of run \"" + dst.Name + "\"");
+            double[] want = PointAt(dst, r.EndS), got = r.Points[r.Points.Count - 1];
+            double miss = Norm(Sub(got, want));
+            if (miss > 0.01)
+                throw Err(w + ": its legs end at (" + string.Join(", ", got.Select(v => Fmt(v / lenUnit)).ToArray()) + ") " + lenName + ", " + U(miss) + " from run \"" + dst.Name + "\" at " + U(r.EndS) +
+                          " (" + string.Join(", ", want.Select(v => Fmt(v / lenUnit)).ToArray()) + "): the loop does not close");
+            bool atEnd = r.EndS < 1e-6 || r.EndS > dst.L - 1e-6;
+            r.EndTee = Str(t, "end_tee", atEnd ? "none" : "welding", w).Trim().ToLowerInvariant();
+            if (r.EndTee != "welding" && r.EndTee != "none") throw Err(w + ": end_tee = \"welding\" or \"none\"");
         }
 
         void Legs(RunB r)
@@ -718,7 +750,7 @@ public static class PipeBuilder
                 string w = "[[components]] " + type + " on run \"" + r.Name + "\" at " + U(a);
                 if (type == "coupling")
                 {
-                    Allowed(t, w, "type run at name axial_gap axial_stiffness deflection rotational_stiffness sif");
+                    Allowed(t, w, "type run at name axial_gap axial_stiffness deflection rotational_stiffness shear_gap shear_stiffness torsion_gap torsion_stiffness sif");
                     if (a <= 1e-6 || a >= r.L - 1e-6) throw Err(w + ": a coupling must lie inside the run, not at an end");
                     r.Couplings.Add(new CouplingAt { S = a, Item = t, Where = w });
                     continue;
@@ -877,6 +909,7 @@ public static class PipeBuilder
                 foreach (var sp in r.Spans) { St(r, sp.A, sp.Type + " start"); St(r, sp.B, sp.Type + " end"); }
             }
             foreach (var r in runs) if (r.IsBranch) St(runByName[r.FromRun], r.FromS, "branch \"" + r.Name + "\"");
+            foreach (var r in runs) if (r.EndRun != null) St(runByName[r.EndRun], r.EndS, "run \"" + r.Name + "\" ends");
             int i = 0;
             foreach (var t in Items("supports"))
             {
@@ -893,7 +926,7 @@ public static class PipeBuilder
                 var r = RunRef(t, "[[sifs]] " + i);
                 foreach (double s in Positions(r, t, "[[sifs]] " + i + " on run \"" + r.Name + "\"")) St(r, s, "SIF");
             }
-            foreach (string key in new[] { "forces", "displacements" })
+            foreach (string key in new[] { "forces", "displacements", "hangers" })
             {
                 i = 0;
                 foreach (var t in Items(key))
@@ -901,7 +934,7 @@ public static class PipeBuilder
                     i++;
                     if (Get(t, "node") != null) continue;
                     var r = RunRef(t, "[[" + key + "]] " + i);
-                    foreach (double s in Positions(r, t, "[[" + key + "]] " + i + " on run \"" + r.Name + "\"")) St(r, s, key == "forces" ? "force" : "displacement");
+                    foreach (double s in Positions(r, t, "[[" + key + "]] " + i + " on run \"" + r.Name + "\"")) St(r, s, key == "forces" ? "force" : key == "hangers" ? "hanger" : "displacement");
                 }
             }
             i = 0;
@@ -1035,12 +1068,14 @@ public static class PipeBuilder
                 stations[0].Node = Claim(next, w);
                 next += step;
             }
-            for (int i = 1; i < stations.Count; i++)
+            int lastOwn = r.EndRun != null ? stations.Count - 1 : stations.Count;   // a loop's last node is the other run's
+            for (int i = 1; i < lastOwn; i++)
             {
                 next = NextFree(next);
                 stations[i].Node = Claim(next, w);
                 next += step;
             }
+            if (r.EndRun != null) stations[stations.Count - 1].Node = runByName[r.EndRun].NodeAt[r.EndS];
             foreach (var st in stations)
             {
                 r.NodeAt[st.S] = st.Node;
@@ -1052,12 +1087,14 @@ public static class PipeBuilder
             {
                 double[] p = st.Corner >= 0 && r.BendR[st.Corner] > 0 ? BendPoint(r, st.Corner, 1) : PointAt(r, st.S);
                 if (r.IsBranch && st == stations[0]) continue;   // the header's node
+                if (r.EndRun != null && st == stations[stations.Count - 1]) continue;   // the node the loop closes on
                 m.Positions[st.Node] = p;
                 Note(st.Node, r, st.S, p, string.Join("; ", st.Why.ToArray()));
                 if (st.Node2 > 0) { m.Positions[st.Node2] = p; Note(st.Node2, r, st.S, p, "coupling, downstream side"); }
             }
             if (!r.IsBranch) m.Coords.Add(new PipeModelCoord { Node = stations[0].Node, X = r.Start[0], Y = r.Start[1], Z = r.Start[2] });
             else if (r.Tee == "welding") { m.Sifs.Add(new PipeModelSif { Node = stations[0].Node, Type = 3 }); res.Tees++; }
+            if (r.EndTee == "welding") { m.Sifs.Add(new PipeModelSif { Node = stations[stations.Count - 1].Node, Type = 3 }); res.Tees++; }
 
             // properties along the run (a reducer changes the section downstream)
             Sec sec = r.Section;
@@ -1226,12 +1263,15 @@ public static class PipeBuilder
             double[] a = r.Legs[LegOf(r, st.S)].Dir;
             double axialGap = NumOpt(t, "axial_gap", 0, w), defl = NumOpt(t, "deflection", 0, w);
             double kAx = NumOpt(t, "axial_stiffness", 0, w), kRot = NumOpt(t, "rotational_stiffness", 0, w);
+            double shearGap = NumOpt(t, "shear_gap", 0, w), kShear = NumOpt(t, "shear_stiffness", 0, w);
+            double torGap = NumOpt(t, "torsion_gap", 0, w), kTor = NumOpt(t, "torsion_stiffness", 0, w);
+            foreach (double v in new[] { axialGap, defl, kAx, kRot, shearGap, kShear, torGap, kTor }) if (v < 0) throw Err(w + ": gaps and stiffnesses are not negative");
             double[] p1, p2;
             Perps(a, out p1, out p2);
             m.Restraints.Add(Restraint(st.Node, "X", axialGap, kAx, 0, st.Node2, a, "", w + " (axial)"));
-            m.Restraints.Add(Restraint(st.Node, "X", 0, 0, 0, st.Node2, p1, "", w + " (shear)"));
-            m.Restraints.Add(Restraint(st.Node, "X", 0, 0, 0, st.Node2, p2, "", w + " (shear)"));
-            m.Restraints.Add(Restraint(st.Node, "RX", 0, 0, 0, st.Node2, a, "", w + " (torsion)"));
+            m.Restraints.Add(Restraint(st.Node, "X", shearGap, kShear, 0, st.Node2, p1, "", w + " (shear)"));
+            m.Restraints.Add(Restraint(st.Node, "X", shearGap, kShear, 0, st.Node2, p2, "", w + " (shear)"));
+            m.Restraints.Add(Restraint(st.Node, "RX", torGap, kTor, 0, st.Node2, a, "", w + " (torsion)"));
             m.Restraints.Add(Restraint(st.Node, "RX", defl, kRot, 0, st.Node2, p1, "", w + " (bending)"));
             m.Restraints.Add(Restraint(st.Node, "RX", defl, kRot, 0, st.Node2, p2, "", w + " (bending)"));
             double sif = NumOpt(t, "sif", 0, w);

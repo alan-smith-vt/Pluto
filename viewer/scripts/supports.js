@@ -18,7 +18,7 @@
 //                 top surface
 //   rotation      a double-headed arrow (moment vector) at 3/4 size on one side,
 //                 beyond where a translation arrow on that line ends
-//   hanger        one arrow below the pipe, holding it up
+//   hanger        one arrow below the pipe, holding it up (on a riser, on its side, pointing up)
 //   other         a small ball on top of the pipe
 // A restraint with a gap stops short of the pipe by a visible space. Items
 // written by the CAESAR export carry `restraints` (kind, direction, axis, gap,
@@ -350,9 +350,12 @@ var FEASupports = (function () {
                     else arrow(P.clone().addScaledVector(a, R + L + 0.3 * u), a.clone().negate(), r.kind, 2, 0.75);
                     break;
                 }
-                case 'hanger':                            // an arrow below the pipe, holding it up
-                    across(d || up, false, r.kind, 0);
+                case 'hanger': {                          // an arrow below the pipe, holding it up
+                    var hd = d || up;                     // on a riser: on its side, like a one-way along it
+                    if (Math.abs(hd.dot(ax)) > 0.9) alongPipe(ax, [hd.dot(ax) > 0 ? -1 : 1], r.kind, 0.45 * u);
+                    else across(hd, false, r.kind, 0);
                     break;
+                }
                 default:
                     ball('other');
             }
