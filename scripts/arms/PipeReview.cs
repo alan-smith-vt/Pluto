@@ -24,7 +24,7 @@ using System.Text;
 //   bend-room       a bend's tangent reaches past the start of its element (it overlaps the run before it)
 //   bend-code       a bend radius code CAESAR reads as no radius
 //   node-twice      a node on a bend's curve that is also on another bend's, or an element end: two points, one number
-//   uniform-mixed   an element's uniform loads mix g's and force per length (CAESAR's error checker warns)
+//   uniform-mixed   the uniform loads mix g's and force per length (CAESAR's error checker warns: 246E, 247E)
 // plus CaesarNeutralWriter.NoticeItems (layouts and codes from the documentation) and any messages the caller adds
 // (the build's warnings, the preview's own).
 
@@ -257,16 +257,31 @@ public static class PipeReview
                 .WithNodes(new[] { kv.Key }).WithElements(distinct.Concat(endOf ?? new List<int>())));
         }
 
-        // uniform loads mixing g's and force per length on one element (CAESAR's error checker warns)
-        var mixed = Enumerable.Range(0, ne).Where(i => m.Elements[i].Uniform != null && m.Elements[i].Uniform.Mixed()).ToList();
-        if (mixed.Count > 0)
+        // uniform loads of both kinds, g's and force per length: CAESAR's error checker warns for an element holding both
+        // (246E) and for a vector used both ways (247E), and it reads every flag, so a model that mixes them warns
+        var gUse = new SortedDictionary<int, List<int>>(); var lUse = new SortedDictionary<int, List<int>>();   // vector -> elements
+        for (int i = 0; i < ne; i++)
         {
-            var u = m.Elements[mixed[0]].Uniform;
-            var vs = Enumerable.Range(0, 9).Where(u.Used).Select(v => "U" + (v + 1) + (u.G[v] ? " in g's" : " per length")).ToArray();
+            var u = m.Elements[i].Uniform;
+            if (PipeModelUniform.IsNone(u)) continue;
+            for (int v = 0; v < 9; v++)
+            {
+                if (!u.Used(v)) continue;
+                var d = u.G[v] ? gUse : lUse;
+                List<int> l;
+                if (!d.TryGetValue(v, out l)) d[v] = l = new List<int>();
+                l.Add(i + 1);
+            }
+        }
+        if (gUse.Count > 0 && lUse.Count > 0)
+        {
+            Func<SortedDictionary<int, List<int>>, string> list = d => string.Join(", ", d.Select(kv => "U" + (kv.Key + 1) + " on " + kv.Value.Count + " element" + (kv.Value.Count == 1 ? "" : "s")).ToArray());
+            bool gFew = gUse.Sum(kv => kv.Value.Count) <= lUse.Sum(kv => kv.Value.Count);
+            var few = (gFew ? gUse : lUse).SelectMany(kv => kv.Value).Distinct().OrderBy(k => k).ToList();
             items.Add(new PipeReviewItem("warning", "uniform-mixed",
-                "uniform loads on " + mixed.Count + " element" + (mixed.Count == 1 ? "" : "s") + " (from " + en(mixed[0] + 1) + ") mix g's and force per length (" + string.Join(", ", vs) +
-                "): CAESAR warns that both uniform load types are used; check each vector's In g's")
-                .WithElements(mixed.Take(ListMax).Select(i => i + 1)));
+                "the uniform loads mix g's (" + list(gUse) + ") and force per length (" + list(lUse) + "): CAESAR warns for every element holding both kinds and every vector used both ways, " +
+                "as it reads each block's flag for every vector; one kind throughout avoids it (the elements listed carry the " + (gFew ? "g's" : "force per length") + ")")
+                .WithElements(few.Take(ListMax)));
         }
 
         items.AddRange(CaesarNeutralWriter.NoticeItems(m));

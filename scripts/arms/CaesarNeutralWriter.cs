@@ -36,8 +36,9 @@ using System.Text;
 //             documented layout; FORCMNT confirmed by a 15.01 export, DISPLMNT seen in 11.00 jobs.
 //   UNIFORM   6 lines, 36 values in order: 9 vectors x (UX UY UZ, 1 = in g's / 0 = force per length)
 //   WIND      1 line: TYPE (0 wind, 1 wave, 2 off) SHAPE-FACTOR (wave: drag) ADDED-MASS LIFT MARINE-GROWTH DENSITY
-//             (UNIFORM and WIND confirmed by 15.01 exports). A new block's unused vectors take the g flag its used
-//             vectors share, so CAESAR does not read a block of g loads as mixing g's and force per length.
+//             (UNIFORM and WIND confirmed by 15.01 exports). CAESAR's error checker reads every g flag, used or not:
+//             one block holding both kinds warns (246E), one vector with both kinds across blocks too (247E). So a
+//             new or edited block's unused vectors take the model's flag for that vector (UniformFlags).
 //   REDUCERS  2 lines: OD2 WALL2 ALPHA R1 R2 / 0 x5
 //   MISCEL_1  one material number per element (6 per line), then 4 execution-option lines; the ambient
 //             temperature is line 2 field 3.
@@ -273,6 +274,7 @@ public static class CaesarNeutralWriter
         public List<string> DefaultAllowables;   // written on element 0 when no element carries an allowables block
         public PipeModelUniform[] UniformOut;    // per element: the UNIFORM block it writes (null = none: carried on)
         public PipeModelWind[] WindOut;          // per element: the WIND block it writes
+        public bool[] UniformFlags;              // per vector: the g flag a new block gives it where it is unused
     }
 
     public static List<string> ToLines(PipeModel m)
@@ -309,6 +311,7 @@ public static class CaesarNeutralWriter
         p.ForceSlots = AssignSlots(m, m.Forces.Select(x => new SlotItem { Item = x, Node = x.Node, OwnerUid = x.OwnerUid, Slot = x.Slot, AnyNode = true }).ToList(), p.ForcePer, touching, "force / moment entries");
 
         CarryPlan(p);
+        p.UniformFlags = UniformFlags(p);
 
         // block numbering per section: CAESAR's own numbers (Seq) first, new blocks after, in element order
         p.DefaultAllowables = DefaultAllowables(m);
@@ -834,7 +837,7 @@ public static class CaesarNeutralWriter
             else if (unknownU && PipeModelUniform.IsNone(u)) { }
             else
             {
-                if (!PipeModelUniform.Same(u, pu)) p.UniformOut[i] = PipeModelUniform.IsNone(u) ? StopUniform(pu) : u;
+                if (!PipeModelUniform.Same(u, pu)) p.UniformOut[i] = PipeModelUniform.IsNone(u) ? new PipeModelUniform() : u;   // a zero block ends it
                 pu = u; unknownU = false;
             }
             var x = e.Wind;
@@ -853,15 +856,37 @@ public static class CaesarNeutralWriter
     static bool Edited(PipeModelUniform u) { return u.Raw == null || u.Raw.Count != 6 || !u.SameAs(CaesarPipeImport.Uniform(u.Raw)); }
     static bool Edited(PipeModelWind x) { return x.Raw == null || x.Raw.Count != 1 || !x.SameAs(CaesarPipeImport.Wind(x.Raw)); }
 
-    // a zero block ending a carried load: every g flag the one its used vectors share (as written when they mix)
-    static PipeModelUniform StopUniform(PipeModelUniform before)
+    // The g flag of each vector where a new or edited block does not use it, so that the flags agree across the
+    // file: a model whose uniform loads are all one kind gets that kind on every flag; otherwise a vector takes
+    // the kind it has where first used, and one no element uses takes the flag the job's own unedited blocks
+    // give it, else the kind of the first vector used.
+    static bool[] UniformFlags(Plan p)
     {
-        var z = new PipeModelUniform();
-        if (before == null) return z;
-        var used = Enumerable.Range(0, 9).Where(before.Used).ToList();
-        bool one = used.Count > 0 && used.All(v => before.G[v] == before.G[used[0]]);
-        for (int v = 0; v < 9; v++) z.G[v] = one ? before.G[used[0]] : before.G[v];
-        return z;
+        var m = p.M;
+        var f = new bool?[9];
+        bool g = false, perLength = false;
+        foreach (var e in m.Elements)
+        {
+            var u = e.Uniform;
+            if (PipeModelUniform.IsNone(u)) continue;
+            for (int v = 0; v < 9; v++)
+            {
+                if (!u.Used(v)) continue;
+                if (u.G[v]) g = true; else perLength = true;
+                if (f[v] == null) f[v] = u.G[v];
+            }
+        }
+        var flags = new bool[9];
+        if (g != perLength) { for (int v = 0; v < 9; v++) flags[v] = g; return flags; }
+        bool first = f.FirstOrDefault(x => x != null) ?? false;
+        for (int v = 0; v < 9; v++)
+        {
+            if (f[v] == null)
+                foreach (var u in p.UniformOut)
+                    if (u != null && u.Raw != null && !Edited(u)) { f[v] = u.G[v]; break; }
+            flags[v] = f[v] ?? first;
+        }
+        return flags;
     }
 
     static void WriteUniform(Plan p, List<string> w)
@@ -873,12 +898,11 @@ public static class CaesarNeutralWriter
             var u = p.UniformOut[i];
             if (u == null && e.Carried.TryGetValue("UNIFORM", out carried)) { w.AddRange(carried.Lines); continue; }
             var vals = new double[36];
-            var used = Enumerable.Range(0, 9).Where(u.Used).ToList();
-            bool fill = Edited(u) && used.Count > 0 && used.All(v => u.G[v] == u.G[used[0]]);   // a new or edited block: unused vectors take the used ones' flag
+            bool fill = Edited(u);   // a new or edited block: its unused vectors take the model's flag (UniformFlags)
             for (int v = 0; v < 9; v++)
             {
                 for (int k = 0; k < 3; k++) vals[4 * v + k] = u.Vectors[v][k];
-                vals[4 * v + 3] = (fill && !u.Used(v) ? u.G[used[0]] : u.G[v]) ? 1 : 0;
+                vals[4 * v + 3] = (fill && !u.Used(v) ? p.UniformFlags[v] : u.G[v]) ? 1 : 0;
             }
             if (u.Raw != null && u.Raw.Count == 6)
             {

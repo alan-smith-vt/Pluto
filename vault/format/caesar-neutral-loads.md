@@ -79,8 +79,11 @@ One block is **6 lines, 36 values in order**: 9 vectors × (UX, UY, UZ, g flag).
 - **A block carries forward.** It acts on its element and on every later element (input order) until another block changes it; a block of zeros ends it. CAESAR's user guide says so for the Uniform Loads tab, and its error checker notes it (166E: four consecutive elements with uniform loads defined, "you do not need to do this"). The element's Uniform Loads box marks where a load is defined, not where it acts. Decision: [[vault/decisions/2026-10-24-uniform-wind-carry-forward|2026-10-24-uniform-wind-carry-forward]].
   - **Corrected 2026-10-24.** The 15.01 export of 2026-10-22 had blocks on five elements and none on the sixth, whose box was unchecked. That was read as "one block per element, no carry-forward"; in CAESAR the sixth element carries the fifth's load.
 - **How Pluto reads it:** an element without a block gets a copy of the load before it, so the model holds what acts on each element (`PipeModelElement.Uniform`, null = none; a carried copy has no raw lines).
-- **How Pluto writes it:** a block where the load starts or changes, a zero block where it stops. An imported job's own blocks stay where they were while unedited; an edited one that only repeats the load before it is dropped.
-- **The g flags:** one per vector. A new or edited block gives its unused vectors the flag its used vectors share. With the unused vectors at 0 behind g loads, CAESAR's error checker reported both kinds on one element (246E); a job that really mixes g's and force per length on one element gets the `uniform-mixed` warning.
+- **How Pluto writes it:** a block where the load starts or changes, a zero block where it stops. An imported job's own blocks stay where they were while unedited; an edited one that only repeats the load before it is dropped. CAESAR 15.01 imported a probe ending a load this way with no error or note (2026-10-24).
+- **The g flags:** one per vector, and CAESAR's error checker reads every one, used or not:
+  - a block holding both kinds warns for its element (246E): a block of g loads with its unused vectors at 0 did;
+  - a vector with both kinds across blocks warns for the vector (247E): a probe with U1 in g's on part of a line and per length on the rest warned for every vector whose flags differed between blocks.
+  - So a new or edited block gives each unused vector the model's flag for it (`CaesarNeutralWriter.UniformFlags`). A model of one kind gets that kind on every flag and no warning; a model that mixes them gets the `uniform-mixed` check, as CAESAR will warn.
 - **The global switch:** line 2 of MISCEL_1's execution options starts with a "uniform loads in g's" switch (0 or 1): the default for each vector in CAESAR's input. It is carried as written; the per-vector flag is what the model edits.
 
 ## WIND: wind and wave data
@@ -95,7 +98,7 @@ One block is **1 line, 6 values**:
 
 - **Carried forward like uniform loads** (`PipeModelElement.Wind`, null = none): CAESAR's user guide says the shape factor applies to every later element, and a 0 disables it. Pluto ends wind with a type 2 (off) block where it stops.
 - **Wave (type 1):** CAESAR's Wind / Wave list shows the five values as drag coefficient, added-mass coefficient, lift coefficient, marine growth (a length) and its density, in the job's units. Pluto keeps them as written.
-- Type 2 (off) is documented; a shape factor of 0 also means no wind. A probe job (2026-10-24) checks the off block in CAESAR.
+- Type 2 (off) is documented; a shape factor of 0 also means no wind. CAESAR 15.01 accepted an off block ending wind (a probe, 2026-10-24).
 - The wind speed or pressure profile is in CAESAR's load-case setup, not in the neutral file.
 
 ## OFFSETS (not a load)

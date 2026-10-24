@@ -305,13 +305,6 @@ public class PipeModelUniform
         return c;
     }
 
-    // g's or force per length: true when the used vectors mix them (CAESAR's error checker warns)
-    public bool Mixed()
-    {
-        var used = Enumerable.Range(0, 9).Where(Used).ToList();
-        return used.Any(v => G[v]) && used.Any(v => !G[v]);
-    }
-
     public bool SameAs(PipeModelUniform o)
     {
         if (o == null) return false;

@@ -24,9 +24,10 @@ Layouts: [[vault/format/caesar-neutral-loads|caesar-neutral-loads]].
 
 - **The workbook and the TOML do not change.** A row (or a run) names the elements a load acts on; an element no row names has none, and Pluto ends the load there.
 - **Imported jobs stay byte-identical.** An element's own block stays where it was while unedited. An edited block that only repeats the load before it is dropped.
-- **g flags:** a new or edited UNIFORM block gives its unused vectors the flag its used vectors share. With them at 0 behind g loads, CAESAR reported g's and force per length on one element (246E). A job that really mixes the two on one element gets the `uniform-mixed` warning.
+- **g flags:** CAESAR's error checker reads every flag, used or not: one block with both kinds warns (246E), one vector with both kinds across blocks too (247E). A new or edited UNIFORM block gives each unused vector the model's flag for it, so a model of one kind gets no warning. A model that mixes g's and force per length gets the `uniform-mixed` check.
 - **Reading shows the carried load** in the viewer, in Compare and in a workbook made from the job.
 
-## Still to confirm in CAESAR
+## Confirmed in CAESAR (2026-10-24)
 
-The zero block and the off block that end a load: a probe job (2026-10-24).
+- **The blocks that end a load.** A probe ending a uniform load with a zero block and wind with an off block imported into CAESAR 15.01 with no error or note.
+- **The job that had raised 48E, 246E and 166E** came back clean once its bend node was renumbered: one uniform block, every flag in g's.
