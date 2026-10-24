@@ -211,6 +211,10 @@ public static class PipeSidecar
             if (e.PipeDensity != 0) num("pipeDensity", e.PipeDensity);
             if (e.InsulationDensity != 0) num("insulDensity", e.InsulationDensity);
             if (e.FluidDensity != 0) num("fluidDensity", e.FluidDensity);
+            if (e.HydroPressure != 0) num("hydro", e.HydroPressure);
+            if (e.MillTolMinus != 0) num("millMinus", e.MillTolMinus);
+            if (e.MillTolPlus != 0) num("millPlus", e.MillTolPlus);
+            if (e.SeamWeld != 0) num("seamWeld", e.SeamWeld);
             if (e.Bend != null)
             {
                 var b = e.Bend;

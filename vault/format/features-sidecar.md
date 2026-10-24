@@ -330,7 +330,8 @@ everything the model holds before CAESAR imports it. The CAESAR export (`CaesarT
   `xlsx | toml | cii | json`, `saved` is the file's last write (UTC), `sha256` is the file's, `model` is the
   model hash the runner's build stamp uses, and `written` is when this preview was made.
 - **`properties`**: one item per element. `values` holds what is set: deltas and length, OD / wall,
-  insulation, corrosion, `T` and `P` (T1… / P1…, the unused tail cut), material, E, Poisson, densities, and
+  insulation, corrosion, `T` and `P` (T1… / P1…, the unused tail cut), material, E, Poisson, densities,
+  `hydro` (hydrotest pressure), `millMinus` / `millPlus` (mill tolerance, %), `seamWeld` (1), and
   `bend` (radius, the name of a coded radius, the code, `noRadius` for a code CAESAR reads as none, angle
   nodes), `rigid` (weight, type), `expJoint` (stiffnesses, effective ID), `reducer` (the TO end), `uniform`,
   `wind`.

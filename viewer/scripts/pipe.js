@@ -303,6 +303,9 @@ var FEAPipe = (function () {
         if (v.pipeDensity) ccRow(t, 'pipe density' + u('pipeDensity'), f(v.pipeDensity, 5));
         if (v.insulDensity) ccRow(t, 'insulation density' + u('insulDensity'), f(v.insulDensity, 5));
         if (v.fluidDensity) ccRow(t, 'fluid density' + u('fluidDensity'), f(v.fluidDensity, 5));
+        if (v.millMinus || v.millPlus) ccRow(t, 'mill tolerance (%)', '-' + f(v.millMinus || 0, 3) + ' / +' + f(v.millPlus || 0, 3));
+        if (v.seamWeld) ccRow(t, 'seam welded', 'yes');
+        if (v.hydro) ccRow(t, 'hydro pressure' + u('pressure'), f(v.hydro, 4));
         elCalcCard.appendChild(t);
         if (v.bend || v.rigid || v.expJoint || v.reducer) {
             ccSub(elCalcCard, it.kind);

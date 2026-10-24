@@ -144,6 +144,10 @@ static class PipeWorkbookGui
         l.Add(C("Bend miter points", "over", "int0", "A mitred bend: the number of miter cuts. Blank = a smooth bend."));
         l.Add(C("Bend fitting thk", "over", "pos", "The bend's wall when it differs from the pipe's. Blank = the wall."));
         l.Add(C("Bend K factor", "over", "nonneg", "The bend's flexibility factor. Blank = the code's."));
+        l.Add(C("Hydro pressure", "over", "nonneg", "This element's hydrotest pressure, instead of its Process's."));
+        l.Add(C("Mill tol -", "over", "nonneg", "This element's minus mill tolerance (% of the wall), instead of its Section's."));
+        l.Add(C("Mill tol +", "over", "nonneg", "This element's plus mill tolerance (% of the wall), instead of its Section's."));
+        l.Add(L("Seam weld", "over", "yesno", LYesNo, "yes = a seam-welded pipe, instead of its Section's.", null));
         return l.ToArray();
     }
 
@@ -161,6 +165,9 @@ static class PipeWorkbookGui
             C("E", "prop", "nonneg", "Elastic modulus. Blank = CAESAR's material database."),
             C("Poisson", "prop", "nonneg", "Poisson's ratio. Blank = CAESAR's material database."),
             C("Pipe density", "prop", "nonneg", "Pipe density. Blank = CAESAR's material database."),
+            C("Mill tol -", "prop", "nonneg", "Minus mill tolerance, % of the wall (12.5 for most seamless pipe). Blank = none."),
+            C("Mill tol +", "prop", "nonneg", "Plus mill tolerance, % of the wall. Blank = none."),
+            L("Seam weld", "prop", "yesno", LYesNo, "yes = seam-welded pipe. Blank = no.", null),
         };
     }
 
@@ -170,6 +177,7 @@ static class PipeWorkbookGui
         for (int k = 1; k <= 9; k++) l.Add(C("T" + k, "prop", "num", "Temperature of operating condition " + k + " (CAESAR's T" + k + "). Blank = not used."));
         for (int k = 1; k <= 9; k++) l.Add(C("P" + k, "prop", "num", "Pressure of operating condition " + k + " (CAESAR's P" + k + "). Blank = not used."));
         l.Add(C("Fluid density", "prop", "nonneg", "Density of the contents. 0 = empty."));
+        l.Add(C("Hydro pressure", "prop", "nonneg", "Hydrotest pressure (CAESAR's HP, for its hydrotest case). Blank = none."));
         return l.ToArray();
     }
 

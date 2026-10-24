@@ -55,6 +55,8 @@ public static class PipeModelJson
             w.Num("e", e.Emod); w.Num("poisson", e.Poisson); w.Num("pipeDensity", e.PipeDensity);
             w.Num("insulDensity", e.InsulationDensity); w.Num("fluidDensity", e.FluidDensity); w.Num("material", e.Material);
             w.Nums("teeAngles", new[] { e.TeeAngle1, e.TeeAngle2 });
+            var dv = e.Design();
+            if (dv.Any(x => x != 0)) w.Nums("design", dv);
             w.Str("name", e.Name); w.Str("line", e.LineNumber); w.Str("kind", e.Kind);
             if (e.Bend != null)
             {
@@ -288,6 +290,7 @@ public static class PipeModelJson
             e.Emod = D(o, "e"); e.Poisson = D(o, "poisson"); e.PipeDensity = D(o, "pipeDensity");
             e.InsulationDensity = D(o, "insulDensity"); e.FluidDensity = D(o, "fluidDensity"); e.Material = I(o, "material");
             var ta = Ds(o, "teeAngles"); e.TeeAngle1 = ta[0]; e.TeeAngle2 = ta[1];
+            var dsg = Ds(o, "design");
             e.Name = S(o, "name") ?? ""; e.LineNumber = S(o, "line") ?? ""; e.Kind = S(o, "kind") ?? "pipe";
             var bo = O(o, "bend");
             if (bo != null)
@@ -317,6 +320,7 @@ public static class PipeModelJson
                 e.Wind = new PipeModelWind { Type = I(wo, "type"), Shape = D(wo, "shape"), AddedMass = D(wo, "addedMass"), Lift = D(wo, "lift"),
                                              MarineGrowth = D(wo, "marineGrowth"), MarineGrowthDensity = D(wo, "marineGrowthDensity"), Seq = I(wo, "seq"), Raw = L(wo, "raw") };
             e.Raw = L(o, "raw");
+            e.SetDesign(dsg ?? CaesarNeutralWriter.DesignFromRecord(e.Raw));   // a model saved before it held them: from its record
             ReadBlocks(O(o, "carried"), e.Carried);
             ReadBlocks(O(o, "slotBlocks"), e.SlotBlocks);
             m.Elements.Add(e);

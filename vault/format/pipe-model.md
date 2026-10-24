@@ -9,7 +9,7 @@ created: 2026-10-22
 # Pipe model
 
 `PipeModel` (`scripts/arms/PipeModel.cs`) is the one pipe-stress model every pipe path goes through. It is held in CAESAR II's terms:
-- elements FROM–TO with deltas, bends, rigids, expansion joints and reducers;
+- elements FROM–TO with deltas, bends, rigids, expansion joints and reducers, and their design data (mill tolerance, seam weld, hydrotest pressure; hot moduli, wL, cladding and refractory carried);
 - restraints, SIFs and tees;
 - spring hangers: designed by CAESAR, springs as given, constant-effort supports ([[vault/format/caesar-neutral-hangers|caesar-neutral-hangers]]);
 - loads: forces and moments, imposed displacements, uniform loads and wind ([[vault/format/caesar-neutral-loads|caesar-neutral-loads]]);
@@ -81,6 +81,12 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 >
 > The job's hanger defaults (table, load variation …, the design options) stay as written; a new model gets CAESAR 15.01's.
 
+> [!info]- Element design data
+> The element record's real rows 6–9, past the densities, in CAESAR's guide (items 33–53): minus and plus mill tolerance (% of the wall), seam weld (1 / 0), hydrotest pressure; hot elastic moduli for T1–T9; the wL factor; two element orientation angles (FEATools data, carried as `TeeAngle1/2`); cladding thickness and density, insulation + cladding weight per length, refractory thickness and density.
+> - The model holds them all (`PipeModelElement.Design()`); the workbook and the TOML edit mill tolerance, seam weld and hydro pressure. The rest are carried.
+> - **Evidence for the positions:** the guide; the CAESAR 15.01 fixture (zeros there); public CAESAR 11.00 jobs whose item 36 is a hydrotest pressure by its value (1.5 × P1 in one, above P1 in another). CAESAR importing a value Pluto wrote there is in the combined probe.
+> - A record with fewer rows (an older CAESAR) cannot take a value in a missing row: the writer says so.
+
 > [!info]- Seeds
 > A new model can take a CAESAR job's settings (`Build-Pipe.ps1 -Seed <job.cii>`, `CaesarPipeImport.ApplySeed`):
 > - the VERSION lines;
@@ -100,7 +106,7 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 > [!info]- Keys
 > - **Top level:** `format`, `version`, `title`, `notes`, `zUp`, `ambient`, `code`, `unitFactors`, `allowablesBlock`, `source`, `elements`, `restraints`, `joints`, `sifs`, `hangers` (only when there are any), `nodeLoads`, `coords`.
 > - **`source`** (imported or seeded models only): `fileName`, `version`, `versionLine`, `codePage`, `lineEnding`, `finalNewline`, `seed`, `prelude`, `sectionOrder`, `headers`, `sections` (raw lines per section), `linesPerBlock`, `trailing`, `miscelMaterialLines`, `miscelTail`, `tailNozzleLines` / `tailHangerLines` / `tailHangers` (the tail's parts; absent = carried whole), `coordsCountLine`, `originalTitle`, `originalNotes`, `elementCount`.
-> - **`elements[]`:** `uid`, `from`, `to`, `d` [dx dy dz], `od`, `wall`, `insul`, `corr`, `t` [T1–T9], `p` [P1–P9], `e`, `poisson`, `pipeDensity`, `insulDensity`, `fluidDensity`, `material`, `teeAngles`, `name`, `line`, `kind`; optional `bend` {`radius`, `type`, `nodes`, `miter`, `fittingThk`, `k`, `seq`, `raw`}, `rigid` {`weight`, `type`, `seq`, `raw`}, `expJoint` {`axial`, `transverse`, `bending`, `torsion`, `effId`, `seq`, `raw`}, `reducer` {`od2`, `wall2`, `alpha`, `r1`, `r2`, `seq`, `raw`}, `uniform` {`vectors` [9 × [ux, uy, uz]], `g` [9 flags], `seq`, `raw`}, `wind` {`type`, `shape`, `addedMass`, `lift`, `marineGrowth`, `marineGrowthDensity`, `seq`, `raw`}; `raw` (the record); `carried` and `slotBlocks` {section: {`seq`, `lines`}}.
+> - **`elements[]`:** `uid`, `from`, `to`, `d` [dx dy dz], `od`, `wall`, `insul`, `corr`, `t` [T1–T9], `p` [P1–P9], `e`, `poisson`, `pipeDensity`, `insulDensity`, `fluidDensity`, `material`, `teeAngles` (CAESAR's element orientation angles), `design` (only when any is set: the 19 values `PipeModelElement.Design()` lists, CAESAR's items 33–46 and 49–53; a model saved without it reads them from its record), `name`, `line`, `kind`; optional `bend` {`radius`, `type`, `nodes`, `miter`, `fittingThk`, `k`, `seq`, `raw`}, `rigid` {`weight`, `type`, `seq`, `raw`}, `expJoint` {`axial`, `transverse`, `bending`, `torsion`, `effId`, `seq`, `raw`}, `reducer` {`od2`, `wall2`, `alpha`, `r1`, `r2`, `seq`, `raw`}, `uniform` {`vectors` [9 × [ux, uy, uz]], `g` [9 flags], `seq`, `raw`}, `wind` {`type`, `shape`, `addedMass`, `lift`, `marineGrowth`, `marineGrowthDensity`, `seq`, `raw`}; `raw` (the record); `carried` and `slotBlocks` {section: {`seq`, `lines`}}.
 > - **`restraints[]`:** `node`, `type`, `code`, `k`, `gap`, `mu`, `cnode`, `cos`, `tag`, `guid`, `source`, `owner` (element uid), `slot`, `raw`.
 > - **`joints[]`:** `uid`, `kind`, `node`, `cnode`, `frame`, `dofs` [{`dof`, `gap`, `k`}], `sif`, `tag`.
 > - **`sifs[]`:** `node`, `type`, `sifIn`, `sifOut`, `surfaceNode`, `owner`, `slot`, `raw`.

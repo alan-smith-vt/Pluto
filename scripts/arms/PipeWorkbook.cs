@@ -133,20 +133,25 @@ public static class PipeWorkbook
     {
         public string Name;
         public double Od, Wall, Insul, Corr, InsDens, E, Poisson, PipeDens;
+        public double MillM = double.NaN, MillP = double.NaN, Seam = double.NaN;   // NaN: the sheet has no such column (an older workbook)
         public int Material;
-        public string Key() { return string.Join("|", new[] { Od, Wall, Insul, Corr, InsDens, E, Poisson, PipeDens, Material }.Select(R).ToArray()); }
+        public string Key() { return string.Join("|", new[] { Od, Wall, Insul, Corr, InsDens, E, Poisson, PipeDens, Material, MillM, MillP, Seam }.Select(R).ToArray()); }
     }
 
     sealed class Proc
     {
         public string Name;
         public double[] T = new double[9], P = new double[9];
-        public double Fluid;
-        public string Key() { return string.Join("|", T.Concat(P).Concat(new[] { Fluid }).Select(R).ToArray()); }
+        public double Fluid, Hydro = double.NaN;    // NaN: the sheet has no hydro column (an older workbook)
+        public string Key() { return string.Join("|", T.Concat(P).Concat(new[] { Fluid, Hydro }).Select(R).ToArray()); }
     }
 
-    static Sec SecOf(PipeModelElement e) { return new Sec { Od = e.Od, Wall = e.Wall, Insul = e.Insulation, Corr = e.Corrosion, InsDens = e.InsulationDensity, E = e.Emod, Poisson = e.Poisson, PipeDens = e.PipeDensity, Material = e.Material }; }
-    static Proc ProcOf(PipeModelElement e) { var p = new Proc { Fluid = e.FluidDensity }; Array.Copy(e.T, p.T, 9); Array.Copy(e.P, p.P, 9); return p; }
+    static Sec SecOf(PipeModelElement e)
+    {
+        return new Sec { Od = e.Od, Wall = e.Wall, Insul = e.Insulation, Corr = e.Corrosion, InsDens = e.InsulationDensity, E = e.Emod, Poisson = e.Poisson, PipeDens = e.PipeDensity, Material = e.Material,
+                         MillM = e.MillTolMinus, MillP = e.MillTolPlus, Seam = e.SeamWeld };
+    }
+    static Proc ProcOf(PipeModelElement e) { var p = new Proc { Fluid = e.FluidDensity, Hydro = e.HydroPressure }; Array.Copy(e.T, p.T, 9); Array.Copy(e.P, p.P, 9); return p; }
 
     static string Unique(string n, HashSet<string> used)
     {
@@ -204,11 +209,11 @@ public static class PipeWorkbook
     const int cId = 0, cFrom = 1, cTo = 2, cDx = 3, cDy = 4, cDz = 5, cType = 6, cSec = 7, cProc = 8, cBendR = 9, cBendN = 10, cBendT = 11, cWeight = 12,
               cOd2 = 13, cWall2 = 14, cEjAx = 15, cEjTr = 16, cEjBe = 17, cEjTo = 18, cEjId = 19, cName = 20, cLine = 21,
               cOd = 22, cWall = 23, cIns = 24, cCorr = 25, cInsD = 26, cMat = 27, cE = 28, cPois = 29, cPipeD = 30, cT1 = 31, cP1 = 40, cFluid = 49,
-              cMiter = 50, cFit = 51, cK = 52;
+              cMiter = 50, cFit = 51, cK = 52, cHydro = 53, cMillM = 54, cMillP = 55, cSeam = 56;
 
     static string[] ElementHeaders(Units u)
     {
-        var h = new string[53];
+        var h = new string[57];
         h[cId] = "Id"; h[cFrom] = "From"; h[cTo] = "To"; h[cDx] = "DX (" + u.Len + ")"; h[cDy] = "DY (" + u.Len + ")"; h[cDz] = "DZ (" + u.Len + ")";
         h[cType] = "Type"; h[cSec] = "Section"; h[cProc] = "Process"; h[cBendR] = "Bend radius (" + u.Len + ")"; h[cBendN] = "Bend nodes"; h[cBendT] = "Bend type";
         h[cWeight] = "Weight (" + u.Force + ")"; h[cOd2] = "OD2 (" + u.Dia + ")"; h[cWall2] = "Wall2 (" + u.Thk + ")";
@@ -218,14 +223,15 @@ public static class PipeWorkbook
         h[cInsD] = "Insul density (" + u.InsDens + ")"; h[cMat] = "Material"; h[cE] = "E (" + u.E + ")"; h[cPois] = "Poisson"; h[cPipeD] = "Pipe density (" + u.PipeDens + ")";
         for (int k = 0; k < 9; k++) { h[cT1 + k] = "T" + (k + 1) + " (" + u.Temp + ")"; h[cP1 + k] = "P" + (k + 1) + " (" + u.Press + ")"; }
         h[cFluid] = "Fluid density (" + u.FluidDens + ")"; h[cMiter] = "Bend miter points"; h[cFit] = "Bend fitting thk (" + u.Thk + ")"; h[cK] = "Bend K factor";
+        h[cHydro] = "Hydro pressure (" + u.Press + ")"; h[cMillM] = "Mill tol - (%)"; h[cMillP] = "Mill tol + (%)"; h[cSeam] = "Seam weld";
         return h;
     }
 
-    static readonly string[] SectionCols = { "Name", "OD", "Wall", "Insulation", "Corrosion", "Insul density", "Material", "E", "Poisson", "Pipe density" };
+    static readonly string[] SectionCols = { "Name", "OD", "Wall", "Insulation", "Corrosion", "Insul density", "Material", "E", "Poisson", "Pipe density", "Mill tol -", "Mill tol +", "Seam weld" };
     static string[] SectionHeaders(Units u)
     {
         return new[] { "Name", "OD (" + u.Dia + ")", "Wall (" + u.Thk + ")", "Insulation (" + u.Thk + ")", "Corrosion (" + u.Thk + ")", "Insul density (" + u.InsDens + ")",
-                       "Material", "E (" + u.E + ")", "Poisson", "Pipe density (" + u.PipeDens + ")" };
+                       "Material", "E (" + u.E + ")", "Poisson", "Pipe density (" + u.PipeDens + ")", "Mill tol - (%)", "Mill tol + (%)", "Seam weld" };
     }
 
     static string[] ProcessHeaders(Units u)
@@ -234,6 +240,7 @@ public static class PipeWorkbook
         for (int k = 0; k < 9; k++) h.Add("T" + (k + 1) + " (" + u.Temp + ")");
         for (int k = 0; k < 9; k++) h.Add("P" + (k + 1) + " (" + u.Press + ")");
         h.Add("Fluid density (" + u.FluidDens + ")");
+        h.Add("Hydro pressure (" + u.Press + ")");
         return h.ToArray();
     }
 
@@ -296,7 +303,7 @@ public static class PipeWorkbook
         var view = b.Add(PipeWorkbookGui.View);
         var eh = ElementHeaders(u);
         for (int c = 0; c < eh.Length; c++) el.Width(c, c == cId || c == cFrom || c == cTo ? 8 : c == cBendN ? 15 : c == cSec || c == cProc ? 17 : c == cName || c == cLine ? 14 : c == cType ? 13 : 11);
-        el.Group(cOd, cK);
+        el.Group(cOd, cSeam);
         r = 1;
         foreach (var e in m.Elements)
         {
@@ -363,11 +370,14 @@ public static class PipeWorkbook
             if (s.E != 0) se.Set(r, 7, s.E);
             if (s.Poisson != 0) se.Set(r, 8, s.Poisson);
             if (s.PipeDens != 0) se.Set(r, 9, s.PipeDens);
+            if (s.MillM != 0) se.Set(r, 10, s.MillM);
+            if (s.MillP != 0) se.Set(r, 11, s.MillP);
+            if (s.Seam != 0) se.Set(r, 12, s.Seam == 1 ? "yes" : R(s.Seam));
             r++;
         }
         PipeWorkbookGui.Table(se, t, sh, PipeWorkbookGui.SectionCols(), secs.Count, limS);
         PipeWorkbookGui.Rule(se, "A2:A" + limS, "AND(A2<>\"\",COUNTIF($A$2:$A$" + limS + ",A2)>1)", t.Red);
-        PipeWorkbookGui.Rule(se, "A2:A" + limS, "AND(A2=\"\",COUNTA($B2:$J2)>0)", t.Red);
+        PipeWorkbookGui.Rule(se, "A2:A" + limS, "AND(A2=\"\",COUNTA($B2:$M2)>0)", t.Red);
         PipeWorkbookGui.Rule(se, "B2:C" + limS, "AND(B2=\"\",$A2<>\"\")", t.Red);
         PipeWorkbookGui.Rule(se, "E2:E" + limS, "AND(ISNUMBER(E2),E2>0,ISNUMBER($C2),E2>=$C2)", t.Red);                       // corrosion as thick as the wall
         PipeWorkbookGui.Rule(se, "B2:C" + limS, "AND(ISNUMBER($B2),ISNUMBER($C2),$C2>0,$B2/$C2>100)", t.Amber);              // D/t over 100
@@ -382,12 +392,13 @@ public static class PipeWorkbook
             pr.Set(r, 0, p.Name);
             for (int k = 0; k < 9; k++) { if (p.T[k] != 0 || k == 0) pr.Set(r, 1 + k, p.T[k]); if (p.P[k] != 0 || k == 0) pr.Set(r, 10 + k, p.P[k]); }
             pr.Set(r, 19, p.Fluid);
+            if (p.Hydro != 0) pr.Set(r, 20, p.Hydro);
             r++;
         }
         PipeWorkbookGui.Table(pr, t, ph, PipeWorkbookGui.ProcessCols(), procs.Count, limP);
         PipeWorkbookGui.Rule(pr, "B2:J" + limP, PipeWorkbookGui.AlphaRule("B2"), t.Amber);                                   // a temperature CAESAR reads as an expansion
         PipeWorkbookGui.Rule(pr, "A2:A" + limP, "AND(A2<>\"\",COUNTIF($A$2:$A$" + limP + ",A2)>1)", t.Red);
-        PipeWorkbookGui.Rule(pr, "A2:A" + limP, "AND(A2=\"\",COUNTA($B2:$T2)>0)", t.Red);
+        PipeWorkbookGui.Rule(pr, "A2:A" + limP, "AND(A2=\"\",COUNTA($B2:$U2)>0)", t.Red);
 
         // nodes the model has (amber when a row names another): From / To and the bend nodes
         string L2 = lim.ToString(CultureInfo.InvariantCulture);
@@ -661,13 +672,13 @@ public static class PipeWorkbook
         var checks = new List<PipeWorkbookGui.Check>
         {
             new PipeWorkbookGui.Check("Error values (#N/A, #DIV/0! ...) on the input sheets",
-                errIn("Elements", "A:BA") + "+" + errIn("Sections", "A:J") + "+" + errIn("Processes", "A:T") + "+" + errIn("Restraints", "A:K") + "+" + errIn("Forces", "A:I") + "+" + errIn("Displacements", "A:I") + "+" +
+                errIn("Elements", "A:BE") + "+" + errIn("Sections", "A:M") + "+" + errIn("Processes", "A:U") + "+" + errIn("Restraints", "A:K") + "+" + errIn("Forces", "A:I") + "+" + errIn("Displacements", "A:I") + "+" +
                 errIn("Uniform", "A:H") + "+" + errIn("Wind", "A:I") + "+" + errIn("Hangers", "A:U") + "+" + errIn("Coords", "A:D"), false),
-            new PipeWorkbookGui.Check("Elements: text where a number belongs", textIn("Elements", "B:F,J:J,M:T,W:BA") + "-SUMPRODUCT(" + string.Join("+", PipeWorkbookGui.RadiusNames.Select(rn => "(UPPER(TRIM(" + col("J") + "))=\"" + rn + "\")").ToArray()) + ")", false),
+            new PipeWorkbookGui.Check("Elements: text where a number belongs", textIn("Elements", "B:F,J:J,M:T,W:BD") + "-SUMPRODUCT(" + string.Join("+", PipeWorkbookGui.RadiusNames.Select(rn => "(UPPER(TRIM(" + col("J") + "))=\"" + rn + "\")").ToArray()) + ")", false),
             new PipeWorkbookGui.Check("Elements: rows without From or To", "SUMPRODUCT(((" + col("B") + "=\"\")+(" + col("C") + "=\"\")>0)*(LEN(" + col("A") + "&" + col("D") + "&" + col("E") + "&" + col("F") + "&" + col("G") + ")>0))", false),
             new PipeWorkbookGui.Check("Elements: unknown Type, Section or Process",
                 unknown(col("G"), PipeWorkbookGui.LType, "") + "+" + unknown(col("H"), secList, "") + "+" + unknown(col("I"), procList, ""), false),
-            new PipeWorkbookGui.Check("Sections / Processes: text where a number belongs", textIn("Sections", "B:J") + "+" + textIn("Processes", "B:T"), false),
+            new PipeWorkbookGui.Check("Sections / Processes: text where a number belongs", textIn("Sections", "B:L") + "+" + textIn("Processes", "B:U"), false),
             new PipeWorkbookGui.Check("Restraints: unknown type, or text where a number belongs", unknown("Restraints!$C$2:$C$" + L2, typeList, "") + "+" + textIn("Restraints", "B:B,D:J"), false),
             new PipeWorkbookGui.Check("Forces / Displacements / Uniform: text where a number belongs, or a vector outside 1-9",
                 textIn("Forces", "B:I") + "+" + textIn("Displacements", "B:I") + "+" + textIn("Uniform", "B:G") + "+" +
@@ -1043,7 +1054,10 @@ public static class PipeWorkbook
             {
                 Name = name, Od = Num(c, r, "OD", x, 20, u.Dia), Wall = Num(c, r, "Wall", x, 21, u.Thk), Insul = Z(Num(c, r, "Insulation", x, 21, u.Thk)),
                 Corr = Z(Num(c, r, "Corrosion", x, 21, u.Thk)), InsDens = Z(Num(c, r, "Insul density", x, -1, u.InsDens)), Material = Int(c, r, "Material", x, 0),
-                E = Z(Num(c, r, "E", x, -1, u.E)), Poisson = Z(Num(c, r, "Poisson", x, -1, null)), PipeDens = Z(Num(c, r, "Pipe density", x, -1, u.PipeDens))
+                E = Z(Num(c, r, "E", x, -1, u.E)), Poisson = Z(Num(c, r, "Poisson", x, -1, null)), PipeDens = Z(Num(c, r, "Pipe density", x, -1, u.PipeDens)),
+                MillM = c.At.ContainsKey("Mill tol -") ? Z(Num(c, r, "Mill tol -", x, -1, null)) : double.NaN,
+                MillP = c.At.ContainsKey("Mill tol +") ? Z(Num(c, r, "Mill tol +", x, -1, null)) : double.NaN,
+                Seam = c.At.ContainsKey("Seam weld") ? YesNo(Text(c, r, "Seam weld", x), "Sections row " + (r + 1) + ": Seam weld", x) : double.NaN
             };
             if (!(sec.Od > 0) || !(sec.Wall > 0)) x.Err("Sections row " + (r + 1) + " (\"" + name + "\"): OD and wall are required");
             d[name] = sec;
@@ -1056,7 +1070,7 @@ public static class PipeWorkbook
         var d = new Dictionary<string, Proc>(StringComparer.OrdinalIgnoreCase);
         if (s == null) return d;
         var u = x.U;
-        var known = new List<string> { "Name", "Fluid density" };
+        var known = new List<string> { "Name", "Fluid density", "Hydro pressure" };
         for (int k = 1; k <= 9; k++) { known.Add("T" + k); known.Add("P" + k); }
         var c = ColsOf(s, x, known.ToArray());
         for (int r = 1; r < s.Rows.Count; r++)
@@ -1065,7 +1079,7 @@ public static class PipeWorkbook
             string name = Text(c, r, "Name", x);
             if (name.Length == 0) { x.Err("Processes row " + (r + 1) + ": no name"); continue; }
             if (d.ContainsKey(name)) { x.Err("Processes row " + (r + 1) + ": a second process \"" + name + "\""); continue; }
-            var p = new Proc { Name = name, Fluid = Z(Num(c, r, "Fluid density", x, -1, u.FluidDens)) };
+            var p = new Proc { Name = name, Fluid = Z(Num(c, r, "Fluid density", x, -1, u.FluidDens)), Hydro = c.At.ContainsKey("Hydro pressure") ? Z(Num(c, r, "Hydro pressure", x, -1, u.Press)) : double.NaN };
             for (int k = 0; k < 9; k++) { p.T[k] = Z(Num(c, r, "T" + (k + 1), x, -1, u.Temp)); p.P[k] = Z(Num(c, r, "P" + (k + 1), x, -1, u.Press)); }
             d[name] = p;
         }
@@ -1129,6 +1143,14 @@ public static class PipeWorkbook
             SetN(ref e.Emod, Ov(c, r, "E", x, -1, u.E, sec.E)); SetN(ref e.Poisson, Ov(c, r, "Poisson", x, -1, null, sec.Poisson)); SetN(ref e.PipeDensity, Ov(c, r, "Pipe density", x, -1, u.PipeDens, sec.PipeDens));
             for (int k = 0; k < 9; k++) { SetN(ref e.T[k], Ov(c, r, "T" + (k + 1), x, -1, u.Temp, proc.T[k])); SetN(ref e.P[k], Ov(c, r, "P" + (k + 1), x, -1, u.Press, proc.P[k])); }
             SetN(ref e.FluidDensity, Ov(c, r, "Fluid density", x, -1, u.FluidDens, proc.Fluid));
+            // design data: this element's override, else its section's / process's; a sheet without the column keeps the element's
+            double hv = Ov(c, r, "Hydro pressure", x, -1, u.Press, proc.Hydro), mm = Ov(c, r, "Mill tol -", x, -1, null, sec.MillM), mp = Ov(c, r, "Mill tol +", x, -1, null, sec.MillP);
+            string sw = Text(c, r, "Seam weld", x);
+            double sv = sw.Length > 0 ? YesNo(sw, w + ": Seam weld", x) : sec.Seam;
+            if (!double.IsNaN(hv)) SetN(ref e.HydroPressure, hv);
+            if (!double.IsNaN(mm)) SetN(ref e.MillTolMinus, mm);
+            if (!double.IsNaN(mp)) SetN(ref e.MillTolPlus, mp);
+            if (!double.IsNaN(sv)) SetN(ref e.SeamWeld, sv);
             // type: rigid / expansion joint / reducer
             string type = Text(c, r, "Type", x);
             if (type.Length == 0) type = "Pipe";
@@ -1216,6 +1238,16 @@ public static class PipeWorkbook
     }
 
     // an override cell, else the section / process value
+    // yes / no (or 1 / 0) -> 1 / 0; blank -> 0
+    static double YesNo(string t, string w, Ctx x)
+    {
+        string v = (t ?? "").Trim().ToLowerInvariant();
+        if (v == "" || v == "no" || v == "0") return 0;
+        if (v == "yes" || v == "1") return 1;
+        x.Err(w + ": yes or no (\"" + t + "\")");
+        return 0;
+    }
+
     static double Ov(Cols c, int r, string col, Ctx x, int kind, string unit, double from)
     {
         double v = Num(c, r, col, x, kind, unit);

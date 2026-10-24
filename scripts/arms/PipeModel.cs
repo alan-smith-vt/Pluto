@@ -85,10 +85,46 @@ public class PipeModelElement
     public double Emod, Poisson, PipeDensity;         // 0 = from CAESAR's material database (by Material)
     public double InsulationDensity, FluidDensity;
     public int Material;                              // CAESAR material number (MISCEL_1)
-    // Element row 8, values 5 and 6: angles (deg) CAESAR 15.01 writes on the elements meeting at a welding
-    // tee (90 / 180 / 315 in the fixture; not in the input echo, meaning unconfirmed). 9999.99 = not set,
-    // what the builder writes; kept so a CAESAR file round-trips exactly.
+    // Element row 8, values 5 and 6: CAESAR's element orientation angles (to end, from end; its items 47 and 48,
+    // "FEATools data only"), which CAESAR 15.01 writes on the elements meeting at a welding tee (90 / 180 / 315 in
+    // the fixture). 9999.99 = not set, what the builder writes; kept so a CAESAR file round-trips exactly.
     public double TeeAngle1 = 9999.99, TeeAngle2 = 9999.99;
+    // Design data, rows 6-9 of the record past the densities (CAESAR's items 33-46 and 49-53): 0 = not given
+    public double MillTolMinus, MillTolPlus;          // mill tolerance, % of the wall (33, 34)
+    public double SeamWeld;                           // 1 = seam welded (35)
+    public double HydroPressure;                      // hydrotest pressure (36)
+    public readonly double[] EHot = new double[9];    // hot elastic modulus for T1-T9 (37-45; 0 = from the material)
+    public double WlFactor;                           // weld strength reduction factor (46)
+    public double CladThickness, CladDensity, InsCladWeight, RefractoryThickness, RefractoryDensity;   // 49-53
+
+    // the design data in record order: rows 6-9 from their third, first, first and first value (the orientation angles
+    // between them stay apart)
+    public double[] Design()
+    {
+        return new[] { MillTolMinus, MillTolPlus, SeamWeld, HydroPressure, EHot[0], EHot[1], EHot[2], EHot[3], EHot[4], EHot[5], EHot[6], EHot[7], EHot[8], WlFactor,
+                       CladThickness, CladDensity, InsCladWeight, RefractoryThickness, RefractoryDensity };
+    }
+
+    public void SetDesign(double[] v)
+    {
+        Func<int, double> at = i => v != null && i < v.Length && !double.IsNaN(v[i]) ? v[i] : 0;
+        MillTolMinus = at(0); MillTolPlus = at(1); SeamWeld = at(2); HydroPressure = at(3);
+        for (int k = 0; k < 9; k++) EHot[k] = at(4 + k);
+        WlFactor = at(13); CladThickness = at(14); CladDensity = at(15); InsCladWeight = at(16); RefractoryThickness = at(17); RefractoryDensity = at(18);
+    }
+
+    // where each design value sits in the record: {real row, value}
+    public static readonly int[][] DesignAt =
+    {
+        new[] { 5, 2 }, new[] { 5, 3 }, new[] { 5, 4 }, new[] { 5, 5 },
+        new[] { 6, 0 }, new[] { 6, 1 }, new[] { 6, 2 }, new[] { 6, 3 }, new[] { 6, 4 }, new[] { 6, 5 }, new[] { 7, 0 }, new[] { 7, 1 }, new[] { 7, 2 }, new[] { 7, 3 },
+        new[] { 8, 0 }, new[] { 8, 1 }, new[] { 8, 2 }, new[] { 8, 3 }, new[] { 8, 4 }
+    };
+    public static readonly string[] DesignNames =
+    {
+        "mill tolerance -", "mill tolerance +", "seam weld", "hydro pressure", "E hot 1", "E hot 2", "E hot 3", "E hot 4", "E hot 5", "E hot 6", "E hot 7", "E hot 8", "E hot 9",
+        "wL factor", "cladding thickness", "cladding density", "insulation + cladding weight", "refractory thickness", "refractory density"
+    };
     public string Name = "";                          // element name (rigids: the component)
     public string LineNumber = "";                    // written on the first element of a line, carried forward by CAESAR
     public PipeModelBend Bend;                        // a bend at the TO end

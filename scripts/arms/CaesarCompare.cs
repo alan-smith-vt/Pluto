@@ -353,6 +353,8 @@ public static class CaesarCompare
         Num(d, "E", a.Emod, b.Emod); Num(d, "Poisson", a.Poisson, b.Poisson); Num(d, "pipe density", a.PipeDensity, b.PipeDensity);
         Num(d, "insulation density", a.InsulationDensity, b.InsulationDensity); Num(d, "fluid density", a.FluidDensity, b.FluidDensity);
         if (a.Material != b.Material) d.Add("material " + a.Material + " -> " + b.Material);
+        var da = a.Design(); var db = b.Design();
+        for (int k = 0; k < da.Length; k++) Num(d, PipeModelElement.DesignNames[k], da[k], db[k]);
         if ((a.Name ?? "") != (b.Name ?? "")) d.Add("name \"" + a.Name + "\" -> \"" + b.Name + "\"");
         if ((a.LineNumber ?? "") != (b.LineNumber ?? "")) d.Add("line \"" + a.LineNumber + "\" -> \"" + b.LineNumber + "\"");
         if ((a.Bend == null) != (b.Bend == null)) d.Add(a.Bend == null ? "bend added" : "bend removed");

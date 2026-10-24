@@ -17,8 +17,8 @@ using System.Text;
 //             restraint-blocks displacement-blocks force-blocks / uniform wind offsets allowables
 //             SIF&TEE-blocks IZUP / equipment.
 //   ELEMENTS  per element 9 real rows: FROM TO DX DY DZ OD / WALL INSUL CORR T1 T2 T3 / T4..T9 / P1..P6 /
-//             P7 P8 P9 E POISSON PIPE-DENSITY / INSUL-DENSITY FLUID-DENSITY 0 0 0 0 / 0 x6 / 0 0 0 0
-//             TEE-ANGLE1 TEE-ANGLE2 (9999.99 = not set) / 0 x5 -- then the element name and line number (text rows), "-1 -1", and
+//             P7 P8 P9 E POISSON PIPE-DENSITY / INSUL-DENSITY FLUID-DENSITY MILL-TOL- MILL-TOL+ SEAM-WELD HYDRO-PRESSURE /
+//             E-HOT1..6 / E-HOT7..9 WL ORIENT-TO ORIENT-FROM (9999.99 = not set) / CLAD-THK CLAD-DENS INS+CLAD-WT REFR-THK REFR-DENS -- then the element name and line number (text rows), "-1 -1", and
 //             the block pointers: BEND RIGID EXPJT RESTRANT DISPLMNT FORCMNT / UNIFORM WIND OFFSETS
 //             ALLOWBLS SIF&TEES NODENAME / REDUCERS FLANGES EQUIPMNT (1-based, 0 = none). Properties are
 //             written on every element. E, Poisson and the pipe density are 0 when CAESAR takes them from
@@ -504,6 +504,21 @@ public static class CaesarNeutralWriter
         return lay;
     }
 
+    // the design data an element record holds as written (a model saved before the model held them reads them back)
+    public static double[] DesignFromRecord(List<string> raw)
+    {
+        var v = new double[PipeModelElement.DesignAt.Length];
+        if (raw == null) return v;
+        var lay = Layout(raw);
+        for (int k = 0; k < v.Length; k++)
+        {
+            int r = PipeModelElement.DesignAt[k][0];
+            double x;
+            if (r < lay.Real.Count && TryNum(Column(raw[lay.Real[r]], PipeModelElement.DesignAt[k][1]), out x)) v[k] = x;
+        }
+        return v;
+    }
+
     static double[][] ElementRows(PipeModelElement e)
     {
         return new[]
@@ -532,6 +547,13 @@ public static class CaesarNeutralWriter
                 if (lay.Real.Count < 6 || lay.Ptr.Count != 3) throw new InvalidOperationException("CaesarNeutralWriter: element " + e.From + "-" + e.To + ": its record (as imported) has no recognisable rows");
                 for (int r = 0; r < rows.Length; r++) for (int c = 0; c < rows[r].Length; c++) lines[lay.Real[r]] = SetReal(lines[lay.Real[r]], c, rows[r][c]);
                 if (lay.Real.Count > 7) { lines[lay.Real[7]] = SetReal(lines[lay.Real[7]], 4, e.TeeAngle1); lines[lay.Real[7]] = SetReal(lines[lay.Real[7]], 5, e.TeeAngle2); }
+                var dv = e.Design();
+                for (int k = 0; k < dv.Length; k++)
+                {
+                    int dr = PipeModelElement.DesignAt[k][0], dc = PipeModelElement.DesignAt[k][1];
+                    if (dr < lay.Real.Count) lines[lay.Real[dr]] = SetReal(lines[lay.Real[dr]], dc, dv[k]);
+                    else if (dv[k] != 0) throw new InvalidOperationException("CaesarNeutralWriter: element " + e.From + "-" + e.To + ": its record (as imported) has no row for the " + PipeModelElement.DesignNames[k]);
+                }
                 if (lay.Text.Count > 0) lines[lay.Text[0]] = SetText(lines[lay.Text[0]], e.Name);
                 if (lay.Text.Count > 1) lines[lay.Text[1]] = SetText(lines[lay.Text[1]], e.LineNumber);
                 for (int k = 0; k < 15; k++) lines[lay.Ptr[k / 6]] = SetInt(lines[lay.Ptr[k / 6]], k % 6, ptr[k]);
@@ -545,10 +567,10 @@ public static class CaesarNeutralWriter
             w.Add(RealRow(rows[2]));
             w.Add(RealRow(rows[3]));
             w.Add(RealRow(rows[4]));
-            w.Add(RealRow(e.InsulationDensity, e.FluidDensity, 0, 0, 0, 0));
-            w.Add(RealRow(0, 0, 0, 0, 0, 0));
-            w.Add(RealRow(0, 0, 0, 0, e.TeeAngle1, e.TeeAngle2));
-            w.Add(RealRow(0, 0, 0, 0, 0));
+            w.Add(RealRow(e.InsulationDensity, e.FluidDensity, e.MillTolMinus, e.MillTolPlus, e.SeamWeld, e.HydroPressure));
+            w.Add(RealRow(e.EHot[0], e.EHot[1], e.EHot[2], e.EHot[3], e.EHot[4], e.EHot[5]));
+            w.Add(RealRow(e.EHot[6], e.EHot[7], e.EHot[8], e.WlFactor, e.TeeAngle1, e.TeeAngle2));
+            w.Add(RealRow(e.CladThickness, e.CladDensity, e.InsCladWeight, e.RefractoryThickness, e.RefractoryDensity));
             w.Add(TextRow(e.Name));
             w.Add(TextRow(e.LineNumber));
             w.Add(IntRow(-1, -1));

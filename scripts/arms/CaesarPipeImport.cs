@@ -222,6 +222,7 @@ public static class CaesarPipeImport
             e.InsulationDensity = Z(ce.Real(5, 0)); e.FluidDensity = Z(ce.Real(5, 1));
             double ta = ce.Real(7, 4), tb = ce.Real(7, 5);
             e.TeeAngle1 = double.IsNaN(ta) ? 9999.99 : ta; e.TeeAngle2 = double.IsNaN(tb) ? 9999.99 : tb;
+            e.SetDesign(PipeModelElement.DesignAt.Select(q => ce.Real(q[0], q[1])).ToArray());
             e.Material = ce.Material;
             e.Name = ce.Name;
             e.LineNumber = ce.LineNumberRaw;

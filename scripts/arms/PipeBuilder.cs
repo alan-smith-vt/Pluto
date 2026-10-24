@@ -186,6 +186,7 @@ public static class PipeBuilder
     {
         public string Name;
         public double Od, Wall, Nps = double.NaN, Insulation, InsulationDensity, FluidDensity, Corrosion;   // in; densities lb/cu.in.
+        public double MillMinus, MillPlus, SeamWeld;   // %, %, 1 = seam welded
         public int Material;
     }
 
@@ -358,7 +359,7 @@ public static class PipeBuilder
             var model = Tbl(root, "model", "[model]") ?? new TomlTable();
             Allowed(model, "[model]", "title notes length_unit node_step material ambient y_up code allowables_from");
             defaults = Tbl(root, "defaults", "[defaults]");
-            Allowed(defaults, "[defaults]", "section temperature delta_t pressure bend bend_nodes max_length uniform g_load wind_shape");
+            Allowed(defaults, "[defaults]", "section temperature delta_t pressure hydro_pressure bend bend_nodes max_length uniform g_load wind_shape");
             res.Source = source;
             res.Title = Str(model, "title", "", "model");
             m.Title = res.Title;
@@ -470,7 +471,7 @@ public static class PipeBuilder
                 if (sections.ContainsKey(name)) throw Err("two sections named \"" + name + "\"");
                 var t = kv.Value;
                 string w = "sections." + name;
-                Allowed(t, w, "name nps schedule od wall insulation insulation_density fluid_density fluid_sg corrosion material");
+                Allowed(t, w, "name nps schedule od wall insulation insulation_density fluid_density fluid_sg corrosion material mill_tolerance mill_tolerance_plus seam_weld");
                 var s = new Sec { Name = name };
                 object nps = Get(t, "nps"), od = Get(t, "od"), wall = Get(t, "wall");
                 string sch = Str(t, "schedule", null, w);
@@ -495,6 +496,11 @@ public static class PipeBuilder
                 s.FluidDensity = Fluid(t, w, 0);
                 s.Corrosion = NumOpt(t, "corrosion", 0, w);
                 s.Material = (int)Math.Round(NumOpt(t, "material", material, w));
+                s.MillMinus = NumOpt(t, "mill_tolerance", 0, w); s.MillPlus = NumOpt(t, "mill_tolerance_plus", 0, w);
+                if (s.MillMinus < 0 || s.MillMinus >= 100 || s.MillPlus < 0 || s.MillPlus >= 100) throw Err(w + ": mill_tolerance and mill_tolerance_plus are % of the wall, 0 to under 100");
+                object sw = Get(t, "seam_weld");
+                if (sw != null && !(sw is bool)) throw Err(w + ".seam_weld must be true or false");
+                s.SeamWeld = sw is bool && (bool)sw ? 1 : 0;
                 if (s.Insulation < 0 || s.InsulationDensity < 0 || s.FluidDensity < 0 || s.Corrosion < 0) throw Err(w + ": a negative insulation, density or corrosion");
                 if (s.Corrosion >= s.Wall) throw Err(w + ": the corrosion allowance is not less than the wall");
                 if (s.Insulation > 0 && !(s.InsulationDensity > 0)) Warn(w + ": insulation without insulation_density (lb/cu.ft): it adds no weight");
@@ -534,7 +540,7 @@ public static class PipeBuilder
                 var r = new RunB { Item = t, Name = Str(t, "name", "run" + (i + 1).ToString(CultureInfo.InvariantCulture), "[[runs]]") };
                 string w = "run \"" + r.Name + "\"";
                 r.Where = w;
-                Allowed(t, w, "name start from tee end end_tee legs section temperature delta_t pressure bend bend_nodes max_length line fluid_density fluid_sg first_node uniform g_load wind_shape");
+                Allowed(t, w, "name start from tee end end_tee legs section temperature delta_t pressure hydro_pressure bend bend_nodes max_length line fluid_density fluid_sg first_node uniform g_load wind_shape");
                 if (runByName.ContainsKey(r.Name)) throw Err("two runs named \"" + r.Name + "\"");
                 r.Section = SectionNamed(RunVal(r, "section"), w);
                 object from = Get(t, "from");
@@ -1099,6 +1105,9 @@ public static class PipeBuilder
             // properties along the run (a reducer changes the section downstream)
             Sec sec = r.Section;
             double[] temps = Temps(r, w), press = Press(r, w);
+            object hv = RunVal(r, "hydro_pressure");
+            double hydro = hv == null ? 0 : Num(hv, (Get(r.Item, "hydro_pressure") != null ? w : "[defaults]") + ".hydro_pressure");
+            if (hydro < 0) throw Err(w + ": a negative hydro_pressure");
             double fluidRun = Get(r.Item, "fluid_density") != null || Get(r.Item, "fluid_sg") != null ? Fluid(r.Item, w, 0) : -1;
             string line = Str(r.Item, "line", "", w);
             string bendNodes = Get(r.Item, "bend_nodes") != null ? BendNodes(Str(r.Item, "bend_nodes", "mid", w), w) : bendNodesDefault;
@@ -1112,6 +1121,7 @@ public static class PipeBuilder
                 double[] pa = PointAt(r, a.S), pb = PointAt(r, b.S);
                 e.Dx = pb[0] - pa[0]; e.Dy = pb[1] - pa[1]; e.Dz = pb[2] - pa[2];
                 Props(e, sec, temps, press, fluidRun);
+                e.HydroPressure = hydro;
                 if (i == 0 && line.Length > 0) e.LineNumber = line;
                 if (b.Corner >= 0 && r.BendR[b.Corner] > 0)
                 {
@@ -1204,6 +1214,7 @@ public static class PipeBuilder
             e.InsulationDensity = sec.InsulationDensity;
             e.FluidDensity = fluidRun >= 0 ? fluidRun : sec.FluidDensity;
             e.Material = sec.Material;
+            e.MillTolMinus = sec.MillMinus; e.MillTolPlus = sec.MillPlus; e.SeamWeld = sec.SeamWeld;
             System.Array.Copy(temps, e.T, 9);
             System.Array.Copy(press, e.P, 9);
         }

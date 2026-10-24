@@ -58,9 +58,9 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > | Sheet | One row per | Columns |
 > |---|---|---|
 > | Settings | setting | title, notes, vertical axis (Y / Z), ambient; read-only: units, source, base fingerprint |
-> | Elements | element, in CAESAR's order | Id, From, To, DX DY DZ, Type, Section, Process, bend radius / nodes / type, rigid weight, reducer OD2 / wall2, expansion joint (axial, transverse, bending, torsion, effective ID), name, line; then a collapsed group (+) of one-element overrides: OD, wall, insulation, corrosion, densities, material, E, Poisson, T1–T9, P1–P9, fluid density, bend miter points, fitting thickness, K |
-> | Sections | pipe size | name, OD, wall, insulation, corrosion, insulation density, material, E / Poisson / pipe density (blank = CAESAR's database) |
-> | Processes | operating condition | name, T1–T9, P1–P9, fluid density |
+> | Elements | element, in CAESAR's order | Id, From, To, DX DY DZ, Type, Section, Process, bend radius / nodes / type, rigid weight, reducer OD2 / wall2, expansion joint (axial, transverse, bending, torsion, effective ID), name, line; then a collapsed group (+) of one-element overrides: OD, wall, insulation, corrosion, densities, material, E, Poisson, T1–T9, P1–P9, fluid density, bend miter points, fitting thickness, K, hydro pressure, mill tolerance − / +, seam weld |
+> | Sections | pipe size | name, OD, wall, insulation, corrosion, insulation density, material, E / Poisson / pipe density (blank = CAESAR's database), mill tolerance − / + (% of the wall), seam weld (yes / no) |
+> | Processes | operating condition | name, T1–T9, P1–P9, fluid density, hydro pressure (CAESAR's hydrotest case) |
 > | Restraints | restraint | Id, node, type (CAESAR's), CNODE, stiffness (blank = rigid), gap, friction, cosines (blank = the type's own axis), tag |
 > | SIFs | SIF / tee | Id, node, type (3 = welding tee, 0 = user SIFs), SIF in / out, surface node |
 > | Forces / Displacements | node and load vector | Id, node, vector (1–9), FX…MZ / DX…RZ. A blank displacement DOF is free; 0 holds it |

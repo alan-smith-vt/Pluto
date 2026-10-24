@@ -120,7 +120,8 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 > - `insulation` (in) + `insulation_density`;
 > - `fluid_density` or `fluid_sg` (× 62.4 lb/ft³);
 > - `corrosion`;
-> - `material`, to override the model's.
+> - `material`, to override the model's;
+> - `mill_tolerance` (the minus mill tolerance, % of the wall: 12.5 for most seamless pipe), `mill_tolerance_plus`, `seam_weld = true`.
 
 > [!info]- [[runs]]: legs, bends, branches, temperatures
 > - **Start:** `start = [x, y, z]`, the first run's default being the origin. Or `from = { run = "header", at = 12 }`: a branch, starting at that position on an earlier run.
@@ -138,6 +139,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 >   - `temperature = T` or `[T1, T2, …]`, up to 9;
 >   - **or** `delta_t = ΔT` or a list, giving T = ambient + ΔT. CAESAR computes the thermal strain from T − ambient.
 >   - `pressure = P` or `[P1, …]`;
+>   - `hydro_pressure` (psi): the hydrotest pressure CAESAR's hydrotest case uses; also in `[defaults]`;
 >   - `fluid_density` / `fluid_sg`, overriding the section's;
 >   - `line`: the line number, written on the run's first element; CAESAR carries it forward;
 >   - `bend`, `bend_nodes`, `max_length`;
@@ -281,7 +283,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 > - **Not written:**
 >   - nozzle flexibility (WRC 297);
 >   - load cases. CAESAR recommends cases on import.
-> - **Also not yet:** a hydrotest pressure (its field is unconfirmed), flanged-bend types and mitres, and tee types other than welding.
+> - **Also not yet:** flanged-bend types and mitres, and tee types other than welding.
 
 ## Verification (2026-10-07, Linux)
 
