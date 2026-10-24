@@ -33,7 +33,7 @@ Every rule is summarised in our own words.
 > | Bends from 5 to 95 deg (Minimum / Maximum Allowed Bend Angle) | `bend-angle` | Bend radius red; Start |
 > | Nodes on a bend at least 5 deg from each other and from its near and far ends; the near point itself (angle 0) and M are fine (Minimum Angle to Adjacent Bend Point) | `bend-node-angle` | Bend nodes red; Start |
 > | Corrosion allowance as thick as the wall | `corrosion-wall` | Sections' Corrosion and Elements' Section / Wall / Corrosion red; Start |
-> | A restraint and an imposed displacement at a node: overspecified (57E, seen on anchors with displacements). CAESAR's advice: give the displacement alone, or give the restraint a connecting node and impose the displacement there. Pluto flags a shared direction; whether CAESAR also stops on other directions is being probed | `displacement-restrained` | Displacements, that DOF red; Start |
+> | A restraint to ground and an imposed displacement at one node: overspecified (57E, seen), whatever their directions (a +Y support with a DX displacement stops it too). CAESAR's advice: give the displacement alone (a direction given holds the node), or give the restraint a connecting node and impose the displacement there | `displacement-restrained` (a restraint with a connecting node does not count) | Displacements, the row red; Start |
 > | A loop whose two paths place a node more than 1 in apart (Loop Closure Tolerance) | `loop-closure` | not on the sheet: the preview and `-Cii` |
 > | Node numbers 1 to 8,000,000 (since CAESAR 11.00; 32,000 before) | `node-range` | every node column red; Start |
 > | A user SIF below 1.0 | `sif-below-one` | SIFs red; Start |
@@ -77,7 +77,7 @@ Every rule is summarised in our own words.
 > - **A new displacement on a connecting node** (CAESAR's way to move a restraint) is written with the element at the restraint's node; the writer refused it before, as on no element.
 
 > [!info]- Verification (2026-10-24, Linux)
-> - **Against CAESAR:** on the displacement and wave probe, Pluto reports what CAESAR 15.01's error checker did: 57E at both anchored nodes with displacements, 151E on both wave elements.
+> - **Against CAESAR:** on the displacement and wave probe, Pluto reports what CAESAR 15.01's error checker did: 57E at both anchored nodes with displacements, 151E on both wave elements. The overspecified probe confirmed 57E for a displacement and a restraint in different directions.
 > - **The review:**
 >   - a test model trips each rule on its own;
 >   - the clean model trips none;

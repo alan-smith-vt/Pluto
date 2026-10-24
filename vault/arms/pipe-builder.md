@@ -185,7 +185,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 > **`[[displacements]]`:** imposed displacements at nodes (anchor movements, equipment growth).
 > - The same `node` / `run` + `at` and `vector` (D1…D9).
 > - `dx dy dz` (in), `rx ry rz` (deg). **A DOF not given stays free; a 0 holds it** in that vector.
-> - **No restraint in the same direction at that node:** CAESAR stops on it (57E, overspecified). An anchor that moves is its displacement with all six DOFs given; a restraint that moves gets a connecting node (`cnode = n` on the support) with the displacement on that node.
+> - **No restraint to ground at that node, in any direction:** CAESAR stops on it (57E, overspecified; confirmed for a support in another direction than the displacement). An anchor that moves is its displacement with all six DOFs given; a restraint that moves gets a connecting node (`cnode = n` on the support) with the displacement on that node.
 >
 > **Uniform loads and wind**, on a run or in `[defaults]` (a run's own value wins):
 > - `uniform = [x, y, z]` in lb/in is U1; a list of them gives U1, U2 …; `0` means none.

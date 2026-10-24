@@ -402,17 +402,6 @@ static class PipeWorkbookGui
     // a SIF / tee type that is an intersection (tees and olets: 1-6, 14-17; 7-13 are joints)
     internal static string TeeType(string at) { return "OR(AND(N(" + at + ")>=1,N(" + at + ")<=6),AND(N(" + at + ")>=14,N(" + at + ")<=17))"; }
 
-    // the restraint types that hold DOF k (DX DY DZ RX RY RZ) to ground: anchors and the axis types (one-way, snubbers,
-    // bilinear, rods, springs), as PipeReview.GroundDofs reads them
-    internal static string[] HoldingTypes(int k)
-    {
-        string a = "XYZ".Substring(k % 3, 1);
-        var l = new List<string> { "ANC" };
-        if (k < 3) foreach (string b in new[] { a, "+" + a, "-" + a, a + "SNB", "+" + a + "SNB", "-" + a + "SNB", a + "2", "+" + a + "2", "-" + a + "2", a + "ROD", "+" + a + "ROD", "-" + a + "ROD", a + "SPR" }) l.Add(b);
-        else foreach (string b in new[] { "R" + a, "+R" + a, "-R" + a, "R" + a + "2", "+R" + a + "2", "-R" + a + "2" }) l.Add(b);
-        return l.ToArray();
-    }
-
     // ---------------------------------------------------------------- the Start sheet
 
     internal sealed class SheetInfo

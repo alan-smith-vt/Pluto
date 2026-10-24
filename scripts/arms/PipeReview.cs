@@ -355,26 +355,27 @@ public static class PipeReview
                 "): CAESAR reads such an entry as a thermal expansion (length per length), not a temperature; a temperature this close to zero is better given as 0.1 or more")
                 .WithElements(alpha.Take(ListMax)));
 
-        // imposed displacements on a DOF a restraint already holds to ground: overspecified, CAESAR stops
-        var heldAt = new Dictionary<int, bool[]>();
+        // a restraint to ground and an imposed displacement at the same node, in any directions: overspecified, CAESAR
+        // stops (57E; confirmed for an anchor, for a Y restraint with DX imposed, and not for a restraint to a CNODE that
+        // carries the displacement)
+        var grounded = new Dictionary<int, List<string>>();
         foreach (var r in restraints)
         {
-            var dofs = GroundDofs(r);
-            if (dofs.Length == 0) continue;
-            bool[] h;
-            if (!heldAt.TryGetValue(r.Node, out h)) heldAt[r.Node] = h = new bool[6];
-            foreach (int k in dofs) h[k] = true;
+            if (r.Node <= 0 || r.CNode > 0) continue;
+            List<string> l;
+            if (!grounded.TryGetValue(r.Node, out l)) grounded[r.Node] = l = new List<string>();
+            if (!l.Contains(r.Type)) l.Add(r.Type);
         }
         foreach (var d in m.Displacements)
         {
-            bool[] h;
-            if (!heldAt.TryGetValue(d.Node, out h)) continue;
-            var both = Enumerable.Range(0, 6).Where(k => h[k] && Enumerable.Range(0, 9).Any(v => !double.IsNaN(d.Vectors[v][k]))).Select(k => PipeModelCodes.DisplacementDofs[k]).ToArray();
-            if (both.Length > 0)
-                items.Add(new PipeReviewItem("error", "displacement-restrained", "node " + d.Node + " has an imposed displacement in " + string.Join(", ", both) +
-                    " where a restraint already holds it to ground: overspecified, CAESAR stops on it (57E). Give the displacement alone (given in a direction, it holds the node there), " +
-                    "or, for a restraint's initial movement, give the restraint a connecting node and impose the displacement on that node")
-                    .WithNodes(new[] { d.Node }));
+            List<string> types;
+            if (!grounded.TryGetValue(d.Node, out types)) continue;
+            var given = Enumerable.Range(0, 6).Where(k => Enumerable.Range(0, 9).Any(v => !double.IsNaN(d.Vectors[v][k]))).Select(k => PipeModelCodes.DisplacementDofs[k]).ToArray();
+            if (given.Length == 0) continue;
+            items.Add(new PipeReviewItem("error", "displacement-restrained", "node " + d.Node + " has an imposed displacement (" + string.Join(", ", given) + ") and a restraint (" +
+                string.Join(", ", types.ToArray()) + "): overspecified, CAESAR stops on it in any directions (57E). Give the displacement alone (a direction given holds the node there), " +
+                "or give the restraint a connecting node and impose the displacement on that node (CAESAR's way to move a restraint)")
+                .WithNodes(new[] { d.Node }));
         }
 
         // loop closure: a node two paths of element deltas place more than 1 in apart is a fatal error
@@ -597,22 +598,6 @@ public static class PipeReview
 
     // CAESAR's SIF & tee types that are intersections (tees, olets: 1-6, 14-17); 7-13 are joints (welds, threads, flanges)
     public static bool IsTeeType(int t) { return (t >= 1 && t <= 6) || (t >= 14 && t <= 17); }
-
-    // the DOFs (0..5: DX DY DZ RX RY RZ) a restraint holds to ground: anchors all, an axis type its own; skewed ones,
-    // guides, limit stops and restraints to a CNODE none (they depend on the pipe or on another node)
-    static int[] GroundDofs(PipeModelRestraint r)
-    {
-        if (r.CNode > 0 || r.Node <= 0) return new int[0];
-        string t = (r.Type ?? "").Trim().ToUpperInvariant();
-        if (t == "ANC") return new[] { 0, 1, 2, 3, 4, 5 };
-        t = t.TrimStart('+', '-');
-        int k = -1;
-        if (t.Length >= 2 && t[0] == 'R' && "XYZ".IndexOf(t[1]) >= 0) k = 3 + "XYZ".IndexOf(t[1]);
-        else if (t.Length >= 1 && "XYZ".IndexOf(t[0]) >= 0) k = "XYZ".IndexOf(t[0]);
-        if (k < 0) return new int[0];
-        if (r.Cosines != null && Math.Abs(Math.Abs(r.Cosines[k % 3]) - 1) > 1e-6) return new int[0];
-        return new[] { k };
-    }
 
     // "error" first; then the order they were found
     public static int Rank(string level)

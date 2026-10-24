@@ -419,8 +419,7 @@ public static class PipeWorkbook
         PipeWorkbookGui.Rule(rs, "D2:D" + limR, PipeWorkbookGui.NodeMissing("D2", nFrom, nTo, nBend), t.Amber);
         string lr = limR.ToString(CultureInfo.InvariantCulture);
         b.Names["ck_rn"] = "Restraints!$B$2:$B$" + lr;                                                                         // node
-        b.Names["ck_rt"] = "Restraints!$C$2:$C$" + lr;                                                                         // type
-        b.Names["ck_rfree"] = "Restraints!$D$2:$D$" + lr + "&Restraints!$H$2:$H$" + lr + "&Restraints!$I$2:$I$" + lr + "&Restraints!$J$2:$J$" + lr;   // "" = to ground, on its axis
+        b.Names["ck_rc"] = "Restraints!$D$2:$D$" + lr;                                                                         // CNode ("" = to ground)
 
         // ---- SIFs
         var sf = b.Add("SIFs");
@@ -461,12 +460,8 @@ public static class PipeWorkbook
             PipeWorkbookGui.Rule(q.S, "B2:C" + limL, "AND(B2=\"\",COUNTA($A2,$D2:$I2)>0)", t.Red);
             PipeWorkbookGui.Rule(q.S, "B2:B" + limL, PipeWorkbookGui.NodeMissing("B2", nFrom, nTo, nBend), t.Amber);
             PipeWorkbookGui.Rule(q.S, "C2:C" + limL, "AND(ISNUMBER($B2),ISNUMBER($C2),COUNTIFS($B$2:$B$" + limL + ",$B2,$C$2:$C$" + limL + ",$C2)>1)", t.Red);
-            if (q.D)   // an imposed displacement where a restraint holds the node to ground in that direction: overspecified
-                for (int k = 0; k < 6; k++)
-                {
-                    string c = XlsxBook.Column(3 + k);
-                    PipeWorkbookGui.Rule(q.S, c + "2:" + c + limL, "AND(ISNUMBER(" + c + "2),SUMPRODUCT((ck_rn=$B2)*(ck_rfree=\"\")*ISNUMBER(MATCH(ck_rt,ck_" + PipeModelCodes.DisplacementDofs[k].ToLowerInvariant() + ",0)))>0)", t.Red);
-                }
+            if (q.D)   // an imposed displacement where a restraint holds the node to ground (any direction): overspecified, 57E
+                PipeWorkbookGui.Rule(q.S, "D2:I" + limL, "AND(ISNUMBER(D2),COUNTIFS(ck_rn,$B2,ck_rc,\"\")>0)", t.Red);
         }
 
         // ---- Uniform, Wind (per element; chained elements with the same values share a row: E3:E9)
@@ -551,14 +546,7 @@ public static class PipeWorkbook
         var li = b.Add("Lists");
         li.State = "hidden";
         Head(li, "Element types", "Restraint types", "Bend types", "Wind types", "Yes / no", "Vertical axis", "Joint frame", "Views", "Vectors", "SIF types", "Joint kinds",
-             "NPS OD (in)", "NPS", "Coded radius (x NPS)", "View azimuth", "View elevation", "Holds DX", "Holds DY", "Holds DZ", "Holds RX", "Holds RY", "Holds RZ");
-        for (int k = 0; k < 6; k++)
-        {
-            var hold = PipeWorkbookGui.HoldingTypes(k);
-            for (int j = 0; j < hold.Length; j++) li.Set(1 + j, 16 + k, hold[j]);
-            string c = XlsxBook.Column(16 + k);
-            b.Names["ck_" + PipeModelCodes.DisplacementDofs[k].ToLowerInvariant()] = "Lists!$" + c + "$2:$" + c + "$" + (1 + hold.Length).ToString(CultureInfo.InvariantCulture);
-        }
+             "NPS OD (in)", "NPS", "Coded radius (x NPS)", "View azimuth", "View elevation");
         for (int k = 0; k < ElementTypes.Length; k++) li.Set(1 + k, 0, ElementTypes[k]);
         for (int k = 0; k < types.Count; k++) li.Set(1 + k, 1, types[k]);
         for (int k = 0; k < BendTypes.Length; k++) li.Set(1 + k, 2, BendTypes[k]);
@@ -653,9 +641,9 @@ public static class PipeWorkbook
                 PipeWorkbookGui.CalcCount("fC", n) + "+SUMPRODUCT(ISNUMBER(Sections!$E$2:$E$" + LS + ")*(Sections!$E$2:$E$" + LS + ">0)*ISNUMBER(Sections!$C$2:$C$" + LS + ")*(Sections!$E$2:$E$" + LS + ">=Sections!$C$2:$C$" + LS + "))", false),
             new PipeWorkbookGui.Check("SIFs: a user SIF below 1.0: CAESAR does not accept it",
                 "SUMPRODUCT(ISNUMBER(SIFs!$D$2:$E$" + L2 + ")*(SIFs!$D$2:$E$" + L2 + ">0)*(SIFs!$D$2:$E$" + L2 + "<1))", false),
-            new PipeWorkbookGui.Check("Displacements: a direction a restraint already holds to ground: CAESAR stops on it (overspecified)",
-                string.Join("+", Enumerable.Range(0, 6).Select(k => "SUMPRODUCT((ck_rfree=\"\")*ISNUMBER(MATCH(ck_rt,ck_" + PipeModelCodes.DisplacementDofs[k].ToLowerInvariant() + ",0))*COUNTIFS(Displacements!$B$2:$B$" + L2 +
-                    ",ck_rn,Displacements!$" + XlsxBook.Column(3 + k) + "$2:$" + XlsxBook.Column(3 + k) + "$" + L2 + ",\"<>\"))").ToArray()), false),
+            new PipeWorkbookGui.Check("Displacements: a node a restraint holds to ground: CAESAR stops on it (57E, overspecified)",
+                "SUMPRODUCT((COUNTIFS(ck_rn,Displacements!$B$2:$B$" + L2 + ",ck_rc,\"\")>0)*(((Displacements!$D$2:$D$" + L2 + "<>\"\")+(Displacements!$E$2:$E$" + L2 + "<>\"\")+(Displacements!$F$2:$F$" + L2 +
+                "<>\"\")+(Displacements!$G$2:$G$" + L2 + "<>\"\")+(Displacements!$H$2:$H$" + L2 + "<>\"\")+(Displacements!$I$2:$I$" + L2 + "<>\"\"))>0))", false),
             new PipeWorkbookGui.Check("Node numbers above 8,000,000 (CAESAR's limit)",
                 string.Join("+", new[] { "Elements!$B$2:$C$", "Restraints!$B$2:$B$", "Restraints!$D$2:$D$", "SIFs!$B$2:$B$", "Forces!$B$2:$B$", "Displacements!$B$2:$B$", "Coords!$A$2:$A$" }
                     .Select(r0 => "SUMPRODUCT(ISNUMBER(" + r0 + L2 + ")*(" + r0 + L2 + ">8000000))").ToArray()), false),
