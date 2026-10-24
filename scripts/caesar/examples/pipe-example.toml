@@ -174,11 +174,6 @@ type = "Y"
 stiffness = 1500                       # lb/in: a spring as a linear support
 
 [[supports]]
-run = "drop"
-at = "L"
-type = "ANC"
-
-[[supports]]
 run = "return"
 at = [0, "L"]
 type = "ANC"
@@ -225,7 +220,10 @@ fx = 300
 
 [[displacements]]
 run = "drop"
-at = "L"                               # the drop's anchor moves: equipment growth in D1
-dx = 0.05                              # in; a DOF not given stays free, a 0 holds it
-dy = 0.25
-dz = 0
+at = "L"                               # the drop ends at equipment that moves (growth in D1): every DOF given
+dx = 0.05                              # in; a DOF not given stays free, a 0 holds it. Given in all six, the
+dy = 0.25                              # displacement is the anchor: CAESAR does not take a restraint and an
+dz = 0                                 # imposed displacement in the same direction (overspecified)
+rx = 0
+ry = 0
+rz = 0

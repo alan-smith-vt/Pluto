@@ -1460,7 +1460,10 @@ public static class PipeBuilder
         }
 
         // uniform / g_load on a run (else [defaults]) -> its uniform load (null: none)
-        PipeModelUniform UniformOf(RunB r)
+        // uniform's vectors are U1, U2 ...; g_load's follow the most any run has per length (gStart), so a vector holds one
+        // kind across the model: CAESAR reads a vector in g's on one element and per length on another as mixed (247E),
+        // and its load cases would add the two
+        PipeModelUniform UniformOf(RunB r, int gStart)
         {
             var u = new PipeModelUniform();
             int v = 0;
@@ -1468,6 +1471,7 @@ public static class PipeBuilder
             {
                 object o = RunVal(r, key);
                 string w = (Get(r.Item, key) != null ? r.Where : "[defaults]") + "." + key;
+                if (key == "g_load") v = Math.Max(v, gStart);
                 foreach (var vec in Vectors(o, w))
                 {
                     if (v >= 9) throw Err(w + ": more than 9 uniform-load vectors (uniform and g_load together)");
@@ -1505,13 +1509,14 @@ public static class PipeBuilder
             return f == 0 ? null : new PipeModelWind { Type = 0, Shape = f };
         }
 
-        // every element of a run with uniform loads / wind gets its own block (the neutral file holds them per
-        // element; an element without a block has none)
+        // every element of a run with uniform loads / wind carries them (the writer puts a block where a load starts
+        // or changes, as CAESAR carries one forward)
         void UniformAndWind()
         {
             var ur = new Dictionary<RunB, PipeModelUniform>();
             var wr = new Dictionary<RunB, PipeModelWind>();
-            foreach (var r in runs) { ur[r] = UniformOf(r); wr[r] = WindOf(r); }
+            int gStart = runs.Count == 0 ? 0 : runs.Max(r => Vectors(RunVal(r, "uniform"), (Get(r.Item, "uniform") != null ? r.Where : "[defaults]") + ".uniform").Count);
+            foreach (var r in runs) { ur[r] = UniformOf(r, gStart); wr[r] = WindOf(r); }
             foreach (var e in m.Elements)
             {
                 var r = runOf[e];

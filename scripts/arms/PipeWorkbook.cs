@@ -335,7 +335,18 @@ public static class PipeWorkbook
             PipeWorkbookGui.Rule(el, "H2:I2", "AND(H2=\"\",$B2<>\"\")", t.Red);
             PipeWorkbookGui.Rule(el, "N2:O" + L, "AND($G2=\"Reducer\",N2=\"\")", t.Red);
             PipeWorkbookGui.Rule(el, "K2:K" + L, "AND(K2<>\"\",ISERROR(FIND(\":\",K2)))", t.Red);
-            PipeWorkbookGui.Rule(el, "K2:K" + L, "AND(K2<>\"\"," + PipeWorkbookGui.BendNodeTwice("K2", "$K$2:$K$" + L, "$B$2:$B$" + L, "$C$2:$C$" + L) + ")", t.Red);
+            // CAESAR's rules a row trips, worked out on PlotCalc (one row per Elements row): bend nodes used twice or too
+            // close, a bend outside 5-95 deg, corrosion as thick as the wall (red); a corner with no bend, an expansion
+            // joint short of stiffnesses, a temperature CAESAR would read as an expansion (amber)
+            Func<string, string> pc = key => PipeWorkbookGui.CalcRef(key, 2);
+            PipeWorkbookGui.Rule(el, "K2:K" + L, "AND(K2<>\"\",OR(" + pc("fB") + "," + pc("fN") + "))", t.Red);
+            PipeWorkbookGui.Rule(el, "J2:J" + L, pc("fA"), t.Red);
+            PipeWorkbookGui.Rule(el, "H2:H" + L, pc("fC"), t.Red);
+            PipeWorkbookGui.Rule(el, "X2:X" + L, "AND(X2<>\"\"," + pc("fC") + ")", t.Red);
+            PipeWorkbookGui.Rule(el, "Z2:Z" + L, "AND(Z2<>\"\"," + pc("fC") + ")", t.Red);
+            PipeWorkbookGui.Rule(el, "J2:J" + L, pc("fK"), t.Amber);
+            PipeWorkbookGui.Rule(el, "P2:S" + L, pc("fE"), t.Amber);
+            PipeWorkbookGui.Rule(el, "AF2:AN" + L, PipeWorkbookGui.AlphaRule("AF2"), t.Amber);
             PipeWorkbookGui.Rule(el, "J2:J" + L, PipeWorkbookGui.NoRadiusRule("J2"), t.Amber);
             PipeWorkbookGui.Rule(el, "D2:F" + L, "AND(ISNUMBER($B2),N($D2)=0,N($E2)=0,N($F2)=0,ISNUMBER($D2)+ISNUMBER($E2)+ISNUMBER($F2)+($D2=\"\")+($E2=\"\")+($F2=\"\")>=3)", t.Amber);
         }
@@ -358,6 +369,8 @@ public static class PipeWorkbook
         PipeWorkbookGui.Rule(se, "A2:A" + limS, "AND(A2<>\"\",COUNTIF($A$2:$A$" + limS + ",A2)>1)", t.Red);
         PipeWorkbookGui.Rule(se, "A2:A" + limS, "AND(A2=\"\",COUNTA($B2:$J2)>0)", t.Red);
         PipeWorkbookGui.Rule(se, "B2:C" + limS, "AND(B2=\"\",$A2<>\"\")", t.Red);
+        PipeWorkbookGui.Rule(se, "E2:E" + limS, "AND(ISNUMBER(E2),E2>0,ISNUMBER($C2),E2>=$C2)", t.Red);                       // corrosion as thick as the wall
+        PipeWorkbookGui.Rule(se, "B2:C" + limS, "AND(ISNUMBER($B2),ISNUMBER($C2),$C2>0,$B2/$C2>100)", t.Amber);              // D/t over 100
         var pr = b.Add("Processes");
         pr.FreezeRows = 1; pr.FreezeCols = 1; pr.TabColor = "00796B";
         var ph = ProcessHeaders(u);
@@ -372,6 +385,7 @@ public static class PipeWorkbook
             r++;
         }
         PipeWorkbookGui.Table(pr, t, ph, PipeWorkbookGui.ProcessCols(), procs.Count, limP);
+        PipeWorkbookGui.Rule(pr, "B2:J" + limP, PipeWorkbookGui.AlphaRule("B2"), t.Amber);                                   // a temperature CAESAR reads as an expansion
         PipeWorkbookGui.Rule(pr, "A2:A" + limP, "AND(A2<>\"\",COUNTIF($A$2:$A$" + limP + ",A2)>1)", t.Red);
         PipeWorkbookGui.Rule(pr, "A2:A" + limP, "AND(A2=\"\",COUNTA($B2:$T2)>0)", t.Red);
 
@@ -403,6 +417,10 @@ public static class PipeWorkbook
         PipeWorkbookGui.Rule(rs, "B2:B" + limR, "AND(B2=\"\",COUNTA($A2,$C2:$J2)>0)", t.Red);
         PipeWorkbookGui.Rule(rs, "B2:B" + limR, PipeWorkbookGui.NodeMissing("B2", nFrom, nTo, nBend), t.Amber);
         PipeWorkbookGui.Rule(rs, "D2:D" + limR, PipeWorkbookGui.NodeMissing("D2", nFrom, nTo, nBend), t.Amber);
+        string lr = limR.ToString(CultureInfo.InvariantCulture);
+        b.Names["ck_rn"] = "Restraints!$B$2:$B$" + lr;                                                                         // node
+        b.Names["ck_rt"] = "Restraints!$C$2:$C$" + lr;                                                                         // type
+        b.Names["ck_rfree"] = "Restraints!$D$2:$D$" + lr + "&Restraints!$H$2:$H$" + lr + "&Restraints!$I$2:$I$" + lr + "&Restraints!$J$2:$J$" + lr;   // "" = to ground, on its axis
 
         // ---- SIFs
         var sf = b.Add("SIFs");
@@ -423,6 +441,8 @@ public static class PipeWorkbook
         int limF = Math.Max(1000, m.Sifs.Count + 500);
         PipeWorkbookGui.Table(sf, t, sfh, PipeWorkbookGui.SifCols("Lists!$J$2:$J$" + (1 + sifTypes.Count)), m.Sifs.Count, limF);
         PipeWorkbookGui.Rule(sf, "B2:B" + limF, PipeWorkbookGui.NodeMissing("B2", nFrom, nTo, nBend), t.Amber);
+        PipeWorkbookGui.Rule(sf, "D2:E" + limF, "AND(ISNUMBER(D2),D2>0,D2<1)", t.Red);                                           // a user SIF under 1
+        PipeWorkbookGui.Rule(sf, "B2:B" + limF, "AND(ISNUMBER(B2)," + PipeWorkbookGui.TeeType("$C2") + ",COUNTIF(" + nFrom + ",B2)+COUNTIF(" + nTo + ",B2)<>3)", t.Amber);   // a tee not of three pipes
 
         // ---- Forces, Displacements
         var fo = b.Add("Forces");
@@ -441,6 +461,12 @@ public static class PipeWorkbook
             PipeWorkbookGui.Rule(q.S, "B2:C" + limL, "AND(B2=\"\",COUNTA($A2,$D2:$I2)>0)", t.Red);
             PipeWorkbookGui.Rule(q.S, "B2:B" + limL, PipeWorkbookGui.NodeMissing("B2", nFrom, nTo, nBend), t.Amber);
             PipeWorkbookGui.Rule(q.S, "C2:C" + limL, "AND(ISNUMBER($B2),ISNUMBER($C2),COUNTIFS($B$2:$B$" + limL + ",$B2,$C$2:$C$" + limL + ",$C2)>1)", t.Red);
+            if (q.D)   // an imposed displacement where a restraint holds the node to ground in that direction: overspecified
+                for (int k = 0; k < 6; k++)
+                {
+                    string c = XlsxBook.Column(3 + k);
+                    PipeWorkbookGui.Rule(q.S, c + "2:" + c + limL, "AND(ISNUMBER(" + c + "2),SUMPRODUCT((ck_rn=$B2)*(ck_rfree=\"\")*ISNUMBER(MATCH(ck_rt,ck_" + PipeModelCodes.DisplacementDofs[k].ToLowerInvariant() + ",0)))>0)", t.Red);
+                }
         }
 
         // ---- Uniform, Wind (per element; chained elements with the same values share a row: E3:E9)
@@ -465,6 +491,8 @@ public static class PipeWorkbook
         un.Width(0, 12); un.Width(1, 8); un.Width(2, 8); un.Width(3, 8); for (int c = 4; c < 7; c++) un.Width(c, 16); un.Width(7, 9);
         PipeWorkbookGui.Table(un, t, unh, PipeWorkbookGui.UniformCols(), nu, limU);
         PipeWorkbookGui.Rule(un, "B2:C" + limU, "AND($A2=\"\",B2=\"\",COUNTA($D2:$H2)>0)", t.Red);
+        string uh = "$H$2:$H$" + limU, ud = "$D$2:$D$" + limU;
+        PipeWorkbookGui.Rule(un, "H2:H" + limU, "AND($D2<>\"\",COUNTIF(" + uh + ",\"yes\")>0,COUNTIF(" + uh + ",\"no\")+COUNTIFS(" + ud + ",\"<>\"," + uh + ",\"\")>0)", t.Amber);   // g's and per length both
         PipeWorkbookGui.Rule(un, "D2:D" + limU, "AND(D2=\"\",COUNTA($A2:$C2,$E2:$H2)>0)", t.Red);
         var wi = b.Add("Wind");
         wi.FreezeRows = 1; wi.TabColor = "9A3412";
@@ -522,7 +550,14 @@ public static class PipeWorkbook
         var li = b.Add("Lists");
         li.State = "hidden";
         Head(li, "Element types", "Restraint types", "Bend types", "Wind types", "Yes / no", "Vertical axis", "Joint frame", "Views", "Vectors", "SIF types", "Joint kinds",
-             "NPS OD (in)", "NPS", "Coded radius (x NPS)", "View azimuth", "View elevation");
+             "NPS OD (in)", "NPS", "Coded radius (x NPS)", "View azimuth", "View elevation", "Holds DX", "Holds DY", "Holds DZ", "Holds RX", "Holds RY", "Holds RZ");
+        for (int k = 0; k < 6; k++)
+        {
+            var hold = PipeWorkbookGui.HoldingTypes(k);
+            for (int j = 0; j < hold.Length; j++) li.Set(1 + j, 16 + k, hold[j]);
+            string c = XlsxBook.Column(16 + k);
+            b.Names["ck_" + PipeModelCodes.DisplacementDofs[k].ToLowerInvariant()] = "Lists!$" + c + "$2:$" + c + "$" + (1 + hold.Length).ToString(CultureInfo.InvariantCulture);
+        }
         for (int k = 0; k < ElementTypes.Length; k++) li.Set(1 + k, 0, ElementTypes[k]);
         for (int k = 0; k < types.Count; k++) li.Set(1 + k, 1, types[k]);
         for (int k = 0; k < BendTypes.Length; k++) li.Set(1 + k, 2, BendTypes[k]);
@@ -588,6 +623,7 @@ public static class PipeWorkbook
         Func<string, string, string, string> unknown = (rng, list, what) => "SUMPRODUCT((" + rng + "<>\"\")*(COUNTIF(" + list + "," + rng + ")=0))";
         Func<string, string> col = c => "Elements!$" + c + "$2:$" + c + "$" + L2;
         Func<string, string, string> missingNodes = (sheet, c) => "SUMPRODUCT(ISNUMBER(" + sheet + "!$" + c + "$2:$" + c + "$" + L2 + ")*(COUNTIF(" + nFrom + "," + sheet + "!$" + c + "$2:$" + c + "$" + L2 + ")+COUNTIF(" + nTo + "," + sheet + "!$" + c + "$2:$" + c + "$" + L2 + ")=0))";
+        string LS = limS.ToString(CultureInfo.InvariantCulture);
         var checks = new List<PipeWorkbookGui.Check>
         {
             new PipeWorkbookGui.Check("Error values (#N/A, #DIV/0! ...) on the input sheets",
@@ -608,7 +644,34 @@ public static class PipeWorkbook
             new PipeWorkbookGui.Check("Restraints, SIFs, loads: nodes on no element's From / To (bend nodes are fine)",
                 missingNodes("Restraints", "B") + "+" + missingNodes("SIFs", "B") + "+" + missingNodes("Forces", "B") + "+" + missingNodes("Displacements", "B"), true),
             new PipeWorkbookGui.Check("Elements: a bend node number used twice (on two bends, or also a From / To): CAESAR stops on it",
-                "SUMPRODUCT(--" + PipeWorkbookGui.BendNodeTwice(col("K"), nBend, nFrom, nTo) + ")", false),
+                PipeWorkbookGui.CalcCount("fB", n), false),
+            // CAESAR's error checker (vault/arms/caesar-checks.md): red = it stops, amber = it warns
+            new PipeWorkbookGui.Check("Elements: a bend outside 5-95 deg, or a node on a bend within 5 deg of its ends or of another: CAESAR stops on it",
+                PipeWorkbookGui.CalcCount("fA", n) + "+" + PipeWorkbookGui.CalcCount("fN", n), false),
+            new PipeWorkbookGui.Check("Elements / Sections: corrosion as thick as the wall: CAESAR stops on it",
+                PipeWorkbookGui.CalcCount("fC", n) + "+SUMPRODUCT(ISNUMBER(Sections!$E$2:$E$" + LS + ")*(Sections!$E$2:$E$" + LS + ">0)*ISNUMBER(Sections!$C$2:$C$" + LS + ")*(Sections!$E$2:$E$" + LS + ">=Sections!$C$2:$C$" + LS + "))", false),
+            new PipeWorkbookGui.Check("SIFs: a user SIF below 1.0: CAESAR does not accept it",
+                "SUMPRODUCT(ISNUMBER(SIFs!$D$2:$E$" + L2 + ")*(SIFs!$D$2:$E$" + L2 + ">0)*(SIFs!$D$2:$E$" + L2 + "<1))", false),
+            new PipeWorkbookGui.Check("Displacements: a direction a restraint already holds to ground: CAESAR stops on it (overspecified)",
+                string.Join("+", Enumerable.Range(0, 6).Select(k => "SUMPRODUCT((ck_rfree=\"\")*ISNUMBER(MATCH(ck_rt,ck_" + PipeModelCodes.DisplacementDofs[k].ToLowerInvariant() + ",0))*COUNTIFS(Displacements!$B$2:$B$" + L2 +
+                    ",ck_rn,Displacements!$" + XlsxBook.Column(3 + k) + "$2:$" + XlsxBook.Column(3 + k) + "$" + L2 + ",\"<>\"))").ToArray()), false),
+            new PipeWorkbookGui.Check("Node numbers above 8,000,000 (CAESAR's limit)",
+                string.Join("+", new[] { "Elements!$B$2:$C$", "Restraints!$B$2:$B$", "Restraints!$D$2:$D$", "SIFs!$B$2:$B$", "Forces!$B$2:$B$", "Displacements!$B$2:$B$", "Coords!$A$2:$A$" }
+                    .Select(r0 => "SUMPRODUCT(ISNUMBER(" + r0 + L2 + ")*(" + r0 + L2 + ">8000000))").ToArray()), false),
+            new PipeWorkbookGui.Check("Elements: a change of direction with no bend or tee: CAESAR warns",
+                PipeWorkbookGui.CalcCount("fK", n), true),
+            new PipeWorkbookGui.Check("Elements: an expansion joint short of the stiffnesses CAESAR asks for",
+                PipeWorkbookGui.CalcCount("fE", n), true),
+            new PipeWorkbookGui.Check("SIFs: a tee where other than three pipes meet: CAESAR warns",
+                "SUMPRODUCT(ISNUMBER(SIFs!$B$2:$B$" + L2 + ")*((SIFs!$C$2:$C$" + L2 + ">=1)*(SIFs!$C$2:$C$" + L2 + "<=6)+(SIFs!$C$2:$C$" + L2 + ">=14)*(SIFs!$C$2:$C$" + L2 + "<=17))*" +
+                "((COUNTIF(" + nFrom + ",SIFs!$B$2:$B$" + L2 + ")+COUNTIF(" + nTo + ",SIFs!$B$2:$B$" + L2 + "))<>3))", true),
+            new PipeWorkbookGui.Check("Processes / Elements: a temperature under 0.05 (CAESAR reads it as a thermal expansion)",
+                string.Join("+", new[] { "Processes!$B$2:$J$", "Elements!$AF$2:$AN$" }.Select(r0 => "SUMPRODUCT(ISNUMBER(" + r0 + L2 + ")*(" + r0 + L2 + "<>0)*(" + r0 + L2 + "<0.05)*(" + r0 + L2 + ">-0.05))").ToArray()), true),
+            new PipeWorkbookGui.Check("Uniform: g's and force per length both used: CAESAR warns",
+                "IF(COUNTIF(Uniform!$H$2:$H$" + L2 + ",\"yes\")*(COUNTIF(Uniform!$H$2:$H$" + L2 + ",\"no\")+COUNTIFS(Uniform!$D$2:$D$" + L2 + ",\"<>\",Uniform!$H$2:$H$" + L2 + ",\"\"))>0," +
+                "MIN(COUNTIF(Uniform!$H$2:$H$" + L2 + ",\"yes\"),COUNTIF(Uniform!$H$2:$H$" + L2 + ",\"no\")+COUNTIFS(Uniform!$D$2:$D$" + L2 + ",\"<>\",Uniform!$H$2:$H$" + L2 + ",\"\")),0)", true),
+            new PipeWorkbookGui.Check("Sections: D/t over 100 (CAESAR warns at bends and tees)",
+                "SUMPRODUCT(ISNUMBER(Sections!$B$2:$B$" + LS + ")*ISNUMBER(Sections!$C$2:$C$" + LS + ")*(Sections!$C$2:$C$" + LS + ">0)*(Sections!$B$2:$B$" + LS + ">100*Sections!$C$2:$C$" + LS + "))", true),
             new PipeWorkbookGui.Check("Ids used twice (a copied row is read as a new item)",
                 "SUMPRODUCT((" + col("A") + "<>\"\")*(COUNTIF(" + col("A") + "," + col("A") + ")>1))+SUMPRODUCT((Restraints!$A$2:$A$" + L2 + "<>\"\")*(COUNTIF(Restraints!$A$2:$A$" + L2 + ",Restraints!$A$2:$A$" + L2 + ")>1))", true),
         };

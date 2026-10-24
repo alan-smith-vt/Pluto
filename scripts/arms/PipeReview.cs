@@ -24,6 +24,10 @@ using System.Text;
 //   bend-room       a bend's tangent reaches past the start of its element (it overlaps the run before it)
 //   bend-code       a bend radius code CAESAR reads as no radius
 //   node-twice      a node on a bend's curve that is also on another bend's, or an element end: two points, one number
+// and the rules of CAESAR's error checker (CaesarRules; vault/arms/caesar-checks.md): node-range, corrosion-wall,
+// temperature-alpha, displacement-restrained, loop-closure, bend-angle, bend-node-angle, corner-no-bend, intersection,
+// sif-below-one, sif-at-bend, thin-wall, reducer-angle, expansion-joint(-thrust), rigid-weightless, uniform-repeated,
+// hangers; element-zero is an error unless the element is a zero-length expansion joint
 //   uniform-mixed   the uniform loads mix g's and force per length (CAESAR's error checker warns: 246E, 247E)
 // plus CaesarNeutralWriter.NoticeItems (layouts and codes from the documentation) and any messages the caller adds
 // (the build's warnings, the preview's own).
@@ -165,8 +169,9 @@ public static class PipeReview
                 items.Add(new PipeReviewItem("error", "element-self", "element " + (i + 1) + " runs from node " + e.From + " to itself").WithNodes(new[] { e.From }).WithElements(new[] { i + 1 }));
                 continue;
             }
-            if (Math.Sqrt(e.Dx * e.Dx + e.Dy * e.Dy + e.Dz * e.Dz) < 1e-9)
-                items.Add(new PipeReviewItem("warning", "element-zero", "element " + name + " has no length (DX = DY = DZ = 0)").WithNodes(new[] { e.From, e.To }).WithElements(new[] { i + 1 }));
+            if (Math.Sqrt(e.Dx * e.Dx + e.Dy * e.Dy + e.Dz * e.Dz) < 1e-9 && e.ExpJoint == null)
+                items.Add(new PipeReviewItem("error", "element-zero", "element " + name + " has no length (DX = DY = DZ = 0): CAESAR needs a length on every element but a zero-length expansion joint")
+                    .WithNodes(new[] { e.From, e.To }).WithElements(new[] { i + 1 }));
             string key = Math.Min(e.From, e.To) + "-" + Math.Max(e.From, e.To);
             int first;
             if (pairs.TryGetValue(key, out first))
@@ -284,8 +289,321 @@ public static class PipeReview
                 .WithElements(few.Take(ListMax)));
         }
 
+        CaesarRules(m, g, cm, items, restraints, sifs, ends, elementsAt, onBends);
+
         items.AddRange(CaesarNeutralWriter.NoticeItems(m));
         return items;
+    }
+
+    // ---- CAESAR's error checker: what it stops on, warns or notes about, as its documentation and its own messages
+    // describe it (vault/arms/caesar-checks.md); limits are its configuration defaults (Geometry Directives)
+    public const double MinBendAngle = 5, MaxBendAngle = 95, MinBendNodeAngle = 5;   // deg
+    public const double LoopClosureIn = 1.0;      // in
+    public const double AlphaTolerance = 0.05;     // a temperature entry below it is read as an expansion (in/in)
+    public const int MaxNode = 8000000;           // node numbers 1 .. 8,000,000 (CAESAR 11.00 on)
+    public const double ThinWall = 100;           // D/t above it: the code's SIF equations do not cover it
+    public const double MaxReducerAlpha = 60;     // deg: the reducer SIF equation's limit
+    public const double CornerTolDeg = 1;         // a change of direction this small is not reported
+
+    static void CaesarRules(PipeModel m, CaesarPipeGraph g, CaesarModel cm, List<PipeReviewItem> items, List<PipeModelRestraint> restraints,
+                            List<PipeModelSif> sifs, Dictionary<int, int> ends, Dictionary<int, List<int>> elementsAt, SortedDictionary<int, List<int>> onBends)
+    {
+        var ci = CultureInfo.InvariantCulture;
+        int ne = m.Elements.Count;
+        Func<int, string> en = k => m.Elements[k - 1].From + "-" + m.Elements[k - 1].To;
+        Func<double, string> f1 = x => x.ToString("0.#", ci);
+        double lenIn = m.Factor(0), diaIn = m.Factor(20), wallIn = m.Factor(21);   // job units per inch
+        if (lenIn <= 0) lenIn = 1; if (diaIn <= 0) diaIn = 1; if (wallIn <= 0) wallIn = 1;
+        Func<PipeModelElement, double> length = e => Math.Sqrt(e.Dx * e.Dx + e.Dy * e.Dy + e.Dz * e.Dz);
+        Func<PipeModelElement, double> dt = e => e.Wall > 0 ? (e.Od / diaIn) / (e.Wall / wallIn) : 0;
+
+        // nodes: CAESAR numbers them 1 .. 8,000,000
+        var badNodes = new SortedSet<int>();
+        Action<int, bool> node = (n, required) => { if (n > MaxNode || (required && n <= 0) || n < 0) badNodes.Add(n); };
+        foreach (var e in m.Elements) { node(e.From, true); node(e.To, true); }
+        foreach (var kv in onBends) node(kv.Key, true);
+        foreach (var r in m.Restraints) { node(r.Node, true); node(r.CNode, false); }
+        foreach (var s in m.Sifs) { node(s.Node, true); node(s.SurfaceNode, false); }
+        foreach (var x in m.NodeLoads) node(x.Node, true);
+        foreach (var j in m.Joints) { node(j.Node, true); node(j.CNode, true); }
+        if (badNodes.Count > 0)
+            items.Add(new PipeReviewItem("error", "node-range", "node number" + (badNodes.Count == 1 ? " " : "s ") + string.Join(", ", badNodes.Take(20).Select(n => n.ToString(ci)).ToArray()) +
+                (badNodes.Count > 20 ? ", ..." : "") + ": CAESAR takes node numbers from 1 to 8,000,000").WithNodes(badNodes.Where(n => n > 0).Take(ListMax)));
+
+        // corrosion as thick as the wall: CAESAR stops (nothing would be left of the pipe)
+        var corroded = Enumerable.Range(0, ne).Where(i => m.Elements[i].Corrosion > 0 && m.Elements[i].Wall > 0 && m.Elements[i].Corrosion >= m.Elements[i].Wall).ToList();
+        if (corroded.Count > 0)
+        {
+            var e0 = m.Elements[corroded[0]];
+            items.Add(new PipeReviewItem("error", "corrosion-wall", string.Format(ci, "the corrosion allowance is as thick as the wall or thicker on {0} element{1} (from {2}: corrosion {3:0.####}, wall {4:0.####}): CAESAR stops on it",
+                corroded.Count, corroded.Count == 1 ? "" : "s", en(corroded[0] + 1), e0.Corrosion, e0.Wall)).WithElements(corroded.Take(ListMax).Select(i => i + 1)));
+        }
+
+        // a temperature entry under CAESAR's alpha tolerance is read as a thermal expansion (length / length)
+        var alpha = new List<int>(); string alphaWhat = null;
+        for (int i = 0; i < ne; i++)
+            for (int k = 0; k < 9; k++)
+            {
+                double t = m.Elements[i].T[k];
+                if (t == 0 || Math.Abs(t) >= AlphaTolerance) continue;
+                if (alpha.Count == 0 || alpha[alpha.Count - 1] != i + 1) alpha.Add(i + 1);
+                if (alphaWhat == null) alphaWhat = "T" + (k + 1) + " = " + t.ToString("0.#####", ci) + " on " + en(i + 1);
+            }
+        if (alpha.Count > 0)
+            items.Add(new PipeReviewItem("warning", "temperature-alpha", "a temperature under 0.05 in magnitude on " + alpha.Count + " element" + (alpha.Count == 1 ? "" : "s") + " (" + alphaWhat +
+                "): CAESAR reads such an entry as a thermal expansion (length per length), not a temperature; a temperature this close to zero is better given as 0.1 or more")
+                .WithElements(alpha.Take(ListMax)));
+
+        // imposed displacements on a DOF a restraint already holds to ground: overspecified, CAESAR stops
+        var heldAt = new Dictionary<int, bool[]>();
+        foreach (var r in restraints)
+        {
+            var dofs = GroundDofs(r);
+            if (dofs.Length == 0) continue;
+            bool[] h;
+            if (!heldAt.TryGetValue(r.Node, out h)) heldAt[r.Node] = h = new bool[6];
+            foreach (int k in dofs) h[k] = true;
+        }
+        foreach (var d in m.Displacements)
+        {
+            bool[] h;
+            if (!heldAt.TryGetValue(d.Node, out h)) continue;
+            var both = Enumerable.Range(0, 6).Where(k => h[k] && Enumerable.Range(0, 9).Any(v => !double.IsNaN(d.Vectors[v][k]))).Select(k => PipeModelCodes.DisplacementDofs[k]).ToArray();
+            if (both.Length > 0)
+                items.Add(new PipeReviewItem("error", "displacement-restrained", "node " + d.Node + " has an imposed displacement in " + string.Join(", ", both) +
+                    " where a restraint already holds it to ground: overspecified, CAESAR stops on it (an imposed displacement acts as the restraint in that direction; drop one)")
+                    .WithNodes(new[] { d.Node }));
+        }
+
+        // loop closure: a node two paths of element deltas place more than 1 in apart is a fatal error
+        var pos = new Dictionary<int, double[]>();
+        var adj = new Dictionary<int, List<int>>();
+        for (int i = 0; i < ne; i++)
+            foreach (int n in new[] { m.Elements[i].From, m.Elements[i].To })
+            {
+                List<int> l;
+                if (!adj.TryGetValue(n, out l)) adj[n] = l = new List<int>();
+                l.Add(i);
+            }
+        var used = new bool[ne];
+        var misses = new List<KeyValuePair<int, double>>();
+        double tol = LoopClosureIn * lenIn;
+        for (int s0 = 0; s0 < ne; s0++)
+        {
+            if (used[s0] || pos.ContainsKey(m.Elements[s0].From) && pos.ContainsKey(m.Elements[s0].To)) continue;
+            if (!pos.ContainsKey(m.Elements[s0].From)) pos[m.Elements[s0].From] = new double[3];
+            var queue = new Queue<int>();
+            queue.Enqueue(m.Elements[s0].From);
+            while (queue.Count > 0)
+            {
+                int n = queue.Dequeue();
+                foreach (int i in adj[n])
+                {
+                    if (used[i]) continue;
+                    used[i] = true;
+                    var e = m.Elements[i];
+                    double sg = e.From == n ? 1 : -1;
+                    int other = e.From == n ? e.To : e.From;
+                    var p = pos[n];
+                    var q = new[] { p[0] + sg * e.Dx, p[1] + sg * e.Dy, p[2] + sg * e.Dz };
+                    double[] at;
+                    if (pos.TryGetValue(other, out at))
+                    {
+                        double miss = Math.Sqrt((at[0] - q[0]) * (at[0] - q[0]) + (at[1] - q[1]) * (at[1] - q[1]) + (at[2] - q[2]) * (at[2] - q[2]));
+                        if (miss > tol) misses.Add(new KeyValuePair<int, double>(i + 1, miss));
+                    }
+                    else { pos[other] = q; queue.Enqueue(other); }
+                }
+            }
+        }
+        foreach (var kv in misses.Take(20))
+            items.Add(new PipeReviewItem("error", "loop-closure", string.Format(ci,
+                "element {0} closes a loop {1:0.###} in away from where the other path puts node {2}: CAESAR stops on a loop that misses by more than 1 in (its loop closure tolerance); check the lengths around the loop",
+                en(kv.Key), kv.Value / lenIn, m.Elements[kv.Key - 1].To)).WithNodes(new[] { m.Elements[kv.Key - 1].From, m.Elements[kv.Key - 1].To }).WithElements(new[] { kv.Key }));
+
+        // bends: CAESAR's angle limits, and the nodes on the curve kept 5 deg apart and off the ends
+        if (g != null)
+            foreach (var b in g.Bends)
+            {
+                if (b.ElementIndex < 0 || b.ElementIndex >= ne || b.LeavingElement < 0 || b.AngleDeg <= 0) continue;
+                var e = m.Elements[b.ElementIndex];
+                string at = "the bend at node " + e.To + " (element " + e.From + "-" + e.To + ")";
+                if (b.AngleDeg < MinBendAngle || b.AngleDeg > MaxBendAngle)
+                    items.Add(new PipeReviewItem("error", "bend-angle", string.Format(ci,
+                        "{0} turns {1:0.##} deg: CAESAR takes bends of 5 to 95 deg (its configuration's limits){2}", at, b.AngleDeg,
+                        b.AngleDeg > MaxBendAngle ? "; split it into two bends, or raise CAESAR's maximum bend angle" : "; a turn this small is better modelled as straight pipe"))
+                        .WithNodes(new[] { e.To }).WithElements(new[] { b.ElementIndex + 1 }));
+                var na = b.NodeAngles.Where(x => x.Length > 1).OrderBy(x => x[1]).ToList();
+                var probs = new List<string>();
+                for (int k = 0; k < na.Count; k++)
+                {
+                    int n = (int)Math.Round(na[k][0]);
+                    double a = na[k][1];
+                    if (a > 1e-6 && a < MinBendNodeAngle - 1e-9) probs.Add("node " + n + " at " + f1(a) + " deg is within 5 deg of the near end");
+                    else if (a > b.AngleDeg + 1e-6) probs.Add("node " + n + " at " + f1(a) + " deg is past the far end (" + f1(b.AngleDeg) + " deg)");
+                    else if (a > b.AngleDeg - MinBendNodeAngle + 1e-9) probs.Add("node " + n + " at " + f1(a) + " deg is within 5 deg of the far end (" + f1(b.AngleDeg) + " deg)");
+                    if (k > 0 && a - na[k - 1][1] < MinBendNodeAngle - 1e-9 && (int)Math.Round(na[k - 1][0]) != n)
+                        probs.Add("nodes " + (int)Math.Round(na[k - 1][0]) + " and " + n + " are " + f1(a - na[k - 1][1]) + " deg apart");
+                }
+                if (probs.Count > 0)
+                    items.Add(new PipeReviewItem("error", "bend-node-angle", at + ": " + string.Join("; ", probs.ToArray()) +
+                        ". CAESAR keeps the nodes on a bend at least 5 deg from each other and from the near and far ends (the near point itself, angle 0, and M are fine)")
+                        .WithNodes(new[] { e.To }.Concat(na.Select(x => (int)Math.Round(x[0])))).WithElements(new[] { b.ElementIndex + 1 }));
+            }
+
+        // a change of direction with no bend or intersection: CAESAR warns
+        var sifAt = new HashSet<int>(sifs.Select(s => s.Node));
+        var corners = new List<KeyValuePair<int, double>>();
+        foreach (var kv in ends.Where(k => k.Value == 2).OrderBy(k => k.Key))
+        {
+            int n = kv.Key;
+            var els = elementsAt[n];
+            if (els.Count != 2 || sifAt.Contains(n)) continue;
+            var a = m.Elements[els[0] - 1]; var c = m.Elements[els[1] - 1];
+            if ((a.Bend != null && a.To == n) || (c.Bend != null && c.To == n)) continue;
+            double la = length(a), lc = length(c);
+            if (la < 1e-9 || lc < 1e-9) continue;
+            double sa = a.From == n ? 1 : -1, sc = c.From == n ? 1 : -1;   // both pointing away from the node
+            double dot = (sa * a.Dx * sc * c.Dx + sa * a.Dy * sc * c.Dy + sa * a.Dz * sc * c.Dz) / (la * lc);
+            double turn = 180 - Math.Acos(Math.Max(-1, Math.Min(1, dot))) * 180 / Math.PI;
+            if (turn > CornerTolDeg) corners.Add(new KeyValuePair<int, double>(n, turn));
+        }
+        if (corners.Count > 0)
+            items.Add(new PipeReviewItem("warning", "corner-no-bend", corners.Count + " change" + (corners.Count == 1 ? "" : "s") + " of direction with no bend or tee: at node" + (corners.Count == 1 ? " " : "s ") +
+                string.Join(", ", corners.Take(12).Select(kv => kv.Key.ToString(ci) + " (" + f1(kv.Value) + " deg)").ToArray()) + (corners.Count > 12 ? ", ..." : "") +
+                ". CAESAR warns about each; give the element before it a bend radius, unless a mitre or a rigid at equipment is meant")
+                .WithNodes(corners.Take(ListMax).Select(kv => kv.Key)).WithElements(corners.Take(ListMax).SelectMany(kv => elementsAt[kv.Key])));
+
+        // intersections (a SIF / tee entry of a tee type): three pipes, two in line
+        foreach (var s in sifs.Where(x => IsTeeType(x.Type)).GroupBy(x => x.Node).Select(gr => gr.First()))
+        {
+            List<int> els;
+            int count = elementsAt.TryGetValue(s.Node, out els) ? els.Count : 0;
+            string what = null;
+            if (count > 0 && count < 3) what = "only " + count + " pipe" + (count == 1 ? "" : "s") + " meet there: CAESAR makes assumptions for a partial intersection (not recommended)";
+            else if (count > 3) what = count + " pipes meet there: CAESAR computes no SIF for more than three (it uses 1.0); model two tees a little apart, or give the SIFs";
+            else if (count == 3)
+            {
+                var outs = els.Select(k => { var e = m.Elements[k - 1]; double l = length(e), sg = e.From == s.Node ? 1 : -1; return l > 0 ? new[] { sg * e.Dx / l, sg * e.Dy / l, sg * e.Dz / l } : null; }).ToList();
+                bool inline = false;
+                for (int x = 0; x < 3; x++) for (int y = x + 1; y < 3; y++)
+                    if (outs[x] != null && outs[y] != null && outs[x][0] * outs[y][0] + outs[x][1] * outs[y][1] + outs[x][2] * outs[y][2] < -Math.Cos(CornerTolDeg * Math.PI / 180)) inline = true;
+                if (!inline && outs.All(o => o != null)) what = "no two of its three pipes are in line: CAESAR's intersection SIFs assume a run and a branch";
+            }
+            if (what != null)
+                items.Add(new PipeReviewItem("warning", "intersection", "the tee at node " + s.Node + ": " + what).WithNodes(new[] { s.Node }).WithElements(els ?? new List<int>()));
+        }
+
+        // user SIFs: below 1.0 CAESAR does not accept them; at a bend they apply only when its configuration allows it
+        var bendNodes = new HashSet<int>(onBends.Keys);
+        foreach (var e in m.Elements) if (e.Bend != null) bendNodes.Add(e.To);
+        foreach (var s in sifs)
+        {
+            if ((s.SifIn > 0 && s.SifIn < 1) || (s.SifOut > 0 && s.SifOut < 1))
+                items.Add(new PipeReviewItem("error", "sif-below-one", string.Format(ci, "the SIF at node {0} (in {1:0.###}, out {2:0.###}) is below 1.0: CAESAR does not accept a user SIF under 1", s.Node, s.SifIn, s.SifOut))
+                    .WithNodes(new[] { s.Node }));
+            else if (s.Type == 0 && (s.SifIn > 0 || s.SifOut > 0) && bendNodes.Contains(s.Node))
+                items.Add(new PipeReviewItem("warning", "sif-at-bend", "a user SIF at node " + s.Node + ", on a bend: CAESAR uses it only when its configuration allows user SIFs at bends; otherwise the bend's code SIF applies")
+                    .WithNodes(new[] { s.Node }));
+        }
+
+        // thin wall: CAESAR warns at bends and intersections with D/t over 100 (the code's SIFs do not cover them)
+        var thin = new SortedDictionary<int, double>();
+        for (int i = 0; i < ne; i++)
+        {
+            var e = m.Elements[i];
+            if (e.Bend != null && dt(e) > ThinWall) thin[e.To] = Math.Max(dt(e), thin.ContainsKey(e.To) ? thin[e.To] : 0);
+            if (e.Reducer != null && Math.Max(dt(e), e.Reducer.Wall2 > 0 ? (e.Reducer.Od2 / diaIn) / (e.Reducer.Wall2 / wallIn) : 0) > ThinWall)
+                thin[e.To] = Math.Max(dt(e), thin.ContainsKey(e.To) ? thin[e.To] : 0);
+        }
+        foreach (var kv in ends.Where(k => k.Value >= 3 || sifs.Any(s => IsTeeType(s.Type) && s.Node == k.Key)))
+        {
+            double worst = elementsAt[kv.Key].Max(k => dt(m.Elements[k - 1]));
+            if (worst > ThinWall) thin[kv.Key] = Math.Max(worst, thin.ContainsKey(kv.Key) ? thin[kv.Key] : 0);
+        }
+        if (thin.Count > 0)
+            items.Add(new PipeReviewItem("warning", "thin-wall", "D/t over 100 at " + thin.Count + " bend, tee or reducer node" + (thin.Count == 1 ? "" : "s") + " (" +
+                string.Join(", ", thin.Take(12).Select(kv => kv.Key.ToString(ci) + ": " + kv.Value.ToString("0", ci)).ToArray()) + (thin.Count > 12 ? ", ..." : "") +
+                "): CAESAR warns that the code's SIF equations are not proven for such thin walls").WithNodes(thin.Keys.Take(ListMax)));
+
+        // reducers: the SIF equation holds to a cone angle of 60 deg (CAESAR computes it when not given)
+        for (int i = 0; i < ne; i++)
+        {
+            var e = m.Elements[i];
+            if (e.Reducer == null || e.Reducer.Od2 <= 0) continue;
+            double l = length(e), a = e.Reducer.Alpha;
+            if (a <= 0 && l > 0) a = Math.Atan(0.5 * Math.Abs(e.Od - e.Reducer.Od2) / diaIn * lenIn / (0.6 * l)) * 180 / Math.PI;
+            if (a > MaxReducerAlpha)
+                items.Add(new PipeReviewItem("warning", "reducer-angle", string.Format(ci, "the reducer {0} has a cone angle of {1:0.#} deg{2}: the code's reducer SIF holds to 60 deg; lengthen it or give the angle",
+                    en(i + 1), a, e.Reducer.Alpha > 0 ? "" : " (from its length, as CAESAR computes it)")).WithNodes(new[] { e.From, e.To }).WithElements(new[] { i + 1 }));
+        }
+
+        // expansion joints: the stiffnesses CAESAR asks for
+        for (int i = 0; i < ne; i++)
+        {
+            var x = m.Elements[i].ExpJoint;
+            if (x == null) continue;
+            var e = m.Elements[i];
+            bool zero = length(e) < 1e-9;
+            var missing = new List<string>();
+            if (x.AxialStiffness <= 0) missing.Add("axial");
+            if (zero && x.TransverseStiffness <= 0) missing.Add("transverse");
+            if (zero && x.BendingStiffness <= 0) missing.Add("bending");
+            if (x.TorsionStiffness <= 0) missing.Add("torsion");
+            string what = null;
+            if (missing.Count > 0) what = "no " + string.Join(", ", missing.ToArray()) + " stiffness (CAESAR asks for every stiffness; for torsion, which vendors rarely give, a large value)";
+            if (!zero && x.TransverseStiffness > 0 && x.BendingStiffness > 0) what = (what != null ? what + "; " : "") + "both transverse and bending stiffness: on a joint with length CAESAR computes one from the other, so leave one blank";
+            if (!zero && x.TransverseStiffness <= 0 && x.BendingStiffness <= 0) what = (what != null ? what + "; " : "") + "neither transverse nor bending stiffness: give one (CAESAR computes the other)";
+            if (what != null)
+                items.Add(new PipeReviewItem("warning", "expansion-joint", "the expansion joint " + en(i + 1) + ": " + what).WithNodes(new[] { e.From, e.To }).WithElements(new[] { i + 1 }));
+            if (x.EffectiveId <= 0 && e.P.Any(v => v > 0))
+                items.Add(new PipeReviewItem("info", "expansion-joint-thrust", "the expansion joint " + en(i + 1) + " has no effective ID: CAESAR applies no pressure thrust (right for a tied joint)")
+                    .WithElements(new[] { i + 1 }));
+        }
+
+        // a rigid element with no weight: CAESAR treats it as a weightless construction element
+        var weightless = Enumerable.Range(0, ne).Where(i => m.Elements[i].Rigid != null && m.Elements[i].ExpJoint == null && m.Elements[i].Rigid.Weight == 0).ToList();
+        if (weightless.Count > 0)
+            items.Add(new PipeReviewItem("info", "rigid-weightless", weightless.Count + " rigid element" + (weightless.Count == 1 ? "" : "s") + " with no weight (from " + en(weightless[0] + 1) +
+                "): CAESAR treats " + (weightless.Count == 1 ? "it as a construction element" : "them as construction elements") + ", adding no fluid or insulation weight; give the component's weight where there is one")
+                .WithElements(weightless.Take(ListMax).Select(i => i + 1)));
+
+        // the job's own uniform blocks repeating the load on 4 or more elements in a row: CAESAR notes it (166E)
+        int runStart = -1;
+        for (int i = 0; i <= ne; i++)
+        {
+            bool own = i < ne && m.Elements[i].Uniform != null && m.Elements[i].Uniform.Raw != null && !PipeModelUniform.IsNone(m.Elements[i].Uniform);
+            bool same = own && i > 0 && runStart >= 0 && PipeModelUniform.Same(m.Elements[i].Uniform, m.Elements[i - 1].Uniform);
+            if (same) continue;
+            if (runStart >= 0 && i - runStart >= 4)
+                items.Add(new PipeReviewItem("info", "uniform-repeated", "elements " + en(runStart + 1) + " to " + en(i) + " each define the same uniform load (as the job was written): CAESAR notes it, since a load carries on to the elements after it")
+                    .WithElements(Enumerable.Range(runStart + 1, i - runStart)));
+            runStart = own ? i : -1;
+        }
+
+        // spring hangers the job carries: CAESAR designs them before the analysis
+        if (cm != null && cm.Hangers.Count > 0)
+            items.Add(new PipeReviewItem("info", "hangers", cm.Hangers.Count + " spring hanger" + (cm.Hangers.Count == 1 ? "" : "s") + " (carried as written): CAESAR designs them first and asks for its hanger-design load cases (weight, then operating) before the others")
+                .WithNodes(cm.Hangers.Select(h => h.Node).Where(n => n > 0).Take(ListMax)));
+    }
+
+    // CAESAR's SIF & tee types that are intersections (tees, olets: 1-6, 14-17); 7-13 are joints (welds, threads, flanges)
+    public static bool IsTeeType(int t) { return (t >= 1 && t <= 6) || (t >= 14 && t <= 17); }
+
+    // the DOFs (0..5: DX DY DZ RX RY RZ) a restraint holds to ground: anchors all, an axis type its own; skewed ones,
+    // guides, limit stops and restraints to a CNODE none (they depend on the pipe or on another node)
+    static int[] GroundDofs(PipeModelRestraint r)
+    {
+        if (r.CNode > 0 || r.Node <= 0) return new int[0];
+        string t = (r.Type ?? "").Trim().ToUpperInvariant();
+        if (t == "ANC") return new[] { 0, 1, 2, 3, 4, 5 };
+        t = t.TrimStart('+', '-');
+        int k = -1;
+        if (t.Length >= 2 && t[0] == 'R' && "XYZ".IndexOf(t[1]) >= 0) k = 3 + "XYZ".IndexOf(t[1]);
+        else if (t.Length >= 1 && "XYZ".IndexOf(t[0]) >= 0) k = "XYZ".IndexOf(t[0]);
+        if (k < 0) return new int[0];
+        if (r.Cosines != null && Math.Abs(Math.Abs(r.Cosines[k % 3]) - 1) > 1e-6) return new int[0];
+        return new[] { k };
     }
 
     // "error" first; then the order they were found

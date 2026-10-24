@@ -153,11 +153,13 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >     - a missing From / To, From = To, a missing section on the first row;
 >     - a reducer without OD2 / Wall2, bend nodes without `angle:node`;
 >     - a bend node number used twice: on another bend, or also an element's From / To (CAESAR stops on it);
+>     - CAESAR's other errors a sheet can see: a bend outside 5–95° or a node on it within 5° of its ends or another, corrosion as thick as the wall, a user SIF under 1, a node above 8,000,000, a displacement where a restraint already holds the node ([[vault/arms/caesar-checks|caesar-checks]]);
 >     - a vector outside 1–9, the same node and vector twice;
 >     - a duplicate section or process name, a cosine above 1.
->   - **Amber** = worth a look: a node no element has (bend nodes count), a copied Id, a zero-length element.
+>   - **Amber** = worth a look: a node no element has (bend nodes count), a copied Id, a zero-length element; and what CAESAR warns about: a corner with no bend, a tee where other than three pipes meet, D/t over 100, an expansion joint short of stiffnesses, a temperature under 0.05 (read as an expansion), g's and force per length both used.
+>   - **Long rules** are worked out per row on the hidden PlotCalc sheet, so every conditional-format formula stays short.
 > - **Build it from here** (Start sheet, under the steps): links to the two launchers (relative, so they follow the folder), to Pluto's viewer page and to the folder, and the PowerShell command each launcher runs, built from `CELL("filename")` so it names the workbook where it is now (the path at write time where `CELL` gives none, e.g. in LibreOffice). Excel asks before it follows a link to a `.cmd` file; where policy stops it, double-click the file in the folder.
-> - **Start's checks** count those cells live: error values; text where a number belongs (per sheet); rows without From / To; unknown names and types; unknown element Ids; vectors outside 1–9; nodes on no element; bend node numbers used twice; Ids used twice. Each shows OK, check (amber) or fix (red).
+> - **Start's checks** count those cells live: error values; text where a number belongs (per sheet); rows without From / To; unknown names and types; unknown element Ids; vectors outside 1–9; nodes on no element; bend node numbers used twice; Ids used twice; and each CAESAR rule above. Each shows OK, check (amber) or fix (red).
 > - **Kept as before:** the input sheets keep their columns, values and order, so the reader is unchanged. Start, 3D View, Nodes, Carried and the hidden sheets are never read. Only the input sheets' cells are read, so the plot's formulas never trip the "formula with no saved value" check. The workbook asks Excel to calculate everything when it opens.
 
 > [!info]- The 3D View

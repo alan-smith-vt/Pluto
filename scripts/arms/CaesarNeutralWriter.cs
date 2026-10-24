@@ -1222,7 +1222,7 @@ public static class CaesarNeutralWriter
             if (!(e.Od > 0) || !(e.Wall > 0) || e.Wall * 2 >= e.Od) err.Add("element " + e.From + "-" + e.To + ": OD " + e.Od + " / wall " + e.Wall);
             if (e.Material <= 0) err.Add("element " + e.From + "-" + e.To + ": no material number");
             if (e.Bend != null && e.Bend.AngleNodes.Count > 3) err.Add("element " + e.From + "-" + e.To + ": more than 3 bend nodes");
-            if (Math.Max(Math.Abs(e.From), Math.Abs(e.To)) > 999999) err.Add("element " + i + ": node number above 999999");
+            if (Math.Max(Math.Abs(e.From), Math.Abs(e.To)) > PipeReview.MaxNode) err.Add("element " + i + ": node number above 8,000,000 (CAESAR's limit)");
         }
         if (m.Coords.Count == 0) err.Add("no COORDS entry (the first node needs a position)");
         foreach (var j in m.Joints)

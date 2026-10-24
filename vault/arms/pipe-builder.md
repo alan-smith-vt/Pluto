@@ -185,10 +185,11 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 > **`[[displacements]]`:** imposed displacements at nodes (anchor movements, equipment growth).
 > - The same `node` / `run` + `at` and `vector` (D1…D9).
 > - `dx dy dz` (in), `rx ry rz` (deg). **A DOF not given stays free; a 0 holds it** in that vector.
+> - **No restraint in the same direction at that node:** CAESAR stops on it (overspecified). An anchor that moves is its displacement with all six DOFs given.
 >
 > **Uniform loads and wind**, on a run or in `[defaults]` (a run's own value wins):
 > - `uniform = [x, y, z]` in lb/in is U1; a list of them gives U1, U2 …; `0` means none.
-> - `g_load = [x, y, z]` in g's (seismic, for example) takes the next vector after `uniform`'s. At most 9 together.
+> - `g_load = [x, y, z]` in g's (seismic, for example) takes the vectors after the most any run has per length, so a vector holds one kind across the model (CAESAR warns about a vector in g's on one element and per length on another). At most 9 together.
 > - `wind_shape = 0.7`: the wind shape factor; `0` means no wind on that run.
 > - CAESAR carries a uniform load or wind forward to every later element until another block changes it. The writer puts a block where a run's load starts or changes and ends it where it stops (a zero uniform block, an off wind block), so each run gets exactly its own ([[vault/format/caesar-neutral-loads|caesar-neutral-loads]]).
 >
@@ -285,7 +286,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
   - no reader or geometry warnings;
   - every bend drawn as a bend.
 - **Configs:**
-  - the example: 3 runs, 41 nodes, 34 restraints, a coupling, a tie, a branch tee;
+  - the example: 3 runs, 41 nodes, 34 restraints, a coupling, a tie, a branch tee (33 restraints since 2026-10-24: the drop's moving anchor is its imposed displacement, all six DOFs given);
   - a skewed one: a 53° bend between skewed legs, back-to-back bends, a reducer before a bend, a flange at a corner, a coupling on a skewed leg, a skewed tie;
   - a Z-up config in inches with ΔT lists.
 - **32 failure cases** each give the expected message: bends without room, features inside an arc or a component, overlaps, typos, cycles, unknown sections, 7 restraints on one element end, and so on.

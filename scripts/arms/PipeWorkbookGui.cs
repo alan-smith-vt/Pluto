@@ -295,7 +295,7 @@ static class PipeWorkbookGui
             case "pos": return "IF(ISNUMBER(" + at + ")," + at + "<=0," + at + "<>\"\")";
             case "nonneg": return "IF(ISNUMBER(" + at + ")," + at + "<0," + at + "<>\"\")";
             case "int0": return "IF(ISNUMBER(" + at + "),OR(" + at + "<0," + at + "<>INT(" + at + "))," + at + "<>\"\")";
-            case "node": return "IF(ISNUMBER(" + at + "),OR(" + at + "<1," + at + "<>INT(" + at + "))," + at + "<>\"\")";
+            case "node": return "IF(ISNUMBER(" + at + "),OR(" + at + "<1," + at + ">8000000," + at + "<>INT(" + at + "))," + at + "<>\"\")";
             case "cos": return "IF(ISNUMBER(" + at + "),ABS(" + at + ")>1," + at + "<>\"\")";
             case "vector": return "IF(ISNUMBER(" + at + "),OR(" + at + "<1," + at + ">9," + at + "<>INT(" + at + "))," + at + "<>\"\")";
             case "list!": return "AND(" + at + "<>\"\",COUNTIF(" + c.List + "," + at + ")=0)";
@@ -333,7 +333,7 @@ static class PipeWorkbookGui
             case "pos": v.Type = "decimal"; v.Operator = "greaterThan"; v.Formula1 = "0"; v.ErrorTitle = "A positive number"; v.Error = c.Name + " takes a number above 0."; break;
             case "nonneg": v.Type = "decimal"; v.Operator = "greaterThanOrEqual"; v.Formula1 = "0"; v.ErrorTitle = "A number"; v.Error = c.Name + " takes a number, 0 or more."; break;
             case "int0": v.Type = "whole"; v.Operator = "greaterThanOrEqual"; v.Formula1 = "0"; v.ErrorTitle = "A whole number"; v.Error = c.Name + " takes a whole number, 0 or more."; break;
-            case "node": v.Type = "whole"; v.Operator = "greaterThanOrEqual"; v.Formula1 = "1"; v.ErrorTitle = "A node number"; v.Error = c.Name + " takes a node number (a whole number, 1 or more)."; break;
+            case "node": v.Type = "whole"; v.Operator = "between"; v.Formula1 = "1"; v.Formula2 = "8000000"; v.ErrorTitle = "A node number"; v.Error = c.Name + " takes a node number (a whole number from 1 to 8,000,000, CAESAR's range)."; break;
             case "cos": v.Type = "decimal"; v.Operator = "between"; v.Formula1 = "-1"; v.Formula2 = "1"; v.ErrorTitle = "A direction cosine"; v.Error = c.Name + " takes a number from -1 to 1."; break;
             case "vector": v.Type = "list"; v.Formula1 = c.List ?? LVector; v.ErrorTitle = "A load vector"; v.Error = "The vector is 1 to 9."; break;
             case "list!": case "yesno": v.Type = "list"; v.Formula1 = c.List; v.ErrorTitle = "Not on the list"; v.Error = "Pick a value from the list (" + NameOf(c.Name) + ")."; break;
@@ -394,6 +394,23 @@ static class PipeWorkbookGui
             terms.Add("(" + n + "<>\"\")*((COUNTIF(" + bends + ",\"*:\"&" + n + ")+COUNTIF(" + bends + ",\"*:\"&" + n + "&\";*\")+COUNTIF(" + from + "," + n + ")+COUNTIF(" + to + "," + n + "))>1)");
         }
         return "((" + string.Join("+", terms.ToArray()) + ")>0)";
+    }
+
+    // a temperature CAESAR reads as a thermal expansion (its alpha tolerance: under 0.05 in magnitude, not 0)
+    internal static string AlphaRule(string at) { return "AND(ISNUMBER(" + at + ")," + at + "<>0," + at + "<0.05," + at + ">-0.05)"; }
+
+    // a SIF / tee type that is an intersection (tees and olets: 1-6, 14-17; 7-13 are joints)
+    internal static string TeeType(string at) { return "OR(AND(N(" + at + ")>=1,N(" + at + ")<=6),AND(N(" + at + ")>=14,N(" + at + ")<=17))"; }
+
+    // the restraint types that hold DOF k (DX DY DZ RX RY RZ) to ground: anchors and the axis types (one-way, snubbers,
+    // bilinear, rods, springs), as PipeReview.GroundDofs reads them
+    internal static string[] HoldingTypes(int k)
+    {
+        string a = "XYZ".Substring(k % 3, 1);
+        var l = new List<string> { "ANC" };
+        if (k < 3) foreach (string b in new[] { a, "+" + a, "-" + a, a + "SNB", "+" + a + "SNB", "-" + a + "SNB", a + "2", "+" + a + "2", "-" + a + "2", a + "ROD", "+" + a + "ROD", "-" + a + "ROD", a + "SPR" }) l.Add(b);
+        else foreach (string b in new[] { "R" + a, "+R" + a, "-R" + a, "R" + a + "2", "+R" + a + "2", "-R" + a + "2" }) l.Add(b);
+        return l.ToArray();
     }
 
     // ---------------------------------------------------------------- the Start sheet
@@ -515,7 +532,19 @@ static class PipeWorkbookGui
         "Pc", "Rt",
         "c1", "g1", "d1x", "d1y", "d1z", "o1x", "o1y", "o1z", "R1", "X1a", "Y1a", "Z1a", "X2a", "Y2a", "Z2a",
         "c2", "g2", "d2x", "d2y", "d2z", "o2x", "o2y", "o2z", "R2", "X1f", "Y1f", "Z1f", "X2f", "Y2f", "Z2f",
+        // CAESAR's error-checker rules a row can be checked for (TRUE = the row trips it); the Elements sheet's red and
+        // amber cells and Start's counts read these, so their own formulas stay short
+        "Bn", "fB", "Wl", "Co", "fC", "Bd", "a1", "a2", "a3", "fA", "fN", "fK", "fE",
     };
+
+    // PlotCalc's last row for a model of n elements, and a reference to one of its columns
+    internal static int CalcLast(int elements) { return Math.Max(300, elements + 300) + 1; }
+    internal static string CalcRef(string key, int row) { return Calc + "!$" + XlsxBook.Column(Array.IndexOf(CalcCols, key)) + row.ToString(CultureInfo.InvariantCulture); }
+    internal static string CalcCount(string key, int elements)
+    {
+        string c = XlsxBook.Column(Array.IndexOf(CalcCols, key));
+        return "COUNTIF(" + Calc + "!$" + c + "$2:$" + c + "$" + CalcLast(elements).ToString(CultureInfo.InvariantCulture) + ",TRUE)";
+    }
 
     static readonly Regex Token = new Regex(@"\[(\w+)([-+:^*]?)\]");
 
@@ -542,8 +571,8 @@ static class PipeWorkbookGui
 
     internal static void ViewSheets(XlsxBook b, Theme t, XlsxBookSheet view, XlsxBookSheet calc, XlsxBookSheet pts, int elements, int restraints, double inToLen, double diaToIn, string lenUnit)
     {
-        int cap = Math.Max(300, elements + 300);           // element rows the plot follows
-        int last = cap + 1;                                // PlotCalc's last row (1-based)
+        int last = CalcLast(elements);                     // PlotCalc's last row (1-based)
+        int cap = last - 1;                                // element rows the plot follows
         int capR = Math.Max(200, restraints + 200);
         string vs = XlsxBook.SheetRef(View);
 
@@ -582,6 +611,26 @@ static class PipeWorkbookGui
             { "Tin", "IF([OK],IFERROR(IF(INDEX([Nx^],MATCH([Fr],[To^],0))=ROW(),INDEX([T^],MATCH([Fr],[To^],0)),0),0),0)" },
             { "SL", "IF([OK],IF(AND(ISNA(MATCH([Fr],[To:],0)),ISNA(MATCH([Fr],[Fr:],0))),1,0),0)" },
         };
+        // ---- CAESAR's rules per row (vault/arms/caesar-checks.md)
+        f["Bn"] = "IFERROR(" + E("pl_bn") + "&\"\",\"\")";
+        f["fB"] = "IF([Bn]=\"\",FALSE," + BendNodeTwice("[Bn]", "[Bn*]", "[Fr*]", "[To*]") + ")";
+        string secRow = "MATCH([Sc],INDEX(pl_secs,0,pl_sname),0)";
+        f["Wl"] = "IFERROR(IF(ISNUMBER(" + E("pl_wall") + ")," + E("pl_wall") + ",INDEX(pl_secs," + secRow + ",pl_swall)),\"\")";
+        f["Co"] = "IFERROR(IF(ISNUMBER(" + E("pl_corr") + ")," + E("pl_corr") + ",N(INDEX(pl_secs," + secRow + ",pl_scorr))),0)";
+        f["fC"] = "AND([OK],ISNUMBER([Wl]),N([Co])>0,N([Co])>=N([Wl]))";
+        f["Bd"] = "IF(AND([OK],[R]>0,[Nx]>0),DEGREES([th]),0)";
+        for (int j = 1; j <= 3; j++)
+        {
+            string tx = "TRIM(MID(SUBSTITUTE(SUBSTITUTE([Bn],\" \",\"\"),\";\",REPT(\" \",99))," + ((j - 1) * 99 + 1).ToString(CultureInfo.InvariantCulture) + ",99))";
+            string h = "LEFT(" + tx + ",FIND(\":\"," + tx + "&\":\")-1)";
+            f["a" + j] = "IF([Bd]>0,IFERROR(IF(" + tx + "=\"\",-1,IF(UPPER(" + h + ")=\"M\",[Bd]/2,--" + h + ")),-1),-1)";
+        }
+        f["fA"] = "AND([Bd]>0,OR([Bd]<5,[Bd]>95))";
+        f["fN"] = "AND([Bd]>0,OR(AND([a1]>0,[a1]<5),AND([a2]>0,[a2]<5),AND([a3]>0,[a3]<5),AND([a1]>=0,[a1]>[Bd]-5),AND([a2]>=0,[a2]>[Bd]-5),AND([a3]>=0,[a3]>[Bd]-5)," +
+                  "AND([a1]>=0,[a2]>=0,ABS([a1]-[a2])<5),AND([a1]>=0,[a3]>=0,ABS([a1]-[a3])<5),AND([a2]>=0,[a3]>=0,ABS([a2]-[a3])<5)))";
+        f["fK"] = "AND([OK],[Rr]=\"\",[Nx]>0,[L]>0,INDEX([L^],MAX(1,[Nx]))>0,DEGREES([th])>1,COUNTIF([Fr*],[To])+COUNTIF([To*],[To])=2,COUNTIF(SIFs!$B:$B,[To])=0)";
+        string ej = "N(" + E("pl_eja") + ")", et = "N(" + E("pl_ejt") + ")", eb = "N(" + E("pl_ejb") + ")", er = "N(" + E("pl_ejr") + ")";
+        f["fE"] = "AND([Kd]=2,OR(" + ej + "<=0," + er + "<=0,IF([L]=0,OR(" + et + "<=0," + eb + "<=0),(" + et + ">0)=(" + eb + ">0))))";
         foreach (string a in new[] { "x", "y", "z" })
         {
             string A = a.ToUpperInvariant(), d = "u" + a, o = "uo" + a;
@@ -671,8 +720,17 @@ static class PipeWorkbookGui
         param("pl_sec", "MATCH(\"Section\",Elements!$1:$1,0)", "");
         param("pl_bend", "MATCH(\"Bend radius*\",Elements!$1:$1,0)", "");
         param("pl_od", "MATCH(\"OD (*\",Elements!$1:$1,0)", "");
+        param("pl_bn", "MATCH(\"Bend nodes\",Elements!$1:$1,0)", "");
+        param("pl_wall", "MATCH(\"Wall (*\",Elements!$1:$1,0)", "");
+        param("pl_corr", "MATCH(\"Corrosion*\",Elements!$1:$1,0)", "");
+        param("pl_eja", "MATCH(\"EJ axial*\",Elements!$1:$1,0)", "");
+        param("pl_ejt", "MATCH(\"EJ transverse*\",Elements!$1:$1,0)", "");
+        param("pl_ejb", "MATCH(\"EJ bending*\",Elements!$1:$1,0)", "");
+        param("pl_ejr", "MATCH(\"EJ torsion*\",Elements!$1:$1,0)", "");
         param("pl_sname", "MATCH(\"Name\",Sections!$1:$1,0)", "Sections columns");
         param("pl_sod", "MATCH(\"OD*\",Sections!$1:$1,0)", "");
+        param("pl_swall", "MATCH(\"Wall*\",Sections!$1:$1,0)", "");
+        param("pl_scorr", "MATCH(\"Corrosion*\",Sections!$1:$1,0)", "");
         param("pl_rnode", "MATCH(\"Node\",Restraints!$1:$1,0)", "Restraints columns");
         param("pl_rtype", "MATCH(\"Type\",Restraints!$1:$1,0)", "");
         param("pl_zup", "IFERROR(UPPER(TRIM(INDEX(Settings!$B:$B,MATCH(\"Vertical axis\",Settings!$A:$A,0))))=\"Z\",FALSE)", "Z is up (Settings)");
