@@ -33,7 +33,7 @@ Every rule is summarised in our own words.
 > | Bends from 5 to 95 deg (Minimum / Maximum Allowed Bend Angle) | `bend-angle` | Bend radius red; Start |
 > | Nodes on a bend at least 5 deg from each other and from its near and far ends; the near point itself (angle 0) and M are fine (Minimum Angle to Adjacent Bend Point) | `bend-node-angle` | Bend nodes red; Start |
 > | Corrosion allowance as thick as the wall | `corrosion-wall` | Sections' Corrosion and Elements' Section / Wall / Corrosion red; Start |
-> | A restraint and an imposed displacement in the same direction at a node (overspecified) | `displacement-restrained` | Displacements, that DOF red; Start |
+> | A restraint and an imposed displacement at a node: overspecified (57E, seen on anchors with displacements). CAESAR's advice: give the displacement alone, or give the restraint a connecting node and impose the displacement there. Pluto flags a shared direction; whether CAESAR also stops on other directions is being probed | `displacement-restrained` | Displacements, that DOF red; Start |
 > | A loop whose two paths place a node more than 1 in apart (Loop Closure Tolerance) | `loop-closure` | not on the sheet: the preview and `-Cii` |
 > | Node numbers 1 to 8,000,000 (since CAESAR 11.00; 32,000 before) | `node-range` | every node column red; Start |
 > | A user SIF below 1.0 | `sif-below-one` | SIFs red; Start |
@@ -51,6 +51,7 @@ Every rule is summarised in our own words.
 > | A reducer's cone angle over 60 deg (the reducer SIF's limit; CAESAR computes it from the length when not given) | `reducer-angle` | — |
 > | A user SIF at a bend: used only when the configuration allows user SIFs at bends | `sif-at-bend` | — |
 > | Expansion joints: every stiffness given; on a joint with length one of transverse / bending blank (CAESAR computes it) | `expansion-joint` | EJ columns amber; Start |
+> | A wave's added-mass coefficient above 1.0, which it typically does not exceed (151E, seen) | `wave-added-mass` | Wind, Added mass amber; Start |
 > | A temperature under 0.05 in magnitude is read as a thermal expansion (Alpha Tolerance) | `temperature-alpha` | T1-T9 amber (Processes, Elements); Start |
 > | Pluto's own: a tee with no SIF entry, a CNODE tied to nothing, a bend with no room | `tee-no-sif`, `cnode-off-model`, `bend-room`, `bend-corner`, `bend-code` | — |
 
@@ -73,8 +74,10 @@ Every rule is summarised in our own words.
 > - **The `.cii` writer** takes node numbers up to 8,000,000, CAESAR's limit; it stopped at 999,999 before.
 > - **The TOML builder** numbers `g_load` vectors after the most any run has per length. A vector then holds one kind across the model; before, a run with g's only put them on U1 while U1 was per length elsewhere.
 > - **The TOML example** modelled a moving anchor as an anchor plus a displacement at the same node: overspecified. It now gives the displacement in all six directions, which is the anchor.
+> - **A new displacement on a connecting node** (CAESAR's way to move a restraint) is written with the element at the restraint's node; the writer refused it before, as on no element.
 
 > [!info]- Verification (2026-10-24, Linux)
+> - **Against CAESAR:** on the displacement and wave probe, Pluto reports what CAESAR 15.01's error checker did: 57E at both anchored nodes with displacements, 151E on both wave elements.
 > - **The review:**
 >   - a test model trips each rule on its own;
 >   - the clean model trips none;

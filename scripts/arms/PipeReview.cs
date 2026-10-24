@@ -26,7 +26,7 @@ using System.Text;
 //   node-twice      a node on a bend's curve that is also on another bend's, or an element end: two points, one number
 // and the rules of CAESAR's error checker (CaesarRules; vault/arms/caesar-checks.md): node-range, corrosion-wall,
 // temperature-alpha, displacement-restrained, loop-closure, bend-angle, bend-node-angle, corner-no-bend, intersection,
-// sif-below-one, sif-at-bend, thin-wall, reducer-angle, expansion-joint(-thrust), rigid-weightless, uniform-repeated,
+// sif-below-one, sif-at-bend, thin-wall, reducer-angle, expansion-joint(-thrust), wave-added-mass, rigid-weightless, uniform-repeated,
 // hangers; element-zero is an error unless the element is a zero-length expansion joint
 //   uniform-mixed   the uniform loads mix g's and force per length (CAESAR's error checker warns: 246E, 247E)
 // plus CaesarNeutralWriter.NoticeItems (layouts and codes from the documentation) and any messages the caller adds
@@ -304,6 +304,7 @@ public static class PipeReview
     public const double ThinWall = 100;           // D/t above it: the code's SIF equations do not cover it
     public const double MaxReducerAlpha = 60;     // deg: the reducer SIF equation's limit
     public const double CornerTolDeg = 1;         // a change of direction this small is not reported
+    public const double MaxAddedMass = 1.0;       // a wave's added-mass coefficient above it: CAESAR warns
 
     static void CaesarRules(PipeModel m, CaesarPipeGraph g, CaesarModel cm, List<PipeReviewItem> items, List<PipeModelRestraint> restraints,
                             List<PipeModelSif> sifs, Dictionary<int, int> ends, Dictionary<int, List<int>> elementsAt, SortedDictionary<int, List<int>> onBends)
@@ -371,7 +372,8 @@ public static class PipeReview
             var both = Enumerable.Range(0, 6).Where(k => h[k] && Enumerable.Range(0, 9).Any(v => !double.IsNaN(d.Vectors[v][k]))).Select(k => PipeModelCodes.DisplacementDofs[k]).ToArray();
             if (both.Length > 0)
                 items.Add(new PipeReviewItem("error", "displacement-restrained", "node " + d.Node + " has an imposed displacement in " + string.Join(", ", both) +
-                    " where a restraint already holds it to ground: overspecified, CAESAR stops on it (an imposed displacement acts as the restraint in that direction; drop one)")
+                    " where a restraint already holds it to ground: overspecified, CAESAR stops on it (57E). Give the displacement alone (given in a direction, it holds the node there), " +
+                    "or, for a restraint's initial movement, give the restraint a connecting node and impose the displacement on that node")
                     .WithNodes(new[] { d.Node }));
         }
 
@@ -560,6 +562,12 @@ public static class PipeReview
                 items.Add(new PipeReviewItem("info", "expansion-joint-thrust", "the expansion joint " + en(i + 1) + " has no effective ID: CAESAR applies no pressure thrust (right for a tied joint)")
                     .WithElements(new[] { i + 1 }));
         }
+
+        // wave data: an added-mass coefficient over 1.0 is unusual (CAESAR warns, 151E)
+        var addedMass = Enumerable.Range(0, ne).Where(i => m.Elements[i].Wind != null && m.Elements[i].Wind.Type == 1 && m.Elements[i].Wind.AddedMass > MaxAddedMass).ToList();
+        if (addedMass.Count > 0)
+            items.Add(new PipeReviewItem("warning", "wave-added-mass", string.Format(ci, "a wave added-mass coefficient of {0:0.###} on {1} element{2} (from {3}): CAESAR warns above 1.0, which it typically does not exceed (151E)",
+                m.Elements[addedMass[0]].Wind.AddedMass, addedMass.Count, addedMass.Count == 1 ? "" : "s", en(addedMass[0] + 1))).WithElements(addedMass.Take(ListMax).Select(i => i + 1)));
 
         // a rigid element with no weight: CAESAR treats it as a weightless construction element
         var weightless = Enumerable.Range(0, ne).Where(i => m.Elements[i].Rigid != null && m.Elements[i].ExpJoint == null && m.Elements[i].Rigid.Weight == 0).ToList();

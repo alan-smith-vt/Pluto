@@ -304,7 +304,11 @@ public static class CaesarNeutralWriter
         var touching = Touching(m);
         p.ResSlots = AssignSlots(m, p.Restraints.Select(r => new SlotItem { Item = r, Node = r.Node, OwnerUid = r.OwnerUid, Slot = r.Slot }).ToList(), p.ResPer, touching, "restraints");
         p.SifSlots = AssignSlots(m, p.Sifs.Select(s => new SlotItem { Item = s, Node = s.Node, OwnerUid = s.OwnerUid, Slot = s.Slot }).ToList(), p.SifPer, touching, "SIF / tee entries");
-        // a load stays with its element even off its ends (CAESAR imposes displacements on CNODEs too)
+        // a load stays with its element even off its ends (CAESAR imposes displacements on CNODEs too: its own advice for
+        // a restraint's initial movement); a new one on a node only a CNODE names goes with the restraint's node
+        var viaCnode = new Dictionary<int, int>();
+        foreach (var r in p.Restraints) if (r.CNode > 0 && !touching.ContainsKey(r.CNode) && !viaCnode.ContainsKey(r.CNode)) viaCnode[r.CNode] = r.Node;
+        foreach (var kv in viaCnode) { List<int> els; if (touching.TryGetValue(kv.Value, out els)) touching[kv.Key] = els; }
         p.DispSlots = AssignSlots(m, m.Displacements.Select(x => new SlotItem { Item = x, Node = x.Node, OwnerUid = x.OwnerUid, Slot = x.Slot, AnyNode = true }).ToList(), p.DispPer, touching, "imposed displacements");
         if (m.Forces.Any() && m.Elements.Any(e => e.Carried.ContainsKey("FORCMNT")))
             throw new InvalidOperationException("CaesarNeutralWriter: the source's FORCMNT blocks are in a layout the model does not read, so forces cannot be added: re-export the job from CAESAR 15.01 first");

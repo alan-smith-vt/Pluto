@@ -169,7 +169,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 >   - or `dofs = ["X", "RY", …]`: single degrees of freedom, e.g. an equipment nozzle as six DOFs with rotational stiffness.
 > - **Options:** `gap`, `stiffness` (0 = rigid) and `mu`, each a number for every type, or a table per type: `gap = { GUI = 0.0625 }`, `stiffness = { RX = 2.5e6 }`. A key that is not one of the support's types is an error.
 > - `direction = [x, y, z]` with one translational or rotational type: along a global axis it gives that axis' type; any other direction gives a skewed restraint, X or RX with the direction's cosines.
-> - `cnode = n` and `tag`.
+> - `cnode = n` and `tag`. The connecting node may be one no element has when a `[[displacements]]` entry names it: CAESAR's way to move a restraint (the displacement on the connecting node, not on the restrained one).
 >
 > **`[[ties]]`:** `node` and `cnode`, each a number or `{ run, at }`, plus the same `type` / `dofs` / `gap` / `stiffness` / `mu` / `direction` / `tag`. For example, a strut between two lines: `type = "Z"`, `gap = 0.125`.
 >
@@ -185,7 +185,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 > **`[[displacements]]`:** imposed displacements at nodes (anchor movements, equipment growth).
 > - The same `node` / `run` + `at` and `vector` (D1…D9).
 > - `dx dy dz` (in), `rx ry rz` (deg). **A DOF not given stays free; a 0 holds it** in that vector.
-> - **No restraint in the same direction at that node:** CAESAR stops on it (overspecified). An anchor that moves is its displacement with all six DOFs given.
+> - **No restraint in the same direction at that node:** CAESAR stops on it (57E, overspecified). An anchor that moves is its displacement with all six DOFs given; a restraint that moves gets a connecting node (`cnode = n` on the support) with the displacement on that node.
 >
 > **Uniform loads and wind**, on a run or in `[defaults]` (a run's own value wins):
 > - `uniform = [x, y, z]` in lb/in is U1; a list of them gives U1, U2 …; `0` means none.

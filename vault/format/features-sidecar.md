@@ -343,7 +343,7 @@ everything the model holds before CAESAR imports it. The CAESAR export (`CaesarT
   `node-twice`, `uniform-mixed`; CAESAR's error checker (`PipeReview.CaesarRules`, [[vault/arms/caesar-checks|caesar-checks]]):
   `node-range`, `corrosion-wall`, `temperature-alpha`, `displacement-restrained`, `loop-closure`, `bend-angle`,
   `bend-node-angle`, `corner-no-bend`, `intersection`, `sif-below-one`, `sif-at-bend`, `thin-wall`, `reducer-angle`,
-  `expansion-joint`, `expansion-joint-thrust`, `rigid-weightless`, `uniform-repeated`, `hangers`
+  `expansion-joint`, `expansion-joint-thrust`, `wave-added-mass`, `rigid-weightless`, `uniform-repeated`, `hangers`
   (`PipeReview.cs`); `restraint-code` (a code from CAESAR's documentation that no CAESAR file has shown yet:
   `CaesarNeutralWriter.NoticeItems`); `build` (the builder's or the workbook reader's
   warnings); `export` (this export's own warnings; how the model is drawn is `info`).

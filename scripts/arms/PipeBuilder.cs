@@ -1294,14 +1294,17 @@ public static class PipeBuilder
 
         // ---------------- supports, ties, SIFs
 
-        List<int> NodesOf(TomlTable t, string w)
+        List<int> NodesOf(TomlTable t, string w) { return NodesOf(t, w, null); }
+
+        // offModel: a node that may be on no element (a restraint's free connecting node, for a displacement on it)
+        List<int> NodesOf(TomlTable t, string w, Func<int, bool> offModel)
         {
             object n = Get(t, "node");
             if (n != null)
             {
                 if (Get(t, "run") != null || Get(t, "at") != null || Get(t, "every") != null) throw Err(w + ": node, or run with at / every, not both");
                 int node = (int)Math.Round(Num(n, w + ".node"));
-                if (!m.Positions.ContainsKey(node)) throw Err(w + ": node " + node + " is not in the model");
+                if (!m.Positions.ContainsKey(node) && (offModel == null || !offModel(node))) throw Err(w + ": node " + node + " is not in the model");
                 return new List<int> { node };
             }
             var r = RunRef(t, w);
@@ -1354,6 +1357,9 @@ public static class PipeBuilder
 
         void Supports()
         {
+            // nodes a [[displacements]] entry names by number: a support may tie to one of them off the model
+            var displaced = new HashSet<int>();
+            foreach (var d in Items("displacements")) { object dn = Get(d, "node"); double x; if (dn != null && double.TryParse(Convert.ToString(dn, CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out x)) displaced.Add((int)Math.Round(x)); }
             int i = 0;
             foreach (var t in Items("supports"))
             {
@@ -1364,7 +1370,8 @@ public static class PipeBuilder
                 var nodes = NodesOf(t, w);
                 double[] dir = DirOf(t, types, w);
                 int cnode = Get(t, "cnode") != null ? (int)Math.Round(Num(Get(t, "cnode"), w + ".cnode")) : 0;
-                if (cnode != 0 && !m.Positions.ContainsKey(cnode)) throw Err(w + ": cnode " + cnode + " is not in the model");
+                if (cnode != 0 && !m.Positions.ContainsKey(cnode) && !displaced.Contains(cnode))
+                    throw Err(w + ": cnode " + cnode + " is not in the model (a free connecting node needs an imposed displacement on it: CAESAR's way to move a restraint)");
                 string tag = Str(t, "tag", "", w);
                 foreach (int n in nodes)
                 {
@@ -1445,7 +1452,7 @@ public static class PipeBuilder
                 int vec = (int)Math.Round(NumOpt(t, "vector", 1, w));
                 if (vec < 1 || vec > 9) throw Err(w + ": vector = 1 .. 9 (CAESAR's " + (kind == "force" ? "F1 .. F9" : "D1 .. D9") + ")");
                 if (!comps.Any(c => Get(t, c) != null)) throw Err(w + ": give at least one of " + string.Join(", ", comps));
-                foreach (int n in NodesOf(t, w))
+                foreach (int n in NodesOf(t, w, kind == "displacement" ? (Func<int, bool>)(x => m.Restraints.Any(r => r.CNode == x)) : null))
                 {
                     if (!given.Add(n + "/" + vec)) throw Err(w + ": node " + n + " vector " + vec + " is given twice");
                     PipeModelNodeLoad d;
@@ -1551,7 +1558,8 @@ public static class PipeBuilder
             foreach (var r in m.Restraints)
             {
                 if (!nodes.Contains(r.Node)) throw Err(r.Source + ": a restraint at node " + r.Node + ", which is on no element");
-                if (r.CNode > 0 && !nodes.Contains(r.CNode)) throw Err(r.Source + ": connects node " + r.Node + " to node " + r.CNode + ", which is on no element");
+                if (r.CNode > 0 && !nodes.Contains(r.CNode) && !m.Displacements.Any(d => d.Node == r.CNode))
+                    throw Err(r.Source + ": connects node " + r.Node + " to node " + r.CNode + ", which is on no element and has no imposed displacement");
                 string key = r.Type + (r.Cosines != null ? " (skewed)" : "") + (r.CNode > 0 ? " (CNODE)" : "");
                 int c; res.RestraintsByType.TryGetValue(key, out c); res.RestraintsByType[key] = c + 1;
             }
@@ -1569,7 +1577,8 @@ public static class PipeBuilder
             res.Sifs = m.Sifs.Count;
             res.Forces = m.Forces.Count();
             res.Displacements = m.Displacements.Count();
-            foreach (var d in m.NodeLoads) if (!nodes.Contains(d.Node)) throw Err(d.Source + ": a load at node " + d.Node + ", which is on no element");
+            foreach (var d in m.NodeLoads)
+                if (!nodes.Contains(d.Node) && !(d.IsDisplacement && m.Restraints.Any(r => r.CNode == d.Node))) throw Err(d.Source + ": a load at node " + d.Node + ", which is on no element");
             m.Warnings.AddRange(res.Warnings);
             // CAESAR puts a node no element has reached yet at the previous element's end: check that holds
             var seen = new HashSet<int>(m.Coords.Select(c => c.Node));

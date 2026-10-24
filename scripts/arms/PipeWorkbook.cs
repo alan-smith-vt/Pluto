@@ -511,6 +511,7 @@ public static class PipeWorkbook
         wi.Width(0, 12); wi.Width(1, 8); wi.Width(2, 8); wi.Width(3, 9); wi.Width(4, 16); for (int c = 5; c < 9; c++) wi.Width(c, 12);
         PipeWorkbookGui.Table(wi, t, wih, PipeWorkbookGui.WindCols(), nw, limW);
         PipeWorkbookGui.Rule(wi, "B2:C" + limW, "AND($A2=\"\",B2=\"\",COUNTA($D2:$I2)>0)", t.Red);
+        PipeWorkbookGui.Rule(wi, "F2:F" + limW, "AND(ISNUMBER(F2),F2>1,LOWER(TRIM($D2))=\"wave\")", t.Amber);                // added mass over 1.0 (CAESAR warns)
 
         // ---- Joints
         var jo = b.Add("Joints");
@@ -670,6 +671,8 @@ public static class PipeWorkbook
             new PipeWorkbookGui.Check("Uniform: g's and force per length both used: CAESAR warns",
                 "IF(COUNTIF(Uniform!$H$2:$H$" + L2 + ",\"yes\")*(COUNTIF(Uniform!$H$2:$H$" + L2 + ",\"no\")+COUNTIFS(Uniform!$D$2:$D$" + L2 + ",\"<>\",Uniform!$H$2:$H$" + L2 + ",\"\"))>0," +
                 "MIN(COUNTIF(Uniform!$H$2:$H$" + L2 + ",\"yes\"),COUNTIF(Uniform!$H$2:$H$" + L2 + ",\"no\")+COUNTIFS(Uniform!$D$2:$D$" + L2 + ",\"<>\",Uniform!$H$2:$H$" + L2 + ",\"\")),0)", true),
+            new PipeWorkbookGui.Check("Wind: a wave added-mass coefficient over 1.0: CAESAR warns",
+                "SUMPRODUCT(ISNUMBER(Wind!$F$2:$F$" + L2 + ")*(Wind!$F$2:$F$" + L2 + ">1)*(LOWER(TRIM(Wind!$D$2:$D$" + L2 + "))=\"wave\"))", true),
             new PipeWorkbookGui.Check("Sections: D/t over 100 (CAESAR warns at bends and tees)",
                 "SUMPRODUCT(ISNUMBER(Sections!$B$2:$B$" + LS + ")*ISNUMBER(Sections!$C$2:$C$" + LS + ")*(Sections!$C$2:$C$" + LS + ">0)*(Sections!$B$2:$B$" + LS + ">100*Sections!$C$2:$C$" + LS + "))", true),
             new PipeWorkbookGui.Check("Ids used twice (a copied row is read as a new item)",
