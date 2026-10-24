@@ -541,7 +541,7 @@ public static class PipeBuilder
                 var r = new RunB { Item = t, Name = Str(t, "name", "run" + (i + 1).ToString(CultureInfo.InvariantCulture), "[[runs]]") };
                 string w = "run \"" + r.Name + "\"";
                 r.Where = w;
-                Allowed(t, w, "name start from tee end end_tee legs section temperature delta_t pressure hydro_pressure bend bend_nodes max_length line fluid_density fluid_sg first_node uniform g_load wind_shape");
+                Allowed(t, w, "name start from tee tee_pad tee_crotch end end_tee legs section temperature delta_t pressure hydro_pressure bend bend_nodes max_length line fluid_density fluid_sg first_node uniform g_load wind_shape");
                 if (runByName.ContainsKey(r.Name)) throw Err("two runs named \"" + r.Name + "\"");
                 r.Section = SectionNamed(RunVal(r, "section"), w);
                 object from = Get(t, "from");
@@ -563,7 +563,7 @@ public static class PipeBuilder
                     r.Start = PointAt(src, r.FromS);
                     bool atEnd = r.FromS < 1e-6 || r.FromS > src.L - 1e-6;
                     r.Tee = Str(t, "tee", atEnd ? "none" : "welding", w).Trim().ToLowerInvariant();
-                    if (r.Tee != "welding" && r.Tee != "none") throw Err(w + ": tee = \"welding\" or \"none\" (another tee type: a [[sifs]] entry with sif_in / sif_out)");
+                    TeeCode(r.Tee, w + ".tee");
                 }
                 else
                 {
@@ -604,7 +604,7 @@ public static class PipeBuilder
                           " (" + string.Join(", ", want.Select(v => Fmt(v / lenUnit)).ToArray()) + "): the loop does not close");
             bool atEnd = r.EndS < 1e-6 || r.EndS > dst.L - 1e-6;
             r.EndTee = Str(t, "end_tee", atEnd ? "none" : "welding", w).Trim().ToLowerInvariant();
-            if (r.EndTee != "welding" && r.EndTee != "none") throw Err(w + ": end_tee = \"welding\" or \"none\"");
+            TeeCode(r.EndTee, w + ".end_tee");
         }
 
         void Legs(RunB r)
@@ -1100,8 +1100,8 @@ public static class PipeBuilder
                 if (st.Node2 > 0) { m.Positions[st.Node2] = p; Note(st.Node2, r, st.S, p, "coupling, downstream side"); }
             }
             if (!r.IsBranch) m.Coords.Add(new PipeModelCoord { Node = stations[0].Node, X = r.Start[0], Y = r.Start[1], Z = r.Start[2] });
-            else if (r.Tee == "welding") { m.Sifs.Add(new PipeModelSif { Node = stations[0].Node, Type = 3 }); res.Tees++; }
-            if (r.EndTee == "welding") { m.Sifs.Add(new PipeModelSif { Node = stations[stations.Count - 1].Node, Type = 3 }); res.Tees++; }
+            else if (r.Tee != "none") { m.Sifs.Add(TeeSif(r, stations[0].Node, r.Tee, w)); res.Tees++; }
+            if (r.EndTee != "none") { m.Sifs.Add(TeeSif(r, stations[stations.Count - 1].Node, r.EndTee, w)); res.Tees++; }
 
             // properties along the run (a reducer changes the section downstream)
             Sec sec = r.Section;
@@ -1590,6 +1590,25 @@ public static class PipeBuilder
             return n;
         }
 
+        // a branch's tee: CAESAR's intersection types (1-6, 14-17) by name, or "none"
+        int TeeCode(string tee, string w)
+        {
+            if (tee == "none") return -1;
+            int code = PipeModelSifTypes.Code(tee);
+            if (code < 0 || !PipeReview.IsTeeType(code))
+                throw Err(w + " = \"" + tee + "\": a tee type (welding, reinforced, unreinforced, weldolet, sweepolet, extruded, bf_sweepolet, latrolet, insert_weldolet, full_encirclement) or \"none\"");
+            return code;
+        }
+
+        PipeModelSif TeeSif(RunB r, int node, string tee, string w)
+        {
+            int code = TeeCode(tee, w + ".tee");
+            double pad = NumOpt(r.Item, "tee_pad", 0, w), crotch = NumOpt(r.Item, "tee_crotch", 0, w);
+            if (pad < 0 || crotch < 0) throw Err(w + ": tee_pad and tee_crotch are not negative");
+            if (code == 1 && !(pad > 0)) throw Err(w + ": a reinforced tee needs its pad thickness (tee_pad, in)");
+            return new PipeModelSif { Node = node, Type = code, Pad = code == 1 ? pad : 0, CrotchRadius = code == 6 ? crotch : 0 };
+        }
+
         void Sifs()
         {
             int i = 0;
@@ -1597,16 +1616,17 @@ public static class PipeBuilder
             {
                 i++;
                 string w = "[[sifs]] " + i;
-                Allowed(t, w, "node run at every from to type sif_in sif_out");
+                Allowed(t, w, "node run at every from to type sif_in sif_out pad crotch_radius weld_mismatch fillet");
                 string type = Str(t, "type", "", w).Trim().ToLowerInvariant();
-                int code;
-                if (type == "" || type == "user") code = 0;
-                else if (type == "welding" || type == "welding_tee") code = 3;
-                else throw Err(w + ": type = \"welding\" (a welding tee), or sif_in / sif_out without a type (other tee types are not confirmed for the neutral file yet)");
+                int code = PipeModelSifTypes.Code(type);
+                if (code < 0) throw Err(w + ": type = one of " + string.Join(", ", PipeModelSifTypes.Keys) + " (CAESAR's list), or sif_in / sif_out without a type");
                 double si = NumOpt(t, "sif_in", 0, w), so = NumOpt(t, "sif_out", si, w);
                 if (code == 0 && !(si > 0)) throw Err(w + ": sif_in (and sif_out) are required without a tee type");
                 if (si < 0 || so < 0) throw Err(w + ": a negative SIF");
-                foreach (int n in NodesOf(t, w)) m.Sifs.Add(new PipeModelSif { Node = n, Type = code, SifIn = si, SifOut = so });
+                double pad = NumOpt(t, "pad", 0, w), crotch = NumOpt(t, "crotch_radius", 0, w), mis = NumOpt(t, "weld_mismatch", 0, w), fil = NumOpt(t, "fillet", 0, w);
+                if (pad < 0 || crotch < 0 || mis < 0 || fil < 0) throw Err(w + ": pad, crotch_radius, weld_mismatch and fillet are not negative");
+                if (code == 1 && !(pad > 0)) throw Err(w + ": a reinforced tee needs its pad thickness (pad, in)");
+                foreach (int n in NodesOf(t, w)) m.Sifs.Add(new PipeModelSif { Node = n, Type = code, SifIn = si, SifOut = so, Pad = pad, CrotchRadius = crotch, WeldMismatch = mis, Fillet = fil });
             }
         }
 

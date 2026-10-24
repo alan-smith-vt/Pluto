@@ -31,6 +31,7 @@ using System.Text;
 //   hangers         the spring hangers CAESAR designs (info; hangers-given: the springs and constant supports it does not)
 //   hanger-twice    two hanger entries at one node; hanger-rate-only: a rate without its installed load;
 //   hanger-free     a hanger frees an anchor that is no restraint
+//   sif-pad         a reinforced fabricated tee without its pad thickness
 //   nozzles         the flexible nozzles (info); nozzle-restrained: a nozzle node also held to ground; nozzle-axis: the
 //                   vessel centreline missing or along the nozzle
 //   uniform-mixed   the uniform loads mix g's and force per length (CAESAR's error checker warns: 246E, 247E)
@@ -526,6 +527,9 @@ public static class PipeReview
                     .WithNodes(new[] { s.Node }));
             else if (s.Type == 0 && (s.SifIn > 0 || s.SifOut > 0) && bendNodes.Contains(s.Node))
                 items.Add(new PipeReviewItem("warning", "sif-at-bend", "a user SIF at node " + s.Node + ", on a bend: CAESAR uses it only when its configuration allows user SIFs at bends; otherwise the bend's code SIF applies")
+                    .WithNodes(new[] { s.Node }));
+            if (s.Type == 1 && !(s.Pad > 0))
+                items.Add(new PipeReviewItem("warning", "sif-pad", "the reinforced fabricated tee at node " + s.Node + " has no pad thickness: the code's SIF for it needs one (or call it unreinforced, type 2)")
                     .WithNodes(new[] { s.Node }));
         }
 

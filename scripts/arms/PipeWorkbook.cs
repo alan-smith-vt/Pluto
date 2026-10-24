@@ -436,8 +436,9 @@ public static class PipeWorkbook
         // ---- SIFs
         var sf = b.Add("SIFs");
         sf.FreezeRows = 1; sf.TabColor = "B45309";
-        string[] sfh = { "Id", "Node", "Type (3 = welding tee, 0 = user SIFs)", "SIF in", "SIF out", "Surface node" };
-        sf.Width(0, 8); sf.Width(1, 9); sf.Width(2, 22); sf.Width(3, 10); sf.Width(4, 10); sf.Width(5, 12);
+        string[] sfh = { "Id", "Node", "Type (3 = welding tee, 0 = user SIFs)", "SIF in", "SIF out", "Surface node", "Pad (" + u.Thk + ")", "Crotch radius (" + u.Thk + ")",
+                         "Weld mismatch (" + u.Thk + ")", "Fillet (" + u.Thk + ")" };
+        sf.Width(0, 8); sf.Width(1, 9); sf.Width(2, 22); sf.Width(3, 10); sf.Width(4, 10); sf.Width(5, 12); for (int c = 6; c < 10; c++) sf.Width(c, 12);
         r = 1;
         for (int i = 0; i < m.Sifs.Count; i++)
         {
@@ -446,13 +447,18 @@ public static class PipeWorkbook
             if (x.SifIn != 0) sf.Set(r, 3, x.SifIn);
             if (x.SifOut != 0) sf.Set(r, 4, x.SifOut);
             if (x.SurfaceNode != 0) sf.Set(r, 5, x.SurfaceNode);
+            if (x.Pad != 0) sf.Set(r, 6, x.Pad);
+            if (x.CrotchRadius != 0) sf.Set(r, 7, x.CrotchRadius);
+            if (x.WeldMismatch != 0) sf.Set(r, 8, x.WeldMismatch);
+            if (x.Fillet != 0) sf.Set(r, 9, x.Fillet);
             r++;
         }
-        var sifTypes = new[] { 0, 3 }.Concat(m.Sifs.Select(x => x.Type)).Distinct().OrderBy(v => v).ToList();
+        var sifTypes = Enumerable.Range(0, PipeModelSifTypes.Names.Length).Concat(m.Sifs.Select(x => x.Type)).Distinct().OrderBy(v => v).ToList();
         int limF = Math.Max(1000, m.Sifs.Count + 500);
         PipeWorkbookGui.Table(sf, t, sfh, PipeWorkbookGui.SifCols("Lists!$J$2:$J$" + (1 + sifTypes.Count)), m.Sifs.Count, limF);
         PipeWorkbookGui.Rule(sf, "B2:B" + limF, PipeWorkbookGui.NodeMissing("B2", nFrom, nTo, nBend), t.Amber);
         PipeWorkbookGui.Rule(sf, "D2:E" + limF, "AND(ISNUMBER(D2),D2>0,D2<1)", t.Red);                                           // a user SIF under 1
+        PipeWorkbookGui.Rule(sf, "G2:G" + limF, "AND($C2=1,N(G2)<=0)", t.Amber);                                                  // a reinforced tee without its pad
         PipeWorkbookGui.Rule(sf, "B2:B" + limF, "AND(ISNUMBER(B2)," + PipeWorkbookGui.TeeType("$C2") + ",COUNTIF(" + nFrom + ",B2)+COUNTIF(" + nTo + ",B2)<>3)", t.Amber);   // a tee not of three pipes
 
         // ---- Forces, Displacements
@@ -1400,7 +1406,7 @@ public static class PipeWorkbook
     {
         var m = x.M;
         if (s == null) { m.Sifs.Clear(); return; }
-        var c = ColsOf(s, x, new[] { "Id", "Node", "Type", "SIF in", "SIF out", "Surface node" });
+        var c = ColsOf(s, x, new[] { "Id", "Node", "Type", "SIF in", "SIF out", "Surface node", "Pad", "Crotch radius", "Weld mismatch", "Fillet" });
         var old = new List<PipeModelSif>(m.Sifs);
         var list = new List<PipeModelSif>();
         var seen = new HashSet<int>();
@@ -1416,6 +1422,10 @@ public static class PipeWorkbook
             t.Type = Int(c, r, "Type", x, 0);
             SetN(ref t.SifIn, Z(Num(c, r, "SIF in", x, -1, null))); SetN(ref t.SifOut, Z(Num(c, r, "SIF out", x, -1, null)));
             t.SurfaceNode = Int(c, r, "Surface node", x, 0);
+            if (c.At.ContainsKey("Pad")) SetN(ref t.Pad, Z(Num(c, r, "Pad", x, 21, x.U.Thk)));
+            if (c.At.ContainsKey("Crotch radius")) SetN(ref t.CrotchRadius, Z(Num(c, r, "Crotch radius", x, 21, x.U.Thk)));
+            if (c.At.ContainsKey("Weld mismatch")) SetN(ref t.WeldMismatch, Z(Num(c, r, "Weld mismatch", x, 21, x.U.Thk)));
+            if (c.At.ContainsKey("Fillet")) SetN(ref t.Fillet, Z(Num(c, r, "Fillet", x, 21, x.U.Thk)));
             list.Add(t);
         }
         m.Sifs.Clear();

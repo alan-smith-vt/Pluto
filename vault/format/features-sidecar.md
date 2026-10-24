@@ -347,7 +347,7 @@ everything the model holds before CAESAR imports it. The CAESAR export (`CaesarT
   `node-range`, `corrosion-wall`, `temperature-alpha`, `displacement-restrained`, `loop-closure`, `bend-angle`,
   `bend-node-angle`, `corner-no-bend`, `intersection`, `sif-below-one`, `sif-at-bend`, `thin-wall`, `reducer-angle`,
   `expansion-joint`, `expansion-joint-thrust`, `wave-added-mass`, `rigid-weightless`, `uniform-repeated`, `hangers`,
-  `hangers-given`, `hanger-twice`, `hanger-rate-only`, `hanger-free`, `nozzles`, `nozzle-restrained`, `nozzle-axis` (`PipeReview.cs`); `restraint-code` and `nozzle-layout` (a code or a layout from CAESAR's documentation that no CAESAR file has shown yet:
+  `hangers-given`, `hanger-twice`, `hanger-rate-only`, `hanger-free`, `nozzles`, `nozzle-restrained`, `nozzle-axis`, `sif-pad` (`PipeReview.cs`); `restraint-code`, `sif-type` and `nozzle-layout` (a code or a layout from CAESAR's documentation that no CAESAR file has shown yet:
   `CaesarNeutralWriter.NoticeItems`); `build` (the builder's or the workbook reader's
   warnings); `export` (this export's own warnings; how the model is drawn is `info`).
 - **The exporter owns these sections.** A re-export replaces them rather than passing the previous copy

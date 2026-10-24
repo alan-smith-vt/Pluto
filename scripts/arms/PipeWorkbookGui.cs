@@ -206,10 +206,16 @@ static class PipeWorkbookGui
         {
             C("Id", "key", "id", "Keep it on rows from the model; leave it blank on a new row."),
             C("Node", "key", "node", "The node of the SIF / tee."),
-            L("Type", "prop", "list!", types, "3 = welding tee, 0 = user SIFs only.", null),
+            L("Type", "prop", "list!", types, "CAESAR's number: 0 user SIFs, 1 reinforced, 2 unreinforced, 3 welding tee, 4 sweepolet, 5 weldolet, 6 extruded; 7-13 joints; 14-17 Bonney Forge, full encirclement. The header's note lists them all.",
+              "Type: CAESAR's SIF & tee type number, as its list orders them: " + string.Join("; ", Enumerable.Range(0, PipeModelSifTypes.Names.Length).Select(k => k + " " + PipeModelSifTypes.Names[k]).ToArray()) +
+              ". 3 (welding tee) and 11 are seen in CAESAR files; the others are written with a notice until a CAESAR export confirms them."),
             C("SIF in", "prop", "nonneg", "In-plane SIF. Blank = the code's."),
             C("SIF out", "prop", "nonneg", "Out-of-plane SIF. Blank = the code's."),
             C("Surface node", "key", "node", "A tee's surface node (CAESAR's Srf.Node). Blank = none."),
+            C("Pad", "prop", "nonneg", "A reinforced tee's pad thickness (type 1 needs it)."),
+            C("Crotch radius", "prop", "nonneg", "An extruded tee's crotch radius (type 6)."),
+            C("Weld mismatch", "prop", "nonneg", "A butt weld's or tapered transition's mismatch (types 7, 10)."),
+            C("Fillet", "prop", "nonneg", "A socket weld's fillet leg (types 8, 9)."),
         };
     }
 

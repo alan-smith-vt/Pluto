@@ -125,7 +125,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 
 > [!info]- [[runs]]: legs, bends, branches, temperatures
 > - **Start:** `start = [x, y, z]`, the first run's default being the origin. Or `from = { run = "header", at = 12 }`: a branch, starting at that position on an earlier run.
->   - A branch gets a **welding tee** at the header node (SIF type 3, as CAESAR writes one).
+>   - A branch gets a **welding tee** at the header node (SIF type 3, as CAESAR writes one). `tee` names another intersection: `reinforced` (with `tee_pad`, in), `unreinforced`, `sweepolet`, `weldolet`, `extruded` (`tee_crotch`, in, optional), `bf_sweepolet`, `latrolet`, `insert_weldolet`, `full_encirclement`. Types other than the welding tee are written by the number of CAESAR's list, with a `sif-type` notice until a CAESAR export confirms them.
 >   - Opt out with `tee = "none"`. That is the default when the branch starts at the other run's end, which makes it a continuation.
 > - **End on another run** (a loop: a bypass round a control valve, a return to the header): `end = { run = "header", at = 34 }`, an earlier run. The legs must reach that point (within 0.01 in; the error says by how much they miss); the run's last element ends at that run's node there, with a welding tee (`end_tee = "none"` for none; the default at the other run's end).
 > - **`legs`:** each leg is `["+X", 20]` (`±X ±Y ±Z`, or `[x, y, z]` for a skewed direction), or one of these tables:
@@ -191,7 +191,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 > - `type = "custom"`: `vessel_od`, `vessel_wall`, `vessel_axis`, `pad`, `vessel_material`, and `axial_stiffness` (lb/in), `inplane_stiffness`, `outplane_stiffness`, `torsional_stiffness` (in·lb/deg).
 > - `nozzle_od` and `nozzle_wall` default to the pipe's at the node. Lengths in inches. A key the type does not use is an error.
 >
-> **`[[sifs]]`:** `type = "welding"` (a welding tee), or `sif_in` / `sif_out` alone (user SIFs; `sif_out` defaults to `sif_in`). One SIF / tee entry per node: a branch's automatic tee counts. Give the branch `tee = "none"` to write your own.
+> **`[[sifs]]`:** `type` = a tee name as for a branch, or a joint: `butt_weld` / `tapered_transition` (with `weld_mismatch`, in), `socket_weld` / `socket_weld_as_welded` (with `fillet`, in), `threaded`, `slip_on`, `lap_joint`; or `sif_in` / `sif_out` alone (user SIFs; `sif_out` defaults to `sif_in`), which a type may carry too. `pad`, `crotch_radius` as for a branch. One SIF / tee entry per node: a branch's automatic tee counts. Give the branch `tee = "none"` to write your own.
 
 > [!info]- [[forces]], [[displacements]], uniform loads and wind
 > **`[[forces]]`:** forces and moments at nodes.

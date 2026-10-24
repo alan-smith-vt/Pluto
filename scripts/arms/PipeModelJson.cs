@@ -133,6 +133,7 @@ public static class PipeModelJson
         {
             w.Open();
             w.Num("node", t.Node); w.Num("type", t.Type); w.Num("sifIn", t.SifIn); w.Num("sifOut", t.SifOut); w.Num("surfaceNode", t.SurfaceNode);
+            if (t.WeldMismatch != 0 || t.Fillet != 0 || t.Pad != 0 || t.FittingRo != 0 || t.CrotchRadius != 0) w.Nums("details", new[] { t.WeldMismatch, t.Fillet, t.Pad, t.FittingRo, t.CrotchRadius });
             w.Num("owner", t.OwnerUid); w.Num("slot", t.Slot); w.Lines("raw", t.Raw);
             w.Close();
         }
@@ -355,7 +356,11 @@ public static class PipeModelJson
         foreach (var to in Arr(root, "sifs"))
         {
             var o = (Dictionary<string, object>)to;
-            m.Sifs.Add(new PipeModelSif { Node = I(o, "node"), Type = I(o, "type"), SifIn = D(o, "sifIn"), SifOut = D(o, "sifOut"), SurfaceNode = I(o, "surfaceNode"), OwnerUid = I(o, "owner"), Slot = I(o, "slot"), Raw = L(o, "raw") });
+            var sf = new PipeModelSif { Node = I(o, "node"), Type = I(o, "type"), SifIn = D(o, "sifIn"), SifOut = D(o, "sifOut"), SurfaceNode = I(o, "surfaceNode"), OwnerUid = I(o, "owner"), Slot = I(o, "slot"), Raw = L(o, "raw") };
+            var det = Ds(o, "details");
+            if (det != null && det.Length >= 5) { sf.WeldMismatch = det[0]; sf.Fillet = det[1]; sf.Pad = det[2]; sf.FittingRo = det[3]; sf.CrotchRadius = det[4]; }
+            else CaesarNeutralWriter.SifDetailsFromSlot(sf);   // a model saved before it held them: from its slot
+            m.Sifs.Add(sf);
         }
         foreach (var zo in Arr(root, "nozzles"))
         {

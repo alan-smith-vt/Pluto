@@ -29,7 +29,7 @@ using System.Text;
 //             writes cosines on every type but ANC (its axis; GUI and LIM a dummy 1 0 0), and so does this writer
 //   ALLOWBLS  one block, on the first element (carried forward): the fixture's B31.1 block (allowables
 //             from the material database), or a seed file's block verbatim.
-//   SIF&TEES  2 slots of 7 lines: NODE TYPE SIF-IN SIF-OUT ... (welding tee surface node on line 5)
+//   SIF&TEES  2 slots of 7 lines: NODE TYPE SIF-IN SIF-OUT WELD-D FILLET / PAD FTG-RO CROTCH-R ... (surface node on line 5)
 //   DISPLMNT, FORCMNT  2 slots of 10 lines: the NODE alone, then one line per load vector (9): DX DY DZ RX RY
 //             RZ / FX FY FZ MX MY MZ; 9999.99 = not given (a free DOF). An unused slot: node 0, then 9999.99
 //             (displacements, as 11.00 jobs show) or 0 (forces, as a CAESAR 15.01 export shows). CAESAR II's
@@ -740,6 +740,14 @@ public static class CaesarNeutralWriter
         }
     }
 
+    // a SIF slot's weld mismatch, fillet (line 1, values 5 and 6), pad, fitting radius and crotch radius (line 2, 1-3), as written
+    public static void SifDetailsFromSlot(PipeModelSif t)
+    {
+        if (t.Raw == null || t.Raw.Count < 2) return;
+        Func<int, int, double> at = (l, c) => { double v; return TryNum(Column(t.Raw[l], c), out v) ? v : 0; };
+        t.WeldMismatch = at(0, 4); t.Fillet = at(0, 5); t.Pad = at(1, 0); t.FittingRo = at(1, 1); t.CrotchRadius = at(1, 2);
+    }
+
     static void WriteSifs(Plan p, List<string> w)
     {
         var m = p.M;
@@ -767,14 +775,15 @@ public static class CaesarNeutralWriter
                 if (t.Raw != null && t.Raw.Count >= 5)
                 {
                     var l = new List<string>(t.Raw);
-                    l[0] = SetReal(SetReal(SetReal(SetReal(l[0], 0, t.Node), 1, t.Type), 2, t.SifIn), 3, t.SifOut);
+                    l[0] = SetReal(SetReal(SetReal(SetReal(SetReal(SetReal(l[0], 0, t.Node), 1, t.Type), 2, t.SifIn), 3, t.SifOut), 4, t.WeldMismatch), 5, t.Fillet);
+                    l[1] = SetReal(SetReal(SetReal(l[1], 0, t.Pad), 1, t.FittingRo), 2, t.CrotchRadius);
                     l[4] = SetReal(l[4], 2, t.SurfaceNode);
                     w.AddRange(l);
                     continue;
                 }
                 if (p.SifLines != 7) throw new InvalidOperationException("CaesarNeutralWriter: a new SIF at node " + t.Node + " in a " + p.SifLines + "-line layout (not CAESAR 15.01's): re-export the job from CAESAR 15.01 first");
-                w.Add(RealRow(t.Node, t.Type, t.SifIn, t.SifOut, 0, 0));
-                w.Add(RealRow(0, 0, 0, 0, 0, 0));
+                w.Add(RealRow(t.Node, t.Type, t.SifIn, t.SifOut, t.WeldMismatch, t.Fillet));
+                w.Add(RealRow(t.Pad, t.FittingRo, t.CrotchRadius, 0, 0, 0));
                 w.Add(RealRow(0, 0, 0, 0, 0, 0));
                 w.Add(RealRow(0, 0, 0, 0, 1, 9999.99));
                 w.Add(RealRow(0, 0, t.SurfaceNode, 0, 0, 0));
@@ -982,6 +991,10 @@ public static class CaesarNeutralWriter
             n.Add(new PipeReviewItem("notice", "restraint-code", "restraint type(s) " + string.Join(", ", unseen.Select(r => r.Type + " (" + r.Code + ")").Distinct().ToArray()) +
                 " written with the codes of CAESAR's documentation, which no CAESAR-written file here has shown yet: check them in CAESAR after the import")
                 .WithNodes(unseen.Select(r => r.Node)));
+        var newSif = Sifs(m).Where(s => s.Raw == null && Array.IndexOf(PipeModelSifTypes.Seen, s.Type) < 0).ToList();
+        if (newSif.Count > 0)
+            n.Add(new PipeReviewItem("notice", "sif-type", "SIF / tee type(s) " + string.Join(", ", newSif.Select(s => s.Type + " (" + PipeModelSifTypes.Name(s.Type) + ")").Distinct().ToArray()) +
+                " written by the number of CAESAR's list, which no CAESAR-written file here has shown yet: check the type CAESAR shows after the import").WithNodes(newSif.Select(s => s.Node)));
         var newNoz = m.Nozzles.Where(z => z.Raw == null).ToList();
         if (newNoz.Count > 0 && !m.Nozzles.Any(z => z.Raw != null))
             n.Add(new PipeReviewItem("notice", "nozzle-layout", newNoz.Count + " nozzle(s) written in the layout of CAESAR's documentation (22 values on 4 lines), which no CAESAR 15.01 file here has shown yet: check them in CAESAR after the import")

@@ -62,7 +62,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > | Sections | pipe size | name, OD, wall, insulation, corrosion, insulation density, material, E / Poisson / pipe density (blank = CAESAR's database), mill tolerance − / + (% of the wall), seam weld (yes / no) |
 > | Processes | operating condition | name, T1–T9, P1–P9, fluid density, hydro pressure (CAESAR's hydrotest case) |
 > | Restraints | restraint | Id, node, type (CAESAR's), CNODE, stiffness (blank = rigid), gap, friction, cosines (blank = the type's own axis), tag |
-> | SIFs | SIF / tee | Id, node, type (3 = welding tee, 0 = user SIFs), SIF in / out, surface node |
+> | SIFs | SIF / tee | Id, node, type (CAESAR's number, 0-17; the header's note names them), SIF in / out, surface node, pad (a reinforced tee; amber without), crotch radius, weld mismatch, fillet |
 > | Forces / Displacements | node and load vector | Id, node, vector (1–9), FX…MZ / DX…RZ. A blank displacement DOF is free; 0 holds it |
 > | Uniform / Wind | element, or a range of elements with the same values | Element (`E4`, a range `E3:E9`, or blank with From and To), vector, UX UY UZ, in g's / type, shape factor, wave data |
 > | Joints | joint | Id, node, CNODE, kind, frame (pipe / global), DOFs (`axial gap=0.125 k=5000; shear; torsion; bending gap=2`), SIF, tag |

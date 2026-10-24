@@ -82,6 +82,10 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 >
 > The job's hanger defaults (table, load variation …, the design options) stay as written; a new model gets CAESAR 15.01's.
 
+> [!info]- SIF and tee types
+> `PipeModelSif.Type` is CAESAR's number, as its input lists the types (`PipeModelSifTypes`): 1 reinforced fabricated tee, 2 unreinforced fabricated tee, 3 welding tee, 4 sweepolet, 5 weldolet, 6 extruded welding tee; joints 7 girth butt weld, 8 socket weld (no undercut), 9 socket weld (as welded), 10 tapered transition, 11 threaded joint, 12 double welded slip-on, 13 lap joint flange; 14–16 the Bonney Forge sweepolet, latrolet and insert weldolet, 17 full encirclement tee; 0 user SIFs only. Each SIF also holds its weld mismatch, fillet, pad, fitting outside radius and crotch radius (the slot's items 5–9).
+> - **Seen in CAESAR files:** 0, 3 and 11. The rest are written with a `sif-type` notice until the combined probe's re-export confirms the numbering.
+
 > [!info]- Nozzles
 > `PipeModelNozzle`, in CAESAR's order (MISCEL_1): `Node`, `VesselNode` (0 = a rigid vessel), `Type` (0 WRC 297, 1 API 650, 2 PD 5500, 3 custom) and `V`, CAESAR's 22 values (`V[i]` = item i + 1). `Fields` names the values a sheet or a config uses, and `Item(f)` says which item each type keeps a field in (0 = the type has none). `Raw`: its lines as written.
 
@@ -113,7 +117,7 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 > - **`elements[]`:** `uid`, `from`, `to`, `d` [dx dy dz], `od`, `wall`, `insul`, `corr`, `t` [T1–T9], `p` [P1–P9], `e`, `poisson`, `pipeDensity`, `insulDensity`, `fluidDensity`, `material`, `teeAngles` (CAESAR's element orientation angles), `design` (only when any is set: the 19 values `PipeModelElement.Design()` lists, CAESAR's items 33–46 and 49–53; a model saved without it reads them from its record), `name`, `line`, `kind`; optional `bend` {`radius`, `type`, `nodes`, `miter`, `fittingThk`, `k`, `seq`, `raw`}, `rigid` {`weight`, `type`, `seq`, `raw`}, `expJoint` {`axial`, `transverse`, `bending`, `torsion`, `effId`, `seq`, `raw`}, `reducer` {`od2`, `wall2`, `alpha`, `r1`, `r2`, `seq`, `raw`}, `uniform` {`vectors` [9 × [ux, uy, uz]], `g` [9 flags], `seq`, `raw`}, `wind` {`type`, `shape`, `addedMass`, `lift`, `marineGrowth`, `marineGrowthDensity`, `seq`, `raw`}; `raw` (the record); `carried` and `slotBlocks` {section: {`seq`, `lines`}}.
 > - **`restraints[]`:** `node`, `type`, `code`, `k`, `gap`, `mu`, `cnode`, `cos`, `tag`, `guid`, `source`, `owner` (element uid), `slot`, `raw`.
 > - **`joints[]`:** `uid`, `kind`, `node`, `cnode`, `frame`, `dofs` [{`dof`, `gap`, `k`}], `sif`, `tag`.
-> - **`sifs[]`:** `node`, `type`, `sifIn`, `sifOut`, `surfaceNode`, `owner`, `slot`, `raw`.
+> - **`sifs[]`:** `node`, `type`, `sifIn`, `sifOut`, `surfaceNode`, `details` (only when any is set: weld mismatch, fillet, pad, fitting outside radius, crotch radius, the slot's items 5-9; a model saved without it reads them from its slot), `owner`, `slot`, `raw`.
 > - **`nozzles[]`:** `node`, `vesselNode`, `type`, `v` [22], `source`, `raw`.
 > - **`hangers[]`:** `node`, `cnode`, `data` [the 11 values], `tag`, `guid`, `free` [node 1, node 2, code 1, code 2], `count`, `table`, `shortRange`, `source`, `raw`, `freeRaw`.
 > - **`nodeLoads[]`:** `kind` (force | displacement), `node`, `vectors` [9 × 6, `null` = free], `source`, `owner`, `slot`, `raw`.

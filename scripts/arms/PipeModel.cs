@@ -266,6 +266,8 @@ public class PipeModelSif
     public int Type;                          // 0 = user SIFs only, 3 = welding tee
     public double SifIn, SifOut;              // 0 = from the code
     public int SurfaceNode;                   // a tee's surface node (CAESAR's "Srf.Node"), 0 = none
+    public double WeldMismatch, Fillet;       // butt weld / tapered transition mismatch; socket weld fillet leg (items 5, 6)
+    public double Pad, FittingRo, CrotchRadius;   // reinforcing pad (reinforced tee), fitting outside radius, extruded tee's crotch radius (7-9)
     public int OwnerUid;
     public int Slot = -1;
     public List<string> Raw;
@@ -542,6 +544,34 @@ public class PipeModelSource
     {
         int v;
         return LinesPerBlock.TryGetValue(key, out v) && v > 0 ? v : dflt;
+    }
+}
+
+// CAESAR's SIF & tee types by number, as its input lists them (names: PipeModelCodes.SifName). 1-6 and 14-17 are
+// intersections, 7-13 joints. Seen in CAESAR-written files: 3 (welding tee) and 11; the rest follow the list's order.
+public static class PipeModelSifTypes
+{
+    public static readonly string[] Names =
+    {
+        "user SIFs", "reinforced fabricated tee", "unreinforced fabricated tee", "welding tee", "sweepolet", "weldolet", "extruded welding tee",
+        "girth butt weld", "socket weld (no undercut)", "socket weld (as welded)", "tapered transition", "threaded joint", "double welded slip-on",
+        "lap joint flange", "Bonney Forge sweepolet", "Bonney Forge latrolet", "Bonney Forge insert weldolet", "full encirclement tee"
+    };
+    // the names a TOML gives a tee or SIF type
+    public static readonly string[] Keys =
+    {
+        "user", "reinforced", "unreinforced", "welding", "sweepolet", "weldolet", "extruded", "butt_weld", "socket_weld", "socket_weld_as_welded",
+        "tapered_transition", "threaded", "slip_on", "lap_joint", "bf_sweepolet", "latrolet", "insert_weldolet", "full_encirclement"
+    };
+    public static readonly int[] Seen = { 0, 3, 11 };
+
+    public static string Name(int t) { return t >= 0 && t < Names.Length ? Names[t] : "type " + t; }
+    public static int Code(string key)
+    {
+        string k = (key ?? "").Trim().ToLowerInvariant().Replace(' ', '_').Replace('-', '_');
+        if (k == "" ) return 0;
+        if (k == "welding_tee") return 3;
+        return Array.IndexOf(Keys, k);
     }
 }
 

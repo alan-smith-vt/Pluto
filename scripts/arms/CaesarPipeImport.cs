@@ -311,11 +311,13 @@ public static class CaesarPipeImport
         int ssl = cm.LinesPerBlock.ContainsKey("SIF&TEES/slot") ? cm.LinesPerBlock["SIF&TEES/slot"] : 7;
         foreach (var ct in cm.SifTees)
         {
-            m.Sifs.Add(new PipeModelSif
+            var sf = new PipeModelSif
             {
                 Node = ct.Node, Type = ct.TypeCode, SifIn = ct.SifIn, SifOut = ct.SifOut, SurfaceNode = ct.SurfaceNode,
                 OwnerUid = ct.ElementIndex >= 0 ? ct.ElementIndex + 1 : 0, Slot = ct.Slot, Raw = SlotLines(slice("SIF&TEES", counts["SIF&TEES"]), ct.Block, ct.Slot, ssl)
-            });
+            };
+            CaesarNeutralWriter.SifDetailsFromSlot(sf);
+            m.Sifs.Add(sf);
         }
         int dsl = cm.LinesPerBlock.ContainsKey("DISPLMNT/slot") ? cm.LinesPerBlock["DISPLMNT/slot"] : 10;
         foreach (var cd in cm.Displacements)
