@@ -90,7 +90,8 @@ static class PipeWorkbookGui
 
     // the lists (the hidden Lists sheet): column letter -> what it holds
     internal const string LType = "Lists!$A$2:$A$9", LBendType = "Lists!$C$2:$C$4", LWind = "Lists!$D$2:$D$4", LYesNo = "Lists!$E$2:$E$3", LAxis = "Lists!$F$2:$F$3",
-                          LFrame = "Lists!$G$2:$G$3", LView = "Lists!$H$2:$H$6", LVector = "Lists!$I$2:$I$10", LKind = "Lists!$K$2:$K$7", LCodes = "Lists!$N$2:$N$10";
+                          LFrame = "Lists!$G$2:$G$3", LView = "Lists!$H$2:$H$6", LVector = "Lists!$I$2:$I$10", LKind = "Lists!$K$2:$K$7", LCodes = "Lists!$N$2:$N$10",
+                          LFree = "Lists!$Q$2:$Q$6";
 
     internal static Col[] ElementCols(string sections, string processes)
     {
@@ -264,6 +265,35 @@ static class PipeWorkbookGui
               "DOFs: the connected degrees of freedom, separated by ';'. Frame pipe: axial, shear, torsion, bending. Frame global: X, Y, Z, RX, RY, RZ. Each may take gap=<value> and k=<stiffness>; without k it is rigid. A DOF not listed is free."),
             C("SIF", "prop", "nonneg", "A SIF at the joint. Blank = none."),
             C("Tag", "text", "text", "A tag, kept with the joint."),
+        };
+    }
+
+    internal static Col[] HangerCols()
+    {
+        return new[]
+        {
+            C("Id", "key", "id", "Keep it on rows from the model; leave it blank on a new row."),
+            C("Node", "key", "node", "The hanger's node (a node of the Elements sheet).",
+              "Hangers: one row per hanger node. Leave Rate and Constant blank for CAESAR to design the hanger from its table; give Rate with Cold load for a spring as given; give Constant for a constant-effort support."),
+            C("CNode", "key", "node", "Connecting node: the hanger ties Node to it. Blank = to ground."),
+            C("Rate", "prop", "nonneg", "Spring rate of a spring as given (with its Cold load). Blank = CAESAR designs the hanger."),
+            C("Cold load", "prop", "nonneg", "The installed (cold) load of a spring as given."),
+            C("Constant", "prop", "nonneg", "A constant-effort support's load. Blank = not one."),
+            C("Table", "prop", "int0", "The hanger table CAESAR designs from (its number in CAESAR's list). Blank = the job's default."),
+            C("Count", "prop", "int0", "Hangers at this location. Blank = one."),
+            C("Load variation", "prop", "nonneg", "Allowed load variation, %. Blank = 25."),
+            L("Short range", "prop", "yesno", LYesNo, "yes (or blank) = short-range springs may be used; no = not.", null),
+            C("Max travel", "prop", "nonneg", "Maximum allowed travel. Blank = no limit."),
+            C("Space", "prop", "num", "Available space for the hanger. Blank = not given."),
+            C("Rigid criteria", "prop", "nonneg", "Rigid support displacement criteria. Blank = CAESAR's default."),
+            C("Operating load", "prop", "nonneg", "A user-defined operating load (variable springs)."),
+            C("Hardware weight", "prop", "nonneg", "The hanger hardware's weight."),
+            C("Multi-load", "prop", "int0", "CAESAR's multiple load case design option. Blank = none."),
+            C("Free node 1", "key", "node", "An anchor CAESAR frees while it designs this hanger (it carries the weight otherwise)."),
+            L("Free 1", "prop", "list!", LFree, "What it frees: Y, XY, ZY, XYZ or all.", null),
+            C("Free node 2", "key", "node", "A second anchor to free."),
+            L("Free 2", "prop", "list!", LFree, "What it frees: Y, XY, ZY, XYZ or all.", null),
+            C("Tag", "text", "text", "A tag (support number ...), kept with the hanger."),
         };
     }
 

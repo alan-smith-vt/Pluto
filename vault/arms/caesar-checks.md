@@ -54,18 +54,20 @@ Every rule is summarised in our own words.
 > | A wave's added-mass coefficient above 1.0, which it typically does not exceed (151E, seen) | `wave-added-mass` | Wind, Added mass amber; Start |
 > | A temperature under 0.05 in magnitude is read as a thermal expansion (Alpha Tolerance) | `temperature-alpha` | T1-T9 amber (Processes, Elements); Start |
 > | Pluto's own: a tee with no SIF entry, a CNODE tied to nothing, a bend with no room | `tee-no-sif`, `cnode-off-model`, `bend-room`, `bend-corner`, `bend-code` | — |
+> | Pluto's own, hangers: two entries at one node; a rate without its installed load; an anchor to free that nothing holds | `hanger-twice`, `hanger-rate-only`, `hanger-free` | Hangers, Node amber; Rate / Cold load and Free columns red; Start |
 
 > [!info]- Notes: information
 > | CAESAR's note | Pluto |
 > |---|---|
 > | Four or more consecutive elements define the same uniform load: a load carries on (166E, seen) | `uniform-repeated`, on an imported job's own blocks. Pluto writes a block only where a load changes |
-> | The job's spring hangers: CAESAR designs them first and asks for its hanger-design load cases (69E, 70E, seen) | `hangers` |
+> | The job's spring hangers: CAESAR designs them first and asks for its hanger-design load cases (69E, 70E, seen) | `hangers` (the ones it designs); `hangers-given` (springs and constant supports as given) |
 > | A rigid with no weight is a weightless construction element | `rigid-weightless` |
 > | An expansion joint with no effective ID gets no pressure thrust | `expansion-joint-thrust` |
 
 > [!info]- What Pluto does not check, and why
 > - **Material limits** (a temperature outside the material's table, minimum wall for pressure, allowables). They need CAESAR's material database, which Pluto only names by number.
-> - **Nozzles** (vessel and nozzle centrelines collinear), **hanger design**, **stress ratios** (al / hl). These are carried as written and not modelled.
+> - **Nozzles** (vessel and nozzle centrelines collinear) and **stress ratios** (al / hl): carried as written, not modelled.
+> - **Hanger design:** CAESAR's. Pluto holds the hangers and their design data ([[vault/format/caesar-neutral-hangers|caesar-neutral-hangers]]) but does not size springs.
 > - **CAESAR's configuration.** Pluto assumes the defaults. A job that raises the maximum bend angle, say, gets an error here that CAESAR would accept.
 >
 > **To extend this list:** CAESAR's Diagnostics > Error Review describes every message. Send the ones a job raised, or let the build environment reach `docs.hexagonppm.com` (its error code pages).

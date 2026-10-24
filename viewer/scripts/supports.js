@@ -690,6 +690,10 @@ var FEASupports = (function () {
         var raw = r.raw || {}, out = [];
         if (raw.gap !== undefined && +raw.gap > 0) out.push('gap ' + raw.gap);
         if (raw.friction) out.push('μ ' + raw.friction);
+        if (raw.design === 'designed') out.push('designed by CAESAR' + (raw.table ? ', table ' + raw.table : ''));
+        else if (raw.design === 'spring') out.push('spring as given, cold load ' + (+raw.coldLoad || 0));
+        else if (raw.design === 'constant') out.push('constant effort ' + raw.constantLoad);
+        if (raw.count > 1) out.push(raw.count + ' hangers');
         if (raw.stiffness) out.push('k ' + raw.stiffness);
         if (raw.cnode) out.push('cnode ' + raw.cnode);
         if (raw.tag) out.push(String(raw.tag));

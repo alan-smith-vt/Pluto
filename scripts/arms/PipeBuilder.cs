@@ -45,7 +45,7 @@ public class PipeBuildResult
     public readonly Dictionary<string, int> RestraintsByType = new Dictionary<string, int>();
     public readonly List<PipeBuildNode> NodeTable = new List<PipeBuildNode>();   // every node: where it is and why
     public int Runs, Nodes, Elements, Bends, Couplings, Ties, Restraints, RestraintNodes, Sifs, Tees;
-    public int Forces, Displacements, UniformElements, WindElements;
+    public int Forces, Displacements, UniformElements, WindElements, Hangers;
     public double PipeLength;          // ft, along the leg lines
     public double Ambient;
     public int Material;
@@ -60,7 +60,7 @@ public class PipeBuildResult
         sb.AppendLine("  elements: " + string.Join(", ", ElementsByKind.OrderBy(k => k.Key, StringComparer.Ordinal).Select(k => k.Key + " " + k.Value).ToArray()));
         sb.AppendLine("  restraints: " + Restraints + " at " + RestraintNodes + " node(s)" + (RestraintsByType.Count > 0 ? ": " +
                       string.Join(", ", RestraintsByType.OrderBy(k => k.Key, StringComparer.Ordinal).Select(k => k.Key + " " + k.Value).ToArray()) : "") +
-                      (Couplings > 0 ? "; " + Couplings + " coupling(s)" : "") + (Ties > 0 ? "; " + Ties + " tie(s)" : ""));
+                      (Couplings > 0 ? "; " + Couplings + " coupling(s)" : "") + (Ties > 0 ? "; " + Ties + " tie(s)" : "") + (Hangers > 0 ? "; " + Hangers + " hanger(s)" : ""));
         sb.AppendLine("  SIF / tee entries: " + Sifs + " (" + Tees + " branch tee(s)); bends: " + Bends);
         if (Forces + Displacements + UniformElements + WindElements > 0)
             sb.AppendLine("  loads: forces / moments at " + Forces + " node(s), imposed displacements at " + Displacements + " node(s), uniform loads on " +
@@ -348,11 +348,10 @@ public static class PipeBuilder
         {
             foreach (string k in root.Order)
             {
-                if (k == "hangers") throw Err("[hangers]: spring hangers are not written (CAESAR designs them): add them in CAESAR after the import");
                 if (k == "loads" || k == "uniform" || k == "wind" || k == "g_load")
                     throw Err("[" + k + "]: loads go in [[forces]] and [[displacements]] (at nodes), and uniform / g_load / wind_shape on a run or in [defaults]");
             }
-            Allowed(root, "the config", "model parameters defaults sections runs components supports ties sifs forces displacements");
+            Allowed(root, "the config", "model parameters defaults sections runs components supports ties hangers sifs forces displacements");
             var model = Tbl(root, "model", "[model]") ?? new TomlTable();
             Allowed(model, "[model]", "title notes length_unit node_step material ambient y_up code allowables_from");
             defaults = Tbl(root, "defaults", "[defaults]");
@@ -393,6 +392,7 @@ public static class PipeBuilder
             foreach (var r in runs) BuildRun(r);
             Supports();
             Ties();
+            Hangers();
             Sifs();
             NodeLoads("forces", "force", new[] { "fx", "fy", "fz", "mx", "my", "mz" });
             NodeLoads("displacements", "displacement", new[] { "dx", "dy", "dz", "rx", "ry", "rz" });
@@ -1416,6 +1416,68 @@ public static class PipeBuilder
             return n;
         }
 
+        // [[hangers]]: spring hangers. CAESAR designs one without a rate; rate + cold_load is a spring as given;
+        // constant is a constant-effort support. Rate lb/in, loads lb, space / travel in.
+        void Hangers()
+        {
+            int i = 0;
+            foreach (var t in Items("hangers"))
+            {
+                i++;
+                string w = "[[hangers]] " + i;
+                Allowed(t, w, "node run at every from to cnode rate cold_load constant operating_load table count load_variation short_range rigid_criteria " +
+                              "max_travel space hardware_weight multi_load free_node free_dofs free_node2 free_dofs2 tag");
+                int cnode = Get(t, "cnode") != null ? (int)Math.Round(Num(Get(t, "cnode"), w + ".cnode")) : 0;
+                if (cnode != 0 && !m.Positions.ContainsKey(cnode)) throw Err(w + ": cnode " + cnode + " is not in the model");
+                object sr = Get(t, "short_range");
+                if (sr != null && !(sr is bool)) throw Err(w + ".short_range must be true or false");
+                var h0 = new PipeModelHanger
+                {
+                    CNode = cnode, Rate = NumOpt(t, "rate", 0, w), ColdLoad = NumOpt(t, "cold_load", 0, w), ConstantLoad = NumOpt(t, "constant", 0, w),
+                    OperatingLoad = NumOpt(t, "operating_load", 0, w), Table = (int)Math.Round(NumOpt(t, "table", 0, w)), Count = (int)Math.Round(NumOpt(t, "count", 0, w)),
+                    LoadVariation = NumOpt(t, "load_variation", 25, w), ShortRange = sr == null || (bool)sr ? 1 : 0, RigidCriteria = NumOpt(t, "rigid_criteria", 0, w),
+                    MaxTravel = NumOpt(t, "max_travel", PipeModelHanger.NoLimit, w), Space = NumOpt(t, "space", 0, w), HardwareWeight = NumOpt(t, "hardware_weight", 0, w),
+                    MultiLoad = NumOpt(t, "multi_load", 0, w), Tag = Str(t, "tag", "", w), Source = w
+                };
+                if (h0.Rate < 0 || h0.Count < 0 || h0.Table < 0 || h0.LoadVariation < 0) throw Err(w + ": rate, count, table and load_variation are not negative");
+                if (h0.ConstantLoad != 0 && h0.Rate != 0) throw Err(w + ": a constant-effort support (constant) has no spring rate");
+                if (h0.Rate != 0 && h0.ColdLoad == 0) throw Err(w + ": a spring as given needs its installed load (cold_load) with its rate; leave both out for CAESAR to design it");
+                h0.FreeNode1 = FreeNode(t, "free_node", "free_dofs", w, out h0.FreeCode1);
+                h0.FreeNode2 = FreeNode(t, "free_node2", "free_dofs2", w, out h0.FreeCode2);
+                foreach (int n in NodesOf(t, w))
+                {
+                    if (n == cnode) throw Err(w + ": node and cnode are both " + n);
+                    if (m.Hangers.Any(x => x.Node == n)) throw Err(w + ": node " + n + " has a hanger already (more than one at a node: count = n)");
+                    var h = Copy(h0);
+                    h.Node = n;
+                    m.Hangers.Add(h);
+                }
+            }
+        }
+
+        static PipeModelHanger Copy(PipeModelHanger a)
+        {
+            var h = new PipeModelHanger { CNode = a.CNode, Tag = a.Tag, Source = a.Source, Count = a.Count, Table = a.Table, ShortRange = a.ShortRange,
+                                          FreeNode1 = a.FreeNode1, FreeNode2 = a.FreeNode2, FreeCode1 = a.FreeCode1, FreeCode2 = a.FreeCode2 };
+            h.SetData(a.Data());
+            return h;
+        }
+
+        // an anchor the hanger design frees, and what it frees ("Y", "XY", "ZY", "XYZ", "all": CAESAR's 1-5)
+        int FreeNode(TomlTable t, string nodeKey, string dofKey, string w, out int code)
+        {
+            code = 0;
+            object nv = Get(t, nodeKey);
+            string dofs = Str(t, dofKey, "", w).Trim().ToUpperInvariant();
+            if (nv == null) { if (dofs.Length > 0) throw Err(w + ": " + dofKey + " without " + nodeKey); return 0; }
+            int n = (int)Math.Round(Num(nv, w + "." + nodeKey));
+            if (!m.Positions.ContainsKey(n)) throw Err(w + "." + nodeKey + ": node " + n + " is not in the model");
+            int k = Array.IndexOf(new[] { "Y", "XY", "ZY", "XYZ", "ALL" }, dofs.Length == 0 ? "ALL" : dofs);
+            if (k < 0) throw Err(w + "." + dofKey + " = \"Y\", \"XY\", \"ZY\", \"XYZ\" or \"all\"");
+            code = k + 1;
+            return n;
+        }
+
         void Sifs()
         {
             int i = 0;
@@ -1567,6 +1629,7 @@ public static class PipeBuilder
                 if (g.Count() > 6 * touching[g.Key])
                     throw Err("node " + g.Key + ": " + g.Count() + " restraints; CAESAR holds 6 per element at a node and " + touching[g.Key] + " element(s) meet there");
             foreach (var s in m.Sifs) if (!nodes.Contains(s.Node)) throw Err("a SIF / tee at node " + s.Node + ", which is on no element");
+            foreach (var h in m.Hangers) if (!nodes.Contains(h.Node)) throw Err(h.Source + ": a hanger at node " + h.Node + ", which is on no element");
             foreach (var g in m.Sifs.GroupBy(x => x.Node))
                 if (g.Count() > 1) throw Err("node " + g.Key + ": " + g.Count() + " SIF / tee entries (a branch's welding tee is automatic; give tee = \"none\" on the branch to define your own)");
             foreach (var e in m.Elements) { int c; res.ElementsByKind.TryGetValue(e.Kind, out c); res.ElementsByKind[e.Kind] = c + 1; }
@@ -1575,6 +1638,7 @@ public static class PipeBuilder
             res.Restraints = m.Restraints.Count;
             res.RestraintNodes = m.Restraints.Select(x => x.Node).Distinct().Count();
             res.Sifs = m.Sifs.Count;
+            res.Hangers = m.Hangers.Count;
             res.Forces = m.Forces.Count();
             res.Displacements = m.Displacements.Count();
             foreach (var d in m.NodeLoads)

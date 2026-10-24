@@ -66,6 +66,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > | Forces / Displacements | node and load vector | Id, node, vector (1–9), FX…MZ / DX…RZ. A blank displacement DOF is free; 0 holds it |
 > | Uniform / Wind | element, or a range of elements with the same values | Element (`E4`, a range `E3:E9`, or blank with From and To), vector, UX UY UZ, in g's / type, shape factor, wave data |
 > | Joints | joint | Id, node, CNODE, kind, frame (pipe / global), DOFs (`axial gap=0.125 k=5000; shear; torsion; bending gap=2`), SIF, tag |
+> | Hangers | spring hanger (one per node) | Id, node, CNODE; Rate with Cold load (a spring as given) or Constant (a constant-effort support), both blank = CAESAR designs it; table, count, load variation, short range, max travel, space, rigid criteria, operating load, hardware weight, multi-load; anchors freed while it is designed (node + Y / XY / ZY / XYZ / all, two); tag. A workbook made before this sheet keeps its base's hangers |
 > | Coords | COORDS entry | node, X Y Z |
 > | Start | — | the landing page: how to use the workbook, links to the sheets with their row counts, the live checks, the colour key, a reference |
 > | 3D View | — | the model drawn live; its controls (view, highlight, labels, restraints), figures, key |

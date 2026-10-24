@@ -40,6 +40,7 @@ public static class PipeModelJson
             w.Key("linesPerBlock"); w.Open(); foreach (var kv in s.LinesPerBlock.OrderBy(k => k.Key, StringComparer.Ordinal)) w.Num(kv.Key, kv.Value); w.Close();
             w.Key("trailing"); w.Open(); foreach (var kv in s.Trailing.OrderBy(k => k.Key, StringComparer.Ordinal)) w.Lines(kv.Key, kv.Value); w.Close();
             w.Lines("miscelMaterialLines", s.MiscelMaterialLines); w.Lines("miscelTail", s.MiscelTail);
+            if (s.TailNozzleLines >= 0) { w.Num("tailNozzleLines", s.TailNozzleLines); w.Num("tailHangerLines", s.TailHangerLines); w.Num("tailHangers", s.TailHangers); }
             w.Str("coordsCountLine", s.CoordsCountLine);
             w.Str("originalTitle", s.OriginalTitle); w.Str("originalNotes", s.OriginalNotes); w.Num("elementCount", s.ElementCount);
             w.Close();
@@ -134,6 +135,20 @@ public static class PipeModelJson
             w.Close();
         }
         w.CloseArr();
+        if (m.Hangers.Count > 0)
+        {
+            w.Key("hangers"); w.OpenArr();
+            foreach (var h in m.Hangers)
+            {
+                w.Open();
+                w.Num("node", h.Node); w.Num("cnode", h.CNode); w.Nums("data", h.Data()); w.Str("tag", h.Tag); w.Str("guid", h.Guid);
+                w.Nums("free", new double[] { h.FreeNode1, h.FreeNode2, h.FreeCode1, h.FreeCode2 });
+                w.Num("count", h.Count); w.Num("table", h.Table); w.Num("shortRange", h.ShortRange); w.Str("source", h.Source);
+                w.Lines("raw", h.Raw); w.Str("freeRaw", h.FreeRaw);
+                w.Close();
+            }
+            w.CloseArr();
+        }
         w.Key("nodeLoads"); w.OpenArr();
         foreach (var d in m.NodeLoads)
         {
@@ -258,6 +273,7 @@ public static class PipeModelJson
             var tr = O(so, "trailing"); if (tr != null) foreach (var kv in tr) s.Trailing[kv.Key] = ToLines(kv.Value);
             s.MiscelMaterialLines = L(so, "miscelMaterialLines") ?? new List<string>(); s.MiscelTail = L(so, "miscelTail") ?? new List<string>();
             s.CoordsCountLine = S(so, "coordsCountLine");
+            s.TailNozzleLines = so.ContainsKey("tailNozzleLines") ? I(so, "tailNozzleLines") : -1; s.TailHangerLines = I(so, "tailHangerLines"); s.TailHangers = I(so, "tailHangers");
             s.OriginalTitle = S(so, "originalTitle") ?? ""; s.OriginalNotes = S(so, "originalNotes") ?? ""; s.ElementCount = (int)D(so, "elementCount");
             m.Source = s;
         }
@@ -325,6 +341,16 @@ public static class PipeModelJson
         {
             var o = (Dictionary<string, object>)to;
             m.Sifs.Add(new PipeModelSif { Node = I(o, "node"), Type = I(o, "type"), SifIn = D(o, "sifIn"), SifOut = D(o, "sifOut"), SurfaceNode = I(o, "surfaceNode"), OwnerUid = I(o, "owner"), Slot = I(o, "slot"), Raw = L(o, "raw") });
+        }
+        foreach (var ho in Arr(root, "hangers"))
+        {
+            var o = (Dictionary<string, object>)ho;
+            var h = new PipeModelHanger { Node = I(o, "node"), CNode = I(o, "cnode"), Tag = S(o, "tag") ?? "", Guid = S(o, "guid") ?? "", Count = I(o, "count"), Table = I(o, "table"),
+                                          ShortRange = I(o, "shortRange"), Source = S(o, "source") ?? "", Raw = L(o, "raw"), FreeRaw = S(o, "freeRaw") };
+            h.SetData(Ds(o, "data") ?? new double[0]);
+            var f = Ds(o, "free") ?? new double[4];
+            h.FreeNode1 = (int)f[0]; h.FreeNode2 = (int)f[1]; h.FreeCode1 = (int)f[2]; h.FreeCode2 = (int)f[3];
+            m.Hangers.Add(h);
         }
         foreach (var no in Arr(root, "nodeLoads"))
         {

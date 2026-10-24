@@ -40,7 +40,8 @@ using System.Text;
 //             one block holding both kinds warns (246E), one vector with both kinds across blocks too (247E). So a
 //             new or edited block's unused vectors take the model's flag for that vector (UniformFlags).
 //   REDUCERS  2 lines: OD2 WALL2 ALPHA R1 R2 / 0 x5
-//   MISCEL_1  one material number per element (6 per line), then 4 execution-option lines; the ambient
+//   MISCEL_1  one material number per element (6 per line), nozzles (carried as written), the hanger section
+//             (WriteHangers; CONTROL counts the hangers), then 4 execution-option lines; the ambient
 //             temperature is line 2 field 3.
 //   UNITS     CAESAR's English set (in, lb, F, psi, lb/cu.in., COORDS in ft), the fixture's block.
 //   COORDS    count, then NODE X Y Z (ft) per segment start.
@@ -457,7 +458,7 @@ public static class CaesarNeutralWriter
         int ne = p.M.Elements.Count;
         long[][] rows =
         {
-            new long[] { ne, -1, -1, Count(p, "NODENAME"), Count(p, "REDUCERS"), Count(p, "FLANGES") },
+            new long[] { ne, -1, p.Src != null && p.Src.TailNozzleLines < 0 ? -1 : p.M.Hangers.Count, Count(p, "NODENAME"), Count(p, "REDUCERS"), Count(p, "FLANGES") },
             new long[] { Count(p, "BEND"), Count(p, "RIGID"), Count(p, "EXPJT"), Count(p, "RESTRANT"), Count(p, "DISPLMNT"), Count(p, "FORCMNT") },
             new long[] { Count(p, "UNIFORM"), Count(p, "WIND"), Count(p, "OFFSETS"), Count(p, "ALLOWBLS"), Count(p, "SIF&TEES"), p.M.ZUp ? 1 : 0 },
             new long[] { Count(p, "EQUIPMNT") }
@@ -469,13 +470,13 @@ public static class CaesarNeutralWriter
             {
                 if (IsBlank(l) || r >= rows.Length) { w.Add(l); continue; }
                 string x = l;
-                for (int c = 0; c < rows[r].Length; c++) if (rows[r][c] >= 0) x = SetInt(x, c, rows[r][c]);   // -1: nozzles and hangers stay as written
+                for (int c = 0; c < rows[r].Length; c++) if (rows[r][c] >= 0) x = SetInt(x, c, rows[r][c]);   // -1: nozzles (and hangers carried whole) stay as written
                 w.Add(x);
                 r++;
             }
             return;
         }
-        rows[0][1] = 0; rows[0][2] = 0;
+        rows[0][1] = 0;
         foreach (var r in rows) w.Add(IntRow(r));
     }
 
@@ -993,13 +994,78 @@ public static class CaesarNeutralWriter
             var tail = new List<string>(src.MiscelTail);
             int at = tail.Count - 3;   // the execution options' line 2: ambient at field 3
             tail[at] = SetReal(tail[at], 2, m.Ambient);
-            w.AddRange(tail);
+            if (src.TailNozzleLines < 0) { w.AddRange(tail); return; }   // parts not told apart: the tail as written
+            w.AddRange(tail.Take(src.TailNozzleLines));                    // nozzles, as written
+            WriteHangers(p, w, tail.Skip(src.TailNozzleLines).Take(src.TailHangerLines).ToList(), src.TailHangers);
+            w.AddRange(tail.Skip(tail.Count - 4));
             return;
         }
+        WriteHangers(p, w, null, 0);
         w.Add(MixedRow(1, 0, 0, 2, 0.0, 1));
         w.Add(MixedRow(0, 0, m.Ambient, 12.0, 0, 0));
         w.Add(MixedRow(0, 0, 0, 0, 0.25, 3));
         w.Add(MixedRow(3, 0));
+    }
+
+    // The hanger section: 2 lines of defaults (table, load variation, rigid criteria, travel, short range, multi-load;
+    // design options), the hanger nodes (6 per line), per hanger its 11 values (2 lines) and its tag and GUID rows,
+    // per hanger its free-anchor line, then 4 lists (6 per line): hangers at the location, table, short range,
+    // CNODE. section: the source's own (nh0 hangers), whose lines are kept where nothing changed.
+    static readonly string[] HangerDefaults = { MixedRow(1, 25.0, 0.0, PipeModelHanger.NoLimit, 1.0, 1.0), IntRow(1, 0, 0, 0, 0) };
+
+    static void WriteHangers(Plan p, List<string> w, List<string> section, int nh0)
+    {
+        var hs = p.M.Hangers;
+        if (hs.Count == 0) return;
+        bool own = section != null && nh0 > 0;
+        int l0 = (nh0 + 5) / 6, h0 = own ? (section.Count - 2 - 5 * l0 - nh0) / nh0 : 4;
+        var head = own ? section.Take(2).ToList() : HangerDefaults.ToList();
+        w.AddRange(head);
+        Func<int, List<string>> list = at => own ? section.Skip(at).Take(l0).ToList() : null;
+        WriteIntList(w, hs.Select(x => (long)x.Node).ToList(), list(2), nh0);
+        double tableDefault;
+        int table = TryNum(Column(head[0], 0), out tableDefault) ? (int)Math.Round(tableDefault) : 1;
+        foreach (var x in hs)
+        {
+            var d = x.Data();
+            if (x.Raw != null && x.Raw.Count >= 2)
+            {
+                string a = x.Raw[0], b = x.Raw[1];
+                for (int c = 0; c < 6; c++) a = SetReal(a, c, d[c]);
+                for (int c = 0; c < 5; c++) b = SetReal(b, c, d[6 + c]);
+                w.Add(a); w.Add(b);
+                for (int i = 2; i < x.Raw.Count; i++) w.Add(i == 2 ? SetText(x.Raw[i], x.Tag) : i == 3 ? SetText(x.Raw[i], x.Guid) : x.Raw[i]);
+                continue;
+            }
+            w.Add(RealRow(d.Take(6).ToArray())); w.Add(RealRow(d.Skip(6).ToArray()));
+            for (int i = 2; i < h0; i++) w.Add(TextRow(i == 2 ? x.Tag : i == 3 ? x.Guid : ""));
+        }
+        foreach (var x in hs)
+        {
+            long[] f = { x.FreeNode1, x.FreeNode2, x.FreeCode1, x.FreeCode2 };
+            string l = x.FreeRaw;
+            if (l == null) { w.Add(IntRow(f)); continue; }
+            for (int c = 0; c < 4; c++) l = SetInt(l, c, f[c]);
+            w.Add(l);
+        }
+        int g0 = 2 + l0 + nh0 * h0 + nh0;
+        WriteIntList(w, hs.Select(x => (long)x.Count).ToList(), list(g0), nh0);
+        WriteIntList(w, hs.Select(x => (long)(x.Table == 0 && x.Raw == null ? table : x.Table)).ToList(), list(g0 + l0), nh0);   // a new hanger: the job's default table, as CAESAR writes it
+        WriteIntList(w, hs.Select(x => (long)x.ShortRange).ToList(), list(g0 + 2 * l0), nh0);
+        WriteIntList(w, hs.Select(x => (long)x.CNode).ToList(), list(g0 + 3 * l0), nh0);
+    }
+
+    // integers 6 per line: over the source's lines while the count is the same, else new lines
+    static void WriteIntList(List<string> w, List<long> v, List<string> raw, int n0)
+    {
+        if (raw != null && v.Count == n0)
+        {
+            var l = new List<string>(raw);
+            for (int k = 0; k < v.Count; k++) l[k / 6] = SetInt(l[k / 6], k % 6, v[k]);
+            w.AddRange(l);
+            return;
+        }
+        for (int k = 0; k < v.Count; k += 6) w.Add(IntRow(v.Skip(k).Take(6).ToArray()));
     }
 
     static void WriteUnits(Plan p, List<string> w)
@@ -1231,6 +1297,18 @@ public static class CaesarNeutralWriter
         if (m.Coords.Count == 0) err.Add("no COORDS entry (the first node needs a position)");
         foreach (var j in m.Joints)
             if (j.Node <= 0 || j.CNode <= 0 || j.Node == j.CNode) err.Add("joint " + j.Node + "-" + j.CNode + ": two different nodes are needed");
+        if (m.Hangers.Count > 0 && m.Source != null && !m.Source.Seed && m.Source.TailNozzleLines < 0)
+            err.Add("hangers: this job's hanger data is carried as written (a layout Pluto does not read), so hangers cannot be added or changed here: do it in CAESAR");
+        foreach (var h in m.Hangers)
+        {
+            string at = "hanger at node " + h.Node;
+            if (h.Node <= 0 || h.Node > PipeReview.MaxNode) err.Add("a hanger at node " + h.Node + ": a node 1 to 8,000,000 is needed");
+            if (h.CNode < 0 || h.CNode == h.Node && h.Node > 0) err.Add(at + ": its CNODE " + h.CNode + " is not another node");
+            if (h.FreeCode1 < 0 || h.FreeCode1 > 5 || h.FreeCode2 < 0 || h.FreeCode2 > 5) err.Add(at + ": a free code is 1 (Y), 2 (XY), 3 (ZY), 4 (XYZ) or 5 (all)");
+            if (h.FreeNode1 > 0 != h.FreeCode1 > 0 || h.FreeNode2 > 0 != h.FreeCode2 > 0) err.Add(at + ": an anchor to free needs its node and its free code");
+            if (h.Table < 0 || h.Count < 0 || h.ShortRange < 0 || h.ShortRange > 1) err.Add(at + ": table, number of hangers and short range (0 / 1) are not negative");
+            if (h.Data().Any(v => double.IsNaN(v) || double.IsInfinity(v))) err.Add(at + ": a value is not a number");
+        }
         foreach (var d in m.NodeLoads)
         {
             if (d.Node <= 0) err.Add((d.IsDisplacement ? "an imposed displacement" : "a force / moment") + " without a node");

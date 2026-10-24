@@ -1263,6 +1263,12 @@ public static class CaesarToPluto
         SetDof(dof, AlignedDof(up, 0), "hanger");
         var sb = new StringBuilder("{");
         JProp(sb, "type", "HGR"); JProp(sb, "kind", "hanger"); JVec(sb, "direction", up);
+        double rate = h.Values != null && h.Values.Length > 0 ? h.Values[0] : 0, ceff = h.Values != null && h.Values.Length > 10 ? h.Values[10] : 0;
+        JProp(sb, "design", ceff != 0 ? "constant" : rate != 0 ? "spring" : "designed");   // CAESAR designs it, or takes it as given
+        if (rate != 0) JNum(sb, "stiffness", rate);
+        if (ceff != 0) JNum(sb, "constantLoad", ceff);
+        if (h.Table > 0) JRaw(sb, "table", I(h.Table));
+        if (h.NumHangers > 1) JRaw(sb, "count", I(h.NumHangers));
         if (h.CNode > 0) JRaw(sb, "cnode", I(h.CNode));
         if (!double.IsNaN(h.ColdLoad) && !double.IsInfinity(h.ColdLoad)) JNum(sb, "coldLoad", h.ColdLoad);
         if (!double.IsNaN(h.HotLoad) && !double.IsInfinity(h.HotLoad)) JNum(sb, "hotLoad", h.HotLoad);

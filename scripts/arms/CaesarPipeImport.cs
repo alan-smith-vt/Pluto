@@ -163,6 +163,7 @@ public static class CaesarPipeImport
             double amb;
             if (src.MiscelTail.Count >= 4 && TryField(src.MiscelTail[src.MiscelTail.Count - 3], 2, out amb)) m.Ambient = amb;
             else res.Notes.Add("MISCEL_1: no execution-option lines; the ambient temperature is not known (70 F assumed for new files)");
+            Hangers(cm, src, m, res);
         }
 
         // blocks of each section, as written
@@ -391,6 +392,38 @@ public static class CaesarPipeImport
         return res;
     }
 
+    // The MISCEL_1 tail's parts: nozzle lines, the hanger section, the 4 execution-option lines. When they add up,
+    // the hangers become the model's (with their lines as written); otherwise the tail is carried whole.
+    static void Hangers(CaesarModel cm, PipeModelSource src, PipeModel m, CaesarPipeImportResult res)
+    {
+        var tail = src.MiscelTail;
+        int nn = Math.Max(0, cm.NumNozzles), nh = Math.Max(0, cm.NumHangers), nozLines = 0, h = 0, lists = (nh + 5) / 6;
+        if (nn > 0 && !cm.LinesPerBlock.TryGetValue("MISCEL_1/nozzle", out nozLines)) nozLines = -1;
+        if (nh > 0 && !cm.LinesPerBlock.TryGetValue("MISCEL_1/hanger", out h)) h = -1;
+        int hLines = nh == 0 ? 0 : 2 + lists + nh * h + nh + 4 * lists;
+        bool ok = nozLines >= 0 && h >= 0 && (nh == 0 || h >= 2) && cm.Hangers.Count == nh && cm.Hangers.All(x => x.Values != null && x.Values.Length == 11) &&
+                  nn * nozLines + hLines + 4 == tail.Count;
+        if (!ok)
+        {
+            if (nh > 0) res.Notes.Add("MISCEL_1: the hanger data is not in a layout Pluto reads: the " + nh + " hanger(s) are carried as written and cannot be edited");
+            return;
+        }
+        src.TailNozzleLines = nn * nozLines; src.TailHangerLines = hLines; src.TailHangers = nh;
+        int q0 = src.TailNozzleLines + 2 + lists, free = q0 + nh * h;
+        for (int k = 0; k < nh; k++)
+        {
+            var c = cm.Hangers[k];
+            var x = new PipeModelHanger { Node = c.Node, CNode = c.CNode, Tag = c.Tag, FreeNode1 = c.FreeAnchor1, FreeNode2 = c.FreeAnchor2, FreeCode1 = c.FreeDof1, FreeCode2 = c.FreeDof2,
+                                          Count = c.NumHangers, Table = c.Table, ShortRange = c.ShortRange, Source = "the .cii" };
+            x.SetData(c.Values);
+            x.Raw = tail.Skip(q0 + k * h).Take(h).ToList();
+            string t;
+            if (h > 3 && CaesarNeutralReader.TryText(x.Raw[3], out t)) x.Guid = t.TrimEnd();
+            x.FreeRaw = tail[free + k];
+            m.Hangers.Add(x);
+        }
+    }
+
     // the global sections of a CAESAR file as a seed for a new model: VERSION, UNITS, the execution options
     // (not its nozzles or hangers) and the first allowables block; the factors of its units
     public static PipeModelSource SeedFrom(CaesarModel cm, string path, out List<string> allowables, out double[] unitFactors)
@@ -399,7 +432,7 @@ public static class CaesarPipeImport
         List<string> l;
         if (cm.RawSections.TryGetValue("VERSION", out l)) s.Sections["VERSION"] = new List<string>(l);
         if (cm.RawSections.TryGetValue("UNITS", out l)) s.Sections["UNITS"] = new List<string>(l);
-        if (cm.RawSections.TryGetValue("MISCEL_1", out l) && l.Count >= 4) s.MiscelTail = l.Skip(l.Count - 4).ToList();
+        if (cm.RawSections.TryGetValue("MISCEL_1", out l) && l.Count >= 4) { s.MiscelTail = l.Skip(l.Count - 4).ToList(); s.TailNozzleLines = 0; }
         allowables = null;
         if (cm.RawSections.TryGetValue("ALLOWBLS", out l))
         {

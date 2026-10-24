@@ -250,7 +250,9 @@ or by hand. Decision: [[vault/decisions/2026-10-03-imported-restraints|2026-10-0
     carries `vertical: true` instead.
   - `axis`: the pipe axis at the node.
   - As the program has them: `gap`, `friction`, `stiffness` (absent = rigid), `cnode`, `tag`. A
-    hanger can have `coldLoad` / `hotLoad`; an imposed displacement has `fixed[6]`.
+    hanger has `design` (`designed`: CAESAR designs it; `spring`: a rate and cold load as given;
+    `constant`: a constant-effort support), `coldLoad` / `hotLoad`, and as given `stiffness` (its rate),
+    `constantLoad`, `table`, `count`; an imposed displacement has `fixed[6]`.
   - An item without `restraints` is drawn from its `dof` letters.
 - **Loads are not here.** Results stay in the binary. CAESAR writes the loads on the supports as
   beam components of kind `restraint` (`Restraint FX … |M|`): node totals on every beam end at the
@@ -343,8 +345,8 @@ everything the model holds before CAESAR imports it. The CAESAR export (`CaesarT
   `node-twice`, `uniform-mixed`; CAESAR's error checker (`PipeReview.CaesarRules`, [[vault/arms/caesar-checks|caesar-checks]]):
   `node-range`, `corrosion-wall`, `temperature-alpha`, `displacement-restrained`, `loop-closure`, `bend-angle`,
   `bend-node-angle`, `corner-no-bend`, `intersection`, `sif-below-one`, `sif-at-bend`, `thin-wall`, `reducer-angle`,
-  `expansion-joint`, `expansion-joint-thrust`, `wave-added-mass`, `rigid-weightless`, `uniform-repeated`, `hangers`
-  (`PipeReview.cs`); `restraint-code` (a code from CAESAR's documentation that no CAESAR file has shown yet:
+  `expansion-joint`, `expansion-joint-thrust`, `wave-added-mass`, `rigid-weightless`, `uniform-repeated`, `hangers`,
+  `hangers-given`, `hanger-twice`, `hanger-rate-only`, `hanger-free` (`PipeReview.cs`); `restraint-code` (a code from CAESAR's documentation that no CAESAR file has shown yet:
   `CaesarNeutralWriter.NoticeItems`); `build` (the builder's or the workbook reader's
   warnings); `export` (this export's own warnings; how the model is drawn is `info`).
 - **The exporter owns these sections.** A re-export replaces them rather than passing the previous copy

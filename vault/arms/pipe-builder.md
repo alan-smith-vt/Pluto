@@ -161,7 +161,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 >
 >   The fixture's CAESAR job holds the same pattern: a node tied to node + 1 in X Y Z RX RY RZ, with a rotational gap and user SIFs. On a skewed pipe the restraints carry cosines.
 
-> [!info]- [[supports]], [[ties]], [[sifs]]
+> [!info]- [[supports]], [[ties]], [[hangers]], [[sifs]]
 > **`[[supports]]`:**
 > - **Where:** `node = n`, or `run` + `at = x | [x, …]`, or `run` + `every = d` (`from` = d and `to` = L unless given).
 > - **What:**
@@ -172,6 +172,15 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 > - `cnode = n` and `tag`. The connecting node may be one no element has when a `[[displacements]]` entry names it: CAESAR's way to move a restraint (the displacement on the connecting node, not on the restrained one).
 >
 > **`[[ties]]`:** `node` and `cnode`, each a number or `{ run, at }`, plus the same `type` / `dofs` / `gap` / `stiffness` / `mu` / `direction` / `tag`. For example, a strut between two lines: `type = "Z"`, `gap = 0.125`.
+>
+> **`[[hangers]]`:** spring hangers, one per node ([[vault/format/caesar-neutral-hangers|caesar-neutral-hangers]]).
+> - **Where:** `node`, or `run` + `at` / `every`, like a support; `cnode` ties it to another node instead of ground.
+> - **What CAESAR does with it:**
+>   - neither `rate` nor `constant`: CAESAR **designs** the hanger from its table, after its hanger-design load cases;
+>   - `rate` (lb/in) with `cold_load` (lb, the installed load): a **spring as given**, not designed (a rate alone is an error);
+>   - `constant` (lb): a **constant-effort support**.
+> - **Design data** (each optional): `table` (CAESAR's hanger table number; blank = the job's default), `count` (hangers at the location), `load_variation` (%, default 25), `short_range = false`, `max_travel` and `space` (in), `rigid_criteria`, `operating_load`, `hardware_weight`, `multi_load`, `tag`.
+> - **Anchors freed while it is designed:** `free_node = n` with `free_dofs = "Y" | "XY" | "ZY" | "XYZ" | "all"` (default all), and `free_node2` / `free_dofs2`.
 >
 > **`[[sifs]]`:** `type = "welding"` (a welding tee), or `sif_in` / `sif_out` alone (user SIFs; `sif_out` defaults to `sif_in`). One SIF / tee entry per node: a branch's automatic tee counts. Give the branch `tee = "none"` to write your own.
 
@@ -269,7 +278,6 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 >   Details: [[vault/format/caesar-neutral-loads|caesar-neutral-loads]].
 > - **From CAESAR's documentation only:** restraint codes beyond 26 (rods, bilinear supports, springs, one-way snubbers). The builder does not write them; a workbook row that names one gets a `[notice ]` line.
 > - **Not written:**
->   - hangers (CAESAR's hanger design);
 >   - nozzle flexibility (WRC 297);
 >   - load cases. CAESAR recommends cases on import.
 > - **Also not yet:** a hydrotest pressure (its field is unconfirmed), flanged-bend types and mitres, and tee types other than welding.

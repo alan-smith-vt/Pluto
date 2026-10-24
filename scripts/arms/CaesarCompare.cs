@@ -12,6 +12,8 @@ using System.Text;
 //   nodes       positions by CAESAR's rules (CaesarGeometry on what each model writes), moves beyond a tolerance
 //   restraints  as written (joints expanded), matched as a multiset of node, type, CNODE, gap, stiffness
 //               (rigid however written), friction, direction; SIF / tee entries likewise
+//   hangers     as a multiset of node, CNODE, kind (designed / spring rate and cold load / constant load) and
+//               the design data given
 //   loads       forces / moments and imposed displacements per node and vector, as a multiset; uniform loads
 //               and wind on each matched element
 //   carried     the blocks each element carries as written (allowables, node names ...), the file's units,
@@ -30,6 +32,8 @@ public class CaesarCompareResult
     public readonly List<string> RestraintsRemoved = new List<string>();
     public readonly List<string> SifsAdded = new List<string>();
     public readonly List<string> SifsRemoved = new List<string>();
+    public readonly List<string> HangersAdded = new List<string>();
+    public readonly List<string> HangersRemoved = new List<string>();
     public readonly List<string> LoadsAdded = new List<string>();     // node loads in B, not in A
     public readonly List<string> LoadsRemoved = new List<string>();
     public readonly List<string> LoadsChanged = new List<string>();   // uniform / wind on matched elements
@@ -42,7 +46,7 @@ public class CaesarCompareResult
         get
         {
             return Settings.Count + ElementsAdded.Count + ElementsRemoved.Count + ElementsChanged.Count + NodesMoved.Count + RestraintsAdded.Count +
-                   RestraintsRemoved.Count + SifsAdded.Count + SifsRemoved.Count + LoadsAdded.Count + LoadsRemoved.Count + LoadsChanged.Count + Carried.Count;
+                   RestraintsRemoved.Count + SifsAdded.Count + SifsRemoved.Count + HangersAdded.Count + HangersRemoved.Count + LoadsAdded.Count + LoadsRemoved.Count + LoadsChanged.Count + Carried.Count;
         }
     }
 
@@ -61,6 +65,8 @@ public class CaesarCompareResult
         List("restraints only in " + NameA, RestraintsRemoved, sb, maxPerList);
         List("SIF / tees only in " + NameB, SifsAdded, sb, maxPerList);
         List("SIF / tees only in " + NameA, SifsRemoved, sb, maxPerList);
+        List("hangers only in " + NameB, HangersAdded, sb, maxPerList);
+        List("hangers only in " + NameA, HangersRemoved, sb, maxPerList);
         List("node loads only in " + NameB, LoadsAdded, sb, maxPerList);
         List("node loads only in " + NameA, LoadsRemoved, sb, maxPerList);
         List("uniform / wind changed", LoadsChanged, sb, maxPerList);
@@ -84,7 +90,7 @@ public class CaesarCompareResult
         sb.Append(",\"worstMove\":" + WorstMove.ToString("R", CultureInfo.InvariantCulture));
         Arr(sb, "settings", Settings); Arr(sb, "elementsAdded", ElementsAdded); Arr(sb, "elementsRemoved", ElementsRemoved); Arr(sb, "elementsChanged", ElementsChanged);
         Arr(sb, "nodesMoved", NodesMoved); Arr(sb, "restraintsAdded", RestraintsAdded); Arr(sb, "restraintsRemoved", RestraintsRemoved);
-        Arr(sb, "sifsAdded", SifsAdded); Arr(sb, "sifsRemoved", SifsRemoved);
+        Arr(sb, "sifsAdded", SifsAdded); Arr(sb, "sifsRemoved", SifsRemoved); Arr(sb, "hangersAdded", HangersAdded); Arr(sb, "hangersRemoved", HangersRemoved);
         Arr(sb, "loadsAdded", LoadsAdded); Arr(sb, "loadsRemoved", LoadsRemoved); Arr(sb, "loadsChanged", LoadsChanged); Arr(sb, "carried", Carried);
         return sb.Append('}').ToString();
     }
@@ -157,12 +163,14 @@ public static class CaesarCompare
         var sa = CaesarNeutralWriter.Sifs(a).Select(SKey).ToList();
         var sb2 = CaesarNeutralWriter.Sifs(b).Select(SKey).ToList();
         Diff(sa, sb2, r.SifsRemoved, r.SifsAdded);
+        Diff(a.Hangers.Select(x => HKey(a, x)).ToList(), b.Hangers.Select(x => HKey(b, x)).ToList(), r.HangersRemoved, r.HangersAdded);
         Diff(a.NodeLoads.SelectMany(LKeys).ToList(), b.NodeLoads.SelectMany(LKeys).ToList(), r.LoadsRemoved, r.LoadsAdded);
 
         // carried global data
         if (a.Source != null && b.Source != null && !a.Source.Seed && !b.Source.Seed)
         {
-            if (!a.Source.MiscelTail.SequenceEqual(b.Source.MiscelTail) && !SameTail(a, b)) r.Carried.Add("MISCEL_1 tail (nozzles, hangers, execution options) differs");
+            if (!a.Source.MiscelTail.SequenceEqual(b.Source.MiscelTail) && !SameTail(a, b))
+                r.Carried.Add(a.Source.TailNozzleLines >= 0 && b.Source.TailNozzleLines >= 0 ? "MISCEL_1 nozzles or execution options differ" : "MISCEL_1 tail (nozzles, hangers, execution options) differs");
             List<string> ua, ub;
             if (a.Source.Sections.TryGetValue("UNITS", out ua) && b.Source.Sections.TryGetValue("UNITS", out ub) && !ua.SequenceEqual(ub)) r.Carried.Add("UNITS block differs");
         }
@@ -237,10 +245,14 @@ public static class CaesarCompare
         }
     }
 
-    // the ambient overlay aside, the tails are the same
+    // the ambient overlay aside, the tails are the same (their nozzles and options, when both are told apart:
+    // the hangers are compared as the model's)
     static bool SameTail(PipeModel a, PipeModel b)
     {
-        var ta = a.Source.MiscelTail; var tb = b.Source.MiscelTail;
+        Func<PipeModelSource, List<string>> part = s => s.TailNozzleLines < 0 || s.MiscelTail.Count < 4 ? s.MiscelTail :
+            s.MiscelTail.Take(s.TailNozzleLines).Concat(s.MiscelTail.Skip(s.MiscelTail.Count - 4)).ToList();
+        bool both = a.Source.TailNozzleLines >= 0 && b.Source.TailNozzleLines >= 0;
+        var ta = both ? part(a.Source) : a.Source.MiscelTail; var tb = both ? part(b.Source) : b.Source.MiscelTail;
         if (ta.Count != tb.Count) return false;
         for (int i = 0; i < ta.Count; i++) if (ta[i] != tb[i] && i != ta.Count - 3) return false;
         return true;
@@ -277,6 +289,43 @@ public static class CaesarCompare
         return "node " + x.Node + " " + name + (x.CNode > 0 ? " cnode " + x.CNode : "") + (rigid ? "" : " K " + G(x.Stiffness)) +
                (x.Gap != 0 ? " gap " + G(x.Gap) : "") + (x.Mu != 0 ? " mu " + G(x.Mu) : "") +
                (x.Code == 1 ? "" : " dir " + G(c[0]) + "," + G(c[1]) + "," + G(c[2])) + (string.IsNullOrEmpty(x.Tag) ? "" : " tag " + x.Tag);
+    }
+
+    // a hanger by what CAESAR does with it; a table of 0 is the job's default table
+    static string HKey(PipeModel m, PipeModelHanger h)
+    {
+        var sb = new StringBuilder("node " + h.Node + (h.CNode > 0 ? " cnode " + h.CNode : "") + " " + h.Kind);
+        if (h.Rate != 0) sb.Append(" rate " + G(h.Rate));
+        if (h.ColdLoad != 0) sb.Append(" cold " + G(h.ColdLoad));
+        if (h.ConstantLoad != 0) sb.Append(" load " + G(h.ConstantLoad));
+        if (h.OperatingLoad != 0) sb.Append(" operating " + G(h.OperatingLoad));
+        if (h.HotLoad != 0) sb.Append(" hot " + G(h.HotLoad));
+        sb.Append(" table " + HangerTable(m, h));
+        if (h.Count > 1) sb.Append(" count " + h.Count);
+        if (h.LoadVariation != 25) sb.Append(" variation " + G(h.LoadVariation));
+        if (h.ShortRange != 1) sb.Append(" no short range");
+        if (h.RigidCriteria != 0) sb.Append(" rigid " + G(h.RigidCriteria));
+        if (h.Space != 0) sb.Append(" space " + G(h.Space));
+        if (Math.Abs(h.MaxTravel - PipeModelHanger.NoLimit) > 0.005) sb.Append(" travel " + G(h.MaxTravel));
+        if (h.MultiLoad != 0) sb.Append(" multi " + G(h.MultiLoad));
+        if (h.HardwareWeight != 0) sb.Append(" hardware " + G(h.HardwareWeight));
+        if (h.FreeNode1 > 0) sb.Append(" frees " + h.FreeNode1 + "/" + h.FreeCode1);
+        if (h.FreeNode2 > 0) sb.Append(" frees " + h.FreeNode2 + "/" + h.FreeCode2);
+        if (!string.IsNullOrEmpty(h.Tag)) sb.Append(" tag " + h.Tag);
+        return sb.ToString();
+    }
+
+    public static int HangerTable(PipeModel m, PipeModelHanger h)
+    {
+        if (h.Table > 0) return h.Table;
+        var s = m.Source;
+        if (s != null && s.TailNozzleLines >= 0 && s.TailHangers > 0 && s.MiscelTail.Count > s.TailNozzleLines)
+        {
+            int t;
+            var f = s.MiscelTail[s.TailNozzleLines].Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (f.Length > 0 && int.TryParse(f[0], NumberStyles.Integer, CultureInfo.InvariantCulture, out t) && t > 0) return t;
+        }
+        return 1;
     }
 
     static string SKey(PipeModelSif s)

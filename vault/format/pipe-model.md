@@ -11,6 +11,7 @@ created: 2026-10-22
 `PipeModel` (`scripts/arms/PipeModel.cs`) is the one pipe-stress model every pipe path goes through. It is held in CAESAR II's terms:
 - elements FROM–TO with deltas, bends, rigids, expansion joints and reducers;
 - restraints, SIFs and tees;
+- spring hangers: designed by CAESAR, springs as given, constant-effort supports ([[vault/format/caesar-neutral-hangers|caesar-neutral-hangers]]);
 - loads: forces and moments, imposed displacements, uniform loads and wind ([[vault/format/caesar-neutral-loads|caesar-neutral-loads]]);
 - COORDS.
 
@@ -39,9 +40,9 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 > - **Overlay:** the writer starts from those lines and rewrites only the 13-character columns whose value changed (`SetReal` / `SetInt` / `SetText`). A value that compares equal keeps its original text, however CAESAR formatted it.
 > - **New items** (an element, a restraint, a SIF that the file did not have) get the 15.01 templates. In a file from another CAESAR version, a new item is written only where that version's line counts match 15.01's; otherwise the writer stops with "re-export the job from CAESAR 15.01 first". It never guesses a layout.
 > - **Section order, VERSION and the prelude** are the source's. PROJECT / NOTES on the VERSION lines are overlaid only when the title or notes changed.
-> - **CONTROL:** the counts (elements, blocks per section) are recomputed; the nozzle and hanger counts are kept.
+> - **CONTROL:** the counts (elements, blocks per section, hangers) are recomputed; the nozzle count is kept.
 > - **UNITS** is carried as written.
-> - **MISCEL_1:** the material numbers are overlaid when the element count is unchanged; the tail (execution options, nozzles, hangers) is carried with the ambient temperature overlaid in its own column.
+> - **MISCEL_1:** the material numbers are overlaid when the element count is unchanged. The tail is taken apart into nozzles (carried as written), the hanger section and the execution options (carried, the ambient temperature overlaid in its own column). The hangers are the model's (`Hangers`, below): each keeps its lines as written, with only changed fields rewritten, and the section is rebuilt around them. A tail whose parts do not add up is carried whole, its hangers with it, and cannot take hanger edits ([[vault/format/caesar-neutral-hangers|caesar-neutral-hangers]]).
 > - **Trailing lines** after a section, and the remainder lines inside a block, are carried where they were.
 
 > [!info]- Blocks, slots and who owns what
@@ -70,6 +71,16 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 >
 > Pipe-frame DOFs need an element at the node to give the axis; the writer reports a joint without one.
 
+> [!info]- Hangers
+> `PipeModelHanger`, one per hanger node, in CAESAR's order (MISCEL_1):
+> - `Node`, `CNode` (0 = to ground);
+> - CAESAR's 11 values in its order: `Rate` (0 = CAESAR designs it), `LoadVariation` (%, 25), `RigidCriteria`, `Space`, `ColdLoad`, `HotLoad`, `OperatingLoad`, `MaxTravel` (9999.99 = no limit), `MultiLoad`, `HardwareWeight`, `ConstantLoad`;
+> - `Kind` follows from them: `constant` (a constant load), `spring` (a rate), else `designed`;
+> - `Table` (0 = the job's default), `Count` (hangers at the location; 0 = one), `ShortRange` (1 = allowed), the anchors freed while it is designed (`FreeNode1/2` with codes 1 Y, 2 XY, 3 ZY, 4 XYZ, 5 all), `Tag`, `Guid`;
+> - `Raw` and `FreeRaw`: its lines as written (null = new).
+>
+> The job's hanger defaults (table, load variation …, the design options) stay as written; a new model gets CAESAR 15.01's.
+
 > [!info]- Seeds
 > A new model can take a CAESAR job's settings (`Build-Pipe.ps1 -Seed <job.cii>`, `CaesarPipeImport.ApplySeed`):
 > - the VERSION lines;
@@ -87,12 +98,13 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 - **Version 2** (Stage C) adds the loads. A version 1 file, whose displacements were carried as slot lines (`nodeItems`), still reads.
 
 > [!info]- Keys
-> - **Top level:** `format`, `version`, `title`, `notes`, `zUp`, `ambient`, `code`, `unitFactors`, `allowablesBlock`, `source`, `elements`, `restraints`, `joints`, `sifs`, `nodeLoads`, `coords`.
-> - **`source`** (imported or seeded models only): `fileName`, `version`, `versionLine`, `codePage`, `lineEnding`, `finalNewline`, `seed`, `prelude`, `sectionOrder`, `headers`, `sections` (raw lines per section), `linesPerBlock`, `trailing`, `miscelMaterialLines`, `miscelTail`, `coordsCountLine`, `originalTitle`, `originalNotes`, `elementCount`.
+> - **Top level:** `format`, `version`, `title`, `notes`, `zUp`, `ambient`, `code`, `unitFactors`, `allowablesBlock`, `source`, `elements`, `restraints`, `joints`, `sifs`, `hangers` (only when there are any), `nodeLoads`, `coords`.
+> - **`source`** (imported or seeded models only): `fileName`, `version`, `versionLine`, `codePage`, `lineEnding`, `finalNewline`, `seed`, `prelude`, `sectionOrder`, `headers`, `sections` (raw lines per section), `linesPerBlock`, `trailing`, `miscelMaterialLines`, `miscelTail`, `tailNozzleLines` / `tailHangerLines` / `tailHangers` (the tail's parts; absent = carried whole), `coordsCountLine`, `originalTitle`, `originalNotes`, `elementCount`.
 > - **`elements[]`:** `uid`, `from`, `to`, `d` [dx dy dz], `od`, `wall`, `insul`, `corr`, `t` [T1–T9], `p` [P1–P9], `e`, `poisson`, `pipeDensity`, `insulDensity`, `fluidDensity`, `material`, `teeAngles`, `name`, `line`, `kind`; optional `bend` {`radius`, `type`, `nodes`, `miter`, `fittingThk`, `k`, `seq`, `raw`}, `rigid` {`weight`, `type`, `seq`, `raw`}, `expJoint` {`axial`, `transverse`, `bending`, `torsion`, `effId`, `seq`, `raw`}, `reducer` {`od2`, `wall2`, `alpha`, `r1`, `r2`, `seq`, `raw`}, `uniform` {`vectors` [9 × [ux, uy, uz]], `g` [9 flags], `seq`, `raw`}, `wind` {`type`, `shape`, `addedMass`, `lift`, `marineGrowth`, `marineGrowthDensity`, `seq`, `raw`}; `raw` (the record); `carried` and `slotBlocks` {section: {`seq`, `lines`}}.
 > - **`restraints[]`:** `node`, `type`, `code`, `k`, `gap`, `mu`, `cnode`, `cos`, `tag`, `guid`, `source`, `owner` (element uid), `slot`, `raw`.
 > - **`joints[]`:** `uid`, `kind`, `node`, `cnode`, `frame`, `dofs` [{`dof`, `gap`, `k`}], `sif`, `tag`.
 > - **`sifs[]`:** `node`, `type`, `sifIn`, `sifOut`, `surfaceNode`, `owner`, `slot`, `raw`.
+> - **`hangers[]`:** `node`, `cnode`, `data` [the 11 values], `tag`, `guid`, `free` [node 1, node 2, code 1, code 2], `count`, `table`, `shortRange`, `source`, `raw`, `freeRaw`.
 > - **`nodeLoads[]`:** `kind` (force | displacement), `node`, `vectors` [9 × 6, `null` = free], `source`, `owner`, `slot`, `raw`.
 > - **`coords[]`:** `node`, `x`, `y`, `z` (in), `raw`, `imported`.
 >

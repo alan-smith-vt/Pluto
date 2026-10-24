@@ -28,6 +28,9 @@ using System.Text;
 // temperature-alpha, displacement-restrained, loop-closure, bend-angle, bend-node-angle, corner-no-bend, intersection,
 // sif-below-one, sif-at-bend, thin-wall, reducer-angle, expansion-joint(-thrust), wave-added-mass, rigid-weightless, uniform-repeated,
 // hangers; element-zero is an error unless the element is a zero-length expansion joint
+//   hangers         the spring hangers CAESAR designs (info; hangers-given: the springs and constant supports it does not)
+//   hanger-twice    two hanger entries at one node; hanger-rate-only: a rate without its installed load;
+//   hanger-free     a hanger frees an anchor that is no restraint
 //   uniform-mixed   the uniform loads mix g's and force per length (CAESAR's error checker warns: 246E, 247E)
 // plus CaesarNeutralWriter.NoticeItems (layouts and codes from the documentation) and any messages the caller adds
 // (the build's warnings, the preview's own).
@@ -104,6 +107,12 @@ public static class PipeReview
         foreach (var j in m.Joints) if (j.Node > 0 && j.CNode > 0) { join(j.Node, j.CNode); connected.Add(j.Node); connected.Add(j.CNode); }
         foreach (var d in m.Displacements)
             if (d.Node > 0 && Enumerable.Range(0, 9).Any(v => d.Used(v))) ground.Add(d.Node);
+        foreach (var h in m.Hangers)
+        {
+            if (h.Node <= 0) continue;
+            if (h.CNode > 0) { join(h.Node, h.CNode); connected.Add(h.Node); connected.Add(h.CNode); }
+            else ground.Add(h.Node);
+        }
         if (cm != null)
         {
             foreach (var h in cm.Hangers)
@@ -192,6 +201,7 @@ public static class PipeReview
         foreach (var r in m.Restraints) off(r.Node, "a restraint " + r.Type);
         foreach (var s in m.Sifs) off(s.Node, "a SIF / tee entry");
         foreach (var x in m.NodeLoads) off(x.Node, x.IsDisplacement ? "an imposed displacement" : "a force / moment");
+        foreach (var h in m.Hangers) off(h.Node, "a hanger");
         foreach (var kv in refsOff)
             items.Add(new PipeReviewItem("error", "off-model", "node " + kv.Key + " has " + string.Join(", ", kv.Value.ToArray()) + " but is on no element and no connection reaches it").WithNodes(new[] { kv.Key }));
         foreach (var r in restraints.Where(x => x.CNode > 0 && !onElement.Contains(x.CNode)).GroupBy(x => x.CNode))
@@ -590,10 +600,39 @@ public static class PipeReview
             runStart = own ? i : -1;
         }
 
-        // spring hangers the job carries: CAESAR designs them before the analysis
-        if (cm != null && cm.Hangers.Count > 0)
+        // spring hangers: CAESAR designs the ones without a rate first, and asks for its hanger-design load cases
+        if (m.Hangers.Count > 0) HangerRules(m, items, restraints, new HashSet<int>(elementsAt.Keys.Concat(onBends.Keys)));
+        else if (cm != null && cm.Hangers.Count > 0)
             items.Add(new PipeReviewItem("info", "hangers", cm.Hangers.Count + " spring hanger" + (cm.Hangers.Count == 1 ? "" : "s") + " (carried as written): CAESAR designs them first and asks for its hanger-design load cases (weight, then operating) before the others")
                 .WithNodes(cm.Hangers.Select(h => h.Node).Where(n => n > 0).Take(ListMax)));
+    }
+
+    static void HangerRules(PipeModel m, List<PipeReviewItem> items, List<PipeModelRestraint> restraints, HashSet<int> onElement)
+    {
+        var designed = m.Hangers.Where(h => h.Kind == "designed").ToList();
+        var given = m.Hangers.Where(h => h.Kind != "designed").ToList();
+        if (designed.Count > 0)
+            items.Add(new PipeReviewItem("info", "hangers", designed.Count + " spring hanger" + (designed.Count == 1 ? "" : "s") + " for CAESAR to design: it designs them first, from the hanger table, and asks for its hanger-design load cases (weight, then operating) before the others (69E, 70E)")
+                .WithNodes(designed.Select(h => h.Node).Take(ListMax)));
+        if (given.Count > 0)
+            items.Add(new PipeReviewItem("info", "hangers-given", given.Count + " hanger" + (given.Count == 1 ? "" : "s") + " as given (" +
+                string.Join(", ", given.GroupBy(h => h.Kind).Select(k => k.Count() + " " + (k.Key == "constant" ? "constant-effort" : "spring")).ToArray()) + "): CAESAR does not design them")
+                .WithNodes(given.Select(h => h.Node).Take(ListMax)));
+        foreach (var grp in m.Hangers.Where(h => h.Node > 0).GroupBy(h => h.Node).Where(k => k.Count() > 1))
+            items.Add(new PipeReviewItem("warning", "hanger-twice", "node " + grp.Key + " has " + grp.Count() + " hanger entries: CAESAR's hangers are one entry per node, with the number of hangers at the location for more than one")
+                .WithNodes(new[] { grp.Key }));
+        foreach (var h in m.Hangers.Where(h => h.Rate != 0 && h.ColdLoad == 0 && h.ConstantLoad == 0))
+            items.Add(new PipeReviewItem("warning", "hanger-rate-only", "the hanger at node " + h.Node + " has a spring rate and no installed (cold) load: CAESAR takes a rate and a load given together as a spring it does not design")
+                .WithNodes(new[] { h.Node }));
+        var groundAt = new HashSet<int>(restraints.Where(r => r.CNode <= 0 && r.Node > 0).Select(r => r.Node).Concat(m.Displacements.Select(d => d.Node)));
+        foreach (var h in m.Hangers)
+            foreach (var f in new[] { h.FreeNode1, h.FreeNode2 })
+                if (f > 0 && !groundAt.Contains(f))
+                    items.Add(new PipeReviewItem("warning", "hanger-free", "the hanger at node " + h.Node + " frees node " + f + " while it is designed, but nothing holds node " + f + " to ground (no restraint or imposed displacement)")
+                        .WithNodes(new[] { h.Node, f }));
+        foreach (var h in m.Hangers.Where(h => h.CNode > 0 && !onElement.Contains(h.CNode) && !groundAt.Contains(h.CNode)))
+            items.Add(new PipeReviewItem("warning", "cnode-off-model", "the hanger at node " + h.Node + " connects to node " + h.CNode + ", which is on no element and has no restraint of its own: it holds nothing")
+                .WithNodes(new[] { h.Node }));
     }
 
     // CAESAR's SIF & tee types that are intersections (tees, olets: 1-6, 14-17); 7-13 are joints (welds, threads, flanges)

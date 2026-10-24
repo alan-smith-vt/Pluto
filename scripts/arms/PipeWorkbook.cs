@@ -19,7 +19,7 @@ using System.Text;
 //   Sections      pipe sizes: OD, wall, insulation, corrosion, densities, material (an element names one)
 //   Processes     T1-T9, P1-P9, fluid density (an element names one)
 //   Restraints    node, type, CNODE, stiffness (blank = rigid), gap, friction, cosines (blank = the type's), tag
-//   SIFs, Joints, Forces, Displacements (blank = free), Coords
+//   SIFs, Joints, Forces, Displacements (blank = free), Hangers (blank Rate / Constant = CAESAR designs it), Coords
 //   Uniform, Wind per element: a row names one element or a range of them (E3:E9, or From and To along a chain);
 //                 an element no row names has none (CAESAR carries a load forward: the writer ends it there)
 //   Nodes, Carried, Help    read-only: rebuilt on every export, never read
@@ -525,6 +525,47 @@ public static class PipeWorkbook
         PipeWorkbookGui.Table(jo, t, joh, PipeWorkbookGui.JointCols(), m.Joints.Count, limJ);
         PipeWorkbookGui.Rule(jo, "B2:C" + limJ, PipeWorkbookGui.NodeMissing("B2", nFrom, nTo, nBend), t.Amber);
 
+        // ---- Hangers
+        var hg = b.Add("Hangers");
+        hg.FreezeRows = 1; hg.TabColor = "B45309";
+        string[] hgh = { "Id", "Node", "CNode", "Rate (" + u.TransK + ")", "Cold load (" + u.Force + ")", "Constant (" + u.Force + ")", "Table", "Count", "Load variation (%)", "Short range",
+                         "Max travel (" + u.Len + ")", "Space (" + u.Len + ")", "Rigid criteria (" + u.Len + ")", "Operating load (" + u.Force + ")", "Hardware weight (" + u.Force + ")", "Multi-load",
+                         "Free node 1", "Free 1", "Free node 2", "Free 2", "Tag" };
+        for (int c = 0; c < hgh.Length; c++) hg.Width(c, c == 0 || c == 1 || c == 2 ? 8 : c == 20 ? 14 : 11);
+        r = 1;
+        for (int i = 0; i < m.Hangers.Count; i++)
+        {
+            var h = m.Hangers[i];
+            hg.Set(r, 0, "H" + (i + 1)); hg.Set(r, 1, h.Node); if (h.CNode != 0) hg.Set(r, 2, h.CNode);
+            if (h.Rate != 0) hg.Set(r, 3, h.Rate);
+            if (h.ColdLoad != 0) hg.Set(r, 4, h.ColdLoad);
+            if (h.ConstantLoad != 0) hg.Set(r, 5, h.ConstantLoad);
+            if (h.Table != 0) hg.Set(r, 6, h.Table);
+            if (h.Count != 0) hg.Set(r, 7, h.Count);
+            if (h.LoadVariation != 25) hg.Set(r, 8, h.LoadVariation);
+            if (h.ShortRange != 1) hg.Set(r, 9, "no");
+            if (!Same(h.MaxTravel, PipeModelHanger.NoLimit)) hg.Set(r, 10, h.MaxTravel);
+            if (h.Space != 0) hg.Set(r, 11, h.Space);
+            if (h.RigidCriteria != 0) hg.Set(r, 12, h.RigidCriteria);
+            if (h.OperatingLoad != 0) hg.Set(r, 13, h.OperatingLoad);
+            if (h.HardwareWeight != 0) hg.Set(r, 14, h.HardwareWeight);
+            if (h.MultiLoad != 0) hg.Set(r, 15, h.MultiLoad);
+            if (h.FreeNode1 != 0) { hg.Set(r, 16, h.FreeNode1); hg.Set(r, 17, FreeName(h.FreeCode1)); }
+            if (h.FreeNode2 != 0) { hg.Set(r, 18, h.FreeNode2); hg.Set(r, 19, FreeName(h.FreeCode2)); }
+            hg.Set(r, 20, h.Tag);
+            r++;
+        }
+        int limH = Math.Max(500, m.Hangers.Count + 300);
+        PipeWorkbookGui.Table(hg, t, hgh, PipeWorkbookGui.HangerCols(), m.Hangers.Count, limH);
+        PipeWorkbookGui.Rule(hg, "B2:B" + limH, "AND(B2=\"\",COUNTA($A2,$C2:$U2)>0)", t.Red);
+        PipeWorkbookGui.Rule(hg, "B2:C" + limH, PipeWorkbookGui.NodeMissing("B2", nFrom, nTo, nBend), t.Amber);
+        PipeWorkbookGui.Rule(hg, "Q2:Q" + limH, PipeWorkbookGui.NodeMissing("Q2", nFrom, nTo, nBend), t.Amber);
+        PipeWorkbookGui.Rule(hg, "S2:S" + limH, PipeWorkbookGui.NodeMissing("S2", nFrom, nTo, nBend), t.Amber);
+        PipeWorkbookGui.Rule(hg, "B2:B" + limH, "AND(ISNUMBER(B2),COUNTIF($B$2:$B$" + limH + ",B2)>1)", t.Amber);                    // two hangers at a node
+        PipeWorkbookGui.Rule(hg, "D2:E" + limH, "AND(ISNUMBER($D2),$D2>0,NOT(ISNUMBER($E2)))", t.Red);                                 // a rate without its cold load
+        PipeWorkbookGui.Rule(hg, "D2:F" + limH, "AND(ISNUMBER($D2),$D2>0,ISNUMBER($F2),$F2>0)", t.Red);                                // a constant support with a rate
+        PipeWorkbookGui.Rule(hg, "Q2:T" + limH, "OR(AND(ISNUMBER($Q2),$R2=\"\"),AND($Q2=\"\",$R2<>\"\"),AND(ISNUMBER($S2),$T2=\"\"),AND($S2=\"\",$T2<>\"\"))", t.Red);   // a node to free and its code
+
         // ---- Coords
         var co = b.Add("Coords");
         co.FreezeRows = 1; co.TabColor = "1565C0";
@@ -546,7 +587,8 @@ public static class PipeWorkbook
         var li = b.Add("Lists");
         li.State = "hidden";
         Head(li, "Element types", "Restraint types", "Bend types", "Wind types", "Yes / no", "Vertical axis", "Joint frame", "Views", "Vectors", "SIF types", "Joint kinds",
-             "NPS OD (in)", "NPS", "Coded radius (x NPS)", "View azimuth", "View elevation");
+             "NPS OD (in)", "NPS", "Coded radius (x NPS)", "View azimuth", "View elevation", "Hanger free codes");
+        for (int k = 0; k < FreeNames.Length; k++) li.Set(1 + k, 16, FreeNames[k]);
         for (int k = 0; k < ElementTypes.Length; k++) li.Set(1 + k, 0, ElementTypes[k]);
         for (int k = 0; k < types.Count; k++) li.Set(1 + k, 1, types[k]);
         for (int k = 0; k < BendTypes.Length; k++) li.Set(1 + k, 2, BendTypes[k]);
@@ -603,6 +645,7 @@ public static class PipeWorkbook
             new PipeWorkbookGui.SheetInfo("Uniform", "uniform loads (weight, seismic g's) on elements", rowsOf("Uniform", "A,B")),
             new PipeWorkbookGui.SheetInfo("Wind", "wind / wave data on elements", rowsOf("Wind", "A,B")),
             new PipeWorkbookGui.SheetInfo("Joints", "couplings, hinges, slip joints: ties between two nodes per DOF", rowsOf("Joints", "B,C")),
+            new PipeWorkbookGui.SheetInfo("Hangers", "spring hangers: designed by CAESAR, springs as given, constant supports", rowsOf("Hangers", "B,C")),
             new PipeWorkbookGui.SheetInfo("Coords", "where pieces of the model start", rowsOf("Coords", "A")),
             new PipeWorkbookGui.SheetInfo("Nodes", "read-only: every node, its position and what is on it", null),
             new PipeWorkbookGui.SheetInfo("Carried", "read-only: what the job holds that the sheets do not show (kept as written)", null),
@@ -617,7 +660,7 @@ public static class PipeWorkbook
         {
             new PipeWorkbookGui.Check("Error values (#N/A, #DIV/0! ...) on the input sheets",
                 errIn("Elements", "A:BA") + "+" + errIn("Sections", "A:J") + "+" + errIn("Processes", "A:T") + "+" + errIn("Restraints", "A:K") + "+" + errIn("Forces", "A:I") + "+" + errIn("Displacements", "A:I") + "+" +
-                errIn("Uniform", "A:H") + "+" + errIn("Wind", "A:I") + "+" + errIn("Coords", "A:D"), false),
+                errIn("Uniform", "A:H") + "+" + errIn("Wind", "A:I") + "+" + errIn("Hangers", "A:U") + "+" + errIn("Coords", "A:D"), false),
             new PipeWorkbookGui.Check("Elements: text where a number belongs", textIn("Elements", "B:F,J:J,M:T,W:BA") + "-SUMPRODUCT(" + string.Join("+", PipeWorkbookGui.RadiusNames.Select(rn => "(UPPER(TRIM(" + col("J") + "))=\"" + rn + "\")").ToArray()) + ")", false),
             new PipeWorkbookGui.Check("Elements: rows without From or To", "SUMPRODUCT(((" + col("B") + "=\"\")+(" + col("C") + "=\"\")>0)*(LEN(" + col("A") + "&" + col("D") + "&" + col("E") + "&" + col("F") + "&" + col("G") + ")>0))", false),
             new PipeWorkbookGui.Check("Elements: unknown Type, Section or Process",
@@ -630,8 +673,11 @@ public static class PipeWorkbook
             new PipeWorkbookGui.Check("Uniform / Wind: unknown element Ids (single Ids)",
                 "SUMPRODUCT((Uniform!$A$2:$A$" + L2 + "<>\"\")*ISERROR(FIND(\":\",Uniform!$A$2:$A$" + L2 + "))*(COUNTIF(" + col("A") + ",Uniform!$A$2:$A$" + L2 + ")=0))+SUMPRODUCT((Wind!$A$2:$A$" + L2 +
                 "<>\"\")*ISERROR(FIND(\":\",Wind!$A$2:$A$" + L2 + "))*(COUNTIF(" + col("A") + ",Wind!$A$2:$A$" + L2 + ")=0))", false),
-            new PipeWorkbookGui.Check("Restraints, SIFs, loads: nodes on no element's From / To (bend nodes are fine)",
-                missingNodes("Restraints", "B") + "+" + missingNodes("SIFs", "B") + "+" + missingNodes("Forces", "B") + "+" + missingNodes("Displacements", "B"), true),
+            new PipeWorkbookGui.Check("Restraints, SIFs, loads, hangers: nodes on no element's From / To (bend nodes are fine)",
+                missingNodes("Restraints", "B") + "+" + missingNodes("SIFs", "B") + "+" + missingNodes("Forces", "B") + "+" + missingNodes("Displacements", "B") + "+" + missingNodes("Hangers", "B"), true),
+            new PipeWorkbookGui.Check("Hangers: text where a number belongs, a rate without its cold load or with a constant load, a node to free without its code",
+                textIn("Hangers", "B:I,K:Q,S:S") + "+SUMPRODUCT(ISNUMBER(Hangers!$D$2:$D$" + L2 + ")*(Hangers!$D$2:$D$" + L2 + ">0)*(NOT(ISNUMBER(Hangers!$E$2:$E$" + L2 + "))+ISNUMBER(Hangers!$F$2:$F$" + L2 +
+                ")*(Hangers!$F$2:$F$" + L2 + ">0)>0))+SUMPRODUCT((ISNUMBER(Hangers!$Q$2:$Q$" + L2 + ")<>(Hangers!$R$2:$R$" + L2 + "<>\"\"))+(ISNUMBER(Hangers!$S$2:$S$" + L2 + ")<>(Hangers!$T$2:$T$" + L2 + "<>\"\")))", false),
             new PipeWorkbookGui.Check("Elements: a bend node number used twice (on two bends, or also a From / To): CAESAR stops on it",
                 PipeWorkbookGui.CalcCount("fB", n), false),
             // CAESAR's error checker (vault/arms/caesar-checks.md): red = it stops, amber = it warns
@@ -645,7 +691,7 @@ public static class PipeWorkbook
                 "SUMPRODUCT((COUNTIFS(ck_rn,Displacements!$B$2:$B$" + L2 + ",ck_rc,\"\")>0)*(((Displacements!$D$2:$D$" + L2 + "<>\"\")+(Displacements!$E$2:$E$" + L2 + "<>\"\")+(Displacements!$F$2:$F$" + L2 +
                 "<>\"\")+(Displacements!$G$2:$G$" + L2 + "<>\"\")+(Displacements!$H$2:$H$" + L2 + "<>\"\")+(Displacements!$I$2:$I$" + L2 + "<>\"\"))>0))", false),
             new PipeWorkbookGui.Check("Node numbers above 8,000,000 (CAESAR's limit)",
-                string.Join("+", new[] { "Elements!$B$2:$C$", "Restraints!$B$2:$B$", "Restraints!$D$2:$D$", "SIFs!$B$2:$B$", "Forces!$B$2:$B$", "Displacements!$B$2:$B$", "Coords!$A$2:$A$" }
+                string.Join("+", new[] { "Elements!$B$2:$C$", "Restraints!$B$2:$B$", "Restraints!$D$2:$D$", "SIFs!$B$2:$B$", "Forces!$B$2:$B$", "Displacements!$B$2:$B$", "Hangers!$B$2:$C$", "Coords!$A$2:$A$" }
                     .Select(r0 => "SUMPRODUCT(ISNUMBER(" + r0 + L2 + ")*(" + r0 + L2 + ">8000000))").ToArray()), false),
             new PipeWorkbookGui.Check("Elements: a change of direction with no bend or tee: CAESAR warns",
                 PipeWorkbookGui.CalcCount("fK", n), true),
@@ -676,6 +722,7 @@ public static class PipeWorkbook
             "Restraints: Stiffness blank = rigid; Cos blank = the type's own axis (guides and limit stops take the pipe's). Forces / Displacements: one row per node and load vector (1-9); a displacement left blank is free, 0 holds it.",
             "Uniform / Wind: per element; an element no row names has none (CAESAR carries a load on to later elements; Pluto ends it there). Element = an Id, a range in the Elements order (E3:E9), or blank with From and To (a chain of elements).",
             "Joints: DOFs like 'axial gap=0.125 k=5000; shear; torsion; bending gap=2' (frame pipe) or 'X; Y; RZ k=1e6' (frame global); a DOF not listed is free.",
+            "Hangers: Rate and Constant blank = CAESAR designs the hanger (from Table; it then asks for its hanger-design load cases). Rate with Cold load = a spring as given. Constant = a constant-effort support. One row per node: Count for more than one.",
             "Read back: only the input sheets. Start, 3D View, Nodes and Carried are rebuilt on every export. The hidden _pluto sheet holds the model this workbook was written from: what you did not change is given back exactly.",
         };
         PipeWorkbookGui.StartSheet(start, t, m.Title ?? "", sourceName ?? "", u.Len + ", " + u.Force + ", " + u.Temp + ", " + u.Press, sheets, checks, reference, run);
@@ -768,7 +815,10 @@ public static class PipeWorkbook
             }
         if (m.Source != null && !m.Source.Seed)
         {
-            s.Set(r, 0, "MISCEL_1", XlsxBook.ReadOnly); s.Set(r, 1, "nozzles, hangers and execution options (the ambient is shown in Settings)", XlsxBook.ReadOnly); s.Set(r, 2, m.Source.MiscelTail.Count, XlsxBook.ReadOnly); r++;
+            bool parts = m.Source.TailNozzleLines >= 0;
+            s.Set(r, 0, "MISCEL_1", XlsxBook.ReadOnly);
+            s.Set(r, 1, parts ? "nozzles and execution options (the ambient is shown in Settings; hangers on the Hangers sheet)" : "nozzles, hangers and execution options (the ambient is shown in Settings)", XlsxBook.ReadOnly);
+            s.Set(r, 2, parts ? m.Source.MiscelTail.Count - m.Source.TailHangerLines : m.Source.MiscelTail.Count, XlsxBook.ReadOnly); r++;
             foreach (var kv in m.Source.Sections.OrderBy(k => k.Key, StringComparer.Ordinal))
             { s.Set(r, 0, kv.Key, XlsxBook.ReadOnly); s.Set(r, 1, "the section as written", XlsxBook.ReadOnly); s.Set(r, 2, kv.Value.Count, XlsxBook.ReadOnly); r++; }
         }
@@ -925,6 +975,7 @@ public static class PipeWorkbook
         ReadUniform(sheet("Uniform"), x, ids);
         ReadWind(sheet("Wind"), x, ids);
         ReadJoints(sheet("Joints"), x);
+        ReadHangers(sheet("Hangers"), x);
         ReadCoords(sheet("Coords"), x);
         m.AssignUids();
         foreach (string e in CaesarNeutralWriter.Validate(m)) x.Err(e);
@@ -1339,6 +1390,69 @@ public static class PipeWorkbook
         m.Joints.AddRange(list);
         int next = m.Joints.Count == 0 ? 1 : m.Joints.Max(j => j.Uid) + 1;
         foreach (var j in m.Joints) if (j.Uid <= 0) j.Uid = next++;
+    }
+
+    // ---- Hangers
+
+    static readonly string[] FreeNames = { "Y", "XY", "ZY", "XYZ", "all" };
+    static string FreeName(int code) { return code >= 1 && code <= 5 ? FreeNames[code - 1] : code.ToString(CultureInfo.InvariantCulture); }
+
+    static void ReadHangers(CaesarSheet s, Ctx x)
+    {
+        var m = x.M;
+        if (s == null) return;   // a workbook from before the Hangers sheet: the base's hangers stay
+        var u = x.U;
+        var c = ColsOf(s, x, new[] { "Id", "Node", "CNode", "Rate", "Cold load", "Constant", "Table", "Count", "Load variation", "Short range", "Max travel", "Space", "Rigid criteria",
+                                     "Operating load", "Hardware weight", "Multi-load", "Free node 1", "Free 1", "Free node 2", "Free 2", "Tag" });
+        var old = new List<PipeModelHanger>(m.Hangers);
+        var list = new List<PipeModelHanger>();
+        var seen = new HashSet<int>();
+        for (int r = 1; r < s.Rows.Count; r++)
+        {
+            if (Blank(s, r)) continue;
+            string id = Text(c, r, "Id", x), w = "Hangers row " + (r + 1) + (id.Length > 0 ? " (" + id + ")" : "");
+            int n = IdNum(id, 'H');
+            var h = n > 0 && n <= old.Count && seen.Add(n) ? old[n - 1] : new PipeModelHanger { Source = "workbook" };
+            int node = Int(c, r, "Node", x, 0);
+            if (node <= 0) { x.Err(w + ": a node is required"); continue; }
+            h.Node = node;
+            h.CNode = Int(c, r, "CNode", x, 0);
+            SetN(ref h.Rate, Z(Num(c, r, "Rate", x, -1, null)));
+            SetN(ref h.ColdLoad, Z(Num(c, r, "Cold load", x, -1, null)));
+            SetN(ref h.ConstantLoad, Z(Num(c, r, "Constant", x, -1, null)));
+            h.Table = Int(c, r, "Table", x, 0);
+            h.Count = Int(c, r, "Count", x, 0);
+            double lv = Num(c, r, "Load variation", x, -1, null);
+            SetN(ref h.LoadVariation, double.IsNaN(lv) ? 25 : lv);
+            string sr = Text(c, r, "Short range", x).ToLowerInvariant();
+            if (sr != "" && sr != "yes" && sr != "no") x.Err(w + ": Short range is yes or no (\"" + sr + "\")");
+            h.ShortRange = sr == "no" ? 0 : 1;
+            double mt = Num(c, r, "Max travel", x, 0, u.Len);
+            SetN(ref h.MaxTravel, double.IsNaN(mt) ? PipeModelHanger.NoLimit : mt);
+            SetN(ref h.Space, Z(Num(c, r, "Space", x, 0, u.Len)));
+            SetN(ref h.RigidCriteria, Z(Num(c, r, "Rigid criteria", x, 0, u.Len)));
+            SetN(ref h.OperatingLoad, Z(Num(c, r, "Operating load", x, -1, null)));
+            SetN(ref h.HardwareWeight, Z(Num(c, r, "Hardware weight", x, -1, null)));
+            SetN(ref h.MultiLoad, Z(Num(c, r, "Multi-load", x, -1, null)));
+            h.FreeNode1 = Int(c, r, "Free node 1", x, 0); h.FreeCode1 = FreeCode(Text(c, r, "Free 1", x), w, x);
+            h.FreeNode2 = Int(c, r, "Free node 2", x, 0); h.FreeCode2 = FreeCode(Text(c, r, "Free 2", x), w, x);
+            string tag = Text(c, r, "Tag", x);
+            if (tag != (h.Tag ?? "").Trim()) h.Tag = tag;
+            list.Add(h);
+        }
+        m.Hangers.Clear();
+        m.Hangers.AddRange(list);
+    }
+
+    static int FreeCode(string t, string w, Ctx x)
+    {
+        if (t.Length == 0) return 0;
+        int k = Array.FindIndex(FreeNames, f => f.Equals(t, StringComparison.OrdinalIgnoreCase));
+        if (k >= 0) return k + 1;
+        int v;
+        if (int.TryParse(t, NumberStyles.Integer, CultureInfo.InvariantCulture, out v) && v >= 1 && v <= 5) return v;
+        x.Err(w + ": a free code is Y, XY, ZY, XYZ or all (\"" + t + "\")");
+        return 0;
     }
 
     // ---- loads

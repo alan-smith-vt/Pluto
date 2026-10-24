@@ -43,6 +43,7 @@ public class PipeModel
     public readonly List<PipeModelRestraint> Restraints = new List<PipeModelRestraint>();
     public readonly List<PipeModelJoint> Joints = new List<PipeModelJoint>();     // expanded to CNODE restraints when written
     public readonly List<PipeModelSif> Sifs = new List<PipeModelSif>();
+    public readonly List<PipeModelHanger> Hangers = new List<PipeModelHanger>();   // spring hangers (MISCEL_1), in CAESAR's order
     public readonly List<PipeModelNodeLoad> NodeLoads = new List<PipeModelNodeLoad>();   // forces / moments and imposed displacements
     public readonly List<PipeModelCoord> Coords = new List<PipeModelCoord>();
     public readonly Dictionary<int, double[]> Positions = new Dictionary<int, double[]>();   // node -> x y z (in), as built
@@ -379,6 +380,55 @@ public class PipeModelJointDof
     public double Stiffness;                  // after the gap; 0 = rigid
 }
 
+// A spring hanger (MISCEL_1 hanger data, one per hanger node). CAESAR designs it from a hanger table when no
+// spring rate is given; given a rate and an installed (cold) load it is a spring as given; given a constant-
+// effort load, a constant support. Values in the job's units (rate: translational stiffness; loads: force;
+// space and travel: length). The 11 data values are CAESAR's HGRDAT in its order.
+public class PipeModelHanger
+{
+    public const double NoLimit = 9999.99;    // CAESAR's "not given" for the travel limit
+    public int Node;
+    public int CNode;                         // 0 = to ground
+    public double Rate;                       // 1 spring rate; 0 = CAESAR designs the hanger
+    public double LoadVariation = 25;         // 2 allowed load variation, %
+    public double RigidCriteria;              // 3 rigid support displacement criteria (0 = CAESAR's default)
+    public double Space;                      // 4 available space (0 = not given)
+    public double ColdLoad;                   // 5 theoretical cold (installed) load
+    public double HotLoad;                    // 6 hot load (CAESAR's, 0 on input)
+    public double OperatingLoad;              // 7 user-defined operating load (variable springs)
+    public double MaxTravel = NoLimit;        // 8 maximum allowed travel
+    public double MultiLoad;                  // 9 multiple load case design option
+    public double HardwareWeight;             // 10
+    public double ConstantLoad;               // 11 constant-effort support load (CEFF)
+    public string Tag = "", Guid = "";
+    public int FreeNode1, FreeNode2;          // anchors freed while the hanger is designed (0 = none)
+    public int FreeCode1, FreeCode2;          // what each frees: 1 Y, 2 XY, 3 ZY, 4 XYZ, 5 all
+    public int Count;                         // hangers at the location (0 = one)
+    public int Table;                         // hanger table (0 = the job's default)
+    public int ShortRange = 1;                // 1 = short-range springs may be used
+    public string Source = "";                // which config item made it (messages)
+    public List<string> Raw;                  // its lines as written (2 data lines, tag, GUID); null = new
+    public string FreeRaw;                    // its free-anchor line as written
+
+    public double[] Data()
+    {
+        return new[] { Rate, LoadVariation, RigidCriteria, Space, ColdLoad, HotLoad, OperatingLoad, MaxTravel, MultiLoad, HardwareWeight, ConstantLoad };
+    }
+
+    public void SetData(double[] v)
+    {
+        Func<int, double> at = i => i < v.Length ? v[i] : 0;
+        Rate = at(0); LoadVariation = at(1); RigidCriteria = at(2); Space = at(3); ColdLoad = at(4); HotLoad = at(5);
+        OperatingLoad = at(6); MaxTravel = at(7); MultiLoad = at(8); HardwareWeight = at(9); ConstantLoad = at(10);
+    }
+
+    // what CAESAR does with it
+    public string Kind
+    {
+        get { return ConstantLoad != 0 ? "constant" : Rate != 0 ? "spring" : "designed"; }
+    }
+}
+
 // What an imported (or seed) file carries besides the model: its global sections as written, so the writer
 // gives them back unchanged.
 public class PipeModelSource
@@ -398,6 +448,10 @@ public class PipeModelSource
     public readonly Dictionary<string, List<string>> Trailing = new Dictionary<string, List<string>>();   // lines past a built section's blocks / entries (blank lines at the end of a file ...)
     public List<string> MiscelMaterialLines = new List<string>();   // MISCEL_1 material-number lines as written
     public List<string> MiscelTail = new List<string>();            // the rest: nozzles, hangers, the 4 execution-option lines
+    // the tail's parts, when the import could tell them apart: its nozzle lines first, then the hanger section
+    // (TailHangers hangers in TailHangerLines lines), then the execution options. -1: not told apart, so the
+    // tail is carried whole (and the model holds no hangers)
+    public int TailNozzleLines = -1, TailHangerLines, TailHangers;
     public string CoordsCountLine;            // the COORDS count line as written
     public string OriginalTitle = "", OriginalNotes = "";
     public int ElementCount;                  // elements in the source (the material lines' count)
