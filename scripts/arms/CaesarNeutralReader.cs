@@ -219,8 +219,8 @@ public class CaesarRestraint
     public double[] Raw;                     // numeric values of the slot, flattened
     public int ElementIndex = -1;            // element whose RESTRANT pointer names the block
 
-    // the restraint type codes of CAESAR II's documentation for the neutral file (1-62); codes 1-9, 14 and 15
-    // are also seen in CAESAR-written files (the fixture's input echo, 11.00 jobs)
+    // the restraint type codes of CAESAR II's documentation for the neutral file (1-62); codes 1-26 are also
+    // seen in CAESAR-written files (the fixture's input echo, 11.00 jobs, a 15.01 probe job's export)
     static readonly string[] Table = { null, "ANC", "X", "Y", "Z", "RX", "RY", "RZ", "GUI", "LIM",
         "XSNB", "YSNB", "ZSNB", "+X", "+Y", "+Z", "-X", "-Y", "-Z", "+RX", "+RY", "+RZ", "-RX", "-RY", "-RZ",
         "+LIM", "-LIM", "XROD", "YROD", "ZROD", "+XROD", "+YROD", "+ZROD", "-XROD", "-YROD", "-ZROD",

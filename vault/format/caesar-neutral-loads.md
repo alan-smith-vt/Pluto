@@ -14,20 +14,22 @@ How the `.cii` holds applied loads (forces and moments, imposed displacements, u
 - The neutral-file chapter of CAESAR II's user's guide, supplied by the user (2026-10-22). It is summarised here in our own words, never copied.
 - CAESAR-written files: the 15.01 fixture, and public 11.00 jobs kept outside the repo.
 - A small 15.01 job the user built and exported from CAESAR with forces, uniform loads and wind, and CAESAR's input screens for two of its elements (2026-10-22, kept outside the repo).
+- Three probe jobs Pluto wrote, imported into CAESAR 15.01, read on its input lists and exported again (2026-10-24, kept outside the repo): [[#The probe jobs (2026-10-24)|below]].
 
 | Item | Documentation | Seen in a CAESAR file |
 |---|---|---|
-| DISPLMNT | yes | yes, 11.00 jobs (layout and the 9999.99 mark) |
+| DISPLMNT | yes | yes: 11.00 jobs (layout and the 9999.99 mark), and a 15.01 probe (15.01's number format, the unused slot) |
 | FORCMNT | yes | yes, a 15.01 export (layout, and the unused slot as node 0 and zeros) |
 | UNIFORM | yes | yes, a 15.01 export (the g flags; one block per loaded element) |
-| WIND | yes | wind: yes, a 15.01 export (type 0, shape factor; one block per element). Wave data: not yet |
-| Restraint codes 1–62 | yes | 1–9, 14, 15 |
+| WIND | yes | yes: wind in a 15.01 export (type 0, shape factor; one block per element), wave in a 15.01 probe (type 1 and all five values) |
+| Restraint codes 1–62 | yes | 1–26, every type the builder writes (a 15.01 probe) |
+| Skewed restraints (an axis type with cosines) | no | yes, a 15.01 probe (X with stiffness and gap, one-way +X, RX) |
 
 **The check against CAESAR (2026-10-22).** Pluto read the export and wrote it back byte for byte. Then the same loads were written as new blocks, with no CAESAR text to copy:
 - UNIFORM, WIND and CONTROL came out line for line as CAESAR wrote them.
 - FORCMNT held the same blocks, in element order. CAESAR had put the last element's block first; the pointers say which block is whose, so the order does not matter.
 
-Whatever no CAESAR file has shown yet is written with a `[notice ]` line from `Build-Pipe.ps1` (`CaesarNeutralWriter.Notices`). The first CAESAR import of a job with each kind confirms it: re-export from CAESAR and run `-Compare`.
+Whatever no CAESAR file has shown yet is written with a `[notice ]` line from `Build-Pipe.ps1` (`CaesarNeutralWriter.Notices`). Since the probe jobs, that is only a restraint code beyond 26 (rods, bilinear supports, springs, one-way snubbers), which the builder never writes and a workbook row can name. Its first CAESAR import confirms it: re-export from CAESAR and run `-Compare`.
 
 **Load cases are not in the neutral file.** CAESAR builds them from the load vectors (W, T1, P1, F1, D1, U1, WIN1 …) and recommends a set on import.
 
@@ -57,11 +59,11 @@ One block holds **two entries** (slots), 10 lines each, so 20 lines per block:
 | 1 | the node number, alone |
 | 2–10 | one load vector per line: FX FY FZ MX MY MZ (forces), DX DY DZ RX RY RZ (displacements); vectors 1–9 are CAESAR's F1…F9 / D1…D9 |
 
-- **An unused second slot:** node 0, then 9 lines. 11.00 jobs fill those lines with 9999.99 for displacements; the writer does the same. For forces CAESAR 15.01 writes 0, and so does the writer.
+- **An unused second slot:** node 0, then 9 lines. For displacements 11.00 jobs fill those lines with 9999.99, and so did CAESAR 15.01 with the probe's; the writer does the same. For forces CAESAR 15.01 writes 0, and so does the writer.
 - **Ownership:** the entry belongs to an element that has the node (FROM, TO or a bend node). A displacement may also sit on a node only a CNODE names. An imported entry stays in its block and slot.
 - **The model:** `PipeModelNodeLoad`: `Kind` (force | displacement), `Node`, `Vectors[9][6]`.
   - A free displacement DOF is NaN.
-  - An imposed 0 holds the DOF in that vector.
+  - An imposed 0 holds the DOF in that vector. CAESAR's Displacements list shows it as 0.0000 and a free DOF as blank.
   - A force read as 9999.99 is NaN and acts as 0.
 
 ## UNIFORM: uniform loads per length or in g's
@@ -91,6 +93,7 @@ One block is **1 line, 6 values**:
 | 3–6 | wave only: added-mass coefficient, lift coefficient, marine growth, its density |
 
 - **One block per element**, like uniform loads (`PipeModelElement.Wind`, null = none). In the 15.01 export, wind on four of six elements gave four blocks. The two without had none, and CAESAR's input screen shows their Wind / Wave box unchecked.
+- **Wave (type 1):** CAESAR's Wind / Wave list shows the five values as drag coefficient, added-mass coefficient, lift coefficient, marine growth (a length) and its density, in the job's units. Pluto keeps them as written.
 - Type 2 (off) is documented. Pluto writes no block instead, as CAESAR did.
 - The wind speed or pressure profile is in CAESAR's load-case setup, not in the neutral file.
 
@@ -117,7 +120,8 @@ CAESAR's table for the RESTRANT type field:
 | 57–62 | +XSNB, +YSNB, +ZSNB, −XSNB, −YSNB, −ZSNB |
 
 - **Which table to trust:** the guide's database-export table lists different names from 48 on (a duplicated +RX2 run, no springs). The neutral-file table above is the one for `.cii` files.
-- **What the builder and the workbook write:** the plain types, codes 1–26 (`PipeModelCodes.BuildTypes`). Rods, bilinear supports and springs need data the restraint record does not hold, so they are read and carried but not built.
+- **What the builder and the workbook write:** the plain types, codes 1–26 (`PipeModelCodes.BuildTypes`), all confirmed by CAESAR. Rods, bilinear supports and springs need data the restraint record does not hold, so they are read and carried but not built.
+- **Skewed restraints:** an axis type (X, +X, RX …) whose cosines give the direction. CAESAR shows the cosines beside the type and keeps the stiffness and gap.
 
 ## Bend radius codes
 
@@ -141,6 +145,19 @@ A bend's radius (BEND, value 1) is a plain length, or a **negative code**, a mul
   - **Compared by meaning:** a code and the plain radius it names are the same bend.
   - **No-radius codes** (2, 6–9) are drawn as corners, and the reader warns about them.
 - **The probe's re-exports differ from it in one other way:** CAESAR fills in its default insulation density (0.0067 lb/in³) where the field was blank. It changes nothing without insulation.
+
+## The probe jobs (2026-10-24)
+
+Three jobs Pluto wrote from workbooks, each holding one of every unconfirmed item. Each was imported into CAESAR 15.01, read on its input lists and exported again. `-Compare` against the re-export found only the insulation density default (below), and the sections under test came back byte for byte.
+
+| Probe | Held | CAESAR showed |
+|---|---|---|
+| Restraint codes | codes 10–13 and 16–26, one per node, between two anchors | XSNB YSNB ZSNB, +X, −X −Y −Z, +RX +RY +RZ, −RX −RY −RZ, +LIM −LIM at their nodes |
+| Skewed restraints and bend nodes | a skewed X with stiffness 50000 and gap 0.125, a skewed one-way +X (code 13), a skewed RX; a bend with its near node at angle 0 and a mid node | each type with its cosines, stiffness and gap; the bend's nodes as written |
+| Displacements and wave | D1, D2, D3 and D9 at three nodes (an imposed 0 among them), two entries in one block and one alone; wave on two elements, wind on a third | each value in its vector and DOF, 0.0000 apart from the free ones; Wave with drag, added mass, lift, marine growth and its density; Wind with its shape factor |
+
+- **The one difference:** CAESAR fills in its default insulation density (0.0067 lb/in³) where the field was blank, as with the bend-radius probes. It changes nothing without insulation.
+- **What it settles:** Pluto writes no notice for any of them now (`CaesarNeutralWriter.NoticeItems`).
 
 ## Other sections the documentation describes (carried as written)
 

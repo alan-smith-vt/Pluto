@@ -340,8 +340,8 @@ everything the model holds before CAESAR imports it. The CAESAR export (`CaesarT
 - **`review`**: the build's checks, errors first (`error | warning | notice | info`), each with the nodes,
   elements and beams it is about. Codes: `unsupported`, `tee-no-sif`, `free-end`, `element-self`,
   `element-zero`, `element-twice`, `off-model`, `cnode-off-model`, `bend-corner`, `bend-room`, `bend-code`
-  (`PipeReview.cs`); `layout-displacement`, `layout-wave`, `restraint-code`, `restraint-skew` (layouts from the
-  documentation: `CaesarNeutralWriter.NoticeItems`); `build` (the builder's or the workbook reader's
+  (`PipeReview.cs`); `restraint-code` (a code from CAESAR's documentation that no CAESAR file has shown yet:
+  `CaesarNeutralWriter.NoticeItems`); `build` (the builder's or the workbook reader's
   warnings); `export` (this export's own warnings; how the model is drawn is `info`).
 - **The exporter owns these sections.** A re-export replaces them rather than passing the previous copy
   through (`FeaturesSidecar.Sections`), so they always match the model. The viewer never edits them; they

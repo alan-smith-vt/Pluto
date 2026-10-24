@@ -258,13 +258,15 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 >   - COORDS;
 >   - the ambient field.
 > - **Confirmed by a CAESAR 15.01 export (2026-10-22):** FORCMNT, UNIFORM and WIND (wind type and shape factor), one uniform / wind block per loaded element.
-> - **From CAESAR's documentation of the neutral file; no CAESAR-written file has shown them yet.** Each is listed as a `[notice ]` line when written; check them after the first import:
->   - restraint codes beyond 1–9, 14, 15 (`+X` 13, `-X -Y -Z` 16–18, one-way rotations, `±LIM`, snubbers);
->   - wave data in WIND;
->   - DISPLMNT in 15.01's number format (its layout is confirmed by 11.00 jobs).
-> - **Written, but neither documented nor shown:**
->   - skewed restraints (X / RX with the direction's cosines), also a `[notice ]`;
->   - a bend's near node at angle 0 (`bend_nodes = "near-mid"`).
+> - **Confirmed by three probe jobs (2026-10-24)**, imported into CAESAR 15.01 and exported again unchanged:
+>   - restraint codes 10–13 and 16–26 (snubbers, `+X`, `-X -Y -Z`, one-way rotations, `±LIM`), so every type the builder writes;
+>   - skewed restraints (an axis type with the direction's cosines), with stiffness and gap, one-way too;
+>   - a bend's near node at angle 0 (`bend_nodes = "near-mid"`);
+>   - DISPLMNT in 15.01's number format;
+>   - wave data in WIND.
+>
+>   Details: [[vault/format/caesar-neutral-loads|caesar-neutral-loads]].
+> - **From CAESAR's documentation only:** restraint codes beyond 26 (rods, bilinear supports, springs, one-way snubbers). The builder does not write them; a workbook row that names one gets a `[notice ]` line.
 > - **Not written:**
 >   - hangers (CAESAR's hanger design);
 >   - nozzle flexibility (WRC 297);

@@ -12,7 +12,7 @@
 #           .pipe.json  a model saved with -Json
 #   out   -Cii      <base>.cii, the CAESAR II neutral file (+ <base>.nodes.csv for a .toml: node numbers by position).
 #                   The default for a .toml when no output is chosen. Never written over the input file. What it holds
-#                   that no CAESAR-written file has shown yet (layouts and codes from CAESAR's documentation) is listed
+#                   that no CAESAR-written file has shown yet (a restraint code from CAESAR's documentation) is listed
 #                   as "[notice ]" lines: check those in CAESAR after the import. An existing <base>.cii is replaced
 #                   only when this runner wrote it, or it is the model's own source, or nothing would change in it;
 #                   otherwise (CAESAR or someone changed it) -Force is needed. The report says whether the model is

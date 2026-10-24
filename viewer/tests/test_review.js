@@ -48,7 +48,7 @@ vm.runInThisContext(fs.readFileSync(V + 'pipe.js', 'utf8'), { filename: 'pipe.js
 const REVIEW = { version: 1, summary: '1 error(s), 1 warning(s), 1 notice(s), 1 info', items: [
   { id: 'r1', level: 'error', code: 'unsupported', text: 'nothing holds the model to ground', nodeIds: [10, 20, 30], elements: [1, 2], members: [{ domain: 'beams', ids: [100, 200, 201] }] },
   { id: 'r2', level: 'warning', code: 'tee-no-sif', text: '3 elements meet at node 20', nodeIds: [20], elements: [1, 2] },
-  { id: 'r3', level: 'notice', code: 'restraint-code', text: 'restraint type(s) +X (13) ...', nodeIds: [30] },
+  { id: 'r3', level: 'notice', code: 'restraint-code', text: 'restraint type(s) XROD (27) ...', nodeIds: [30] },
   { id: 'r4', level: 'info', code: 'build', text: 'a message with no place' }
 ] };
 const PROPS = { version: 1, units: { length: 'in.', diameter: 'in.', wall: 'in.', temperature: 'F', pressure: 'lb./sq.in.' }, items: [

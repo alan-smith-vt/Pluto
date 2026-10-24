@@ -374,9 +374,10 @@ public class PipeModelSource
     }
 }
 
-// CAESAR restraint type codes: the neutral file's table in CAESAR II's own documentation (1-62; codes 1-9,
-// 14 and 15 also seen in CAESAR-written files). Types the builder and the workbook write: the plain ones
-// (BuildTypes); rods, bilinear supports and springs need data the restraint record does not hold.
+// CAESAR restraint type codes: the neutral file's table in CAESAR II's own documentation (1-62; codes 1-26
+// confirmed by CAESAR 15.01, which showed and exported a probe job's codes as written). Types the builder and
+// the workbook write: the plain ones (BuildTypes, all confirmed); rods, bilinear supports and springs need data
+// the restraint record does not hold.
 public static class PipeModelCodes
 {
     static readonly string[] Names =
