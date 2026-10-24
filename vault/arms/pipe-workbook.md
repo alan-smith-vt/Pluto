@@ -89,7 +89,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >     - A name read back over CAESAR's code for that name keeps the code, so CAESAR gets its own file back. Any other name becomes the plain radius.
 >     - The codes were confirmed with CAESAR 15.01: [[vault/format/caesar-neutral-loads|caesar-neutral-loads]].
 >   - **Codes CAESAR reads as no radius** (−2.0202, −6.0606 … −9.0909) stay numbers, are carried as written, and show amber. Do not make a code positive: +4.0404 is a literal 4.04 radius, a different bend.
-> - **Uniform / Wind are per element.** An element no row names has none: CAESAR's file does not carry them forward.
+> - **Uniform / Wind name the elements they act on.** An element no row names has none. CAESAR carries a load forward to the elements after it, so Pluto writes a block where a load starts or changes and ends it where it stops ([[vault/decisions/2026-10-24-uniform-wind-carry-forward|carry forward]]).
 >   - **Element:**
 >     - an Id;
 >     - a range in the Elements sheet's order (`E3:E9`), including new rows between;
@@ -152,11 +152,12 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >     - a value not on its list, an unknown Section / Process, an unknown element Id or range (Uniform, Wind);
 >     - a missing From / To, From = To, a missing section on the first row;
 >     - a reducer without OD2 / Wall2, bend nodes without `angle:node`;
+>     - a bend node number used twice: on another bend, or also an element's From / To (CAESAR stops on it);
 >     - a vector outside 1–9, the same node and vector twice;
 >     - a duplicate section or process name, a cosine above 1.
 >   - **Amber** = worth a look: a node no element has (bend nodes count), a copied Id, a zero-length element.
 > - **Build it from here** (Start sheet, under the steps): links to the two launchers (relative, so they follow the folder), to Pluto's viewer page and to the folder, and the PowerShell command each launcher runs, built from `CELL("filename")` so it names the workbook where it is now (the path at write time where `CELL` gives none, e.g. in LibreOffice). Excel asks before it follows a link to a `.cmd` file; where policy stops it, double-click the file in the folder.
-> - **Start's checks** count those cells live: error values; text where a number belongs (per sheet); rows without From / To; unknown names and types; unknown element Ids; vectors outside 1–9; nodes on no element; Ids used twice. Each shows OK, check (amber) or fix (red).
+> - **Start's checks** count those cells live: error values; text where a number belongs (per sheet); rows without From / To; unknown names and types; unknown element Ids; vectors outside 1–9; nodes on no element; bend node numbers used twice; Ids used twice. Each shows OK, check (amber) or fix (red).
 > - **Kept as before:** the input sheets keep their columns, values and order, so the reader is unchanged. Start, 3D View, Nodes, Carried and the hidden sheets are never read. Only the input sheets' cells are read, so the plot's formulas never trip the "formula with no saved value" check. The workbook asks Excel to calculate everything when it opens.
 
 > [!info]- The 3D View

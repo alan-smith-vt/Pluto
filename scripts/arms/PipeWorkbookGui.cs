@@ -381,6 +381,21 @@ static class PipeWorkbookGui
         return "AND(ISNUMBER(" + at + "),COUNTIF(" + from + "," + at + ")=0,COUNTIF(" + to + "," + at + ")=0,COUNTIF(" + bendNodes + ",\"*:\"&" + at + ")=0,COUNTIF(" + bendNodes + ",\"*:\"&" + at + "&\";*\")=0)";
     }
 
+    // a bend node number used twice (red): on another bend's curve, twice on this one, or an element's From / To. at is a
+    // Bend nodes cell, or the whole column inside SUMPRODUCT; each of its 3 "angle:node" entries is taken apart without an
+    // error value (an entry with no ':' gives no node), so the same formula works per cell and per column
+    internal static string BendNodeTwice(string at, string bends, string from, string to)
+    {
+        var terms = new List<string>();
+        for (int j = 0; j < 3; j++)
+        {
+            string e = "TRIM(MID(SUBSTITUTE(SUBSTITUTE(" + at + ",\" \",\"\"),\";\",REPT(\" \",99))," + (j * 99 + 1).ToString(CultureInfo.InvariantCulture) + ",99))";
+            string n = "MID(" + e + ",FIND(\":\"," + e + "&\":\")+1,99)";
+            terms.Add("(" + n + "<>\"\")*((COUNTIF(" + bends + ",\"*:\"&" + n + ")+COUNTIF(" + bends + ",\"*:\"&" + n + "&\";*\")+COUNTIF(" + from + "," + n + ")+COUNTIF(" + to + "," + n + "))>1)");
+        }
+        return "((" + string.Join("+", terms.ToArray()) + ")>0)";
+    }
+
     // ---------------------------------------------------------------- the Start sheet
 
     internal sealed class SheetInfo

@@ -190,7 +190,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 > - `uniform = [x, y, z]` in lb/in is U1; a list of them gives U1, U2 …; `0` means none.
 > - `g_load = [x, y, z]` in g's (seismic, for example) takes the next vector after `uniform`'s. At most 9 together.
 > - `wind_shape = 0.7`: the wind shape factor; `0` means no wind on that run.
-> - Every element of the run gets its own uniform and wind block, as CAESAR writes them. The neutral file does not carry them forward, so an element without a block has none.
+> - CAESAR carries a uniform load or wind forward to every later element until another block changes it. The writer puts a block where a run's load starts or changes and ends it where it stops (a zero uniform block, an off wind block), so each run gets exactly its own ([[vault/format/caesar-neutral-loads|caesar-neutral-loads]]).
 >
 > Load cases are not in the neutral file: CAESAR builds them and recommends a set on import. The layouts and what is confirmed: [[vault/format/caesar-neutral-loads|caesar-neutral-loads]].
 
@@ -257,7 +257,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 >   - welding tees and user SIFs;
 >   - COORDS;
 >   - the ambient field.
-> - **Confirmed by a CAESAR 15.01 export (2026-10-22):** FORCMNT, UNIFORM and WIND (wind type and shape factor), one uniform / wind block per loaded element.
+> - **Confirmed by a CAESAR 15.01 export (2026-10-22):** FORCMNT, UNIFORM and WIND (wind type and shape factor). That they carry forward to later elements comes from CAESAR's user guide and error checker (2026-10-24).
 > - **Confirmed by three probe jobs (2026-10-24)**, imported into CAESAR 15.01 and exported again unchanged:
 >   - restraint codes 10–13 and 16–26 (snubbers, `+X`, `-X -Y -Z`, one-way rotations, `±LIM`), so every type the builder writes;
 >   - skewed restraints (an axis type with the direction's cosines), with stiffness and gap, one-way too;

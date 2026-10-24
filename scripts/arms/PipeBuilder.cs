@@ -18,7 +18,8 @@ using System.Text;
 //
 // Loads: [[forces]] and [[displacements]] at nodes (node, or run + at), per load vector (CAESAR's F1..F9 /
 // D1..D9); a displacement DOF not given stays free, a 0 holds it. uniform / g_load / wind_shape on a run or in
-// [defaults]: every element of the run gets its own block (CAESAR's neutral file does not carry them forward).
+// [defaults]: every element of the run carries it (CAESAR carries a block forward; the writer puts one where the
+// load starts or changes).
 //
 // Any number may be an expression string over [parameters] ("3*span + 2"); positions along a run may
 // also use L, the run's length. Build-Pipe.ps1 -Set "span=25" overrides a parameter.

@@ -21,7 +21,7 @@ using System.Text;
 //   Restraints    node, type, CNODE, stiffness (blank = rigid), gap, friction, cosines (blank = the type's), tag
 //   SIFs, Joints, Forces, Displacements (blank = free), Coords
 //   Uniform, Wind per element: a row names one element or a range of them (E3:E9, or From and To along a chain);
-//                 an element no row names has none (the neutral file does not carry them forward)
+//                 an element no row names has none (CAESAR carries a load forward: the writer ends it there)
 //   Nodes, Carried, Help    read-only: rebuilt on every export, never read
 //   Lists (hidden), _pluto (veryHidden: the base model as exact JSON and its hash)
 // Reading: every row with an Id is that item of the base model, every row without one a new item, every base
@@ -335,6 +335,7 @@ public static class PipeWorkbook
             PipeWorkbookGui.Rule(el, "H2:I2", "AND(H2=\"\",$B2<>\"\")", t.Red);
             PipeWorkbookGui.Rule(el, "N2:O" + L, "AND($G2=\"Reducer\",N2=\"\")", t.Red);
             PipeWorkbookGui.Rule(el, "K2:K" + L, "AND(K2<>\"\",ISERROR(FIND(\":\",K2)))", t.Red);
+            PipeWorkbookGui.Rule(el, "K2:K" + L, "AND(K2<>\"\"," + PipeWorkbookGui.BendNodeTwice("K2", "$K$2:$K$" + L, "$B$2:$B$" + L, "$C$2:$C$" + L) + ")", t.Red);
             PipeWorkbookGui.Rule(el, "J2:J" + L, PipeWorkbookGui.NoRadiusRule("J2"), t.Amber);
             PipeWorkbookGui.Rule(el, "D2:F" + L, "AND(ISNUMBER($B2),N($D2)=0,N($E2)=0,N($F2)=0,ISNUMBER($D2)+ISNUMBER($E2)+ISNUMBER($F2)+($D2=\"\")+($E2=\"\")+($F2=\"\")>=3)", t.Amber);
         }
@@ -606,6 +607,8 @@ public static class PipeWorkbook
                 "<>\"\")*ISERROR(FIND(\":\",Wind!$A$2:$A$" + L2 + "))*(COUNTIF(" + col("A") + ",Wind!$A$2:$A$" + L2 + ")=0))", false),
             new PipeWorkbookGui.Check("Restraints, SIFs, loads: nodes on no element's From / To (bend nodes are fine)",
                 missingNodes("Restraints", "B") + "+" + missingNodes("SIFs", "B") + "+" + missingNodes("Forces", "B") + "+" + missingNodes("Displacements", "B"), true),
+            new PipeWorkbookGui.Check("Elements: a bend node number used twice (on two bends, or also a From / To): CAESAR stops on it",
+                "SUMPRODUCT(--" + PipeWorkbookGui.BendNodeTwice(col("K"), nBend, nFrom, nTo) + ")", false),
             new PipeWorkbookGui.Check("Ids used twice (a copied row is read as a new item)",
                 "SUMPRODUCT((" + col("A") + "<>\"\")*(COUNTIF(" + col("A") + "," + col("A") + ")>1))+SUMPRODUCT((Restraints!$A$2:$A$" + L2 + "<>\"\")*(COUNTIF(Restraints!$A$2:$A$" + L2 + ",Restraints!$A$2:$A$" + L2 + ")>1))", true),
         };
@@ -617,7 +620,7 @@ public static class PipeWorkbook
             "Bend radius by name: LR or Long (1.5 x nominal), SR or Short (1 x), 3D, 5D. A radius CAESAR wrote by name shows its name and is written back as CAESAR's code. A negative number (-2.0202, -6.0606 ...) is a code CAESAR reads as no radius (amber): keep it or replace it.",
             "Section / Process: a name from those sheets; blank = the row above's. The grouped columns at the right of Elements (+) override one value for one element.",
             "Restraints: Stiffness blank = rigid; Cos blank = the type's own axis (guides and limit stops take the pipe's). Forces / Displacements: one row per node and load vector (1-9); a displacement left blank is free, 0 holds it.",
-            "Uniform / Wind: per element; an element no row names has none (CAESAR's file does not carry them forward). Element = an Id, a range in the Elements order (E3:E9), or blank with From and To (a chain of elements).",
+            "Uniform / Wind: per element; an element no row names has none (CAESAR carries a load on to later elements; Pluto ends it there). Element = an Id, a range in the Elements order (E3:E9), or blank with From and To (a chain of elements).",
             "Joints: DOFs like 'axial gap=0.125 k=5000; shear; torsion; bending gap=2' (frame pipe) or 'X; Y; RZ k=1e6' (frame global); a DOF not listed is free.",
             "Read back: only the input sheets. Start, 3D View, Nodes and Carried are rebuilt on every export. The hidden _pluto sheet holds the model this workbook was written from: what you did not change is given back exactly.",
         };

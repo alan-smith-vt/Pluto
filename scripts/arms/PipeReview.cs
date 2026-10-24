@@ -23,6 +23,8 @@ using System.Text;
 //   bend-corner     a bend drawn as a corner (CAESAR's geometry rules leave no room, or no radius)
 //   bend-room       a bend's tangent reaches past the start of its element (it overlaps the run before it)
 //   bend-code       a bend radius code CAESAR reads as no radius
+//   node-twice      a node on a bend's curve that is also on another bend's, or an element end: two points, one number
+//   uniform-mixed   an element's uniform loads mix g's and force per length (CAESAR's error checker warns)
 // plus CaesarNeutralWriter.NoticeItems (layouts and codes from the documentation) and any messages the caller adds
 // (the build's warnings, the preview's own).
 
@@ -221,6 +223,50 @@ public static class PipeReview
                 items.Add(new PipeReviewItem("warning", "bend-code", string.Format(ci,
                     "the bend at node {0} has radius {1}, CAESAR's code {2}, which CAESAR reads as no radius (0): give LR, SR, 3D, 5D or a length", e.To, e.Bend.Radius, code))
                     .WithNodes(new[] { e.To }).WithElements(new[] { i + 1 }));
+        }
+
+        // a node on a bend's curve is a point of its own: on two bends, or also an element end, it names two points
+        var onBends = new SortedDictionary<int, List<int>>();
+        for (int i = 0; i < ne; i++)
+        {
+            var e = m.Elements[i];
+            if (e.Bend == null) continue;
+            foreach (var an in e.Bend.AngleNodes)
+            {
+                if (an.Length < 2 || an[1] <= 0) continue;
+                int n = (int)Math.Round(an[1]);
+                List<int> l;
+                if (!onBends.TryGetValue(n, out l)) onBends[n] = l = new List<int>();
+                l.Add(i + 1);
+            }
+        }
+        Func<int, string> en = k => m.Elements[k - 1].From + "-" + m.Elements[k - 1].To;
+        foreach (var kv in onBends)
+        {
+            var bends = kv.Value;
+            List<int> endOf;
+            elementsAt.TryGetValue(kv.Key, out endOf);
+            if (bends.Count < 2 && endOf == null) continue;
+            var distinct = bends.Distinct().ToList();
+            string where = distinct.Count > 1 ? "on the curves of " + distinct.Count + " bends (elements " + string.Join(", ", distinct.Select(en).ToArray()) + ")"
+                         : bends.Count > 1 ? "twice on the curve of the bend on element " + en(bends[0])
+                         : "on the curve of the bend on element " + en(bends[0]);
+            if (endOf != null) where += " and is also an end of element" + (endOf.Count == 1 ? " " : "s ") + string.Join(", ", endOf.Select(en).ToArray());
+            items.Add(new PipeReviewItem("error", "node-twice",
+                "node " + kv.Key + " is " + where + ": a node number names one point, so give each a number of its own (CAESAR stops on it: a node on the curvature of two different bends)")
+                .WithNodes(new[] { kv.Key }).WithElements(distinct.Concat(endOf ?? new List<int>())));
+        }
+
+        // uniform loads mixing g's and force per length on one element (CAESAR's error checker warns)
+        var mixed = Enumerable.Range(0, ne).Where(i => m.Elements[i].Uniform != null && m.Elements[i].Uniform.Mixed()).ToList();
+        if (mixed.Count > 0)
+        {
+            var u = m.Elements[mixed[0]].Uniform;
+            var vs = Enumerable.Range(0, 9).Where(u.Used).Select(v => "U" + (v + 1) + (u.G[v] ? " in g's" : " per length")).ToArray();
+            items.Add(new PipeReviewItem("warning", "uniform-mixed",
+                "uniform loads on " + mixed.Count + " element" + (mixed.Count == 1 ? "" : "s") + " (from " + en(mixed[0] + 1) + ") mix g's and force per length (" + string.Join(", ", vs) +
+                "): CAESAR warns that both uniform load types are used; check each vector's In g's")
+                .WithElements(mixed.Take(ListMax).Select(i => i + 1)));
         }
 
         items.AddRange(CaesarNeutralWriter.NoticeItems(m));

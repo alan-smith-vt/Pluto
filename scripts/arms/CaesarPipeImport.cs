@@ -278,6 +278,21 @@ public static class CaesarPipeImport
             m.Elements.Add(e);
         }
 
+        // uniform loads and wind carry forward (CAESAR's input: a block acts on its element and every later one until
+        // another changes it): an element without a block gets a copy of the load on the element before it. After a
+        // block in a layout the model does not read, what acts is unknown: nothing is carried from it.
+        PipeModelUniform lastU = null;
+        PipeModelWind lastW = null;
+        foreach (var e in m.Elements)
+        {
+            if (e.Uniform != null) lastU = e.Uniform;
+            else if (e.Carried.ContainsKey("UNIFORM")) lastU = null;
+            else if (!PipeModelUniform.IsNone(lastU)) e.Uniform = lastU.Carry();
+            if (e.Wind != null) lastW = e.Wind;
+            else if (e.Carried.ContainsKey("WIND")) lastW = null;
+            else if (!PipeModelWind.IsNone(lastW)) e.Wind = lastW.Carry();
+        }
+
         // restraints, SIF / tees, displacements: their slots as written and the element block that held them
         int rsl = cm.LinesPerBlock.ContainsKey("RESTRANT/slot") ? cm.LinesPerBlock["RESTRANT/slot"] : 4;
         foreach (var cr in cm.Restraints)

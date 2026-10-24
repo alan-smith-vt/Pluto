@@ -20,8 +20,8 @@ How the `.cii` holds applied loads (forces and moments, imposed displacements, u
 |---|---|---|
 | DISPLMNT | yes | yes: 11.00 jobs (layout and the 9999.99 mark), and a 15.01 probe (15.01's number format, the unused slot) |
 | FORCMNT | yes | yes, a 15.01 export (layout, and the unused slot as node 0 and zeros) |
-| UNIFORM | yes | yes, a 15.01 export (the g flags; one block per loaded element) |
-| WIND | yes | yes: wind in a 15.01 export (type 0, shape factor; one block per element), wave in a 15.01 probe (type 1 and all five values) |
+| UNIFORM | yes | yes, a 15.01 export (the g flags). Carried forward to later elements: CAESAR's user guide and error checker |
+| WIND | yes | yes: wind in a 15.01 export (type 0, shape factor), wave in a 15.01 probe (type 1 and all five values). Carried forward like uniform loads |
 | Restraint codes 1–62 | yes | 1–26, every type the builder writes (a 15.01 probe) |
 | Skewed restraints (an axis type with cosines) | no | yes, a 15.01 probe (X with stiffness and gap, one-way +X, RX) |
 
@@ -76,11 +76,12 @@ One block is **6 lines, 36 values in order**: 9 vectors × (UX, UY, UZ, g flag).
 | 2 | U2z g2 U3x U3y U3z g3 |
 | 3–6 | the same pattern through U9 |
 
-- **One block per loaded element.** Every element the load acts on has its own block, with the same values when a whole line is loaded. An element without a block has none: **the file does not carry loads forward.**
-  - The 15.01 export shows it. Four vectors on five elements were written as five identical blocks. The sixth element had no block, and CAESAR's input screen shows its Uniform Loads box unchecked.
-  - The model keeps each element's own load (`PipeModelElement.Uniform`, null = none).
-- **Removing a load:** the element's block goes (its pointer is 0).
-- **The global switch:** line 2 of MISCEL_1's execution options starts with a "uniform loads in g's" switch (0 or 1). It is carried as written; the per-vector flag is what the model edits.
+- **A block carries forward.** It acts on its element and on every later element (input order) until another block changes it; a block of zeros ends it. CAESAR's user guide says so for the Uniform Loads tab, and its error checker notes it (166E: four consecutive elements with uniform loads defined, "you do not need to do this"). The element's Uniform Loads box marks where a load is defined, not where it acts. Decision: [[vault/decisions/2026-10-24-uniform-wind-carry-forward|2026-10-24-uniform-wind-carry-forward]].
+  - **Corrected 2026-10-24.** The 15.01 export of 2026-10-22 had blocks on five elements and none on the sixth, whose box was unchecked. That was read as "one block per element, no carry-forward"; in CAESAR the sixth element carries the fifth's load.
+- **How Pluto reads it:** an element without a block gets a copy of the load before it, so the model holds what acts on each element (`PipeModelElement.Uniform`, null = none; a carried copy has no raw lines).
+- **How Pluto writes it:** a block where the load starts or changes, a zero block where it stops. An imported job's own blocks stay where they were while unedited; an edited one that only repeats the load before it is dropped.
+- **The g flags:** one per vector. A new or edited block gives its unused vectors the flag its used vectors share. With the unused vectors at 0 behind g loads, CAESAR's error checker reported both kinds on one element (246E); a job that really mixes g's and force per length on one element gets the `uniform-mixed` warning.
+- **The global switch:** line 2 of MISCEL_1's execution options starts with a "uniform loads in g's" switch (0 or 1): the default for each vector in CAESAR's input. It is carried as written; the per-vector flag is what the model edits.
 
 ## WIND: wind and wave data
 
@@ -92,9 +93,9 @@ One block is **1 line, 6 values**:
 | 2 | wind shape factor (wave: drag coefficient) |
 | 3–6 | wave only: added-mass coefficient, lift coefficient, marine growth, its density |
 
-- **One block per element**, like uniform loads (`PipeModelElement.Wind`, null = none). In the 15.01 export, wind on four of six elements gave four blocks. The two without had none, and CAESAR's input screen shows their Wind / Wave box unchecked.
+- **Carried forward like uniform loads** (`PipeModelElement.Wind`, null = none): CAESAR's user guide says the shape factor applies to every later element, and a 0 disables it. Pluto ends wind with a type 2 (off) block where it stops.
 - **Wave (type 1):** CAESAR's Wind / Wave list shows the five values as drag coefficient, added-mass coefficient, lift coefficient, marine growth (a length) and its density, in the job's units. Pluto keeps them as written.
-- Type 2 (off) is documented. Pluto writes no block instead, as CAESAR did.
+- Type 2 (off) is documented; a shape factor of 0 also means no wind. A probe job (2026-10-24) checks the off block in CAESAR.
 - The wind speed or pressure profile is in CAESAR's load-case setup, not in the neutral file.
 
 ## OFFSETS (not a load)

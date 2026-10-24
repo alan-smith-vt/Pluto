@@ -87,7 +87,7 @@ public static class PipeSidecar
         string thk = Label(cm, CaesarUnits.Wall), dens = Label(cm, CaesarUnits.FluidDensity);
         added += ByValue(sc, pm, elementBeams, used, e => e.Insulation, v => "Insulation " + Nice(v) + (thk.Length > 0 ? " " + thk : ""), "insulation", true);
         added += ByValue(sc, pm, elementBeams, used, e => e.FluidDensity, v => "Fluid " + Nice(v) + (dens.Length > 0 ? " " + dens : ""), "fluid", true);
-        added += ByValue(sc, pm, elementBeams, used, e => e.Wind != null && e.Wind.Type != 2 ? e.Wind.Shape : 0,
+        added += ByValue(sc, pm, elementBeams, used, e => !PipeModelWind.IsNone(e.Wind) ? e.Wind.Shape : 0,
                          v => "Wind shape " + Nice(v), "wind", true);
         return added;
     }
@@ -292,7 +292,7 @@ public static class PipeSidecar
             while (i < n)
             {
                 var e = pm.Elements[i];
-                bool has = pass == 0 ? e.Uniform != null && Enumerable.Range(0, 9).Any(k => e.Uniform.Used(k)) : e.Wind != null && e.Wind.Type != 2;
+                bool has = pass == 0 ? !PipeModelUniform.IsNone(e.Uniform) : !PipeModelWind.IsNone(e.Wind);
                 if (!has) { i++; continue; }
                 int j = i + 1;
                 while (j < n && (pass == 0 ? pm.Elements[j].Uniform != null && pm.Elements[j].Uniform.SameAs(e.Uniform) : pm.Elements[j].Wind != null && pm.Elements[j].Wind.SameAs(e.Wind))

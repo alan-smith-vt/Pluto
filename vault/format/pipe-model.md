@@ -49,7 +49,7 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 > |---|---|---|
 > | Owned by an element | BEND, RIGID, EXPJT, REDUCERS | read into the model; raw lines overlaid |
 > | Carried with an element | OFFSETS, ALLOWBLS, NODENAME, FLANGES, EQUIPMNT; a load block in a layout the model does not know | not read; travel with their element as written (`CaesarNeutralWriter.CarriedSections`) |
-> | Owned by an element, one block per loaded element | UNIFORM, WIND | read into the model (`Uniform`, `Wind`); raw lines overlaid. The file does not carry them forward |
+> | Owned by an element, carried forward | UNIFORM, WIND | read into the model (`Uniform`, `Wind`) as what acts on each element: an element without a block carries the one before. Written where the load starts or changes; raw lines overlaid |
 > | Tied to a node, in slots | RESTRANT (6 per block), SIF&TEES (2), DISPLMNT (2), FORCMNT (2) | each item knows its owner element and slot |
 >
 > - **Block numbers:** each block keeps its number in the source (`Seq`). CAESAR numbers them in its own order, not element order, so the writer orders a section's blocks by `Seq`, then element order; a new block goes after them. The pointers in the element records follow.

@@ -36,7 +36,8 @@ using System.Text;
 //             documented layout; FORCMNT confirmed by a 15.01 export, DISPLMNT seen in 11.00 jobs.
 //   UNIFORM   6 lines, 36 values in order: 9 vectors x (UX UY UZ, 1 = in g's / 0 = force per length)
 //   WIND      1 line: TYPE (0 wind, 1 wave, 2 off) SHAPE-FACTOR (wave: drag) ADDED-MASS LIFT MARINE-GROWTH DENSITY
-//             (UNIFORM and WIND confirmed by a 15.01 export, wind only: the wave fields are documented, not seen)
+//             (UNIFORM and WIND confirmed by 15.01 exports). A new block's unused vectors take the g flag its used
+//             vectors share, so CAESAR does not read a block of g loads as mixing g's and force per length.
 //   REDUCERS  2 lines: OD2 WALL2 ALPHA R1 R2 / 0 x5
 //   MISCEL_1  one material number per element (6 per line), then 4 execution-option lines; the ambient
 //             temperature is line 2 field 3.
@@ -44,7 +45,8 @@ using System.Text;
 //   COORDS    count, then NODE X Y Z (ft) per segment start.
 // Restraints, SIF/tee entries, forces and displacements go to an element that has the node as its FROM or TO
 // (6 / 2 / 2 / 2 per element block); a node with more than its elements can hold is an error. Uniform loads
-// and wind: one block on every element they act on (the file does not carry them forward).
+// and wind carry forward in CAESAR (a block acts on its element and every later one until another changes it):
+// a block where the load starts or changes, a zero block (uniform) or an "off" block (wind) where it stops.
 //
 // Overlay and carry (a model imported from a .cii, PipeModel.Source): every record, block and slot the model
 // carries as written is given back from its own lines, with only the fields that CHANGED rewritten in their
@@ -269,6 +271,8 @@ public static class CaesarNeutralWriter
         public Dictionary<string, int[]> Ptr = new Dictionary<string, int[]>();
         public Dictionary<string, List<int>> BlockOrder = new Dictionary<string, List<int>>();   // section -> element indices in pointer order
         public List<string> DefaultAllowables;   // written on element 0 when no element carries an allowables block
+        public PipeModelUniform[] UniformOut;    // per element: the UNIFORM block it writes (null = none: carried on)
+        public PipeModelWind[] WindOut;          // per element: the WIND block it writes
     }
 
     public static List<string> ToLines(PipeModel m)
@@ -303,6 +307,8 @@ public static class CaesarNeutralWriter
         if (m.Forces.Any() && m.Elements.Any(e => e.Carried.ContainsKey("FORCMNT")))
             throw new InvalidOperationException("CaesarNeutralWriter: the source's FORCMNT blocks are in a layout the model does not read, so forces cannot be added: re-export the job from CAESAR 15.01 first");
         p.ForceSlots = AssignSlots(m, m.Forces.Select(x => new SlotItem { Item = x, Node = x.Node, OwnerUid = x.OwnerUid, Slot = x.Slot, AnyNode = true }).ToList(), p.ForcePer, touching, "force / moment entries");
+
+        CarryPlan(p);
 
         // block numbering per section: CAESAR's own numbers (Seq) first, new blocks after, in element order
         p.DefaultAllowables = DefaultAllowables(m);
@@ -375,11 +381,11 @@ public static class CaesarNeutralWriter
                 if (e.Carried.TryGetValue(s, out b)) { seq = b.Seq; return true; }
                 if (p.ForceSlots[i] == null) return false; if (e.SlotBlocks.TryGetValue(s, out b)) seq = b.Seq; return true;
             case "UNIFORM":
-                if (e.Uniform != null) { seq = e.Uniform.Seq; return true; }
+                if (p.UniformOut[i] != null) { seq = p.UniformOut[i].Seq; return true; }
                 if (e.Carried.TryGetValue(s, out b)) { seq = b.Seq; return true; }
                 return false;
             case "WIND":
-                if (e.Wind != null) { seq = e.Wind.Seq; return true; }
+                if (p.WindOut[i] != null) { seq = p.WindOut[i].Seq; return true; }
                 if (e.Carried.TryGetValue(s, out b)) { seq = b.Seq; return true; }
                 return false;
             case "ALLOWBLS":
@@ -806,19 +812,73 @@ public static class CaesarNeutralWriter
         return n;
     }
 
+    // Which elements write a UNIFORM / WIND block, CAESAR carrying each forward: an element's own imported block stays
+    // where it was while unedited (or still needed); otherwise a block where the load acting differs from the one
+    // before it (in element order), a zero / off block where it stops. After a block in a layout the model does not
+    // read, an element with no load of its own writes nothing (what CAESAR carries there is the source's).
+    static void CarryPlan(Plan p)
+    {
+        var m = p.M;
+        int ne = m.Elements.Count;
+        p.UniformOut = new PipeModelUniform[ne];
+        p.WindOut = new PipeModelWind[ne];
+        PipeModelUniform pu = null;
+        PipeModelWind pw = null;
+        bool unknownU = false, unknownW = false;
+        for (int i = 0; i < ne; i++)
+        {
+            var e = m.Elements[i];
+            var u = e.Uniform;
+            if (u == null && e.Carried.ContainsKey("UNIFORM")) { unknownU = true; pu = null; }
+            else if (u != null && u.Raw != null && (!Edited(u) || !PipeModelUniform.Same(u, pu))) { p.UniformOut[i] = u; pu = u; unknownU = false; }
+            else if (unknownU && PipeModelUniform.IsNone(u)) { }
+            else
+            {
+                if (!PipeModelUniform.Same(u, pu)) p.UniformOut[i] = PipeModelUniform.IsNone(u) ? StopUniform(pu) : u;
+                pu = u; unknownU = false;
+            }
+            var x = e.Wind;
+            if (x == null && e.Carried.ContainsKey("WIND")) { unknownW = true; pw = null; }
+            else if (x != null && x.Raw != null && (!Edited(x) || !PipeModelWind.Same(x, pw))) { p.WindOut[i] = x; pw = x; unknownW = false; }
+            else if (unknownW && PipeModelWind.IsNone(x)) { }
+            else
+            {
+                if (!PipeModelWind.Same(x, pw)) p.WindOut[i] = PipeModelWind.IsNone(x) ? (x ?? new PipeModelWind { Type = 2 }) : x;
+                pw = x; unknownW = false;
+            }
+        }
+    }
+
+    // an imported block whose values the model has changed
+    static bool Edited(PipeModelUniform u) { return u.Raw == null || u.Raw.Count != 6 || !u.SameAs(CaesarPipeImport.Uniform(u.Raw)); }
+    static bool Edited(PipeModelWind x) { return x.Raw == null || x.Raw.Count != 1 || !x.SameAs(CaesarPipeImport.Wind(x.Raw)); }
+
+    // a zero block ending a carried load: every g flag the one its used vectors share (as written when they mix)
+    static PipeModelUniform StopUniform(PipeModelUniform before)
+    {
+        var z = new PipeModelUniform();
+        if (before == null) return z;
+        var used = Enumerable.Range(0, 9).Where(before.Used).ToList();
+        bool one = used.Count > 0 && used.All(v => before.G[v] == before.G[used[0]]);
+        for (int v = 0; v < 9; v++) z.G[v] = one ? before.G[used[0]] : before.G[v];
+        return z;
+    }
+
     static void WriteUniform(Plan p, List<string> w)
     {
         foreach (int i in p.BlockOrder["UNIFORM"])
         {
             var e = p.M.Elements[i];
             PipeModelBlock carried;
-            if (e.Uniform == null && e.Carried.TryGetValue("UNIFORM", out carried)) { w.AddRange(carried.Lines); continue; }
-            var u = e.Uniform;
+            var u = p.UniformOut[i];
+            if (u == null && e.Carried.TryGetValue("UNIFORM", out carried)) { w.AddRange(carried.Lines); continue; }
             var vals = new double[36];
+            var used = Enumerable.Range(0, 9).Where(u.Used).ToList();
+            bool fill = Edited(u) && used.Count > 0 && used.All(v => u.G[v] == u.G[used[0]]);   // a new or edited block: unused vectors take the used ones' flag
             for (int v = 0; v < 9; v++)
             {
                 for (int k = 0; k < 3; k++) vals[4 * v + k] = u.Vectors[v][k];
-                vals[4 * v + 3] = u.G[v] ? 1 : 0;
+                vals[4 * v + 3] = (fill && !u.Used(v) ? u.G[used[0]] : u.G[v]) ? 1 : 0;
             }
             if (u.Raw != null && u.Raw.Count == 6)
             {
@@ -837,8 +897,8 @@ public static class CaesarNeutralWriter
         {
             var e = p.M.Elements[i];
             PipeModelBlock carried;
-            if (e.Wind == null && e.Carried.TryGetValue("WIND", out carried)) { w.AddRange(carried.Lines); continue; }
-            var x = e.Wind;
+            var x = p.WindOut[i];
+            if (x == null && e.Carried.TryGetValue("WIND", out carried)) { w.AddRange(carried.Lines); continue; }
             double[] v = { x.Type, x.Shape, x.AddedMass, x.Lift, x.MarineGrowth, x.MarineGrowthDensity };
             if (x.Raw != null && x.Raw.Count == 1)
             {

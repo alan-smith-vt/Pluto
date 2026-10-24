@@ -16,7 +16,8 @@
 #                   as "[notice ]" lines: check those in CAESAR after the import. An existing <base>.cii is replaced
 #                   only when this runner wrote it, or it is the model's own source, or nothing would change in it;
 #                   otherwise (CAESAR or someone changed it) -Force is needed. The report says whether the model is
-#                   the one you previewed ("[review ]").
+#                   the one you previewed ("[review ]"). The model's checks follow ("[checks ]": the errors CAESAR's
+#                   error checker stops on and the warnings, as the viewer's Checks panel lists them).
 #         -Xlsx     <base>.xlsx, the model as a workbook to edit (never written over the input), with two launchers beside
 #                   it that the Start sheet links to: "<base> - preview.cmd" (-Preview -Watch) and "<base> - cii.cmd"
 #                   (-Cii -Preview); -NewWorkbook writes them too (PipeWorkbookRun)
@@ -190,7 +191,7 @@ function Check-Target($model, $base) {
 # ---- one build: read the input, write the chosen outputs; throws on an input that does not build ----
 function Build-Once {
     $script:sw.Reset(); $script:sw.Start()
-    $r = @{ build = "null"; seed = $null; compare = "null"; notices = @(); preview = "null"; review = $null }
+    $r = @{ build = "null"; seed = $null; compare = "null"; notices = @(); preview = "null"; review = $null; checks = $null }
     $base = $null; $csv = $null
     $script:buildWarnings = New-Object System.Collections.Generic.List[string]   # the build's warnings, for the preview's Checks panel
     if ($kind -eq "toml") {
@@ -230,6 +231,14 @@ function Build-Once {
         if ($csv) { [IO.File]::WriteAllText($csvFile, $csv, (New-Object Text.UTF8Encoding($false))); Say "write" ("{0}: node numbers by run and position" -f $csvFile) }
         $r.notices = @([CaesarNeutralWriter]::Notices($model))
         foreach ($n in $r.notices) { Say "notice" $n }
+        # the checks the preview's Checks panel lists, so the direct path catches what CAESAR's error checker would stop on
+        $cmW = [CaesarNeutralReader]::ParseText([CaesarNeutralWriter]::ToText($model))
+        $gW = $null
+        try { $gW = [CaesarGeometry]::Build($cmW) } catch { }
+        $checks = [PipeReview]::Check($model, $gW, $cmW)
+        foreach ($c in $checks) { if ($c.Level -eq "error" -or $c.Level -eq "warning") { Say "checks" ($c.Level + ": " + $c.Text) } }
+        $r.checks = [PipeReview]::Summary($checks)
+        Say "checks" $r.checks
         $st = Read-Stamp
         if ($st -and $st.preview -and $st.preview.model) {
             $when = $st.preview.written
@@ -288,6 +297,7 @@ function Build-Once {
     $res += ",""json"":" + $(if ($Json) { Q $jsonFile } else { "null" })
     $res += ",""review"":" + (Q $r.review)
     $res += ",""notices"":[" + (($r.notices | ForEach-Object { Q $_ }) -join ",") + "]"
+    $res += ",""checks"":" + (Q $r.checks)
     $res += ",""seed"":" + (Q $r.seed) + ",""build"":" + $r.build + ",""compare"":" + $r.compare + ",""preview"":" + $r.preview + "}"
     return $res
 }

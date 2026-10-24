@@ -334,12 +334,13 @@ everything the model holds before CAESAR imports it. The CAESAR export (`CaesarT
   `wind`.
 - **`loads`**: forces / moments and imposed displacements per node (vectors F1–F9 / D1–D9, six values each;
   a free displacement DOF is `null`, an imposed 0 holds it). Uniform loads and wind per run of consecutive
-  elements with the same values (U1–U9 with the g flag; wind type and shape factor). Only vectors that carry
+  elements with the same values acting (a load CAESAR carries forward included) (U1–U9 with the g flag; wind type and shape factor). Only vectors that carry
   something are written. **Load cases are not in the model**: CAESAR builds them. Wind's direction and
   speed are in CAESAR's load cases too, so the viewer asks which way to draw it.
 - **`review`**: the build's checks, errors first (`error | warning | notice | info`), each with the nodes,
   elements and beams it is about. Codes: `unsupported`, `tee-no-sif`, `free-end`, `element-self`,
-  `element-zero`, `element-twice`, `off-model`, `cnode-off-model`, `bend-corner`, `bend-room`, `bend-code`
+  `element-zero`, `element-twice`, `off-model`, `cnode-off-model`, `bend-corner`, `bend-room`, `bend-code`,
+  `node-twice`, `uniform-mixed`
   (`PipeReview.cs`); `restraint-code` (a code from CAESAR's documentation that no CAESAR file has shown yet:
   `CaesarNeutralWriter.NoticeItems`); `build` (the builder's or the workbook reader's
   warnings); `export` (this export's own warnings; how the model is drawn is `info`).

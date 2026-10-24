@@ -94,8 +94,8 @@ public class PipeModelElement
     public PipeModelRigid Rigid;
     public PipeModelExpJoint ExpJoint;
     public PipeModelReducer Reducer;
-    public PipeModelUniform Uniform;                  // uniform loads on this element (null = none)
-    public PipeModelWind Wind;                        // wind / wave data on this element (null = none)
+    public PipeModelUniform Uniform;                  // uniform loads acting on this element (null = none); CAESAR carries
+    public PipeModelWind Wind;                        // them forward, so an element's may come from a block before it (Raw null)
     public string Kind = "pipe";                      // for summaries: pipe, bend, valve, flange, ...
     public List<string> Raw;                          // the record as written (import); null = new
     // blocks this element owns and the model does not read (OFFSETS ALLOWBLS NODENAME FLANGES EQUIPMNT, and a
@@ -272,7 +272,10 @@ public class PipeModelNodeLoad
 }
 
 // Uniform loads on an element (UNIFORM): 9 vectors (CAESAR's U1..U9) of UX UY UZ, each in force per length
-// (job units) or in g's (G). A run of loaded elements has one block per element, the same values in each.
+// (job units) or in g's (G). The model holds what acts on each element. CAESAR carries a block forward: it acts on
+// its element and on every later one (input order) until another block changes it, a zero block ending it. The
+// import gives an element without a block a copy of the load before it (Raw null); the writer puts a block only
+// where the load starts or changes, and a zero block where it stops.
 public class PipeModelUniform
 {
     public readonly double[][] Vectors = new double[9][];
@@ -283,6 +286,31 @@ public class PipeModelUniform
     public PipeModelUniform() { for (int v = 0; v < 9; v++) Vectors[v] = new double[3]; }
 
     public bool Used(int v) { return Vectors[v][0] != 0 || Vectors[v][1] != 0 || Vectors[v][2] != 0; }
+
+    // no load: no block, or a block with every vector zero (CAESAR's way to end a carried load)
+    public static bool IsNone(PipeModelUniform u) { return u == null || Enumerable.Range(0, 9).All(v => !u.Used(v)); }
+
+    // the same load acting (none is none however it is written)
+    public static bool Same(PipeModelUniform a, PipeModelUniform b)
+    {
+        bool na = IsNone(a), nb = IsNone(b);
+        return na || nb ? na == nb : a.SameAs(b);
+    }
+
+    // a copy for an element the load is carried onto (no block of its own)
+    public PipeModelUniform Carry()
+    {
+        var c = new PipeModelUniform();
+        for (int v = 0; v < 9; v++) { Array.Copy(Vectors[v], c.Vectors[v], 3); c.G[v] = G[v]; }
+        return c;
+    }
+
+    // g's or force per length: true when the used vectors mix them (CAESAR's error checker warns)
+    public bool Mixed()
+    {
+        var used = Enumerable.Range(0, 9).Where(Used).ToList();
+        return used.Any(v => G[v]) && used.Any(v => !G[v]);
+    }
 
     public bool SameAs(PipeModelUniform o)
     {
@@ -296,7 +324,8 @@ public class PipeModelUniform
     }
 }
 
-// Wind / wave data on an element (WIND), one block per element like uniform loads.
+// Wind / wave data on an element (WIND), carried forward like uniform loads: an "off" block (type 2) ends it.
+// CAESAR's input also ends wind with a shape factor of 0.
 public class PipeModelWind
 {
     public int Type;                          // 0 wind, 1 wave, 2 off
@@ -309,6 +338,19 @@ public class PipeModelWind
     {
         return o != null && Type == o.Type && Shape == o.Shape && AddedMass == o.AddedMass && Lift == o.Lift &&
                MarineGrowth == o.MarineGrowth && MarineGrowthDensity == o.MarineGrowthDensity;
+    }
+
+    public static bool IsNone(PipeModelWind x) { return x == null || x.Type == 2 || (x.Type == 0 && x.Shape == 0); }
+
+    public static bool Same(PipeModelWind a, PipeModelWind b)
+    {
+        bool na = IsNone(a), nb = IsNone(b);
+        return na || nb ? na == nb : a.SameAs(b);
+    }
+
+    public PipeModelWind Carry()
+    {
+        return new PipeModelWind { Type = Type, Shape = Shape, AddedMass = AddedMass, Lift = Lift, MarineGrowth = MarineGrowth, MarineGrowthDensity = MarineGrowthDensity };
     }
 
     public static string TypeName(int t) { return t == 0 ? "wind" : t == 1 ? "wave" : t == 2 ? "off" : "type " + t.ToString(System.Globalization.CultureInfo.InvariantCulture); }

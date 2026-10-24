@@ -215,7 +215,7 @@ public static class CaesarCompare
 
     static string WKey(PipeModelWind x)
     {
-        if (x == null || x.Type == 2) return "";
+        if (PipeModelWind.IsNone(x)) return "";
         return PipeModelWind.TypeName(x.Type) + " " + G(x.Shape) + (x.Type == 1 ? " added mass " + G(x.AddedMass) + " lift " + G(x.Lift) + " growth " + G(x.MarineGrowth) + "/" + G(x.MarineGrowthDensity) : "");
     }
 
