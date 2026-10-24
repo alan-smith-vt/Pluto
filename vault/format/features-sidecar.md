@@ -244,7 +244,7 @@ or by hand. Decision: [[vault/decisions/2026-10-03-imported-restraints|2026-10-0
 - **`restraints`** (optional, written by an exporter that knows them): one entry per restraint
   at the node.
   - `type`: the program's own code (`ANC`, `+Y`, `GUI`, `LIM`, `RX` …).
-  - `kind`: `anchor | translation | oneway | guide | limit | rotation | hanger | imposed | other`.
+  - `kind`: `anchor | translation | oneway | guide | limit | rotation | hanger | nozzle | imposed | other`.
   - `direction`: unit vector the restraint acts along. For a one-way it is the way it pushes; for a
     guide, across the pipe. It is absent for an anchor, and for a guide on a vertical pipe, which
     carries `vertical: true` instead.
@@ -252,7 +252,7 @@ or by hand. Decision: [[vault/decisions/2026-10-03-imported-restraints|2026-10-0
   - As the program has them: `gap`, `friction`, `stiffness` (absent = rigid), `cnode`, `tag`. A
     hanger has `design` (`designed`: CAESAR designs it; `spring`: a rate and cold load as given;
     `constant`: a constant-effort support), `coldLoad` / `hotLoad`, and as given `stiffness` (its rate),
-    `constantLoad`, `table`, `count`; an imposed displacement has `fixed[6]`.
+    `constantLoad`, `table`, `count`; a nozzle has `nozzleType` and its vessel node as `cnode`; an imposed displacement has `fixed[6]`.
   - An item without `restraints` is drawn from its `dof` letters.
 - **Loads are not here.** Results stay in the binary. CAESAR writes the loads on the supports as
   beam components of kind `restraint` (`Restraint FX … |M|`): node totals on every beam end at the
@@ -347,7 +347,7 @@ everything the model holds before CAESAR imports it. The CAESAR export (`CaesarT
   `node-range`, `corrosion-wall`, `temperature-alpha`, `displacement-restrained`, `loop-closure`, `bend-angle`,
   `bend-node-angle`, `corner-no-bend`, `intersection`, `sif-below-one`, `sif-at-bend`, `thin-wall`, `reducer-angle`,
   `expansion-joint`, `expansion-joint-thrust`, `wave-added-mass`, `rigid-weightless`, `uniform-repeated`, `hangers`,
-  `hangers-given`, `hanger-twice`, `hanger-rate-only`, `hanger-free` (`PipeReview.cs`); `restraint-code` (a code from CAESAR's documentation that no CAESAR file has shown yet:
+  `hangers-given`, `hanger-twice`, `hanger-rate-only`, `hanger-free`, `nozzles`, `nozzle-restrained`, `nozzle-axis` (`PipeReview.cs`); `restraint-code` and `nozzle-layout` (a code or a layout from CAESAR's documentation that no CAESAR file has shown yet:
   `CaesarNeutralWriter.NoticeItems`); `build` (the builder's or the workbook reader's
   warnings); `export` (this export's own warnings; how the model is drawn is `info`).
 - **The exporter owns these sections.** A re-export replaces them rather than passing the previous copy

@@ -40,6 +40,7 @@ Every rule is summarised in our own words.
 > | An element with no length, unless it is a zero-length expansion joint | `element-zero` | DX DY DZ amber |
 > | An element from a node to itself | `element-self` | From / To red |
 > | Nothing holding a piece to ground (unstable) | `unsupported` | — |
+> | A nozzle whose vessel centreline runs along the nozzle (from the documentation summaries) | `nozzle-axis` (a missing centreline: a warning) | — |
 
 > [!info]- Warnings: CAESAR accepts, and says so
 > | CAESAR's rule | Pluto | Workbook |
@@ -54,6 +55,7 @@ Every rule is summarised in our own words.
 > | A wave's added-mass coefficient above 1.0, which it typically does not exceed (151E, seen) | `wave-added-mass` | Wind, Added mass amber; Start |
 > | A temperature under 0.05 in magnitude is read as a thermal expansion (Alpha Tolerance) | `temperature-alpha` | T1-T9 amber (Processes, Elements); Start |
 > | Pluto's own: a tee with no SIF entry, a CNODE tied to nothing, a bend with no room | `tee-no-sif`, `cnode-off-model`, `bend-room`, `bend-corner`, `bend-code` | — |
+> | Pluto's own, nozzles: a restraint to ground at a nozzle node takes what the nozzle's flexibility would | `nozzle-restrained` | — |
 > | Pluto's own, hangers: two entries at one node; a rate without its installed load; an anchor to free that nothing holds | `hanger-twice`, `hanger-rate-only`, `hanger-free` | Hangers, Node amber; Rate / Cold load and Free columns red; Start |
 
 > [!info]- Notes: information
@@ -66,7 +68,7 @@ Every rule is summarised in our own words.
 
 > [!info]- What Pluto does not check, and why
 > - **Material limits** (a temperature outside the material's table, minimum wall for pressure, allowables). They need CAESAR's material database, which Pluto only names by number.
-> - **Nozzles** (vessel and nozzle centrelines collinear) and **stress ratios** (al / hl): carried as written, not modelled.
+> - **Stress ratios** (al / hl): carried as written, not modelled.
 > - **Hanger design:** CAESAR's. Pluto holds the hangers and their design data ([[vault/format/caesar-neutral-hangers|caesar-neutral-hangers]]) but does not size springs.
 > - **CAESAR's configuration.** Pluto assumes the defaults. A job that raises the maximum bend angle, say, gets an error here that CAESAR would accept.
 >

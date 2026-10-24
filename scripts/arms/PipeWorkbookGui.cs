@@ -91,7 +91,7 @@ static class PipeWorkbookGui
     // the lists (the hidden Lists sheet): column letter -> what it holds
     internal const string LType = "Lists!$A$2:$A$9", LBendType = "Lists!$C$2:$C$4", LWind = "Lists!$D$2:$D$4", LYesNo = "Lists!$E$2:$E$3", LAxis = "Lists!$F$2:$F$3",
                           LFrame = "Lists!$G$2:$G$3", LView = "Lists!$H$2:$H$6", LVector = "Lists!$I$2:$I$10", LKind = "Lists!$K$2:$K$7", LCodes = "Lists!$N$2:$N$10",
-                          LFree = "Lists!$Q$2:$Q$6";
+                          LFree = "Lists!$Q$2:$Q$6", LNozzle = "Lists!$R$2:$R$5", LVessel = "Lists!$S$2:$S$3", LReinf = "Lists!$T$2:$T$3";
 
     internal static Col[] ElementCols(string sections, string processes)
     {
@@ -304,6 +304,40 @@ static class PipeWorkbookGui
             C("Tag", "text", "text", "A tag (support number ...), kept with the hanger."),
         };
     }
+
+    // the nozzle's values, named; which type uses which: PipeModelNozzle
+    internal static Col[] NozzleCols()
+    {
+        var l = new List<Col>
+        {
+            C("Id", "key", "id", "Keep it on rows from the model; leave it blank on a new row."),
+            C("Node", "key", "node", "The nozzle's node: the pipe end at the vessel or tank wall.",
+              "Nozzles: one row per flexible nozzle. CAESAR works out its flexibility (WRC 297, PD 5500: on a vessel; API 650: on a tank shell) or takes the stiffnesses given (Custom), between Node and Vessel node (or ground without one). Fill the columns the type uses; a value in a column the type does not use is red."),
+            C("Vessel node", "key", "node", "The vessel's node the nozzle ties to. Blank = ground (a rigid vessel)."),
+            L("Type", "prop", "list!", LNozzle, "WRC 297, API 650, PD 5500 or Custom.", null),
+        };
+        string[] hints =
+        {
+            "The nozzle's OD (blank on a new row from a TOML: the pipe's).", "The nozzle's wall (WRC 297, API 650, Custom).", "PD 5500: cylinder or sphere.",
+            "The vessel's (tank's) OD.", "The vessel's (tank's) wall.", "Reinforcing pad thickness (WRC 297, PD 5500, Custom).", "API 650: reinforcing on the shell or on the nozzle.",
+            "Distance to the nearest stiffener or head (WRC 297, PD 5500).", "Distance to the stiffener or head on the other side (WRC 297, PD 5500).",
+            "API 650: the nozzle's height above the tank bottom.", "API 650: the fluid's height in the tank.", "Vessel centreline direction X (WRC 297, PD 5500, Custom).",
+            "Vessel centreline direction Y.", "Vessel centreline direction Z.", "Vessel temperature (WRC 297, PD 5500). Blank = not given.",
+            "Vessel material number (WRC 297, PD 5500, Custom). Blank = not given.", "API 650: the displacement vector (1-9) the tank's growth goes in.", "API 650: the fluid's specific gravity.",
+            "API 650: the tank's thermal expansion coefficient.", "API 650: the tank's temperature rise.", "API 650: the tank's elastic modulus.",
+            "Custom: axial stiffness.", "Custom: in-plane bending stiffness.", "Custom: out-of-plane bending stiffness.", "Custom: torsional stiffness."
+        };
+        for (int f = 0; f < PipeModelNozzle.Fields.Length; f++)
+        {
+            string n = NozzleHeader(f);
+            if (n == "Vessel type") l.Add(L(n, "prop", "list!", LVessel, hints[f], null));
+            else if (n == "Reinforcing") l.Add(L(n, "prop", "list!", LReinf, hints[f], null));
+            else l.Add(C(n, "prop", n.StartsWith("Axis", StringComparison.Ordinal) ? "cos" : n == "Vessel temperature" || n == "Tank delta T" ? "num" : "nonneg", hints[f]));
+        }
+        return l.ToArray();
+    }
+
+    internal static string NozzleHeader(int f) { string s = PipeModelNozzle.Fields[f]; return char.ToUpperInvariant(s[0]) + s.Substring(1); }
 
     internal static Col[] CoordCols()
     {

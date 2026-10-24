@@ -40,7 +40,7 @@ using System.Text;
 //             one block holding both kinds warns (246E), one vector with both kinds across blocks too (247E). So a
 //             new or edited block's unused vectors take the model's flag for that vector (UniformFlags).
 //   REDUCERS  2 lines: OD2 WALL2 ALPHA R1 R2 / 0 x5
-//   MISCEL_1  one material number per element (6 per line), nozzles (carried as written), the hanger section
+//   MISCEL_1  one material number per element (6 per line), nozzles (WriteNozzles), the hanger section
 //             (WriteHangers; CONTROL counts the hangers), then 4 execution-option lines; the ambient
 //             temperature is line 2 field 3.
 //   UNITS     CAESAR's English set (in, lb, F, psi, lb/cu.in., COORDS in ft), the fixture's block.
@@ -458,7 +458,7 @@ public static class CaesarNeutralWriter
         int ne = p.M.Elements.Count;
         long[][] rows =
         {
-            new long[] { ne, -1, p.Src != null && p.Src.TailNozzleLines < 0 ? -1 : p.M.Hangers.Count, Count(p, "NODENAME"), Count(p, "REDUCERS"), Count(p, "FLANGES") },
+            new long[] { ne, p.Src != null && p.Src.TailNozzleLines < 0 ? -1 : p.M.Nozzles.Count, p.Src != null && p.Src.TailNozzleLines < 0 ? -1 : p.M.Hangers.Count, Count(p, "NODENAME"), Count(p, "REDUCERS"), Count(p, "FLANGES") },
             new long[] { Count(p, "BEND"), Count(p, "RIGID"), Count(p, "EXPJT"), Count(p, "RESTRANT"), Count(p, "DISPLMNT"), Count(p, "FORCMNT") },
             new long[] { Count(p, "UNIFORM"), Count(p, "WIND"), Count(p, "OFFSETS"), Count(p, "ALLOWBLS"), Count(p, "SIF&TEES"), p.M.ZUp ? 1 : 0 },
             new long[] { Count(p, "EQUIPMNT") }
@@ -476,7 +476,6 @@ public static class CaesarNeutralWriter
             }
             return;
         }
-        rows[0][1] = 0;
         foreach (var r in rows) w.Add(IntRow(r));
     }
 
@@ -983,6 +982,10 @@ public static class CaesarNeutralWriter
             n.Add(new PipeReviewItem("notice", "restraint-code", "restraint type(s) " + string.Join(", ", unseen.Select(r => r.Type + " (" + r.Code + ")").Distinct().ToArray()) +
                 " written with the codes of CAESAR's documentation, which no CAESAR-written file here has shown yet: check them in CAESAR after the import")
                 .WithNodes(unseen.Select(r => r.Node)));
+        var newNoz = m.Nozzles.Where(z => z.Raw == null).ToList();
+        if (newNoz.Count > 0 && !m.Nozzles.Any(z => z.Raw != null))
+            n.Add(new PipeReviewItem("notice", "nozzle-layout", newNoz.Count + " nozzle(s) written in the layout of CAESAR's documentation (22 values on 4 lines), which no CAESAR 15.01 file here has shown yet: check them in CAESAR after the import")
+                .WithNodes(newNoz.Select(z => z.Node)));
         return n;
     }
 
@@ -1017,16 +1020,46 @@ public static class CaesarNeutralWriter
             int at = tail.Count - 3;   // the execution options' line 2: ambient at field 3
             tail[at] = SetReal(tail[at], 2, m.Ambient);
             if (src.TailNozzleLines < 0) { w.AddRange(tail); return; }   // parts not told apart: the tail as written
-            w.AddRange(tail.Take(src.TailNozzleLines));                    // nozzles, as written
+            WriteNozzles(p, w);
             WriteHangers(p, w, tail.Skip(src.TailNozzleLines).Take(src.TailHangerLines).ToList(), src.TailHangers);
             w.AddRange(tail.Skip(tail.Count - 4));
             return;
         }
+        WriteNozzles(p, w);
         WriteHangers(p, w, null, 0);
         w.Add(MixedRow(1, 0, 0, 2, 0.0, 1));
         w.Add(MixedRow(0, 0, m.Ambient, 12.0, 0, 0));
         w.Add(MixedRow(0, 0, 0, 0, 0.25, 3));
         w.Add(MixedRow(3, 0));
+    }
+
+    // Nozzles: CAESAR's 22 values each, 6 per line. One read from a file keeps its lines, only changed fields rewritten;
+    // a new one takes the line layout of the job's own nozzles, else the guide's (6, 6, 6, 4: from the documentation; an
+    // 11.00 job wrote 6, 6, 4, 4).
+    public static readonly int[] NozzleLayout = { 6, 6, 6, 4 };
+
+    static int Fields(string line) { int n = (line ?? "").TrimEnd().Length - 2; return n <= 0 ? 0 : (n + 12) / 13; }
+
+    static void WriteNozzles(Plan p, List<string> w)
+    {
+        var zs = p.M.Nozzles;
+        var own = zs.FirstOrDefault(z => z.Raw != null && z.Raw.Count > 0);
+        int[] per = own != null ? own.Raw.Select(Fields).ToArray() : NozzleLayout;
+        foreach (var z in zs)
+        {
+            var v = z.Values();
+            int k = 0;
+            if (z.Raw != null && z.Raw.Count > 0)
+            {
+                var l = new List<string>(z.Raw);
+                for (int i = 0; i < l.Count; i++) { int n = Fields(z.Raw[i]); for (int c = 0; c < n && k < v.Length; c++, k++) l[i] = SetReal(l[i], c, v[k]); }
+                w.AddRange(l);
+            }
+            else
+                foreach (int n in per) { w.Add(RealRow(v.Skip(k).Take(n).ToArray())); k += n; }
+            for (; k < v.Length; k++)
+                if (v[k] != 0) throw new InvalidOperationException("CaesarNeutralWriter: the nozzle at node " + z.Node + ": its lines have no field for CAESAR's item " + (k + 1));
+        }
     }
 
     // The hanger section: 2 lines of defaults (table, load variation, rigid criteria, travel, short range, multi-load;
@@ -1319,8 +1352,15 @@ public static class CaesarNeutralWriter
         if (m.Coords.Count == 0) err.Add("no COORDS entry (the first node needs a position)");
         foreach (var j in m.Joints)
             if (j.Node <= 0 || j.CNode <= 0 || j.Node == j.CNode) err.Add("joint " + j.Node + "-" + j.CNode + ": two different nodes are needed");
-        if (m.Hangers.Count > 0 && m.Source != null && !m.Source.Seed && m.Source.TailNozzleLines < 0)
-            err.Add("hangers: this job's hanger data is carried as written (a layout Pluto does not read), so hangers cannot be added or changed here: do it in CAESAR");
+        if ((m.Hangers.Count > 0 || m.Nozzles.Count > 0) && m.Source != null && !m.Source.Seed && m.Source.TailNozzleLines < 0)
+            err.Add("hangers / nozzles: this job's nozzle and hanger data is carried as written (a layout Pluto does not read), so they cannot be added or changed here: do it in CAESAR");
+        foreach (var z in m.Nozzles)
+        {
+            if (z.Node <= 0 || z.Node > PipeReview.MaxNode) err.Add("a nozzle at node " + z.Node + ": a node 1 to 8,000,000 is needed");
+            if (z.VesselNode < 0 || z.VesselNode == z.Node && z.Node > 0) err.Add("the nozzle at node " + z.Node + ": its vessel node " + z.VesselNode + " is not another node");
+            if (z.Type < 0 || z.Type > 3) err.Add("the nozzle at node " + z.Node + ": type " + z.Type + " (0 WRC 297, 1 API 650, 2 PD 5500, 3 custom)");
+            if (z.V.Any(v => double.IsNaN(v) || double.IsInfinity(v))) err.Add("the nozzle at node " + z.Node + ": a value is not a number");
+        }
         foreach (var h in m.Hangers)
         {
             string at = "hanger at node " + h.Node;

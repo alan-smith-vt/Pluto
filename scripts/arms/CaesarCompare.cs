@@ -12,6 +12,7 @@ using System.Text;
 //   nodes       positions by CAESAR's rules (CaesarGeometry on what each model writes), moves beyond a tolerance
 //   restraints  as written (joints expanded), matched as a multiset of node, type, CNODE, gap, stiffness
 //               (rigid however written), friction, direction; SIF / tee entries likewise
+//   nozzles     as a multiset of node, vessel node, type and the values the type uses
 //   hangers     as a multiset of node, CNODE, kind (designed / spring rate and cold load / constant load) and
 //               the design data given
 //   loads       forces / moments and imposed displacements per node and vector, as a multiset; uniform loads
@@ -32,6 +33,8 @@ public class CaesarCompareResult
     public readonly List<string> RestraintsRemoved = new List<string>();
     public readonly List<string> SifsAdded = new List<string>();
     public readonly List<string> SifsRemoved = new List<string>();
+    public readonly List<string> NozzlesAdded = new List<string>();
+    public readonly List<string> NozzlesRemoved = new List<string>();
     public readonly List<string> HangersAdded = new List<string>();
     public readonly List<string> HangersRemoved = new List<string>();
     public readonly List<string> LoadsAdded = new List<string>();     // node loads in B, not in A
@@ -46,7 +49,7 @@ public class CaesarCompareResult
         get
         {
             return Settings.Count + ElementsAdded.Count + ElementsRemoved.Count + ElementsChanged.Count + NodesMoved.Count + RestraintsAdded.Count +
-                   RestraintsRemoved.Count + SifsAdded.Count + SifsRemoved.Count + HangersAdded.Count + HangersRemoved.Count + LoadsAdded.Count + LoadsRemoved.Count + LoadsChanged.Count + Carried.Count;
+                   RestraintsRemoved.Count + SifsAdded.Count + SifsRemoved.Count + HangersAdded.Count + HangersRemoved.Count + NozzlesAdded.Count + NozzlesRemoved.Count + LoadsAdded.Count + LoadsRemoved.Count + LoadsChanged.Count + Carried.Count;
         }
     }
 
@@ -65,6 +68,8 @@ public class CaesarCompareResult
         List("restraints only in " + NameA, RestraintsRemoved, sb, maxPerList);
         List("SIF / tees only in " + NameB, SifsAdded, sb, maxPerList);
         List("SIF / tees only in " + NameA, SifsRemoved, sb, maxPerList);
+        List("nozzles only in " + NameB, NozzlesAdded, sb, maxPerList);
+        List("nozzles only in " + NameA, NozzlesRemoved, sb, maxPerList);
         List("hangers only in " + NameB, HangersAdded, sb, maxPerList);
         List("hangers only in " + NameA, HangersRemoved, sb, maxPerList);
         List("node loads only in " + NameB, LoadsAdded, sb, maxPerList);
@@ -91,6 +96,7 @@ public class CaesarCompareResult
         Arr(sb, "settings", Settings); Arr(sb, "elementsAdded", ElementsAdded); Arr(sb, "elementsRemoved", ElementsRemoved); Arr(sb, "elementsChanged", ElementsChanged);
         Arr(sb, "nodesMoved", NodesMoved); Arr(sb, "restraintsAdded", RestraintsAdded); Arr(sb, "restraintsRemoved", RestraintsRemoved);
         Arr(sb, "sifsAdded", SifsAdded); Arr(sb, "sifsRemoved", SifsRemoved); Arr(sb, "hangersAdded", HangersAdded); Arr(sb, "hangersRemoved", HangersRemoved);
+        Arr(sb, "nozzlesAdded", NozzlesAdded); Arr(sb, "nozzlesRemoved", NozzlesRemoved);
         Arr(sb, "loadsAdded", LoadsAdded); Arr(sb, "loadsRemoved", LoadsRemoved); Arr(sb, "loadsChanged", LoadsChanged); Arr(sb, "carried", Carried);
         return sb.Append('}').ToString();
     }
@@ -164,13 +170,14 @@ public static class CaesarCompare
         var sb2 = CaesarNeutralWriter.Sifs(b).Select(SKey).ToList();
         Diff(sa, sb2, r.SifsRemoved, r.SifsAdded);
         Diff(a.Hangers.Select(x => HKey(a, x)).ToList(), b.Hangers.Select(x => HKey(b, x)).ToList(), r.HangersRemoved, r.HangersAdded);
+        Diff(a.Nozzles.Select(NKey).ToList(), b.Nozzles.Select(NKey).ToList(), r.NozzlesRemoved, r.NozzlesAdded);
         Diff(a.NodeLoads.SelectMany(LKeys).ToList(), b.NodeLoads.SelectMany(LKeys).ToList(), r.LoadsRemoved, r.LoadsAdded);
 
         // carried global data
         if (a.Source != null && b.Source != null && !a.Source.Seed && !b.Source.Seed)
         {
             if (!a.Source.MiscelTail.SequenceEqual(b.Source.MiscelTail) && !SameTail(a, b))
-                r.Carried.Add(a.Source.TailNozzleLines >= 0 && b.Source.TailNozzleLines >= 0 ? "MISCEL_1 nozzles or execution options differ" : "MISCEL_1 tail (nozzles, hangers, execution options) differs");
+                r.Carried.Add(a.Source.TailNozzleLines >= 0 && b.Source.TailNozzleLines >= 0 ? "MISCEL_1 execution options differ" : "MISCEL_1 tail (nozzles, hangers, execution options) differs");
             List<string> ua, ub;
             if (a.Source.Sections.TryGetValue("UNITS", out ua) && b.Source.Sections.TryGetValue("UNITS", out ub) && !ua.SequenceEqual(ub)) r.Carried.Add("UNITS block differs");
         }
@@ -249,8 +256,7 @@ public static class CaesarCompare
     // the hangers are compared as the model's)
     static bool SameTail(PipeModel a, PipeModel b)
     {
-        Func<PipeModelSource, List<string>> part = s => s.TailNozzleLines < 0 || s.MiscelTail.Count < 4 ? s.MiscelTail :
-            s.MiscelTail.Take(s.TailNozzleLines).Concat(s.MiscelTail.Skip(s.MiscelTail.Count - 4)).ToList();
+        Func<PipeModelSource, List<string>> part = s => s.TailNozzleLines < 0 || s.MiscelTail.Count < 4 ? s.MiscelTail : s.MiscelTail.Skip(s.MiscelTail.Count - 4).ToList();
         bool both = a.Source.TailNozzleLines >= 0 && b.Source.TailNozzleLines >= 0;
         var ta = both ? part(a.Source) : a.Source.MiscelTail; var tb = both ? part(b.Source) : b.Source.MiscelTail;
         if (ta.Count != tb.Count) return false;
@@ -289,6 +295,15 @@ public static class CaesarCompare
         return "node " + x.Node + " " + name + (x.CNode > 0 ? " cnode " + x.CNode : "") + (rigid ? "" : " K " + G(x.Stiffness)) +
                (x.Gap != 0 ? " gap " + G(x.Gap) : "") + (x.Mu != 0 ? " mu " + G(x.Mu) : "") +
                (x.Code == 1 ? "" : " dir " + G(c[0]) + "," + G(c[1]) + "," + G(c[2])) + (string.IsNullOrEmpty(x.Tag) ? "" : " tag " + x.Tag);
+    }
+
+    // a nozzle by its type and the values its type uses
+    static string NKey(PipeModelNozzle z)
+    {
+        var sb = new StringBuilder("node " + z.Node + (z.VesselNode > 0 ? " vessel " + z.VesselNode : "") + " " + z.TypeName);
+        for (int f = 0; f < PipeModelNozzle.Fields.Length; f++)
+            if (z.Item(f) > 0 && z.Get(f) != 0) sb.Append(" " + PipeModelNozzle.Fields[f] + " " + z.Get(f).ToString("G6", CultureInfo.InvariantCulture));   // significant digits: a tank's alpha is 1e-5
+        return sb.ToString();
     }
 
     // a hanger by what CAESAR does with it; a table of 0 is the job's default table

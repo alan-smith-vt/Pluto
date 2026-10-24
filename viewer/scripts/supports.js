@@ -75,7 +75,7 @@ var FEASupports = (function () {
     var PRIMS = ['cone', 'cyl', 'box', 'ball'];
     var KIND_RGB = {
         anchor: [229, 57, 53], translation: [3, 155, 229], oneway: [124, 179, 66], guide: [0, 137, 123],
-        limit: [251, 140, 0], rotation: [142, 36, 170], hanger: [253, 216, 53], imposed: [216, 27, 96],
+        limit: [251, 140, 0], rotation: [142, 36, 170], hanger: [253, 216, 53], imposed: [216, 27, 96], nozzle: [0, 172, 193],
         other: [176, 176, 186]
     };
     var NEUTRAL = [0.35, 0.35, 0.38];
@@ -318,6 +318,7 @@ var FEASupports = (function () {
             var axial = !!d && Math.abs(d.dot(ax)) > 0.9;
             switch (r.kind) {
                 case 'anchor':
+                case 'nozzle':                      // a flexible nozzle: the vessel wall, a plate like an anchor's
                 case 'imposed': {                   // an imposed displacement sits on an anchor point
                     var side = 2 * R + 1.6 * u;
                     put('box', P.clone(), quatFrame(perp(ax), ax), side, side, 0.14 * u, r.kind);
@@ -698,7 +699,8 @@ var FEASupports = (function () {
         else if (raw.design === 'constant') out.push('constant effort ' + raw.constantLoad);
         if (raw.count > 1) out.push(raw.count + ' hangers');
         if (raw.stiffness) out.push('k ' + raw.stiffness);
-        if (raw.cnode) out.push('cnode ' + raw.cnode);
+        if (raw.nozzleType) out.push(raw.nozzleType + ' nozzle');
+        if (raw.cnode) out.push((raw.kind === 'nozzle' ? 'vessel node ' : 'cnode ') + raw.cnode);
         if (raw.tag) out.push(String(raw.tag));
         return out.join(', ');
     }

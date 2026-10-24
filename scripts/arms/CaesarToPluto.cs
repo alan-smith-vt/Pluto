@@ -700,6 +700,7 @@ public static class CaesarToPluto
             AddToken(tokens, r.Node, t);
         }
         foreach (var h in m.Hangers) if (h.Node > 0) { res.Hangers++; AddToken(tokens, h.Node, "HGR"); }
+        foreach (var z in m.Nozzles) if (z.Node > 0) AddToken(tokens, z.Node, "NOZ");
         foreach (var d in m.Displacements) if (d.Node > 0 && d.FixedCount > 0) { res.ImposedDisplacements++; AddToken(tokens, d.Node, "DISP"); }
         var byCombo = new Dictionary<string, List<uint>>();
         var comboKey = new Dictionary<string, string>();
@@ -744,6 +745,8 @@ public static class CaesarToPluto
         foreach (var r in m.Restraints) if (r.Node > 0) AddTo(restrAt, r.Node, r);
         var hangAt = new Dictionary<int, List<CaesarHanger>>();
         foreach (var h in m.Hangers) if (h.Node > 0) AddTo(hangAt, h.Node, h);
+        var nozAt = new Dictionary<int, List<CaesarNozzle>>();
+        foreach (var z in m.Nozzles) if (z.Node > 0) AddTo(nozAt, z.Node, z);
         var dispAt = new Dictionary<int, List<CaesarDisplacement>>();
         foreach (var d in m.Displacements) if (d.Node > 0 && d.FixedCount > 0) AddTo(dispAt, d.Node, d);
         foreach (int node in comboOf.Keys.OrderBy(k => k))
@@ -754,6 +757,8 @@ public static class CaesarToPluto
             if (restrAt.TryGetValue(node, out rl)) foreach (var r in rl) entries.Add(RestraintJson(r, g, up, dof));
             List<CaesarHanger> hl;
             if (hangAt.TryGetValue(node, out hl)) foreach (var h in hl) entries.Add(HangerJson(h, up, dof));
+            List<CaesarNozzle> zl;
+            if (nozAt.TryGetValue(node, out zl)) foreach (var z in zl) entries.Add(NozzleJson(z));
             List<CaesarDisplacement> dl;
             if (dispAt.TryGetValue(node, out dl)) foreach (var d in dl) entries.Add(DisplacementJson(d, dof));
             var dofPairs = new List<KeyValuePair<string, string>>();
@@ -1273,6 +1278,15 @@ public static class CaesarToPluto
         if (!double.IsNaN(h.ColdLoad) && !double.IsInfinity(h.ColdLoad)) JNum(sb, "coldLoad", h.ColdLoad);
         if (!double.IsNaN(h.HotLoad) && !double.IsInfinity(h.HotLoad)) JNum(sb, "hotLoad", h.HotLoad);
         if (!string.IsNullOrEmpty(h.Tag) && h.Tag.Trim().Length > 0) JProp(sb, "tag", h.Tag.Trim());
+        return sb.Append("}").ToString();
+    }
+
+    static string NozzleJson(CaesarNozzle z)
+    {
+        int t = z.Values != null && z.Values.Length > 2 ? (int)Math.Round(z.Values[2]) : 0;
+        var sb = new StringBuilder("{");
+        JProp(sb, "type", "NOZ"); JProp(sb, "kind", "nozzle"); JProp(sb, "nozzleType", t >= 0 && t < 4 ? PipeModelNozzle.TypeNames[t] : "type " + I(t));
+        if (z.VesselNode > 0) JRaw(sb, "cnode", I(z.VesselNode));
         return sb.Append("}").ToString();
     }
 

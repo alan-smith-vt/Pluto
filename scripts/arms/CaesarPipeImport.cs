@@ -403,13 +403,21 @@ public static class CaesarPipeImport
         if (nh > 0 && !cm.LinesPerBlock.TryGetValue("MISCEL_1/hanger", out h)) h = -1;
         int hLines = nh == 0 ? 0 : 2 + lists + nh * h + nh + 4 * lists;
         bool ok = nozLines >= 0 && h >= 0 && (nh == 0 || h >= 2) && cm.Hangers.Count == nh && cm.Hangers.All(x => x.Values != null && x.Values.Length == 11) &&
-                  nn * nozLines + hLines + 4 == tail.Count;
+                  cm.Nozzles.Count == nn && nn * nozLines + hLines + 4 == tail.Count;
         if (!ok)
         {
-            if (nh > 0) res.Notes.Add("MISCEL_1: the hanger data is not in a layout Pluto reads: the " + nh + " hanger(s) are carried as written and cannot be edited");
+            if (nh > 0 || nn > 0) res.Notes.Add("MISCEL_1: the nozzle and hanger data is not in a layout Pluto reads: the " + nn + " nozzle(s) and " + nh + " hanger(s) are carried as written and cannot be edited");
             return;
         }
         src.TailNozzleLines = nn * nozLines; src.TailHangerLines = hLines; src.TailHangers = nh;
+        for (int k = 0; k < nn && k < cm.Nozzles.Count; k++)
+        {
+            var cz = cm.Nozzles[k];
+            var z = new PipeModelNozzle { Node = cz.Node, VesselNode = cz.VesselNode, Source = "the .cii", Raw = tail.Skip(k * nozLines).Take(nozLines).ToList() };
+            z.Type = cz.Values.Length > 2 ? (int)Math.Round(cz.Values[2]) : 0;
+            for (int i = 3; i < 22 && i < cz.Values.Length; i++) z.V[i] = cz.Values[i];
+            m.Nozzles.Add(z);
+        }
         int q0 = src.TailNozzleLines + 2 + lists, free = q0 + nh * h;
         for (int k = 0; k < nh; k++)
         {

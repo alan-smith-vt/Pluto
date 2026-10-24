@@ -1,0 +1,210 @@
+# Pipe builder patterns: the modelling patterns beyond pipe-example.toml, each on its own runs. Every key is
+# explained in vault/arms/pipe-builder.md. Build it with:
+#   Build-Pipe.ps1 -In pipe-patterns.toml -Out "<project dir>\patterns" -Cii -Preview
+#
+#   1. a control-valve station: block valves, a control valve, a bypass that closes back on the header (end = ...)
+#   2. a pump discharge on a vessel nozzle (WRC 297), with a designed spring hanger and a constant support
+#   3. a tank nozzle (API 650) that moves with the tank's growth
+#   4. a grooved coupling as gap restraints (axial, shear, torsion), and an expansion joint with control rods
+#   5. pipe design data: mill tolerance, seam weld, hydrotest pressure
+[model]
+title = "Pipe builder patterns"
+material = 106                       # A106 B
+[defaults]
+section = "8in"
+temperature = 350
+pressure = 250
+hydro_pressure = 375                 # psi: CAESAR's hydrotest case
+bend = "LR"
+max_length = 10
+[sections.8in]
+nps = 8
+schedule = "40"
+insulation = 2
+insulation_density = 11.5
+fluid_sg = 0.9
+mill_tolerance = 12.5                # % of the wall (minus); mill_tolerance_plus for the plus side
+[sections.6in]
+nps = 6
+schedule = "40"
+fluid_sg = 0.9
+seam_weld = true
+[sections.vessel]                     # a vessel drawn as a stiff stick, for the nozzle's vessel node
+od = 48
+wall = 1
+
+# ---- 1. control-valve station
+[[runs]]
+name = "header"
+start = [0, 0, 0]
+legs = [["+X", 40]]
+[[runs]]
+name = "bypass"
+from = { run = "header", at = 8 }    # a welding tee here
+section = "6in"
+legs = [["+Y", 4], ["+X", 24], ["-Y", 4]]
+end = { run = "header", at = 32 }    # ... and here: the loop closes on the header
+[[components]]
+type = "flanged_valve"
+name = "BV-1"
+run = "header"
+at = 12
+length = 2
+weight = 650
+[[components]]
+type = "flanged_valve"
+name = "CV-1"
+run = "header"
+at = 18
+length = 3
+weight = 1200
+[[components]]
+type = "flanged_valve"
+name = "BV-2"
+run = "header"
+at = 26
+length = 2
+weight = 650
+[[components]]
+type = "valve"
+name = "GV-1"
+run = "bypass"
+at = 14
+length = 1.5
+weight = 250
+[[supports]]
+run = "header"
+at = [0, "L"]
+type = "ANC"
+[[supports]]
+run = "header"
+at = [4, 36]
+type = "+Y"
+mu = 0.3
+
+# ---- 2. pump discharge to a vessel nozzle
+[[runs]]
+name = "vessel"
+start = [0, 0, 30]
+section = "vessel"
+first_node = 1000
+legs = [["+Y", 20]]
+[[runs]]
+name = "discharge"
+start = [2, 16, 30]
+first_node = 1100
+legs = [["+X", 20], ["-Y", 12], ["+X", 15]]
+[[supports]]
+run = "vessel"
+at = 0
+type = "ANC"                         # the vessel's skirt
+[[supports]]
+run = "discharge"
+at = "L"
+type = "ANC"                         # the pump nozzle
+[[nozzles]]
+run = "discharge"
+at = 0
+type = "WRC297"                      # CAESAR works out the nozzle's flexibility on the vessel shell
+vessel_node = 1020                   # tied to the vessel stick there (blank: a rigid vessel)
+vessel_od = 48
+vessel_wall = 1
+pad = 0.5
+stiffener_distance = 60
+opposite_distance = 60
+vessel_axis = [0, 1, 0]
+vessel_temperature = 350
+[[hangers]]
+run = "discharge"
+at = 10
+free_node = 1160                     # CAESAR frees the pump anchor while it designs the hanger
+free_dofs = "XYZ"
+tag = "H-1"
+[[hangers]]
+run = "discharge"
+at = 28
+constant = 1500                      # lb: a constant-effort support
+tag = "CS-1"
+
+# ---- 3. tank nozzle
+[[runs]]
+name = "tankline"
+start = [0, 2, 60]
+first_node = 1200
+legs = [["+X", 30], ["+Y", 8]]
+[[supports]]
+run = "tankline"
+at = [10, 22]
+type = "+Y"
+mu = 0.3
+[[supports]]
+run = "tankline"
+at = "L"
+type = "ANC"
+[[nozzles]]
+run = "tankline"
+at = 0
+type = "API650"
+vessel_od = 1200                     # the tank: OD and shell
+vessel_wall = 0.75
+reinforcing = "shell"
+nozzle_height = 24
+fluid_height = 360
+displacement_vector = 1              # CAESAR puts the shell's growth in D1
+fluid_sg = 0.9
+tank_alpha = 6.5e-6
+tank_delta_t = 230
+tank_e = 2.9e7
+
+# ---- 4. coupling gaps and control rods
+[[runs]]
+name = "grooved"
+start = [0, 0, 90]
+first_node = 1300
+legs = [["+X", 40]]
+[[components]]
+type = "coupling"
+run = "grooved"
+at = 10
+axial_gap = 0.125                    # in, free each way
+shear_gap = 0.0625
+torsion_gap = 1.5                    # deg
+torsion_stiffness = 5e4              # after the gap
+deflection = 1
+[[components]]
+type = "flange_pair"
+run = "grooved"
+at = 19
+length = 0.5
+weight = 150
+[[components]]
+type = "expansion_joint"
+name = "EJ-1"
+run = "grooved"
+at = 20
+length = 2
+axial_stiffness = 1800
+transverse_stiffness = 7000
+torsion_stiffness = 1e7
+effective_id = 9
+[[components]]
+type = "flange_pair"
+run = "grooved"
+at = 22.5
+length = 0.5
+weight = 150
+[[ties]]                              # control rods: they stop the joint's extension past their free play
+node = { run = "grooved", at = 23 }
+cnode = { run = "grooved", at = 19 }
+type = "-X"
+gap = 0.375
+tag = "CONTROL-RODS"
+[[supports]]
+run = "grooved"
+at = [0, "L"]
+type = "ANC"
+[[supports]]
+run = "grooved"
+at = [5, 15, 30]
+type = ["+Y", "GUI"]
+mu = 0.3

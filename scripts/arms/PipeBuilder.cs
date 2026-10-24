@@ -355,7 +355,7 @@ public static class PipeBuilder
                 if (k == "loads" || k == "uniform" || k == "wind" || k == "g_load")
                     throw Err("[" + k + "]: loads go in [[forces]] and [[displacements]] (at nodes), and uniform / g_load / wind_shape on a run or in [defaults]");
             }
-            Allowed(root, "the config", "model parameters defaults sections runs components supports ties hangers sifs forces displacements");
+            Allowed(root, "the config", "model parameters defaults sections runs components supports ties hangers nozzles sifs forces displacements");
             var model = Tbl(root, "model", "[model]") ?? new TomlTable();
             Allowed(model, "[model]", "title notes length_unit node_step material ambient y_up code allowables_from");
             defaults = Tbl(root, "defaults", "[defaults]");
@@ -397,6 +397,7 @@ public static class PipeBuilder
             Supports();
             Ties();
             Hangers();
+            Nozzles();
             Sifs();
             NodeLoads("forces", "force", new[] { "fx", "fy", "fz", "mx", "my", "mz" });
             NodeLoads("displacements", "displacement", new[] { "dx", "dy", "dz", "rx", "ry", "rz" });
@@ -932,7 +933,7 @@ public static class PipeBuilder
                 var r = RunRef(t, "[[sifs]] " + i);
                 foreach (double s in Positions(r, t, "[[sifs]] " + i + " on run \"" + r.Name + "\"")) St(r, s, "SIF");
             }
-            foreach (string key in new[] { "forces", "displacements", "hangers" })
+            foreach (string key in new[] { "forces", "displacements", "hangers", "nozzles" })
             {
                 i = 0;
                 foreach (var t in Items(key))
@@ -940,7 +941,7 @@ public static class PipeBuilder
                     i++;
                     if (Get(t, "node") != null) continue;
                     var r = RunRef(t, "[[" + key + "]] " + i);
-                    foreach (double s in Positions(r, t, "[[" + key + "]] " + i + " on run \"" + r.Name + "\"")) St(r, s, key == "forces" ? "force" : key == "hangers" ? "hanger" : "displacement");
+                    foreach (double s in Positions(r, t, "[[" + key + "]] " + i + " on run \"" + r.Name + "\"")) St(r, s, key == "forces" ? "force" : key == "hangers" ? "hanger" : key == "nozzles" ? "nozzle" : "displacement");
                 }
             }
             i = 0;
@@ -1506,6 +1507,66 @@ public static class PipeBuilder
             }
         }
 
+        // [[nozzles]]: flexible nozzles. type WRC297 / PD5500 (a nozzle on a vessel), API650 (on a tank shell), custom (its
+        // stiffnesses); the nozzle's OD and wall default to the pipe's at the node. Lengths in, temperatures F, E psi.
+        static readonly string[][] NozzleKeys =
+        {
+            new[] { "nozzle_od", "nozzle OD" }, new[] { "nozzle_wall", "nozzle wall" }, new[] { "vessel_od", "vessel OD" }, new[] { "vessel_wall", "vessel wall" },
+            new[] { "pad", "pad" }, new[] { "stiffener_distance", "stiffener distance" }, new[] { "opposite_distance", "opposite distance" },
+            new[] { "nozzle_height", "nozzle height" }, new[] { "fluid_height", "fluid height" }, new[] { "vessel_temperature", "vessel temperature" },
+            new[] { "vessel_material", "vessel material" }, new[] { "displacement_vector", "displacement vector" }, new[] { "fluid_sg", "fluid SG" },
+            new[] { "tank_alpha", "tank alpha" }, new[] { "tank_delta_t", "tank delta T" }, new[] { "tank_e", "tank E" }, new[] { "axial_stiffness", "axial stiffness" },
+            new[] { "inplane_stiffness", "in-plane stiffness" }, new[] { "outplane_stiffness", "out-of-plane stiffness" }, new[] { "torsional_stiffness", "torsional stiffness" }
+        };
+
+        void Nozzles()
+        {
+            int i = 0;
+            foreach (var t in Items("nozzles"))
+            {
+                i++;
+                string w = "[[nozzles]] " + i;
+                Allowed(t, w, "node run at type vessel_node vessel_type reinforcing vessel_axis " + string.Join(" ", NozzleKeys.Select(k => k[0]).ToArray()));
+                string ty = Str(t, "type", "", w).Trim().ToUpperInvariant().Replace(" ", "").Replace("-", "");
+                int code = ty == "WRC297" ? 0 : ty == "API650" ? 1 : ty == "PD5500" ? 2 : ty == "CUSTOM" ? 3 : -1;
+                if (code < 0) throw Err(w + ": type = \"WRC297\", \"API650\", \"PD5500\" or \"custom\"");
+                int vessel = Get(t, "vessel_node") != null ? (int)Math.Round(Num(Get(t, "vessel_node"), w + ".vessel_node")) : 0;
+                foreach (int n in NodesOf(t, w))
+                {
+                    if (m.Nozzles.Any(x => x.Node == n)) throw Err(w + ": node " + n + " has a nozzle already");
+                    if (n == vessel) throw Err(w + ": node and vessel_node are both " + n);
+                    var z = new PipeModelNozzle { Node = n, VesselNode = vessel, Type = code, Source = w };
+                    Action<string, string, double> put = (key, field, v) =>
+                    {
+                        int f = PipeModelNozzle.FieldIndex(field);
+                        if (z.Item(f) == 0) throw Err(w + ": " + key + " does not apply to a " + z.TypeName + " nozzle");
+                        z.Set(f, v);
+                    };
+                    foreach (var k in NozzleKeys) { object v = Get(t, k[0]); if (v != null) put(k[0], k[1], Num(v, w + "." + k[0])); }
+                    string vt = Str(t, "vessel_type", "", w).Trim().ToLowerInvariant();
+                    if (vt.Length > 0) { if (vt != "cylinder" && vt != "sphere") throw Err(w + ".vessel_type = \"cylinder\" or \"sphere\""); put("vessel_type", "vessel type", vt == "sphere" ? 1 : 0); }
+                    string rf = Str(t, "reinforcing", "", w).Trim().ToLowerInvariant();
+                    if (rf.Length > 0) { if (rf != "shell" && rf != "nozzle") throw Err(w + ".reinforcing = \"shell\" or \"nozzle\""); put("reinforcing", "reinforcing", rf == "shell" ? 1 : 2); }
+                    var ax = Arr(t, "vessel_axis", w + ".vessel_axis");
+                    if (ax != null)
+                    {
+                        var d = Vec(ax, w + ".vessel_axis", 1);
+                        if (!(Norm(d) > 1e-9)) throw Err(w + ".vessel_axis: a direction is needed");
+                        d = Scale(d, 1 / Norm(d));
+                        put("vessel_axis", "axis X", d[0]); put("vessel_axis", "axis Y", d[1]); put("vessel_axis", "axis Z", d[2]);
+                    }
+                    var e = m.Elements.FirstOrDefault(x => x.From == n || x.To == n);
+                    int fo = PipeModelNozzle.FieldIndex("nozzle OD"), fw = PipeModelNozzle.FieldIndex("nozzle wall");
+                    if (e != null && z.Get(fo) == 0) z.Set(fo, e.Od);
+                    if (e != null && z.Item(fw) > 0 && z.Get(fw) == 0) z.Set(fw, e.Wall);
+                    if (!(z.Get(PipeModelNozzle.FieldIndex("vessel OD")) > 0) || !(z.Get(PipeModelNozzle.FieldIndex("vessel wall")) > 0))
+                        throw Err(w + ": vessel_od and vessel_wall are required");
+                    if (code != 1 && ax == null) throw Err(w + ": vessel_axis = [x, y, z] is required (the vessel's centreline)");
+                    m.Nozzles.Add(z);
+                }
+            }
+        }
+
         static PipeModelHanger Copy(PipeModelHanger a)
         {
             var h = new PipeModelHanger { CNode = a.CNode, Tag = a.Tag, Source = a.Source, Count = a.Count, Table = a.Table, ShortRange = a.ShortRange,
@@ -1681,6 +1742,7 @@ public static class PipeBuilder
                     throw Err("node " + g.Key + ": " + g.Count() + " restraints; CAESAR holds 6 per element at a node and " + touching[g.Key] + " element(s) meet there");
             foreach (var s in m.Sifs) if (!nodes.Contains(s.Node)) throw Err("a SIF / tee at node " + s.Node + ", which is on no element");
             foreach (var h in m.Hangers) if (!nodes.Contains(h.Node)) throw Err(h.Source + ": a hanger at node " + h.Node + ", which is on no element");
+            foreach (var z in m.Nozzles) if (!nodes.Contains(z.Node)) throw Err(z.Source + ": a nozzle at node " + z.Node + ", which is on no element");
             foreach (var g in m.Sifs.GroupBy(x => x.Node))
                 if (g.Count() > 1) throw Err("node " + g.Key + ": " + g.Count() + " SIF / tee entries (a branch's welding tee is automatic; give tee = \"none\" on the branch to define your own)");
             foreach (var e in m.Elements) { int c; res.ElementsByKind.TryGetValue(e.Kind, out c); res.ElementsByKind[e.Kind] = c + 1; }

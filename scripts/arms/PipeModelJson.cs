@@ -137,6 +137,17 @@ public static class PipeModelJson
             w.Close();
         }
         w.CloseArr();
+        if (m.Nozzles.Count > 0)
+        {
+            w.Key("nozzles"); w.OpenArr();
+            foreach (var z in m.Nozzles)
+            {
+                w.Open();
+                w.Num("node", z.Node); w.Num("vesselNode", z.VesselNode); w.Num("type", z.Type); w.Nums("v", z.V); w.Str("source", z.Source); w.Lines("raw", z.Raw);
+                w.Close();
+            }
+            w.CloseArr();
+        }
         if (m.Hangers.Count > 0)
         {
             w.Key("hangers"); w.OpenArr();
@@ -345,6 +356,14 @@ public static class PipeModelJson
         {
             var o = (Dictionary<string, object>)to;
             m.Sifs.Add(new PipeModelSif { Node = I(o, "node"), Type = I(o, "type"), SifIn = D(o, "sifIn"), SifOut = D(o, "sifOut"), SurfaceNode = I(o, "surfaceNode"), OwnerUid = I(o, "owner"), Slot = I(o, "slot"), Raw = L(o, "raw") });
+        }
+        foreach (var zo in Arr(root, "nozzles"))
+        {
+            var o = (Dictionary<string, object>)zo;
+            var z = new PipeModelNozzle { Node = I(o, "node"), VesselNode = I(o, "vesselNode"), Type = I(o, "type"), Source = S(o, "source") ?? "", Raw = L(o, "raw") };
+            var v = Ds(o, "v");
+            for (int i = 0; v != null && i < 22 && i < v.Length; i++) z.V[i] = double.IsNaN(v[i]) ? 0 : v[i];
+            m.Nozzles.Add(z);
         }
         foreach (var ho in Arr(root, "hangers"))
         {

@@ -31,6 +31,8 @@ using System.Text;
 //   hangers         the spring hangers CAESAR designs (info; hangers-given: the springs and constant supports it does not)
 //   hanger-twice    two hanger entries at one node; hanger-rate-only: a rate without its installed load;
 //   hanger-free     a hanger frees an anchor that is no restraint
+//   nozzles         the flexible nozzles (info); nozzle-restrained: a nozzle node also held to ground; nozzle-axis: the
+//                   vessel centreline missing or along the nozzle
 //   uniform-mixed   the uniform loads mix g's and force per length (CAESAR's error checker warns: 246E, 247E)
 // plus CaesarNeutralWriter.NoticeItems (layouts and codes from the documentation) and any messages the caller adds
 // (the build's warnings, the preview's own).
@@ -112,6 +114,12 @@ public static class PipeReview
             if (h.Node <= 0) continue;
             if (h.CNode > 0) { join(h.Node, h.CNode); connected.Add(h.Node); connected.Add(h.CNode); }
             else ground.Add(h.Node);
+        }
+        foreach (var z in m.Nozzles)
+        {
+            if (z.Node <= 0) continue;
+            if (z.VesselNode > 0) { join(z.Node, z.VesselNode); connected.Add(z.Node); connected.Add(z.VesselNode); }
+            else ground.Add(z.Node);
         }
         if (cm != null)
         {
@@ -202,6 +210,7 @@ public static class PipeReview
         foreach (var s in m.Sifs) off(s.Node, "a SIF / tee entry");
         foreach (var x in m.NodeLoads) off(x.Node, x.IsDisplacement ? "an imposed displacement" : "a force / moment");
         foreach (var h in m.Hangers) off(h.Node, "a hanger");
+        foreach (var z in m.Nozzles) off(z.Node, "a nozzle");
         foreach (var kv in refsOff)
             items.Add(new PipeReviewItem("error", "off-model", "node " + kv.Key + " has " + string.Join(", ", kv.Value.ToArray()) + " but is on no element and no connection reaches it").WithNodes(new[] { kv.Key }));
         foreach (var r in restraints.Where(x => x.CNode > 0 && !onElement.Contains(x.CNode)).GroupBy(x => x.CNode))
@@ -605,6 +614,30 @@ public static class PipeReview
         else if (cm != null && cm.Hangers.Count > 0)
             items.Add(new PipeReviewItem("info", "hangers", cm.Hangers.Count + " spring hanger" + (cm.Hangers.Count == 1 ? "" : "s") + " (carried as written): CAESAR designs them first and asks for its hanger-design load cases (weight, then operating) before the others")
                 .WithNodes(cm.Hangers.Select(h => h.Node).Where(n => n > 0).Take(ListMax)));
+        if (m.Nozzles.Count > 0) NozzleRules(m, items, restraints);
+    }
+
+    static void NozzleRules(PipeModel m, List<PipeReviewItem> items, List<PipeModelRestraint> restraints)
+    {
+        items.Add(new PipeReviewItem("info", "nozzles", m.Nozzles.Count + " flexible nozzle" + (m.Nozzles.Count == 1 ? "" : "s") + " (" +
+            string.Join(", ", m.Nozzles.GroupBy(z => z.TypeName).Select(k => k.Count() + " " + k.Key).ToArray()) + "): CAESAR adds each one's flexibility between its node and its vessel node (or ground)")
+            .WithNodes(m.Nozzles.Select(z => z.Node).Take(ListMax)));
+        foreach (var z in m.Nozzles)
+        {
+            var held = restraints.Where(r => r.Node == z.Node && r.CNode <= 0).Select(r => r.Type).Distinct().ToList();
+            if (held.Count > 0)
+                items.Add(new PipeReviewItem("warning", "nozzle-restrained", "the nozzle at node " + z.Node + " is also held to ground there (" + string.Join(", ", held.ToArray()) +
+                    "): the restraint takes what the nozzle's flexibility would; restrain the vessel node instead, or nothing").WithNodes(new[] { z.Node }));
+            if (z.Type == 1) continue;   // API 650: the tank's axis is vertical
+            double ax = z.Get(11), ay = z.Get(12), az = z.Get(13), an = Math.Sqrt(ax * ax + ay * ay + az * az);
+            if (!(an > 0)) { items.Add(new PipeReviewItem("warning", "nozzle-axis", "the " + z.TypeName + " nozzle at node " + z.Node + " has no vessel centreline direction").WithNodes(new[] { z.Node })); continue; }
+            var e = m.Elements.FirstOrDefault(x => x.From == z.Node || x.To == z.Node);
+            if (e == null) continue;
+            double el = Math.Sqrt(e.Dx * e.Dx + e.Dy * e.Dy + e.Dz * e.Dz);
+            if (el > 0 && Math.Abs((e.Dx * ax + e.Dy * ay + e.Dz * az) / (el * an)) > 0.99)
+                items.Add(new PipeReviewItem("error", "nozzle-axis", "the " + z.TypeName + " nozzle at node " + z.Node + ": the vessel centreline runs along the nozzle (element " + e.From + "-" + e.To +
+                    "); CAESAR needs a nozzle square to the vessel, so give the vessel's own axis").WithNodes(new[] { z.Node }));
+        }
     }
 
     static void HangerRules(PipeModel m, List<PipeReviewItem> items, List<PipeModelRestraint> restraints, HashSet<int> onElement)

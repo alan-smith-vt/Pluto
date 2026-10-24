@@ -49,7 +49,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 
 - **`-In`** (alias `-Config`), one of:
   - a `.xlsx` workbook ([[vault/arms/pipe-workbook|pipe-workbook]]); the report lists its edits;
-  - a `.toml` config. Every key is shown, with its unit, in `scripts/caesar/examples/pipe-example.toml`;
+  - a `.toml` config. Every key is shown, with its unit, in `scripts/caesar/examples/pipe-example.toml`; `pipe-patterns.toml` beside it shows the patterns beyond it (a control-valve station whose bypass closes on the header, a vessel nozzle with hangers, a tank nozzle, coupling gaps, control rods, design data);
   - a `.cii`, an existing CAESAR job. The report says whether writing it back gives the source identically;
   - a `.pipe.json`, a model saved with `-Json`.
 - **Outputs**, in any combination:
@@ -164,7 +164,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 >
 >   The fixture's CAESAR job holds the same pattern: a node tied to node + 1 in X Y Z RX RY RZ, with a rotational gap and user SIFs. On a skewed pipe the restraints carry cosines.
 
-> [!info]- [[supports]], [[ties]], [[hangers]], [[sifs]]
+> [!info]- [[supports]], [[ties]], [[hangers]], [[nozzles]], [[sifs]]
 > **`[[supports]]`:**
 > - **Where:** `node = n`, or `run` + `at = x | [x, …]`, or `run` + `every = d` (`from` = d and `to` = L unless given).
 > - **What:**
@@ -184,6 +184,12 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 >   - `constant` (lb): a **constant-effort support**.
 > - **Design data** (each optional): `table` (CAESAR's hanger table number; blank = the job's default), `count` (hangers at the location), `load_variation` (%, default 25), `short_range = false`, `max_travel` and `space` (in), `rigid_criteria`, `operating_load`, `hardware_weight`, `multi_load`, `tag`.
 > - **Anchors freed while it is designed:** `free_node = n` with `free_dofs = "Y" | "XY" | "ZY" | "XYZ" | "all"` (default all), and `free_node2` / `free_dofs2`.
+>
+> **`[[nozzles]]`:** flexible nozzles ([[vault/format/caesar-neutral-nozzles|caesar-neutral-nozzles]]), one per node: `node` or `run` + `at`, `type`, `vessel_node` (blank = a rigid vessel).
+> - `type = "WRC297"` or `"PD5500"` (a nozzle on a vessel): `vessel_od`, `vessel_wall`, `vessel_axis = [x, y, z]` (required), `pad`, `stiffener_distance`, `opposite_distance`, `vessel_temperature`, `vessel_material`; PD 5500 also `vessel_type = "cylinder" | "sphere"`.
+> - `type = "API650"` (a tank shell): `vessel_od`, `vessel_wall` (the tank's), `reinforcing = "shell" | "nozzle"`, `nozzle_height`, `fluid_height`, `displacement_vector`, `fluid_sg`, `tank_alpha`, `tank_delta_t`, `tank_e`.
+> - `type = "custom"`: `vessel_od`, `vessel_wall`, `vessel_axis`, `pad`, `vessel_material`, and `axial_stiffness` (lb/in), `inplane_stiffness`, `outplane_stiffness`, `torsional_stiffness` (in·lb/deg).
+> - `nozzle_od` and `nozzle_wall` default to the pipe's at the node. Lengths in inches. A key the type does not use is an error.
 >
 > **`[[sifs]]`:** `type = "welding"` (a welding tee), or `sif_in` / `sif_out` alone (user SIFs; `sif_out` defaults to `sif_in`). One SIF / tee entry per node: a branch's automatic tee counts. Give the branch `tee = "none"` to write your own.
 
@@ -280,9 +286,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 >
 >   Details: [[vault/format/caesar-neutral-loads|caesar-neutral-loads]].
 > - **From CAESAR's documentation only:** restraint codes beyond 26 (rods, bilinear supports, springs, one-way snubbers). The builder does not write them; a workbook row that names one gets a `[notice ]` line.
-> - **Not written:**
->   - nozzle flexibility (WRC 297);
->   - load cases. CAESAR recommends cases on import.
+> - **Not written:** load cases. CAESAR recommends cases on import.
 > - **Also not yet:** flanged-bend types and mitres, and tee types other than welding.
 
 ## Verification (2026-10-07, Linux)

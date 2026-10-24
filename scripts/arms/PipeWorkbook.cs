@@ -19,7 +19,8 @@ using System.Text;
 //   Sections      pipe sizes: OD, wall, insulation, corrosion, densities, material (an element names one)
 //   Processes     T1-T9, P1-P9, fluid density (an element names one)
 //   Restraints    node, type, CNODE, stiffness (blank = rigid), gap, friction, cosines (blank = the type's), tag
-//   SIFs, Joints, Forces, Displacements (blank = free), Hangers (blank Rate / Constant = CAESAR designs it), Coords
+//   SIFs, Joints, Forces, Displacements (blank = free), Hangers (blank Rate / Constant = CAESAR designs it),
+//                 Nozzles (WRC 297 / API 650 / PD 5500 / custom; the columns a type does not use stay blank), Coords
 //   Uniform, Wind per element: a row names one element or a range of them (E3:E9, or From and To along a chain);
 //                 an element no row names has none (CAESAR carries a load forward: the writer ends it there)
 //   Nodes, Carried, Help    read-only: rebuilt on every export, never read
@@ -579,6 +580,40 @@ public static class PipeWorkbook
         PipeWorkbookGui.Rule(hg, "D2:F" + limH, "AND(ISNUMBER($D2),$D2>0,ISNUMBER($F2),$F2>0)", t.Red);                                // a constant support with a rate
         PipeWorkbookGui.Rule(hg, "Q2:T" + limH, "OR(AND(ISNUMBER($Q2),$R2=\"\"),AND($Q2=\"\",$R2<>\"\"),AND(ISNUMBER($S2),$T2=\"\"),AND($S2=\"\",$T2<>\"\"))", t.Red);   // a node to free and its code
 
+        // ---- Nozzles
+        var nz = b.Add("Nozzles");
+        nz.FreezeRows = 1; nz.FreezeCols = 2; nz.TabColor = "B45309";
+        var nzh = NozzleHeaders(u);
+        for (int c = 0; c < nzh.Length; c++) nz.Width(c, c < 3 ? 9 : c == 3 ? 11 : 12);
+        r = 1;
+        for (int i = 0; i < m.Nozzles.Count; i++)
+        {
+            var z = m.Nozzles[i];
+            nz.Set(r, 0, "N" + (i + 1)); nz.Set(r, 1, z.Node); if (z.VesselNode != 0) nz.Set(r, 2, z.VesselNode); nz.Set(r, 3, z.TypeName);
+            for (int f = 0; f < PipeModelNozzle.Fields.Length; f++)
+            {
+                if (z.Item(f) == 0) continue;
+                double v = z.Get(f);
+                string name = PipeWorkbookGui.NozzleHeader(f);
+                if (name == "Vessel type") { if (v != 0) nz.Set(r, 4 + f, v == 1 ? "sphere" : R(v)); else nz.Set(r, 4 + f, "cylinder"); }
+                else if (name == "Reinforcing") { if (v != 0) nz.Set(r, 4 + f, v == 1 ? "shell" : v == 2 ? "nozzle" : R(v)); }
+                else if (v != 0) nz.Set(r, 4 + f, v);
+            }
+            r++;
+        }
+        int limN = Math.Max(300, m.Nozzles.Count + 200);
+        PipeWorkbookGui.Table(nz, t, nzh, PipeWorkbookGui.NozzleCols(), m.Nozzles.Count, limN);
+        PipeWorkbookGui.Rule(nz, "B2:B" + limN, "AND(B2=\"\",COUNTA($A2,$C2:$AC2)>0)", t.Red);
+        PipeWorkbookGui.Rule(nz, "B2:C" + limN, PipeWorkbookGui.NodeMissing("B2", nFrom, nTo, nBend), t.Amber);
+        for (int f = 0; f < PipeModelNozzle.Fields.Length; f++)      // a value in a column the row's type does not use
+        {
+            var probe = new PipeModelNozzle();
+            var uses = new List<string>();
+            for (int ty = 0; ty < 4; ty++) { probe.Type = ty; if (probe.Item(f) > 0) uses.Add("$D2=\"" + PipeModelNozzle.TypeNames[ty] + "\""); }
+            string cn = XlsxBook.Column(4 + f);
+            PipeWorkbookGui.Rule(nz, cn + "2:" + cn + limN, "AND(" + cn + "2<>\"\",NOT(OR(" + string.Join(",", uses.ToArray()) + ")))", t.Red);
+        }
+
         // ---- Coords
         var co = b.Add("Coords");
         co.FreezeRows = 1; co.TabColor = "1565C0";
@@ -602,6 +637,9 @@ public static class PipeWorkbook
         Head(li, "Element types", "Restraint types", "Bend types", "Wind types", "Yes / no", "Vertical axis", "Joint frame", "Views", "Vectors", "SIF types", "Joint kinds",
              "NPS OD (in)", "NPS", "Coded radius (x NPS)", "View azimuth", "View elevation", "Hanger free codes");
         for (int k = 0; k < FreeNames.Length; k++) li.Set(1 + k, 16, FreeNames[k]);
+        li.Set(0, 17, "Nozzle types", XlsxBook.Header); li.Set(0, 18, "Vessel types", XlsxBook.Header); li.Set(0, 19, "Reinforcing", XlsxBook.Header);
+        for (int k = 0; k < 4; k++) li.Set(1 + k, 17, PipeModelNozzle.TypeNames[k]);
+        li.Set(1, 18, "cylinder"); li.Set(2, 18, "sphere"); li.Set(1, 19, "shell"); li.Set(2, 19, "nozzle");
         for (int k = 0; k < ElementTypes.Length; k++) li.Set(1 + k, 0, ElementTypes[k]);
         for (int k = 0; k < types.Count; k++) li.Set(1 + k, 1, types[k]);
         for (int k = 0; k < BendTypes.Length; k++) li.Set(1 + k, 2, BendTypes[k]);
@@ -659,6 +697,7 @@ public static class PipeWorkbook
             new PipeWorkbookGui.SheetInfo("Wind", "wind / wave data on elements", rowsOf("Wind", "A,B")),
             new PipeWorkbookGui.SheetInfo("Joints", "couplings, hinges, slip joints: ties between two nodes per DOF", rowsOf("Joints", "B,C")),
             new PipeWorkbookGui.SheetInfo("Hangers", "spring hangers: designed by CAESAR, springs as given, constant supports", rowsOf("Hangers", "B,C")),
+            new PipeWorkbookGui.SheetInfo("Nozzles", "flexible nozzles on vessels and tanks: WRC 297, API 650, PD 5500, custom stiffnesses", rowsOf("Nozzles", "B,D")),
             new PipeWorkbookGui.SheetInfo("Coords", "where pieces of the model start", rowsOf("Coords", "A")),
             new PipeWorkbookGui.SheetInfo("Nodes", "read-only: every node, its position and what is on it", null),
             new PipeWorkbookGui.SheetInfo("Carried", "read-only: what the job holds that the sheets do not show (kept as written)", null),
@@ -673,7 +712,7 @@ public static class PipeWorkbook
         {
             new PipeWorkbookGui.Check("Error values (#N/A, #DIV/0! ...) on the input sheets",
                 errIn("Elements", "A:BE") + "+" + errIn("Sections", "A:M") + "+" + errIn("Processes", "A:U") + "+" + errIn("Restraints", "A:K") + "+" + errIn("Forces", "A:I") + "+" + errIn("Displacements", "A:I") + "+" +
-                errIn("Uniform", "A:H") + "+" + errIn("Wind", "A:I") + "+" + errIn("Hangers", "A:U") + "+" + errIn("Coords", "A:D"), false),
+                errIn("Uniform", "A:H") + "+" + errIn("Wind", "A:I") + "+" + errIn("Hangers", "A:U") + "+" + errIn("Nozzles", "A:AC") + "+" + errIn("Coords", "A:D"), false),
             new PipeWorkbookGui.Check("Elements: text where a number belongs", textIn("Elements", "B:F,J:J,M:T,W:BD") + "-SUMPRODUCT(" + string.Join("+", PipeWorkbookGui.RadiusNames.Select(rn => "(UPPER(TRIM(" + col("J") + "))=\"" + rn + "\")").ToArray()) + ")", false),
             new PipeWorkbookGui.Check("Elements: rows without From or To", "SUMPRODUCT(((" + col("B") + "=\"\")+(" + col("C") + "=\"\")>0)*(LEN(" + col("A") + "&" + col("D") + "&" + col("E") + "&" + col("F") + "&" + col("G") + ")>0))", false),
             new PipeWorkbookGui.Check("Elements: unknown Type, Section or Process",
@@ -687,7 +726,9 @@ public static class PipeWorkbook
                 "SUMPRODUCT((Uniform!$A$2:$A$" + L2 + "<>\"\")*ISERROR(FIND(\":\",Uniform!$A$2:$A$" + L2 + "))*(COUNTIF(" + col("A") + ",Uniform!$A$2:$A$" + L2 + ")=0))+SUMPRODUCT((Wind!$A$2:$A$" + L2 +
                 "<>\"\")*ISERROR(FIND(\":\",Wind!$A$2:$A$" + L2 + "))*(COUNTIF(" + col("A") + ",Wind!$A$2:$A$" + L2 + ")=0))", false),
             new PipeWorkbookGui.Check("Restraints, SIFs, loads, hangers: nodes on no element's From / To (bend nodes are fine)",
-                missingNodes("Restraints", "B") + "+" + missingNodes("SIFs", "B") + "+" + missingNodes("Forces", "B") + "+" + missingNodes("Displacements", "B") + "+" + missingNodes("Hangers", "B"), true),
+                missingNodes("Restraints", "B") + "+" + missingNodes("SIFs", "B") + "+" + missingNodes("Forces", "B") + "+" + missingNodes("Displacements", "B") + "+" + missingNodes("Hangers", "B") + "+" + missingNodes("Nozzles", "B"), true),
+            new PipeWorkbookGui.Check("Nozzles: unknown type, text where a number belongs, or a value the nozzle's type does not use",
+                unknown("Nozzles!$D$2:$D$" + L2, PipeWorkbookGui.LNozzle, "") + "+" + textIn("Nozzles", "B:C,E:F,H:J,L:AC") + "+" + NozzleMisfits(L2), false),
             new PipeWorkbookGui.Check("Hangers: text where a number belongs, a rate without its cold load or with a constant load, a node to free without its code",
                 textIn("Hangers", "B:I,K:Q,S:S") + "+SUMPRODUCT(ISNUMBER(Hangers!$D$2:$D$" + L2 + ")*(Hangers!$D$2:$D$" + L2 + ">0)*(NOT(ISNUMBER(Hangers!$E$2:$E$" + L2 + "))+ISNUMBER(Hangers!$F$2:$F$" + L2 +
                 ")*(Hangers!$F$2:$F$" + L2 + ">0)>0))+SUMPRODUCT((ISNUMBER(Hangers!$Q$2:$Q$" + L2 + ")<>(Hangers!$R$2:$R$" + L2 + "<>\"\"))+(ISNUMBER(Hangers!$S$2:$S$" + L2 + ")<>(Hangers!$T$2:$T$" + L2 + "<>\"\")))", false),
@@ -704,7 +745,7 @@ public static class PipeWorkbook
                 "SUMPRODUCT((COUNTIFS(ck_rn,Displacements!$B$2:$B$" + L2 + ",ck_rc,\"\")>0)*(((Displacements!$D$2:$D$" + L2 + "<>\"\")+(Displacements!$E$2:$E$" + L2 + "<>\"\")+(Displacements!$F$2:$F$" + L2 +
                 "<>\"\")+(Displacements!$G$2:$G$" + L2 + "<>\"\")+(Displacements!$H$2:$H$" + L2 + "<>\"\")+(Displacements!$I$2:$I$" + L2 + "<>\"\"))>0))", false),
             new PipeWorkbookGui.Check("Node numbers above 8,000,000 (CAESAR's limit)",
-                string.Join("+", new[] { "Elements!$B$2:$C$", "Restraints!$B$2:$B$", "Restraints!$D$2:$D$", "SIFs!$B$2:$B$", "Forces!$B$2:$B$", "Displacements!$B$2:$B$", "Hangers!$B$2:$C$", "Coords!$A$2:$A$" }
+                string.Join("+", new[] { "Elements!$B$2:$C$", "Restraints!$B$2:$B$", "Restraints!$D$2:$D$", "SIFs!$B$2:$B$", "Forces!$B$2:$B$", "Displacements!$B$2:$B$", "Hangers!$B$2:$C$", "Nozzles!$B$2:$C$", "Coords!$A$2:$A$" }
                     .Select(r0 => "SUMPRODUCT(ISNUMBER(" + r0 + L2 + ")*(" + r0 + L2 + ">8000000))").ToArray()), false),
             new PipeWorkbookGui.Check("Elements: a change of direction with no bend or tee: CAESAR warns",
                 PipeWorkbookGui.CalcCount("fK", n), true),
@@ -735,6 +776,7 @@ public static class PipeWorkbook
             "Restraints: Stiffness blank = rigid; Cos blank = the type's own axis (guides and limit stops take the pipe's). Forces / Displacements: one row per node and load vector (1-9); a displacement left blank is free, 0 holds it.",
             "Uniform / Wind: per element; an element no row names has none (CAESAR carries a load on to later elements; Pluto ends it there). Element = an Id, a range in the Elements order (E3:E9), or blank with From and To (a chain of elements).",
             "Joints: DOFs like 'axial gap=0.125 k=5000; shear; torsion; bending gap=2' (frame pipe) or 'X; Y; RZ k=1e6' (frame global); a DOF not listed is free.",
+            "Nozzles: Type WRC 297 / PD 5500 (a vessel: give its OD, wall and centreline), API 650 (a tank shell), Custom (its four stiffnesses); Vessel node blank = a rigid vessel. A column the type does not use is red.",
             "Hangers: Rate and Constant blank = CAESAR designs the hanger (from Table; it then asks for its hanger-design load cases). Rate with Cold load = a spring as given. Constant = a constant-effort support. One row per node: Count for more than one.",
             "Read back: only the input sheets. Start, 3D View, Nodes and Carried are rebuilt on every export. The hidden _pluto sheet holds the model this workbook was written from: what you did not change is given back exactly.",
         };
@@ -989,6 +1031,7 @@ public static class PipeWorkbook
         ReadWind(sheet("Wind"), x, ids);
         ReadJoints(sheet("Joints"), x);
         ReadHangers(sheet("Hangers"), x);
+        ReadNozzles(sheet("Nozzles"), x);
         ReadCoords(sheet("Coords"), x);
         m.AssignUids();
         foreach (string e in CaesarNeutralWriter.Validate(m)) x.Err(e);
@@ -1425,6 +1468,76 @@ public static class PipeWorkbook
         int next = m.Joints.Count == 0 ? 1 : m.Joints.Max(j => j.Uid) + 1;
         foreach (var j in m.Joints) if (j.Uid <= 0) j.Uid = next++;
     }
+
+    // ---- Nozzles
+
+    static string[] NozzleHeaders(Units u)
+    {
+        string[] unit = { u.Dia, u.Thk, null, u.Dia, u.Thk, u.Thk, null, u.Len, u.Len, u.Len, u.Len, null, null, null, u.Temp, null, null, null, null, u.Temp, u.E, u.TransK, u.RotK, u.RotK, u.RotK };
+        var h = new List<string> { "Id", "Node", "Vessel node", "Type" };
+        for (int f = 0; f < PipeModelNozzle.Fields.Length; f++) h.Add(PipeWorkbookGui.NozzleHeader(f) + (unit[f] != null ? " (" + unit[f] + ")" : ""));
+        return h.ToArray();
+    }
+
+    // rows with a value in a column their type does not use
+    static string NozzleMisfits(string l2)
+    {
+        var terms = new List<string>();
+        var probe = new PipeModelNozzle();
+        for (int f = 0; f < PipeModelNozzle.Fields.Length; f++)
+        {
+            string col = XlsxBook.Column(4 + f), rng = "Nozzles!$" + col + "$2:$" + col + "$" + l2, ty = "Nozzles!$D$2:$D$" + l2;
+            var not = new List<string>();
+            for (int t = 0; t < 4; t++) { probe.Type = t; if (probe.Item(f) > 0) not.Add("(" + ty + "<>\"" + PipeModelNozzle.TypeNames[t] + "\")"); }
+            terms.Add("SUMPRODUCT((" + rng + "<>\"\")*(" + ty + "<>\"\")*" + string.Join("*", not.ToArray()) + ")");
+        }
+        return string.Join("+", terms.ToArray());
+    }
+
+    static void ReadNozzles(CaesarSheet s, Ctx x)
+    {
+        var m = x.M;
+        if (s == null) return;   // a workbook from before the Nozzles sheet: the base's nozzles stay
+        var known = new List<string> { "Id", "Node", "Vessel node", "Type" };
+        for (int f = 0; f < PipeModelNozzle.Fields.Length; f++) known.Add(PipeWorkbookGui.NozzleHeader(f));
+        var c = ColsOf(s, x, known.ToArray());
+        var old = new List<PipeModelNozzle>(m.Nozzles);
+        var list = new List<PipeModelNozzle>();
+        var seen = new HashSet<int>();
+        for (int r = 1; r < s.Rows.Count; r++)
+        {
+            if (Blank(s, r)) continue;
+            string id = Text(c, r, "Id", x), w = "Nozzles row " + (r + 1) + (id.Length > 0 ? " (" + id + ")" : "");
+            int n = IdNum(id, 'N');
+            var z = n > 0 && n <= old.Count && seen.Add(n) ? old[n - 1] : new PipeModelNozzle { Source = "workbook" };
+            int node = Int(c, r, "Node", x, 0);
+            if (node <= 0) { x.Err(w + ": a node is required"); continue; }
+            string tn = Text(c, r, "Type", x);
+            int type = Array.FindIndex(PipeModelNozzle.TypeNames, q => string.Equals(q.Replace(" ", ""), tn.Replace(" ", ""), StringComparison.OrdinalIgnoreCase));
+            int tv;
+            if (type < 0 && int.TryParse(tn, NumberStyles.Integer, CultureInfo.InvariantCulture, out tv) && tv >= 0 && tv <= 3) type = tv;
+            if (type < 0) { x.Err(w + ": type \"" + tn + "\" (WRC 297, API 650, PD 5500 or Custom)"); continue; }
+            if (type != z.Type) { Array.Clear(z.V, 0, z.V.Length); z.Type = type; }   // another type: its values mean other things
+            z.Node = node; z.VesselNode = Int(c, r, "Vessel node", x, 0);
+            for (int f = 0; f < PipeModelNozzle.Fields.Length; f++)
+            {
+                string name = PipeWorkbookGui.NozzleHeader(f), txt = Text(c, r, name, x);
+                if (z.Item(f) == 0) { if (txt.Length > 0) x.Err(w + ": " + name + " does not apply to a " + z.TypeName + " nozzle"); continue; }
+                double v;
+                if (name == "Vessel type") v = txt.Length == 0 || txt.Equals("cylinder", StringComparison.OrdinalIgnoreCase) ? 0 : txt.Equals("sphere", StringComparison.OrdinalIgnoreCase) ? 1 : Bad(x, w, name, txt);
+                else if (name == "Reinforcing") v = txt.Length == 0 ? 0 : txt.Equals("shell", StringComparison.OrdinalIgnoreCase) ? 1 : txt.Equals("nozzle", StringComparison.OrdinalIgnoreCase) ? 2 : Bad(x, w, name, txt);
+                else v = Z(Num(c, r, name, x, -1, null));
+                double cur = z.Get(f);
+                SetN(ref cur, v);
+                z.Set(f, cur);
+            }
+            list.Add(z);
+        }
+        m.Nozzles.Clear();
+        m.Nozzles.AddRange(list);
+    }
+
+    static double Bad(Ctx x, string w, string name, string txt) { x.Err(w + ": " + name + " \"" + txt + "\""); return 0; }
 
     // ---- Hangers
 

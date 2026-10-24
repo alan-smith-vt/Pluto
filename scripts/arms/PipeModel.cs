@@ -44,6 +44,7 @@ public class PipeModel
     public readonly List<PipeModelJoint> Joints = new List<PipeModelJoint>();     // expanded to CNODE restraints when written
     public readonly List<PipeModelSif> Sifs = new List<PipeModelSif>();
     public readonly List<PipeModelHanger> Hangers = new List<PipeModelHanger>();   // spring hangers (MISCEL_1), in CAESAR's order
+    public readonly List<PipeModelNozzle> Nozzles = new List<PipeModelNozzle>();   // flexible nozzles (MISCEL_1), in CAESAR's order
     public readonly List<PipeModelNodeLoad> NodeLoads = new List<PipeModelNodeLoad>();   // forces / moments and imposed displacements
     public readonly List<PipeModelCoord> Coords = new List<PipeModelCoord>();
     public readonly Dictionary<int, double[]> Positions = new Dictionary<int, double[]>();   // node -> x y z (in), as built
@@ -462,6 +463,51 @@ public class PipeModelHanger
     public string Kind
     {
         get { return ConstantLoad != 0 ? "constant" : Rate != 0 ? "spring" : "designed"; }
+    }
+}
+
+// A flexible nozzle (MISCEL_1 nozzle data): CAESAR works out the flexibility of a nozzle on a vessel (WRC 297,
+// PD 5500) or on a tank shell (API 650), or takes the stiffnesses given (custom), between the nozzle node and the
+// vessel node (or ground without one). CAESAR's 22 values in its order: V[i] is its item i + 1; items 1-3 are the
+// node, the vessel node and the type, kept in Node / VesselNode / Type. Job units.
+public class PipeModelNozzle
+{
+    public static readonly string[] TypeNames = { "WRC 297", "API 650", "PD 5500", "Custom" };
+    public int Node, VesselNode;
+    public int Type;                          // 0 WRC 297, 1 API 650, 2 PD 5500, 3 custom
+    public readonly double[] V = new double[22];
+    public string Source = "";                // which config item made it (messages)
+    public List<string> Raw;                  // its lines as written; null = new
+
+    public string TypeName { get { return Type >= 0 && Type < TypeNames.Length ? TypeNames[Type] : "type " + Type; } }
+
+    // The values a sheet or a config names, by the item each type keeps them in (0 = not one of this type's)
+    public static readonly string[] Fields =
+    {
+        "nozzle OD", "nozzle wall", "vessel type", "vessel OD", "vessel wall", "pad", "reinforcing", "stiffener distance", "opposite distance",
+        "nozzle height", "fluid height", "axis X", "axis Y", "axis Z", "vessel temperature", "vessel material", "displacement vector", "fluid SG",
+        "tank alpha", "tank delta T", "tank E", "axial stiffness", "in-plane stiffness", "out-of-plane stiffness", "torsional stiffness"
+    };
+    static readonly int[][] ItemOf =       // per field: WRC 297, API 650, PD 5500, custom
+    {
+        new[] { 4, 4, 4, 4 }, new[] { 5, 5, 0, 5 }, new[] { 0, 0, 5, 0 }, new[] { 6, 6, 6, 6 }, new[] { 7, 7, 7, 7 }, new[] { 8, 0, 8, 8 }, new[] { 0, 9, 0, 0 },
+        new[] { 10, 0, 10, 0 }, new[] { 11, 0, 11, 0 }, new[] { 0, 10, 0, 0 }, new[] { 0, 11, 0, 0 }, new[] { 12, 0, 12, 12 }, new[] { 13, 0, 13, 13 },
+        new[] { 14, 0, 14, 14 }, new[] { 15, 0, 15, 0 }, new[] { 16, 0, 16, 16 }, new[] { 0, 12, 0, 0 }, new[] { 0, 13, 0, 0 }, new[] { 0, 14, 0, 0 },
+        new[] { 0, 15, 0, 0 }, new[] { 0, 16, 0, 0 }, new[] { 0, 0, 0, 19 }, new[] { 0, 0, 0, 20 }, new[] { 0, 0, 0, 21 }, new[] { 0, 0, 0, 22 }
+    };
+
+    // CAESAR's item (1-22) that holds field f for this nozzle's type; 0 when the type has none
+    public int Item(int f) { return f >= 0 && f < ItemOf.Length && Type >= 0 && Type < 4 ? ItemOf[f][Type] : 0; }
+    public static int FieldIndex(string name) { return Array.FindIndex(Fields, x => string.Equals(x, name, StringComparison.OrdinalIgnoreCase)); }
+    public double Get(int f) { int i = Item(f); return i > 0 ? V[i - 1] : 0; }
+    public void Set(int f, double v) { int i = Item(f); if (i > 0) V[i - 1] = v; }
+
+    // items 1-3 into V, as written
+    public double[] Values()
+    {
+        var v = (double[])V.Clone();
+        v[0] = Node; v[1] = VesselNode; v[2] = Type;
+        return v;
     }
 }
 

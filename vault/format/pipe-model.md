@@ -12,6 +12,7 @@ created: 2026-10-22
 - elements FROM–TO with deltas, bends, rigids, expansion joints and reducers, and their design data (mill tolerance, seam weld, hydrotest pressure; hot moduli, wL, cladding and refractory carried);
 - restraints, SIFs and tees;
 - spring hangers: designed by CAESAR, springs as given, constant-effort supports ([[vault/format/caesar-neutral-hangers|caesar-neutral-hangers]]);
+- flexible nozzles: WRC 297, API 650, PD 5500, custom stiffnesses ([[vault/format/caesar-neutral-nozzles|caesar-neutral-nozzles]]);
 - loads: forces and moments, imposed displacements, uniform loads and wind ([[vault/format/caesar-neutral-loads|caesar-neutral-loads]]);
 - COORDS.
 
@@ -40,9 +41,9 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 > - **Overlay:** the writer starts from those lines and rewrites only the 13-character columns whose value changed (`SetReal` / `SetInt` / `SetText`). A value that compares equal keeps its original text, however CAESAR formatted it.
 > - **New items** (an element, a restraint, a SIF that the file did not have) get the 15.01 templates. In a file from another CAESAR version, a new item is written only where that version's line counts match 15.01's; otherwise the writer stops with "re-export the job from CAESAR 15.01 first". It never guesses a layout.
 > - **Section order, VERSION and the prelude** are the source's. PROJECT / NOTES on the VERSION lines are overlaid only when the title or notes changed.
-> - **CONTROL:** the counts (elements, blocks per section, hangers) are recomputed; the nozzle count is kept.
+> - **CONTROL:** the counts (elements, blocks per section, nozzles, hangers) are recomputed.
 > - **UNITS** is carried as written.
-> - **MISCEL_1:** the material numbers are overlaid when the element count is unchanged. The tail is taken apart into nozzles (carried as written), the hanger section and the execution options (carried, the ambient temperature overlaid in its own column). The hangers are the model's (`Hangers`, below): each keeps its lines as written, with only changed fields rewritten, and the section is rebuilt around them. A tail whose parts do not add up is carried whole, its hangers with it, and cannot take hanger edits ([[vault/format/caesar-neutral-hangers|caesar-neutral-hangers]]).
+> - **MISCEL_1:** the material numbers are overlaid when the element count is unchanged. The tail is taken apart into the nozzles, the hanger section and the execution options (carried, the ambient temperature overlaid in its own column). The nozzles and hangers are the model's (`Nozzles`, `Hangers`, below): each keeps its lines as written, with only changed fields rewritten, and the section is rebuilt around them. A tail whose parts do not add up is carried whole, its hangers with it, and cannot take hanger edits ([[vault/format/caesar-neutral-hangers|caesar-neutral-hangers]]).
 > - **Trailing lines** after a section, and the remainder lines inside a block, are carried where they were.
 
 > [!info]- Blocks, slots and who owns what
@@ -81,6 +82,9 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 >
 > The job's hanger defaults (table, load variation …, the design options) stay as written; a new model gets CAESAR 15.01's.
 
+> [!info]- Nozzles
+> `PipeModelNozzle`, in CAESAR's order (MISCEL_1): `Node`, `VesselNode` (0 = a rigid vessel), `Type` (0 WRC 297, 1 API 650, 2 PD 5500, 3 custom) and `V`, CAESAR's 22 values (`V[i]` = item i + 1). `Fields` names the values a sheet or a config uses, and `Item(f)` says which item each type keeps a field in (0 = the type has none). `Raw`: its lines as written.
+
 > [!info]- Element design data
 > The element record's real rows 6–9, past the densities, in CAESAR's guide (items 33–53): minus and plus mill tolerance (% of the wall), seam weld (1 / 0), hydrotest pressure; hot elastic moduli for T1–T9; the wL factor; two element orientation angles (FEATools data, carried as `TeeAngle1/2`); cladding thickness and density, insulation + cladding weight per length, refractory thickness and density.
 > - The model holds them all (`PipeModelElement.Design()`); the workbook and the TOML edit mill tolerance, seam weld and hydro pressure. The rest are carried.
@@ -104,12 +108,13 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 - **Version 2** (Stage C) adds the loads. A version 1 file, whose displacements were carried as slot lines (`nodeItems`), still reads.
 
 > [!info]- Keys
-> - **Top level:** `format`, `version`, `title`, `notes`, `zUp`, `ambient`, `code`, `unitFactors`, `allowablesBlock`, `source`, `elements`, `restraints`, `joints`, `sifs`, `hangers` (only when there are any), `nodeLoads`, `coords`.
+> - **Top level:** `format`, `version`, `title`, `notes`, `zUp`, `ambient`, `code`, `unitFactors`, `allowablesBlock`, `source`, `elements`, `restraints`, `joints`, `sifs`, `nozzles` and `hangers` (only when there are any), `nodeLoads`, `coords`.
 > - **`source`** (imported or seeded models only): `fileName`, `version`, `versionLine`, `codePage`, `lineEnding`, `finalNewline`, `seed`, `prelude`, `sectionOrder`, `headers`, `sections` (raw lines per section), `linesPerBlock`, `trailing`, `miscelMaterialLines`, `miscelTail`, `tailNozzleLines` / `tailHangerLines` / `tailHangers` (the tail's parts; absent = carried whole), `coordsCountLine`, `originalTitle`, `originalNotes`, `elementCount`.
 > - **`elements[]`:** `uid`, `from`, `to`, `d` [dx dy dz], `od`, `wall`, `insul`, `corr`, `t` [T1–T9], `p` [P1–P9], `e`, `poisson`, `pipeDensity`, `insulDensity`, `fluidDensity`, `material`, `teeAngles` (CAESAR's element orientation angles), `design` (only when any is set: the 19 values `PipeModelElement.Design()` lists, CAESAR's items 33–46 and 49–53; a model saved without it reads them from its record), `name`, `line`, `kind`; optional `bend` {`radius`, `type`, `nodes`, `miter`, `fittingThk`, `k`, `seq`, `raw`}, `rigid` {`weight`, `type`, `seq`, `raw`}, `expJoint` {`axial`, `transverse`, `bending`, `torsion`, `effId`, `seq`, `raw`}, `reducer` {`od2`, `wall2`, `alpha`, `r1`, `r2`, `seq`, `raw`}, `uniform` {`vectors` [9 × [ux, uy, uz]], `g` [9 flags], `seq`, `raw`}, `wind` {`type`, `shape`, `addedMass`, `lift`, `marineGrowth`, `marineGrowthDensity`, `seq`, `raw`}; `raw` (the record); `carried` and `slotBlocks` {section: {`seq`, `lines`}}.
 > - **`restraints[]`:** `node`, `type`, `code`, `k`, `gap`, `mu`, `cnode`, `cos`, `tag`, `guid`, `source`, `owner` (element uid), `slot`, `raw`.
 > - **`joints[]`:** `uid`, `kind`, `node`, `cnode`, `frame`, `dofs` [{`dof`, `gap`, `k`}], `sif`, `tag`.
 > - **`sifs[]`:** `node`, `type`, `sifIn`, `sifOut`, `surfaceNode`, `owner`, `slot`, `raw`.
+> - **`nozzles[]`:** `node`, `vesselNode`, `type`, `v` [22], `source`, `raw`.
 > - **`hangers[]`:** `node`, `cnode`, `data` [the 11 values], `tag`, `guid`, `free` [node 1, node 2, code 1, code 2], `count`, `table`, `shortRange`, `source`, `raw`, `freeRaw`.
 > - **`nodeLoads[]`:** `kind` (force | displacement), `node`, `vectors` [9 × 6, `null` = free], `source`, `owner`, `slot`, `raw`.
 > - **`coords[]`:** `node`, `x`, `y`, `z` (in), `raw`, `imported`.
