@@ -55,8 +55,8 @@ public static class PipeModelJson
             w.Num("e", e.Emod); w.Num("poisson", e.Poisson); w.Num("pipeDensity", e.PipeDensity);
             w.Num("insulDensity", e.InsulationDensity); w.Num("fluidDensity", e.FluidDensity); w.Num("material", e.Material);
             w.Nums("teeAngles", new[] { e.TeeAngle1, e.TeeAngle2 });
-            var dv = e.Design();
-            if (dv.Any(x => x != 0)) w.Nums("design", dv);
+            var dv = e.Design();   // only what the record does not already hold (a model saved before these keys keeps its text)
+            if (!dv.SequenceEqual(CaesarNeutralWriter.DesignFromRecord(e.Raw))) w.Nums("design", dv);
             w.Str("name", e.Name); w.Str("line", e.LineNumber); w.Str("kind", e.Kind);
             if (e.Bend != null)
             {
@@ -133,7 +133,10 @@ public static class PipeModelJson
         {
             w.Open();
             w.Num("node", t.Node); w.Num("type", t.Type); w.Num("sifIn", t.SifIn); w.Num("sifOut", t.SifOut); w.Num("surfaceNode", t.SurfaceNode);
-            if (t.WeldMismatch != 0 || t.Fillet != 0 || t.Pad != 0 || t.FittingRo != 0 || t.CrotchRadius != 0) w.Nums("details", new[] { t.WeldMismatch, t.Fillet, t.Pad, t.FittingRo, t.CrotchRadius });
+            var slot = new PipeModelSif { Raw = t.Raw };
+            CaesarNeutralWriter.SifDetailsFromSlot(slot);
+            var det = new[] { t.WeldMismatch, t.Fillet, t.Pad, t.FittingRo, t.CrotchRadius };
+            if (!det.SequenceEqual(new[] { slot.WeldMismatch, slot.Fillet, slot.Pad, slot.FittingRo, slot.CrotchRadius })) w.Nums("details", det);   // only what the slot does not hold
             w.Num("owner", t.OwnerUid); w.Num("slot", t.Slot); w.Lines("raw", t.Raw);
             w.Close();
         }
