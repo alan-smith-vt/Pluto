@@ -1,0 +1,67 @@
+# edges: node numbers near CAESAR's limit, a hanger hung off another line, an expansion joint ending at a bend's
+# near point, a coupling just after a tee, a branch off a branch's first element, Z up
+[model]
+title = "E11 edges"
+material = 106
+y_up = false
+[defaults]
+section = "6in"
+delta_t = 180
+pressure = 100
+bend = "LR"
+max_length = 10
+[sections.6in]
+nps = 6
+schedule = "40"
+fluid_sg = 1.0
+[sections.2in]
+nps = 2
+schedule = "80"
+fluid_sg = 1.0
+[[runs]]
+name = "main"
+start = [0, 0, 10]
+first_node = 7999000
+legs = [["+X", 30], ["+Y", 20]]
+[[runs]]
+name = "small"
+start = [0, 0, 5]
+section = "2in"
+first_node = 7999500
+legs = [["+X", 30]]
+[[runs]]
+name = "br"
+from = { run = "main", at = 10 }
+legs = [["-Z", 3], ["+Y", 6]]
+[[components]]
+type = "expansion_joint"
+run = "main"
+at = 27.25
+length = 2
+axial_stiffness = 900
+transverse_stiffness = 4000
+torsion_stiffness = 1e7
+effective_id = 7.5
+[[components]]
+type = "coupling"
+run = "br"
+at = 1
+axial_gap = 0.25
+deflection = 1
+[[supports]]
+run = "main"
+at = [0, "L"]
+type = "ANC"
+[[supports]]
+run = "small"
+at = [0, "L"]
+type = "ANC"
+[[supports]]
+run = "br"
+at = "L"
+type = "ANC"
+[[hangers]]
+run = "small"
+at = 15
+cnode = 7999020
+tag = "HUNG-OFF-MAIN"

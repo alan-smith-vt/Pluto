@@ -1,0 +1,150 @@
+# branch connections of every intersection type, and joints with their data
+[model]
+title = "E13 tees"
+material = 106
+[defaults]
+section = "12in"
+temperature = 300
+pressure = 200
+bend = "LR"
+max_length = 10
+[sections.12in]
+nps = 12
+schedule = "STD"
+fluid_sg = 1.0
+[sections.4in]
+nps = 4
+schedule = "40"
+fluid_sg = 1.0
+[[runs]]
+name = "header"
+start = [0, 0, 0]
+legs = [["+X", 110]]
+[[runs]]
+name = "b1"
+from = { run = "header", at = 10 }
+section = "4in"
+tee = "reinforced"
+tee_pad = 0.375
+legs = [["+Y", 6]]
+[[runs]]
+name = "b2"
+from = { run = "header", at = 20 }
+section = "4in"
+tee = "unreinforced"
+legs = [["+Y", 6]]
+[[runs]]
+name = "b4"
+from = { run = "header", at = 30 }
+section = "4in"
+tee = "sweepolet"
+legs = [["+Y", 6]]
+[[runs]]
+name = "b5"
+from = { run = "header", at = 40 }
+section = "4in"
+tee = "weldolet"
+legs = [["+Y", 6]]
+[[runs]]
+name = "b6"
+from = { run = "header", at = 50 }
+section = "4in"
+tee = "extruded"
+tee_crotch = 0.5
+legs = [["+Y", 6]]
+[[runs]]
+name = "b14"
+from = { run = "header", at = 60 }
+section = "4in"
+tee = "bf_sweepolet"
+legs = [["+Y", 6]]
+[[runs]]
+name = "b15"
+from = { run = "header", at = 70 }
+section = "4in"
+tee = "latrolet"
+legs = [["+Y", 6]]
+[[runs]]
+name = "b16"
+from = { run = "header", at = 80 }
+section = "4in"
+tee = "insert_weldolet"
+legs = [["+Y", 6]]
+[[runs]]
+name = "b17"
+from = { run = "header", at = 90 }
+section = "4in"
+tee = "full_encirclement"
+legs = [["+Y", 6]]
+[[sifs]]
+run = "header"
+at = 5
+type = "butt_weld"
+weld_mismatch = 0.0625
+[[sifs]]
+run = "header"
+at = 15
+type = "socket_weld"
+fillet = 0.375
+[[sifs]]
+run = "header"
+at = 25
+type = "tapered_transition"
+weld_mismatch = 0.03
+[[sifs]]
+run = "header"
+at = 35
+type = "threaded"
+[[sifs]]
+run = "header"
+at = 45
+type = "slip_on"
+[[sifs]]
+run = "header"
+at = 55
+type = "lap_joint"
+[[sifs]]
+run = "header"
+at = 65
+type = "socket_weld_as_welded"
+fillet = 0.375
+[[supports]]
+run = "header"
+at = [0, "L"]
+type = "ANC"
+[[supports]]
+run = "b1"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "b2"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "b4"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "b5"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "b6"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "b14"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "b15"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "b16"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "b17"
+at = "L"
+type = "ANC"

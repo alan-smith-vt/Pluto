@@ -1577,6 +1577,7 @@ public static class PipeWorkbook
             SetN(ref h.Rate, Z(Num(c, r, "Rate", x, -1, null)));
             SetN(ref h.ColdLoad, Z(Num(c, r, "Cold load", x, -1, null)));
             SetN(ref h.ConstantLoad, Z(Num(c, r, "Constant", x, -1, null)));
+            if (h.Rate > 0 && h.ConstantLoad > 0) x.Err(w + ": a constant-effort support (Constant) has no spring rate");
             h.Table = Int(c, r, "Table", x, 0);
             h.Count = Int(c, r, "Count", x, 0);
             double lv = Num(c, r, "Load variation", x, -1, null);

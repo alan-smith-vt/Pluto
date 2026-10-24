@@ -1,0 +1,45 @@
+# bends: in-plane and out-of-plane, skewed, short / long / 3D / 5D / explicit radius, near-mid nodes, a corner
+[model]
+title = "E1 bends"
+material = 106
+[defaults]
+section = "6in"
+temperature = 400
+pressure = 300
+bend = "LR"
+max_length = 8
+[sections.6in]
+nps = 6
+schedule = "40"
+fluid_sg = 0.9
+[[runs]]
+name = "a"
+start = [0, 0, 0]
+bend_nodes = "near-mid"
+legs = [
+  ["+X", 20],
+  { dir = "+Y", length = 10, bend = "SR" },
+  { dir = "+Z", length = 15, bend = "3D" },
+  { dir = [1, 0, 1], length = 14.142, bend = "5D" },
+  { dir = "-Y", length = 12, bend = 12 },
+  { dir = "+X", length = 6, bend = "LR" },
+  ["+Z", 10],
+]
+[[runs]]
+name = "b"
+start = [0, 0, 30]
+bend = "none"
+legs = [["+X", 10], ["+Y", 10], ["+X", 10]]
+[[supports]]
+run = "a"
+at = [0, "L"]
+type = "ANC"
+[[supports]]
+run = "a"
+at = [8, 16]
+type = "+Y"
+mu = 0.3
+[[supports]]
+run = "b"
+at = [0, "L"]
+type = "ANC"

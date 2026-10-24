@@ -1,0 +1,86 @@
+# nozzles: a pump-to-vessel line with a WRC 297 nozzle on a vessel modelled as a rigid stick (vessel node), an API 650
+# tank nozzle with the tank's growth, a PD 5500 nozzle on a sphere, a custom nozzle with given stiffnesses
+[model]
+title = "E12 nozzles"
+material = 106
+[defaults]
+section = "8in"
+temperature = 300
+pressure = 150
+bend = "LR"
+max_length = 10
+[sections.8in]
+nps = 8
+schedule = "40"
+fluid_sg = 1.0
+[sections.stick]
+od = 24
+wall = 1
+[[runs]]
+name = "vessel"
+start = [0, 0, 0]
+section = "stick"
+first_node = 900
+legs = [["+Y", 10]]
+[[runs]]
+name = "line"
+start = [2, 6, 0]
+legs = [["+X", 20], ["+Z", 15], ["+X", 25]]
+[[runs]]
+name = "tankline"
+start = [0, 0, 40]
+first_node = 2000
+legs = [["+X", 30], ["+Y", 6]]
+[[supports]]
+run = "vessel"
+at = 0
+type = "ANC"
+[[supports]]
+run = "line"
+at = [10, 30, 45]
+type = "+Y"
+mu = 0.3
+[[supports]]
+run = "line"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "tankline"
+at = [10, 20]
+type = "+Y"
+[[nozzles]]
+run = "line"
+at = 0
+type = "WRC297"
+vessel_node = 910
+vessel_od = 48
+vessel_wall = 0.5
+pad = 0.375
+stiffener_distance = 60
+opposite_distance = 60
+vessel_axis = [0, 1, 0]
+vessel_temperature = 300
+[[nozzles]]
+node = 2000
+type = "API650"
+vessel_od = 1200
+vessel_wall = 0.75
+reinforcing = "shell"
+nozzle_height = 24
+fluid_height = 360
+displacement_vector = 1
+fluid_sg = 1.0
+tank_alpha = 6.5e-6
+tank_delta_t = 230
+tank_e = 2.9e7
+[[nozzles]]
+run = "tankline"
+at = "L"
+type = "custom"
+vessel_od = 96
+vessel_wall = 0.5
+vessel_axis = [1, 0, 0]
+axial_stiffness = 2e6
+inplane_stiffness = 5e6
+outplane_stiffness = 4e6
+torsional_stiffness = 8e6

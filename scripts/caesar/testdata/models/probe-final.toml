@@ -1,0 +1,407 @@
+# The combined confirmation probe (2026-10-24): what CAESAR 15.01 has not shown yet, in one job. Generic geometry,
+# English units. Parts by node range: 10s hangers, 1000s nozzles, 2000s design data, 3000s coupling gaps on a skewed
+# pipe, 4000s a loop closing on its header. The rule pieces (5000 up) are added by the probe program.
+[model]
+title = "PROBE FINAL"
+notes = "hangers 10-60; nozzles 1000s; design data 2000s; coupling gaps 3000s; loop 4000s; rule pieces 5000 up"
+material = 106
+[defaults]
+section = "8in"
+temperature = 400
+pressure = 250
+bend = "LR"
+max_length = 10
+[sections.8in]
+nps = 8
+schedule = "40"
+fluid_sg = 0.9
+[sections.design]
+nps = 8
+schedule = "40"
+fluid_sg = 0.9
+mill_tolerance = 12.5
+mill_tolerance_plus = 5
+seam_weld = true
+[sections.12in]
+nps = 12
+schedule = "STD"
+fluid_sg = 1.0
+[sections.stick]
+od = 36
+wall = 1
+
+# ---- hangers: designed (freeing the anchor at 10), a spring as given, a constant support, two at a location with
+# design limits, one hung off another line (CNODE)
+[[runs]]
+name = "hangers"
+start = [0, 0, 0]
+legs = [["+X", 60]]
+[[runs]]
+name = "upper"
+start = [0, 12, 0]
+first_node = 100
+legs = [["+X", 60]]
+[[supports]]
+run = "hangers"
+at = [0, "L"]
+type = "ANC"
+[[supports]]
+run = "upper"
+at = [0, "L"]
+type = "ANC"
+[[hangers]]
+run = "hangers"
+at = 10
+free_node = 10
+free_dofs = "XYZ"
+tag = "H-DESIGN"
+[[hangers]]
+run = "hangers"
+at = 20
+rate = 850
+cold_load = 3200
+tag = "H-SPRING"
+[[hangers]]
+run = "hangers"
+at = 30
+constant = 2800
+tag = "H-CONST"
+[[hangers]]
+run = "hangers"
+at = 40
+count = 2
+table = 1
+load_variation = 20
+short_range = false
+max_travel = 4
+tag = "H-TWO"
+[[hangers]]
+run = "hangers"
+at = 50
+cnode = 150
+tag = "H-CNODE"
+
+# ---- nozzles: a WRC 297 nozzle on a vessel stick (vessel node), API 650 on a tank, PD 5500 on a sphere, custom
+[[runs]]
+name = "vessel"
+start = [0, 0, 40]
+section = "stick"
+first_node = 1000
+legs = [["+Y", 10]]
+[[runs]]
+name = "wrc"
+start = [2, 6, 40]
+first_node = 1100
+legs = [["+X", 30]]
+[[runs]]
+name = "api"
+start = [0, 2, 60]
+first_node = 1200
+legs = [["+X", 30]]
+[[runs]]
+name = "pd"
+start = [0, 8, 80]
+first_node = 1300
+legs = [["+X", 30]]
+[[runs]]
+name = "custom"
+start = [0, 4, 100]
+first_node = 1400
+legs = [["+X", 30]]
+[[supports]]
+run = "vessel"
+at = 0
+type = "ANC"
+[[supports]]
+run = "wrc"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "api"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "pd"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "custom"
+at = "L"
+type = "ANC"
+[[nozzles]]
+run = "wrc"
+at = 0
+type = "WRC297"
+vessel_node = 1010
+vessel_od = 48
+vessel_wall = 0.5
+pad = 0.375
+stiffener_distance = 60
+opposite_distance = 72
+vessel_axis = [0, 1, 0]
+vessel_temperature = 400
+vessel_material = 106
+[[nozzles]]
+run = "api"
+at = 0
+type = "API650"
+vessel_od = 1200
+vessel_wall = 0.75
+reinforcing = "shell"
+nozzle_height = 24
+fluid_height = 360
+displacement_vector = 1
+fluid_sg = 1.0
+tank_alpha = 6.5e-6
+tank_delta_t = 230
+tank_e = 2.9e7
+[[nozzles]]
+run = "pd"
+at = 0
+type = "PD5500"
+vessel_type = "sphere"
+vessel_od = 240
+vessel_wall = 1.25
+pad = 0.5
+stiffener_distance = 100
+opposite_distance = 100
+vessel_axis = [0, 1, 0]
+vessel_temperature = 350
+vessel_material = 106
+[[nozzles]]
+run = "custom"
+at = 0
+type = "custom"
+vessel_od = 96
+vessel_wall = 0.5
+vessel_axis = [0, 1, 0]
+axial_stiffness = 2e6
+inplane_stiffness = 5e6
+outplane_stiffness = 4e6
+torsional_stiffness = 8e6
+
+# ---- design data: mill tolerance, seam weld, hydrotest pressure
+[[runs]]
+name = "design"
+start = [0, 0, 130]
+first_node = 2000
+section = "design"
+hydro_pressure = 375
+legs = [["+X", 30]]
+[[supports]]
+run = "design"
+at = [0, "L"]
+type = "ANC"
+
+# ---- coupling gaps on a skewed pipe: axial, shear and torsional slip, angular deflection (rotational CNODE
+# restraints with cosines)
+[[runs]]
+name = "skew"
+start = [0, 0, 150]
+first_node = 3000
+legs = [[[1, 0, 1], 42.426]]
+[[components]]
+type = "coupling"
+run = "skew"
+at = 20
+axial_gap = 0.125
+shear_gap = 0.0625
+torsion_gap = 1.5
+torsion_stiffness = 5e4
+deflection = 1
+[[supports]]
+run = "skew"
+at = [0, "L"]
+type = "ANC"
+
+# ---- a loop: a bypass round valves on a header, closing on it (a tee at each end)
+[[runs]]
+name = "header"
+start = [0, 0, 200]
+first_node = 4000
+legs = [["+X", 40]]
+[[runs]]
+name = "bypass"
+from = { run = "header", at = 8 }
+first_node = 4100
+section = "8in"
+legs = [["+Y", 4], ["+X", 24], ["-Y", 4]]
+end = { run = "header", at = 32 }
+[[components]]
+type = "flanged_valve"
+name = "BV-1"
+run = "header"
+at = 12
+length = 2
+weight = 650
+[[components]]
+type = "flanged_valve"
+name = "CV-1"
+run = "header"
+at = 18
+length = 3
+weight = 1200
+[[components]]
+type = "flanged_valve"
+name = "BV-2"
+run = "header"
+at = 26
+length = 2
+weight = 650
+[[supports]]
+run = "header"
+at = [0, "L"]
+type = "ANC"
+[[supports]]
+run = "header"
+at = [4, 36]
+type = "+Y"
+
+# ---- every tee type on branches, and the joint types with their data (CAESAR's SIF & tee list, by number)
+[sections.4in]
+nps = 4
+schedule = "40"
+fluid_sg = 1.0
+[[runs]]
+name = "teeheader"
+start = [0, 0, 260]
+first_node = 7000
+section = "12in"
+legs = [["+X", 110]]
+[[runs]]
+name = "tb1"
+first_node = 7100
+from = { run = "teeheader", at = 10 }
+section = "4in"
+tee = "reinforced"
+tee_pad = 0.375
+legs = [["+Y", 6]]
+[[runs]]
+name = "tb2"
+first_node = 7200
+from = { run = "teeheader", at = 20 }
+section = "4in"
+tee = "unreinforced"
+legs = [["+Y", 6]]
+[[runs]]
+name = "tb4"
+first_node = 7400
+from = { run = "teeheader", at = 30 }
+section = "4in"
+tee = "sweepolet"
+legs = [["+Y", 6]]
+[[runs]]
+name = "tb5"
+first_node = 7500
+from = { run = "teeheader", at = 40 }
+section = "4in"
+tee = "weldolet"
+legs = [["+Y", 6]]
+[[runs]]
+name = "tb6"
+first_node = 7600
+from = { run = "teeheader", at = 50 }
+section = "4in"
+tee = "extruded"
+tee_crotch = 0.5
+legs = [["+Y", 6]]
+[[runs]]
+name = "tb14"
+first_node = 8400
+from = { run = "teeheader", at = 60 }
+section = "4in"
+tee = "bf_sweepolet"
+legs = [["+Y", 6]]
+[[runs]]
+name = "tb15"
+first_node = 8500
+from = { run = "teeheader", at = 70 }
+section = "4in"
+tee = "latrolet"
+legs = [["+Y", 6]]
+[[runs]]
+name = "tb16"
+first_node = 8600
+from = { run = "teeheader", at = 80 }
+section = "4in"
+tee = "insert_weldolet"
+legs = [["+Y", 6]]
+[[runs]]
+name = "tb17"
+first_node = 8700
+from = { run = "teeheader", at = 90 }
+section = "4in"
+tee = "full_encirclement"
+legs = [["+Y", 6]]
+[[sifs]]
+run = "teeheader"
+at = 5
+type = "butt_weld"
+weld_mismatch = 0.0625
+[[sifs]]
+run = "teeheader"
+at = 15
+type = "socket_weld"
+fillet = 0.375
+[[sifs]]
+run = "teeheader"
+at = 25
+type = "tapered_transition"
+weld_mismatch = 0.03
+[[sifs]]
+run = "teeheader"
+at = 35
+type = "threaded"
+[[sifs]]
+run = "teeheader"
+at = 45
+type = "slip_on"
+[[sifs]]
+run = "teeheader"
+at = 55
+type = "lap_joint"
+[[sifs]]
+run = "teeheader"
+at = 65
+type = "socket_weld_as_welded"
+fillet = 0.375
+[[supports]]
+run = "teeheader"
+at = [0, "L"]
+type = "ANC"
+[[supports]]
+run = "tb1"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "tb2"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "tb4"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "tb5"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "tb6"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "tb14"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "tb15"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "tb16"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "tb17"
+at = "L"
+type = "ANC"

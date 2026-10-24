@@ -32,3 +32,16 @@ The job should have about 30 nodes and include:
   - Element names, line numbers, node names and restraint tags must be made-up.
 - **.xlsx:** Excel File > Info > Check for Issues > Inspect Document > Document Properties and Personal Information > Remove All. This clears the author, last-modified-by, company and manager fields. Then check each tab's title block for a job path, a "Licensed to" line or a date.
 - **File names:** generic, as in the table above.
+
+## models/: pipe models of every kind (TOML, for Build-Pipe.ps1)
+
+Made-up models that exercise one area each, built and checked through every path (TOML -> model -> .cii -> CAESAR's
+reader and geometry, review, workbook round trip, re-import, compare, viewer export): `e1-bends` (in- and out-of-plane,
+skewed, every radius, a corner), `e2-branches` (tees, a branch of a branch, a continuation, a reducer), `e3-ej-valves`
+(valves, flange pairs, a tied and a free expansion joint, control rods), `e4-couplings` (couplings with axial, shear and
+torsional gaps), `e5-gaps` (one-ways with different gaps each way, guide + limit stops, rotational gaps, springs, skew,
+snubbers), `e6-cnode` (struts, a sway brace, a support on a moving frame node), `e7-hangers` (designed, spring, constant,
+two at a location), `e8-loops` (a control-valve bypass that closes on the header, an expansion loop, design data, loads),
+`e10-big` (1,345 elements), `e11-edges` (nodes near 8,000,000, a hanger off another line, Z up), `e12-nozzles` (WRC 297,
+API 650, custom), `e13-tees` (every SIF / tee type). `probe-final.toml` is the base of the combined CAESAR probe job
+(2026-10-24); the probe program adds one small piece per CAESAR rule to it.

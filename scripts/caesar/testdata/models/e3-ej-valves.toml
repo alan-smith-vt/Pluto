@@ -1,0 +1,88 @@
+# expansion joints with valves and flanges: a tied (control-rod) joint, an untied one, valves either side, a gimbal-like joint
+[model]
+title = "E3 joints and valves"
+material = 106
+[defaults]
+section = "12in"
+delta_t = 300
+pressure = 150
+bend = "LR"
+max_length = 10
+[sections.12in]
+nps = 12
+schedule = "STD"
+fluid_sg = 0.8
+[parameters]
+ej = 20
+[[runs]]
+name = "line"
+start = [0, 0, 0]
+legs = [["+X", 50], ["+Y", 10], ["+X", 20]]
+[[components]]
+type = "flanged_valve"
+name = "V-1"
+run = "line"
+at = 5
+length = 2
+weight = 900
+[[components]]
+type = "flange_pair"
+run = "line"
+at = "ej - 1"
+length = 0.5
+weight = 200
+[[components]]
+type = "expansion_joint"
+name = "EJ-TIED"
+run = "line"
+at = "ej"
+length = 2
+axial_stiffness = 2000
+transverse_stiffness = 8000
+effective_id = 13.5
+[[components]]
+type = "flange_pair"
+run = "line"
+at = "ej + 2.5"
+length = 0.5
+weight = 200
+[[components]]
+type = "valve"
+name = "V-2"
+run = "line"
+at = 30
+length = 1.5
+weight = 600
+[[components]]
+type = "expansion_joint"
+name = "EJ-FREE"
+run = "line"
+at = 40
+length = 1.5
+axial_stiffness = 1500
+bending_stiffness = 500
+torsion_stiffness = 1e6
+effective_id = 13.5
+# control rods across EJ-TIED: an axial tie with a gap between the flanges either side
+[[ties]]
+node = { run = "line", at = "ej - 1" }
+cnode = { run = "line", at = "ej + 3" }
+type = "X"
+gap = 0.5
+tag = "ROD-1"
+[[supports]]
+run = "line"
+at = [0, "L"]
+type = "ANC"
+[[supports]]
+run = "line"
+at = [12, 26, 35, 46]
+type = ["+Y", "GUI"]
+mu = 0.3
+# control rods across EJ-FREE that act only in extension: a one-way CNODE restraint with the rods' free play
+[[ties]]
+node = { run = "line", at = 42 }
+cnode = { run = "line", at = 39 }
+type = "-X"
+gap = 0.375
+tag = "CONTROL-RODS"

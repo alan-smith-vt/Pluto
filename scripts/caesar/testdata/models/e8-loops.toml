@@ -1,0 +1,107 @@
+# loops: a control-valve station (block valves, control valve, a bypass that closes on the header), an expansion
+# loop on a rack line, a second line tied to the first, hangers, loads
+[model]
+title = "E8 loops"
+material = 106
+[defaults]
+section = "8in"
+temperature = [450, 200]
+pressure = [300, 450]
+hydro_pressure = 675
+bend = "LR"
+max_length = 10
+wind_shape = 0.7
+[sections.8in]
+nps = 8
+schedule = "40"
+mill_tolerance = 12.5
+seam_weld = true
+insulation = 2
+insulation_density = 11.5
+fluid_sg = 0.85
+[sections.4in]
+nps = 4
+schedule = "80"
+fluid_sg = 0.85
+[[runs]]
+name = "header"
+start = [0, 0, 0]
+legs = [["+X", 50], ["+Z", 20], ["+X", 30], ["+Z", 20], ["-X", 30], ["+Z", 20], ["+X", 40]]
+[[runs]]
+name = "bypass"
+from = { run = "header", at = 10 }
+section = "4in"
+legs = [["+Y", 4], ["+X", 24], ["-Y", 4]]
+end = { run = "header", at = 34 }
+[[components]]
+type = "flanged_valve"
+name = "BV-1"
+run = "header"
+at = 13
+length = 2
+weight = 650
+[[components]]
+type = "flanged_valve"
+name = "CV-1"
+run = "header"
+at = 20
+length = 3
+weight = 1200
+[[components]]
+type = "flanged_valve"
+name = "BV-2"
+run = "header"
+at = 28
+length = 2
+weight = 650
+[[components]]
+type = "flanged_valve"
+name = "GV-1"
+run = "bypass"
+at = 14
+length = 1.5
+weight = 300
+[[supports]]
+run = "header"
+at = 0
+type = "ANC"
+[[supports]]
+run = "header"
+at = [5, 17, 25, 45, 60, 90, 110, 130, 160]
+type = "+Y"
+mu = 0.3
+[[supports]]
+run = "header"
+at = [40, 150]
+type = ["+Y", "GUI"]
+gap = { GUI = 0.125 }
+mu = 0.3
+[[supports]]
+run = "header"
+at = 100
+type = ["+Y", "LIM"]
+gap = { LIM = 0.5 }
+mu = 0.3
+[[hangers]]
+run = "bypass"
+at = 2
+tag = "H-BP"
+[[forces]]
+run = "header"
+at = 18
+vector = 1
+fy = -300
+[[forces]]
+run = "header"
+at = 18
+vector = 2
+fx = 1500
+[[displacements]]
+run = "header"
+at = "L"
+dx = 0.4
+dy = 0.1
+dz = 0
+rx = 0
+ry = 0
+rz = 0

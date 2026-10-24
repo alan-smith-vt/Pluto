@@ -1,0 +1,50 @@
+# hangers: designed by CAESAR (freeing the anchors near equipment), a spring as given, a constant support,
+# a hanger off another line (CNODE), two hangers at a location
+[model]
+title = "E7 hangers"
+material = 106
+[defaults]
+section = "10in"
+temperature = 650
+pressure = 400
+bend = "LR"
+max_length = 10
+[sections.10in]
+nps = 10
+schedule = "40"
+insulation = 3
+insulation_density = 11.5
+fluid_sg = 0.7
+[[runs]]
+name = "riser"
+start = [0, 0, 0]
+legs = [["+Y", 30], ["+X", 40], ["-Y", 20]]
+[[supports]]
+run = "riser"
+at = [0, "L"]
+type = "ANC"
+[[hangers]]
+run = "riser"
+at = 25
+free_node = 10
+free_dofs = "XYZ"
+tag = "H-1"
+[[hangers]]
+run = "riser"
+at = 45
+table = 1
+load_variation = 20
+max_travel = 4
+count = 2
+tag = "H-2"
+[[hangers]]
+run = "riser"
+at = 60
+rate = 850
+cold_load = 3200
+tag = "SPR-1"
+[[hangers]]
+run = "riser"
+at = 72
+constant = 2800
+tag = "CS-1"

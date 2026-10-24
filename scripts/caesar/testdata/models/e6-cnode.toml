@@ -1,0 +1,66 @@
+# CNODE couplings: a strut between two lines, a support on a frame node that moves, a sway brace with a gap, a
+# line hung off another line
+[model]
+title = "E6 cnode"
+material = 106
+[defaults]
+section = "6in"
+delta_t = 200
+pressure = 150
+bend = "LR"
+max_length = 10
+[sections.6in]
+nps = 6
+schedule = "40"
+fluid_sg = 1.0
+[sections.3in]
+nps = 3
+schedule = "40"
+fluid_sg = 1.0
+[[runs]]
+name = "upper"
+start = [0, 10, 0]
+legs = [["+X", 50]]
+[[runs]]
+name = "lower"
+start = [0, 0, 0]
+first_node = 1000
+section = "3in"
+legs = [["+X", 50]]
+[[supports]]
+run = "upper"
+at = [0, "L"]
+type = "ANC"
+[[supports]]
+run = "lower"
+at = [0, "L"]
+type = "ANC"
+# a strut: lower hangs off upper at 20 ft, rigid in Y
+[[ties]]
+node = { run = "lower", at = 20 }
+cnode = { run = "upper", at = 20 }
+type = "Y"
+tag = "STRUT"
+# a sway brace with a gap in Z
+[[ties]]
+node = { run = "lower", at = 30 }
+cnode = { run = "upper", at = 30 }
+type = "Z"
+gap = 0.25
+stiffness = 1e4
+tag = "BRACE"
+# a rest on a frame node that settles: the restraint ties to node 9000, which has the imposed displacement
+[[supports]]
+run = "upper"
+at = 40
+type = "+Y"
+cnode = 9000
+mu = 0.3
+[[displacements]]
+node = 9000
+dx = 0
+dy = -0.5
+dz = 0
+rx = 0
+ry = 0
+rz = 0

@@ -1,0 +1,85 @@
+# branches: tees on a header, a branch of a branch, a continuation, branches up / down / sideways, a reducer on a branch
+[model]
+title = "E2 branches"
+material = 106
+[defaults]
+section = "10in"
+delta_t = 250
+pressure = 200
+bend = "LR"
+max_length = 10
+[sections.10in]
+nps = 10
+schedule = "STD"
+fluid_sg = 1.0
+[sections.6in]
+nps = 6
+schedule = "40"
+fluid_sg = 1.0
+[sections.4in]
+nps = 4
+schedule = "40"
+fluid_sg = 1.0
+[[runs]]
+name = "header"
+start = [0, 0, 0]
+legs = [["+X", 60], ["+Z", 20]]
+[[runs]]
+name = "up"
+from = { run = "header", at = 15 }
+section = "6in"
+legs = [["+Y", 12], ["+Z", 15], ["+Y", 6]]
+[[runs]]
+name = "down"
+from = { run = "header", at = 30 }
+section = "6in"
+legs = [["-Y", 8]]
+[[runs]]
+name = "side"
+from = { run = "header", at = 45 }
+section = "6in"
+legs = [["-Z", 10], ["+X", 8]]
+[[runs]]
+name = "sub"
+from = { run = "up", at = 5 }
+section = "4in"
+legs = [["+X", 10]]
+[[runs]]
+name = "cont"
+from = { run = "header", at = "L" }
+legs = [["+X", 10]]
+[[components]]
+type = "reducer"
+run = "side"
+at = 4
+length = 0.5
+to_section = "4in"
+[[supports]]
+run = "header"
+at = 0
+type = "ANC"
+[[supports]]
+run = "header"
+at = [10, 20, 40, 52]
+type = "+Y"
+mu = 0.3
+[[supports]]
+run = "up"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "down"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "side"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "sub"
+at = "L"
+type = ["+Y", "GUI"]
+[[supports]]
+run = "cont"
+at = "L"
+type = "ANC"

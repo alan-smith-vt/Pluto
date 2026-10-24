@@ -1,0 +1,34 @@
+# size: a long rack line in 1 ft elements with an expansion loop every 200 ft, rests every 20 ft
+[model]
+title = "E10 big"
+material = 106
+[parameters]
+n = 1
+[defaults]
+section = "6in"
+delta_t = 250
+pressure = 150
+bend = "LR"
+max_length = 1
+[sections.6in]
+nps = 6
+schedule = "40"
+fluid_sg = 1.0
+[[runs]]
+name = "rack"
+start = [0, 0, 0]
+legs = [
+ ["+X", 190], ["+Z", 15], ["+X", 20], ["-Z", 15], ["+X", 180], ["+Z", 15], ["+X", 20], ["-Z", 15],
+ ["+X", 180], ["+Z", 15], ["+X", 20], ["-Z", 15], ["+X", 180], ["+Z", 15], ["+X", 20], ["-Z", 15],
+ ["+X", 180], ["+Z", 15], ["+X", 20], ["-Z", 15], ["+X", 190],
+]
+[[supports]]
+run = "rack"
+at = [0, "L"]
+type = "ANC"
+[[supports]]
+run = "rack"
+every = 20
+to = "L - 20"
+type = "+Y"
+mu = 0.3

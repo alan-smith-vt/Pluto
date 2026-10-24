@@ -1,0 +1,63 @@
+# restraints with gaps: different gaps each way, guide + limit with gaps, rotational gaps, springs, friction,
+# skewed with a gap, snubbers
+[model]
+title = "E5 gaps"
+material = 106
+[defaults]
+section = "6in"
+delta_t = 200
+pressure = 150
+bend = "LR"
+max_length = 10
+[sections.6in]
+nps = 6
+schedule = "40"
+fluid_sg = 1.0
+[[runs]]
+name = "line"
+start = [0, 0, 0]
+legs = [["+X", 60], ["+Y", 15], ["+Z", 30]]
+[[supports]]
+run = "line"
+at = 0
+type = "ANC"
+[[supports]]
+run = "line"
+at = 10
+type = ["+Z", "-Z"]
+gap = { "+Z" = 0.25, "-Z" = 0.5 }
+tag = "TWO-GAPS"
+[[supports]]
+run = "line"
+at = 20
+type = ["+Y", "GUI", "LIM"]
+gap = { GUI = 0.0625, LIM = 0.5 }
+mu = 0.3
+tag = "GUIDE-STOP"
+[[supports]]
+run = "line"
+at = 30
+type = ["+Y", "+LIM", "-LIM"]
+gap = { "+LIM" = 0.25, "-LIM" = 1.0 }
+[[supports]]
+run = "line"
+at = 40
+type = ["Y", "RX"]
+stiffness = { Y = 2500 }
+gap = { RX = 1.5 }
+[[supports]]
+run = "line"
+at = 50
+direction = [0.7071, 0, 0.7071]
+type = "X"
+gap = 0.125
+stiffness = 1e5
+tag = "SKEW"
+[[supports]]
+run = "line"
+at = 70
+type = ["XSNB", "ZSNB"]
+[[supports]]
+run = "line"
+at = "L"
+type = "ANC"

@@ -1,0 +1,58 @@
+# flexible couplings: mechanical couplings (axial gap + angular deflection), and couplings as gap ties,
+# translational and torsional, on a straight and next to a bend
+[model]
+title = "E4 couplings"
+material = 106
+[defaults]
+section = "8in"
+delta_t = 150
+pressure = 100
+bend = "LR"
+max_length = 10
+[sections.8in]
+nps = 8
+schedule = "STD"
+fluid_sg = 1.0
+[[runs]]
+name = "line"
+start = [0, 0, 0]
+legs = [["+X", 40], ["+Z", 30], ["+X", 20]]
+[[components]]
+type = "coupling"
+run = "line"
+at = 10
+axial_gap = 0.25
+deflection = 2
+[[components]]
+type = "coupling"
+run = "line"
+at = 25
+axial_gap = 0.125
+axial_stiffness = 5000
+deflection = 1
+rotational_stiffness = 2e5
+sif = 1.5
+[[components]]
+type = "coupling"
+run = "line"
+at = 55
+axial_gap = 0.5
+[[supports]]
+run = "line"
+at = [0, "L"]
+type = "ANC"
+[[supports]]
+run = "line"
+at = [5, 15, 20, 30, 35, 50, 60, 65, 75]
+type = "+Y"
+mu = 0.3
+# a grooved coupling as gap restraints: axial, shear and torsional slip before it binds
+[[components]]
+type = "coupling"
+run = "line"
+at = 80
+axial_gap = 0.125
+shear_gap = 0.0625
+torsion_gap = 1.5
+torsion_stiffness = 5e4
+deflection = 1

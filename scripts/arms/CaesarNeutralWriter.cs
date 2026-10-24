@@ -1032,9 +1032,9 @@ public static class CaesarNeutralWriter
             var tail = new List<string>(src.MiscelTail);
             int at = tail.Count - 3;   // the execution options' line 2: ambient at field 3
             tail[at] = SetReal(tail[at], 2, m.Ambient);
-            if (src.TailNozzleLines < 0) { w.AddRange(tail); return; }   // parts not told apart: the tail as written
+            if (src.TailNozzleLines < 0 && !src.Seed) { w.AddRange(tail); return; }   // parts not told apart: the tail as written (a seed's is its 4 option lines)
             WriteNozzles(p, w);
-            WriteHangers(p, w, tail.Skip(src.TailNozzleLines).Take(src.TailHangerLines).ToList(), src.TailHangers);
+            WriteHangers(p, w, src.Seed ? null : tail.Skip(src.TailNozzleLines).Take(src.TailHangerLines).ToList(), src.Seed ? 0 : src.TailHangers);
             w.AddRange(tail.Skip(tail.Count - 4));
             return;
         }
