@@ -1539,7 +1539,7 @@ public static class PipeBuilder
                     Action<string, string, double> put = (key, field, v) =>
                     {
                         int f = PipeModelNozzle.FieldIndex(field);
-                        if (z.Item(f) == 0) throw Err(w + ": " + key + " does not apply to a " + z.TypeName + " nozzle");
+                        if (z.Item(f) == 0) throw Err(w + ": " + key + " does not apply to a nozzle of type " + z.TypeName);
                         z.Set(f, v);
                     };
                     foreach (var k in NozzleKeys) { object v = Get(t, k[0]); if (v != null) put(k[0], k[1], Num(v, w + "." + k[0])); }

@@ -1532,7 +1532,7 @@ public static class PipeWorkbook
             for (int f = 0; f < PipeModelNozzle.Fields.Length; f++)
             {
                 string name = PipeWorkbookGui.NozzleHeader(f), txt = Text(c, r, name, x);
-                if (z.Item(f) == 0) { if (txt.Length > 0) x.Err(w + ": " + name + " does not apply to a " + z.TypeName + " nozzle"); continue; }
+                if (z.Item(f) == 0) { if (txt.Length > 0) x.Err(w + ": " + name + " does not apply to a nozzle of type " + z.TypeName); continue; }
                 double v;
                 if (name == "Vessel type") v = txt.Length == 0 || txt.Equals("cylinder", StringComparison.OrdinalIgnoreCase) ? 0 : txt.Equals("sphere", StringComparison.OrdinalIgnoreCase) ? 1 : Bad(x, w, name, txt);
                 else if (name == "Reinforcing") v = txt.Length == 0 ? 0 : txt.Equals("shell", StringComparison.OrdinalIgnoreCase) ? 1 : txt.Equals("nozzle", StringComparison.OrdinalIgnoreCase) ? 2 : Bad(x, w, name, txt);
