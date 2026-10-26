@@ -249,6 +249,8 @@ public partial class DuctsToPluto
         var clean = edges.Where(x => !x.Dead && x.A != x.B).ToList();
         foreach (CEdge ce in clean) foreach (RvEl s in ce.Src) foreach (string f in s.Flags) ce.Flags.Add(f);
         string cutNote = ApplyCuts(clean, P);
+        string dropNote = ApplyManualDrop(clean, P);   // add-on, DuctsManualDrop.cs
+        if (dropNote != "") cutNote += (cutNote != "" ? "\n" : "") + dropNote;
 
         // checks: length, deviation of the original connectors from the clean centreline
         double cleanLen = clean.Where(x => !x.Rigid && x.Source != "navisworks-only").Sum(x => Len(P[x.A], P[x.B]));

@@ -23,6 +23,9 @@
     # Revit categories left out of the Revit Pluto Mesh _norun viewer file (exact names as in its "Category:" groups,
     # ignoring case), e.g. @('Duct Insulations', 'Duct Linings'). @() = keep all.
     RevitMeshNoRunExclude = @()
+    # Add-on: hand-picked clean-model drops, the list the viewer's Cut picker downloads (e.g.
+    # 'C:\Temp\hvac\cuts\drop.txt'). Export-DuctsViewer.ps1 -Revit removes those members after the cuts. '' = off.
+    DuctDrop = ''
     Group = 'DUCT_ALL'                # SAP frame group holding every duct member
 
     # Output case names exactly as SAP lists them (copy from SAP, not from Excel).
