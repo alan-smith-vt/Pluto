@@ -131,6 +131,11 @@ if ($Box) {
     # add-on (DuctsManualDrop.cs): hand-picked drops from the viewer's Cut picker
     [DuctsToPluto]::ManualDrop.Clear()
     if (-not $Drop -and (Test-Path $cfg)) { $Drop = (Import-PowerShellDataFile $cfg).DuctDrop }
+    # not configured: drop.txt beside the cut points file, when there is one
+    if (-not $Drop -and $Cuts -and $Cuts -ne "none") {
+        $auto = Join-Path (Split-Path $Cuts) "drop.txt"
+        if (Test-Path $auto) { $Drop = $auto }
+    }
     if ($Drop -and $Drop -ne "none") {
         if (-not (Test-Path $Drop)) { throw "drop list not found: $Drop (DuctDrop in duct-config.psd1 or -Drop; -Drop none = off)" }
         Write-Output ("manual drop: {0} parts from {1}" -f [DuctsToPluto]::ReadManualDrop((Resolve-Path $Drop).Path), $Drop)

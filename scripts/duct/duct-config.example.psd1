@@ -24,7 +24,8 @@
     # ignoring case), e.g. @('Duct Insulations', 'Duct Linings'). @() = keep all.
     RevitMeshNoRunExclude = @()
     # Add-on: hand-picked clean-model drops, the list the viewer's Cut picker downloads (e.g.
-    # 'C:\Temp\hvac\cuts\drop.txt'). Export-DuctsViewer.ps1 -Revit removes those members after the cuts. '' = off.
+    # 'C:\Temp\hvac\cuts\drop.txt'). Export-DuctsViewer.ps1 -Revit removes those members after the cuts.
+    # '' = drop.txt in the DuctCuts file's folder if it exists, else off; 'none' = off.
     DuctDrop = ''
     Group = 'DUCT_ALL'                # SAP frame group holding every duct member
 
