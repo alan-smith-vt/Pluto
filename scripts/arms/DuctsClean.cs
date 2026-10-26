@@ -279,8 +279,8 @@ public partial class DuctsToPluto
 
     // Each cut point snaps to a clean joint within CutSnapIn, else to a point on a prismatic duct edge (split there).
     // The model is then split at those joints into pieces. Each system with a cut on it (fragments counted with their
-    // system) keeps the piece holding most of its duct length; every other piece made mostly of a cut system is
-    // dropped, whether it meets a cut or not. Edges of kept pieces ending at a cut get CUT_END.
+    // system) keeps the piece holding most of its own duct length; every other piece meeting a cut and made mostly of
+    // a cut system is dropped. Edges of kept pieces ending at a cut get CUT_END.
     // A point named KEEP... is not a cut: the piece it lies on (nearest edge within KeepSnapIn) is kept instead of the
     // main one; a system with keep points keeps only its marked pieces (for cuts where the shorter side is the scope).
     static string ApplyCuts(List<CEdge> clean, Dictionary<int, double[]> P)
@@ -366,11 +366,10 @@ public partial class DuctsToPluto
             if (best >= 0) keep[s] = new HashSet<int> { best };
         }
         var kept = new HashSet<int>(keep.Values.SelectMany(x => x));
-        // every other piece mostly of a cut system goes, met by a cut or not: the far side joined round the cut
-        // (2026-10-26: a run carried on past its cut, joined back through another piece) and the system's fragments
-        var drop = new HashSet<int>();
-        for (int i = 0; i < pieces.Count; i++) if (!kept.Contains(i) && cutSys.Contains(sysOf(pieces[i]))) drop.Add(i);
+        // every other piece meeting a cut and made mostly of a cut system goes. Only those: the clean model is in many
+        // pieces besides the cuts, so dropping all a system's other pieces took most of a real run (2026-10-26)
         var atCut = new HashSet<int>(cutNodes.SelectMany(n => byNode[n]).Select(e => piece[e]));
+        var drop = new HashSet<int>(atCut.Where(i => !kept.Contains(i) && cutSys.Contains(sysOf(pieces[i]))));
         // per cut, the pieces meeting it: which was kept and why (keep point / largest)
         var sides = new List<string>();
         foreach (int n in cutNodes)
@@ -384,10 +383,10 @@ public partial class DuctsToPluto
         clean.RemoveAll(e => drop.Contains(piece[e]));
         int ends = 0;
         foreach (CEdge e in clean) if (cutNodes.Contains(e.A) || cutNodes.Contains(e.B)) { e.Flags.Add("CUT_END"); ends++; }
-        return string.Format(Inv, "NEW cuts: {0} of {1} placed, {2} elements ({3:0.#} ft of duct) dropped beyond them ({8} pieces not at a cut: fragments / joined round a cut), {4} kept elements end at a cut (CUT_END){5}\nNEW cut points: {6}\nNEW cut sides: {7}",
+        return string.Format(Inv, "NEW cuts: {0} of {1} placed, {2} elements ({3:0.#} ft of duct) dropped beyond them, {4} kept elements end at a cut (CUT_END){5}\nNEW cut points: {6}\nNEW cut sides: {7}",
             nCuts - notFound.Count(x => !x.StartsWith("KEEP", StringComparison.OrdinalIgnoreCase)), nCuts, dropN, dropFt, ends,
             notFound.Count > 0 ? "; NOT placed (no joint / duct within " + CutSnapIn.ToString("0.#", Inv) + " in): " + string.Join(", ", notFound.ToArray()) : "",
-            string.Join("; ", report.ToArray()), string.Join("; ", sides.ToArray()), drop.Count(i => !atCut.Contains(i)));
+            string.Join("; ", report.ToArray()), string.Join("; ", sides.ToArray()));
     }
 
     static CEdge CopyEdge(CEdge s, int a, int b)

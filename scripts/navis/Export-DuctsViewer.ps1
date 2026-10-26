@@ -88,6 +88,10 @@ if ($Box) {
     Write-Output $r.Note
     Write-Output ("box mesh: {0} nodes; {1} items without triangles in the box" -f $r.Nodes, $r.Skipped)
 } elseif ($RvMesh) {
+    # Revit categories left out of the _norun file: RevitMeshNoRunExclude in duct-config.psd1
+    [DuctsToPluto]::NoRunExclude.Clear()
+    $cfg = Join-Path (Split-Path $PSScriptRoot) "duct\duct-config.psd1"
+    if (Test-Path $cfg) { foreach ($c in @((Import-PowerShellDataFile $cfg).RevitMeshNoRunExclude | Where-Object { $_ })) { [void][DuctsToPluto]::NoRunExclude.Add($c.Trim()) } }
     $r = [DuctsToPluto]::ExportRevitMesh($Run, $Out, $ModelId, $Unit)
     Write-Output $r.Note
     Write-Output ("Revit mesh: {0} nodes; {1} elements without triangles in the boxes" -f $r.Nodes, $r.Skipped)

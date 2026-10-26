@@ -1761,21 +1761,32 @@ public partial class DuctsToPluto
     // Split by run name (2026-10-13: one room was 500 MB, 2.5 M triangles without a run name; hiding a group does
     // not free it): <outBase>_run.bin (items with a value in runCol) and <outBase>_norun.bin, each with its own
     // sidecar; a part with no triangles is not written. Result = the run file; Note covers both.
+    // Revit categories left out of the Revit mesh's _norun file (RevitMeshNoRunExclude in duct-config.psd1), exact
+    // names, ignoring case
+    public static readonly HashSet<string> NoRunExclude = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
     static Result WriteMeshOverlays(List<KeyValuePair<int, float[]>> recs, List<Dictionary<string, string>> items, string runCol,
         string outBase, string modelId, string lengthUnit, string tag, MeshItemInfo info)
     {
         var withRun = new List<KeyValuePair<int, float[]>>(); var noRun = new List<KeyValuePair<int, float[]>>();
+        var excluded = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         foreach (KeyValuePair<int, float[]> rec in recs)
         {
             Dictionary<string, string> it = rec.Key >= 1 && rec.Key <= items.Count ? items[rec.Key - 1] : null;
-            (it != null && Get(it, runCol) != "" ? withRun : noRun).Add(rec);
+            if (it != null && Get(it, runCol) != "") { withRun.Add(rec); continue; }
+            string cat = it != null ? Get(it, "Category") : "";
+            if (tag == "revit" && NoRunExclude.Contains(cat)) { int c; excluded.TryGetValue(cat, out c); excluded[cat] = c + 1; continue; }
+            noRun.Add(rec);
         }
         Result a = withRun.Count > 0 ? WriteMeshOverlay(withRun, items, outBase + "_run", modelId + "/run", lengthUnit, tag, info) : null;
         Result b = noRun.Count > 0 ? WriteMeshOverlay(noRun, items, outBase + "_norun", modelId + "/norun", lengthUnit, tag, info) : null;
         Result res = a ?? b;
         res.Skipped = items.Count - recs.Count;
+        var ex = new List<string>();
+        foreach (KeyValuePair<string, int> kv in excluded) ex.Add(kv.Key + " " + kv.Value);
         res.Note = (a != null ? a.Note + " -> " + Path.GetFileName(a.BinPath) : "NEW mesh " + tag + " run: none")
-            + "\n" + (b != null ? b.Note + " -> " + Path.GetFileName(b.BinPath) : "NEW mesh " + tag + " norun: none");
+            + "\n" + (b != null ? b.Note + " -> " + Path.GetFileName(b.BinPath) : "NEW mesh " + tag + " norun: none")
+            + (ex.Count > 0 ? "\nNEW norun excluded (RevitMeshNoRunExclude): " + string.Join(", ", ex.ToArray()) : "");
         return res;
     }
 

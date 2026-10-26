@@ -20,6 +20,9 @@
     # Scope cut points: the CSV of scripts\sap\Run-Sap.ps1 -Points <cut nodes> (read from the reviewed SAP model).
     # Export-DuctsViewer.ps1 -Revit cuts the clean model there (-Cuts overrides; -Cuts none = no cuts). '' = none.
     DuctCuts = ''
+    # Revit categories left out of the Revit Pluto Mesh _norun viewer file (exact names as in its "Category:" groups,
+    # ignoring case), e.g. @('Duct Insulations', 'Duct Linings'). @() = keep all.
+    RevitMeshNoRunExclude = @()
     Group = 'DUCT_ALL'                # SAP frame group holding every duct member
 
     # Output case names exactly as SAP lists them (copy from SAP, not from Excel).
