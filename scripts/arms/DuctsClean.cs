@@ -19,7 +19,7 @@ using System.Text;
 // <out>.parts_frames.csv) and returns the checks for match.txt.
 public partial class DuctsToPluto
 {
-    const double MergeIn = 1, CollinearCos = 0.99939, LatTolIn = 1, GapFt = 1, GapLatIn = 2;   // cos 2 deg; gaps up to 12 in along, 2 in sideways
+    const double MergeIn = 1, CollinearCos = 0.99939, LatTolIn = 1, GapFt = 2, GapLatIn = 2;   // cos 2 deg; gaps up to 24 in along, 2 in sideways
 
     class CEdge
     {

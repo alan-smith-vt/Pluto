@@ -68,6 +68,7 @@ public partial class DuctsToPluto
     }
 
     const double RvTouch = 0.02;   // ft, as the add-in's "touching"
+    const double NearFt = 2;      // near links: facing open ends up to 24 in apart (off-axis <= 1 in)
 
     public static Result ExportRevit(string navisRun, string revitRun, string outBase, string modelId, string lengthUnit, string room)
     {
@@ -397,12 +398,13 @@ public partial class DuctsToPluto
         // neither was loose, and a 10 in hole to the next end piece, facing it, never got a near link; the systems
         // split there): a ONE-connector part's touching connector stands for the duct end it sits on. Its links
         // take gaps only (no overlap: two pieces at both ends of a short straight face apart and must not link)
+        // (near links reach NearFt: 12 in until 2026-10-26, when a lined-up 12.1 in gap left a system split)
         var endPiece = new HashSet<RvConn>();
         foreach (RvConn k in open) if (k.Owner.Conns.Count == 1 && touch.ContainsKey(k)) { endPiece.Add(k); loose.Add(k); }
         foreach (RvConn k in loose)
         {
             if (linked.Contains(k)) continue;
-            RvConn best = null; double bd = 1.0, bAlong = 0;
+            RvConn best = null; double bd = NearFt, bAlong = 0;
             foreach (RvConn q in loose)
             {
                 if (q == k || q.Owner == k.Owner || linked.Contains(q)) continue;
@@ -1108,7 +1110,7 @@ public partial class DuctsToPluto
     // -Part report, 3 lines: the part (kind, run / segment, category, family); each connector (id, type, size, state:
     // connected <ids> / outside / touching <id> / near / side / open); for each connector not connected, the 2 nearest
     // other connectors in the room: owner id + kind, distance, along (+ = in front of it) and off-axis inches, and
-    // the angle between the two directions (180 = facing each other; near links need <= 12 in, off-axis <= 1 in,
+    // the angle between the two directions (180 = facing each other; near links need <= 24 in, off-axis <= 1 in,
     // angle >= 154 deg)
     static string PartReport(RvEl pe, List<RvEl> scope, Dictionary<string, RvConn> conns, HashSet<RvEl> inScope,
         Dictionary<RvConn, RvConn> touch, HashSet<RvConn> nearSet, HashSet<RvConn> linked, Dictionary<RvConn, RvConn> attach)
@@ -1223,7 +1225,7 @@ public partial class DuctsToPluto
         double along = ((kb.P[0] - ka.P[0]) * ka.D[0] + (kb.P[1] - ka.P[1]) * ka.D[1] + (kb.P[2] - ka.P[2]) * ka.D[2]) * 12;
         double lat = Math.Sqrt(Math.Max(0, dist * dist - along * along));
         double ang = Math.Acos(Math.Max(-1, Math.Min(1, ka.D[0] * kb.D[0] + ka.D[1] * kb.D[1] + ka.D[2] * kb.D[2]))) * 180 / Math.PI;
-        string l2 = string.Format(Inv, "NEW ends: {0}({1}) conn {2} {3} -> {4}({5}) conn {6} {7}: {8:0.#} in, along {9:0.#} off {10:0.#} ang {11:0} (near link needs <= 12 in, off <= 1, ang >= 154)",
+        string l2 = string.Format(Inv, "NEW ends: {0}({1}) conn {2} {3} -> {4}({5}) conn {6} {7}: {8:0.#} in, along {9:0.#} off {10:0.#} ang {11:0} (near link needs <= 24 in, off <= 1, ang >= 154)",
             ka.Owner.Id, ka.Owner.Kind, ka.Key.Substring(ka.Key.IndexOf(':') + 1), state(ka), kb.Owner.Id, kb.Owner.Kind, kb.Key.Substring(kb.Key.IndexOf(':') + 1), state(kb), dist, along, lat, ang);
         // what lies on the straight line between the two ends
         double[] a = ka.P, b = kb.P; int n = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(best) / 0.25));
