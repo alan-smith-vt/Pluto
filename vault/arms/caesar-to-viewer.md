@@ -101,8 +101,8 @@ Code: `scripts/arms/CaesarNeutralReader.cs` → `CaesarGeometry.cs` → [`Caesar
 
 > [!info]- Geometry (CaesarGeometry)
 > - **Node positions:**
->   - A breadth-first walk over the elements, both directions, seeded from COORDS.
->   - Restraint CNODE links and nozzle-vessel links carry the walk on: the fixture's runs connect only through them.
+>   - A breadth-first walk over the elements, both directions, seeded from the first COORDS entry.
+>   - Restraint and hanger CNODE links and nozzle-vessel links carry the walk on before the next COORDS entry: the fixture's runs connect only through them. A piece a link reaches sits at the link, whatever its own COORDS say: CAESAR 15.01 drew a hanger's frame and a nozzle's pipe so ("connect geometry through CNodes") and dropped their COORDS on export (2026-10-26).
 >   - Bend intermediate nodes seed elements that start on an elbow (trunnions, dummy legs).
 >   - Anything still unreached starts at the origin, with a warning. Loop-closure misses are reported.
 > - **Bends (CAESAR convention):**

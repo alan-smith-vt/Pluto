@@ -62,7 +62,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > | Sections | pipe size | name, OD, wall, insulation, corrosion, insulation density, material, E / Poisson / pipe density (blank = CAESAR's database), mill tolerance − / + (% of the wall), seam weld (yes / no) |
 > | Processes | operating condition | name, T1–T9, P1–P9, fluid density, hydro pressure (CAESAR's hydrotest case) |
 > | Restraints | restraint | Id, node, type (CAESAR's), CNODE, stiffness (blank = rigid), gap, friction, cosines (blank = the type's own axis), tag |
-> | SIFs | SIF / tee | Id, node, type (CAESAR's number, 0-17; the header's note names them), SIF in / out, surface node, pad (a reinforced tee; amber without), crotch radius, weld mismatch, fillet |
+> | SIFs | SIF / tee | Id, node, type (a dropdown of CAESAR's list, "3 - welding tee"; a bare number from an older workbook reads the same), SIF in / out, surface node, pad (a reinforced tee; amber without), crotch radius, weld mismatch |
 > | Forces / Displacements | node and load vector | Id, node, vector (1–9), FX…MZ / DX…RZ. A blank displacement DOF is free; 0 holds it |
 > | Uniform / Wind | element, or a range of elements with the same values | Element (`E4`, a range `E3:E9`, or blank with From and To), vector, UX UY UZ, in g's / type, shape factor, wave data |
 > | Joints | joint | Id, node, CNODE, kind, frame (pipe / global), DOFs (`axial gap=0.125 k=5000; shear; torsion; bending gap=2`), SIF, tag |
@@ -145,9 +145,10 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > - **Every input column has a hint and a rule**: the hint shows when a cell is selected, and the rule gives a warning that can be overridden.
 >   - **Number columns** take numbers. Positive-only columns, whole numbers, node numbers and cosines (−1..1) each have their own rule.
 >   - **Dropdowns:**
->     - with a warning for a value not on the list: element type, bend type, restraint type, SIF type, load vector, In g's, wind type, joint frame, vertical axis;
+>     - with a warning for a value not on the list: element type, bend type, restraint type, SIF type (by name, `3 - welding tee`, as CAESAR lists them), load vector (forces, displacements, uniform loads and an API 650 nozzle's growth), In g's, wind type, joint frame, vertical axis, nozzle type, vessel type, reinforcing, hanger free codes, short-range springs, seam weld;
 >     - free entry allowed: Section, Process, joint kind;
->     - the bend radius takes a number, or `LR`, `SR`, `Long`, `Short`, `3D`, `5D`.
+>     - the bend radius: a dropdown of `LR`, `SR`, `3D`, `5D` that takes a radius (a number) too; `Long` and `Short` are read as well; anything else turns red.
+>   - **Not dropdowns:** values from CAESAR's own databases that Pluto does not hold the list of (material number, hanger table, multi-load option): whole numbers, as CAESAR numbers them.
 > - **Highlighting (conditional formatting):**
 >   - **Red** = the build would refuse it:
 >     - text or an error where a number belongs;
@@ -155,10 +156,10 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >     - a missing From / To, From = To, a missing section on the first row;
 >     - a reducer without OD2 / Wall2, bend nodes without `angle:node`;
 >     - a bend node number used twice: on another bend, or also an element's From / To (CAESAR stops on it);
->     - CAESAR's other errors a sheet can see: a bend outside 5–95° or a node on it within 5° of its far end or another, corrosion as thick as the wall, a user SIF under 1, a node above 8,000,000, a displacement where a restraint already holds the node, an incomplete expansion joint, a WRC 297 nozzle's stiffeners closer than its radius, a custom nozzle without its vessel material ([[vault/arms/caesar-checks|caesar-checks]]);
+>     - CAESAR's other errors a sheet can see: a bend outside 5–95° or a node on it within 5° of its far end or another, corrosion as thick as the wall, a user SIF under 1, a SIF type CAESAR 15.01 does not have (past 13), a node above 8,000,000, a displacement where a restraint already holds the node, an incomplete expansion joint, a WRC 297 or PD 5500 nozzle's stiffeners closer than its radius, a custom nozzle without its vessel material ([[vault/arms/caesar-checks|caesar-checks]]);
 >     - a vector outside 1–9, the same node and vector twice;
 >     - a duplicate section or process name, a cosine above 1.
->   - **Amber** = worth a look: a node no element has (bend nodes count), a copied Id, a zero-length element; and what CAESAR warns about: a corner with no bend, a tee where other than three pipes meet, a SIF type 14–17 (CAESAR 15.01 read them as no tee), D/t over 100, an expansion joint without torsion stiffness or with both transverse and bending, a rigid with no weight, a temperature under 0.05 (read as an expansion), g's and force per length both used, a designed hanger at a restrained or displaced node, a nozzle node a restraint, displacement or hanger also uses, an API 650 tank under 120 ft or its growth in a vector displacements use; and a bend node within 5° of the near end, a WRC 297 nozzle without its vessel material, a PD 5500 nozzle (CAESAR 15.01 stopped on the one Pluto wrote).
+>   - **Amber** = worth a look: a node no element has (bend nodes count), a copied Id, a zero-length element; and what CAESAR warns about: a corner with no bend, a tee where other than three pipes meet, D/t over 100, an expansion joint without torsion stiffness or with both transverse and bending, a rigid with no weight, a temperature under 0.05 (read as an expansion), g's and force per length both used, a designed hanger at a restrained or displaced node, a nozzle node a restraint, displacement or hanger also uses, an API 650 tank under 120 ft or its growth in a vector displacements use; and a bend node within 5° of the near end, a WRC 297 or PD 5500 nozzle without its vessel material.
 >   - **Long rules** are worked out per row on the hidden PlotCalc sheet, so every conditional-format formula stays short.
 > - **Build it from here** (Start sheet, under the steps): links to the two launchers (relative, so they follow the folder), to Pluto's viewer page and to the folder, and the PowerShell command each launcher runs, built from `CELL("filename")` so it names the workbook where it is now (the path at write time where `CELL` gives none, e.g. in LibreOffice). Excel asks before it follows a link to a `.cmd` file; where policy stops it, double-click the file in the folder.
 > - **Start's checks** count those cells live: error values; text where a number belongs (per sheet); rows without From / To; unknown names and types; unknown element Ids; vectors outside 1–9; nodes on no element; bend node numbers used twice; Ids used twice; and each CAESAR rule above. Each shows OK, check (amber) or fix (red).

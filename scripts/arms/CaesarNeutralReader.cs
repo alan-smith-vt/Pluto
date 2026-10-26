@@ -1228,8 +1228,15 @@ public static class CaesarNeutralReader
                     var r = rows[pos + k * nozLines];
                     var z = new CaesarNozzle();
                     z.Index = k; z.Node = r.IntAt(0); z.VesselNode = r.IntAt(1);
-                    var vals = new List<double>();
-                    for (int q = 0; q < nozLines; q++) vals.AddRange(rows[pos + k * nozLines + q].V);
+                    // CAESAR 15.01 reads a nozzle line by line, 6, 6, 4 and 4 values (PipeModelNozzle.Lines): a line's
+                    // values past its count are not read; lines past the fourth run on
+                    var vals = new List<double>(new double[PipeModelNozzle.Count]);
+                    for (int q = 0; q < nozLines; q++)
+                    {
+                        var v = rows[pos + k * nozLines + q].V;
+                        if (q < PipeModelNozzle.Lines.Length) for (int c = 0; c < v.Length && c < PipeModelNozzle.Lines[q]; c++) vals[PipeModelNozzle.LineStart(q) + c] = v[c];
+                        else vals.AddRange(v);
+                    }
                     z.Values = vals.ToArray();
                     M.Nozzles.Add(z);
                 }

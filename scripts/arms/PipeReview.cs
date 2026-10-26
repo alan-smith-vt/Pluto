@@ -36,10 +36,9 @@ using System.Text;
 //   sif-pad         a reinforced fabricated tee without its pad thickness
 //   nozzles         the flexible nozzles (info); nozzle-restrained: a nozzle node also a restraint's, a displacement's or
 //                   a hanger's (266E); nozzle-axis: the vessel centreline missing or along the nozzle; nozzle-stiffener:
-//                   a stiffener closer than the nozzle's radius (118E); nozzle-material: no vessel material (79E); a
-//                   PD 5500 nozzle's values are not checked (its layout is not the documentation's);
+//                   a stiffener closer than the nozzle's radius (118E); nozzle-material: no vessel material (79E);
 //                   nozzle-api-scope: an API 650 tank under 120 ft (123E); nozzle-vector: the API 650 growth's vector
-//                   also imposed (244E); nozzle-pd5500: a PD 5500 nozzle Pluto writes (135E)
+//                   also imposed (244E); nozzle-vessel-type: a PD 5500 vessel type other than 0 or 1 (135E)
 //   uniform-mixed   the uniform loads mix g's and force per length (CAESAR's error checker warns: 246E, 247E)
 // plus CaesarNeutralWriter.NoticeItems (layouts and codes from the documentation) and any messages the caller adds
 // (the build's warnings, the preview's own).
@@ -161,7 +160,7 @@ public static class PipeReview
         }
 
         // tees without an intersection type: CAESAR warns (33E) and uses pipe flexibilities and SIFs of 1.0 there. A user
-        // SIF entry (type 0) gives the SIFs; a joint (7-13) is not an intersection; CAESAR 15.01 read 14-17 as none either
+        // SIF entry (type 0) gives the SIFs; a joint (7-13) is not an intersection; a number past 13 is no type at all
         List<PipeModelSif> sifs;
         try { sifs = CaesarNeutralWriter.Sifs(m); }
         catch (Exception) { sifs = new List<PipeModelSif>(m.Sifs); }
@@ -173,7 +172,7 @@ public static class PipeReview
             if (at != null && at.Any(s => s.Type >= 0 && s.Type <= 6)) continue;
             string what = at == null ? "no SIF / tee entry there"
                         : "a SIF entry of type " + string.Join(", ", at.Select(s => s.Type + " (" + PipeModelSifTypes.Name(s.Type) + ")").Distinct().ToArray()) +
-                          (at.Any(s => s.Type >= 14) ? ", which CAESAR 15.01 read as no intersection type" : ", a joint, not an intersection");
+                          (at.Any(s => s.Type > PipeModelSifTypes.Max) ? ", which is no type of CAESAR 15.01's (it reads none there)" : ", a joint, not an intersection");
             items.Add(new PipeReviewItem("warning", "tee-no-sif",
                 kv.Value + " elements meet at node " + kv.Key + " with " + what + ": CAESAR warns (33E) and uses pipe flexibilities and SIFs of 1.0 at this branch (a welding tee is type 3)")
                 .WithNodes(new[] { kv.Key }).WithElements(elementsAt[kv.Key]));
@@ -696,15 +695,15 @@ public static class PipeReview
             if (uses.Count > 0)
                 items.Add(new PipeReviewItem("warning", "nozzle-restrained", "the nozzle at node " + z.Node + " has " + string.Join(", ", uses.ToArray()) +
                     " at its node too: CAESAR warns (266E); what holds the node there takes what the nozzle's flexibility would. Put it on the vessel node, or on a node of its own").WithNodes(new[] { z.Node }));
-            // PD 5500: its items are not where the documentation puts them (135E), so its values are not checked here
+            // a PD 5500 vessel type other than cylinder (0) or sphere (1): CAESAR stops (135E)
             if (z.Type == 2)
             {
-                if (z.Raw == null)
-                    items.Add(new PipeReviewItem("error", "nozzle-pd5500", "the PD 5500 nozzle at node " + z.Node + " is written in the layout of CAESAR's documentation, and CAESAR 15.01 stopped on " +
-                        "the one Pluto wrote (135E: an invalid vessel type), so the layout is not that one: until a PD 5500 nozzle written by CAESAR shows it, give this nozzle in CAESAR").WithNodes(new[] { z.Node }));
-                continue;
+                double vt = z.Get(2);
+                if (vt != 0 && vt != 1)
+                    items.Add(new PipeReviewItem("error", "nozzle-vessel-type", string.Format(ci, "the PD 5500 nozzle at node {0} has vessel type {1:0.###}: CAESAR stops on it (135E); 0 is a cylinder, 1 a sphere", z.Node, vt))
+                        .WithNodes(new[] { z.Node }));
             }
-            if (z.Type == 0)
+            if (z.Type == 0 || z.Type == 2)
             {
                 double od = z.Get(0);
                 if (!(od > 0)) { var pe = m.Elements.FirstOrDefault(x => x.From == z.Node || x.To == z.Node); if (pe != null) od = pe.Od; }
@@ -713,7 +712,7 @@ public static class PipeReview
                     items.Add(new PipeReviewItem("error", "nozzle-stiffener", string.Format(ci, "the {0} nozzle at node {1} has its stiffeners or heads {2:0.###} and {3:0.###} away, less than the nozzle's radius ({4:0.###}): CAESAR stops on it (118E); " +
                         "give both distances (a long vessel shell: its heads)", z.TypeName, z.Node, d1, d2, radius)).WithNodes(new[] { z.Node }));
             }
-            if ((z.Type == 0 || z.Type == 3) && !(z.Get(15) > 0))
+            if (z.Type != 1 && !(z.Get(15) > 0))
                 items.Add(new PipeReviewItem(z.Type == 3 ? "error" : "warning", "nozzle-material", "the " + z.TypeName + " nozzle at node " + z.Node + " has no vessel material: " +
                     (z.Type == 3 ? "CAESAR stops on it (79E: a material / temperature error)" : "CAESAR stopped on a custom nozzle without one (79E); this type takes the vessel's modulus from it too") +
                     "; give the vessel's material number").WithNodes(new[] { z.Node }));
@@ -783,8 +782,7 @@ public static class PipeReview
     }
 
     // CAESAR's SIF & tee types that are intersections (tees, olets: 1-6); 7-13 are joints (welds, threads, flanges). CAESAR
-    // 15.01 read 14-17 (the Bonney Forge fittings and the full encirclement tee by its documentation's list) as no
-    // intersection type (33E), so they are not taken as tees until its own listing shows what those numbers are
+    // 15.01's list ends at 13: the 14-17 an older guide listed it reads as no type (33E at a branch)
     public static bool IsTeeType(int t) { return t >= 1 && t <= 6; }
 
     // "error" first; then the order they were found

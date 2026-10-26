@@ -266,7 +266,8 @@ public class PipeModelSif
     public int Type;                          // 0 = user SIFs only, 3 = welding tee
     public double SifIn, SifOut;              // 0 = from the code
     public int SurfaceNode;                   // a tee's surface node (CAESAR's "Srf.Node"), 0 = none
-    public double WeldMismatch, Fillet;       // butt weld / tapered transition mismatch; socket weld fillet leg (items 5, 6)
+    public double WeldMismatch;               // butt weld / tapered transition mismatch (item 5; CAESAR's "Weld Error")
+    public double Item6;                      // item 6, carried: not the fillet leg the guide names (CAESAR 15.01 showed a value there under no column)
     public double Pad, FittingRo, CrotchRadius;   // reinforcing pad (reinforced tee), fitting outside radius, extruded tee's crotch radius (7-9)
     public int OwnerUid;
     public int Slot = -1;
@@ -470,20 +471,28 @@ public class PipeModelHanger
 
 // A flexible nozzle (MISCEL_1 nozzle data): CAESAR works out the flexibility of a nozzle on a vessel (WRC 297,
 // PD 5500) or on a tank shell (API 650), or takes the stiffnesses given (custom), between the nozzle node and the
-// vessel node (or ground without one). CAESAR's 22 values in its order: V[i] is its item i + 1; items 1-3 are the
-// node, the vessel node and the type, kept in Node / VesselNode / Type. Job units.
+// vessel node (or ground without one). CAESAR's 20 values in its order: V[i] is its item i + 1; items 1-3 are the
+// node, the vessel node and the type, kept in Node / VesselNode / Type. Job units. CAESAR 15.01 writes them on 4
+// lines of 6, 6, 4 and 4 values and reads them line by line (Lines): a line's values past its count are not read.
 public class PipeModelNozzle
 {
     public static readonly string[] TypeNames = { "WRC 297", "API 650", "PD 5500", "Custom" };
+    public const int Count = 20;
+    public static readonly int[] Lines = { 6, 6, 4, 4 };
     public int Node, VesselNode;
     public int Type;                          // 0 WRC 297, 1 API 650, 2 PD 5500, 3 custom
-    public readonly double[] V = new double[22];
+    public readonly double[] V = new double[Count];
     public string Source = "";                // which config item made it (messages)
     public List<string> Raw;                  // its lines as written; null = new
 
     public string TypeName { get { return Type >= 0 && Type < TypeNames.Length ? TypeNames[Type] : "type " + Type; } }
 
-    // The values a sheet or a config names, by the item each type keeps them in (0 = not one of this type's)
+    // the item (0-based) a line's first value is
+    public static int LineStart(int line) { int k = 0; for (int i = 0; i < line && i < Lines.Length; i++) k += Lines[i]; return k; }
+
+    // The values a sheet or a config names, by the item each type keeps them in (0 = not one of this type's). CAESAR
+    // 15.01 confirmed each type's items (2026-10-26): PD 5500 has no nozzle wall, its vessel type is item 4 and its
+    // nozzle OD item 5; the custom stiffnesses are items 17-20.
     public static readonly string[] Fields =
     {
         "nozzle OD", "nozzle wall", "vessel type", "vessel OD", "vessel wall", "pad", "reinforcing", "stiffener distance", "opposite distance",
@@ -492,17 +501,40 @@ public class PipeModelNozzle
     };
     static readonly int[][] ItemOf =       // per field: WRC 297, API 650, PD 5500, custom
     {
-        new[] { 4, 4, 4, 4 }, new[] { 5, 5, 0, 5 }, new[] { 0, 0, 5, 0 }, new[] { 6, 6, 6, 6 }, new[] { 7, 7, 7, 7 }, new[] { 8, 0, 8, 8 }, new[] { 0, 9, 0, 0 },
+        new[] { 4, 4, 5, 4 }, new[] { 5, 5, 0, 5 }, new[] { 0, 0, 4, 0 }, new[] { 6, 6, 6, 6 }, new[] { 7, 7, 7, 7 }, new[] { 8, 0, 8, 8 }, new[] { 0, 9, 0, 0 },
         new[] { 10, 0, 10, 0 }, new[] { 11, 0, 11, 0 }, new[] { 0, 10, 0, 0 }, new[] { 0, 11, 0, 0 }, new[] { 12, 0, 12, 12 }, new[] { 13, 0, 13, 13 },
         new[] { 14, 0, 14, 14 }, new[] { 15, 0, 15, 0 }, new[] { 16, 0, 16, 16 }, new[] { 0, 12, 0, 0 }, new[] { 0, 13, 0, 0 }, new[] { 0, 14, 0, 0 },
-        new[] { 0, 15, 0, 0 }, new[] { 0, 16, 0, 0 }, new[] { 0, 0, 0, 19 }, new[] { 0, 0, 0, 20 }, new[] { 0, 0, 0, 21 }, new[] { 0, 0, 0, 22 }
+        new[] { 0, 15, 0, 0 }, new[] { 0, 16, 0, 0 }, new[] { 0, 0, 0, 17 }, new[] { 0, 0, 0, 18 }, new[] { 0, 0, 0, 19 }, new[] { 0, 0, 0, 20 }
     };
 
-    // CAESAR's item (1-22) that holds field f for this nozzle's type; 0 when the type has none
+    // CAESAR's item (1-20) that holds field f for this nozzle's type; 0 when the type has none
     public int Item(int f) { return f >= 0 && f < ItemOf.Length && Type >= 0 && Type < 4 ? ItemOf[f][Type] : 0; }
     public static int FieldIndex(string name) { return Array.FindIndex(Fields, x => string.Equals(x, name, StringComparison.OrdinalIgnoreCase)); }
     public double Get(int f) { int i = Item(f); return i > 0 ? V[i - 1] : 0; }
     public void Set(int f, double v) { int i = Item(f); if (i > 0) V[i - 1] = v; }
+
+    // a model file saved before 2026-10-26 held 22 values: for a nozzle with lines, the values of its lines run on (a
+    // line written with 6 values on the third took items 13-18); for a new one, by the guide's numbering (PD 5500's
+    // nozzle OD at 4 and vessel type at 5, the custom stiffnesses at 19-22). Both into today's items
+    public void SetFromOldValues(double[] old)
+    {
+        Array.Clear(V, 0, V.Length);
+        Func<int, double> at = i => old != null && i < old.Length && !double.IsNaN(old[i]) ? old[i] : 0;
+        if (Raw != null && Raw.Count > 0)
+        {
+            int c = 0;
+            for (int q = 0; q < Raw.Count; q++)
+            {
+                int n = Math.Max(0, ((Raw[q] ?? "").TrimEnd().Length - 2 + 12) / 13);
+                if (q < Lines.Length) for (int k = 0; k < n && k < Lines[q]; k++) V[LineStart(q) + k] = at(c + k);
+                c += n;
+            }
+            return;
+        }
+        for (int i = 0; i < 16; i++) V[i] = at(i);
+        if (Type == 2) { V[3] = at(4); V[4] = at(3); }
+        if (Type == 3) for (int i = 0; i < 4; i++) V[16 + i] = at(18 + i);
+    }
 
     // items 1-3 into V, as written
     public double[] Values()
@@ -547,24 +579,27 @@ public class PipeModelSource
     }
 }
 
-// CAESAR's SIF & tee types by number, as its documentation lists them, with their names. 1-6 are
-// intersections, 7-13 joints; CAESAR 15.01 read 14-17 as no intersection type (33E). Seen in CAESAR-written files: 3
-// (welding tee) and 11; the rest follow the list's order.
+// CAESAR's SIF & tee types by number, with their names: 1-6 intersections, 7-13 joints, 0 user SIFs only. CAESAR
+// 15.01's SIF listing named each of 1-13 as here (2026-10-26) and showed no type for 14-17, which an older guide listed
+// (Bonney Forge fittings, a full encirclement tee): its list ends at 13.
 public static class PipeModelSifTypes
 {
     public static readonly string[] Names =
     {
         "user SIFs", "reinforced fabricated tee", "unreinforced fabricated tee", "welding tee", "sweepolet", "weldolet", "extruded welding tee",
         "girth butt weld", "socket weld (no undercut)", "socket weld (as welded)", "tapered transition", "threaded joint", "double welded slip-on",
-        "lap joint flange", "Bonney Forge sweepolet", "Bonney Forge latrolet", "Bonney Forge insert weldolet", "full encirclement tee"
+        "lap joint flange"
     };
     // the names a TOML gives a tee or SIF type
     public static readonly string[] Keys =
     {
         "user", "reinforced", "unreinforced", "welding", "sweepolet", "weldolet", "extruded", "butt_weld", "socket_weld", "socket_weld_as_welded",
-        "tapered_transition", "threaded", "slip_on", "lap_joint", "bf_sweepolet", "latrolet", "insert_weldolet", "full_encirclement"
+        "tapered_transition", "threaded", "slip_on", "lap_joint"
     };
-    public static readonly int[] Seen = { 0, 3, 11 };
+    // the names the guide gave 14-17, which CAESAR 15.01 does not have
+    public static readonly string[] Gone = { "bf_sweepolet", "latrolet", "insert_weldolet", "full_encirclement" };
+    public const int Max = 13;
+    public static readonly int[] Seen = { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13 };
 
     public static string Name(int t) { return t >= 0 && t < Names.Length ? Names[t] : "type " + t; }
     public static int Code(string key)

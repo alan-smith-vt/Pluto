@@ -441,30 +441,30 @@ public static class PipeWorkbook
         var sf = b.Add("SIFs");
         sf.FreezeRows = 1; sf.TabColor = "B45309";
         string[] sfh = { "Id", "Node", "Type (3 = welding tee, 0 = user SIFs)", "SIF in", "SIF out", "Surface node", "Pad (" + u.Thk + ")", "Crotch radius (" + u.Thk + ")",
-                         "Weld mismatch (" + u.Thk + ")", "Fillet (" + u.Thk + ")" };
-        sf.Width(0, 8); sf.Width(1, 9); sf.Width(2, 22); sf.Width(3, 10); sf.Width(4, 10); sf.Width(5, 12); for (int c = 6; c < 10; c++) sf.Width(c, 12);
+                         "Weld mismatch (" + u.Thk + ")" };
+        sf.Width(0, 8); sf.Width(1, 9); sf.Width(2, 22); sf.Width(3, 10); sf.Width(4, 10); sf.Width(5, 12); for (int c = 6; c < 9; c++) sf.Width(c, 12);
         r = 1;
         for (int i = 0; i < m.Sifs.Count; i++)
         {
             var x = m.Sifs[i];
-            sf.Set(r, 0, "S" + (i + 1)); sf.Set(r, 1, x.Node); sf.Set(r, 2, x.Type);
+            sf.Set(r, 0, "S" + (i + 1)); sf.Set(r, 1, x.Node); sf.Set(r, 2, PipeWorkbookGui.SifLabel(x.Type));
             if (x.SifIn != 0) sf.Set(r, 3, x.SifIn);
             if (x.SifOut != 0) sf.Set(r, 4, x.SifOut);
             if (x.SurfaceNode != 0) sf.Set(r, 5, x.SurfaceNode);
             if (x.Pad != 0) sf.Set(r, 6, x.Pad);
             if (x.CrotchRadius != 0) sf.Set(r, 7, x.CrotchRadius);
             if (x.WeldMismatch != 0) sf.Set(r, 8, x.WeldMismatch);
-            if (x.Fillet != 0) sf.Set(r, 9, x.Fillet);
             r++;
         }
-        var sifTypes = Enumerable.Range(0, PipeModelSifTypes.Names.Length).Concat(m.Sifs.Select(x => x.Type)).Distinct().OrderBy(v => v).ToList();
+        var sifTypes = Enumerable.Range(0, PipeModelSifTypes.Names.Length).Concat(m.Sifs.Select(x => x.Type).Where(v => v > PipeModelSifTypes.Max)).Distinct().OrderBy(v => v).ToList();
+        string lSif = "Lists!$J$2:$J$" + (1 + sifTypes.Count);
         int limF = Math.Max(1000, m.Sifs.Count + 500);
-        PipeWorkbookGui.Table(sf, t, sfh, PipeWorkbookGui.SifCols("Lists!$J$2:$J$" + (1 + sifTypes.Count)), m.Sifs.Count, limF);
+        PipeWorkbookGui.Table(sf, t, sfh, PipeWorkbookGui.SifCols(lSif), m.Sifs.Count, limF);
         PipeWorkbookGui.Rule(sf, "B2:B" + limF, PipeWorkbookGui.NodeMissing("B2", nFrom, nTo, nBend), t.Amber);
         PipeWorkbookGui.Rule(sf, "D2:E" + limF, "AND(ISNUMBER(D2),D2>0,D2<1)", t.Red);                                           // a user SIF under 1
-        PipeWorkbookGui.Rule(sf, "G2:G" + limF, "AND($C2=1,N(G2)<=0)", t.Amber);                                                  // a reinforced tee without its pad
+        PipeWorkbookGui.Rule(sf, "G2:G" + limF, "AND(" + PipeWorkbookGui.SifIs("$C2", 1) + ",N(G2)<=0)", t.Amber);                 // a reinforced tee without its pad
         PipeWorkbookGui.Rule(sf, "B2:B" + limF, "AND(ISNUMBER(B2)," + PipeWorkbookGui.TeeType("$C2") + ",COUNTIF(" + nFrom + ",B2)+COUNTIF(" + nTo + ",B2)<>3)", t.Amber);   // a tee not of three pipes
-        PipeWorkbookGui.Rule(sf, "C2:C" + limF, "AND(ISNUMBER(C2),C2>=14,C2<=17)", t.Amber);                                    // CAESAR 15.01 read 14-17 as no tee (33E)
+        PipeWorkbookGui.Rule(sf, "C2:C" + limF, "AND(C2<>\"\",ISNA(MATCH(C2," + lSif + ",0)),NOT(AND(ISNUMBER(C2),C2>=0,C2<=" + PipeModelSifTypes.Max + ")))", t.Red);   // not CAESAR 15.01's (its list ends at 13)
 
         // ---- Forces, Displacements
         var fo = b.Add("Forces");
@@ -626,16 +626,15 @@ public static class PipeWorkbook
         // CAESAR's error checker on nozzles (vault/arms/caesar-checks.md): stiffeners closer than the nozzle's radius (118E),
         // a custom nozzle without its vessel material (79E) red; the node a restraint's, a displacement's or a hanger's
         // (266E), an API 650 tank under 120 ft (123E), its growth in a vector imposed displacements use (244E), a WRC 297
-        // vessel without its material, a PD 5500 nozzle (135E on the one Pluto wrote; its values are not checked) amber
+        // or PD 5500 vessel without its material amber
         // the nozzle's radius in the length unit (its OD blank: the pipe's at the node)
         string nzRadius = "(IF(ISNUMBER($E2),$E2," + PipeWorkbookGui.OdAtNode("$B2", n) + ")*pl_d2in*pl_i2l/2)";
-        PipeWorkbookGui.Rule(nz, "L2:M" + limN, "AND($D2=\"WRC 297\",OR(NOT(ISNUMBER(L2)),N(L2)<=0,N(L2)<" + nzRadius + "))", t.Red);
+        PipeWorkbookGui.Rule(nz, "L2:M" + limN, "AND(OR($D2=\"WRC 297\",$D2=\"PD 5500\"),OR(NOT(ISNUMBER(L2)),N(L2)<=0,N(L2)<" + nzRadius + "))", t.Red);
         PipeWorkbookGui.Rule(nz, "T2:T" + limN, "AND($D2=\"Custom\",NOT(N(T2)>0))", t.Red);
-        PipeWorkbookGui.Rule(nz, "T2:T" + limN, "AND($D2=\"WRC 297\",NOT(N(T2)>0))", t.Amber);
+        PipeWorkbookGui.Rule(nz, "T2:T" + limN, "AND(OR($D2=\"WRC 297\",$D2=\"PD 5500\"),NOT(N(T2)>0))", t.Amber);
         PipeWorkbookGui.Rule(nz, "B2:B" + limN, "AND(ISNUMBER(B2),COUNTIF(ck_rn,B2)+COUNTIF(Displacements!$B$2:$B$" + L2 + ",B2)+COUNTIF(Hangers!$B$2:$B$" + L2 + ",B2)>0)", t.Amber);
         PipeWorkbookGui.Rule(nz, "H2:H" + limN, "AND($D2=\"API 650\",ISNUMBER(H2),H2>0,H2*pl_d2in<" + PipeReview.ApiMinTankOdIn.ToString(CultureInfo.InvariantCulture) + ")", t.Amber);
         PipeWorkbookGui.Rule(nz, "U2:U" + limN, "AND($D2=\"API 650\",ISNUMBER(U2),COUNTIF(Displacements!$C$2:$C$" + L2 + ",U2)>0)", t.Amber);
-        PipeWorkbookGui.Rule(nz, "D2:D" + limN, "$D2=\"PD 5500\"", t.Amber);
 
         // ---- Coords
         var co = b.Add("Coords");
@@ -659,6 +658,9 @@ public static class PipeWorkbook
         li.State = "hidden";
         Head(li, "Element types", "Restraint types", "Bend types", "Wind types", "Yes / no", "Vertical axis", "Joint frame", "Views", "Vectors", "SIF types", "Joint kinds",
              "NPS OD (in)", "NPS", "Coded radius (x NPS)", "View azimuth", "View elevation", "Hanger free codes");
+        li.Set(0, 20, "Bend radius names", XlsxBook.Header);
+        string[] radiusNames = { "LR", "SR", "3D", "5D" };
+        for (int k = 0; k < radiusNames.Length; k++) li.Set(1 + k, 20, radiusNames[k]);
         for (int k = 0; k < FreeNames.Length; k++) li.Set(1 + k, 16, FreeNames[k]);
         li.Set(0, 17, "Nozzle types", XlsxBook.Header); li.Set(0, 18, "Vessel types", XlsxBook.Header); li.Set(0, 19, "Reinforcing", XlsxBook.Header);
         for (int k = 0; k < 4; k++) li.Set(1 + k, 17, PipeModelNozzle.TypeNames[k]);
@@ -672,7 +674,7 @@ public static class PipeWorkbook
         double[] az = { 45, 0, 0, 90, 45 }, elv = { 35.264, 90, 0, 0, 35.264 };
         for (int k = 0; k < views.Length; k++) { li.Set(1 + k, 7, views[k]); li.Set(1 + k, 14, az[k]); li.Set(1 + k, 15, elv[k]); }
         for (int k = 1; k <= 9; k++) li.Set(k, 8, k);
-        for (int k = 0; k < sifTypes.Count; k++) li.Set(1 + k, 9, sifTypes[k]);
+        for (int k = 0; k < sifTypes.Count; k++) li.Set(1 + k, 9, PipeWorkbookGui.SifLabel(sifTypes[k]));
         string[] kinds = { "coupling", "hinge", "slip", "ball", "link", "custom" };
         for (int k = 0; k < kinds.Length; k++) li.Set(1 + k, 10, kinds[k]);
         var npsOd = new SortedDictionary<double, double>();
@@ -768,8 +770,8 @@ public static class PipeWorkbook
                 PipeWorkbookGui.CalcCount("fA", n) + "+" + PipeWorkbookGui.CalcCount("fN", n), false),
             new PipeWorkbookGui.Check("Elements: an expansion joint without its axial stiffness, or without transverse and bending: CAESAR stops on it (19E)",
                 PipeWorkbookGui.CalcCount("fE", n), false),
-            new PipeWorkbookGui.Check("Nozzles: a WRC 297 nozzle's stiffener or head closer than its radius, or not given: CAESAR stops on it (118E)",
-                "IFERROR(SUMPRODUCT((" + nzc("D") + "=\"WRC 297\")*(((NOT(ISNUMBER(" + nzc("L") + ")))+(" + nzc("L") + "<=0)+(NOT(ISNUMBER(" + nzc("M") + ")))+(" + nzc("M") + "<=0)+" +
+            new PipeWorkbookGui.Check("Nozzles: a WRC 297 / PD 5500 nozzle's stiffener or head closer than its radius, or not given: CAESAR stops on it (118E)",
+                "IFERROR(SUMPRODUCT(((" + nzc("D") + "=\"WRC 297\")+(" + nzc("D") + "=\"PD 5500\"))*(((NOT(ISNUMBER(" + nzc("L") + ")))+(" + nzc("L") + "<=0)+(NOT(ISNUMBER(" + nzc("M") + ")))+(" + nzc("M") + "<=0)+" +
                 "(" + nzc("L") + "<" + nzRad + ")+(" + nzc("M") + "<" + nzRad + "))>0)),0)", false),
             new PipeWorkbookGui.Check("Nozzles: a custom nozzle without its vessel material: CAESAR stops on it (79E)",
                 "SUMPRODUCT((" + nzc("D") + "=\"Custom\")*(((NOT(ISNUMBER(" + nzc("T") + ")))+(" + nzc("T") + "<=0))>0))", false),
@@ -793,10 +795,10 @@ public static class PipeWorkbook
                 "SUMPRODUCT(((LEFT(" + col("G") + ",5)=\"Rigid\")+(" + col("G") + "=\"Valve\")+(" + col("G") + "=\"Flange\")+(" + col("G") + "=\"Flange pair\")+(" + col("G") + "=\"Flanged valve\")>0)*" +
                 "(((" + col("M") + "=\"\")+(" + col("M") + "=0))>0))", true),
             new PipeWorkbookGui.Check("SIFs: a tee where other than three pipes meet: CAESAR warns (39E)",
-                "SUMPRODUCT(ISNUMBER(SIFs!$B$2:$B$" + L2 + ")*(SIFs!$C$2:$C$" + L2 + ">=1)*(SIFs!$C$2:$C$" + L2 + "<=6)*" +
+                "SUMPRODUCT(ISNUMBER(SIFs!$B$2:$B$" + L2 + ")*((ISNUMBER(MATCH(SIFs!$C$2:$C$" + L2 + "," + PipeWorkbookGui.LSifTees + ",0))+ISNUMBER(SIFs!$C$2:$C$" + L2 + ")*(SIFs!$C$2:$C$" + L2 + ">=1)*(SIFs!$C$2:$C$" + L2 + "<=6))>0)*" +
                 "((COUNTIF(" + nFrom + ",SIFs!$B$2:$B$" + L2 + ")+COUNTIF(" + nTo + ",SIFs!$B$2:$B$" + L2 + "))<>3))", true),
-            new PipeWorkbookGui.Check("SIFs: type 14-17, which CAESAR 15.01 read as no intersection type (33E: SIFs of 1.0 at a branch)",
-                "SUMPRODUCT(ISNUMBER(SIFs!$C$2:$C$" + L2 + ")*(SIFs!$C$2:$C$" + L2 + ">=14)*(SIFs!$C$2:$C$" + L2 + "<=17))", true),
+            new PipeWorkbookGui.Check("SIFs: a type not on CAESAR 15.01's list (0-13)",
+                "SUMPRODUCT((SIFs!$C$2:$C$" + L2 + "<>\"\")*ISNA(MATCH(SIFs!$C$2:$C$" + L2 + "," + lSif + ",0))*(1-ISNUMBER(SIFs!$C$2:$C$" + L2 + ")*(SIFs!$C$2:$C$" + L2 + ">=0)*(SIFs!$C$2:$C$" + L2 + "<=" + PipeModelSifTypes.Max + ")))", false),
             new PipeWorkbookGui.Check("Hangers: a hanger CAESAR designs at a node with a restraint or an imposed displacement: CAESAR warns (72E)",
                 "SUMPRODUCT(ISNUMBER(Hangers!$B$2:$B$" + L2 + ")*(1-ISNUMBER(Hangers!$D$2:$D$" + L2 + ")*(Hangers!$D$2:$D$" + L2 + ">0))*(1-ISNUMBER(Hangers!$F$2:$F$" + L2 + ")*(Hangers!$F$2:$F$" + L2 + ">0))*" +
                 "((COUNTIF(ck_rn,Hangers!$B$2:$B$" + L2 + ")+COUNTIF(Displacements!$B$2:$B$" + L2 + ",Hangers!$B$2:$B$" + L2 + "))>0))", true),
@@ -805,10 +807,8 @@ public static class PipeWorkbook
             new PipeWorkbookGui.Check("Nozzles: an API 650 tank under 120 ft (CAESAR warns, 123E), or its growth in a vector imposed displacements use (244E)",
                 "IFERROR(SUMPRODUCT((" + nzc("D") + "=\"API 650\")*ISNUMBER(" + nzc("H") + ")*(" + nzc("H") + ">0)*(" + nzc("H") + "*pl_d2in<" + PipeReview.ApiMinTankOdIn.ToString(CultureInfo.InvariantCulture) + ")),0)+" +
                 "SUMPRODUCT((" + nzc("D") + "=\"API 650\")*ISNUMBER(" + nzc("U") + ")*(COUNTIF(Displacements!$C$2:$C$" + L2 + "," + nzc("U") + ")>0))", true),
-            new PipeWorkbookGui.Check("Nozzles: a WRC 297 nozzle without its vessel material (CAESAR stopped on a custom one without, 79E)",
-                "SUMPRODUCT((" + nzc("D") + "=\"WRC 297\")*(((NOT(ISNUMBER(" + nzc("T") + ")))+(" + nzc("T") + "<=0))>0))", true),
-            new PipeWorkbookGui.Check("Nozzles: PD 5500. CAESAR 15.01 stopped on the one Pluto wrote (135E): give it in CAESAR (one CAESAR wrote is carried as written)",
-                "COUNTIF(" + nzc("D") + ",\"PD 5500\")", true),
+            new PipeWorkbookGui.Check("Nozzles: a WRC 297 / PD 5500 nozzle without its vessel material (CAESAR stopped on a custom one without, 79E)",
+                "SUMPRODUCT(((" + nzc("D") + "=\"WRC 297\")+(" + nzc("D") + "=\"PD 5500\"))*(((NOT(ISNUMBER(" + nzc("T") + ")))+(" + nzc("T") + "<=0))>0))", true),
             new PipeWorkbookGui.Check("Processes / Elements: a temperature under 0.05 (CAESAR reads it as a thermal expansion)",
                 string.Join("+", new[] { "Processes!$B$2:$J$", "Elements!$AF$2:$AN$" }.Select(r0 => "SUMPRODUCT(ISNUMBER(" + r0 + L2 + ")*(" + r0 + L2 + "<>0)*(" + r0 + L2 + "<0.05)*(" + r0 + L2 + ">-0.05))").ToArray()), true),
             new PipeWorkbookGui.Check("Uniform: g's and force per length both used: CAESAR warns",
@@ -831,7 +831,7 @@ public static class PipeWorkbook
             "Restraints: Stiffness blank = rigid; Cos blank = the type's own axis (guides and limit stops take the pipe's). Forces / Displacements: one row per node and load vector (1-9); a displacement left blank is free, 0 holds it.",
             "Uniform / Wind: per element; an element no row names has none (CAESAR carries a load on to later elements; Pluto ends it there). Element = an Id, a range in the Elements order (E3:E9), or blank with From and To (a chain of elements).",
             "Joints: DOFs like 'axial gap=0.125 k=5000; shear; torsion; bending gap=2' (frame pipe) or 'X; Y; RZ k=1e6' (frame global); a DOF not listed is free.",
-            "Nozzles: Type WRC 297 / PD 5500 (a vessel: give its OD, wall, centreline, material and the distances to its stiffeners or heads), API 650 (a tank shell), Custom (its four stiffnesses and the vessel's material); Vessel node blank = a rigid vessel. A column the type does not use is red. CAESAR 15.01 stopped on a PD 5500 nozzle Pluto wrote: give those in CAESAR.",
+            "Nozzles: Type WRC 297 / PD 5500 (a vessel: give its OD, wall, centreline, material and the distances to its stiffeners or heads), API 650 (a tank shell), Custom (its four stiffnesses and the vessel's material); Vessel node blank = a rigid vessel. A column the type does not use is red.",
             "Hangers: Rate and Constant blank = CAESAR designs the hanger (from Table; it then asks for its hanger-design load cases). Rate with Cold load = a spring as given. Constant = a constant-effort support. One row per node: Count for more than one.",
             "Read back: only the input sheets. Start, 3D View, Nodes and Carried are rebuilt on every export. The hidden _pluto sheet holds the model this workbook was written from: what you did not change is given back exactly.",
         };
@@ -1024,6 +1024,19 @@ public static class PipeWorkbook
         return v;
     }
 
+    // a SIF type: its label ("3 - welding tee") or a bare number; blank = 0 (user SIFs)
+    static int SifType(Cols c, int row, Ctx x)
+    {
+        string tx = Text(c, row, "Type", x).Trim();
+        if (tx.Length == 0) return 0;
+        int dash = tx.IndexOf(' ');
+        string head = dash > 0 ? tx.Substring(0, dash) : tx;
+        double v;
+        if (double.TryParse(head, NumberStyles.Float, CultureInfo.InvariantCulture, out v) && Math.Abs(v - Math.Round(v)) < 1e-9) return (int)Math.Round(v);
+        x.Err(c.S.Name + "!" + XlsxBook.Ref(row, c.At["Type"]) + ": SIF type \"" + tx + "\" (pick one from the list: a number from 0 to 13 and its name)");
+        return 0;
+    }
+
     static int Int(Cols c, int row, string col, Ctx x, int dflt)
     {
         double v = Num(c, row, col, x, -1, null);
@@ -1061,11 +1074,13 @@ public static class PipeWorkbook
             int n = (int)ToNum(pl.Text(3, 1));
             var sb = new StringBuilder();
             for (int k = 0; k < n; k++) sb.Append(pl.Cell(4 + k, 0) ?? "");
-            try { res.Base = PipeModelJson.Read(sb.ToString()); }
+            bool upgraded = false;
+            try { res.Base = PipeModelJson.Read(sb.ToString(), out upgraded); }
             catch (Exception ex) { throw new InvalidOperationException("PipeWorkbook: the hidden base model (_pluto) does not read (" + ex.Message + "): make the workbook again from its source"); }
             res.BaseHash = pl.Text(1, 1);
             res.SourceName = pl.Text(2, 1);
-            if (Sha(PipeModelJson.Write(res.Base)) != res.BaseHash) res.Warnings.Add("the hidden base model does not match its fingerprint: it was changed outside Pluto");
+            // a base in an older form (nozzles before 2026-10-26) writes again differently: its fingerprint cannot be checked
+            if (!upgraded && Sha(PipeModelJson.Write(res.Base)) != res.BaseHash) res.Warnings.Add("the hidden base model does not match its fingerprint: it was changed outside Pluto");
         }
         else x.Warnings.Add("no hidden base model (_pluto): every row is read as new, and nothing CAESAR wrote is carried");
         var m = res.Base != null ? PipeModelJson.Read(PipeModelJson.Write(res.Base)) : new PipeModel();
@@ -1455,7 +1470,7 @@ public static class PipeWorkbook
     {
         var m = x.M;
         if (s == null) { m.Sifs.Clear(); return; }
-        var c = ColsOf(s, x, new[] { "Id", "Node", "Type", "SIF in", "SIF out", "Surface node", "Pad", "Crotch radius", "Weld mismatch", "Fillet" });
+        var c = ColsOf(s, x, new[] { "Id", "Node", "Type", "SIF in", "SIF out", "Surface node", "Pad", "Crotch radius", "Weld mismatch", "Fillet" });   // Fillet: workbooks before 2026-10-26
         var old = new List<PipeModelSif>(m.Sifs);
         var list = new List<PipeModelSif>();
         var seen = new HashSet<int>();
@@ -1468,13 +1483,19 @@ public static class PipeWorkbook
             int node = Int(c, r, "Node", x, 0);
             if (node <= 0) { x.Err(w + ": a node is required"); continue; }
             if (node != t.Node) { t.Node = node; t.OwnerUid = 0; t.Slot = -1; }
-            t.Type = Int(c, r, "Type", x, 0);
+            t.Type = SifType(c, r, x);
             SetN(ref t.SifIn, Z(Num(c, r, "SIF in", x, -1, null))); SetN(ref t.SifOut, Z(Num(c, r, "SIF out", x, -1, null)));
             t.SurfaceNode = Int(c, r, "Surface node", x, 0);
             if (c.At.ContainsKey("Pad")) SetN(ref t.Pad, Z(Num(c, r, "Pad", x, 21, x.U.Thk)));
             if (c.At.ContainsKey("Crotch radius")) SetN(ref t.CrotchRadius, Z(Num(c, r, "Crotch radius", x, 21, x.U.Thk)));
             if (c.At.ContainsKey("Weld mismatch")) SetN(ref t.WeldMismatch, Z(Num(c, r, "Weld mismatch", x, 21, x.U.Thk)));
-            if (c.At.ContainsKey("Fillet")) SetN(ref t.Fillet, Z(Num(c, r, "Fillet", x, 21, x.U.Thk)));
+            // a workbook from before 2026-10-26 shows the slot's item 6 as Fillet: kept as written; CAESAR 15.01 does not
+            // read a fillet leg there, so a changed value is refused
+            if (c.At.ContainsKey("Fillet"))
+            {
+                double fv = Z(Num(c, r, "Fillet", x, 21, x.U.Thk));
+                if (!Same(fv, t.Item6)) x.Err(w + ": Fillet: CAESAR 15.01 does not read a fillet leg where this column writes it; give it in CAESAR (and clear the column)");
+            }
             list.Add(t);
         }
         m.Sifs.Clear();

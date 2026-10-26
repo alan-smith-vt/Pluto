@@ -171,7 +171,7 @@ Three jobs Pluto wrote from workbooks, each holding one of every unconfirmed ite
 - **NODENAME:** the FROM and TO node names, 10 characters each.
 - **MISCEL_1:**
   - one material number per element;
-  - nozzles: 22 values, 4 lines each;
+  - nozzles: 20 values on 4 lines of 6, 6, 4, 4, read line by line ([[vault/format/caesar-neutral-nozzles|caesar-neutral-nozzles]]);
   - hangers: defaults, then per-hanger data, tags, free anchors, tables ([[vault/format/caesar-neutral-hangers|caesar-neutral-hangers]]);
   - the execution options.
 - **COORDS:** count, then node X Y Z in the compound-length unit.

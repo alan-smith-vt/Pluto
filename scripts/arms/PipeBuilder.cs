@@ -383,8 +383,8 @@ public static class PipeBuilder
             m.Code = Str(model, "code", "B31.1", "model");
             string seed = Str(model, "allowables_from", null, "model");
             if (seed != null) m.AllowablesBlock = AllowablesFrom(seed);
-            else if (!string.Equals(m.Code, "B31.1", StringComparison.OrdinalIgnoreCase))
-                throw Err("model.code \"" + m.Code + "\": only B31.1 is built in; for another code set allowables_from = a .cii exported from CAESAR with that code (its allowables block is copied)");
+            else if (!CaesarNeutralWriter.CodeNumbers.ContainsKey(m.Code))
+                throw Err("model.code \"" + m.Code + "\": B31.1 and B31.3 are built in; for another code set allowables_from = a .cii exported from CAESAR with that code (its allowables block is copied)");
             bendNodesDefault = BendNodes(Str(defaults, "bend_nodes", "mid", "defaults"), "[defaults]");
 
             ReadSections();
@@ -1590,15 +1590,13 @@ public static class PipeBuilder
             return n;
         }
 
-        // a branch's tee: CAESAR's intersection types (1-6) by name, or "none". CAESAR 15.01 read 14-17 as no intersection
-        // type (33E: SIFs of 1.0 at the branch), so a branch does not take them; a [[sifs]] entry still writes them
+        // a branch's tee: CAESAR's intersection types (1-6) by name, or "none"
         int TeeCode(string tee, string w)
         {
             if (tee == "none") return -1;
             int code = PipeModelSifTypes.Code(tee);
-            if (code >= 14)
-                throw Err(w + " = \"" + tee + "\": CAESAR 15.01 reads SIF type " + code + " as no intersection type (33E: pipe flexibilities and SIFs of 1.0 at the branch); " +
-                          "give the branch a type CAESAR takes as a tee (welding, reinforced, unreinforced, weldolet, sweepolet, extruded), or \"none\" and a [[sifs]] entry");
+            if (PipeModelSifTypes.Gone.Contains(tee))
+                throw Err(w + " = \"" + tee + "\": CAESAR 15.01 has no such SIF type (its list ends at 13); give the branch a tee it has (welding, reinforced, unreinforced, weldolet, sweepolet, extruded)");
             if (code < 0 || !PipeReview.IsTeeType(code))
                 throw Err(w + " = \"" + tee + "\": a tee type (welding, reinforced, unreinforced, weldolet, sweepolet, extruded) or \"none\"");
             return code;
@@ -1623,14 +1621,16 @@ public static class PipeBuilder
                 Allowed(t, w, "node run at every from to type sif_in sif_out pad crotch_radius weld_mismatch fillet");
                 string type = Str(t, "type", "", w).Trim().ToLowerInvariant();
                 int code = PipeModelSifTypes.Code(type);
+                if (PipeModelSifTypes.Gone.Contains(type)) throw Err(w + ": type = \"" + type + "\": CAESAR 15.01 has no such SIF type (its list ends at 13, the lap joint flange)");
                 if (code < 0) throw Err(w + ": type = one of " + string.Join(", ", PipeModelSifTypes.Keys) + " (CAESAR's list), or sif_in / sif_out without a type");
+                if (Get(t, "fillet") != null) throw Err(w + ": fillet: CAESAR 15.01 does not read a fillet leg where its documentation puts it (it showed the probe's under no column); give it in CAESAR");
                 double si = NumOpt(t, "sif_in", 0, w), so = NumOpt(t, "sif_out", si, w);
                 if (code == 0 && !(si > 0)) throw Err(w + ": sif_in (and sif_out) are required without a tee type");
                 if (si < 0 || so < 0) throw Err(w + ": a negative SIF");
-                double pad = NumOpt(t, "pad", 0, w), crotch = NumOpt(t, "crotch_radius", 0, w), mis = NumOpt(t, "weld_mismatch", 0, w), fil = NumOpt(t, "fillet", 0, w);
-                if (pad < 0 || crotch < 0 || mis < 0 || fil < 0) throw Err(w + ": pad, crotch_radius, weld_mismatch and fillet are not negative");
+                double pad = NumOpt(t, "pad", 0, w), crotch = NumOpt(t, "crotch_radius", 0, w), mis = NumOpt(t, "weld_mismatch", 0, w);
+                if (pad < 0 || crotch < 0 || mis < 0) throw Err(w + ": pad, crotch_radius and weld_mismatch are not negative");
                 if (code == 1 && !(pad > 0)) throw Err(w + ": a reinforced tee needs its pad thickness (pad, in)");
-                foreach (int n in NodesOf(t, w)) m.Sifs.Add(new PipeModelSif { Node = n, Type = code, SifIn = si, SifOut = so, Pad = pad, CrotchRadius = crotch, WeldMismatch = mis, Fillet = fil });
+                foreach (int n in NodesOf(t, w)) m.Sifs.Add(new PipeModelSif { Node = n, Type = code, SifIn = si, SifOut = so, Pad = pad, CrotchRadius = crotch, WeldMismatch = mis });
             }
         }
 
@@ -1780,6 +1780,7 @@ public static class PipeBuilder
             res.Displacements = m.Displacements.Count();
             foreach (var d in m.NodeLoads)
                 if (!nodes.Contains(d.Node) && !(d.IsDisplacement && m.Restraints.Any(r => r.CNode == d.Node))) throw Err(d.Source + ": a load at node " + d.Node + ", which is on no element");
+            PlaceLinkedPieces();
             m.Warnings.AddRange(res.Warnings);
             // CAESAR puts a node no element has reached yet at the previous element's end: check that holds
             var seen = new HashSet<int>(m.Coords.Select(c => c.Node));
@@ -1794,6 +1795,56 @@ public static class PipeBuilder
                         throw Err("element " + e.From + "-" + e.To + " starts at a new node away from the previous element's end, where CAESAR would put it");
                 }
                 seen.Add(e.From); seen.Add(e.To);
+            }
+        }
+
+        // CAESAR connects geometry through CNODEs: a piece tied to the rest only by a restraint's or a hanger's CNODE, a joint
+        // or a nozzle's vessel node is drawn at that tie, its own COORDS put aside (CAESAR 15.01 drew a hanger's frame and a
+        // nozzle's pipe so, and dropped their COORDS on export). The pieces are taken in COORDS order, as CaesarGeometry
+        // reads them; a piece moved off its start is said so, and its COORDS entry follows it
+        void PlaceLinkedPieces()
+        {
+            if (m.Coords.Count < 2) return;
+            var uf = new Dictionary<int, int>();
+            Func<int, int> find = null;
+            find = x => { int q; if (!uf.TryGetValue(x, out q)) { uf[x] = x; return x; } if (q == x) return x; int r = find(q); uf[x] = r; return r; };
+            foreach (var e in m.Elements)
+            {
+                uf[find(e.From)] = find(e.To);
+                if (e.Bend != null) foreach (var an in e.Bend.AngleNodes) if (an.Length > 1 && an[1] > 0) uf[find((int)Math.Round(an[1]))] = find(e.To);
+            }
+            var links = new List<KeyValuePair<int[], string>>();
+            foreach (var r in m.Restraints) if (r.CNode > 0) links.Add(new KeyValuePair<int[], string>(new[] { r.Node, r.CNode }, "the restraint's CNODE"));
+            foreach (var j in m.Joints) if (j.CNode > 0) links.Add(new KeyValuePair<int[], string>(new[] { j.Node, j.CNode }, "the joint"));
+            foreach (var h in m.Hangers) if (h.CNode > 0) links.Add(new KeyValuePair<int[], string>(new[] { h.Node, h.CNode }, "the hanger's CNODE"));
+            foreach (var z in m.Nozzles) if (z.VesselNode > 0) links.Add(new KeyValuePair<int[], string>(new[] { z.Node, z.VesselNode }, "the nozzle's vessel node"));
+            var placed = new HashSet<int> { find(m.Coords[0].Node) };
+            int next = 1;
+            while (true)
+            {
+                bool progress = false;
+                foreach (var l in links)
+                {
+                    int a = l.Key[0], b = l.Key[1];
+                    if (!m.Positions.ContainsKey(a) || !m.Positions.ContainsKey(b) || !uf.ContainsKey(a) || !uf.ContainsKey(b)) continue;
+                    bool pa = placed.Contains(find(a)), pb = placed.Contains(find(b));
+                    if (pa == pb) continue;
+                    int at = pa ? a : b, mv = pa ? b : a, root = find(mv);
+                    var pAt = m.Positions[at]; var pMv = m.Positions[mv];
+                    var d = new[] { pAt[0] - pMv[0], pAt[1] - pMv[1], pAt[2] - pMv[2] };
+                    placed.Add(root);
+                    progress = true;
+                    if (Norm(d) < 1e-6) continue;
+                    foreach (var n in m.Positions.Keys.Where(k => uf.ContainsKey(k) && find(k) == root).ToList())
+                        m.Positions[n] = new[] { m.Positions[n][0] + d[0], m.Positions[n][1] + d[1], m.Positions[n][2] + d[2] };
+                    foreach (var c in m.Coords.Where(c => uf.ContainsKey(c.Node) && find(c.Node) == root)) { c.X += d[0]; c.Y += d[1]; c.Z += d[2]; }
+                    res.Warnings.Add(string.Format(CultureInfo.InvariantCulture,
+                        "the piece with node {0} is tied to the model only through {1} at node {2}: CAESAR draws node {0} at node {2} (it connects geometry through CNODEs), so the piece moves {3:0.###} in from its start", mv, l.Value, at, Norm(d)));
+                }
+                if (progress) continue;
+                while (next < m.Coords.Count && placed.Contains(find(m.Coords[next].Node))) next++;
+                if (next >= m.Coords.Count) break;
+                placed.Add(find(m.Coords[next].Node));
             }
         }
 

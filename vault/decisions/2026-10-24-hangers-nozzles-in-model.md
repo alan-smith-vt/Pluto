@@ -19,5 +19,5 @@ created: 2026-10-24
 
 - **Imported jobs stay byte-identical.** Each hanger and nozzle keeps its lines as written, with only changed fields rewritten; the lists and defaults keep theirs while their counts hold.
 - **A tail Pluto cannot take apart is carried whole**, as before, and refuses hanger or nozzle edits with a message; the workbook says so on its Start sheet (and lists the tail on Carried).
-- **New items are written in CAESAR 15.01's layout** where a 15.01 file showed it (hangers), and in the guide's (nozzles: 22 values on 4 lines). CAESAR 15.01 imported both from the combined probe (2026-10-26): the hangers counted as Pluto had them, the WRC 297 and API 650 nozzles value for value. The PD 5500 nozzle is the exception: CAESAR stopped on its vessel type, so Pluto flags one it writes as an error until CAESAR shows that layout.
+- **New items are written in CAESAR 15.01's layout.** The hangers' from a 15.01 file; the nozzles' from CAESAR's re-export of the combined probe (2026-10-26): 20 values on lines of 6, 6, 4, 4, read line by line, which corrected the guide's PD 5500 and custom items. CAESAR's panels showed every hanger and nozzle of the probe as Pluto meant it, but the PD 5500 one written by the guide.
 - **Older workbooks and model files** (without these sheets or keys) read as before: the base's hangers and nozzles stay.

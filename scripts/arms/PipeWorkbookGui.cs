@@ -91,7 +91,8 @@ static class PipeWorkbookGui
     // the lists (the hidden Lists sheet): column letter -> what it holds
     internal const string LType = "Lists!$A$2:$A$9", LBendType = "Lists!$C$2:$C$4", LWind = "Lists!$D$2:$D$4", LYesNo = "Lists!$E$2:$E$3", LAxis = "Lists!$F$2:$F$3",
                           LFrame = "Lists!$G$2:$G$3", LView = "Lists!$H$2:$H$6", LVector = "Lists!$I$2:$I$10", LKind = "Lists!$K$2:$K$7", LCodes = "Lists!$N$2:$N$10",
-                          LFree = "Lists!$Q$2:$Q$6", LNozzle = "Lists!$R$2:$R$5", LVessel = "Lists!$S$2:$S$3", LReinf = "Lists!$T$2:$T$3";
+                          LFree = "Lists!$Q$2:$Q$6", LNozzle = "Lists!$R$2:$R$5", LVessel = "Lists!$S$2:$S$3", LReinf = "Lists!$T$2:$T$3",
+                          LRadius = "Lists!$U$2:$U$5", LSifTees = "Lists!$J$3:$J$8";   // bend radius names; the SIF type labels of 1-6 (tees)
 
     internal static Col[] ElementCols(string sections, string processes)
     {
@@ -206,16 +207,15 @@ static class PipeWorkbookGui
         {
             C("Id", "key", "id", "Keep it on rows from the model; leave it blank on a new row."),
             C("Node", "key", "node", "The node of the SIF / tee."),
-            L("Type", "prop", "list!", types, "CAESAR's number: 0 user SIFs, 1 reinforced, 2 unreinforced, 3 welding tee, 4 sweepolet, 5 weldolet, 6 extruded; 7-13 joints; 14-17: CAESAR 15.01 read them as no tee (amber). The header's note lists them all.",
-              "Type: CAESAR's SIF & tee type number, as its documentation's list orders them: " + string.Join("; ", Enumerable.Range(0, PipeModelSifTypes.Names.Length).Select(k => k + " " + PipeModelSifTypes.Names[k]).ToArray()) +
-              ". 3 (welding tee) and 11 are seen in CAESAR files; CAESAR 15.01 took 1-6 as tees and read 14-17 as no intersection type (pipe SIFs of 1.0 at a branch), so those are amber. The others are written with a notice until a CAESAR export confirms them."),
+            L("Type", "prop", "list!", types, "Pick from the list: 0 user SIFs, 1-6 tees (3 = welding tee), 7-13 joints.",
+              "Type: CAESAR's SIF & tee type, as CAESAR 15.01 lists them: " + string.Join("; ", Enumerable.Range(0, PipeModelSifTypes.Names.Length).Select(k => SifLabel(k)).ToArray()) +
+              ". Its list ends at 13. A bare number (a workbook from before) reads the same."),
             C("SIF in", "prop", "nonneg", "In-plane SIF. Blank = the code's."),
             C("SIF out", "prop", "nonneg", "Out-of-plane SIF. Blank = the code's."),
             C("Surface node", "key", "node", "A tee's surface node (CAESAR's Srf.Node). Blank = none."),
             C("Pad", "prop", "nonneg", "A reinforced tee's pad thickness (type 1 needs it)."),
             C("Crotch radius", "prop", "nonneg", "An extruded tee's crotch radius (type 6)."),
             C("Weld mismatch", "prop", "nonneg", "A butt weld's or tapered transition's mismatch (types 7, 10)."),
-            C("Fillet", "prop", "nonneg", "A socket weld's fillet leg (types 8, 9)."),
         };
     }
 
@@ -338,6 +338,7 @@ static class PipeWorkbookGui
             string n = NozzleHeader(f);
             if (n == "Vessel type") l.Add(L(n, "prop", "list!", LVessel, hints[f], null));
             else if (n == "Reinforcing") l.Add(L(n, "prop", "list!", LReinf, hints[f], null));
+            else if (n == "Displacement vector") l.Add(C(n, "prop", "vector", hints[f]));
             else l.Add(C(n, "prop", n.StartsWith("Axis", StringComparison.Ordinal) ? "cos" : n == "Vessel temperature" || n == "Tank delta T" ? "num" : "nonneg", hints[f]));
         }
         return l.ToArray();
@@ -416,9 +417,8 @@ static class PipeWorkbookGui
             case "vector": v.Type = "list"; v.Formula1 = c.List ?? LVector; v.ErrorTitle = "A load vector"; v.Error = "The vector is 1 to 9."; break;
             case "list!": case "yesno": v.Type = "list"; v.Formula1 = c.List; v.ErrorTitle = "Not on the list"; v.Error = "Pick a value from the list (" + NameOf(c.Name) + ")."; break;
             case "list?": v.Type = "list"; v.Formula1 = c.List; v.ShowError = false; break;
-            case "radius":
-                v.Type = "custom"; v.Formula1 = "OR(ISNUMBER(" + at + ")," + string.Join(",", RadiusNames.Select(n => "UPPER(TRIM(" + at + "))=\"" + n + "\"").ToArray()) + ")";
-                v.ErrorTitle = "A bend radius"; v.Error = "A radius (a number), or LR, SR, Long, Short, 3D, 5D."; break;
+            case "radius":   // a dropdown of the names that takes a number too: anything else turns red (Rule)
+                v.Type = "list"; v.Formula1 = LRadius; v.ShowError = false; break;
         }
         return v;
     }
@@ -479,7 +479,12 @@ static class PipeWorkbookGui
 
     // a SIF / tee type that is an intersection (tees and olets: 1-6, 14-17; 7-13 are joints)
     // an intersection type CAESAR takes as a tee (1-6; PipeReview.IsTeeType)
-    internal static string TeeType(string at) { return "AND(N(" + at + ")>=1,N(" + at + ")<=6)"; }
+    internal static string TeeType(string at) { return "OR(AND(ISNUMBER(" + at + ")," + at + ">=1," + at + "<=6),ISNUMBER(MATCH(" + at + "," + LSifTees + ",0)))"; }
+
+    // a SIF type as the SIFs sheet shows it ("3 - welding tee", as CAESAR's own list does); a cell of type t: its label,
+    // or the bare number (workbooks before 2026-10-26)
+    internal static string SifLabel(int t) { return t >= 0 && t < PipeModelSifTypes.Names.Length ? t + " - " + PipeModelSifTypes.Names[t] : t.ToString(CultureInfo.InvariantCulture); }
+    internal static string SifIs(string at, int t) { return "OR(" + at + "=" + t + "," + at + "=\"" + SifLabel(t) + "\")"; }
 
     // ---------------------------------------------------------------- the Start sheet
 

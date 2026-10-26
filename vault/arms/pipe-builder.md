@@ -103,7 +103,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 > - `length_unit`.
 > - `node_step`, default 10.
 > - `y_up`, default true; false = Z up.
-> - `code`: only `"B31.1"` is built in. For another code, `allowables_from = "<a .cii exported from CAESAR with that code>"` copies its allowables block.
+> - `code`: `"B31.1"` (the default) or `"B31.3"` are built in: the same allowables block, its code number 65 or 63 (the number CAESAR 15.01 wrote after its code was switched to B31.3). For another code, `allowables_from = "<a .cii exported from CAESAR with that code>"` copies its allowables block.
 >
 > **`[parameters]`:** `name = number | "expression"`.
 >
@@ -125,7 +125,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 
 > [!info]- [[runs]]: legs, bends, branches, temperatures
 > - **Start:** `start = [x, y, z]`, the first run's default being the origin. Or `from = { run = "header", at = 12 }`: a branch, starting at that position on an earlier run.
->   - A branch gets a **welding tee** at the header node (SIF type 3, as CAESAR writes one). `tee` names another intersection: `reinforced` (with `tee_pad`, in), `unreinforced`, `sweepolet`, `weldolet`, `extruded` (`tee_crotch`, in, optional). Types other than the welding tee are written by the number of CAESAR's list, with a `sif-type` notice until a CAESAR export confirms them. `bf_sweepolet`, `latrolet`, `insert_weldolet` and `full_encirclement` (14–17) are refused here: CAESAR 15.01 read them as no intersection type (33E). A `[[sifs]]` entry still writes them.
+>   - A branch gets a **welding tee** at the header node (SIF type 3, as CAESAR writes one). `tee` names another intersection: `reinforced` (with `tee_pad`, in), `unreinforced`, `sweepolet`, `weldolet`, `extruded` (`tee_crotch`, in, optional), by the number of CAESAR's list (confirmed by CAESAR 15.01's SIF listing). `bf_sweepolet`, `latrolet`, `insert_weldolet` and `full_encirclement` are refused: CAESAR 15.01 has no such types (its list ends at 13).
 >   - Opt out with `tee = "none"`. That is the default when the branch starts at the other run's end, which makes it a continuation.
 > - **End on another run** (a loop: a bypass round a control valve, a return to the header): `end = { run = "header", at = 34 }`, an earlier run. The legs must reach that point (within 0.01 in; the error says by how much they miss); the run's last element ends at that run's node there, with a welding tee (`end_tee = "none"` for none; the default at the other run's end).
 > - **`legs`:** each leg is `["+X", 20]` (`±X ±Y ±Z`, or `[x, y, z]` for a skewed direction), or one of these tables:
@@ -191,7 +191,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 > - `type = "custom"`: `vessel_od`, `vessel_wall`, `vessel_axis`, `pad`, `vessel_material`, and `axial_stiffness` (lb/in), `inplane_stiffness`, `outplane_stiffness`, `torsional_stiffness` (in·lb/deg).
 > - `nozzle_od` and `nozzle_wall` default to the pipe's at the node. Lengths in inches. A key the type does not use is an error.
 >
-> **`[[sifs]]`:** `type` = a tee name as for a branch, or a joint: `butt_weld` / `tapered_transition` (with `weld_mismatch`, in), `socket_weld` / `socket_weld_as_welded` (with `fillet`, in), `threaded`, `slip_on`, `lap_joint`; or `sif_in` / `sif_out` alone (user SIFs; `sif_out` defaults to `sif_in`), which a type may carry too. `pad`, `crotch_radius` as for a branch. One SIF / tee entry per node: a branch's automatic tee counts. Give the branch `tee = "none"` to write your own.
+> **`[[sifs]]`:** `type` = a tee name as for a branch, or a joint: `butt_weld` / `tapered_transition` (with `weld_mismatch`, in), `socket_weld` / `socket_weld_as_welded`, `threaded`, `slip_on`, `lap_joint`; or `sif_in` / `sif_out` alone (user SIFs; `sif_out` defaults to `sif_in`), which a type may carry too. `pad`, `crotch_radius` as for a branch. `fillet` is refused: CAESAR 15.01 does not read a fillet leg where the guide puts it (give it in CAESAR). One SIF / tee entry per node: a branch's automatic tee counts. Give the branch `tee = "none"` to write your own.
 
 > [!info]- [[forces]], [[displacements]], uniform loads and wind
 > **`[[forces]]`:** forces and moments at nodes.
@@ -239,6 +239,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
   - A coupling's second node is N + 1.
   - The node table (`.nodes.csv`) lists them all.
 - **COORDS:** every run that is not a branch gets a COORDS entry for its first node. The builder checks that every new FROM node starts where the previous element ended, which is where CAESAR would put it.
+- **Pieces tied on by a CNODE:** a run tied to the rest only through a restraint's or a hanger's CNODE, a joint or a nozzle's vessel node is moved so the two nodes meet, with a warning when that moves it off its `start`. CAESAR connects geometry through CNODEs: CAESAR 15.01 drew the probe's hanger frame and nozzle pipe so, whatever their COORDS said.
 
 ## What the neutral file holds
 

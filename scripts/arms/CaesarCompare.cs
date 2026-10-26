@@ -347,7 +347,7 @@ public static class CaesarCompare
     {
         return "node " + s.Node + " type " + s.Type + (s.SifIn != 0 ? " in " + G(s.SifIn) : "") + (s.SifOut != 0 ? " out " + G(s.SifOut) : "") + (s.SurfaceNode > 0 ? " surface " + s.SurfaceNode : "") +
                (s.Pad != 0 ? " pad " + G(s.Pad) : "") + (s.CrotchRadius != 0 ? " crotch " + G(s.CrotchRadius) : "") + (s.FittingRo != 0 ? " ftg Ro " + G(s.FittingRo) : "") +
-               (s.WeldMismatch != 0 ? " mismatch " + G(s.WeldMismatch) : "") + (s.Fillet != 0 ? " fillet " + G(s.Fillet) : "");
+               (s.WeldMismatch != 0 ? " mismatch " + G(s.WeldMismatch) : "") + (s.Item6 != 0 ? " item 6 " + G(s.Item6) : "");
     }
 
     // a bend radius by its meaning: a code CAESAR writes for a radius chosen by name, as the radius it names

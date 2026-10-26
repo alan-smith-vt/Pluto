@@ -31,7 +31,7 @@ Spring hangers are not element blocks. They sit in MISCEL_1, after the material 
 
 > [!info]- How Pluto reads and writes it
 > - **Reading** (`CaesarPipeImport`): the tail is taken apart into nozzle lines, the hanger section and the 4 option lines. When the parts add up, each hanger becomes a `PipeModelHanger` with its lines as written; otherwise the tail is carried whole and its hangers cannot be edited (the workbook and `-Cii` say so).
-> - **Writing** (`CaesarNeutralWriter.WriteHangers`): the defaults lines as written (a new model gets 15.01's); every list over its own lines while the count is unchanged; each hanger from its own lines with only changed fields rewritten; a new hanger in the job's layout, with the job's default table written out as CAESAR 15.01 does. CONTROL counts the model's hangers. An unedited job comes back byte for byte.
+> - **Writing** (`CaesarNeutralWriter.WriteHangers`): the defaults lines as written (a new model gets 15.01's); every list over its own lines while the count is unchanged; each hanger from its own lines with only changed fields rewritten; a new hanger in the job's layout, its table 0 for the job's default, as CAESAR 15.01 re-exported the probe's. CONTROL counts the model's hangers. An unedited job comes back byte for byte.
 > - **Compare** matches hangers by meaning (node, CNODE, kind, the design data given), a table of 0 as the job's default.
 > - **The viewer** shows each hanger as an arrow under the pipe; the readout says whether CAESAR designs it or takes it as given.
 
@@ -47,5 +47,6 @@ Spring hangers are not element blocks. They sit in MISCEL_1, after the material 
 > [!info]- What is confirmed
 > - **Read and written back byte for byte (2026-10-24):** three public CAESAR 11.00 jobs (three designed hangers with freed anchors; two springs as given on table 16, metric; one with the multi-load options) and a CAESAR 15.01 job with one designed hanger. Edits to them read back the same.
 > - **CAESAR 15.01 imported a hanger section Pluto wrote (2026-10-26):** seven hangers, of which it counted five to design and two pre-designed (69E), as Pluto had them (a spring as given and a constant support are the two). It asked for its hanger-design load cases (70E) and warned at the two designed hangers sharing a node with a restraint or a displacement (72E).
-> - **Still to be seen:** CAESAR's hanger panels for the probe's hangers (the freed anchor, the CNODE, the count above one, the table).
+> - **CAESAR 15.01's hanger list and panels for the probe (2026-10-26)** show every hanger as Pluto wrote it: the anchor freed in XYZ at node 10, the spring's rate and cold load, the constant-effort load, two hangers at a location with 20 % load variation, a 4 in travel limit and no short-range springs, the CNODE 150 and table 1 (ANVIL). Its re-export gave the same lines, but a table of 0 (the default) where Pluto had written the default out.
+> - **A hanger's CNODE places its piece:** CAESAR drew the frame the probe hung from node 150 with node 150 at the hanger's node, not where its COORDS put it ([[vault/arms/caesar-to-viewer|caesar-to-viewer]]).
 > - **From the guide only:** what the defaults and design options mean beyond their names; 0 hangers at a location read as one.

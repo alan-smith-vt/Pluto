@@ -8,9 +8,11 @@ using System.Linq;
 // C# 5 / Add-Type (PowerShell 5.1) compatible; every type is prefixed Caesar (one global batch).
 //
 // Positions. A breadth-first walk over the element graph in both directions (TO = FROM + delta,
-// FROM = TO - delta), seeded from COORDS. When the walk stops, restraint / hanger CNODE links and
-// nozzle-to-vessel links carry it on (CAESAR's "connect geometry through CNodes"); a piece still
-// unreached starts at the origin, with a warning. An element closing a loop is checked against the
+// FROM = TO - delta), seeded from the first COORDS entry. When the walk stops, restraint / hanger CNODE
+// links and nozzle-to-vessel links carry it on (CAESAR's "connect geometry through CNodes"), before the
+// next COORDS entry: a piece a link reaches sits at the link, whatever its own COORDS say, as CAESAR 15.01
+// draws it (it drops such a piece's COORDS on export). A piece still unreached starts at the origin, with
+// a warning. An element closing a loop is checked against the
 // node it meets (loop-closure warning above 0.05 in). A bend node (mid "M", angle or near node) that
 // an element or a CNODE link starts from carries the walk on as well, from its position on the arc,
 // once the bend's FROM and TO are placed (a trunnion or dummy leg on an elbow); only then do origin
@@ -247,6 +249,7 @@ public static class CaesarGeometry
         const double CosParallel = 0.99619469809174555;   // cos 5 deg
         bool _mute;                      // WarnAgg silent (bend geometry computed early, in TipFrame, for its nodes only)
         readonly Dictionary<int, double[]> _arcSeeded = new Dictionary<int, double[]>();   // bend node -> arc position the walk started from
+        readonly HashSet<int> _linkPlaced = new HashSet<int>();   // nodes a walk from a CNODE / vessel link placed
 
         public Builder(CaesarModel m, CaesarPipeGraph g, double arcStepDeg)
         {
@@ -326,6 +329,8 @@ public static class CaesarGeometry
             var q = new Queue<int>();
             var tree = new HashSet<int>();
             var closed = new HashSet<int>();
+            var coords = new List<KeyValuePair<int, double[]>>();
+            var given = new Dictionary<int, double[]>();
             foreach (var c in M.Coords)
             {
                 int node = (int)Math.Round(c[0]);
@@ -333,15 +338,36 @@ public static class CaesarGeometry
                 var p = V(c[1], c[2], c[3]);
                 if (!Finite(p) || Math.Abs(p[0]) >= Huge || Math.Abs(p[1]) >= Huge || Math.Abs(p[2]) >= Huge) { WarnAgg("coords-nan", "COORDS entry not usable (not a number or beyond 1e12): ignored", I(node)); continue; }
                 double[] have;
-                if (tip.TryGetValue(node, out have))
+                if (given.TryGetValue(node, out have))
                 {
                     if (Dist(have, p) > _tolLoop) WarnAgg("coords-dup", "COORDS node given twice with different coordinates: the first kept", I(node));
                     continue;
                 }
-                tip[node] = p;
-                q.Enqueue(node);
+                given[node] = p;
+                coords.Add(new KeyValuePair<int, double[]>(node, p));
             }
             if (M.Coords.Count == 0 && E.Count > 0) Warn("no COORDS entry: the model starts at the origin");
+            int nextCoord = 0;
+            Func<bool> seedCoord = () =>
+            {
+                while (nextCoord < coords.Count)
+                {
+                    var kv = coords[nextCoord++];
+                    double[] at;
+                    if (tip.TryGetValue(kv.Key, out at))
+                    {
+                        // placed by the walk: an element path agrees (or a loop warning follows); a link moved its piece
+                        if (Dist(at, kv.Value) > _tolLoop && _linkPlaced.Contains(kv.Key))
+                            WarnAgg("coords-link", "COORDS of a piece a CNODE / vessel link reaches: the link places it (CAESAR connects geometry through CNODEs)", I(kv.Key) + " by " + F(Dist(at, kv.Value)));
+                        continue;
+                    }
+                    tip[kv.Key] = kv.Value;
+                    q.Enqueue(kv.Key);
+                    return true;
+                }
+                return false;
+            };
+            seedCoord();
             Walk(q, tree, closed);
             var links = new List<int[]>();
             foreach (var r in M.Restraints) if (r.CNode > 0 && r.CNode != r.Node) links.Add(new[] { r.Node, r.CNode });
@@ -365,8 +391,16 @@ public static class CaesarGeometry
                     G.CNodeLinksUsed++;
                     progress = true;
                 }
-                if (progress) { Walk(q, tree, closed); continue; }
+                if (progress)
+                {
+                    var had = new HashSet<int>(tip.Keys);
+                    foreach (var k in q) had.Remove(k);
+                    Walk(q, tree, closed);
+                    foreach (var k in tip.Keys) if (!had.Contains(k)) _linkPlaced.Add(k);
+                    continue;
+                }
                 if (SeedBendNodes(q, bendDone, linkBendPos)) { Walk(q, tree, closed); continue; }
+                if (seedCoord()) { Walk(q, tree, closed); continue; }
                 int seed = int.MinValue;
                 foreach (var e in E)
                 {

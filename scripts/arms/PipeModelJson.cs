@@ -135,8 +135,8 @@ public static class PipeModelJson
             w.Num("node", t.Node); w.Num("type", t.Type); w.Num("sifIn", t.SifIn); w.Num("sifOut", t.SifOut); w.Num("surfaceNode", t.SurfaceNode);
             var slot = new PipeModelSif { Raw = t.Raw };
             CaesarNeutralWriter.SifDetailsFromSlot(slot);
-            var det = new[] { t.WeldMismatch, t.Fillet, t.Pad, t.FittingRo, t.CrotchRadius };
-            if (!det.SequenceEqual(new[] { slot.WeldMismatch, slot.Fillet, slot.Pad, slot.FittingRo, slot.CrotchRadius })) w.Nums("details", det);   // only what the slot does not hold
+            var det = new[] { t.WeldMismatch, t.Item6, t.Pad, t.FittingRo, t.CrotchRadius };
+            if (!det.SequenceEqual(new[] { slot.WeldMismatch, slot.Item6, slot.Pad, slot.FittingRo, slot.CrotchRadius })) w.Nums("details", det);   // only what the slot does not hold
             w.Num("owner", t.OwnerUid); w.Num("slot", t.Slot); w.Lines("raw", t.Raw);
             w.Close();
         }
@@ -269,6 +269,15 @@ public static class PipeModelJson
 
     public static PipeModel Read(string json)
     {
+        bool upgraded;
+        return Read(json, out upgraded);
+    }
+
+    // upgraded: the text held something in an older form this reader turned into today's (nozzles of 22 values), so
+    // writing the model again does not give the same text
+    public static PipeModel Read(string json, out bool upgraded)
+    {
+        upgraded = false;
         var root = new JR(json ?? "").Document() as Dictionary<string, object>;
         if (root == null) throw new FormatException("PipeModelJson: not a JSON object");
         if (S(root, "format") != Format) throw new FormatException("PipeModelJson: format \"" + S(root, "format") + "\" (\"" + Format + "\" expected)");
@@ -361,7 +370,7 @@ public static class PipeModelJson
             var o = (Dictionary<string, object>)to;
             var sf = new PipeModelSif { Node = I(o, "node"), Type = I(o, "type"), SifIn = D(o, "sifIn"), SifOut = D(o, "sifOut"), SurfaceNode = I(o, "surfaceNode"), OwnerUid = I(o, "owner"), Slot = I(o, "slot"), Raw = L(o, "raw") };
             var det = Ds(o, "details");
-            if (det != null && det.Length >= 5) { sf.WeldMismatch = det[0]; sf.Fillet = det[1]; sf.Pad = det[2]; sf.FittingRo = det[3]; sf.CrotchRadius = det[4]; }
+            if (det != null && det.Length >= 5) { sf.WeldMismatch = det[0]; sf.Item6 = det[1]; sf.Pad = det[2]; sf.FittingRo = det[3]; sf.CrotchRadius = det[4]; }
             else CaesarNeutralWriter.SifDetailsFromSlot(sf);   // a model saved before it held them: from its slot
             m.Sifs.Add(sf);
         }
@@ -370,7 +379,8 @@ public static class PipeModelJson
             var o = (Dictionary<string, object>)zo;
             var z = new PipeModelNozzle { Node = I(o, "node"), VesselNode = I(o, "vesselNode"), Type = I(o, "type"), Source = S(o, "source") ?? "", Raw = L(o, "raw") };
             var v = Ds(o, "v");
-            for (int i = 0; v != null && i < 22 && i < v.Length; i++) z.V[i] = double.IsNaN(v[i]) ? 0 : v[i];
+            if (v != null && v.Length > PipeModelNozzle.Count) { z.SetFromOldValues(v); upgraded = true; }   // saved before CAESAR 15.01 showed its layout
+            else for (int i = 0; v != null && i < v.Length; i++) z.V[i] = double.IsNaN(v[i]) ? 0 : v[i];
             m.Nozzles.Add(z);
         }
         foreach (var ho in Arr(root, "hangers"))

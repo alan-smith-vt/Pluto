@@ -417,7 +417,7 @@ public static class CaesarPipeImport
             var cz = cm.Nozzles[k];
             var z = new PipeModelNozzle { Node = cz.Node, VesselNode = cz.VesselNode, Source = "the .cii", Raw = tail.Skip(k * nozLines).Take(nozLines).ToList() };
             z.Type = cz.Values.Length > 2 ? (int)Math.Round(cz.Values[2]) : 0;
-            for (int i = 3; i < 22 && i < cz.Values.Length; i++) z.V[i] = cz.Values[i];
+            for (int i = 3; i < PipeModelNozzle.Count && i < cz.Values.Length; i++) z.V[i] = cz.Values[i];
             m.Nozzles.Add(z);
         }
         int q0 = src.TailNozzleLines + 2 + lists, free = q0 + nh * h;

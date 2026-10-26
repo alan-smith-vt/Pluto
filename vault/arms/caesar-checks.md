@@ -39,9 +39,9 @@ Every rule is summarised in our own words.
 > | A user SIF below 1.0 (1E, once per SIF value) | `sif-below-one` | SIFs red; Start |
 > | An element with no length (2E), unless it is a zero-length expansion joint | `element-zero` | DX DY DZ amber |
 > | An expansion joint without its axial stiffness, or without both transverse and bending (on a joint of no length, without either): incomplete (19E) | `expansion-joint` | EJ columns red; Start |
-> | A WRC 297 nozzle whose stiffener or head distances are under the nozzle's radius, or not given (118E) | `nozzle-stiffener` | Nozzles, the distances red; Start |
-> | A custom nozzle without a vessel material (79E, a material / temperature error) | `nozzle-material` (a WRC 297 one without: a warning) | Nozzles, Vessel material red (amber); Start |
-> | A PD 5500 nozzle in the documentation's layout: an invalid vessel type (135E) | `nozzle-pd5500`, on a nozzle Pluto writes (one CAESAR wrote is carried as written). A PD 5500 nozzle's values are not checked: they are not where the documentation puts them | Nozzles, Type amber; Start |
+> | A WRC 297 nozzle whose stiffener or head distances are under the nozzle's radius, or not given (118E) | `nozzle-stiffener` (WRC 297 and PD 5500) | Nozzles, the distances red; Start |
+> | A custom nozzle without a vessel material (79E, a material / temperature error) | `nozzle-material` (a WRC 297 or PD 5500 one without: a warning) | Nozzles, Vessel material red (amber); Start |
+> | A PD 5500 vessel type other than 0 (cylinder) or 1 (sphere) (135E: the probe's nozzle, written in the guide's layout, had its OD there) | `nozzle-vessel-type` | Nozzles, Vessel type a dropdown |
 > | An element from a node to itself | `element-self` | From / To red |
 > | Nothing holding a piece to ground (unstable) | `unsupported` | — |
 > | A nozzle whose vessel centreline runs along the nozzle (from the documentation; the probe's nozzle stopped on 118E first) | `nozzle-axis` (a missing centreline: a warning) | — |
@@ -50,7 +50,7 @@ Every rule is summarised in our own words.
 > | CAESAR's rule | Pluto | Workbook |
 > |---|---|---|
 > | A change of direction that is neither a bend nor an intersection (21E). CAESAR compares each element with the one before it in the input, so it sees a corner only where the second element starts at the first one's end | `corner-no-bend` (above 1 deg); `corner-unseen`: the same between elements apart in the input, which CAESAR does not report | Bend radius amber; Start |
-> | A geometric intersection with no intersection type: pipe flexibilities and SIFs of 1.0 there (33E). CAESAR 15.01 read SIF types 14-17 this way | `tee-no-sif` (no entry, a joint type, or 14-17; a user SIF entry gives the SIFs) | SIFs, Type 14-17 amber; Start |
+> | A geometric intersection with no intersection type: pipe flexibilities and SIFs of 1.0 there (33E). The probe's branches typed 14-17 drew it: CAESAR 15.01 has no such types | `tee-no-sif` (no entry, or a joint type; a user SIF entry gives the SIFs) | — |
 > | An intersection type where no geometric intersection is found: the SIFs come from the smallest wall and largest diameter there (39E). With four or more pipes CAESAR computes no SIF (1.0) | `intersection` (tee types 1-6; 7-13 are joints) | SIFs, Node amber; Start |
 > | D/t over 100 at a bend or intersection: the code's flexibilities and SIFs are not valid for it, and CAESAR computes them anyway (160E) | `thin-wall` (and reducers) | Sections amber; Start |
 > | A reducer outside B31J's limits (282E); its cone angle over 60 deg is the reducer SIF's limit (CAESAR computes it from the length when not given) | `reducer-angle` | — |
@@ -67,7 +67,7 @@ Every rule is summarised in our own words.
 > | Pluto's own: a node on a bend within 5 deg of its near end. The configuration's limit names both ends, but 15.01 let a node at 3 deg pass on the bend whose 88 deg node it stopped on | `bend-node-near` | Bend nodes amber; Start |
 > | Pluto's own: a CNODE tied to nothing, a bend with no room | `cnode-off-model`, `bend-room`, `bend-corner`, `bend-code` | — |
 > | Pluto's own: a reinforced fabricated tee without its pad thickness | `sif-pad` | SIFs, Pad amber |
-> | Pluto's own, nozzles: a WRC 297 nozzle without a vessel material | `nozzle-material` | Nozzles, Vessel material amber; Start |
+> | Pluto's own, nozzles: a WRC 297 or PD 5500 nozzle without a vessel material | `nozzle-material` | Nozzles, Vessel material amber; Start |
 > | Pluto's own, hangers: two entries at one node; a rate without its installed load; an anchor to free that nothing holds | `hanger-twice`, `hanger-rate-only`, `hanger-free` | Hangers, Node amber; Rate / Cold load and Free columns red; Start |
 
 > [!info]- B31J: warnings CAESAR 15.01 gives where it takes a default
@@ -90,7 +90,7 @@ Every rule is summarised in our own words.
 > - **Stress ratios** (al / hl): carried as written, not modelled.
 > - **Hanger design:** CAESAR's. Pluto holds the hangers and their design data ([[vault/format/caesar-neutral-hangers|caesar-neutral-hangers]]) but does not size springs.
 > - **CAESAR's configuration.** Pluto assumes the defaults. A job that raises the maximum bend angle, say, gets an error here that CAESAR would accept.
-> - **26E**, a reinforced fabricated tee's pad improperly given, came on the probe's element between its type 16 and type 17 entries, where neither is a reinforced tee by the documentation's list. It waits on CAESAR's SIF listing of those nodes.
+> - **26E**, a reinforced fabricated tee's pad improperly given, came on the probe's element ending at its type 17 entry. CAESAR 15.01 has no type 17 (its SIF listing showed none there), so it is what CAESAR made of a type it does not have; Pluto writes types 0-13 only.
 >
 > **To extend this list:** CAESAR's Diagnostics > Error Review describes every message. Send the ones a job raised, or let the build environment reach `docs.hexagonppm.com` (its error code pages).
 
@@ -99,7 +99,7 @@ Every rule is summarised in our own words.
 > - **The TOML builder** numbers `g_load` vectors after the most any run has per length. A vector then holds one kind across the model; before, a run with g's only put them on U1 while U1 was per length elsewhere.
 > - **The TOML example** modelled a moving anchor as an anchor plus a displacement at the same node: overspecified. It now gives the displacement in all six directions, which is the anchor.
 > - **A new displacement on a connecting node** (CAESAR's way to move a restraint) is written with the element at the restraint's node; the writer refused it before, as on no element.
-> - **A branch's `tee`** takes the intersection types 1-6 only (2026-10-26): CAESAR 15.01 read 14-17 as no intersection type. A `[[sifs]]` entry still writes them.
+> - **SIF types 0-13 only** (2026-10-26): CAESAR 15.01's list ends at 13. The builder and the workbook refuse 14-17 (the guide's Bonney Forge fittings and full encirclement tee); a job's own entries are carried as written.
 
 > [!info]- Verification
 > - **Against CAESAR (2026-10-26):** on the combined probe, every error CAESAR 15.01 raised is a Pluto error at the same node (44E, 5E, 12E, 3E, 1E, 19E, 2E, 135E, 79E, 118E twice), and Pluto adds one, `nozzle-axis`, on a nozzle CAESAR stopped on for its stiffeners first. Every warning CAESAR raised that Pluto checks is a Pluto warning or the `b31j` info item. Pluto's own warnings on top: the bend node at 3 deg (`bend-node-near`), the corner CAESAR does not see (`corner-unseen`), and the two WRC 297 nozzles without a material.

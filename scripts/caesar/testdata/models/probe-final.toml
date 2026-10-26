@@ -333,23 +333,6 @@ from = { run = "teeheader", at = 90 }
 section = "4in"
 tee = "none"
 legs = [["+Y", 6]]
-# SIF types 14-17 as entries: CAESAR 15.01 read them as no intersection type (33E), so a branch's tee does not take them
-[[sifs]]
-run = "teeheader"
-at = 60
-type = "bf_sweepolet"
-[[sifs]]
-run = "teeheader"
-at = 70
-type = "latrolet"
-[[sifs]]
-run = "teeheader"
-at = 80
-type = "insert_weldolet"
-[[sifs]]
-run = "teeheader"
-at = 90
-type = "full_encirclement"
 [[sifs]]
 run = "teeheader"
 at = 5
@@ -359,7 +342,6 @@ weld_mismatch = 0.0625
 run = "teeheader"
 at = 15
 type = "socket_weld"
-fillet = 0.375
 [[sifs]]
 run = "teeheader"
 at = 25
@@ -381,7 +363,6 @@ type = "lap_joint"
 run = "teeheader"
 at = 65
 type = "socket_weld_as_welded"
-fillet = 0.375
 [[supports]]
 run = "teeheader"
 at = [0, "L"]
