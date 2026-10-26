@@ -249,8 +249,8 @@ public static class PipeReview
                     items.Add(new PipeReviewItem("warning", "bend-corner", at + " is drawn as a corner: " + b.Reason).WithNodes(new[] { e.To }).WithElements(new[] { b.ElementIndex + 1 }));
                 else if (b.LeadLength < 0 && -b.LeadLength > 0.01 * Math.Sqrt(e.Dx * e.Dx + e.Dy * e.Dy + e.Dz * e.Dz))   // under 1%: CAESAR's own default
                     items.Add(new PipeReviewItem("warning", "bend-room", string.Format(ci,
-                        "{0} needs a straight of {1:0.###} before it (radius x tan(angle / 2)) and its element gives {2:0.###}: the bend reaches back past node {3}",
-                        at, b.T, b.T + b.LeadLength, e.From)).WithNodes(new[] { e.From, e.To }).WithElements(new[] { b.ElementIndex + 1 }));
+                        "{0} needs a straight of {1:0.###} before it (radius x tan(angle / 2)) and its element gives {2:0.###}: the bend reaches back past node {3}{4}",
+                        at, b.T, b.T + b.LeadLength, e.From, b.Fitted ? string.Format(ci, " (the viewer draws it from node {0} with a radius of {1:0.###})", e.From, b.DrawRadius) : "")).WithNodes(new[] { e.From, e.To }).WithElements(new[] { b.ElementIndex + 1 }));
             }
         for (int i = 0; i < ne; i++)
         {

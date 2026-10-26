@@ -111,7 +111,10 @@ Code: `scripts/arms/CaesarNeutralReader.cs` → `CaesarGeometry.cs` → [`Caesar
 >   - Bend-node angles count from the near point (−2.0202 = midpoint).
 >   - A coded radius (a multiple of −1.0101, a radius chosen by name) is drawn with the radius it names: Long, 3D, Short, 5D as 1.5, 3, 1, 5 × the nominal size from the OD (`PipeModelBend.NamedRadii`, confirmed with CAESAR 15.01). A code CAESAR reads as no radius (−2.0202, −6.0606 … −9.0909) is drawn as a corner, with a warning ([[vault/format/caesar-neutral-loads|caesar-neutral-loads]]).
 >   - Arcs are drawn as chords of ≤ `ArcStepDeg`. Mitred bends are a polyline through the cut points.
-> - **Bend guards:** zero-length elements, bends under 1° or over 179°, and overlapping tangents. CAESAR's 1 % attachment tolerance leaves tiny backward pieces, which are flagged.
+> - **Bend guards:** zero-length elements, bends under 1° or over 179°, and overlapping tangents (back-to-back bends closer than their tangents):
+>   - within CAESAR's 1 % bend-length attachment, a tiny piece runs backwards (flagged, too small to see);
+>   - past it, the bend is **drawn fitted**: from its element's From node with the radius that fits up to the tangent intersection, then straight to the far node, which stays where CAESAR puts it; its own bend nodes sit on the drawn arc. Warned (`overlap-fit`), and the `bend-room` check names the drawn radius. Before 2026-10-26 the piece running backwards showed as a stray sleeve beside the elbow before it;
+>   - a From node past the tangent intersection, or a bend node that carries other pieces: the piece running backwards stays.
 > - **Synthetic nodes** (near points, arc vertices, valve mids) have ids from 10,000,000. Each records its two bracketing real nodes, which the results use for interpolation. Use `IsSynthetic`, not the id range.
 > - **Checked on the fixture** against CAESAR's own COORDINATE REPORT in the input echo:
 >   - all 128 rows within 0.0016 in;

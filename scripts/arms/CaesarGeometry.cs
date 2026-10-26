@@ -30,7 +30,9 @@ using System.Linq;
 // element, theta < 1 or > 179 deg, or R <= 0 -> drawn straight with a warning, its bend nodes attached
 // at the TO node. A tangent longer than the straight it eats (back-to-back bends, short legs) leaves a
 // short piece running backwards (CaesarPiece.Backward), with a warning that says whether the overlap is
-// within CAESAR's default 1% bend-length attachment.
+// within CAESAR's default 1% bend-length attachment. Past that 1% the bend is drawn fitted instead (FitOverlaps):
+// the arc runs from the FROM node with the radius that fits there, then a straight to the FAR node, which stays
+// where CAESAR puts it; the bend's own bend nodes move onto the drawn arc.
 //
 // Synthetic vertices (bend near points without a node, chord points, miter cuts) get ids from
 // CaesarPipeGraph.FirstSyntheticId up; each records the two real nodes that bracket it along the run and
@@ -73,7 +75,7 @@ public class CaesarSyntheticNode
     public int NodeA, NodeB;             // the real nodes bracketing it along the run
     public double Fraction;              // 0 at NodeA .. 1 at NodeB, by path length
     public int ElementIndex;
-    public string Kind = "";             // NEAR | ARC | MITER, or whatever the caller of AddSyntheticNode says
+    public string Kind = "";             // NEAR | ARC | MITER | FAR (a fitted bend's arc end), or whatever the caller of AddSyntheticNode says
 
     public double Interpolate(double atA, double atB) { return atA + (atB - atA) * Fraction; }
 }
@@ -89,6 +91,9 @@ public class CaesarBendGeom
     public string Reason = "";
     public bool Mitred;
     public int MiterPoints;
+    public bool Fitted;                  // drawn with DrawRadius from the FROM node: the tangent reaches back past it (FitOverlaps)
+    public double DrawRadius;
+    public double[] DrawNear, DrawFar, DrawCentre;
     public List<double[]> NodeAngles = new List<double[]>();   // {node, angle deg from NEAR}, ascending
     public List<int> Path = new List<int>();                   // vertex ids FROM .. TO along the element
 }
@@ -301,6 +306,7 @@ public static class CaesarGeometry
             TipFrame();
             BendGeometry();
             Physical();
+            FitOverlaps();
             ClassifyRigids();
             foreach (var e in E) MakePieces(e);
             Attached();
@@ -601,12 +607,12 @@ public static class CaesarGeometry
             return null;
         }
 
-        // point at `ang` degrees from NEAR: on the arc, or on the miter polyline (radial projection)
+        // point at `ang` degrees from NEAR: on the arc, or on the miter polyline (radial projection); the drawn arc of a fitted bend
         double[] CurvePoint(CaesarBendGeom bg, double ang)
         {
             double phi = ang * Math.PI / 180.0;
             var dir = Add(Mul(bg.Normal, -Math.Cos(phi)), Mul(bg.UIn, Math.Sin(phi)));
-            double r = bg.Radius;
+            double r = bg.Fitted ? bg.DrawRadius : bg.Radius;
             if (bg.Mitred)
             {
                 int n = bg.MiterPoints;
@@ -615,9 +621,37 @@ public static class CaesarGeometry
                 int j = (int)Math.Floor(phi * n / theta + 0.5);
                 if (j < 0) j = 0;
                 if (j > n) j = n;
-                r = bg.Radius / Math.Cos(phi - j * theta / n);
+                r = r / Math.Cos(phi - j * theta / n);
             }
-            return Add(bg.Centre, Mul(dir, r));
+            return Add(bg.Fitted ? bg.DrawCentre : bg.Centre, Mul(dir, r));
+        }
+
+        // a bend whose tangent reaches back past its FROM node by more than CAESAR's 1% bend-length attachment (back-to-back
+        // bends closer than their tangents) is drawn with the radius that fits from the FROM node to the tangent intersection,
+        // its FAR node where CAESAR puts it. Not when a bend node of its own carries other pieces (they were placed from the
+        // true arc) or the FROM node is past the tangent intersection: those keep the piece that runs backwards
+        void FitOverlaps()
+        {
+            foreach (var bg in G.Bends)
+            {
+                if (bg.Straight) continue;
+                var e = E[bg.ElementIndex];
+                double[] from;
+                if (!G.Nodes.TryGetValue(e.From, out from)) continue;
+                double lead = Dot(Sub(bg.Near, from), bg.UIn);
+                if (lead >= -_tolLead || -lead <= 0.01 * Math.Sqrt(e.Dx * e.Dx + e.Dy * e.Dy + e.Dz * e.Dz)) continue;
+                double tf = bg.T + lead;   // FROM node to the tangent intersection, along the way in
+                if (tf <= _tolLead) continue;
+                if (bg.NodeAngles.Any(na => _adj.ContainsKey((int)na[0]) || _linked.Contains((int)na[0]))) continue;
+                bg.Fitted = true;
+                bg.DrawRadius = tf / Math.Tan(bg.AngleDeg * Math.PI / 360.0);
+                bg.DrawNear = Sub(bg.Tip, Mul(bg.UIn, tf));
+                bg.DrawFar = Add(bg.Tip, Mul(bg.UOut, tf));
+                bg.DrawCentre = Add(bg.DrawNear, Mul(bg.Normal, bg.DrawRadius));
+                foreach (var na in bg.NodeAngles) G.Nodes[(int)na[0]] = CurvePoint(bg, na[1]);
+                WarnAgg("overlap-fit", "bend tangent reaches back past the start of its element by more than 1% of it (check the model): drawn from the element's start with the radius that fits, then straight to its far node",
+                    "element " + El(e) + " radius " + F(bg.Radius) + " drawn " + F(bg.DrawRadius));
+            }
         }
 
         // ---------------- physical positions
@@ -805,21 +839,23 @@ public static class CaesarGeometry
             path.Add(e.From);
             double lead = Dot(Sub(bg.Near, G.Nodes[e.From]), bg.UIn);
             bg.LeadLength = lead;
+            double drawLead = bg.Fitted ? Dot(Sub(bg.DrawNear, G.Nodes[e.From]), bg.UIn) : lead;
+            bool fitFar = bg.Fitted && Dist(bg.DrawFar, G.Nodes[e.To]) > _tolLead;   // the arc ends short of the FAR node: a straight follows
             int node0 = 0;
             var rest = new List<double[]>();
             foreach (var na in bg.NodeAngles) { if (na[1] <= 1e-9 && node0 == 0) node0 = (int)na[0]; else rest.Add(na); }
             int cur;
-            if (Math.Abs(lead) <= _tolLead)
+            if (Math.Abs(drawLead) <= _tolLead)
             {
                 if (node0 != 0) { AddPiece(e, e.From, node0, CaesarPieceKind.Pipe); path.Add(node0); cur = node0; }
                 else cur = e.From;
             }
             else
             {
-                cur = node0 != 0 ? node0 : NewSyn(bg.Near, e, "NEAR");
+                cur = node0 != 0 ? node0 : NewSyn(bg.Fitted ? bg.DrawNear : bg.Near, e, "NEAR");
                 var lp = AddPiece(e, e.From, cur, CaesarPieceKind.Pipe);
                 path.Add(cur);
-                if (lead < 0) Overlap(lp, e, -lead);
+                if (drawLead < 0) Overlap(lp, e, -drawLead);
             }
             var targets = new List<double[]>(rest);
             targets.Add(new[] { (double)e.To, bg.AngleDeg });
@@ -829,6 +865,7 @@ public static class CaesarGeometry
                 foreach (var t in targets)
                 {
                     int node = (int)t[0];
+                    if (node == e.To && fitFar) node = NewSyn(bg.DrawFar, e, "FAR");
                     double ang = t[1], span = ang - curAng;
                     int n = Math.Max(1, (int)Math.Ceiling(span / _stepDeg - 1e-9));
                     for (int k = 1; k < n; k++)
@@ -858,11 +895,13 @@ public static class CaesarGeometry
                 foreach (var v in verts)
                 {
                     int id = v[0] < 0 ? NewSyn(CurvePoint(bg, v[1]), e, "MITER") : (int)v[0];
+                    if (id == e.To && fitFar) id = NewSyn(bg.DrawFar, e, "FAR");
                     AddPiece(e, cur, id, CaesarPieceKind.Bend);
                     path.Add(id);
                     cur = id;
                 }
             }
+            if (fitFar) { AddPiece(e, cur, e.To, CaesarPieceKind.Pipe); path.Add(e.To); }
             // bracket every synthetic vertex of this element by the real vertices around it
             var cum = new double[path.Count];
             for (int i = 1; i < path.Count; i++) cum[i] = cum[i - 1] + Dist(G.Nodes[path[i - 1]], G.Nodes[path[i]]);

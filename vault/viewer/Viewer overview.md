@@ -165,6 +165,11 @@ Pipe-stress groundwork (2026-10-03, branch `pipestress`, for the CAESAR II arm):
   ([[vault/decisions/2026-10-03-beam-taper|decision]]). Ring B and cap B come from that section
   when both outlines have the same point count; otherwise end A is used and the mismatch is counted.
   The readout shows `A → B`. The demo has one tapered column. Test: `viewer/tests/test_beamtaper.js`.
+- **Mitred joints (2026-10-26).** Where exactly two PIPE members of one section meet at a node and turn
+  by at most 90°, both ends are cut on the plane bisecting the turn, so a chorded bend draws as one
+  tube (square cuts left a wedge gap and a cap seam at every chord, the ring seams seen on closely
+  spaced bends). Square stays for a sharper turn, a tee, another section or shape, an offset, or cuts
+  that would eat a member. Vertex count and order are unchanged. Test: `viewer/tests/test_mitre.js`.
 - **Deformed shape for files without shells.** The gate (`FEAAttributes.deformStatus`) allows
   deformation when the shells have a displacement vector, or when the beams have one and there are no
   shells. A shell + beam file whose shells lack one stays locked, with a hint. Test:

@@ -30,6 +30,16 @@
 // DECLARED end-B section (== sectionOf[e] for a straight member), so
 // readouts can show "A -> B" either way. Slot 4 = 0 builds exactly the
 // geometry of a straight member (same vertex order, same values).
+//
+// Mitred joints (2026-10-26): where exactly two PIPE members of one
+// section meet at a node (a bend's chords, a corner) and turn by at most
+// 90 deg, both ends are cut on the plane that bisects the turn instead of
+// square, so a chorded bend draws as one smooth tube, without a wedge gap
+// and a cap seam at every chord. Not with offsets, other shapes or a
+// different section at the node, nor where the cuts would eat the member
+// (a bend drawn tighter than the pipe's radius): those stay square. The
+// vertex count and order are unchanged; only end rings (and caps) move
+// along the member's axis.
 // ================================================================
 
 var FEABeamGeometry = (function () {
@@ -104,6 +114,77 @@ var FEABeamGeometry = (function () {
         }
     }
 
+    // Mitre planes: Float32Array(nElem * 6), the unit normal of the cut at
+    // end A (0..2) and end B (3..5); all zero = a square end.
+    function mitrePlanes(nElem, REC, elems, nodes, props, sections, secA, secB, BP) {
+        var out = new Float32Array(nElem * 6);
+        var at = {};   // node index -> element ends there (2e = end A, 2e + 1 = end B)
+        for (var e = 0; e < nElem; e++) {
+            var n0 = elems[e * REC + 1], n1 = elems[e * REC + 2];
+            (at[n0] = at[n0] || []).push(e * 2);
+            (at[n1] = at[n1] || []).push(e * 2 + 1);
+        }
+        function pipeR(si) {
+            var s = sections[si];
+            return s && s.type === 'PIPE' && s.params && s.params.od > 0 ? s.params.od / 2 : 0;
+        }
+        function offsetFree(e, end) {
+            if (!props) return true;
+            var k = e * BP + (end ? 5 : 3);
+            return props[k] === 0 && props[k + 1] === 0;
+        }
+        // unit vector along e pointing INTO its end, and e's length
+        function dirIn(e, end) {
+            var a = elems[e * REC + 1], b = elems[e * REC + 2];
+            var from = end ? a : b, to = end ? b : a;
+            var x = nodes[to * 3] - nodes[from * 3], y = nodes[to * 3 + 1] - nodes[from * 3 + 1], z = nodes[to * 3 + 2] - nodes[from * 3 + 2];
+            var L = Math.sqrt(x * x + y * y + z * z);
+            return L > 1e-12 ? [x / L, y / L, z / L, L] : null;
+        }
+        var cand = [], cut = new Float64Array(nElem);
+        for (var key in at) {
+            var l = at[key];
+            if (l.length !== 2) continue;
+            var e1 = l[0] >> 1, end1 = l[0] & 1, e2 = l[1] >> 1, end2 = l[1] & 1;
+            if (e1 === e2) continue;
+            var s1 = end1 ? secB[e1] : secA[e1], s2 = end2 ? secB[e2] : secA[e2];
+            if (s1 !== s2) continue;
+            var r = pipeR(s1);
+            if (!(r > 0) || !offsetFree(e1, end1) || !offsetFree(e2, end2)) continue;
+            var d1 = dirIn(e1, end1), d2 = dirIn(e2, end2);
+            if (!d1 || !d2) continue;
+            var c = -(d1[0] * d2[0] + d1[1] * d2[1] + d1[2] * d2[2]);   // cos of the turn: in along d1, out along -d2
+            if (c < 0 || c > 1 - 1e-9) continue;                          // over 90 deg, or straight on (square is exact)
+            var nx = d1[0] - d2[0], ny = d1[1] - d2[1], nz = d1[2] - d2[2], nl = Math.sqrt(nx * nx + ny * ny + nz * nz);
+            var reach = r * Math.sqrt((1 - c) / (1 + c));                 // r tan(turn / 2): how far the cut runs along the pipe
+            cut[e1] += reach; cut[e2] += reach;
+            cand.push([e1, end1, e2, end2, nx / nl, ny / nl, nz / nl, d1[3], d2[3]]);
+        }
+        for (var i = 0; i < cand.length; i++) {
+            var q = cand[i];
+            if (cut[q[0]] >= 0.9 * q[7] || cut[q[2]] >= 0.9 * q[8]) continue;   // the cuts would eat a member
+            out[q[0] * 6 + q[1] * 3] = q[4]; out[q[0] * 6 + q[1] * 3 + 1] = q[5]; out[q[0] * 6 + q[1] * 3 + 2] = q[6];
+            out[q[2] * 6 + q[3] * 3] = q[4]; out[q[2] * 6 + q[3] * 3 + 1] = q[5]; out[q[2] * 6 + q[3] * 3 + 2] = q[6];
+        }
+        return out;
+    }
+
+    // Moves each ring point along the member axis X onto the plane through
+    // c with normal planes[k..k+2] (a no-op for a square end).
+    var _N = null;
+    function cutRing(ring, c, X, planes, k) {
+        if (planes[k] === 0 && planes[k + 1] === 0 && planes[k + 2] === 0) return;
+        var N = _N || (_N = new THREE.Vector3());
+        N.set(planes[k], planes[k + 1], planes[k + 2]);
+        var dn = X.dot(N);
+        if (Math.abs(dn) < 1e-6) return;
+        for (var i = 0; i < ring.length; i++) {
+            var p = ring[i];
+            var t = -((p.x - c.x) * N.x + (p.y - c.y) * N.y + (p.z - c.z) * N.z) / dn;
+            p.addScaledVector(X, t);
+        }
+    }
+
     function build(view) {
         var dom = view.domain;
         var nElem = dom.nElem;
@@ -157,6 +238,9 @@ var FEABeamGeometry = (function () {
                 'point counts (e.g. PIPE -> I); drawn straight at end A\'s section.');
         }
         var totalTris = totalVerts / 3;
+        var mitre = mitrePlanes(nElem, REC, elems, nodes, props, sections, sectionOf, geomB, BP);
+        var nMitred = 0;
+        for (var mi = 0; mi < nElem * 2; mi++) if (mitre[mi * 3] !== 0 || mitre[mi * 3 + 1] !== 0 || mitre[mi * 3 + 2] !== 0) nMitred++;
 
         var positions = new Float32Array(totalVerts * 3);
         var normals   = new Float32Array(totalVerts * 3);
@@ -221,6 +305,8 @@ var FEABeamGeometry = (function () {
                 ringA.push(cA.clone().addScaledVector(Y, pts[i][0]).addScaledVector(Z, pts[i][1]));
                 ringB.push(cB.clone().addScaledVector(Y, ptsB[i][0]).addScaledVector(Z, ptsB[i][1]));
             }
+            cutRing(ringA, cA, X, mitre, e2 * 6);
+            cutRing(ringB, cB, X, mitre, e2 * 6 + 3);
             for (var k = 0; k < m; k++) {
                 var k2 = (k + 1) % m;
                 tri(ringA[k], ringB[k], ringB[k2], 0, 1, 1, e2);
@@ -263,6 +349,7 @@ var FEABeamGeometry = (function () {
             sectionOfB: sectionOfB,
             nTaper: nTaper,
             taperMismatch: taperMismatch,
+            mitredEnds: nMitred,
             axisA: axisA,
             axisB: axisB,
             frames: frames,
