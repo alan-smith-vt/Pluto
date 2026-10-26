@@ -206,9 +206,9 @@ static class PipeWorkbookGui
         {
             C("Id", "key", "id", "Keep it on rows from the model; leave it blank on a new row."),
             C("Node", "key", "node", "The node of the SIF / tee."),
-            L("Type", "prop", "list!", types, "CAESAR's number: 0 user SIFs, 1 reinforced, 2 unreinforced, 3 welding tee, 4 sweepolet, 5 weldolet, 6 extruded; 7-13 joints; 14-17 Bonney Forge, full encirclement. The header's note lists them all.",
-              "Type: CAESAR's SIF & tee type number, as its list orders them: " + string.Join("; ", Enumerable.Range(0, PipeModelSifTypes.Names.Length).Select(k => k + " " + PipeModelSifTypes.Names[k]).ToArray()) +
-              ". 3 (welding tee) and 11 are seen in CAESAR files; the others are written with a notice until a CAESAR export confirms them."),
+            L("Type", "prop", "list!", types, "CAESAR's number: 0 user SIFs, 1 reinforced, 2 unreinforced, 3 welding tee, 4 sweepolet, 5 weldolet, 6 extruded; 7-13 joints; 14-17: CAESAR 15.01 read them as no tee (amber). The header's note lists them all.",
+              "Type: CAESAR's SIF & tee type number, as its documentation's list orders them: " + string.Join("; ", Enumerable.Range(0, PipeModelSifTypes.Names.Length).Select(k => k + " " + PipeModelSifTypes.Names[k]).ToArray()) +
+              ". 3 (welding tee) and 11 are seen in CAESAR files; CAESAR 15.01 took 1-6 as tees and read 14-17 as no intersection type (pipe SIFs of 1.0 at a branch), so those are amber. The others are written with a notice until a CAESAR export confirms them."),
             C("SIF in", "prop", "nonneg", "In-plane SIF. Blank = the code's."),
             C("SIF out", "prop", "nonneg", "Out-of-plane SIF. Blank = the code's."),
             C("Surface node", "key", "node", "A tee's surface node (CAESAR's Srf.Node). Blank = none."),
@@ -478,7 +478,8 @@ static class PipeWorkbookGui
     internal static string AlphaRule(string at) { return "AND(ISNUMBER(" + at + ")," + at + "<>0," + at + "<0.05," + at + ">-0.05)"; }
 
     // a SIF / tee type that is an intersection (tees and olets: 1-6, 14-17; 7-13 are joints)
-    internal static string TeeType(string at) { return "OR(AND(N(" + at + ")>=1,N(" + at + ")<=6),AND(N(" + at + ")>=14,N(" + at + ")<=17))"; }
+    // an intersection type CAESAR takes as a tee (1-6; PipeReview.IsTeeType)
+    internal static string TeeType(string at) { return "AND(N(" + at + ")>=1,N(" + at + ")<=6)"; }
 
     // ---------------------------------------------------------------- the Start sheet
 
@@ -601,16 +602,25 @@ static class PipeWorkbookGui
         "c2", "g2", "d2x", "d2y", "d2z", "o2x", "o2y", "o2z", "R2", "X1f", "Y1f", "Z1f", "X2f", "Y2f", "Z2f",
         // CAESAR's error-checker rules a row can be checked for (TRUE = the row trips it); the Elements sheet's red and
         // amber cells and Start's counts read these, so their own formulas stay short
-        "Bn", "fB", "Wl", "Co", "fC", "Bd", "a1", "a2", "a3", "fA", "fN", "fK", "fE",
+        "Bn", "fB", "Wl", "Co", "fC", "Bd", "a1", "a2", "a3", "fA", "fN", "fK", "fE", "fH", "fF",
     };
 
     // PlotCalc's last row for a model of n elements, and a reference to one of its columns
     internal static int CalcLast(int elements) { return Math.Max(300, elements + 300) + 1; }
     internal static string CalcRef(string key, int row) { return Calc + "!$" + XlsxBook.Column(Array.IndexOf(CalcCols, key)) + row.ToString(CultureInfo.InvariantCulture); }
-    internal static string CalcCount(string key, int elements)
+    internal static string CalcRange(string key, int elements)
     {
         string c = XlsxBook.Column(Array.IndexOf(CalcCols, key));
-        return "COUNTIF(" + Calc + "!$" + c + "$2:$" + c + "$" + CalcLast(elements).ToString(CultureInfo.InvariantCulture) + ",TRUE)";
+        return Calc + "!$" + c + "$2:$" + c + "$" + CalcLast(elements).ToString(CultureInfo.InvariantCulture);
+    }
+    internal static string CalcCount(string key, int elements) { return "COUNTIF(" + CalcRange(key, elements) + ",TRUE)"; }
+
+    // the OD of the elements at a node (their mean; 0 on no element), in the job's diameter unit: a nozzle's OD left blank
+    internal static string OdAtNode(string node, int elements)
+    {
+        string fr = CalcRange("Fr", elements), to = CalcRange("To", elements), od = CalcRange("OD", elements);
+        string count = "(COUNTIF(" + fr + "," + node + ")+COUNTIF(" + to + "," + node + "))";
+        return "((SUMIF(" + fr + "," + node + "," + od + ")+SUMIF(" + to + "," + node + "," + od + "))/(" + count + "+(" + count + "=0)))";
     }
 
     static readonly Regex Token = new Regex(@"\[(\w+)([-+:^*]?)\]");
@@ -693,11 +703,17 @@ static class PipeWorkbookGui
             f["a" + j] = "IF([Bd]>0,IFERROR(IF(" + tx + "=\"\",-1,IF(UPPER(" + h + ")=\"M\",[Bd]/2,--" + h + ")),-1),-1)";
         }
         f["fA"] = "AND([Bd]>0,OR([Bd]<5,[Bd]>95))";
-        f["fN"] = "AND([Bd]>0,OR(AND([a1]>0,[a1]<5),AND([a2]>0,[a2]<5),AND([a3]>0,[a3]<5),AND([a1]>=0,[a1]>[Bd]-5),AND([a2]>=0,[a2]>[Bd]-5),AND([a3]>=0,[a3]>[Bd]-5)," +
+        // fN: a node within 5 deg of the far end or of another (CAESAR stops, 12E); fH: within 5 deg of the near end (its
+        // configuration's limit, but 15.01 let a node at 3 deg pass: amber)
+        f["fN"] = "AND([Bd]>0,OR(AND([a1]>=0,[a1]>[Bd]-5),AND([a2]>=0,[a2]>[Bd]-5),AND([a3]>=0,[a3]>[Bd]-5)," +
                   "AND([a1]>=0,[a2]>=0,ABS([a1]-[a2])<5),AND([a1]>=0,[a3]>=0,ABS([a1]-[a3])<5),AND([a2]>=0,[a3]>=0,ABS([a2]-[a3])<5)))";
+        f["fH"] = "AND([Bd]>0,OR(AND([a1]>0,[a1]<5),AND([a2]>0,[a2]<5),AND([a3]>0,[a3]<5)))";
         f["fK"] = "AND([OK],[Rr]=\"\",[Nx]>0,[L]>0,INDEX([L^],MAX(1,[Nx]))>0,DEGREES([th])>1,COUNTIF([Fr*],[To])+COUNTIF([To*],[To])=2,COUNTIF(SIFs!$B:$B,[To])=0)";
         string ej = "N(" + E("pl_eja") + ")", et = "N(" + E("pl_ejt") + ")", eb = "N(" + E("pl_ejb") + ")", er = "N(" + E("pl_ejr") + ")";
-        f["fE"] = "AND([Kd]=2,OR(" + ej + "<=0," + er + "<=0,IF([L]=0,OR(" + et + "<=0," + eb + "<=0),(" + et + ">0)=(" + eb + ">0))))";
+        // fE: an expansion joint CAESAR stops on as incomplete (19E: no axial; no transverse and no bending, or on a joint
+        // of no length either one missing); fF: no torsion, or both transverse and bending on a joint with length (amber)
+        f["fE"] = "AND([Kd]=2,OR(" + ej + "<=0,IF([L]=0,OR(" + et + "<=0," + eb + "<=0),AND(" + et + "<=0," + eb + "<=0))))";
+        f["fF"] = "AND([Kd]=2,NOT([fE]),OR(" + er + "<=0,AND([L]>0," + et + ">0," + eb + ">0)))";
         foreach (string a in new[] { "x", "y", "z" })
         {
             string A = a.ToUpperInvariant(), d = "u" + a, o = "uo" + a;

@@ -40,10 +40,12 @@ Spring hangers are not element blocks. They sit in MISCEL_1, after the material 
 > - `hanger-twice` (warning): two entries at one node. CAESAR's way is one entry with the number of hangers at the location.
 > - `hanger-rate-only` (warning): a rate without its installed load.
 > - `hanger-free` (warning): an anchor to free that nothing holds to ground.
+> - `hanger-restrained` (warning; CAESAR 15.01 warns, 72E): a restraint or an imposed displacement at a node whose hanger CAESAR designs.
 > - `off-model`, `cnode-off-model`: a hanger node, or its connecting node, on no element.
 > - The writer refuses a node outside 1–8,000,000, a free code outside 1–5, a node to free without its code, and hanger edits on a job whose tail was carried whole.
 
-> [!info]- What is confirmed (2026-10-24)
-> - **Read and written back byte for byte:** three public CAESAR 11.00 jobs (three designed hangers with freed anchors; two springs as given on table 16, metric; one with the multi-load options) and a CAESAR 15.01 job with one designed hanger. Edits to them read back the same.
-> - **Not yet seen in CAESAR:** a hanger section Pluto wrote (new hangers, a spring as given, a constant support, a freed anchor, a CNODE, a count above one). The combined probe job asks CAESAR to import one.
+> [!info]- What is confirmed
+> - **Read and written back byte for byte (2026-10-24):** three public CAESAR 11.00 jobs (three designed hangers with freed anchors; two springs as given on table 16, metric; one with the multi-load options) and a CAESAR 15.01 job with one designed hanger. Edits to them read back the same.
+> - **CAESAR 15.01 imported a hanger section Pluto wrote (2026-10-26):** seven hangers, of which it counted five to design and two pre-designed (69E), as Pluto had them (a spring as given and a constant support are the two). It asked for its hanger-design load cases (70E) and warned at the two designed hangers sharing a node with a restraint or a displacement (72E).
+> - **Still to be seen:** CAESAR's hanger panels for the probe's hangers (the freed anchor, the CNODE, the count above one, the table).
 > - **From the guide only:** what the defaults and design options mean beyond their names; 0 hangers at a location read as one.

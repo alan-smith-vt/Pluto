@@ -995,9 +995,13 @@ public static class CaesarNeutralWriter
         if (newSif.Count > 0)
             n.Add(new PipeReviewItem("notice", "sif-type", "SIF / tee type(s) " + string.Join(", ", newSif.Select(s => s.Type + " (" + PipeModelSifTypes.Name(s.Type) + ")").Distinct().ToArray()) +
                 " written by the number of CAESAR's list, which no CAESAR-written file here has shown yet: check the type CAESAR shows after the import").WithNodes(newSif.Select(s => s.Node)));
-        var newNoz = m.Nozzles.Where(z => z.Raw == null).ToList();
-        if (newNoz.Count > 0 && !m.Nozzles.Any(z => z.Raw != null))
-            n.Add(new PipeReviewItem("notice", "nozzle-layout", newNoz.Count + " nozzle(s) written in the layout of CAESAR's documentation (22 values on 4 lines), which no CAESAR 15.01 file here has shown yet: check them in CAESAR after the import")
+        // CAESAR 15.01 read Pluto's WRC 297 and API 650 nozzles value for value (its own calculations echoed them); it
+        // stopped on the custom one's material first, so the custom stiffnesses (items 19-22) are still to be seen. The
+        // PD 5500 layout is not the documentation's (135E): PipeReview's nozzle-pd5500 error
+        var newNoz = m.Nozzles.Where(z => z.Raw == null && z.Type == 3).ToList();
+        if (newNoz.Count > 0)
+            n.Add(new PipeReviewItem("notice", "nozzle-layout", newNoz.Count + " custom nozzle(s) written in the layout of CAESAR's documentation: CAESAR 15.01 read the WRC 297 and API 650 nozzles written so, " +
+                "but has not yet shown a custom nozzle's stiffnesses (items 19-22) read back: check them in CAESAR after the import")
                 .WithNodes(newNoz.Select(z => z.Node)));
         return n;
     }
@@ -1047,8 +1051,8 @@ public static class CaesarNeutralWriter
     }
 
     // Nozzles: CAESAR's 22 values each, 6 per line. One read from a file keeps its lines, only changed fields rewritten;
-    // a new one takes the line layout of the job's own nozzles, else the guide's (6, 6, 6, 4: from the documentation; an
-    // 11.00 job wrote 6, 6, 4, 4).
+    // a new one takes the line layout of the job's own nozzles, else the guide's (6, 6, 6, 4, which CAESAR 15.01 imported;
+    // an 11.00 job wrote 6, 6, 4, 4).
     public static readonly int[] NozzleLayout = { 6, 6, 6, 4 };
 
     static int Fields(string line) { int n = (line ?? "").TrimEnd().Length - 2; return n <= 0 ? 0 : (n + 12) / 13; }

@@ -84,7 +84,8 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 
 > [!info]- SIF and tee types
 > `PipeModelSif.Type` is CAESAR's number, as its input lists the types (`PipeModelSifTypes`): 1 reinforced fabricated tee, 2 unreinforced fabricated tee, 3 welding tee, 4 sweepolet, 5 weldolet, 6 extruded welding tee; joints 7 girth butt weld, 8 socket weld (no undercut), 9 socket weld (as welded), 10 tapered transition, 11 threaded joint, 12 double welded slip-on, 13 lap joint flange; 14–16 the Bonney Forge sweepolet, latrolet and insert weldolet, 17 full encirclement tee; 0 user SIFs only. Each SIF also holds its weld mismatch, fillet, pad, fitting outside radius and crotch radius (the slot's items 5–9).
-> - **Seen in CAESAR files:** 0, 3 and 11. The rest are written with a `sif-type` notice until the combined probe's re-export confirms the numbering.
+> - **Seen in CAESAR files:** 0, 3 and 11. The rest are written with a `sif-type` notice until a CAESAR listing confirms the numbering.
+> - **What CAESAR 15.01 made of them** (the combined probe, 2026-10-26): it took 1, 2, 4, 5 and 6 as intersections (its B31J notes named them) and accepted the reinforced tee's pad and the extruded tee's crotch radius. It read 14–17 as **no intersection type** (33E: pipe flexibilities and SIFs of 1.0 at the branch), so Pluto counts only 1–6 as tees (`PipeReview.IsTeeType`) and a branch's `tee` does not take 14–17.
 
 > [!info]- Nozzles
 > `PipeModelNozzle`, in CAESAR's order (MISCEL_1): `Node`, `VesselNode` (0 = a rigid vessel), `Type` (0 WRC 297, 1 API 650, 2 PD 5500, 3 custom) and `V`, CAESAR's 22 values (`V[i]` = item i + 1). `Fields` names the values a sheet or a config uses, and `Item(f)` says which item each type keeps a field in (0 = the type has none). `Raw`: its lines as written.

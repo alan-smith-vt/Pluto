@@ -344,16 +344,20 @@ public static class PipeWorkbook
             PipeWorkbookGui.Rule(el, "N2:O" + L, "AND($G2=\"Reducer\",N2=\"\")", t.Red);
             PipeWorkbookGui.Rule(el, "K2:K" + L, "AND(K2<>\"\",ISERROR(FIND(\":\",K2)))", t.Red);
             // CAESAR's rules a row trips, worked out on PlotCalc (one row per Elements row): bend nodes used twice or too
-            // close, a bend outside 5-95 deg, corrosion as thick as the wall (red); a corner with no bend, an expansion
-            // joint short of stiffnesses, a temperature CAESAR would read as an expansion (amber)
+            // close, a bend outside 5-95 deg, corrosion as thick as the wall, an incomplete expansion joint (red); a bend
+            // node near the near end, a corner with no bend, an expansion joint without torsion or with both transverse and
+            // bending, a rigid with no weight, a temperature CAESAR would read as an expansion (amber)
             Func<string, string> pc = key => PipeWorkbookGui.CalcRef(key, 2);
             PipeWorkbookGui.Rule(el, "K2:K" + L, "AND(K2<>\"\",OR(" + pc("fB") + "," + pc("fN") + "))", t.Red);
+            PipeWorkbookGui.Rule(el, "K2:K" + L, "AND(K2<>\"\"," + pc("fH") + ")", t.Amber);
             PipeWorkbookGui.Rule(el, "J2:J" + L, pc("fA"), t.Red);
             PipeWorkbookGui.Rule(el, "H2:H" + L, pc("fC"), t.Red);
             PipeWorkbookGui.Rule(el, "X2:X" + L, "AND(X2<>\"\"," + pc("fC") + ")", t.Red);
             PipeWorkbookGui.Rule(el, "Z2:Z" + L, "AND(Z2<>\"\"," + pc("fC") + ")", t.Red);
             PipeWorkbookGui.Rule(el, "J2:J" + L, pc("fK"), t.Amber);
-            PipeWorkbookGui.Rule(el, "P2:S" + L, pc("fE"), t.Amber);
+            PipeWorkbookGui.Rule(el, "P2:S" + L, pc("fE"), t.Red);
+            PipeWorkbookGui.Rule(el, "P2:S" + L, pc("fF"), t.Amber);
+            PipeWorkbookGui.Rule(el, "M2:M" + L, "AND(" + pc("Kd") + "=1,N($M2)=0)", t.Amber);     // a rigid with no weight (18E)
             PipeWorkbookGui.Rule(el, "AF2:AN" + L, PipeWorkbookGui.AlphaRule("AF2"), t.Amber);
             PipeWorkbookGui.Rule(el, "J2:J" + L, PipeWorkbookGui.NoRadiusRule("J2"), t.Amber);
             PipeWorkbookGui.Rule(el, "D2:F" + L, "AND(ISNUMBER($B2),N($D2)=0,N($E2)=0,N($F2)=0,ISNUMBER($D2)+ISNUMBER($E2)+ISNUMBER($F2)+($D2=\"\")+($E2=\"\")+($F2=\"\")>=3)", t.Amber);
@@ -460,6 +464,7 @@ public static class PipeWorkbook
         PipeWorkbookGui.Rule(sf, "D2:E" + limF, "AND(ISNUMBER(D2),D2>0,D2<1)", t.Red);                                           // a user SIF under 1
         PipeWorkbookGui.Rule(sf, "G2:G" + limF, "AND($C2=1,N(G2)<=0)", t.Amber);                                                  // a reinforced tee without its pad
         PipeWorkbookGui.Rule(sf, "B2:B" + limF, "AND(ISNUMBER(B2)," + PipeWorkbookGui.TeeType("$C2") + ",COUNTIF(" + nFrom + ",B2)+COUNTIF(" + nTo + ",B2)<>3)", t.Amber);   // a tee not of three pipes
+        PipeWorkbookGui.Rule(sf, "C2:C" + limF, "AND(ISNUMBER(C2),C2>=14,C2<=17)", t.Amber);                                    // CAESAR 15.01 read 14-17 as no tee (33E)
 
         // ---- Forces, Displacements
         var fo = b.Add("Forces");
@@ -573,8 +578,6 @@ public static class PipeWorkbook
             hg.Set(r, 20, h.Tag);
             r++;
         }
-        if (m.Source != null && !m.Source.Seed && m.Source.TailNozzleLines < 0 && m.Source.MiscelTail.Count > 4)
-            hg.Set(0, 22, "this job's MISCEL_1 tail (nozzles, hangers) is in a layout Pluto does not take apart: it is carried as written, so its hangers are not listed here and cannot be edited (CAESAR keeps them)", XlsxBook.Note);
         int limH = Math.Max(500, m.Hangers.Count + 300);
         PipeWorkbookGui.Table(hg, t, hgh, PipeWorkbookGui.HangerCols(), m.Hangers.Count, limH);
         PipeWorkbookGui.Rule(hg, "B2:B" + limH, "AND(B2=\"\",COUNTA($A2,$C2:$U2)>0)", t.Red);
@@ -585,6 +588,7 @@ public static class PipeWorkbook
         PipeWorkbookGui.Rule(hg, "D2:E" + limH, "AND(ISNUMBER($D2),$D2>0,NOT(ISNUMBER($E2)))", t.Red);                                 // a rate without its cold load
         PipeWorkbookGui.Rule(hg, "D2:F" + limH, "AND(ISNUMBER($D2),$D2>0,ISNUMBER($F2),$F2>0)", t.Red);                                // a constant support with a rate
         PipeWorkbookGui.Rule(hg, "Q2:T" + limH, "OR(AND(ISNUMBER($Q2),$R2=\"\"),AND($Q2=\"\",$R2<>\"\"),AND(ISNUMBER($S2),$T2=\"\"),AND($S2=\"\",$T2<>\"\"))", t.Red);   // a node to free and its code
+        PipeWorkbookGui.Rule(hg, "B2:B" + limH, "AND(ISNUMBER(B2),N($D2)<=0,N($F2)<=0,COUNTIF(ck_rn,B2)+COUNTIF(Displacements!$B$2:$B$" + L2 + ",B2)>0)", t.Amber);   // a designed hanger with a restraint or a displacement there (72E)
 
         // ---- Nozzles
         var nz = b.Add("Nozzles");
@@ -619,6 +623,19 @@ public static class PipeWorkbook
             string cn = XlsxBook.Column(4 + f);
             PipeWorkbookGui.Rule(nz, cn + "2:" + cn + limN, "AND(" + cn + "2<>\"\",NOT(OR(" + string.Join(",", uses.ToArray()) + ")))", t.Red);
         }
+        // CAESAR's error checker on nozzles (vault/arms/caesar-checks.md): stiffeners closer than the nozzle's radius (118E),
+        // a custom nozzle without its vessel material (79E) red; the node a restraint's, a displacement's or a hanger's
+        // (266E), an API 650 tank under 120 ft (123E), its growth in a vector imposed displacements use (244E), a WRC 297
+        // vessel without its material, a PD 5500 nozzle (135E on the one Pluto wrote; its values are not checked) amber
+        // the nozzle's radius in the length unit (its OD blank: the pipe's at the node)
+        string nzRadius = "(IF(ISNUMBER($E2),$E2," + PipeWorkbookGui.OdAtNode("$B2", n) + ")*pl_d2in*pl_i2l/2)";
+        PipeWorkbookGui.Rule(nz, "L2:M" + limN, "AND($D2=\"WRC 297\",OR(NOT(ISNUMBER(L2)),N(L2)<=0,N(L2)<" + nzRadius + "))", t.Red);
+        PipeWorkbookGui.Rule(nz, "T2:T" + limN, "AND($D2=\"Custom\",NOT(N(T2)>0))", t.Red);
+        PipeWorkbookGui.Rule(nz, "T2:T" + limN, "AND($D2=\"WRC 297\",NOT(N(T2)>0))", t.Amber);
+        PipeWorkbookGui.Rule(nz, "B2:B" + limN, "AND(ISNUMBER(B2),COUNTIF(ck_rn,B2)+COUNTIF(Displacements!$B$2:$B$" + L2 + ",B2)+COUNTIF(Hangers!$B$2:$B$" + L2 + ",B2)>0)", t.Amber);
+        PipeWorkbookGui.Rule(nz, "H2:H" + limN, "AND($D2=\"API 650\",ISNUMBER(H2),H2>0,H2*pl_d2in<" + PipeReview.ApiMinTankOdIn.ToString(CultureInfo.InvariantCulture) + ")", t.Amber);
+        PipeWorkbookGui.Rule(nz, "U2:U" + limN, "AND($D2=\"API 650\",ISNUMBER(U2),COUNTIF(Displacements!$C$2:$C$" + L2 + ",U2)>0)", t.Amber);
+        PipeWorkbookGui.Rule(nz, "D2:D" + limN, "$D2=\"PD 5500\"", t.Amber);
 
         // ---- Coords
         var co = b.Add("Coords");
@@ -688,6 +705,7 @@ public static class PipeWorkbook
 
         // ---- Start: how to use it, the sheets, the live checks, the colour key, the reference
         Func<string, string, string> rowsOf = (sheet, cols) => "SUMPRODUCT(--(LEN(" + string.Join("&", cols.Split(',').Select(c => sheet + "!$" + c + "$2:$" + c + "$" + L2).ToArray()) + ")>0))";
+        bool tailWhole = m.Source != null && !m.Source.Seed && m.Source.TailNozzleLines < 0 && m.Source.MiscelTail.Count > 4;
         var sheets = new List<PipeWorkbookGui.SheetInfo>
         {
             new PipeWorkbookGui.SheetInfo("Settings", "title, notes, vertical axis, ambient temperature", null),
@@ -702,7 +720,9 @@ public static class PipeWorkbook
             new PipeWorkbookGui.SheetInfo("Uniform", "uniform loads (weight, seismic g's) on elements", rowsOf("Uniform", "A,B")),
             new PipeWorkbookGui.SheetInfo("Wind", "wind / wave data on elements", rowsOf("Wind", "A,B")),
             new PipeWorkbookGui.SheetInfo("Joints", "couplings, hinges, slip joints: ties between two nodes per DOF", rowsOf("Joints", "B,C")),
-            new PipeWorkbookGui.SheetInfo("Hangers", "spring hangers: designed by CAESAR, springs as given, constant supports", rowsOf("Hangers", "B,C")),
+            // a tail Pluto does not take apart is carried whole: said here, not on the sheet, whose header row is read
+            new PipeWorkbookGui.SheetInfo("Hangers", tailWhole ? "this job's hangers and nozzles are in a MISCEL_1 layout Pluto does not take apart: carried as written (CAESAR keeps them), not listed here, not editable"
+                                                               : "spring hangers: designed by CAESAR, springs as given, constant supports", rowsOf("Hangers", "B,C")),
             new PipeWorkbookGui.SheetInfo("Nozzles", "flexible nozzles on vessels and tanks: WRC 297, API 650, PD 5500, custom stiffnesses", rowsOf("Nozzles", "B,D")),
             new PipeWorkbookGui.SheetInfo("Coords", "where pieces of the model start", rowsOf("Coords", "A")),
             new PipeWorkbookGui.SheetInfo("Nodes", "read-only: every node, its position and what is on it", null),
@@ -712,6 +732,9 @@ public static class PipeWorkbook
         Func<string, string, string> errIn = (sheet, cols) => "SUMPRODUCT(--ISERROR(" + sheet + "!$" + cols.Split(':')[0] + "$2:$" + cols.Split(':')[1] + "$" + L2 + "))";
         Func<string, string, string, string> unknown = (rng, list, what) => "SUMPRODUCT((" + rng + "<>\"\")*(COUNTIF(" + list + "," + rng + ")=0))";
         Func<string, string> col = c => "Elements!$" + c + "$2:$" + c + "$" + L2;
+        Func<string, string> nzc = c => "Nozzles!$" + c + "$2:$" + c + "$" + L2;
+        // a nozzle's radius, row by row (its OD blank: the pipe's at the node), in the length unit
+        string nzRad = "((" + nzc("E") + "+(1-ISNUMBER(" + nzc("E") + "))*" + PipeWorkbookGui.OdAtNode(nzc("B"), n) + ")*pl_d2in*pl_i2l/2)";
         Func<string, string, string> missingNodes = (sheet, c) => "SUMPRODUCT(ISNUMBER(" + sheet + "!$" + c + "$2:$" + c + "$" + L2 + ")*(COUNTIF(" + nFrom + "," + sheet + "!$" + c + "$2:$" + c + "$" + L2 + ")+COUNTIF(" + nTo + "," + sheet + "!$" + c + "$2:$" + c + "$" + L2 + ")=0))";
         string LS = limS.ToString(CultureInfo.InvariantCulture);
         var checks = new List<PipeWorkbookGui.Check>
@@ -741,8 +764,15 @@ public static class PipeWorkbook
             new PipeWorkbookGui.Check("Elements: a bend node number used twice (on two bends, or also a From / To): CAESAR stops on it",
                 PipeWorkbookGui.CalcCount("fB", n), false),
             // CAESAR's error checker (vault/arms/caesar-checks.md): red = it stops, amber = it warns
-            new PipeWorkbookGui.Check("Elements: a bend outside 5-95 deg, or a node on a bend within 5 deg of its ends or of another: CAESAR stops on it",
+            new PipeWorkbookGui.Check("Elements: a bend outside 5-95 deg, or a node on a bend within 5 deg of its far end or of another: CAESAR stops on it (5E, 12E)",
                 PipeWorkbookGui.CalcCount("fA", n) + "+" + PipeWorkbookGui.CalcCount("fN", n), false),
+            new PipeWorkbookGui.Check("Elements: an expansion joint without its axial stiffness, or without transverse and bending: CAESAR stops on it (19E)",
+                PipeWorkbookGui.CalcCount("fE", n), false),
+            new PipeWorkbookGui.Check("Nozzles: a WRC 297 nozzle's stiffener or head closer than its radius, or not given: CAESAR stops on it (118E)",
+                "IFERROR(SUMPRODUCT((" + nzc("D") + "=\"WRC 297\")*(((NOT(ISNUMBER(" + nzc("L") + ")))+(" + nzc("L") + "<=0)+(NOT(ISNUMBER(" + nzc("M") + ")))+(" + nzc("M") + "<=0)+" +
+                "(" + nzc("L") + "<" + nzRad + ")+(" + nzc("M") + "<" + nzRad + "))>0)),0)", false),
+            new PipeWorkbookGui.Check("Nozzles: a custom nozzle without its vessel material: CAESAR stops on it (79E)",
+                "SUMPRODUCT((" + nzc("D") + "=\"Custom\")*(((NOT(ISNUMBER(" + nzc("T") + ")))+(" + nzc("T") + "<=0))>0))", false),
             new PipeWorkbookGui.Check("Elements / Sections: corrosion as thick as the wall: CAESAR stops on it",
                 PipeWorkbookGui.CalcCount("fC", n) + "+SUMPRODUCT(ISNUMBER(Sections!$E$2:$E$" + LS + ")*(Sections!$E$2:$E$" + LS + ">0)*ISNUMBER(Sections!$C$2:$C$" + LS + ")*(Sections!$E$2:$E$" + LS + ">=Sections!$C$2:$C$" + LS + "))", false),
             new PipeWorkbookGui.Check("SIFs: a user SIF below 1.0: CAESAR does not accept it",
@@ -753,13 +783,32 @@ public static class PipeWorkbook
             new PipeWorkbookGui.Check("Node numbers above 8,000,000 (CAESAR's limit)",
                 string.Join("+", new[] { "Elements!$B$2:$C$", "Restraints!$B$2:$B$", "Restraints!$D$2:$D$", "SIFs!$B$2:$B$", "Forces!$B$2:$B$", "Displacements!$B$2:$B$", "Hangers!$B$2:$C$", "Nozzles!$B$2:$C$", "Coords!$A$2:$A$" }
                     .Select(r0 => "SUMPRODUCT(ISNUMBER(" + r0 + L2 + ")*(" + r0 + L2 + ">8000000))").ToArray()), false),
-            new PipeWorkbookGui.Check("Elements: a change of direction with no bend or tee: CAESAR warns",
+            new PipeWorkbookGui.Check("Elements: a change of direction with no bend or tee: CAESAR warns where the second element follows the first (21E); the others it does not see",
                 PipeWorkbookGui.CalcCount("fK", n), true),
-            new PipeWorkbookGui.Check("Elements: an expansion joint short of the stiffnesses CAESAR asks for",
-                PipeWorkbookGui.CalcCount("fE", n), true),
-            new PipeWorkbookGui.Check("SIFs: a tee where other than three pipes meet: CAESAR warns",
-                "SUMPRODUCT(ISNUMBER(SIFs!$B$2:$B$" + L2 + ")*((SIFs!$C$2:$C$" + L2 + ">=1)*(SIFs!$C$2:$C$" + L2 + "<=6)+(SIFs!$C$2:$C$" + L2 + ">=14)*(SIFs!$C$2:$C$" + L2 + "<=17))*" +
+            new PipeWorkbookGui.Check("Elements: a node on a bend within 5 deg of its near end (CAESAR's configuration asks for 5 deg; 15.01 let one at 3 deg pass)",
+                PipeWorkbookGui.CalcCount("fH", n), true),
+            new PipeWorkbookGui.Check("Elements: an expansion joint without its torsion stiffness, or with both transverse and bending on a joint with length",
+                PipeWorkbookGui.CalcCount("fF", n), true),
+            new PipeWorkbookGui.Check("Elements: a rigid (valve, flange ...) with no weight: CAESAR warns (18E) and adds no fluid or insulation weight",
+                "SUMPRODUCT(((LEFT(" + col("G") + ",5)=\"Rigid\")+(" + col("G") + "=\"Valve\")+(" + col("G") + "=\"Flange\")+(" + col("G") + "=\"Flange pair\")+(" + col("G") + "=\"Flanged valve\")>0)*" +
+                "(((" + col("M") + "=\"\")+(" + col("M") + "=0))>0))", true),
+            new PipeWorkbookGui.Check("SIFs: a tee where other than three pipes meet: CAESAR warns (39E)",
+                "SUMPRODUCT(ISNUMBER(SIFs!$B$2:$B$" + L2 + ")*(SIFs!$C$2:$C$" + L2 + ">=1)*(SIFs!$C$2:$C$" + L2 + "<=6)*" +
                 "((COUNTIF(" + nFrom + ",SIFs!$B$2:$B$" + L2 + ")+COUNTIF(" + nTo + ",SIFs!$B$2:$B$" + L2 + "))<>3))", true),
+            new PipeWorkbookGui.Check("SIFs: type 14-17, which CAESAR 15.01 read as no intersection type (33E: SIFs of 1.0 at a branch)",
+                "SUMPRODUCT(ISNUMBER(SIFs!$C$2:$C$" + L2 + ")*(SIFs!$C$2:$C$" + L2 + ">=14)*(SIFs!$C$2:$C$" + L2 + "<=17))", true),
+            new PipeWorkbookGui.Check("Hangers: a hanger CAESAR designs at a node with a restraint or an imposed displacement: CAESAR warns (72E)",
+                "SUMPRODUCT(ISNUMBER(Hangers!$B$2:$B$" + L2 + ")*(1-ISNUMBER(Hangers!$D$2:$D$" + L2 + ")*(Hangers!$D$2:$D$" + L2 + ">0))*(1-ISNUMBER(Hangers!$F$2:$F$" + L2 + ")*(Hangers!$F$2:$F$" + L2 + ">0))*" +
+                "((COUNTIF(ck_rn,Hangers!$B$2:$B$" + L2 + ")+COUNTIF(Displacements!$B$2:$B$" + L2 + ",Hangers!$B$2:$B$" + L2 + "))>0))", true),
+            new PipeWorkbookGui.Check("Nozzles: the nozzle node also a restraint's, a displacement's or a hanger's: CAESAR warns (266E)",
+                "SUMPRODUCT(ISNUMBER(" + nzc("B") + ")*((COUNTIF(ck_rn," + nzc("B") + ")+COUNTIF(Displacements!$B$2:$B$" + L2 + "," + nzc("B") + ")+COUNTIF(Hangers!$B$2:$B$" + L2 + "," + nzc("B") + "))>0))", true),
+            new PipeWorkbookGui.Check("Nozzles: an API 650 tank under 120 ft (CAESAR warns, 123E), or its growth in a vector imposed displacements use (244E)",
+                "IFERROR(SUMPRODUCT((" + nzc("D") + "=\"API 650\")*ISNUMBER(" + nzc("H") + ")*(" + nzc("H") + ">0)*(" + nzc("H") + "*pl_d2in<" + PipeReview.ApiMinTankOdIn.ToString(CultureInfo.InvariantCulture) + ")),0)+" +
+                "SUMPRODUCT((" + nzc("D") + "=\"API 650\")*ISNUMBER(" + nzc("U") + ")*(COUNTIF(Displacements!$C$2:$C$" + L2 + "," + nzc("U") + ")>0))", true),
+            new PipeWorkbookGui.Check("Nozzles: a WRC 297 nozzle without its vessel material (CAESAR stopped on a custom one without, 79E)",
+                "SUMPRODUCT((" + nzc("D") + "=\"WRC 297\")*(((NOT(ISNUMBER(" + nzc("T") + ")))+(" + nzc("T") + "<=0))>0))", true),
+            new PipeWorkbookGui.Check("Nozzles: PD 5500. CAESAR 15.01 stopped on the one Pluto wrote (135E): give it in CAESAR (one CAESAR wrote is carried as written)",
+                "COUNTIF(" + nzc("D") + ",\"PD 5500\")", true),
             new PipeWorkbookGui.Check("Processes / Elements: a temperature under 0.05 (CAESAR reads it as a thermal expansion)",
                 string.Join("+", new[] { "Processes!$B$2:$J$", "Elements!$AF$2:$AN$" }.Select(r0 => "SUMPRODUCT(ISNUMBER(" + r0 + L2 + ")*(" + r0 + L2 + "<>0)*(" + r0 + L2 + "<0.05)*(" + r0 + L2 + ">-0.05))").ToArray()), true),
             new PipeWorkbookGui.Check("Uniform: g's and force per length both used: CAESAR warns",
@@ -782,7 +831,7 @@ public static class PipeWorkbook
             "Restraints: Stiffness blank = rigid; Cos blank = the type's own axis (guides and limit stops take the pipe's). Forces / Displacements: one row per node and load vector (1-9); a displacement left blank is free, 0 holds it.",
             "Uniform / Wind: per element; an element no row names has none (CAESAR carries a load on to later elements; Pluto ends it there). Element = an Id, a range in the Elements order (E3:E9), or blank with From and To (a chain of elements).",
             "Joints: DOFs like 'axial gap=0.125 k=5000; shear; torsion; bending gap=2' (frame pipe) or 'X; Y; RZ k=1e6' (frame global); a DOF not listed is free.",
-            "Nozzles: Type WRC 297 / PD 5500 (a vessel: give its OD, wall and centreline), API 650 (a tank shell), Custom (its four stiffnesses); Vessel node blank = a rigid vessel. A column the type does not use is red.",
+            "Nozzles: Type WRC 297 / PD 5500 (a vessel: give its OD, wall, centreline, material and the distances to its stiffeners or heads), API 650 (a tank shell), Custom (its four stiffnesses and the vessel's material); Vessel node blank = a rigid vessel. A column the type does not use is red. CAESAR 15.01 stopped on a PD 5500 nozzle Pluto wrote: give those in CAESAR.",
             "Hangers: Rate and Constant blank = CAESAR designs the hanger (from Table; it then asks for its hanger-design load cases). Rate with Cold load = a spring as given. Constant = a constant-effort support. One row per node: Count for more than one.",
             "Read back: only the input sheets. Start, 3D View, Nodes and Carried are rebuilt on every export. The hidden _pluto sheet holds the model this workbook was written from: what you did not change is given back exactly.",
         };

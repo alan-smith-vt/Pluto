@@ -56,26 +56,43 @@ legs = [["+Y", 6]]
 name = "b14"
 from = { run = "header", at = 60 }
 section = "4in"
-tee = "bf_sweepolet"
+tee = "none"
 legs = [["+Y", 6]]
 [[runs]]
 name = "b15"
 from = { run = "header", at = 70 }
 section = "4in"
-tee = "latrolet"
+tee = "none"
 legs = [["+Y", 6]]
 [[runs]]
 name = "b16"
 from = { run = "header", at = 80 }
 section = "4in"
-tee = "insert_weldolet"
+tee = "none"
 legs = [["+Y", 6]]
 [[runs]]
 name = "b17"
 from = { run = "header", at = 90 }
 section = "4in"
-tee = "full_encirclement"
+tee = "none"
 legs = [["+Y", 6]]
+# SIF types 14-17 as entries: CAESAR 15.01 read them as no intersection type (33E), so a branch's tee does not take them
+[[sifs]]
+run = "header"
+at = 60
+type = "bf_sweepolet"
+[[sifs]]
+run = "header"
+at = 70
+type = "latrolet"
+[[sifs]]
+run = "header"
+at = 80
+type = "insert_weldolet"
+[[sifs]]
+run = "header"
+at = 90
+type = "full_encirclement"
 [[sifs]]
 run = "header"
 at = 5

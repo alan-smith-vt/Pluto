@@ -1590,13 +1590,17 @@ public static class PipeBuilder
             return n;
         }
 
-        // a branch's tee: CAESAR's intersection types (1-6, 14-17) by name, or "none"
+        // a branch's tee: CAESAR's intersection types (1-6) by name, or "none". CAESAR 15.01 read 14-17 as no intersection
+        // type (33E: SIFs of 1.0 at the branch), so a branch does not take them; a [[sifs]] entry still writes them
         int TeeCode(string tee, string w)
         {
             if (tee == "none") return -1;
             int code = PipeModelSifTypes.Code(tee);
+            if (code >= 14)
+                throw Err(w + " = \"" + tee + "\": CAESAR 15.01 reads SIF type " + code + " as no intersection type (33E: pipe flexibilities and SIFs of 1.0 at the branch); " +
+                          "give the branch a type CAESAR takes as a tee (welding, reinforced, unreinforced, weldolet, sweepolet, extruded), or \"none\" and a [[sifs]] entry");
             if (code < 0 || !PipeReview.IsTeeType(code))
-                throw Err(w + " = \"" + tee + "\": a tee type (welding, reinforced, unreinforced, weldolet, sweepolet, extruded, bf_sweepolet, latrolet, insert_weldolet, full_encirclement) or \"none\"");
+                throw Err(w + " = \"" + tee + "\": a tee type (welding, reinforced, unreinforced, weldolet, sweepolet, extruded) or \"none\"");
             return code;
         }
 

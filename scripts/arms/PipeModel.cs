@@ -547,8 +547,9 @@ public class PipeModelSource
     }
 }
 
-// CAESAR's SIF & tee types by number, as its input lists them (names: PipeModelCodes.SifName). 1-6 and 14-17 are
-// intersections, 7-13 joints. Seen in CAESAR-written files: 3 (welding tee) and 11; the rest follow the list's order.
+// CAESAR's SIF & tee types by number, as its documentation lists them, with their names. 1-6 are
+// intersections, 7-13 joints; CAESAR 15.01 read 14-17 as no intersection type (33E). Seen in CAESAR-written files: 3
+// (welding tee) and 11; the rest follow the list's order.
 public static class PipeModelSifTypes
 {
     public static readonly string[] Names =
