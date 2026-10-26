@@ -1,0 +1,50 @@
+/* ============================================================
+   modules.css  --  module flyouts (modules.js): one tab per loaded
+   module down the right edge under the groups tab, then the "+" tab
+   (optional modules). Matches groups.css / predicates.css styling.
+   ============================================================ */
+
+.md-panel {
+    position: fixed;
+    right: 0;
+    z-index: 14;               /* with grPanel: under pdPanel / scPanel, above the view cube canvas (13) */
+    display: flex;
+    flex-direction: row-reverse;
+    align-items: flex-start;
+}
+.md-tab {
+    width: 30px;
+    height: 42px;
+    background: rgba(16, 16, 20, 0.94);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 15px;
+    color: #f2b84b;
+    user-select: none;
+}
+.md-tab:hover { background: rgba(40, 40, 50, 0.94); }
+.md-body {
+    width: 268px;
+    background: rgba(16, 16, 20, 0.94);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-right: none;
+    padding: 12px 14px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+}
+.md-panel.collapsed .md-body { display: none; }
+
+/* the "+" list */
+.md-item { display: flex; align-items: center; gap: 8px; padding: 5px 0; border-top: 1px solid rgba(255, 255, 255, 0.07); }
+.md-item:first-of-type { border-top: none; }
+.md-item-icon { width: 18px; text-align: center; color: #f2b84b; }
+.md-item-text { flex: 1; }
+.md-item-desc { color: #8888aa; font-size: 11px; }
+.md-core { color: #8888aa; font-size: 11px; }

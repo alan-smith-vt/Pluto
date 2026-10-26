@@ -1,10 +1,10 @@
 // ================================================================
-// addons/cutPicker.js  --  ADD-ON (2026-10-26): hand-pick clean-model members to drop.
+// modules/cutPicker.js  --  module (modules.js, core): hand-pick clean-model members to drop.
 //
-// Self-contained: one <script> line in index.html; delete it (and this file) to remove.
+// Self-contained: its REGISTRY entry in modules.js loads it; remove that entry (and this file) to drop it.
 // The converter side is scripts/arms/DuctsManualDrop.cs (DuctDrop in duct-config.psd1).
 //
-// "Cut picker" button (bottom left) arms it. While armed, on any overlay whose members carry
+// Its tab's Arm button arms it. While armed, on any overlay whose members carry
 // clean-model labels ("clean | system ... | parts <ids>"):
 //   Shift+click         toggle one member
 //   Shift+drag          box: add every visible clean member whose centre is inside
@@ -202,24 +202,23 @@ var FEACutPicker = (function () {
         setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
     }
 
-    // ---- panel ---------------------------------------------------------
+    // ---- tab (modules.js) -----------------------------------------------
     var css = document.createElement('style');
     css.textContent =
-        '#cutPick{position:fixed;left:12px;bottom:12px;z-index:50;font:12px system-ui,sans-serif;color:#ddd;background:#1b1d22e8;' +
-        'border:1px solid #444;border-radius:6px;padding:6px 8px;min-width:150px}' +
-        '#cutPick button{font:inherit;margin:2px 2px 0 0;padding:2px 7px;background:#2c2f36;color:#ddd;border:1px solid #555;border-radius:4px;cursor:pointer}' +
-        '#cutPick button.on{background:#ff3b30;border-color:#ff3b30;color:#fff}' +
-        '#cutPick .cp-body{display:none;margin-top:4px}#cutPick.armed .cp-body{display:block}' +
-        '#cutPick .cp-hint{color:#999;margin:3px 0}#cutPick .cp-status{color:#ffcc00;min-height:1em}' +
+        '.cp-arm.on{background:#ff3b30;border-color:#ff3b30;color:#fff}' +
+        '.cp-count{margin:6px 0 2px}.cp-status{color:#ffcc00;min-height:1em;margin-top:4px}' +
         '.cutpick-box{position:fixed;border:1px dashed #ff3b30;background:#ff3b3014;pointer-events:none;z-index:60}';
     document.head.appendChild(css);
-    var el = document.createElement('div'); el.id = 'cutPick';
-    el.innerHTML = '<button class="cp-arm">Cut picker</button>' +
-        '<div class="cp-body"><div class="cp-count"></div>' +
-        '<div class="cp-hint">Shift+click toggle · Shift+drag add · Shift+Alt+drag remove</div>' +
-        '<button class="cp-dl">Download drop.txt</button><button class="cp-undo">Undo</button><button class="cp-clear">Clear</button>' +
-        '<div class="cp-status"></div></div>';
-    document.body.appendChild(el);
+    var el = FEAModules.tab('cutPicker');
+    var box = document.createElement('div');
+    box.innerHTML = '<div class="fea-row"><button class="fea-btn cp-arm" title="While armed, Shift+click / Shift+drag on clean-model overlays pick members">Arm</button></div>' +
+        '<div class="cp-count"></div>' +
+        '<div class="fea-hint">Arm, then Shift+click to toggle a member, Shift+drag to add a box, Shift+Alt+drag to remove. ' +
+        'Hidden groups are skipped. Save the list as the DuctDrop file and rerun the export.</div>' +
+        '<div class="fea-row" style="margin-top:6px;"><button class="fea-btn cp-dl">Download drop.txt</button>' +
+        '<button class="fea-btn cp-undo">Undo</button><button class="fea-btn cp-clear">Clear</button></div>' +
+        '<div class="cp-status"></div>';
+    el.appendChild(box);
     var q = function (s) { return el.querySelector(s); };
     function status(t) { q('.cp-status').textContent = t || ''; }
     function updatePanel() {
@@ -229,10 +228,11 @@ var FEACutPicker = (function () {
     }
     q('.cp-arm').addEventListener('click', function () {
         armed = !armed;
-        el.classList.toggle('armed', armed); q('.cp-arm').classList.toggle('on', armed);
+        q('.cp-arm').classList.toggle('on', armed); q('.cp-arm').textContent = armed ? 'Armed' : 'Arm';
         if (armed && !Object.keys(picked).length) restore(saved());
         status(''); redraw();
     });
+    updatePanel();
     q('.cp-dl').addEventListener('click', download);
     q('.cp-undo').addEventListener('click', function () { if (undo.length) { restore(undo.pop()); save(); redraw(); } });
     q('.cp-clear').addEventListener('click', function () { pushUndo(); picked = {}; save(); redraw(); });
