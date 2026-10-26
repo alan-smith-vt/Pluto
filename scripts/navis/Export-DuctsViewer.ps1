@@ -58,7 +58,7 @@ param(
     [string]$Services,
     [string]$Systems,
     [string]$Cuts,
-    [string]$Drop   # add-on: hand-picked drops (viewer Cut picker list); default DuctDrop in the duct config; none = off
+    [string]$Drop   # add-on: hand-picked drop lists (viewer Cut picker), comma separated; default DuctDrop in the duct config; none = off
 )
 $ErrorActionPreference = "Stop"
 $Part = $(if ($Part) { $Part -join "," } else { $null })
@@ -130,15 +130,12 @@ if ($Box) {
     }
     # add-on (DuctsManualDrop.cs): hand-picked drops from the viewer's Cut picker
     [DuctsToPluto]::ManualDrop.Clear()
-    if (-not $Drop -and (Test-Path $cfg)) { $Drop = (Import-PowerShellDataFile $cfg).DuctDrop }
-    # not configured: drop.txt beside the cut points file, when there is one
-    if (-not $Drop -and $Cuts -and $Cuts -ne "none") {
-        $auto = Join-Path (Split-Path $Cuts) "drop.txt"
-        if (Test-Path $auto) { $Drop = $auto }
-    }
-    if ($Drop -and $Drop -ne "none") {
-        if (-not (Test-Path $Drop)) { throw "drop list not found: $Drop (DuctDrop in duct-config.psd1 or -Drop; -Drop none = off)" }
-        Write-Output ("manual drop: {0} parts from {1}" -f [DuctsToPluto]::ReadManualDrop((Resolve-Path $Drop).Path), $Drop)
+    # DuctDrop: one file or a list of files, only those named (no default); -Drop overrides, -Drop none = off
+    $dropFiles = @($(if ($Drop) { $Drop -split ',' } elseif (Test-Path $cfg) { (Import-PowerShellDataFile $cfg).DuctDrop }) |
+        ForEach-Object { "$_".Trim() } | Where-Object { $_ -and $_ -ne "none" })
+    foreach ($f in $dropFiles) {
+        if (-not (Test-Path $f)) { throw "drop list not found: $f (DuctDrop in duct-config.psd1 or -Drop; -Drop none = off)" }
+        Write-Output ("manual drop: {0} parts from {1}" -f [DuctsToPluto]::ReadManualDrop((Resolve-Path $f).Path), $f)
     }
     Write-Output ("primary systems: " + $(if ([DuctsToPluto]::PrimarySystems.Count) { [DuctsToPluto]::PrimarySystems -join ", " } else { "none configured (DuctSystems in duct-config.psd1 or -Systems)" }))
     $r = [DuctsToPluto]::ExportRevit($Run, [IO.Path]::GetFullPath($Revit), $Out, $ModelId, $Unit, $Room, $Part)

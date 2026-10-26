@@ -16,15 +16,20 @@ public partial class DuctsToPluto
 {
     public static readonly HashSet<string> ManualDrop = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
+    // Adds one list's parts to ManualDrop (several lists add up; the caller clears); returns the parts it read.
+    // A cut-points CSV (Run-Sap -Points header) given here by mistake is refused rather than read as ids.
     public static int ReadManualDrop(string path)
     {
-        ManualDrop.Clear();
+        int n = 0;
         foreach (string raw in File.ReadAllLines(path))
         {
             string s = raw; int h = s.IndexOf('#'); if (h >= 0) s = s.Substring(0, h);
-            s = s.Trim(); if (s != "") ManualDrop.Add(s);
+            s = s.Trim(); if (s == "") continue;
+            if (s.StartsWith("Name,Found", StringComparison.OrdinalIgnoreCase))
+                throw new Exception("DuctsToPluto: " + path + " is a cut points CSV (DuctCuts), not a drop list (DuctDrop)");
+            ManualDrop.Add(s); n++;
         }
-        return ManualDrop.Count;
+        return n;
     }
 
     static string ApplyManualDrop(List<CEdge> clean, Dictionary<int, double[]> P)
