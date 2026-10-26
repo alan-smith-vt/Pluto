@@ -280,13 +280,17 @@ public partial class DuctsToPluto
     // Each cut point snaps to a clean joint within CutSnapIn, else to a point on a prismatic duct edge (split there).
     // The model is then cut at those joints: per system the largest connected piece (duct length) is kept, and every
     // other piece meeting a cut joint is dropped. Edges of the kept piece ending at a cut get CUT_END.
+    // A point named KEEP... is not a cut: the piece it lies on (nearest edge within CutSnapIn) is kept instead of the
+    // largest one; a system with keep points keeps only its marked pieces (for cuts where the shorter side is the scope).
     static string ApplyCuts(List<CEdge> clean, Dictionary<int, double[]> P)
     {
         if (CutPoints.Count == 0) return "";
         double snap = CutSnapIn / 12;
         var cutNodes = new HashSet<int>(); var report = new List<string>(); var notFound = new List<string>();
+        var keepPts = CutPoints.Where(x => x.Key.StartsWith("KEEP", StringComparison.OrdinalIgnoreCase)).ToList();
+        int nCuts = CutPoints.Count - keepPts.Count;
         int nextNode = P.Keys.Count > 0 ? P.Keys.Max() + 1 : 1;
-        foreach (KeyValuePair<string, double[]> cp in CutPoints)
+        foreach (KeyValuePair<string, double[]> cp in CutPoints.Except(keepPts))
         {
             double[] p = { cp.Value[0] / 12, cp.Value[1] / 12, cp.Value[2] / 12 };
             var used = new HashSet<int>(clean.SelectMany(x => new[] { x.A, x.B }));
@@ -327,17 +331,35 @@ public partial class DuctsToPluto
         }
         Func<List<CEdge>, double> len = l => l.Where(x => !x.Rigid).Sum(x => Len(P[x.A], P[x.B]));
         Func<List<CEdge>, string> sysOf = l => { CEdge e = l.FirstOrDefault(x => x.Src.Count > 0); return e != null ? e.Src[0].SysName : ""; };
-        var keep = new Dictionary<string, int>(StringComparer.Ordinal);
-        for (int i = 0; i < pieces.Count; i++) { string s = sysOf(pieces[i]); int k; if (!keep.TryGetValue(s, out k) || len(pieces[i]) > len(pieces[k])) keep[s] = i; }
+        var keep = new Dictionary<string, HashSet<int>>(StringComparer.Ordinal);
+        foreach (KeyValuePair<string, double[]> kp in keepPts)
+        {
+            double[] p = { kp.Value[0] / 12, kp.Value[1] / 12, kp.Value[2] / 12 };
+            CEdge bestE = null; double bestD = double.MaxValue;
+            foreach (CEdge ce in clean)
+            {
+                double t, lat; Project(P[ce.A], P[ce.B], p, out t, out lat);
+                double d = Len(Lerp(P[ce.A], P[ce.B], Math.Max(0, Math.Min(1, t))), p);
+                if (d < bestD) { bestD = d; bestE = ce; }
+            }
+            if (bestE == null || bestD > snap) { notFound.Add(string.Format(Inv, "{0} (nearest element {1:0.#} in)", kp.Key, bestD * 12)); continue; }
+            int i = piece[bestE]; string s = sysOf(pieces[i]); HashSet<int> ks;
+            if (!keep.TryGetValue(s, out ks)) { ks = new HashSet<int>(); keep[s] = ks; }
+            ks.Add(i);
+            report.Add(string.Format(Inv, "{0} keeps a {1:0.#} ft piece of {2} ({3:0.##} in)", kp.Key, len(pieces[i]), s == "" ? "(no system)" : s, bestD * 12));
+        }
+        var largest = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (int i = 0; i < pieces.Count; i++) { string s = sysOf(pieces[i]); int k; if (!largest.TryGetValue(s, out k) || len(pieces[i]) > len(pieces[k])) largest[s] = i; }
+        foreach (KeyValuePair<string, int> kv in largest) if (!keep.ContainsKey(kv.Key)) keep[kv.Key] = new HashSet<int> { kv.Value };
         var drop = new HashSet<int>();
         foreach (int n in cutNodes)
-            foreach (CEdge e in byNode[n]) { int i = piece[e]; if (keep[sysOf(pieces[i])] != i) drop.Add(i); }
+            foreach (CEdge e in byNode[n]) { int i = piece[e]; if (!keep[sysOf(pieces[i])].Contains(i)) drop.Add(i); }
         double dropFt = drop.Sum(i => len(pieces[i])); int dropN = drop.Sum(i => pieces[i].Count);
         clean.RemoveAll(e => drop.Contains(piece[e]));
         int ends = 0;
         foreach (CEdge e in clean) if (cutNodes.Contains(e.A) || cutNodes.Contains(e.B)) { e.Flags.Add("CUT_END"); ends++; }
         return string.Format(Inv, "NEW cuts: {0} of {1} placed, {2} elements ({3:0.#} ft of duct) dropped beyond them, {4} kept elements end at a cut (CUT_END){5}\nNEW cut points: {6}",
-            CutPoints.Count - notFound.Count, CutPoints.Count, dropN, dropFt, ends,
+            nCuts - notFound.Count(x => !x.StartsWith("KEEP", StringComparison.OrdinalIgnoreCase)), nCuts, dropN, dropFt, ends,
             notFound.Count > 0 ? "; NOT placed (no joint / duct within " + CutSnapIn.ToString("0.#", Inv) + " in): " + string.Join(", ", notFound.ToArray()) : "",
             string.Join("; ", report.ToArray()));
     }
