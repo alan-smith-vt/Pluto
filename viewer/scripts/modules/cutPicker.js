@@ -4,7 +4,7 @@
 // Self-contained: its REGISTRY entry in modules.js loads it; remove that entry (and this file) to drop it.
 // The converter side is scripts/arms/DuctsManualDrop.cs (DuctDrop in duct-config.psd1).
 //
-// Its tab's Arm button arms it. While armed, on any overlay whose members carry
+// Its tab's Arm button arms it. While armed, on any loaded file (main model or overlay) whose members carry
 // clean-model labels ("clean | system ... | parts <ids>"):
 //   Shift+click         toggle one member
 //   Shift+drag          box: add every visible clean member whose centre is inside
@@ -33,20 +33,39 @@ var FEACutPicker = (function () {
 
     var KEY = 'pluto.cutPicker';
     var armed = false;
-    var picked = {};          // key "<overlay name>|<elem>" -> { ov, elem, label, parts }
+    var picked = {};          // key "<source name>|<elem>" -> { src, elem, label, parts }
     var undo = [];
     var markers = null;
-    var centres = new WeakMap();   // drawable -> { local: Float32Array (3 per elem), tris: per elem first tri }
+    var centres = new WeakMap();   // beam build -> { local: Float32Array (3 per elem), tri: first triangle per elem }
+    var MAIN = '(main model)';
 
     // ---- data ----------------------------------------------------------
+    // Sources: the main model's beams (loaded with Choose files...) and every overlay's beams. Each is
+    // { name, part: { view, build, mesh }, shown(), label(e) }.
     function overlays() { return window.FEAOverlays ? FEAOverlays.list() : []; }
-    function beamPart(ov) { return ov.drawable && ov.drawable.beam; }
-    function key(ov, e) { return ov.name + '|' + e; }
+    function sources() {
+        var out = [];
+        if (window.FEABeams && FEABeams.view() && FEABeams.build() && FEABeams.mesh()) {
+            var v = FEABeams.view(), m = FEABeams.mesh();
+            out.push({ name: MAIN, part: { view: v, build: FEABeams.build(), mesh: m },
+                       shown: function () { return m.visible; },
+                       label: function (e) { return v.labels ? (v.labels.get(e) || '') : ''; } });
+        }
+        overlays().forEach(function (ov) {
+            var p = ov.drawable && ov.drawable.beam; if (!p) return;
+            out.push({ name: ov.name, part: p,
+                       shown: function () { return ov.ctx.look.visible && ov.drawable.root.visible; },
+                       label: function (e) { return ov.drawable.label('beam', e); } });
+        });
+        return out;
+    }
+    function source(name) { return sources().find(function (s) { return s.name === name; }); }
+    function isClean(src) { var n = src.part.view.header.nElements; return n > 0 && parseParts(src.label(0)) !== null; }
+    function key(src, e) { return src.name + '|' + e; }
 
     // per element: centre (mesh-local) and one triangle (for the visibility flag)
-    function centresOf(ov) {
-        var p = beamPart(ov); if (!p) return null;
-        var c = centres.get(ov.drawable); if (c) return c;
+    function centresOf(src) {
+        var p = src.part, c = centres.get(p.build); if (c) return c;
         var pos = p.build.geometry.getAttribute('position').array, t2e = p.build.triToElem;
         var n = p.view.header.nElements, sum = new Float64Array(n * 3), cnt = new Uint32Array(n), tri = new Int32Array(n).fill(-1);
         for (var t = 0; t < t2e.length; t++) {
@@ -57,22 +76,22 @@ var FEACutPicker = (function () {
         var local = new Float32Array(n * 3);
         for (var i = 0; i < n; i++) for (var j = 0; j < 3; j++) local[i * 3 + j] = cnt[i] ? sum[i * 3 + j] / cnt[i] : NaN;
         c = { local: local, tri: tri };
-        centres.set(ov.drawable, c);
+        centres.set(p.build, c);
         return c;
     }
-    function visible(ov, e) {
-        if (!ov.ctx.look.visible || !ov.drawable.root.visible) return false;
-        var p = beamPart(ov), c = centresOf(ov), va = p.build.geometry.getAttribute('elemVis');
-        return !va || c.tri[e] < 0 || va.array[c.tri[e] * 3] >= 0.5;   // elemVis: 1 shown, 0 hidden (Groups eyes)
+    function visible(src, e) {
+        if (!src.shown()) return false;
+        var c = centresOf(src), va = src.part.build.geometry.getAttribute('elemVis');
+        return !va || c.tri[e] < 0 || va.array[c.tri[e] * 3] >= 0.5;   // elemVis: 1 shown, 0 hidden (Groups eyes, isolate)
     }
-    function worldCentre(ov, e) {
-        var c = centresOf(ov), p = beamPart(ov);
+    function worldCentre(src, e) {
+        var c = centresOf(src);
         if (isNaN(c.local[e * 3])) return null;
-        return new THREE.Vector3(c.local[e * 3], c.local[e * 3 + 1], c.local[e * 3 + 2]).applyMatrix4(p.mesh.matrixWorld);
+        return new THREE.Vector3(c.local[e * 3], c.local[e * 3 + 1], c.local[e * 3 + 2]).applyMatrix4(src.part.mesh.matrixWorld);
     }
-    function entry(ov, e) {
-        var label = ov.drawable.label('beam', e), parts = parseParts(label);
-        return parts ? { ov: ov, elem: e, label: label, parts: parts } : null;
+    function entry(src, e) {
+        var label = src.label(e), parts = parseParts(label);
+        return parts ? { src: src, elem: e, label: label, parts: parts } : null;
     }
 
     function snapshot() { return Object.keys(picked); }
@@ -80,9 +99,8 @@ var FEACutPicker = (function () {
     function restore(keys) {
         picked = {};
         keys.forEach(function (k) {
-            var i = k.lastIndexOf('|'), name = k.substring(0, i), e = parseInt(k.substring(i + 1), 10);
-            var ov = overlays().find(function (o) { return o.name === name; });
-            var en = ov && beamPart(ov) && e < beamPart(ov).view.header.nElements ? entry(ov, e) : null;
+            var i = k.lastIndexOf('|'), src = source(k.substring(0, i)), e = parseInt(k.substring(i + 1), 10);
+            var en = src && e < src.part.view.header.nElements ? entry(src, e) : null;
             if (en) picked[k] = en;
         });
     }
@@ -96,7 +114,7 @@ var FEACutPicker = (function () {
         // the picked members' own triangles, red and translucent, drawn on top
         var pts = [];
         Object.keys(picked).forEach(function (k) {
-            var en = picked[k], p = beamPart(en.ov), pos = p.build.geometry.getAttribute('position').array, t2e = p.build.triToElem;
+            var en = picked[k], p = en.src.part, pos = p.build.geometry.getAttribute('position').array, t2e = p.build.triToElem;
             p.mesh.updateMatrixWorld();
             var v = new THREE.Vector3();
             for (var t = 0; t < t2e.length; t++) {
@@ -121,36 +139,39 @@ var FEACutPicker = (function () {
     }
 
     // ---- picking -------------------------------------------------------
+    var NO_CLEAN = 'no clean-model file loaded (a revit_<rooms>_clean.bin, as the main model or an overlay)';
     function toggleAt(x, y) {
         var hit = typeof feaPick === 'function' ? feaPick(x, y) : null;
-        if (!hit || !hit.overlay || hit.fam !== 'beam') { status('no clean member under the cursor'); return; }
-        var en = entry(hit.overlay, hit.elem);
-        if (!en) { status('not a clean-model member (label does not start "clean |")'); return; }
+        var src = !hit ? null : hit.overlay ? (hit.fam === 'beam' ? source(hit.overlay.name) : null) : hit.beam ? source(MAIN) : null;
+        if (!src) { status(sources().some(isClean) ? 'no beam under the cursor' : NO_CLEAN); return; }
+        var en = entry(src, hit.elem);
+        if (!en) { status('that is not a clean-model member: its label does not start "clean |"'); return; }
         pushUndo();
-        var k = key(hit.overlay, hit.elem);
+        var k = key(src, hit.elem);
         if (picked[k]) { delete picked[k]; status('removed 1'); } else { picked[k] = en; status('added 1'); }
         save(); redraw();
     }
     function boxSelect(x0, y0, x1, y1, remove) {
         var rect = renderer.domElement.getBoundingClientRect();
         var lx = Math.min(x0, x1), hx = Math.max(x0, x1), ly = Math.min(y0, y1), hy = Math.max(y0, y1);
+        var clean = sources().filter(isClean);
+        if (!clean.length) { status(NO_CLEAN); return; }
         pushUndo();
         var n = 0;
-        overlays().forEach(function (ov) {
-            var p = beamPart(ov); if (!p) return;
-            for (var e = 0; e < p.view.header.nElements; e++) {
-                if (!visible(ov, e)) continue;
-                var w = worldCentre(ov, e); if (!w) continue;
+        clean.forEach(function (src) {
+            for (var e = 0; e < src.part.view.header.nElements; e++) {
+                if (!visible(src, e)) continue;
+                var w = worldCentre(src, e); if (!w) continue;
                 var s = w.clone().project(camera);
                 if (s.z < -1 || s.z > 1) continue;
                 var sx = rect.left + (s.x + 1) / 2 * rect.width, sy = rect.top + (1 - s.y) / 2 * rect.height;
                 if (sx < lx || sx > hx || sy < ly || sy > hy) continue;
-                var k = key(ov, e);
+                var k = key(src, e);
                 if (remove) { if (picked[k]) { delete picked[k]; n++; } }
-                else if (!picked[k]) { var en = entry(ov, e); if (en) { picked[k] = en; n++; } }
+                else if (!picked[k]) { var en = entry(src, e); if (en) { picked[k] = en; n++; } }
             }
         });
-        status((remove ? 'removed ' : 'added ') + n);
+        status((remove ? 'removed ' : 'added ') + n + (n ? '' : ' (no member centre inside the box)'));
         save(); redraw();
     }
 
@@ -214,7 +235,7 @@ var FEACutPicker = (function () {
     box.innerHTML = '<div class="fea-row"><button class="fea-btn cp-arm" title="While armed, Shift+click / Shift+drag on clean-model overlays pick members">Arm</button></div>' +
         '<div class="cp-count"></div>' +
         '<div class="fea-hint">Arm, then Shift+click to toggle a member, Shift+drag to add a box, Shift+Alt+drag to remove. ' +
-        'Hidden groups are skipped. Save the list as the DuctDrop file and rerun the export.</div>' +
+        'Works on clean-model files (revit_<rooms>_clean.bin), loaded as the main model or an overlay. Hidden groups are skipped. Save the list as the DuctDrop file and rerun the export.</div>' +
         '<div class="fea-row" style="margin-top:6px;"><button class="fea-btn cp-dl">Download drop.txt</button>' +
         '<button class="fea-btn cp-undo">Undo</button><button class="fea-btn cp-clear">Clear</button></div>' +
         '<div class="cp-status"></div>';
