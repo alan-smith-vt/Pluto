@@ -80,6 +80,7 @@ type = "custom"
 vessel_od = 96
 vessel_wall = 0.5
 vessel_axis = [1, 0, 0]
+vessel_material = 106
 axial_stiffness = 2e6
 inplane_stiffness = 5e6
 outplane_stiffness = 4e6

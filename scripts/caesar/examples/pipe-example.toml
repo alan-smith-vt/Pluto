@@ -191,11 +191,24 @@ at = 25
 type = "X"
 direction = [1, 0, 1]                  # a skewed restraint (written with direction cosines)
 
-# ---- ties: node to node (CNODE) in chosen DOFs, with gaps and stiffness like a support
+# ---- ties: node to node (CNODE) in chosen DOFs, with gaps and stiffness like a support. CAESAR draws a piece tied
+# on only by a CNODE at the node it is tied to, so the strut between the lines is a weightless rigid stub up from the
+# return line to the header (it carries the strut's force, no more), tied to the header node beside it
+[[runs]]
+name = "strut"
+from = { run = "return", at = 30 }
+tee = "none"                           # a strut attachment, not a branch: no tee
+legs = [["+Z", 4]]
+[[components]]
+type = "rigid"
+run = "strut"
+at = 0
+length = 4
+weight = 0                             # a construction element (CAESAR notes it, 18E)
 [[ties]]
 node = { run = "header", at = 30 }
-cnode = { run = "return", at = 30 }
-type = "Z"                             # a strut between the lines, 1/8 in free each way
+cnode = { run = "strut", at = "L" }
+type = "Z"                             # the strut, 1/8 in free each way
 gap = 0.125
 
 # ---- SIFs: a welding tee (branches get one automatically), or user SIFs

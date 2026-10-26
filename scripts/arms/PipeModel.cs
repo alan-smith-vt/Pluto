@@ -611,6 +611,43 @@ public static class PipeModelSifTypes
     }
 }
 
+// CAESAR's own lists the workbook offers by name, as CAESAR 15.01's input shows them (2026-10-26): its hanger tables
+// (all of them, 1-39) and the materials most jobs use (its database holds more; any number is taken)
+public static class PipeModelCatalog
+{
+    public static readonly Dictionary<int, string> Materials = new Dictionary<int, string>
+    {
+        { 1, "LOW CARBON" }, { 2, "HIGH CARBON" }, { 3, "CARBON MOLY" }, { 4, "LOW CHROME MOLY" }, { 5, "MED CHROME MOLY" }, { 6, "AUSTENITIC STNL" },
+        { 7, "STRGHT CHROMIUM" }, { 8, "310 STAINLESS" }, { 9, "WROUGHT IRON" }, { 10, "GREY CAST IRON" }, { 11, "MONEL 67Ni 30Cu" }, { 12, "K-MONEL" },
+        { 13, "COPPER-NICKEL" }, { 14, "ALUMINUM" }, { 15, "COPPER (99.8%)" }, { 16, "COMMERCIAL BRASS" }, { 17, "LEAD TIN BRONZE" }, { 18, "CUT SHORT (COLD SPRING)" },
+        { 19, "CUT LONG (COLD SPRING)" }, { 20, "FRP (FIBER REIN PLASTIC)" }, { 21, "USER DEFINED" }, { 101, "A53 Grade A" }, { 102, "A53 Grade B" }, { 103, "A105" },
+        { 104, "A106 Grade A" }, { 105, "A106 Grade C" }, { 106, "A106 Grade B" }, { 107, "A135 Grade A" }, { 108, "A135 Grade B" }, { 109, "A181 60" },
+        { 110, "A181 70" }, { 111, "A182 F310" }, { 112, "A182 F1" }, { 113, "A182 F11" }, { 114, "A182 F11 CL1" }, { 115, "A182 F11 CL2" },
+        { 116, "A182 F12" }, { 117, "A182 F12 CL1" }, { 118, "A182 F12 CL2" }, { 119, "A182 F2" }, { 120, "A182 F21" }, { 121, "A182 F22" },
+        { 122, "A182 F22 CL1" }, { 123, "A182 F22 CL3" }, { 124, "A182 F304" }, { 125, "A182 F304H" }, { 126, "A182 F304L" }, { 127, "A182 F304N" },
+        { 128, "A-182 F310" }, { 129, "A182 F316" }, { 130, "A182 F316H" }, { 131, "A182 F316L" }, { 132, "A182 F316N" }, { 133, "A182 F321" },
+        { 134, "A182 F321H" }, { 135, "A182 F347" }, { 136, "A182 F347H" }, { 137, "A182 F348" }, { 138, "A182 F348H" }, { 139, "A182 F5" },
+        { 140, "A182 F5A" }, { 142, "A182 F9" }, { 143, "A182 F91" }, { 144, "A268 TP405" }, { 145, "A268 TP410" }, { 146, "A268 TP429" },
+        { 147, "A268 TP430" }, { 148, "A268 TP446" }, { 149, "A268 TP446-1" }, { 150, "A285 A" }, { 151, "A285 B" }, { 152, "A285 C" },
+        { 153, "A312 304" }, { 154, "A312 304L" }, { 155, "A312 TP304" }, { 156, "A312 TP304H" }, { 157, "A312 TP304L" }, { 158, "A312 TP304N" },
+        { 159, "A312 TP309" }, { 160, "A312 TP309S" }, { 161, "A312 TP310S" }, { 162, "A312 TP310S" }, { 163, "A312 TP316" }, { 164, "A312 TP316H" },
+        { 165, "A312 TP316L" }, { 166, "A312 TP316N" }
+    };
+    public static readonly string[] HangerTables =
+    {
+        "ANVIL", "Bergen (US) Pipe Supports Inc.", "Power Piping", "NPS Industries", "Lisega", "Fronek",
+        "Piping Technology", "Capitol", "Piping Services", "Basic Engineers", "Inoflex (Italy)", "E. Myatt & Co. (Canada)",
+        "Sinopec (China)", "Bhel (India)", "CASTIM (Italy)", "Carpenter & Paterson", "Bergen (India) Pipe Priv Ltd", "Witzenmann (Germany)",
+        "SARATHI (India)", "Myricks (India)", "China Power (China)", "Pipe Supports USA", "Quality Pipe Supports(UK)", "PiHASA (Spain)",
+        "Binder (UK)", "Gradior (Czech Rep.)", "NHK (Japan)", "PSSI GmbH", "Seonghwa (Korea)", "Mitsubishi (Japan)",
+        "Yamashita (Japan)", "SanwaTekki (Japan)", "Techno Instry (India)", "Hesterberg (Germany)", "SprSupMfg (India)", "Senior (Brazil)",
+        "Unison (Korea)", "Wookwang (Korea)", "Rilco"
+    };
+
+    public static string MaterialLabel(int n) { string s; return Materials.TryGetValue(n, out s) ? n + " - " + s : n.ToString(System.Globalization.CultureInfo.InvariantCulture); }
+    public static string HangerTableLabel(int n) { return n >= 1 && n <= HangerTables.Length ? n + " - " + HangerTables[n - 1] : n.ToString(System.Globalization.CultureInfo.InvariantCulture); }
+}
+
 // CAESAR restraint type codes: the neutral file's table in CAESAR II's own documentation (1-62; codes 1-26
 // confirmed by CAESAR 15.01, which showed and exported a probe job's codes as written). Types the builder and
 // the workbook write: the plain ones (BuildTypes, all confirmed); rods, bilinear supports and springs need data

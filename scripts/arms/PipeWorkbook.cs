@@ -371,7 +371,7 @@ public static class PipeWorkbook
         r = 1;
         foreach (var s in secs)
         {
-            se.Set(r, 0, s.Name); se.Set(r, 1, s.Od); se.Set(r, 2, s.Wall); se.Set(r, 3, s.Insul); se.Set(r, 4, s.Corr); se.Set(r, 5, s.InsDens); se.Set(r, 6, s.Material);
+            se.Set(r, 0, s.Name); se.Set(r, 1, s.Od); se.Set(r, 2, s.Wall); se.Set(r, 3, s.Insul); se.Set(r, 4, s.Corr); se.Set(r, 5, s.InsDens); se.Set(r, 6, PipeModelCatalog.MaterialLabel(s.Material));
             if (s.E != 0) se.Set(r, 7, s.E);
             if (s.Poisson != 0) se.Set(r, 8, s.Poisson);
             if (s.PipeDens != 0) se.Set(r, 9, s.PipeDens);
@@ -456,7 +456,8 @@ public static class PipeWorkbook
             if (x.WeldMismatch != 0) sf.Set(r, 8, x.WeldMismatch);
             r++;
         }
-        var sifTypes = Enumerable.Range(0, PipeModelSifTypes.Names.Length).Concat(m.Sifs.Select(x => x.Type).Where(v => v > PipeModelSifTypes.Max)).Distinct().OrderBy(v => v).ToList();
+        // CAESAR 15.01's types, and any other a job carries as written (a new entry of another number is red)
+        var sifTypes = Enumerable.Range(0, PipeModelSifTypes.Names.Length).Concat(m.Sifs.Where(x => x.Raw != null && x.Type > PipeModelSifTypes.Max).Select(x => x.Type)).Distinct().OrderBy(v => v).ToList();
         string lSif = "Lists!$J$2:$J$" + (1 + sifTypes.Count);
         int limF = Math.Max(1000, m.Sifs.Count + 500);
         PipeWorkbookGui.Table(sf, t, sfh, PipeWorkbookGui.SifCols(lSif), m.Sifs.Count, limF);
@@ -563,7 +564,7 @@ public static class PipeWorkbook
             if (h.Rate != 0) hg.Set(r, 3, h.Rate);
             if (h.ColdLoad != 0) hg.Set(r, 4, h.ColdLoad);
             if (h.ConstantLoad != 0) hg.Set(r, 5, h.ConstantLoad);
-            if (h.Table != 0) hg.Set(r, 6, h.Table);
+            if (h.Table != 0) hg.Set(r, 6, PipeModelCatalog.HangerTableLabel(h.Table));
             if (h.Count != 0) hg.Set(r, 7, h.Count);
             if (h.LoadVariation != 25) hg.Set(r, 8, h.LoadVariation);
             if (h.ShortRange != 1) hg.Set(r, 9, "no");
@@ -607,6 +608,7 @@ public static class PipeWorkbook
                 string name = PipeWorkbookGui.NozzleHeader(f);
                 if (name == "Vessel type") { if (v != 0) nz.Set(r, 4 + f, v == 1 ? "sphere" : R(v)); else nz.Set(r, 4 + f, "cylinder"); }
                 else if (name == "Reinforcing") { if (v != 0) nz.Set(r, 4 + f, v == 1 ? "shell" : v == 2 ? "nozzle" : R(v)); }
+                else if (name == "Vessel material") { if (v != 0) nz.Set(r, 4 + f, Math.Abs(v - Math.Round(v)) < 1e-9 ? PipeModelCatalog.MaterialLabel((int)Math.Round(v)) : R(v)); }
                 else if (v != 0) nz.Set(r, 4 + f, v);
             }
             r++;
@@ -658,7 +660,9 @@ public static class PipeWorkbook
         li.State = "hidden";
         Head(li, "Element types", "Restraint types", "Bend types", "Wind types", "Yes / no", "Vertical axis", "Joint frame", "Views", "Vectors", "SIF types", "Joint kinds",
              "NPS OD (in)", "NPS", "Coded radius (x NPS)", "View azimuth", "View elevation", "Hanger free codes");
-        li.Set(0, 20, "Bend radius names", XlsxBook.Header);
+        li.Set(0, 20, "Bend radius names", XlsxBook.Header); li.Set(0, 21, "Hanger tables", XlsxBook.Header); li.Set(0, 22, "Materials", XlsxBook.Header);
+        for (int k = 0; k < PipeModelCatalog.HangerTables.Length; k++) li.Set(1 + k, 21, PipeModelCatalog.HangerTableLabel(k + 1));
+        { int k = 1; foreach (var mt in PipeModelCatalog.Materials.Keys.OrderBy(q => q)) li.Set(k++, 22, PipeModelCatalog.MaterialLabel(mt)); }
         string[] radiusNames = { "LR", "SR", "3D", "5D" };
         for (int k = 0; k < radiusNames.Length; k++) li.Set(1 + k, 20, radiusNames[k]);
         for (int k = 0; k < FreeNames.Length; k++) li.Set(1 + k, 16, FreeNames[k]);
@@ -744,11 +748,14 @@ public static class PipeWorkbook
             new PipeWorkbookGui.Check("Error values (#N/A, #DIV/0! ...) on the input sheets",
                 errIn("Elements", "A:BE") + "+" + errIn("Sections", "A:M") + "+" + errIn("Processes", "A:U") + "+" + errIn("Restraints", "A:K") + "+" + errIn("Forces", "A:I") + "+" + errIn("Displacements", "A:I") + "+" +
                 errIn("Uniform", "A:H") + "+" + errIn("Wind", "A:I") + "+" + errIn("Hangers", "A:U") + "+" + errIn("Nozzles", "A:AC") + "+" + errIn("Coords", "A:D"), false),
-            new PipeWorkbookGui.Check("Elements: text where a number belongs", textIn("Elements", "B:F,J:J,M:T,W:BD") + "-SUMPRODUCT(" + string.Join("+", PipeWorkbookGui.RadiusNames.Select(rn => "(UPPER(TRIM(" + col("J") + "))=\"" + rn + "\")").ToArray()) + ")", false),
+            new PipeWorkbookGui.Check("Elements: text where a number belongs", textIn("Elements", "B:F,J:J,M:T,W:AA,AC:BD") + "-SUMPRODUCT(" + string.Join("+", PipeWorkbookGui.RadiusNames.Select(rn => "(UPPER(TRIM(" + col("J") + "))=\"" + rn + "\")").ToArray()) + ")", false),
             new PipeWorkbookGui.Check("Elements: rows without From or To", "SUMPRODUCT(((" + col("B") + "=\"\")+(" + col("C") + "=\"\")>0)*(LEN(" + col("A") + "&" + col("D") + "&" + col("E") + "&" + col("F") + "&" + col("G") + ")>0))", false),
             new PipeWorkbookGui.Check("Elements: unknown Type, Section or Process",
                 unknown(col("G"), PipeWorkbookGui.LType, "") + "+" + unknown(col("H"), secList, "") + "+" + unknown(col("I"), procList, ""), false),
-            new PipeWorkbookGui.Check("Sections / Processes: text where a number belongs", textIn("Sections", "B:L") + "+" + textIn("Processes", "B:U"), false),
+            new PipeWorkbookGui.Check("Materials, hanger tables: neither a number nor an entry of CAESAR's list",
+                string.Join("+", new[] { "Sections!$G$2:$G$", "Elements!$AB$2:$AB$", "Nozzles!$T$2:$T$", "Hangers!$G$2:$G$" }.Select(r0 =>
+                    "SUMPRODUCT((" + r0 + L2 + "<>\"\")*NOT(ISNUMBER(" + r0 + L2 + "))*NOT(ISNUMBER(--LEFT(" + r0 + L2 + ",FIND(\" \"," + r0 + L2 + "&\" \")-1))))").ToArray()), false),
+            new PipeWorkbookGui.Check("Sections / Processes: text where a number belongs", textIn("Sections", "B:F,H:L") + "+" + textIn("Processes", "B:U"), false),
             new PipeWorkbookGui.Check("Restraints: unknown type, or text where a number belongs", unknown("Restraints!$C$2:$C$" + L2, typeList, "") + "+" + textIn("Restraints", "B:B,D:J"), false),
             new PipeWorkbookGui.Check("Forces / Displacements / Uniform: text where a number belongs, or a vector outside 1-9",
                 textIn("Forces", "B:I") + "+" + textIn("Displacements", "B:I") + "+" + textIn("Uniform", "B:G") + "+" +
@@ -759,9 +766,9 @@ public static class PipeWorkbook
             new PipeWorkbookGui.Check("Restraints, SIFs, loads, hangers: nodes on no element's From / To (bend nodes are fine)",
                 missingNodes("Restraints", "B") + "+" + missingNodes("SIFs", "B") + "+" + missingNodes("Forces", "B") + "+" + missingNodes("Displacements", "B") + "+" + missingNodes("Hangers", "B") + "+" + missingNodes("Nozzles", "B"), true),
             new PipeWorkbookGui.Check("Nozzles: unknown type, text where a number belongs, or a value the nozzle's type does not use",
-                unknown("Nozzles!$D$2:$D$" + L2, PipeWorkbookGui.LNozzle, "") + "+" + textIn("Nozzles", "B:C,E:F,H:J,L:AC") + "+" + NozzleMisfits(L2), false),
+                unknown("Nozzles!$D$2:$D$" + L2, PipeWorkbookGui.LNozzle, "") + "+" + textIn("Nozzles", "B:C,E:F,H:J,L:S,U:AC") + "+" + NozzleMisfits(L2), false),
             new PipeWorkbookGui.Check("Hangers: text where a number belongs, a rate without its cold load or with a constant load, a node to free without its code",
-                textIn("Hangers", "B:I,K:Q,S:S") + "+SUMPRODUCT(ISNUMBER(Hangers!$D$2:$D$" + L2 + ")*(Hangers!$D$2:$D$" + L2 + ">0)*(NOT(ISNUMBER(Hangers!$E$2:$E$" + L2 + "))+ISNUMBER(Hangers!$F$2:$F$" + L2 +
+                textIn("Hangers", "B:F,H:I,K:Q,S:S") + "+SUMPRODUCT(ISNUMBER(Hangers!$D$2:$D$" + L2 + ")*(Hangers!$D$2:$D$" + L2 + ">0)*(NOT(ISNUMBER(Hangers!$E$2:$E$" + L2 + "))+ISNUMBER(Hangers!$F$2:$F$" + L2 +
                 ")*(Hangers!$F$2:$F$" + L2 + ">0)>0))+SUMPRODUCT((ISNUMBER(Hangers!$Q$2:$Q$" + L2 + ")<>(Hangers!$R$2:$R$" + L2 + "<>\"\"))+(ISNUMBER(Hangers!$S$2:$S$" + L2 + ")<>(Hangers!$T$2:$T$" + L2 + "<>\"\")))", false),
             new PipeWorkbookGui.Check("Elements: a bend node number used twice (on two bends, or also a From / To): CAESAR stops on it",
                 PipeWorkbookGui.CalcCount("fB", n), false),
@@ -1025,16 +1032,20 @@ public static class PipeWorkbook
     }
 
     // a SIF type: its label ("3 - welding tee") or a bare number; blank = 0 (user SIFs)
-    static int SifType(Cols c, int row, Ctx x)
+    static int SifType(Cols c, int row, Ctx x) { return LeadInt(c, row, "Type", x, 0); }
+
+    // a number from one of CAESAR's lists, as a list entry ("106 - A106 Grade B") or the bare number; blank = dflt
+    static int LeadInt(Cols c, int row, string col, Ctx x, int dflt)
     {
-        string tx = Text(c, row, "Type", x).Trim();
-        if (tx.Length == 0) return 0;
-        int dash = tx.IndexOf(' ');
-        string head = dash > 0 ? tx.Substring(0, dash) : tx;
+        if (!c.At.ContainsKey(col)) return dflt;
+        string tx = Text(c, row, col, x).Trim();
+        if (tx.Length == 0) return dflt;
+        int sp = tx.IndexOf(' ');
+        string head = sp > 0 ? tx.Substring(0, sp) : tx;
         double v;
         if (double.TryParse(head, NumberStyles.Float, CultureInfo.InvariantCulture, out v) && Math.Abs(v - Math.Round(v)) < 1e-9) return (int)Math.Round(v);
-        x.Err(c.S.Name + "!" + XlsxBook.Ref(row, c.At["Type"]) + ": SIF type \"" + tx + "\" (pick one from the list: a number from 0 to 13 and its name)");
-        return 0;
+        x.Err(c.S.Name + "!" + XlsxBook.Ref(row, c.At[col]) + ": " + col + " \"" + tx + "\" (pick one from the list, or give its number)");
+        return dflt;
     }
 
     static int Int(Cols c, int row, string col, Ctx x, int dflt)
@@ -1166,7 +1177,7 @@ public static class PipeWorkbook
             var sec = new Sec
             {
                 Name = name, Od = Num(c, r, "OD", x, 20, u.Dia), Wall = Num(c, r, "Wall", x, 21, u.Thk), Insul = Z(Num(c, r, "Insulation", x, 21, u.Thk)),
-                Corr = Z(Num(c, r, "Corrosion", x, 21, u.Thk)), InsDens = Z(Num(c, r, "Insul density", x, -1, u.InsDens)), Material = Int(c, r, "Material", x, 0),
+                Corr = Z(Num(c, r, "Corrosion", x, 21, u.Thk)), InsDens = Z(Num(c, r, "Insul density", x, -1, u.InsDens)), Material = LeadInt(c, r, "Material", x, 0),
                 E = Z(Num(c, r, "E", x, -1, u.E)), Poisson = Z(Num(c, r, "Poisson", x, -1, null)), PipeDens = Z(Num(c, r, "Pipe density", x, -1, u.PipeDens)),
                 MillM = c.At.ContainsKey("Mill tol -") ? Z(Num(c, r, "Mill tol -", x, -1, null)) : double.NaN,
                 MillP = c.At.ContainsKey("Mill tol +") ? Z(Num(c, r, "Mill tol +", x, -1, null)) : double.NaN,
@@ -1252,7 +1263,7 @@ public static class PipeWorkbook
             SetN(ref e.Od, Ov(c, r, "OD", x, 20, u.Dia, sec.Od)); SetN(ref e.Wall, Ov(c, r, "Wall", x, 21, u.Thk, sec.Wall));
             SetN(ref e.Insulation, Ov(c, r, "Insulation", x, 21, u.Thk, sec.Insul)); SetN(ref e.Corrosion, Ov(c, r, "Corrosion", x, 21, u.Thk, sec.Corr));
             SetN(ref e.InsulationDensity, Ov(c, r, "Insul density", x, -1, u.InsDens, sec.InsDens));
-            e.Material = Int(c, r, "Material", x, sec.Material);
+            e.Material = LeadInt(c, r, "Material", x, sec.Material);
             SetN(ref e.Emod, Ov(c, r, "E", x, -1, u.E, sec.E)); SetN(ref e.Poisson, Ov(c, r, "Poisson", x, -1, null, sec.Poisson)); SetN(ref e.PipeDensity, Ov(c, r, "Pipe density", x, -1, u.PipeDens, sec.PipeDens));
             for (int k = 0; k < 9; k++) { SetN(ref e.T[k], Ov(c, r, "T" + (k + 1), x, -1, u.Temp, proc.T[k])); SetN(ref e.P[k], Ov(c, r, "P" + (k + 1), x, -1, u.Press, proc.P[k])); }
             SetN(ref e.FluidDensity, Ov(c, r, "Fluid density", x, -1, u.FluidDens, proc.Fluid));
@@ -1606,6 +1617,7 @@ public static class PipeWorkbook
                 double v;
                 if (name == "Vessel type") v = txt.Length == 0 || txt.Equals("cylinder", StringComparison.OrdinalIgnoreCase) ? 0 : txt.Equals("sphere", StringComparison.OrdinalIgnoreCase) ? 1 : Bad(x, w, name, txt);
                 else if (name == "Reinforcing") v = txt.Length == 0 ? 0 : txt.Equals("shell", StringComparison.OrdinalIgnoreCase) ? 1 : txt.Equals("nozzle", StringComparison.OrdinalIgnoreCase) ? 2 : Bad(x, w, name, txt);
+                else if (name == "Vessel material") v = LeadInt(c, r, name, x, 0);
                 else v = Z(Num(c, r, name, x, -1, null));
                 double cur = z.Get(f);
                 SetN(ref cur, v);
@@ -1648,7 +1660,7 @@ public static class PipeWorkbook
             SetN(ref h.ColdLoad, Z(Num(c, r, "Cold load", x, -1, null)));
             SetN(ref h.ConstantLoad, Z(Num(c, r, "Constant", x, -1, null)));
             if (h.Rate > 0 && h.ConstantLoad > 0) x.Err(w + ": a constant-effort support (Constant) has no spring rate");
-            h.Table = Int(c, r, "Table", x, 0);
+            h.Table = LeadInt(c, r, "Table", x, 0);
             h.Count = Int(c, r, "Count", x, 0);
             double lv = Num(c, r, "Load variation", x, -1, null);
             SetN(ref h.LoadVariation, double.IsNaN(lv) ? 25 : lv);

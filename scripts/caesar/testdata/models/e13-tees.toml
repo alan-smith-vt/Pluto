@@ -106,19 +106,3 @@ type = "ANC"
 run = "b6"
 at = "L"
 type = "ANC"
-[[supports]]
-run = "b14"
-at = "L"
-type = "ANC"
-[[supports]]
-run = "b15"
-at = "L"
-type = "ANC"
-[[supports]]
-run = "b16"
-at = "L"
-type = "ANC"
-[[supports]]
-run = "b17"
-at = "L"
-type = "ANC"

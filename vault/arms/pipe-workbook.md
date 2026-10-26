@@ -145,10 +145,11 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > - **Every input column has a hint and a rule**: the hint shows when a cell is selected, and the rule gives a warning that can be overridden.
 >   - **Number columns** take numbers. Positive-only columns, whole numbers, node numbers and cosines (−1..1) each have their own rule.
 >   - **Dropdowns:**
->     - with a warning for a value not on the list: element type, bend type, restraint type, SIF type (by name, `3 - welding tee`, as CAESAR lists them), load vector (forces, displacements, uniform loads and an API 650 nozzle's growth), In g's, wind type, joint frame, vertical axis, nozzle type, vessel type, reinforcing, hanger free codes, short-range springs, seam weld;
+>     - with a warning for a value not on the list: element type, bend type, restraint type, SIF type (by name, `3 - welding tee`, as CAESAR lists them), load vector (forces, displacements, uniform loads and an API 650 nozzle's growth), In g's, wind type, joint frame, vertical axis, nozzle type, vessel type, reinforcing, hanger free codes, short-range springs, seam weld, hanger table (CAESAR's whole list, `1 - ANVIL` to `39 - Rilco`; blank = the job's default);
 >     - free entry allowed: Section, Process, joint kind;
->     - the bend radius: a dropdown of `LR`, `SR`, `3D`, `5D` that takes a radius (a number) too; `Long` and `Short` are read as well; anything else turns red.
->   - **Not dropdowns:** values from CAESAR's own databases that Pluto does not hold the list of (material number, hanger table, multi-load option): whole numbers, as CAESAR numbers them.
+>     - the bend radius: a dropdown of `LR`, `SR`, `3D`, `5D` that takes a radius (a number) too; `Long` and `Short` are read as well; anything else turns red;
+>     - the material (Sections, Elements, a nozzle's vessel material): a dropdown of the common ones (`106 - A106 Grade B`) that takes any number from CAESAR's database too; anything that is neither turns red and is counted on Start.
+>   - **Not a dropdown:** the multi-load option (a whole number, as CAESAR numbers it).
 > - **Highlighting (conditional formatting):**
 >   - **Red** = the build would refuse it:
 >     - text or an error where a number belongs;

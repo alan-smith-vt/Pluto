@@ -92,7 +92,9 @@ static class PipeWorkbookGui
     internal const string LType = "Lists!$A$2:$A$9", LBendType = "Lists!$C$2:$C$4", LWind = "Lists!$D$2:$D$4", LYesNo = "Lists!$E$2:$E$3", LAxis = "Lists!$F$2:$F$3",
                           LFrame = "Lists!$G$2:$G$3", LView = "Lists!$H$2:$H$6", LVector = "Lists!$I$2:$I$10", LKind = "Lists!$K$2:$K$7", LCodes = "Lists!$N$2:$N$10",
                           LFree = "Lists!$Q$2:$Q$6", LNozzle = "Lists!$R$2:$R$5", LVessel = "Lists!$S$2:$S$3", LReinf = "Lists!$T$2:$T$3",
-                          LRadius = "Lists!$U$2:$U$5", LSifTees = "Lists!$J$3:$J$8";   // bend radius names; the SIF type labels of 1-6 (tees)
+                          LRadius = "Lists!$U$2:$U$5", LSifTees = "Lists!$J$3:$J$8",   // bend radius names; the SIF type labels of 1-6 (tees)
+                          LHangerTable = "Lists!$V$2:$V$40";                            // CAESAR's hanger tables, "1 - ANVIL"
+    internal static readonly string LMaterial = "Lists!$W$2:$W$" + (1 + PipeModelCatalog.Materials.Count).ToString(CultureInfo.InvariantCulture);   // common materials, "106 - A106 Grade B"
 
     internal static Col[] ElementCols(string sections, string processes)
     {
@@ -134,7 +136,7 @@ static class PipeWorkbookGui
             C("Insulation", "over", "nonneg", "This element's insulation thickness, instead of its Section's."),
             C("Corrosion", "over", "nonneg", "This element's corrosion allowance, instead of its Section's."),
             C("Insul density", "over", "nonneg", "This element's insulation density, instead of its Section's."),
-            C("Material", "over", "int0", "This element's CAESAR material number (e.g. 106 = A106 B), instead of its Section's."),
+            L("Material", "over", "catalog", LMaterial, "This element's CAESAR material, instead of its Section's: pick one (106 - A106 Grade B ...) or type its number.", null),
             C("E", "over", "nonneg", "This element's elastic modulus. Blank = the Section's (or CAESAR's database)."),
             C("Poisson", "over", "nonneg", "This element's Poisson's ratio. Blank = the Section's (or CAESAR's database)."),
             C("Pipe density", "over", "nonneg", "This element's pipe density. Blank = the Section's (or CAESAR's database)."),
@@ -162,7 +164,7 @@ static class PipeWorkbookGui
             C("Insulation", "prop", "nonneg", "Insulation thickness. Blank or 0 = none."),
             C("Corrosion", "prop", "nonneg", "Corrosion allowance."),
             C("Insul density", "prop", "nonneg", "Insulation density."),
-            C("Material", "prop", "int0", "CAESAR material number (e.g. 106 = A106 B)."),
+            L("Material", "prop", "catalog", LMaterial, "CAESAR's material: pick a common one (106 - A106 Grade B ...) or type any number from its database.", null),
             C("E", "prop", "nonneg", "Elastic modulus. Blank = CAESAR's material database."),
             C("Poisson", "prop", "nonneg", "Poisson's ratio. Blank = CAESAR's material database."),
             C("Pipe density", "prop", "nonneg", "Pipe density. Blank = CAESAR's material database."),
@@ -293,7 +295,7 @@ static class PipeWorkbookGui
             C("Rate", "prop", "nonneg", "Spring rate of a spring as given (with its Cold load). Blank = CAESAR designs the hanger."),
             C("Cold load", "prop", "nonneg", "The installed (cold) load of a spring as given."),
             C("Constant", "prop", "nonneg", "A constant-effort support's load. Blank = not one."),
-            C("Table", "prop", "int0", "The hanger table CAESAR designs from (its number in CAESAR's list). Blank = the job's default."),
+            L("Table", "prop", "list!", LHangerTable, "The hanger table CAESAR designs from (1 - ANVIL ...). Blank = the job's default.", null),
             C("Count", "prop", "int0", "Hangers at this location. Blank = one."),
             C("Load variation", "prop", "nonneg", "Allowed load variation, %. Blank = 25."),
             L("Short range", "prop", "yesno", LYesNo, "yes (or blank) = short-range springs may be used; no = not.", null),
@@ -339,6 +341,7 @@ static class PipeWorkbookGui
             if (n == "Vessel type") l.Add(L(n, "prop", "list!", LVessel, hints[f], null));
             else if (n == "Reinforcing") l.Add(L(n, "prop", "list!", LReinf, hints[f], null));
             else if (n == "Displacement vector") l.Add(C(n, "prop", "vector", hints[f]));
+            else if (n == "Vessel material") l.Add(L(n, "prop", "catalog", LMaterial, hints[f] + " Pick one or type its number.", null));
             else l.Add(C(n, "prop", n.StartsWith("Axis", StringComparison.Ordinal) ? "cos" : n == "Vessel temperature" || n == "Tank delta T" ? "num" : "nonneg", hints[f]));
         }
         return l.ToArray();
@@ -376,6 +379,8 @@ static class PipeWorkbookGui
             case "int0": return "IF(ISNUMBER(" + at + "),OR(" + at + "<0," + at + "<>INT(" + at + "))," + at + "<>\"\")";
             case "node": return "IF(ISNUMBER(" + at + "),OR(" + at + "<1," + at + ">8000000," + at + "<>INT(" + at + "))," + at + "<>\"\")";
             case "cos": return "IF(ISNUMBER(" + at + "),ABS(" + at + ")>1," + at + "<>\"\")";
+            // a number from CAESAR's list, or a list entry ("106 - A106 Grade B"): anything else is red
+            case "catalog": return "AND(" + at + "<>\"\",NOT(ISNUMBER(" + at + ")),NOT(ISNUMBER(--LEFT(" + at + ",FIND(\" \"," + at + "&\" \")-1))))";
             case "vector": return "IF(ISNUMBER(" + at + "),OR(" + at + "<1," + at + ">9," + at + "<>INT(" + at + "))," + at + "<>\"\")";
             case "list!": return "AND(" + at + "<>\"\",COUNTIF(" + c.List + "," + at + ")=0)";
             case "yesno":   // no array constant: Excel refuses them in conditional formatting (and repairs the sheet away)
@@ -416,7 +421,7 @@ static class PipeWorkbookGui
             case "cos": v.Type = "decimal"; v.Operator = "between"; v.Formula1 = "-1"; v.Formula2 = "1"; v.ErrorTitle = "A direction cosine"; v.Error = c.Name + " takes a number from -1 to 1."; break;
             case "vector": v.Type = "list"; v.Formula1 = c.List ?? LVector; v.ErrorTitle = "A load vector"; v.Error = "The vector is 1 to 9."; break;
             case "list!": case "yesno": v.Type = "list"; v.Formula1 = c.List; v.ErrorTitle = "Not on the list"; v.Error = "Pick a value from the list (" + NameOf(c.Name) + ")."; break;
-            case "list?": v.Type = "list"; v.Formula1 = c.List; v.ShowError = false; break;
+            case "list?": case "catalog": v.Type = "list"; v.Formula1 = c.List; v.ShowError = false; break;
             case "radius":   // a dropdown of the names that takes a number too: anything else turns red (Rule)
                 v.Type = "list"; v.Formula1 = LRadius; v.ShowError = false; break;
         }

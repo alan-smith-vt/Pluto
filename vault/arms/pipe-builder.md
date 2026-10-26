@@ -174,7 +174,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 > - `direction = [x, y, z]` with one translational or rotational type: along a global axis it gives that axis' type; any other direction gives a skewed restraint, X or RX with the direction's cosines.
 > - `cnode = n` and `tag`. The connecting node may be one no element has when a `[[displacements]]` entry names it: CAESAR's way to move a restraint (the displacement on the connecting node, not on the restrained one).
 >
-> **`[[ties]]`:** `node` and `cnode`, each a number or `{ run, at }`, plus the same `type` / `dofs` / `gap` / `stiffness` / `mu` / `direction` / `tag`. For example, a strut between two lines: `type = "Z"`, `gap = 0.125`.
+> **`[[ties]]`:** `node` and `cnode`, each a number or `{ run, at }`, plus the same `type` / `dofs` / `gap` / `stiffness` / `mu` / `direction` / `tag`. For example, a strut between two lines: `type = "Z"`, `gap = 0.125`. CAESAR draws a line tied on only by a CNODE at the node it is tied to (below), so two lines apart are tied through a stub: a weightless rigid from one line to beside the other's node, its end the CNODE (the example's `strut` run). The stub is CAESAR's way to say where the strut is, not only a picture: it is an element, carries the strut's force and takes no weight.
 >
 > **`[[hangers]]`:** spring hangers, one per node ([[vault/format/caesar-neutral-hangers|caesar-neutral-hangers]]).
 > - **Where:** `node`, or `run` + `at` / `every`, like a support; `cnode` ties it to another node instead of ground.
