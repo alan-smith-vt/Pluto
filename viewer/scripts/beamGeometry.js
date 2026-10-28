@@ -32,19 +32,20 @@
 // geometry of a straight member (same vertex order, same values).
 //
 // Mitred joints (2026-10-26): where exactly two PIPE members of one
-// section meet at a node (a bend's chords, a corner) and turn by at most
-// 90 deg, both ends are cut on the plane that bisects the turn instead of
+// OD meet at a point (a bend's chords, a corner) and turn by at most
+// 135 deg, both ends are cut on the plane that bisects the turn instead of
 // square, so a chorded bend draws as one smooth tube, without a wedge gap
 // and a cap seam at every chord. Not with offsets, other shapes or a
-// different section at the node, nor where the cuts would eat the member
-// (a bend drawn tighter than the pipe's radius): those stay square. The
-// vertex count and order are unchanged; only end rings (and caps) move
-// along the member's axis.
+// different OD at the node. A member shorter than its cut keeps a sliver
+// (its neighbour's cut closes the joint). Ends within a hair of each other
+// count as one joint. The vertex count and order are unchanged; only end
+// rings (and caps) move along the member's axis.
 // ================================================================
 
 var FEABeamGeometry = (function () {
 
     var PIPE_SEGS = 24;           // adaptive: see segsFor()
+    var MITRE_COS = -Math.SQRT1_2; // joints turning up to 135 deg are mitred (a sharper cut spikes past 2.4 r)
 
     // Fewer facets for big models so 150k pipes stay renderable.
     function segsFor(nElem) { return nElem > 60000 ? 6 : nElem > 20000 ? 8 : nElem > 5000 ? 12 : 24; }
@@ -115,14 +116,48 @@ var FEABeamGeometry = (function () {
     }
 
     // Mitre planes: Float32Array(nElem * 6), the unit normal of the cut at
-    // end A (0..2) and end B (3..5); all zero = a square end.
+    // end A (0..2) and end B (3..5); all zero = a square end. A joint is a
+    // point, not a node index: ends within a hair of each other (a skipped
+    // zero-length piece leaves two node ids at one point) meet there. Two
+    // PIPE ends of one OD join whatever their section (a straight and its
+    // elbow often differ in wall only).
     function mitrePlanes(nElem, REC, elems, nodes, props, sections, secA, secB, BP) {
         var out = new Float32Array(nElem * 6);
-        var at = {};   // node index -> element ends there (2e = end A, 2e + 1 = end B)
+        var lo = [Infinity, Infinity, Infinity], hi = [-Infinity, -Infinity, -Infinity], used = {};
         for (var e = 0; e < nElem; e++) {
-            var n0 = elems[e * REC + 1], n1 = elems[e * REC + 2];
-            (at[n0] = at[n0] || []).push(e * 2);
-            (at[n1] = at[n1] || []).push(e * 2 + 1);
+            for (var k = 1; k <= 2; k++) {
+                var n = elems[e * REC + k];
+                if (used[n]) continue;
+                used[n] = true;
+                for (var a = 0; a < 3; a++) { var v = nodes[n * 3 + a]; if (v < lo[a]) lo[a] = v; if (v > hi[a]) hi[a] = v; }
+            }
+        }
+        var diag = Math.sqrt(Math.pow(hi[0] - lo[0], 2) + Math.pow(hi[1] - lo[1], 2) + Math.pow(hi[2] - lo[2], 2));
+        var tol = Math.max(1e-9, 1e-5 * (diag > 0 ? diag : 1));
+        // node index -> joint id: a grid of cells 2 tol wide, each node joins the first joint within tol in the 27 cells round it
+        var cellOf = {}, joints = [], jointOf = {};
+        function jointFor(n) {
+            if (jointOf[n] !== undefined) return jointOf[n];
+            var x = nodes[n * 3], y = nodes[n * 3 + 1], z = nodes[n * 3 + 2];
+            var cx = Math.floor(x / (2 * tol)), cy = Math.floor(y / (2 * tol)), cz = Math.floor(z / (2 * tol));
+            for (var i = -1; i <= 1; i++) for (var j = -1; j <= 1; j++) for (var k = -1; k <= 1; k++) {
+                var l = cellOf[(cx + i) + ',' + (cy + j) + ',' + (cz + k)];
+                if (!l) continue;
+                for (var q = 0; q < l.length; q++) {
+                    var p = joints[l[q]];
+                    if (Math.abs(p[0] - x) <= tol && Math.abs(p[1] - y) <= tol && Math.abs(p[2] - z) <= tol) return (jointOf[n] = l[q]);
+                }
+            }
+            var id = joints.length, key = cx + ',' + cy + ',' + cz;
+            joints.push([x, y, z]);
+            (cellOf[key] = cellOf[key] || []).push(id);
+            return (jointOf[n] = id);
+        }
+        var at = [];   // joint -> element ends there (2e = end A, 2e + 1 = end B)
+        for (var e2 = 0; e2 < nElem; e2++) {
+            var j0 = jointFor(elems[e2 * REC + 1]), j1 = jointFor(elems[e2 * REC + 2]);
+            (at[j0] = at[j0] || []).push(e2 * 2);
+            (at[j1] = at[j1] || []).push(e2 * 2 + 1);
         }
         function pipeR(si) {
             var s = sections[si];
@@ -133,46 +168,39 @@ var FEABeamGeometry = (function () {
             var k = e * BP + (end ? 5 : 3);
             return props[k] === 0 && props[k + 1] === 0;
         }
-        // unit vector along e pointing INTO its end, and e's length
+        // unit vector along e pointing INTO its end
         function dirIn(e, end) {
             var a = elems[e * REC + 1], b = elems[e * REC + 2];
             var from = end ? a : b, to = end ? b : a;
             var x = nodes[to * 3] - nodes[from * 3], y = nodes[to * 3 + 1] - nodes[from * 3 + 1], z = nodes[to * 3 + 2] - nodes[from * 3 + 2];
             var L = Math.sqrt(x * x + y * y + z * z);
-            return L > 1e-12 ? [x / L, y / L, z / L, L] : null;
+            return L > 1e-12 ? [x / L, y / L, z / L] : null;
         }
-        var cand = [], cut = new Float64Array(nElem);
-        for (var key in at) {
-            var l = at[key];
-            if (l.length !== 2) continue;
-            var e1 = l[0] >> 1, end1 = l[0] & 1, e2 = l[1] >> 1, end2 = l[1] & 1;
-            if (e1 === e2) continue;
-            var s1 = end1 ? secB[e1] : secA[e1], s2 = end2 ? secB[e2] : secA[e2];
-            if (s1 !== s2) continue;
-            var r = pipeR(s1);
-            if (!(r > 0) || !offsetFree(e1, end1) || !offsetFree(e2, end2)) continue;
-            var d1 = dirIn(e1, end1), d2 = dirIn(e2, end2);
-            if (!d1 || !d2) continue;
-            var c = -(d1[0] * d2[0] + d1[1] * d2[1] + d1[2] * d2[2]);   // cos of the turn: in along d1, out along -d2
-            if (c < 0 || c > 1 - 1e-9) continue;                          // over 90 deg, or straight on (square is exact)
-            var nx = d1[0] - d2[0], ny = d1[1] - d2[1], nz = d1[2] - d2[2], nl = Math.sqrt(nx * nx + ny * ny + nz * nz);
-            var reach = r * Math.sqrt((1 - c) / (1 + c));                 // r tan(turn / 2): how far the cut runs along the pipe
-            cut[e1] += reach; cut[e2] += reach;
-            cand.push([e1, end1, e2, end2, nx / nl, ny / nl, nz / nl, d1[3], d2[3]]);
-        }
-        for (var i = 0; i < cand.length; i++) {
-            var q = cand[i];
-            if (cut[q[0]] >= 0.9 * q[7] || cut[q[2]] >= 0.9 * q[8]) continue;   // the cuts would eat a member
-            out[q[0] * 6 + q[1] * 3] = q[4]; out[q[0] * 6 + q[1] * 3 + 1] = q[5]; out[q[0] * 6 + q[1] * 3 + 2] = q[6];
-            out[q[2] * 6 + q[3] * 3] = q[4]; out[q[2] * 6 + q[3] * 3 + 1] = q[5]; out[q[2] * 6 + q[3] * 3 + 2] = q[6];
+        for (var jt = 0; jt < at.length; jt++) {
+            var l2 = at[jt];
+            if (!l2 || l2.length !== 2) continue;
+            var e1 = l2[0] >> 1, end1 = l2[0] & 1, e3 = l2[1] >> 1, end3 = l2[1] & 1;
+            if (e1 === e3) continue;
+            var r1 = pipeR(end1 ? secB[e1] : secA[e1]), r3 = pipeR(end3 ? secB[e3] : secA[e3]);
+            if (!(r1 > 0) || Math.abs(r1 - r3) > 1e-6 * r1 || !offsetFree(e1, end1) || !offsetFree(e3, end3)) continue;
+            var d1 = dirIn(e1, end1), d3 = dirIn(e3, end3);
+            if (!d1 || !d3) continue;
+            var c = -(d1[0] * d3[0] + d1[1] * d3[1] + d1[2] * d3[2]);   // cos of the turn: in along d1, out along -d3
+            if (c < MITRE_COS || c > 1 - 1e-9) continue;                  // sharper than 135 deg, or straight on (square is exact)
+            var nx = d1[0] - d3[0], ny = d1[1] - d3[1], nz = d1[2] - d3[2], nl = Math.sqrt(nx * nx + ny * ny + nz * nz);
+            out[e1 * 6 + end1 * 3] = nx / nl; out[e1 * 6 + end1 * 3 + 1] = ny / nl; out[e1 * 6 + end1 * 3 + 2] = nz / nl;
+            out[e3 * 6 + end3 * 3] = nx / nl; out[e3 * 6 + end3 * 3 + 1] = ny / nl; out[e3 * 6 + end3 * 3 + 2] = nz / nl;
         }
         return out;
     }
 
     // Moves each ring point along the member axis X onto the plane through
-    // c with normal planes[k..k+2] (a no-op for a square end).
+    // c with normal planes[k..k+2] (a no-op for a square end), by at most
+    // `room` back into the member (sign: +1 at end A, -1 at end B): a member
+    // shorter than its cut keeps a sliver, and its neighbour's cut, which
+    // reaches past it, closes the joint.
     var _N = null;
-    function cutRing(ring, c, X, planes, k) {
+    function cutRing(ring, c, X, planes, k, into, room) {
         if (planes[k] === 0 && planes[k + 1] === 0 && planes[k + 2] === 0) return;
         var N = _N || (_N = new THREE.Vector3());
         N.set(planes[k], planes[k + 1], planes[k + 2]);
@@ -181,6 +209,7 @@ var FEABeamGeometry = (function () {
         for (var i = 0; i < ring.length; i++) {
             var p = ring[i];
             var t = -((p.x - c.x) * N.x + (p.y - c.y) * N.y + (p.z - c.z) * N.z) / dn;
+            if (t * into > room) t = into * room;
             p.addScaledVector(X, t);
         }
     }
@@ -305,8 +334,12 @@ var FEABeamGeometry = (function () {
                 ringA.push(cA.clone().addScaledVector(Y, pts[i][0]).addScaledVector(Z, pts[i][1]));
                 ringB.push(cB.clone().addScaledVector(Y, ptsB[i][0]).addScaledVector(Z, ptsB[i][1]));
             }
-            cutRing(ringA, cA, X, mitre, e2 * 6);
-            cutRing(ringB, cB, X, mitre, e2 * 6 + 3);
+            var len = cA.distanceTo(cB);
+            var cutA = mitre[e2 * 6] !== 0 || mitre[e2 * 6 + 1] !== 0 || mitre[e2 * 6 + 2] !== 0;
+            var cutB = mitre[e2 * 6 + 3] !== 0 || mitre[e2 * 6 + 4] !== 0 || mitre[e2 * 6 + 5] !== 0;
+            var room = 0.95 * len * (cutA && cutB ? 0.5 : 1);
+            cutRing(ringA, cA, X, mitre, e2 * 6, 1, room);
+            cutRing(ringB, cB, X, mitre, e2 * 6 + 3, -1, room);
             for (var k = 0; k < m; k++) {
                 var k2 = (k + 1) % m;
                 tri(ringA[k], ringB[k], ringB[k2], 0, 1, 1, e2);

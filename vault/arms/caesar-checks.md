@@ -65,7 +65,7 @@ Every rule is summarised in our own words.
 > | A user SIF at a bend: used only when the configuration allows user SIFs at bends | `sif-at-bend` | — |
 > | Expansion joints: the torsion stiffness given; on a joint with length, one of transverse / bending blank (CAESAR computes it) | `expansion-joint-stiffness` | EJ columns amber; Start |
 > | Pluto's own: a node on a bend within 5 deg of its near end. The configuration's limit names both ends, but 15.01 let a node at 3 deg pass on the bend whose 88 deg node it stopped on | `bend-node-near` | Bend nodes amber; Start |
-> | Pluto's own: a CNODE tied to nothing, a bend with no room | `cnode-off-model`, `bend-room`, `bend-corner`, `bend-code` | — |
+> | Pluto's own: a CNODE tied to nothing, a bend with no room, a straight shorter than the bend before it needs | `cnode-off-model`, `bend-room`, `piece-backward`, `bend-corner`, `bend-code` | — |
 > | Pluto's own: a reinforced fabricated tee without its pad thickness | `sif-pad` | SIFs, Pad amber |
 > | Pluto's own, nozzles: a WRC 297 or PD 5500 nozzle without a vessel material | `nozzle-material` | Nozzles, Vessel material amber; Start |
 > | Pluto's own, hangers: two entries at one node; a rate without its installed load; an anchor to free that nothing holds | `hanger-twice`, `hanger-rate-only`, `hanger-free` | Hangers, Node amber; Rate / Cold load and Free columns red; Start |

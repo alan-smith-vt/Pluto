@@ -22,6 +22,7 @@ using System.Text;
 //   cnode-off-model a restraint whose CNODE is on no element (the connection goes nowhere)
 //   bend-corner     a bend drawn as a corner (CAESAR's geometry rules leave no room, or no radius)
 //   bend-room       a bend's tangent reaches past the start of its element (it overlaps the run before it)
+//   piece-backward  a straight shorter than the bend before it needs after it: it runs back past the bend's far point
 //   bend-code       a bend radius code CAESAR reads as no radius
 //   node-twice      a node on a bend's curve that is also on another bend's, or an element end: two points, one number
 // and the rules of CAESAR's error checker (CaesarRules; vault/arms/caesar-checks.md): node-range, corrosion-wall,
@@ -247,10 +248,23 @@ public static class PipeReview
                 string at = "the bend at node " + e.To + " (element " + e.From + "-" + e.To + ")";
                 if (b.Straight)
                     items.Add(new PipeReviewItem("warning", "bend-corner", at + " is drawn as a corner: " + b.Reason).WithNodes(new[] { e.To }).WithElements(new[] { b.ElementIndex + 1 }));
-                else if (b.LeadLength < 0 && -b.LeadLength > 0.01 * Math.Sqrt(e.Dx * e.Dx + e.Dy * e.Dy + e.Dz * e.Dz))   // under 1%: CAESAR's own default
+                else if (b.LeadLength < 0 && -b.LeadLength > CaesarGeometry.AttachFraction * b.Radius)   // within it: CAESAR's bend-length attachment
                     items.Add(new PipeReviewItem("warning", "bend-room", string.Format(ci,
                         "{0} needs a straight of {1:0.###} before it (radius x tan(angle / 2)) and its element gives {2:0.###}: the bend reaches back past node {3}{4}",
-                        at, b.T, b.T + b.LeadLength, e.From, b.Fitted ? string.Format(ci, " (the viewer draws it from node {0} with a radius of {1:0.###})", e.From, b.DrawRadius) : "")).WithNodes(new[] { e.From, e.To }).WithElements(new[] { b.ElementIndex + 1 }));
+                        at, b.T, b.T + b.LeadLength, e.From,
+                        b.Fitted ? string.Format(ci, " (the viewer draws it from node {0} with a radius of {1:0.###})", e.From, b.DrawRadius)
+                        : b.Chorded ? string.Format(ci, " (no room at all: the viewer draws it as a straight from node {0} to node {1})", e.From, e.To) : "")).WithNodes(new[] { e.From, e.To }).WithElements(new[] { b.ElementIndex + 1 }));
+            }
+        if (g != null)
+            foreach (var p in g.Pieces)
+            {
+                if (!p.Backward || !p.BeyondAttach || p.ElementIndex < 0 || p.ElementIndex >= ne) continue;
+                CaesarBendGeom own;
+                if (g.BendByElement.TryGetValue(p.ElementIndex, out own) && !own.Straight) continue;   // a bend's own lead: bend-room
+                var e = m.Elements[p.ElementIndex];
+                items.Add(new PipeReviewItem("warning", "piece-backward", string.Format(ci,
+                    "element {0}-{1} is shorter than the bend before it needs after it: it ends {2:0.###} back past the bend's far point at node {0}, so it is drawn running backwards",
+                    e.From, e.To, p.BackwardBy)).WithNodes(new[] { e.From, e.To }).WithElements(new[] { p.ElementIndex + 1 }));
             }
         for (int i = 0; i < ne; i++)
         {

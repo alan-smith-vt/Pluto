@@ -30,9 +30,11 @@ using System.Linq;
 // element, theta < 1 or > 179 deg, or R <= 0 -> drawn straight with a warning, its bend nodes attached
 // at the TO node. A tangent longer than the straight it eats (back-to-back bends, short legs) leaves a
 // short piece running backwards (CaesarPiece.Backward), with a warning that says whether the overlap is
-// within CAESAR's default 1% bend-length attachment. Past that 1% the bend is drawn fitted instead (FitOverlaps):
-// the arc runs from the FROM node with the radius that fits there, then a straight to the FAR node, which stays
-// where CAESAR puts it; the bend's own bend nodes move onto the drawn arc.
+// within CAESAR's default bend-length attachment (1% of the bend radius, CAESAR's documentation). Past it a bend
+// whose tangent reaches back past its FROM node is drawn fitted instead (FitOverlaps): the arc runs from the FROM
+// node with the radius that fits there, then a straight to the FAR node, which stays where CAESAR puts it; the
+// bend's own bend nodes move onto the drawn arc. A FROM node already past the tangent intersection (no room at
+// all) gets a straight from the FROM node to the FAR node, the bend nodes on it.
 //
 // Synthetic vertices (bend near points without a node, chord points, miter cuts) get ids from
 // CaesarPipeGraph.FirstSyntheticId up; each records the two real nodes that bracket it along the run and
@@ -65,6 +67,8 @@ public class CaesarPiece
     public int RigidType = -1;           // CaesarRigid.TypeCode for rigid pieces, -1 otherwise
     public double RigidWeight = double.NaN;
     public bool Backward;                // runs against its element: a bend tangent overlaps this straight (short)
+    public double BackwardBy;            // how far, LENGTH units
+    public bool BeyondAttach;            // further than CAESAR's bend-length attachment (1% of the bend radius)
 
     public bool IsTaper { get { return Math.Abs(OdA - OdB) > 1e-9 || Math.Abs(WallA - WallB) > 1e-9; } }
 }
@@ -92,6 +96,7 @@ public class CaesarBendGeom
     public bool Mitred;
     public int MiterPoints;
     public bool Fitted;                  // drawn with DrawRadius from the FROM node: the tangent reaches back past it (FitOverlaps)
+    public bool Chorded;                 // drawn as a straight FROM -> FAR: the FROM node is past the tangent intersection (FitOverlaps)
     public double DrawRadius;
     public double[] DrawNear, DrawFar, DrawCentre;
     public List<double[]> NodeAngles = new List<double[]>();   // {node, angle deg from NEAR}, ascending
@@ -204,6 +209,7 @@ public class CaesarPipeGraph
 public static class CaesarGeometry
 {
     public const double DefaultArcStepDeg = 7.5;
+    public const double AttachFraction = 0.01;   // CAESAR's default bend-length attachment: 1% of the bend radius
 
     public static CaesarPipeGraph Build(CaesarModel m) { return Build(m, DefaultArcStepDeg); }
 
@@ -612,6 +618,7 @@ public static class CaesarGeometry
         {
             double phi = ang * Math.PI / 180.0;
             var dir = Add(Mul(bg.Normal, -Math.Cos(phi)), Mul(bg.UIn, Math.Sin(phi)));
+            if (bg.Chorded) return Add(bg.DrawNear, Mul(Sub(bg.DrawFar, bg.DrawNear), Math.Min(1.0, Math.Max(0.0, ang / bg.AngleDeg))));
             double r = bg.Fitted ? bg.DrawRadius : bg.Radius;
             if (bg.Mitred)
             {
@@ -626,10 +633,11 @@ public static class CaesarGeometry
             return Add(bg.Fitted ? bg.DrawCentre : bg.Centre, Mul(dir, r));
         }
 
-        // a bend whose tangent reaches back past its FROM node by more than CAESAR's 1% bend-length attachment (back-to-back
+        // a bend whose tangent reaches back past its FROM node by more than CAESAR's bend-length attachment (back-to-back
         // bends closer than their tangents) is drawn with the radius that fits from the FROM node to the tangent intersection,
-        // its FAR node where CAESAR puts it. Not when a bend node of its own carries other pieces (they were placed from the
-        // true arc) or the FROM node is past the tangent intersection: those keep the piece that runs backwards
+        // its FAR node where CAESAR puts it; a FROM node past the tangent intersection gets a straight to the FAR node. Not
+        // when a bend node of its own carries other pieces (they were placed from the true arc): that keeps the piece that
+        // runs backwards
         void FitOverlaps()
         {
             foreach (var bg in G.Bends)
@@ -639,19 +647,42 @@ public static class CaesarGeometry
                 double[] from;
                 if (!G.Nodes.TryGetValue(e.From, out from)) continue;
                 double lead = Dot(Sub(bg.Near, from), bg.UIn);
-                if (lead >= -_tolLead || -lead <= 0.01 * Math.Sqrt(e.Dx * e.Dx + e.Dy * e.Dy + e.Dz * e.Dz)) continue;
+                if (lead >= -_tolLead || -lead <= CaesarGeometry.AttachFraction * bg.Radius) continue;
+                if (bg.NodeAngles.Any(na => _adj.ContainsKey((int)na[0]) || _linked.Contains((int)na[0])))
+                {
+                    WarnAgg("overlap-kept", "bend tangent reaches back past the start of its element, and a bend node of its own carries other pieces: the piece running backwards is kept", "element " + El(e));
+                    continue;
+                }
                 double tf = bg.T + lead;   // FROM node to the tangent intersection, along the way in
-                if (tf <= _tolLead) continue;
-                if (bg.NodeAngles.Any(na => _adj.ContainsKey((int)na[0]) || _linked.Contains((int)na[0]))) continue;
+                if (tf <= _tolLead)
+                {
+                    bg.Chorded = true;
+                    bg.DrawNear = Copy(from);
+                    bg.DrawFar = Copy(bg.Far);
+                    foreach (var na in bg.NodeAngles) G.Nodes[(int)na[0]] = CurvePoint(bg, na[1]);
+                    WarnAgg("overlap-chord", "bend's element starts past its tangent intersection (no room for the bend at all; check the model): drawn as a straight from the element's start to its far node",
+                        "element " + El(e) + " starts " + F(-tf) + " past it");
+                    continue;
+                }
                 bg.Fitted = true;
                 bg.DrawRadius = tf / Math.Tan(bg.AngleDeg * Math.PI / 360.0);
                 bg.DrawNear = Sub(bg.Tip, Mul(bg.UIn, tf));
                 bg.DrawFar = Add(bg.Tip, Mul(bg.UOut, tf));
                 bg.DrawCentre = Add(bg.DrawNear, Mul(bg.Normal, bg.DrawRadius));
                 foreach (var na in bg.NodeAngles) G.Nodes[(int)na[0]] = CurvePoint(bg, na[1]);
-                WarnAgg("overlap-fit", "bend tangent reaches back past the start of its element by more than 1% of it (check the model): drawn from the element's start with the radius that fits, then straight to its far node",
+                WarnAgg("overlap-fit", "bend tangent reaches back past the start of its element by more than CAESAR's bend-length attachment (1% of the radius; check the model): drawn from the element's start with the radius that fits, then straight to its far node",
                     "element " + El(e) + " radius " + F(bg.Radius) + " drawn " + F(bg.DrawRadius));
             }
+        }
+
+        // the attachment that applies to a piece of element e running backwards: 1% of the radius of the bend it
+        // leaves (or of e's own bend, for its lead), else 1% of the element
+        double Attach(CaesarElement e)
+        {
+            CaesarBendGeom own;
+            if (G.BendByElement.TryGetValue(e.Index, out own) && !own.Straight) return CaesarGeometry.AttachFraction * own.Radius;
+            foreach (var bg in G.Bends) if (!bg.Straight && bg.ToNode == e.From) return CaesarGeometry.AttachFraction * bg.Radius;
+            return CaesarGeometry.AttachFraction * Math.Sqrt(e.Dx * e.Dx + e.Dy * e.Dy + e.Dz * e.Dz);
         }
 
         // ---------------- physical positions
@@ -796,12 +827,13 @@ public static class CaesarGeometry
         void Overlap(CaesarPiece p, CaesarElement e, double overlap)
         {
             p.Backward = true;
+            p.BackwardBy = overlap;
+            p.BeyondAttach = overlap > Attach(e);
             G.BackwardPieces++;
-            double len = Math.Sqrt(e.Dx * e.Dx + e.Dy * e.Dy + e.Dz * e.Dz);
-            if (overlap <= 0.01 * len)
-                WarnAgg("overlap-small", "bend tangent overlaps the straight next to it by under 1% of the element (CAESAR's default bend-length attachment): a short piece runs backwards", "element " + El(e) + " by " + F(overlap));
+            if (!p.BeyondAttach)
+                WarnAgg("overlap-small", "bend tangent overlaps the straight next to it within CAESAR's bend-length attachment (1% of the bend radius): a short piece runs backwards", "element " + El(e) + " by " + F(overlap));
             else
-                WarnAgg("overlap", "bend tangent overlaps the straight next to it by MORE than 1% of the element (check the model): a piece runs backwards", "element " + El(e) + " by " + F(overlap));
+                WarnAgg("overlap", "bend tangent overlaps the straight next to it by MORE than CAESAR's bend-length attachment (1% of the bend radius; check the model): a piece runs backwards", "element " + El(e) + " by " + F(overlap));
         }
 
         int NewSyn(double[] pos, CaesarElement e, string kind) { return G.AddSyntheticNode(pos, 0, 0, 0, e.Index, kind); }
@@ -839,6 +871,14 @@ public static class CaesarGeometry
             path.Add(e.From);
             double lead = Dot(Sub(bg.Near, G.Nodes[e.From]), bg.UIn);
             bg.LeadLength = lead;
+            if (bg.Chorded)
+            {
+                int at = e.From;
+                foreach (var na in bg.NodeAngles) { AddPiece(e, at, (int)na[0], CaesarPieceKind.Bend); path.Add((int)na[0]); at = (int)na[0]; }
+                AddPiece(e, at, e.To, CaesarPieceKind.Bend);
+                path.Add(e.To);
+                return;
+            }
             double drawLead = bg.Fitted ? Dot(Sub(bg.DrawNear, G.Nodes[e.From]), bg.UIn) : lead;
             bool fitFar = bg.Fitted && Dist(bg.DrawFar, G.Nodes[e.To]) > _tolLead;   // the arc ends short of the FAR node: a straight follows
             int node0 = 0;

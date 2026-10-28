@@ -1,8 +1,10 @@
 // Headless tests for mitred joints in beamGeometry.js: where two PIPE members of
-// one section meet at a node and turn by at most 90 deg, both ends are cut on
+// one OD meet at a point and turn by at most 135 deg, both ends are cut on
 // the bisecting plane (a chorded bend draws as one tube, no wedge gaps or cap
-// seams). Square everywhere else: a sharper turn, a tee, another section or
-// shape at the node, an offset, cuts that would eat a member, straight on.
+// seams). The same OD is enough (another wall is another section), and ends a
+// hair apart are one joint. A member shorter than its cut keeps a sliver.
+// Square everywhere else: a sharper turn, a tee, another OD or shape at the
+// joint, an offset, straight on.
 // THREE under vm; no DOM, no mesh.
 //   node viewer/tests/test_mitre.js
 const fs = require('fs'), path = require('path'), vm = require('vm');
@@ -23,7 +25,8 @@ const assert = (c, m) => { if (!c) { fails++; console.error('FAIL ' + m); } else
 const SECTIONS = [
   { name: 'P2', type: 'PIPE', params: { od: 2, t: 0.2 } },     // 0
   { name: 'P4', type: 'PIPE', params: { od: 4, t: 0.25 } },    // 1
-  { name: 'R2x3', type: 'RECT', params: { b: 2, h: 3 } }       // 2
+  { name: 'R2x3', type: 'RECT', params: { b: 2, h: 3 } },      // 2
+  { name: 'P2 XS', type: 'PIPE', params: { od: 2, t: 0.3 } }   // 3: P2's OD, another wall
 ];
 // pts: [[x,y,z]...], beams: [{n0, n1, sec}], props: optional Float32Array(n * 8)
 function build(pts, beams, props) {
@@ -62,14 +65,23 @@ function lineDist(p, a, u) { const d = sub(p, a), t = dot(d, u); return Math.hyp
 }
 // 2. limits of the turn
 assert(corner(90, 0).mitredEnds === 2, '90 deg corner: mitred');
-assert(corner(120, 0).mitredEnds === 0, '120 deg: square (a mitre that sharp would spike)');
+assert(corner(120, 0).mitredEnds === 2, '120 deg kink: mitred (a sharp corner, as a mitre joint is)');
+assert(corner(150, 0).mitredEnds === 0, '150 deg: square (a mitre that sharp would spike past 2.4 r)');
 {
   const a = corner(0, 0), pos = a.geometry.getAttribute('position').array;
   assert(a.mitredEnds === 0, 'straight on: square (exact already)');
   const ref = build([[-10, 0, 0], [0, 0, 0], [10, 0, 0]], [{ n0: 0, n1: 1, sec: 0 }, { n0: 1, n1: 2, sec: 0 }]).geometry.getAttribute('position').array;
   assert(pos.every((v, i) => v === ref[i]), 'straight on: the same vertices as before');
 }
-// 3. not for another section, another shape, a tee, an offset
+// 3. the same OD in another section joins; ends a hair apart are one joint; not for another OD, another shape, a tee, an offset
+assert(corner(30, 0, 3).mitredEnds === 2, 'P2 into P2 XS (same OD, another wall): mitred');
+{
+  const out = [10 * Math.cos(30 * deg), 10 * Math.sin(30 * deg), 0];
+  const b = build([[-10, 0, 0], [0, 0, 0], [0, 1e-7, 0], out], [{ n0: 0, n1: 1, sec: 0 }, { n0: 2, n1: 3, sec: 0 }]);
+  assert(b.mitredEnds === 2, 'two node ids 1e-7 apart (a skipped zero-length piece between): one joint, mitred');
+  const far = build([[-10, 0, 0], [0, 0, 0], [0, 0.5, 0], out], [{ n0: 0, n1: 1, sec: 0 }, { n0: 2, n1: 3, sec: 0 }]);
+  assert(far.mitredEnds === 0, 'two node ids 0.5 apart: not a joint');
+}
 assert(corner(30, 0, 1).mitredEnds === 0, 'P2 into P4 at the node: square');
 assert(corner(30, 2).mitredEnds === 0, 'RECT members: square');
 {
@@ -84,10 +96,18 @@ assert(corner(30, 2).mitredEnds === 0, 'RECT members: square');
   const b = build([[-10, 0, 0], [0, 0, 0], [10 * Math.cos(30 * deg), 10 * Math.sin(30 * deg), 0]], [{ n0: 0, n1: 1, sec: 0 }, { n0: 1, n1: 2, sec: 0 }], props);
   assert(b.mitredEnds === 0, 'an offset end at the node: square');
 }
-// 4. a bend drawn tighter than the pipe: the cuts would eat a chord, so square
+// 4. members shorter than their cut: mitred, each vertex kept inside its own member (a sliver, never turned inside out)
 {
   const b = build([[-1, 0, 0], [0, 0, 0], [0, 1, 0]], [{ n0: 0, n1: 1, sec: 1 }, { n0: 1, n1: 2, sec: 1 }]);   // r = 2 on members 1 long
-  assert(b.mitredEnds === 0, 'members shorter than the cut (r tan(turn/2) = 2 on length 1): square');
+  assert(b.mitredEnds === 2, 'members shorter than the cut (r tan(turn/2) = 2 on length 1): mitred');
+  const inA = endVerts(b, 0, 1).every(p => p[0] >= -1 + 0.04), inB = endVerts(b, 1, 0).every(p => p[1] <= 1 - 0.04);
+  assert(inA && inB, 'the clamped cut ends stay inside their members');
+  // a short straight (0.1) between a long straight and a 15 deg chord, all P2: the chord's cut closes the joint
+  const c = build([[-10, 0, 0], [0, 0, 0], [0.1, 0, 0], [0.1 + 2 * Math.cos(15 * deg), 2 * Math.sin(15 * deg), 0]],
+    [{ n0: 0, n1: 1, sec: 0 }, { n0: 1, n1: 2, sec: 0 }, { n0: 2, n1: 3, sec: 0 }]);
+  assert(c.mitredEnds === 2, 'a 0.1 straight before a 15 deg chord: the joint after it is mitred');
+  const n = [1 + Math.cos(15 * deg), Math.sin(15 * deg), 0], nl = Math.hypot(n[0], n[1]);
+  assert(endVerts(c, 2, 0).every(p => Math.abs(((p[0] - 0.1) * n[0] + p[1] * n[1]) / nl) < 1e-5), 'the chord\'s cut lies whole on the bisecting plane');
 }
 // 5. a chorded bend: every inner joint mitred, the end joints square
 {
