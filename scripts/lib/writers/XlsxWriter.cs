@@ -17,8 +17,8 @@ using System.Text;
 //   b.Save(path);
 //
 // What it writes: numbers (round-trip precision), inline strings (xml:space="preserve"; text that would read as
-// an OOXML "_xHHHH_" escape is escaped itself), formulas (no saved value: the workbook asks for a full
-// calculation on load), styles (a few fixed ones -- Header, ReadOnly, Note, Bold, Wrap -- and any others built
+// an OOXML "_xHHHH_" escape is escaped itself), formulas (with no saved value, or with a number or text saved as
+// their value, so a reader that does not calculate sees it; the workbook asks for a full calculation on load), styles (a few fixed ones -- Header, ReadOnly, Note, Bold, Wrap -- and any others built
 // with Style(XlsxStyle)), column widths, row heights, merged cells, frozen panes, collapsed column groups,
 // auto-filters, data validations (lists, custom rules, input hints), conditional formatting (formula rules),
 // cell notes (comments), links to places in the workbook, scatter charts, and hidden / veryHidden sheets.
@@ -30,6 +30,7 @@ public sealed class XlsxBookCell
     public string Text = "";                  // "" an empty cell; null: a number (or a formula)
     public double Number;
     public string Formula;                    // without the "="; null: a value
+    public bool Saved;                        // a formula with a saved value: Number, or Text when Text is not null
     public int Style;
 }
 
@@ -258,7 +259,23 @@ public sealed class XlsxBookSheet
     public void SetFormula(int row, int col, string formula, int style)
     {
         var c = Cell(row, col);
-        c.Text = null; c.Formula = formula; c.Style = style;
+        c.Text = null; c.Formula = formula; c.Style = style; c.Saved = false;
+        HasFormula = true;
+    }
+
+    // a formula with the number it gives saved as its value (read as that value by a reader that does not calculate)
+    public void SetFormula(int row, int col, string formula, double value, int style)
+    {
+        var c = Cell(row, col);
+        c.Text = null; c.Formula = formula; c.Number = value; c.Style = style; c.Saved = true;
+        HasFormula = true;
+    }
+
+    // a formula with the text it gives saved as its value
+    public void SetFormulaText(int row, int col, string formula, string value, int style)
+    {
+        var c = Cell(row, col);
+        c.Text = value ?? ""; c.Formula = formula; c.Style = style; c.Saved = true;
         HasFormula = true;
     }
 
@@ -341,7 +358,11 @@ public sealed class XlsxBookSheet
                 {
                     var c = kv.Value;
                     string at = " r=\"" + XlsxBook.Ref(rk, kv.Key) + "\"" + (c.Style != 0 ? " s=\"" + c.Style + "\"" : "");
-                    if (c.Formula != null) sb.Append("<c" + at + "><f>" + XlsxBook.Escape(c.Formula) + "</f></c>");
+                    if (c.Formula != null && c.Saved && c.Text != null)
+                        sb.Append("<c" + at + " t=\"str\"><f>" + XlsxBook.Escape(c.Formula) + "</f><v>" + XlsxBook.Escape(c.Text) + "</v></c>");
+                    else if (c.Formula != null && c.Saved)
+                        sb.Append("<c" + at + "><f>" + XlsxBook.Escape(c.Formula) + "</f><v>" + c.Number.ToString("R", CultureInfo.InvariantCulture) + "</v></c>");
+                    else if (c.Formula != null) sb.Append("<c" + at + "><f>" + XlsxBook.Escape(c.Formula) + "</f></c>");
                     else if (c.Text == null) sb.Append("<c" + at + "><v>" + c.Number.ToString("R", CultureInfo.InvariantCulture) + "</v></c>");
                     else if (c.Text.Length == 0) sb.Append("<c" + at + "/>");
                     else sb.Append("<c" + at + " t=\"inlineStr\"><is><t xml:space=\"preserve\">" + XlsxBook.Escape(c.Text) + "</t></is></c>");

@@ -57,7 +57,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > [!info]- The sheets
 > | Sheet | One row per | Columns |
 > |---|---|---|
-> | Settings | setting | title, notes, vertical axis (Y / Z), ambient; read-only: units, source, base fingerprint |
+> | Settings | setting | title, notes, vertical axis (Y / Z), ambient; read-only: units, source, base fingerprint, node numbers (live and its step, or fixed and why) |
 > | Elements | element, in CAESAR's order | Id, From, To, DX DY DZ, Type, Section, Process, bend radius / nodes / type, rigid weight, reducer OD2 / wall2, expansion joint (axial, transverse, bending, torsion, effective ID), name, line; then a collapsed group (+) of one-element overrides: OD, wall, insulation, corrosion, densities, material, E, Poisson, T1–T9, P1–P9, fluid density, bend miter points, fitting thickness, K, hydro pressure, mill tolerance − / +, seam weld |
 > | Sections | pipe size | name, OD, wall, insulation, corrosion, insulation density, material, E / Poisson / pipe density (blank = CAESAR's database), mill tolerance − / + (% of the wall), seam weld (yes / no) |
 > | Processes | operating condition | name, T1–T9, P1–P9, fluid density, hydro pressure (CAESAR's hydrotest case) |
@@ -72,10 +72,21 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > | Start | — | the landing page: how to use the workbook, links to the sheets with their row counts, the live checks, the colour key, a reference |
 > | 3D View | — | the model drawn live; its controls (view, highlight, labels, restraints), figures, key |
 > | Nodes, Carried | — | read-only: rebuilt on every export, never read |
-> | Lists, PlotCalc, PlotPts (hidden); `_pluto` (very hidden) | — | dropdown sources; the 3D View's formulas (one row per element) and the chart's points; the base model as exact JSON and its fingerprint |
+> | Lists, PlotCalc, PlotPts, CheckCalc (hidden); `_pluto` (very hidden) | — | dropdown sources; the 3D View's formulas (one row per element) and the chart's points; the Start checks that look a node up, row by row; the base model as exact JSON and its fingerprint |
 >
 > - **Units are the job's.** Each header says which (`DX (in)`).
 > - **Sections and Processes** are named from what they hold (`8in STD ins2`, `T300 P150`).
+
+> [!info]- Node numbers (live)
+> - **From and To are formulas** (2026-10-29), so inserting a node renumbers the nodes after it. Settings says `live, step 10` (the commonest increment) or `fixed` and why.
+>   - Every number a row holds is `step × ROW() + constant` (`=10*ROW()`). A row's From is `IF(ROW()=ROW($A$<the run's first row>), <the run's start>, INDEX($C:$C,ROW()-1))`: the To of the row above. A run is a stretch of rows each starting where the row above ends; a branch starts on the cell that holds its node (`$C$3`), and an element closing a loop ends on one.
+>   - The other sheets name a node by the Elements cell that holds it (`=Elements!$C$11`), and a bend's own nodes by its To (`"M:"&(C12-1)`), so inserting or deleting rows carries them along.
+>   - To never reads From, so Excel sees no circular reference. Every formula is written with its value.
+> - **To add a node inside an element:** insert a row above it, copy the row above into the new row (select both, Ctrl+D), then give the new row the first part of the element's DX / DY / DZ and the element the rest. Every node below moves up one step; supports, loads, SIFs and branches stay where they are.
+>   - **The first element of a run** (the row above belongs to another run): insert the row below it instead and give the new row the second part. Anything that sat at the element's old end node (a support, a branch) now names the new node in between: point it at the new row's To.
+>   - **Deleting a row** closes the gap: the next element starts where the one above ended, and the numbers below move down one step. Anything that named the deleted row's To shows `#REF!` (Start counts it): give it its node.
+> - **When the numbers stay fixed:** live numbering needs the numbers the rows hold to rise down the sheet (or all fall); otherwise moving the rows below an inserted row could land on a number a row above holds (an imported job numbered out of order). Type numbers as before, or renumber the job so they rise down the sheet.
+> - **Saved without values** (by a program that does not calculate, such as a script library): Pluto works out its own node formulas and plain arithmetic itself; any other formula still has to be saved in Excel first.
 
 > [!info]- Reading rules
 > - **Ids:**
@@ -103,7 +114,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > - **Headers:** a length column's header may say another unit (`DX (ft)`; in, ft, mm, cm, m) and its values are converted. Any other unit change is an error. Columns are found by name, so they may be reordered.
 > - **What is refused, by address** (`Elements!D6`):
 >   - an error value;
->   - a formula Excel never calculated (save the workbook in Excel first);
+>   - a formula saved without its value that Pluto cannot work out itself (it works out its own node formulas and plain arithmetic; for anything else, save the workbook in Excel first);
 >   - text where a number belongs.
 >
 >   All problems are collected and reported together.
@@ -161,10 +172,10 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >     - a vector outside 1–9, the same node and vector twice;
 >     - a duplicate section or process name, a cosine above 1.
 >   - **Amber** = worth a look: a node no element has (bend nodes count), a copied Id, a zero-length element; and what CAESAR warns about: a corner with no bend, a tee where other than three pipes meet, D/t over 100, an expansion joint without torsion stiffness or with both transverse and bending, a rigid with no weight, a temperature under 0.05 (read as an expansion), g's and force per length both used, a designed hanger at a restrained or displaced node, a nozzle node a restraint, displacement or hanger also uses, an API 650 tank under 120 ft or its growth in a vector displacements use; and a bend node within 5° of the near end, a WRC 297 or PD 5500 nozzle without its vessel material.
->   - **Long rules** are worked out per row on the hidden PlotCalc sheet, so every conditional-format formula stays short.
+>   - **Long rules** are worked out per row on the hidden PlotCalc sheet, so every conditional-format formula stays short; the Start checks that look a node up do so per row on the hidden CheckCalc sheet.
 > - **Build it from here** (Start sheet, under the steps): links to the two launchers (relative, so they follow the folder), to Pluto's viewer page and to the folder, and the PowerShell command each launcher runs, built from `CELL("filename")` so it names the workbook where it is now (the path at write time where `CELL` gives none, e.g. in LibreOffice). Excel asks before it follows a link to a `.cmd` file; where policy stops it, double-click the file in the folder.
 > - **Start's checks** count those cells live: error values; text where a number belongs (per sheet); rows without From / To; unknown names and types; unknown element Ids; vectors outside 1–9; nodes on no element; bend node numbers used twice; Ids used twice; and each CAESAR rule above. Each shows OK, check (amber) or fix (red).
-> - **Kept as before:** the input sheets keep their columns, values and order, so the reader is unchanged. Start, 3D View, Nodes, Carried and the hidden sheets are never read. Only the input sheets' cells are read, so the plot's formulas never trip the "formula with no saved value" check. The workbook asks Excel to calculate everything when it opens.
+> - **Kept as before:** the input sheets keep their columns, values and order (node numbers are formulas carrying their values, see Node numbers), so the reader is unchanged. Start, 3D View, Nodes, Carried and the hidden sheets are never read. Only the input sheets' cells are read, so the plot's formulas never trip the "formula with no saved value" check. The workbook asks Excel to calculate everything when it opens.
 
 > [!info]- The 3D View
 > - **Controls:**
@@ -182,7 +193,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >
 >   Figures: elements drawn, rows not drawn, pipe length, extents.
 > - **How it is computed** (PlotCalc, one row per Elements row; all plain Excel 2007 functions, no macros, no array formulas):
->   - **Columns** are found by header name, so the sheet follows reordered columns.
+>   - **Columns:** each Elements column is read on its own (`INDEX(Elements!$D:$D,ROW())`), so PlotCalc row r stays Elements row r when rows are inserted, Excel's own adjustment follows moved columns, and an edit recalculates only what reads that column.
 >   - **Positions** follow CAESAR's rules. A From node is where an element above reached it, else its Coords entry, else where the element above ended. A bend's element runs to the corner and the next element starts there, trimmed by the bend's tangent.
 >   - **Backward branches:** a piece of the model that meets an already placed piece further down the sheet (a branch entered from its far end) is moved onto it, in two passes.
 >   - **Projection:** azimuth, then elevation, with Z-up jobs turned first. The chart is square and a hidden square frame keeps both scales equal.
@@ -192,6 +203,18 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >   - the formula rows end 300 elements past the job's count, so a much longer model needs the workbook written again (`-Xlsx`);
 >   - where a loop of the model does not close, the place it is closed may differ from Pluto's viewer by that gap;
 >   - the workbook is about 0.4–0.8 MB (the formulas).
+> - **Speed** (2026-10-29), measured in LibreOffice on a 1,345-element line (Excel is faster and uses every core):
+>
+>   | | before | after |
+>   |---|---|---|
+>   | open (everything calculated) | 37 s | 14 s |
+>   | full recalculation | 18.7 s | 6.4 s |
+>   | edit a DX | 14.1 s | 1.9 s |
+>   | edit a name, a temperature, a material | 15.4 s | 0.1 s |
+>
+>   - **Why it was slow:** every PlotCalc row read Elements through one reference to the whole sheet, so any edit there recalculated the whole view; each row scanned the rows above five times for the same node; two Start checks compared every row of six node sheets with every element.
+>   - **Now:** one column per reference, one shared lookup per row (`mT`, `mF`), IF where AND / OR would work out a costly branch they do not need, and the node-lookup checks per row on CheckCalc.
+>   - **Formulas of your own:** OFFSET and INDIRECT are volatile (every edit anywhere recalculates them and everything that reads them); `INDEX(column,ROW()-1)` does the same without. For a long editing session, Formulas → Calculation Options → Manual and F9 to see the result: Excel still calculates before it saves, so the values Pluto reads are current.
 > - **Two LibreOffice quirks, worked around:**
 >   - It drops line segments when a chart has a manual plot-area layout, so the chart keeps its automatic layout and the key is in cells.
 >   - It merges points that nearly coincide even across the empty row between elements, and then drops that element's first segment. So each element is drawn from its end back to its start, so its first point is not where the element before it ended, and that point is also moved by 0.1 % of the frame (under the line's width).

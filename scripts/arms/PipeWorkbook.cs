@@ -280,6 +280,11 @@ public static class PipeWorkbook
         RowRo(st, r++, "Source", sourceName ?? "", "what this workbook was made from (read-only)");
         RowRo(st, r++, "Base", hash.Substring(0, 16), "the base model's fingerprint (read-only)");
         RowRo(st, r++, "Workbook", Format + " " + Version, "written by Pluto Build-Pipe.ps1 (read-only)");
+        var live = new LiveNodes(m.Elements, cId, cFrom, cTo);
+        RowRo(st, r++, "Node numbers", live.Live ? "live, step " + live.Step.ToString(CultureInfo.InvariantCulture) : "fixed",
+              live.Live ? "From / To are formulas: insert a row above an element and copy the row above into it to add a node; every node below moves up one step, and the other sheets follow (read-only)"
+                        : m.Elements.Count == 0 ? "no elements yet (read-only)"
+                        : "numbers as typed: the job's numbering does not rise down the sheet (" + live.Why + "), so moving the rows below an inserted row could land on a number in use (read-only)");
 
         // ---- sections and processes, from the elements
         var secs = new List<Sec>(); var secByKey = new Dictionary<string, Sec>();
@@ -308,14 +313,16 @@ public static class PipeWorkbook
         r = 1;
         foreach (var e in m.Elements)
         {
-            el.Set(r, cId, "E" + e.Uid); el.Set(r, cFrom, e.From); el.Set(r, cTo, e.To);
+            el.Set(r, cId, "E" + e.Uid);
+            if (live.From[r - 1] != null) el.SetFormula(r, cFrom, live.From[r - 1], e.From, 0); else el.Set(r, cFrom, e.From);
+            if (live.To[r - 1] != null) el.SetFormula(r, cTo, live.To[r - 1], e.To, 0); else el.Set(r, cTo, e.To);
             el.Set(r, cDx, e.Dx); el.Set(r, cDy, e.Dy); el.Set(r, cDz, e.Dz);
             el.Set(r, cType, TypeOf(e)); el.Set(r, cSec, eSec[e].Name); el.Set(r, cProc, eProc[e].Name);
             if (e.Bend != null)
             {
                 string rn = PipeModelBend.DisplayName(e.Bend.Radius);       // a radius CAESAR wrote by name shows its name
                 if (rn != null) el.Set(r, cBendR, rn); else el.Set(r, cBendR, e.Bend.Radius);
-                el.Set(r, cBendN, BendNodesText(e.Bend));
+                live.BendNodes(el, r, cBendN, e, BendNodesText(e.Bend));
                 if (e.Bend.Type != 0) el.Set(r, cBendT, e.Bend.Type >= 0 && e.Bend.Type < 3 ? BendTypes[e.Bend.Type] : e.Bend.Type.ToString(CultureInfo.InvariantCulture));
                 if (e.Bend.MiterPoints != 0) el.Set(r, cMiter, e.Bend.MiterPoints);
                 if (e.Bend.FittingThickness != 0 && !Same(e.Bend.FittingThickness, e.Wall)) el.Set(r, cFit, e.Bend.FittingThickness);
@@ -418,7 +425,7 @@ public static class PipeWorkbook
         for (int i = 0; i < m.Restraints.Count; i++)
         {
             var x = m.Restraints[i];
-            rs.Set(r, 0, "R" + (i + 1)); rs.Set(r, 1, x.Node); rs.Set(r, 2, x.Type); if (x.CNode != 0) rs.Set(r, 3, x.CNode);
+            rs.Set(r, 0, "R" + (i + 1)); live.Cell(rs, r, 1, x.Node, 0); rs.Set(r, 2, x.Type); if (x.CNode != 0) live.Cell(rs, r, 3, x.CNode, 0);
             if (!IsRigid(m, x)) rs.Set(r, 4, x.Stiffness);
             if (x.Gap != 0) rs.Set(r, 5, x.Gap);
             if (x.Mu != 0) rs.Set(r, 6, x.Mu);
@@ -447,10 +454,10 @@ public static class PipeWorkbook
         for (int i = 0; i < m.Sifs.Count; i++)
         {
             var x = m.Sifs[i];
-            sf.Set(r, 0, "S" + (i + 1)); sf.Set(r, 1, x.Node); sf.Set(r, 2, PipeWorkbookGui.SifLabel(x.Type));
+            sf.Set(r, 0, "S" + (i + 1)); live.Cell(sf, r, 1, x.Node, 0); sf.Set(r, 2, PipeWorkbookGui.SifLabel(x.Type));
             if (x.SifIn != 0) sf.Set(r, 3, x.SifIn);
             if (x.SifOut != 0) sf.Set(r, 4, x.SifOut);
-            if (x.SurfaceNode != 0) sf.Set(r, 5, x.SurfaceNode);
+            if (x.SurfaceNode != 0) live.Cell(sf, r, 5, x.SurfaceNode, 0);
             if (x.Pad != 0) sf.Set(r, 6, x.Pad);
             if (x.CrotchRadius != 0) sf.Set(r, 7, x.CrotchRadius);
             if (x.WeldMismatch != 0) sf.Set(r, 8, x.WeldMismatch);
@@ -471,11 +478,11 @@ public static class PipeWorkbook
         var fo = b.Add("Forces");
         fo.FreezeRows = 1; fo.TabColor = "9A3412";
         string[] foh = { "Id", "Node", "Vector", "FX (" + u.Force + ")", "FY (" + u.Force + ")", "FZ (" + u.Force + ")", "MX (" + u.MomIn + ")", "MY (" + u.MomIn + ")", "MZ (" + u.MomIn + ")" };
-        int nf = LoadRows(fo, m.Forces.ToList(), "F", false);
+        int nf = LoadRows(fo, m.Forces.ToList(), "F", false, live);
         var di = b.Add("Displacements");
         di.FreezeRows = 1; di.TabColor = "9A3412";
         string[] dih = { "Id", "Node", "Vector", "DX (" + u.Len + ")", "DY (" + u.Len + ")", "DZ (" + u.Len + ")", "RX (deg)", "RY (deg)", "RZ (deg)" };
-        int nd = LoadRows(di, m.Displacements.ToList(), "D", true);
+        int nd = LoadRows(di, m.Displacements.ToList(), "D", true, live);
         foreach (var q in new[] { new { S = fo, H = foh, N = nf, D = false }, new { S = di, H = dih, N = nd, D = true } })
         {
             for (int c = 0; c < 9; c++) q.S.Width(c, c < 3 ? 9 : 12);
@@ -500,7 +507,7 @@ public static class PipeWorkbook
             if (used.Count == 0) used.Add(0);
             foreach (int v in used)
             {
-                un.Set(r, 0, RangeId(g)); un.Set(r, 1, e.From, XlsxBook.ReadOnly); un.Set(r, 2, g[g.Count - 1].To, XlsxBook.ReadOnly); un.Set(r, 3, v + 1);
+                un.Set(r, 0, RangeId(g)); live.Cell(un, r, 1, e.From, XlsxBook.ReadOnly); live.Cell(un, r, 2, g[g.Count - 1].To, XlsxBook.ReadOnly); un.Set(r, 3, v + 1);
                 for (int k = 0; k < 3; k++) un.Set(r, 4 + k, e.Uniform.Vectors[v][k]);
                 un.Set(r, 7, e.Uniform.G[v] ? "yes" : "no");
                 r++;
@@ -520,7 +527,7 @@ public static class PipeWorkbook
         foreach (var g in SameRuns(m, q => q.Wind != null, (p, q) => p.Wind.SameAs(q.Wind)))
         {
             var x = g[0].Wind;
-            wi.Set(r, 0, RangeId(g)); wi.Set(r, 1, g[0].From, XlsxBook.ReadOnly); wi.Set(r, 2, g[g.Count - 1].To, XlsxBook.ReadOnly);
+            wi.Set(r, 0, RangeId(g)); live.Cell(wi, r, 1, g[0].From, XlsxBook.ReadOnly); live.Cell(wi, r, 2, g[g.Count - 1].To, XlsxBook.ReadOnly);
             wi.Set(r, 3, x.Type >= 0 && x.Type < 3 ? WindTypes[x.Type] : x.Type.ToString(CultureInfo.InvariantCulture)); wi.Set(r, 4, x.Shape);
             if (x.Type == 1 || x.AddedMass != 0 || x.Lift != 0 || x.MarineGrowth != 0 || x.MarineGrowthDensity != 0)
             { wi.Set(r, 5, x.AddedMass); wi.Set(r, 6, x.Lift); wi.Set(r, 7, x.MarineGrowth); wi.Set(r, 8, x.MarineGrowthDensity); }
@@ -540,7 +547,7 @@ public static class PipeWorkbook
         r = 1;
         foreach (var j in m.Joints)
         {
-            jo.Set(r, 0, "J" + j.Uid); jo.Set(r, 1, j.Node); jo.Set(r, 2, j.CNode); jo.Set(r, 3, j.Kind); jo.Set(r, 4, j.Frame); jo.Set(r, 5, DofsText(j));
+            jo.Set(r, 0, "J" + j.Uid); live.Cell(jo, r, 1, j.Node, 0); live.Cell(jo, r, 2, j.CNode, 0); jo.Set(r, 3, j.Kind); jo.Set(r, 4, j.Frame); jo.Set(r, 5, DofsText(j));
             if (j.Sif != 0) jo.Set(r, 6, j.Sif);
             jo.Set(r, 7, j.Tag);
             r++;
@@ -560,7 +567,7 @@ public static class PipeWorkbook
         for (int i = 0; i < m.Hangers.Count; i++)
         {
             var h = m.Hangers[i];
-            hg.Set(r, 0, "H" + (i + 1)); hg.Set(r, 1, h.Node); if (h.CNode != 0) hg.Set(r, 2, h.CNode);
+            hg.Set(r, 0, "H" + (i + 1)); live.Cell(hg, r, 1, h.Node, 0); if (h.CNode != 0) live.Cell(hg, r, 2, h.CNode, 0);
             if (h.Rate != 0) hg.Set(r, 3, h.Rate);
             if (h.ColdLoad != 0) hg.Set(r, 4, h.ColdLoad);
             if (h.ConstantLoad != 0) hg.Set(r, 5, h.ConstantLoad);
@@ -574,8 +581,8 @@ public static class PipeWorkbook
             if (h.OperatingLoad != 0) hg.Set(r, 13, h.OperatingLoad);
             if (h.HardwareWeight != 0) hg.Set(r, 14, h.HardwareWeight);
             if (h.MultiLoad != 0) hg.Set(r, 15, h.MultiLoad);
-            if (h.FreeNode1 != 0) { hg.Set(r, 16, h.FreeNode1); hg.Set(r, 17, FreeName(h.FreeCode1)); }
-            if (h.FreeNode2 != 0) { hg.Set(r, 18, h.FreeNode2); hg.Set(r, 19, FreeName(h.FreeCode2)); }
+            if (h.FreeNode1 != 0) { live.Cell(hg, r, 16, h.FreeNode1, 0); hg.Set(r, 17, FreeName(h.FreeCode1)); }
+            if (h.FreeNode2 != 0) { live.Cell(hg, r, 18, h.FreeNode2, 0); hg.Set(r, 19, FreeName(h.FreeCode2)); }
             hg.Set(r, 20, h.Tag);
             r++;
         }
@@ -600,7 +607,7 @@ public static class PipeWorkbook
         for (int i = 0; i < m.Nozzles.Count; i++)
         {
             var z = m.Nozzles[i];
-            nz.Set(r, 0, "N" + (i + 1)); nz.Set(r, 1, z.Node); if (z.VesselNode != 0) nz.Set(r, 2, z.VesselNode); nz.Set(r, 3, z.TypeName);
+            nz.Set(r, 0, "N" + (i + 1)); live.Cell(nz, r, 1, z.Node, 0); if (z.VesselNode != 0) live.Cell(nz, r, 2, z.VesselNode, 0); nz.Set(r, 3, z.TypeName);
             for (int f = 0; f < PipeModelNozzle.Fields.Length; f++)
             {
                 if (z.Item(f) == 0) continue;
@@ -643,7 +650,7 @@ public static class PipeWorkbook
         co.FreezeRows = 1; co.TabColor = "1565C0";
         string[] coh = { "Node", "X (" + u.Len + ")", "Y (" + u.Len + ")", "Z (" + u.Len + ")" };
         r = 1;
-        foreach (var c in m.Coords) { co.Set(r, 0, c.Node); co.Set(r, 1, c.X); co.Set(r, 2, c.Y); co.Set(r, 3, c.Z); r++; }
+        foreach (var c in m.Coords) { live.Cell(co, r, 0, c.Node, 0); co.Set(r, 1, c.X); co.Set(r, 2, c.Y); co.Set(r, 3, c.Z); r++; }
         co.Width(0, 9); for (int c = 1; c < 4; c++) co.Width(c, 14);
         int limC = Math.Max(500, m.Coords.Count + 300);
         PipeWorkbookGui.Table(co, t, coh, PipeWorkbookGui.CoordCols(), m.Coords.Count, limC);
@@ -697,7 +704,11 @@ public static class PipeWorkbook
 
         var calc = b.Add(PipeWorkbookGui.Calc);
         var pts = b.Add(PipeWorkbookGui.Pts);
-        PipeWorkbookGui.ViewSheets(b, t, view, calc, pts, n, m.Restraints.Count, m.Factor(0), 1.0 / m.Factor(20), u.Len);
+        PipeWorkbookGui.ViewSheets(b, t, view, calc, pts, n, m.Restraints.Count, m.Factor(0), 1.0 / m.Factor(20), u.Len, new Dictionary<string, int>
+        {
+            { "id", cId }, { "from", cFrom }, { "to", cTo }, { "dx", cDx }, { "dy", cDy }, { "dz", cDz }, { "type", cType }, { "sec", cSec }, { "od", cOd }, { "bend", cBendR },
+            { "bn", cBendN }, { "wall", cWall }, { "corr", cCorr }, { "eja", cEjAx }, { "ejt", cEjTr }, { "ejb", cEjBe }, { "ejr", cEjTo },
+        });
 
         var pl = b.Add("_pluto");
         pl.State = "veryHidden";
@@ -739,9 +750,26 @@ public static class PipeWorkbook
         Func<string, string, string, string> unknown = (rng, list, what) => "SUMPRODUCT((" + rng + "<>\"\")*(COUNTIF(" + list + "," + rng + ")=0))";
         Func<string, string> col = c => "Elements!$" + c + "$2:$" + c + "$" + L2;
         Func<string, string> nzc = c => "Nozzles!$" + c + "$2:$" + c + "$" + L2;
-        // a nozzle's radius, row by row (its OD blank: the pipe's at the node), in the length unit
-        string nzRad = "((" + nzc("E") + "+(1-ISNUMBER(" + nzc("E") + "))*" + PipeWorkbookGui.OdAtNode(nzc("B"), n) + ")*pl_d2in*pl_i2l/2)";
-        Func<string, string, string> missingNodes = (sheet, c) => "SUMPRODUCT(ISNUMBER(" + sheet + "!$" + c + "$2:$" + c + "$" + L2 + ")*(COUNTIF(" + nFrom + "," + sheet + "!$" + c + "$2:$" + c + "$" + L2 + ")+COUNTIF(" + nTo + "," + sheet + "!$" + c + "$2:$" + c + "$" + L2 + ")=0))";
+        // CheckCalc (hidden): the checks that look a node up row by row, one row per input row, so a blank row costs
+        // nothing and a lookup stops at its first match (as array formulas on Start they took seconds on a big job)
+        var cc = b.Add("CheckCalc");
+        cc.State = "hidden";
+        string[] ccSheets = { "Restraints", "SIFs", "Forces", "Displacements", "Hangers", "Nozzles" };
+        for (int k = 0; k < ccSheets.Length; k++) cc.Set(0, k, ccSheets[k] + ": node on no element", XlsxBook.Header);
+        cc.Set(0, ccSheets.Length, "Nozzles: 118E", XlsxBook.Header);
+        for (int row = 2; row <= lim; row++)
+        {
+            for (int k = 0; k < ccSheets.Length; k++)
+            {
+                string cn = "INDEX(" + ccSheets[k] + "!$B:$B,ROW())";
+                cc.SetFormula(row - 1, k, "IF(ISNUMBER(" + cn + "),IF(ISNA(MATCH(" + cn + "," + nFrom + ",0)),ISNA(MATCH(" + cn + "," + nTo + ",0)),FALSE),FALSE)", 0);
+            }
+            string ty = "INDEX(Nozzles!$D:$D,ROW())", l = "INDEX(Nozzles!$L:$L,ROW())", mm = "INDEX(Nozzles!$M:$M,ROW())", od = "INDEX(Nozzles!$E:$E,ROW())";
+            string rad = "(IF(ISNUMBER(" + od + ")," + od + "," + PipeWorkbookGui.OdAtNode("INDEX(Nozzles!$B:$B,ROW())", n) + ")*pl_d2in*pl_i2l/2)";
+            cc.SetFormula(row - 1, ccSheets.Length, "IF(OR(" + ty + "=\"WRC 297\"," + ty + "=\"PD 5500\"),IFERROR(OR(NOT(ISNUMBER(" + l + ")),N(" + l + ")<=0,NOT(ISNUMBER(" + mm + ")),N(" + mm + ")<=0,N(" + l + ")<" + rad +
+                          ",N(" + mm + ")<" + rad + "),FALSE),FALSE)", 0);
+        }
+        string ccEnd = "$" + L2;
         string LS = limS.ToString(CultureInfo.InvariantCulture);
         var checks = new List<PipeWorkbookGui.Check>
         {
@@ -764,7 +792,7 @@ public static class PipeWorkbook
                 "SUMPRODUCT((Uniform!$A$2:$A$" + L2 + "<>\"\")*ISERROR(FIND(\":\",Uniform!$A$2:$A$" + L2 + "))*(COUNTIF(" + col("A") + ",Uniform!$A$2:$A$" + L2 + ")=0))+SUMPRODUCT((Wind!$A$2:$A$" + L2 +
                 "<>\"\")*ISERROR(FIND(\":\",Wind!$A$2:$A$" + L2 + "))*(COUNTIF(" + col("A") + ",Wind!$A$2:$A$" + L2 + ")=0))", false),
             new PipeWorkbookGui.Check("Restraints, SIFs, loads, hangers: nodes on no element's From / To (bend nodes are fine)",
-                missingNodes("Restraints", "B") + "+" + missingNodes("SIFs", "B") + "+" + missingNodes("Forces", "B") + "+" + missingNodes("Displacements", "B") + "+" + missingNodes("Hangers", "B") + "+" + missingNodes("Nozzles", "B"), true),
+                "COUNTIF(CheckCalc!$A$2:$F" + ccEnd + ",TRUE)", true),
             new PipeWorkbookGui.Check("Nozzles: unknown type, text where a number belongs, or a value the nozzle's type does not use",
                 unknown("Nozzles!$D$2:$D$" + L2, PipeWorkbookGui.LNozzle, "") + "+" + textIn("Nozzles", "B:C,E:F,H:J,L:S,U:AC") + "+" + NozzleMisfits(L2), false),
             new PipeWorkbookGui.Check("Hangers: text where a number belongs, a rate without its cold load or with a constant load, a node to free without its code",
@@ -778,8 +806,7 @@ public static class PipeWorkbook
             new PipeWorkbookGui.Check("Elements: an expansion joint without its axial stiffness, or without transverse and bending: CAESAR stops on it (19E)",
                 PipeWorkbookGui.CalcCount("fE", n), false),
             new PipeWorkbookGui.Check("Nozzles: a WRC 297 / PD 5500 nozzle's stiffener or head closer than its radius, or not given: CAESAR stops on it (118E)",
-                "IFERROR(SUMPRODUCT(((" + nzc("D") + "=\"WRC 297\")+(" + nzc("D") + "=\"PD 5500\"))*(((NOT(ISNUMBER(" + nzc("L") + ")))+(" + nzc("L") + "<=0)+(NOT(ISNUMBER(" + nzc("M") + ")))+(" + nzc("M") + "<=0)+" +
-                "(" + nzc("L") + "<" + nzRad + ")+(" + nzc("M") + "<" + nzRad + "))>0)),0)", false),
+                "COUNTIF(CheckCalc!$G$2:$G" + ccEnd + ",TRUE)", false),
             new PipeWorkbookGui.Check("Nozzles: a custom nozzle without its vessel material: CAESAR stops on it (79E)",
                 "SUMPRODUCT((" + nzc("D") + "=\"Custom\")*(((NOT(ISNUMBER(" + nzc("T") + ")))+(" + nzc("T") + "<=0))>0))", false),
             new PipeWorkbookGui.Check("Elements / Sections: corrosion as thick as the wall: CAESAR stops on it",
@@ -857,7 +884,7 @@ public static class PipeWorkbook
     static void RowRo(XlsxBookSheet s, int r, string k, string v, string note) { s.Set(r, 0, k, XlsxBook.Bold); s.Set(r, 1, v ?? "", XlsxBook.ReadOnly); s.Set(r, 2, note, XlsxBook.Note); }
 
     // one row per used vector (an entry with none: one row of vector 1); the rows written
-    static int LoadRows(XlsxBookSheet s, List<PipeModelNodeLoad> loads, string prefix, bool disp)
+    static int LoadRows(XlsxBookSheet s, List<PipeModelNodeLoad> loads, string prefix, bool disp, LiveNodes live)
     {
         int r = 1;
         for (int i = 0; i < loads.Count; i++)
@@ -867,7 +894,7 @@ public static class PipeWorkbook
             if (used.Count == 0) used.Add(0);
             foreach (int v in used)
             {
-                s.Set(r, 0, prefix + (i + 1)); s.Set(r, 1, d.Node); s.Set(r, 2, v + 1);
+                s.Set(r, 0, prefix + (i + 1)); live.Cell(s, r, 1, d.Node, 0); s.Set(r, 2, v + 1);
                 for (int k = 0; k < 6; k++)
                 {
                     double x = d.Vectors[v][k];
@@ -879,6 +906,135 @@ public static class PipeWorkbook
             }
         }
         return r - 1;
+    }
+
+    // Live node numbering (2026-10-29): the Elements sheet's From / To are formulas, so a row inserted in a run, its
+    // formulas copied from a row of that run, renumbers every node below it, and a deleted row closes the gap; every
+    // other sheet names a node by the Elements cell that first holds it, so it follows. Every number a row owns is
+    // <step>*ROW()+<constant> (one step for the whole sheet, the commonest increment): the rows below an inserted row
+    // all move up by one step, so no number they move to is one the rows above hold. A run is a stretch of rows each
+    // starting where the row above ends; its rows share one From formula, IF(ROW()=ROW($A$<first row>),<start>,
+    // INDEX($C:$C,ROW()-1)), where <start> is the run's own first number or the cell that holds it (a branch), and a
+    // To that closes on a node held earlier is that cell. To never reads From, so Excel sees no circular reference.
+    // Every formula carries its value, so the workbook reads back before Excel has calculated it. Only when the numbers
+    // the rows hold rise down the sheet (or all fall): otherwise moving the rows below an insertion could land one on a
+    // number a row above holds, so the numbers stay fixed (Live false, Why says where).
+    sealed class LiveNodes
+    {
+        public readonly Dictionary<int, string> Owner = new Dictionary<int, string>();   // node -> its first cell on Elements ("$C$12")
+        public readonly string[] From, To;                                              // formulas (no "="); null: a constant
+        public readonly bool Live;
+        public readonly int Step;
+        public readonly string Why = "";
+        readonly string idCol, fromCol, toCol;
+        int step;
+
+        public LiveNodes(IList<PipeModelElement> els, int cIdCol, int cFromCol, int cToCol)
+        {
+            idCol = XlsxBook.Column(cIdCol); fromCol = XlsxBook.Column(cFromCol); toCol = XlsxBook.Column(cToCol);
+            int n = els.Count;
+            From = new string[n]; To = new string[n];
+            var held = new List<int[]>();   // {node, row}: the numbers rows hold, in the order they first appear
+            for (int i = 0; i < n; i++)
+            {
+                // in order: the From, the bend's own nodes (its To cell less their offset, when numbered between its From
+                // and its To), the To
+                string row = Row(i);
+                var e = els[i];
+                if (!Owner.ContainsKey(e.From)) { Owner[e.From] = "$" + fromCol + "$" + row; held.Add(new[] { e.From, i + 2 }); }
+                if (e.Bend != null)
+                    foreach (var an in e.Bend.AngleNodes.OrderBy(an => e.To > e.From ? an[1] : -an[1]))
+                    {
+                        int bn = (int)Math.Round(an[1]);
+                        if (an[1] == bn && !Owner.ContainsKey(bn) && Between(bn, e.From, e.To))
+                        { Owner[bn] = "$" + toCol + "$" + row + "-" + ((long)e.To - bn).ToString(CultureInfo.InvariantCulture); held.Add(new[] { bn, i + 2 }); }
+                    }
+                if (!Owner.ContainsKey(e.To)) { Owner[e.To] = "$" + toCol + "$" + row; held.Add(new[] { e.To, i + 2 }); }
+            }
+            // the step: the commonest increment of the rows whose To is new there (ties: the smaller)
+            var steps = new Dictionary<int, int>();
+            for (int i = 0; i < n; i++)
+                if (els[i].To != els[i].From && Owns(i, els[i].To)) { int d = els[i].To - els[i].From, c; steps.TryGetValue(d, out c); steps[d] = c + 1; }
+            step = steps.Count == 0 ? 10 : steps.OrderByDescending(kv => kv.Value).ThenBy(kv => Math.Abs(kv.Key)).First().Key;
+            Step = step;
+            for (int k = 1; k < held.Count; k++)
+                if (step > 0 ? held[k][0] <= held[k - 1][0] : held[k][0] >= held[k - 1][0])
+                {
+                    Why = "node " + held[k - 1][0] + " (row " + held[k - 1][1] + ") is above node " + held[k][0] + " (row " + held[k][1] + ")";
+                    Owner.Clear();
+                    return;
+                }
+            Live = n > 0;
+            int s0 = 0;
+            while (s0 < n)
+            {
+                // a run: rows that each start where the row above ends (an element from a node to itself stands alone)
+                int s1 = s0 + 1;
+                if (els[s0].From != els[s0].To)
+                    while (s1 < n && els[s1].From == els[s1 - 1].To && els[s1].From != els[s1].To) s1++;
+                Run(els, s0, s1);
+                s0 = s1;
+            }
+        }
+
+        static string Row(int i) { return (i + 2).ToString(CultureInfo.InvariantCulture); }
+        static bool Between(int v, int a, int b) { return a < b ? v > a && v < b : v < a && v > b; }
+
+        // a number held at element row i: <step>*ROW()+<constant>
+        string Number(int i, int value)
+        {
+            long k = value - (long)step * (i + 2);
+            return step.ToString(CultureInfo.InvariantCulture) + "*ROW()" + (k == 0 ? "" : (k > 0 ? "+" : "") + k.ToString(CultureInfo.InvariantCulture));
+        }
+
+        void Run(IList<PipeModelElement> els, int s0, int s1)
+        {
+            var first = els[s0];
+            if (first.From == first.To) return;                                          // constants
+            string own = "$" + fromCol + "$" + Row(s0);
+            string start = Owner[first.From] == own ? Number(s0, first.From) : Owner[first.From];
+            string anchor = "$" + idCol + "$" + Row(s0);
+            for (int i = s0; i < s1; i++)
+            {
+                From[i] = "IF(ROW()=ROW(" + anchor + ")," + start + ",INDEX($" + toCol + ":$" + toCol + ",ROW()-1))";
+                To[i] = Owns(i, els[i].To) ? Number(i, els[i].To) : Owner[els[i].To];
+            }
+        }
+
+        bool Owns(int i, int node) { return Owner[node] == "$" + toCol + "$" + Row(i); }
+
+        // a node on another sheet: the Elements cell that holds it, or the number when no element has it
+        public void Cell(XlsxBookSheet s, int row, int col, int node, int style)
+        {
+            string at;
+            if (node != 0 && Owner.TryGetValue(node, out at)) s.SetFormula(row, col, "Elements!" + at, node, style);
+            else s.Set(row, col, node, style);
+        }
+
+        // an element's bend nodes: one numbered between its From and its To (CAESAR's habit: 18, 19 on the bend from 10
+        // to 20) is written from this row's To cell, so it moves with the bend; one an earlier row holds, from that cell
+        public void BendNodes(XlsxBookSheet s, int row, int col, PipeModelElement e, string text)
+        {
+            var b = e.Bend;
+            string own = "$" + toCol + "$" + (row + 1).ToString(CultureInfo.InvariantCulture);
+            var parts = new List<string>();
+            bool live = false;
+            foreach (var an in b.AngleNodes)
+            {
+                string ang = "\"" + (Math.Abs(an[0] - PipeModelBend.MidPoint) < 1e-3 ? "M" : R(an[0])) + ":\"";
+                int bn = (int)Math.Round(an[1]);
+                string at;
+                if (an[1] == bn && Owner.TryGetValue(bn, out at))
+                {
+                    live = true;
+                    // this row's own: relative, so a copied row keeps it a step back from its own To
+                    parts.Add(ang + "&(" + (at.StartsWith(own + "-", StringComparison.Ordinal) ? toCol + (row + 1).ToString(CultureInfo.InvariantCulture) + at.Substring(own.Length) : at) + ")");
+                }
+                else parts.Add("\"" + (Math.Abs(an[0] - PipeModelBend.MidPoint) < 1e-3 ? "M" : R(an[0])) + ":" + R(an[1]) + "\"");
+            }
+            if (!live) { s.Set(row, col, text); return; }
+            s.SetFormulaText(row, col, string.Join("&\"; \"&", parts.ToArray()), text, 0);
+        }
     }
 
     static string BendNodesText(PipeModelBend b)
@@ -1074,6 +1230,7 @@ public static class PipeWorkbook
         var res = new PipeWorkbookResult { Path = path ?? "" };
         var sheets = CaesarWorkbook.Read(path);
         Func<string, CaesarSheet> sheet = n => sheets.FirstOrDefault(s => string.Equals(s.Name, n, StringComparison.OrdinalIgnoreCase));
+        PipeWorkbookFormula.Resolve(sheets);
         var x = new Ctx();
 
         // the base model from _pluto
@@ -2007,5 +2164,270 @@ public static class PipeWorkbook
             else sb.Append(c);
         }
         return sb.Append('"').ToString();
+    }
+}
+
+// The formulas a workbook saved by a program that does not calculate (a script library) holds without their values:
+// the node numbers and node references Pluto writes (live numbering) and plain arithmetic, worked out here so the
+// workbook still reads. Numbers, "text", cell references (another sheet's too, $ or not), + - * / &, = <>, parentheses,
+// ROW(), ROW(ref), IF(a,b,c), INDEX(column,n). Anything else stays a cell with no value (reported as before).
+static class PipeWorkbookFormula
+{
+    sealed class Fail : Exception { }
+
+    // the sheets the reader takes values from (the hidden ones calculate for the 3D view and the checks only)
+    static readonly HashSet<string> Inputs = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    { "Settings", "Elements", "Sections", "Processes", "Restraints", "SIFs", "Forces", "Displacements", "Uniform", "Wind", "Joints", "Hangers", "Nozzles", "Coords" };
+
+    public static void Resolve(List<CaesarSheet> sheets)
+    {
+        if (!sheets.Any(s => Inputs.Contains(s.Name) && s.Formulas.Count > 0)) return;
+        var memo = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        var busy = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var s in sheets.Where(q => Inputs.Contains(q.Name)))
+            foreach (var kv in s.Formulas.ToList())
+            {
+                object v;
+                try { v = Cell(sheets, s, kv.Key, memo, busy); }
+                catch (Fail) { continue; }
+                int col, row;
+                if (!Pos(kv.Key, out col, out row)) continue;
+                s.Set(row, col, Parser.Str(v));
+                s.Problems.Remove(kv.Key);
+                s.Formulas.Remove(kv.Key);
+            }
+    }
+
+    static bool Pos(string a, out int col, out int row)
+    {
+        col = 0; row = -1;
+        int i = 0;
+        while (i < a.Length && char.IsLetter(a[i])) { col = col * 26 + (char.ToUpperInvariant(a[i]) - 'A' + 1); i++; }
+        col--;
+        int r;
+        if (i == 0 || i >= a.Length || !int.TryParse(a.Substring(i), NumberStyles.Integer, CultureInfo.InvariantCulture, out r)) return false;
+        row = r - 1;
+        return true;
+    }
+
+    // a cell's value: its saved value, else its formula worked out (a number as double, else text)
+    static object Cell(List<CaesarSheet> sheets, CaesarSheet s, string at, Dictionary<string, object> memo, HashSet<string> busy)
+    {
+        string key = s.Name + "!" + at;
+        object m;
+        if (memo.TryGetValue(key, out m)) return m;
+        string f;
+        if (!s.Formulas.TryGetValue(at, out f))
+        {
+            int col, row;
+            if (!Pos(at, out col, out row)) throw new Fail();
+            if (s.Problems.ContainsKey(at)) throw new Fail();
+            string t = s.Cell(row, col);
+            double d;
+            if (t == null) return "";
+            return double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out d) ? (object)d : t;
+        }
+        if (!busy.Add(key)) throw new Fail();
+        int c0, r0;
+        Pos(at, out c0, out r0);
+        var p = new Parser { Src = f.StartsWith("=") ? f.Substring(1) : f, Sheets = sheets, Here = s, Row = r0 + 1, Memo = memo, Busy = busy };
+        object v = p.Val(p.Expr());
+        p.Ws();
+        if (p.I != p.Src.Length) throw new Fail();
+        busy.Remove(key);
+        memo[key] = v;
+        return v;
+    }
+
+    sealed class Ref { public CaesarSheet Sheet; public int Col, Row; public bool WholeColumn; }
+
+    sealed class Parser
+    {
+        public string Src; public int I; public List<CaesarSheet> Sheets; public CaesarSheet Here; public int Row;
+        public Dictionary<string, object> Memo; public HashSet<string> Busy;
+
+        public void Ws() { while (I < Src.Length && Src[I] == ' ') I++; }
+        bool Eat(string t) { Ws(); if (string.Compare(Src, I, t, 0, t.Length, StringComparison.OrdinalIgnoreCase) == 0) { I += t.Length; return true; } return false; }
+
+        public object Val(object v)
+        {
+            var r = v as Ref;
+            if (r == null) return v;
+            if (r.WholeColumn) throw new Fail();
+            return Cell(Sheets, r.Sheet, XlsxBook.Ref(r.Row, r.Col), Memo, Busy);
+        }
+        static double Num(object v) { if (v is double) return (double)v; if (v is bool) return (bool)v ? 1 : 0; if (v as string == "") return 0; throw new Fail(); }
+        public static string Str(object v) { return v is double ? ((double)v).ToString("R", CultureInfo.InvariantCulture) : v is bool ? ((bool)v ? "TRUE" : "FALSE") : v as string ?? ""; }
+
+        public object Expr()
+        {
+            object a = Concat();
+            if (Eat("<>")) { object b = Concat(); return !Same(Val(a), Val(b)); }
+            if (Eat("=")) { object b = Concat(); return Same(Val(a), Val(b)); }
+            return a;
+        }
+        static bool Same(object a, object b)
+        {
+            if (a is double && b is double) return (double)a == (double)b;
+            if (a is string && b is string) return string.Equals((string)a, (string)b, StringComparison.OrdinalIgnoreCase);
+            if (a is bool && b is bool) return (bool)a == (bool)b;
+            return false;   // a number never equals text (Excel)
+        }
+        object Concat()
+        {
+            object a = Add();
+            while (Eat("&")) a = Str(Val(a)) + Str(Val(Add()));
+            return a;
+        }
+        object Add()
+        {
+            object a = Mul();
+            while (true)
+            {
+                if (Eat("+")) a = Num(Val(a)) + Num(Val(Mul()));
+                else if (Eat("-")) a = Num(Val(a)) - Num(Val(Mul()));
+                else return a;
+            }
+        }
+        object Mul()
+        {
+            object a = Unary();
+            while (true)
+            {
+                if (Eat("*")) a = Num(Val(a)) * Num(Val(Unary()));
+                else if (Eat("/")) { double d = Num(Val(Unary())); if (d == 0) throw new Fail(); a = Num(Val(a)) / d; }
+                else return a;
+            }
+        }
+        object Unary()
+        {
+            if (Eat("-")) return -Num(Val(Unary()));
+            if (Eat("+")) return Num(Val(Unary()));
+            return Primary();
+        }
+        object Primary()
+        {
+            Ws();
+            if (I >= Src.Length) throw new Fail();
+            char c = Src[I];
+            if (c == '(') { I++; object v = Expr(); if (!Eat(")")) throw new Fail(); return v; }
+            if (c == '"')
+            {
+                var sb = new StringBuilder();
+                I++;
+                while (I < Src.Length) { if (Src[I] == '"') { if (I + 1 < Src.Length && Src[I + 1] == '"') { sb.Append('"'); I += 2; continue; } break; } sb.Append(Src[I++]); }
+                if (I >= Src.Length) throw new Fail();
+                I++;
+                return sb.ToString();
+            }
+            if (char.IsDigit(c) || c == '.')
+            {
+                int j = I;
+                while (I < Src.Length && (char.IsDigit(Src[I]) || Src[I] == '.' || ((Src[I] == 'E' || Src[I] == 'e') && I + 1 < Src.Length && (char.IsDigit(Src[I + 1]) || Src[I + 1] == '-' || Src[I + 1] == '+')) ||
+                                          ((Src[I] == '-' || Src[I] == '+') && I > j && (Src[I - 1] == 'E' || Src[I - 1] == 'e')))) I++;
+                double d;
+                if (!double.TryParse(Src.Substring(j, I - j), NumberStyles.Float, CultureInfo.InvariantCulture, out d)) throw new Fail();
+                return d;
+            }
+            if (Eat("ROW("))
+            {
+                if (Eat(")")) return (double)Row;
+                var r = Reference();
+                if (!Eat(")") || r.WholeColumn) throw new Fail();
+                return (double)(r.Row + 1);
+            }
+            if (Eat("IF("))
+            {
+                object cond = Val(Expr());
+                if (!Eat(",")) throw new Fail();
+                bool yes = cond is bool ? (bool)cond : Num(cond) != 0;
+                // both branches are parsed; only the one taken is worked out
+                object a = null, b = null;
+                if (yes) { a = Val(Expr()); if (!Eat(",")) throw new Fail(); SkipArg(); }
+                else { SkipArg(); if (!Eat(",")) throw new Fail(); b = Val(Expr()); }
+                if (!Eat(")")) throw new Fail();
+                return yes ? a : b;
+            }
+            if (Eat("INDEX("))
+            {
+                var r = Reference();
+                if (!r.WholeColumn || !Eat(",")) throw new Fail();
+                double n = Num(Val(Expr()));
+                if (!Eat(")") || n < 1 || n != Math.Floor(n)) throw new Fail();
+                return Cell(Sheets, r.Sheet, XlsxBook.Ref((int)n - 1, r.Col), Memo, Busy);
+            }
+            return Reference();
+        }
+
+        // an argument skipped over (the IF branch not taken): to the next comma or close at this depth
+        void SkipArg()
+        {
+            int depth = 0;
+            bool q = false;
+            while (I < Src.Length)
+            {
+                char c = Src[I];
+                if (q) { if (c == '"') q = false; I++; continue; }
+                if (c == '"') q = true;
+                else if (c == '(') depth++;
+                else if (c == ')') { if (depth == 0) return; depth--; }
+                else if (c == ',' && depth == 0) return;
+                I++;
+            }
+        }
+
+        // [Sheet!]$A$1 or [Sheet!]$A:$A
+        Ref Reference()
+        {
+            Ws();
+            var sheet = Here;
+            int j = I;
+            string name = null;
+            if (I < Src.Length && Src[I] == '\'')
+            {
+                int k = Src.IndexOf("'!", I + 1, StringComparison.Ordinal);
+                if (k < 0) throw new Fail();
+                name = Src.Substring(I + 1, k - I - 1).Replace("''", "'");
+                I = k + 2;
+            }
+            else
+            {
+                int k = I;
+                while (k < Src.Length && (char.IsLetterOrDigit(Src[k]) || Src[k] == '_' || Src[k] == ' ')) k++;
+                if (k < Src.Length && Src[k] == '!') { name = Src.Substring(I, k - I); I = k + 1; }
+            }
+            if (name != null)
+            {
+                sheet = Sheets.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
+                if (sheet == null) throw new Fail();
+            }
+            int col, row;
+            if (!Part(out col, out row)) { I = j; throw new Fail(); }
+            if (row < 0)
+            {
+                // a whole column: $A:$A
+                if (!Eat(":")) throw new Fail();
+                int col2, row2;
+                if (!Part(out col2, out row2) || row2 >= 0 || col2 != col) throw new Fail();
+                return new Ref { Sheet = sheet, Col = col, Row = -1, WholeColumn = true };
+            }
+            return new Ref { Sheet = sheet, Col = col, Row = row };
+        }
+
+        // $A$1 -> col 0, row 0; $A -> row -1
+        bool Part(out int col, out int row)
+        {
+            col = 0; row = -1;
+            if (I < Src.Length && Src[I] == '$') I++;
+            int j = I;
+            while (I < Src.Length && char.IsLetter(Src[I])) { col = col * 26 + (char.ToUpperInvariant(Src[I]) - 'A' + 1); I++; }
+            if (I == j || I - j > 3) return false;
+            col--;
+            if (I < Src.Length && Src[I] == '$') I++;
+            int k = I;
+            while (I < Src.Length && char.IsDigit(Src[I])) I++;
+            if (I > k) row = int.Parse(Src.Substring(k, I - k), CultureInfo.InvariantCulture) - 1;
+            return true;
+        }
     }
 }

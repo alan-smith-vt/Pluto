@@ -613,6 +613,8 @@ static class PipeWorkbookGui
         // CAESAR's error-checker rules a row can be checked for (TRUE = the row trips it); the Elements sheet's red and
         // amber cells and Start's counts read these, so their own formulas stay short
         "Bn", "fB", "Wl", "Co", "fC", "Bd", "a1", "a2", "a3", "fA", "fN", "fK", "fE", "fH", "fF",
+        // the first row above that ends (mT) or starts (mF) at this row's From node, 0 = none: one lookup each, shared
+        "mT", "mF",
     };
 
     // PlotCalc's last row for a model of n elements, and a reference to one of its columns
@@ -654,10 +656,19 @@ static class PipeWorkbookGui
         });
     }
 
-    static string E(string colParam) { return "INDEX(pl_el,ROW()," + colParam + ")"; }
+    // an Elements cell on this row, by the column's key (ElementKeys): INDEX over that one column, so PlotCalc row r stays
+    // the Elements row r when rows are inserted, and only edits to that column recalculate the formulas that read it
+    static Dictionary<string, string> _elCol;
+    static string E(string key) { return "INDEX(Elements!$" + _elCol[key] + ":$" + _elCol[key] + ",ROW())"; }
 
-    internal static void ViewSheets(XlsxBook b, Theme t, XlsxBookSheet view, XlsxBookSheet calc, XlsxBookSheet pts, int elements, int restraints, double inToLen, double diaToIn, string lenUnit)
+    // the Elements columns PlotCalc reads: key -> 0-based column (PipeWorkbook's layout)
+    internal static readonly string[] ElementKeys = { "id", "from", "to", "dx", "dy", "dz", "type", "sec", "od", "bend", "bn", "wall", "corr", "eja", "ejt", "ejb", "ejr" };
+
+    internal static void ViewSheets(XlsxBook b, Theme t, XlsxBookSheet view, XlsxBookSheet calc, XlsxBookSheet pts, int elements, int restraints, double inToLen, double diaToIn, string lenUnit,
+                                    Dictionary<string, int> elementCols)
     {
+        _elCol = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (string k in ElementKeys) _elCol[k] = XlsxBook.Column(elementCols[k]);
         int last = CalcLast(elements);                     // PlotCalc's last row (1-based)
         int cap = last - 1;                                // element rows the plot follows
         int capR = Math.Max(200, restraints + 200);
@@ -669,23 +680,25 @@ static class PipeWorkbookGui
         for (int k = 0; k < CalcCols.Length; k++) { col[CalcCols[k]] = XlsxBook.Column(k); calc.Set(0, k, CalcCols[k], XlsxBook.Header); }
         var f = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            { "Id", "IFERROR(" + E("pl_id") + "&\"\",\"\")" },
-            { "Fr", "IFERROR(IF(ISNUMBER(" + E("pl_from") + ")," + E("pl_from") + ",\"\"),\"\")" },
-            { "To", "IFERROR(IF(ISNUMBER(" + E("pl_to") + ")," + E("pl_to") + ",\"\"),\"\")" },
+            { "Id", "IFERROR(" + E("id") + "&\"\",\"\")" },
+            { "Fr", "IFERROR(IF(ISNUMBER(" + E("from") + ")," + E("from") + ",\"\"),\"\")" },
+            { "To", "IFERROR(IF(ISNUMBER(" + E("to") + ")," + E("to") + ",\"\"),\"\")" },
             { "OK", "AND(ISNUMBER([Fr]),ISNUMBER([To]))" },
-            { "DX", "IFERROR(N(" + E("pl_dx") + "),0)" }, { "DY", "IFERROR(N(" + E("pl_dy") + "),0)" }, { "DZ", "IFERROR(N(" + E("pl_dz") + "),0)" },
-            { "Ty", "IFERROR(" + E("pl_type") + "&\"\",\"\")" },
+            { "DX", "IFERROR(N(" + E("dx") + "),0)" }, { "DY", "IFERROR(N(" + E("dy") + "),0)" }, { "DZ", "IFERROR(N(" + E("dz") + "),0)" },
+            { "Ty", "IFERROR(" + E("type") + "&\"\",\"\")" },
             { "Kd", "IF(OR(LEFT([Ty],5)=\"Rigid\",[Ty]=\"Valve\",[Ty]=\"Flange\",[Ty]=\"Flange pair\",[Ty]=\"Flanged valve\"),1,IF([Ty]=\"Exp joint\",2,0))" },
-            { "Sc", "IFERROR(IF(" + E("pl_sec") + "&\"\"<>\"\"," + E("pl_sec") + "&\"\",[Sc-]),[Sc-])" },
-            { "OD", "IFERROR(IF(ISNUMBER(" + E("pl_od") + ")," + E("pl_od") + ",INDEX(pl_secs,MATCH([Sc],INDEX(pl_secs,0,pl_sname),0),pl_sod)),\"\")" },
+            { "Sc", "IFERROR(IF(" + E("sec") + "&\"\"<>\"\"," + E("sec") + "&\"\",[Sc-]),[Sc-])" },
+            { "OD", "IFERROR(IF(ISNUMBER(" + E("od") + ")," + E("od") + ",INDEX(pl_secs,MATCH([Sc],INDEX(pl_secs,0,pl_sname),0),pl_sod)),\"\")" },
             { "ODin", "IFERROR([OD]*pl_d2in,\"\")" },
             { "Mi", "IFERROR(MATCH([ODin]+0.02,pl_odl,1),0)" },
             { "NP", "IFERROR(IF([ODin]>=13.9,IF(ABS([ODin]-ROUND([ODin],0))<0.02,ROUND([ODin],0),\"\"),IF(ABS(INDEX(pl_odl,[Mi])-[ODin])<0.02,INDEX(pl_npl,[Mi]),\"\")),\"\")" },
-            { "Rr", "IFERROR(" + E("pl_bend") + "&\"\",\"\")" },
+            { "Rr", "IFERROR(" + E("bend") + "&\"\",\"\")" },
             { "R", "IFERROR(IF([Rr]=\"\",0,IF(ISNUMBER(--[Rr]),IF(--[Rr]>0,--[Rr],IF(--[Rr]<0,INDEX(pl_codes,ROUND(-[Rr]/1.0101,0))*[NP]*pl_i2l,0)),IF(OR(UPPER(TRIM([Rr]))=\"LR\",UPPER(TRIM([Rr]))=\"LONG\"),1.5,IF(OR(UPPER(TRIM([Rr]))=\"SR\",UPPER(TRIM([Rr]))=\"SHORT\"),1,IF(UPPER(TRIM([Rr]))=\"3D\",3,IF(UPPER(TRIM([Rr]))=\"5D\",5,0))))*[NP]*pl_i2l)),0)" },
-            { "X1", "IF([OK],IFERROR(INDEX([X2:],MATCH([Fr],[To:],0)),IFERROR(INDEX([X1:],MATCH([Fr],[Fr:],0)),IFERROR(INDEX(Coords!$B:$B,MATCH([Fr],Coords!$A:$A,0))+0,[LX-]))),\"\")" },
-            { "Y1", "IF([OK],IFERROR(INDEX([Y2:],MATCH([Fr],[To:],0)),IFERROR(INDEX([Y1:],MATCH([Fr],[Fr:],0)),IFERROR(INDEX(Coords!$C:$C,MATCH([Fr],Coords!$A:$A,0))+0,[LY-]))),\"\")" },
-            { "Z1", "IF([OK],IFERROR(INDEX([Z2:],MATCH([Fr],[To:],0)),IFERROR(INDEX([Z1:],MATCH([Fr],[Fr:],0)),IFERROR(INDEX(Coords!$D:$D,MATCH([Fr],Coords!$A:$A,0))+0,[LZ-]))),\"\")" },
+            { "mT", "IF([OK],IFERROR(MATCH([Fr],[To:],0),0),0)" },
+            { "mF", "IF(AND([OK],[mT]=0),IFERROR(MATCH([Fr],[Fr:],0),0),0)" },
+            { "X1", "IF([OK],IF([mT]>0,INDEX([X2^],[mT]),IF([mF]>0,INDEX([X1^],[mF]),IFERROR(INDEX(Coords!$B:$B,MATCH([Fr],Coords!$A:$A,0))+0,[LX-]))),\"\")" },
+            { "Y1", "IF([OK],IF([mT]>0,INDEX([Y2^],[mT]),IF([mF]>0,INDEX([Y1^],[mF]),IFERROR(INDEX(Coords!$C:$C,MATCH([Fr],Coords!$A:$A,0))+0,[LY-]))),\"\")" },
+            { "Z1", "IF([OK],IF([mT]>0,INDEX([Z2^],[mT]),IF([mF]>0,INDEX([Z1^],[mF]),IFERROR(INDEX(Coords!$D:$D,MATCH([Fr],Coords!$A:$A,0))+0,[LZ-]))),\"\")" },
             { "LX", "IF(ISNUMBER([X2]),[X2],[LX-])" }, { "LY", "IF(ISNUMBER([Y2]),[Y2],[LY-])" }, { "LZ", "IF(ISNUMBER([Z2]),[Z2],[LZ-])" },
             { "X2", "IF([OK],[X1]+[DX],\"\")" }, { "Y2", "IF([OK],[Y1]+[DY],\"\")" }, { "Z2", "IF([OK],[Z1]+[DZ],\"\")" },
             { "L", "IF([OK],SQRT([DX]^2+[DY]^2+[DZ]^2),0)" },
@@ -695,15 +708,15 @@ static class PipeWorkbookGui
             { "cs", "[ux]*[uox]+[uy]*[uoy]+[uz]*[uoz]" },
             { "th", "ACOS(MAX(-1,MIN(1,[cs])))" },
             { "T", "IF(AND([R]>0,[Nx]>0,[th]>0.0175,[th]<3.124),[R]*TAN([th]/2),0)" },
-            { "Tin", "IF([OK],IFERROR(IF(INDEX([Nx^],MATCH([Fr],[To^],0))=ROW(),INDEX([T^],MATCH([Fr],[To^],0)),0),0),0)" },
-            { "SL", "IF([OK],IF(AND(ISNA(MATCH([Fr],[To:],0)),ISNA(MATCH([Fr],[Fr:],0))),1,0),0)" },
+            { "Tin", "IF([OK],IFERROR(IF(INDEX([Nx^],IF([mT]>0,[mT],MATCH([Fr],[To^],0)))=ROW(),INDEX([T^],IF([mT]>0,[mT],MATCH([Fr],[To^],0))),0),0),0)" },
+            { "SL", "IF([OK],IF(AND([mT]=0,[mF]=0),1,0),0)" },
         };
         // ---- CAESAR's rules per row (vault/arms/caesar-checks.md)
-        f["Bn"] = "IFERROR(" + E("pl_bn") + "&\"\",\"\")";
+        f["Bn"] = "IFERROR(" + E("bn") + "&\"\",\"\")";
         f["fB"] = "IF([Bn]=\"\",FALSE," + BendNodeTwice("[Bn]", "[Bn*]", "[Fr*]", "[To*]") + ")";
         string secRow = "MATCH([Sc],INDEX(pl_secs,0,pl_sname),0)";
-        f["Wl"] = "IFERROR(IF(ISNUMBER(" + E("pl_wall") + ")," + E("pl_wall") + ",INDEX(pl_secs," + secRow + ",pl_swall)),\"\")";
-        f["Co"] = "IFERROR(IF(ISNUMBER(" + E("pl_corr") + ")," + E("pl_corr") + ",N(INDEX(pl_secs," + secRow + ",pl_scorr))),0)";
+        f["Wl"] = "IFERROR(IF(ISNUMBER(" + E("wall") + ")," + E("wall") + ",INDEX(pl_secs," + secRow + ",pl_swall)),\"\")";
+        f["Co"] = "IFERROR(IF(ISNUMBER(" + E("corr") + ")," + E("corr") + ",N(INDEX(pl_secs," + secRow + ",pl_scorr))),0)";
         f["fC"] = "AND([OK],ISNUMBER([Wl]),N([Co])>0,N([Co])>=N([Wl]))";
         f["Bd"] = "IF(AND([OK],[R]>0,[Nx]>0),DEGREES([th]),0)";
         for (int j = 1; j <= 3; j++)
@@ -718,8 +731,8 @@ static class PipeWorkbookGui
         f["fN"] = "AND([Bd]>0,OR(AND([a1]>=0,[a1]>[Bd]-5),AND([a2]>=0,[a2]>[Bd]-5),AND([a3]>=0,[a3]>[Bd]-5)," +
                   "AND([a1]>=0,[a2]>=0,ABS([a1]-[a2])<5),AND([a1]>=0,[a3]>=0,ABS([a1]-[a3])<5),AND([a2]>=0,[a3]>=0,ABS([a2]-[a3])<5)))";
         f["fH"] = "AND([Bd]>0,OR(AND([a1]>0,[a1]<5),AND([a2]>0,[a2]<5),AND([a3]>0,[a3]<5)))";
-        f["fK"] = "AND([OK],[Rr]=\"\",[Nx]>0,[L]>0,INDEX([L^],MAX(1,[Nx]))>0,DEGREES([th])>1,COUNTIF([Fr*],[To])+COUNTIF([To*],[To])=2,COUNTIF(SIFs!$B:$B,[To])=0)";
-        string ej = "N(" + E("pl_eja") + ")", et = "N(" + E("pl_ejt") + ")", eb = "N(" + E("pl_ejb") + ")", er = "N(" + E("pl_ejr") + ")";
+        f["fK"] = "IF(AND([OK],[Rr]=\"\",[Nx]>0,[L]>0),IF(AND(INDEX([L^],MAX(1,[Nx]))>0,DEGREES([th])>1),AND(COUNTIF([Fr*],[To])+COUNTIF([To*],[To])=2,COUNTIF(SIFs!$B:$B,[To])=0),FALSE),FALSE)";
+        string ej = "N(" + E("eja") + ")", et = "N(" + E("ejt") + ")", eb = "N(" + E("ejb") + ")", er = "N(" + E("ejr") + ")";
         // fE: an expansion joint CAESAR stops on as incomplete (19E: no axial; no transverse and no bending, or on a joint
         // of no length either one missing); fF: no torsion, or both transverse and bending on a joint with length (amber)
         f["fE"] = "AND([Kd]=2,OR(" + ej + "<=0,IF([L]=0,OR(" + et + "<=0," + eb + "<=0),AND(" + et + "<=0," + eb + "<=0))))";
@@ -738,7 +751,7 @@ static class PipeWorkbookGui
         // reached, else at its Coords entry, else where the element above ended (CAESAR's rule); a piece that meets an
         // already placed piece at a node further down the sheet (a branch entered from its far end) is then moved
         // onto it, in two passes (Rt: placed from the start; R1, R2: placed after pass 1, 2; o: the move)
-        f["Pc"] = "IF([OK],IFERROR(INDEX([Pc:],MATCH([Fr],[To:],0)),IFERROR(INDEX([Pc:],MATCH([Fr],[Fr:],0)),ROW())),\"\")";
+        f["Pc"] = "IF([OK],IF([mT]>0,INDEX([Pc^],[mT]),IF([mF]>0,INDEX([Pc^],[mF]),ROW())),\"\")";
         f["Rt"] = "IF([OK],IF([Pc]=ROW(),OR(COUNTIF([OK:],TRUE)=0,COUNTIF(Coords!$A:$A,[Fr])>0),INDEX([Rt^],[Pc])),FALSE)";
         for (int k = 1; k <= 2; k++)
         {
@@ -746,7 +759,7 @@ static class PipeWorkbookGui
             string viaTo = "COUNTIFS([To*],[To]," + ok + ")+COUNTIFS([Fr*],[To]," + ok + ")", viaFr = "COUNTIFS([To*],[Fr]," + ok + ")+COUNTIFS([Fr*],[Fr]," + ok + ")";
             f[c] = "IF(AND([OK],NOT([" + R + "])),IF(" + viaTo + ">0,1,IF(" + viaFr + ">0,2,0)),0)";
             // g: the piece's first row that meets a placed piece (a loop that does not close exactly is closed there)
-            f["g" + k] = "AND([" + c + "]>0,COUNTIFS([Pc:],[Pc],[" + c + ":],\">0\")=0)";
+            f["g" + k] = "IF([" + c + "]>0,COUNTIFS([Pc:],[Pc],[" + c + ":],\">0\")=0,FALSE)";
             foreach (string a3 in new[] { "x", "y", "z" })
             {
                 string X = a3.ToUpperInvariant(), p1 = "[" + X + "1" + A + "*]", p2 = "[" + X + "2" + A + "*]";
@@ -755,7 +768,7 @@ static class PipeWorkbookGui
                 f["d" + k + a3] = "IF([" + c + "]=1," + string.Format(at, "[To]") + "-[" + X + "2],IF([" + c + "]=2," + string.Format(at, "[Fr]") + "-[" + X + "1],0))";
                 f["o" + k + a3] = "IF([" + R + "]," + (k == 1 ? "0" : "[o1" + a3 + "]") + ",SUMIFS([d" + k + a3 + "*],[Pc*],[Pc],[" + c + "*],\">0\",[g" + k + "*],TRUE))";
             }
-            f["R" + k] = "IF([OK],OR([" + R + "],COUNTIFS([Pc*],[Pc],[" + c + "*],\">0\")>0),FALSE)";
+            f["R" + k] = "IF([OK],IF([" + R + "],TRUE,COUNTIFS([Pc*],[Pc],[" + c + "*],\">0\")>0),FALSE)";
             string sfx = k == 1 ? "a" : "f";
             foreach (string a3 in new[] { "x", "y", "z" })
             {
@@ -773,13 +786,14 @@ static class PipeWorkbookGui
         }
         var first = new Dictionary<string, string>(StringComparer.Ordinal)
         {
-            { "Sc", "IFERROR(" + E("pl_sec") + "&\"\",\"\")" },
+            { "Sc", "IFERROR(" + E("sec") + "&\"\",\"\")" },
             { "LX", "IF(ISNUMBER([X2]),[X2],0)" }, { "LY", "IF(ISNUMBER([Y2]),[Y2],0)" }, { "LZ", "IF(ISNUMBER([Z2]),[Z2],0)" },
             { "X1", "IF([OK],IFERROR(INDEX(Coords!$B:$B,MATCH([Fr],Coords!$A:$A,0))+0,0),\"\")" },
             { "Y1", "IF([OK],IFERROR(INDEX(Coords!$C:$C,MATCH([Fr],Coords!$A:$A,0))+0,0),\"\")" },
             { "Z1", "IF([OK],IFERROR(INDEX(Coords!$D:$D,MATCH([Fr],Coords!$A:$A,0))+0,0),\"\")" },
             { "SL", "IF([OK],1,0)" },
             { "Pc", "IF([OK],ROW(),\"\")" },
+            { "mT", "0" }, { "mF", "0" },
         };
         for (int row = 2; row <= last; row++)
             for (int k = 0; k < CalcCols.Length; k++)
@@ -797,7 +811,6 @@ static class PipeWorkbookGui
             b.Names[name] = Calc + "!$" + XlsxBook.Column(pc + 1) + "$" + (pr + 1);
             pr++;
         };
-        b.Names["pl_el"] = "Elements!$1:$1048576";
         b.Names["pl_secs"] = "Sections!$1:$1048576";
         b.Names["pl_rest"] = "Restraints!$1:$1048576";
         b.Names["pl_odl"] = "Lists!$L$2:$L$27";
@@ -955,7 +968,7 @@ static class PipeWorkbookGui
             new[] { "Highlighted", "IF(pl_hl=\"\",\"-\",INDEX(" + colR("Fr") + ",MATCH(pl_hl," + colR("Id") + ",0))&\"-\"&INDEX(" + colR("To") + ",MATCH(pl_hl," + colR("Id") + ",0))&\", \"&TEXT(INDEX(" +
                     colR("L") + ",MATCH(pl_hl," + colR("Id") + ",0)),\"0.###\")&\" " + lenUnit + ", \"&INDEX(" + colR("Ty") + ",MATCH(pl_hl," + colR("Id") + ",0)))" },
             new[] { "Elements drawn", "COUNT(" + X2 + ")" },
-            new[] { "Rows not drawn", "MAX(0,COUNTA(INDEX(pl_el,0,pl_from))+COUNTA(INDEX(pl_el,0,pl_to))-2-2*COUNT(" + X2 + "))/2" },
+            new[] { "Rows not drawn", "MAX(0,COUNTA(Elements!$" + _elCol["from"] + ":$" + _elCol["from"] + ")+COUNTA(Elements!$" + _elCol["to"] + ":$" + _elCol["to"] + ")-2-2*COUNT(" + X2 + "))/2" },
             new[] { "Pipe length (" + lenUnit + ")", "SUM(" + calcR + "$" + col["L"] + "$2:$" + col["L"] + "$" + last + ")" },
             new[] { "Extent X (" + lenUnit + ")", ext("X1f", "X2f") },
             new[] { "Extent Y (" + lenUnit + ")", ext("Y1f", "Y2f") },

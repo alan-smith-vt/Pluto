@@ -47,6 +47,8 @@ public class CaesarSheet
     public readonly List<string[]> Rows = new List<string[]>();   // Rows[r] = cells of spreadsheet row r+1 (null = no cells)
     // cells that hold no usable value, by address ("D12"): an error value (#DIV/0!), a formula never calculated
     public readonly Dictionary<string, string> Problems = new Dictionary<string, string>();
+    // the text of each formula never calculated (saved by a program that does not calculate), by address
+    public readonly Dictionary<string, string> Formulas = new Dictionary<string, string>();
 
     public string Cell(int row, int col)
     {
@@ -267,10 +269,11 @@ public static class CaesarWorkbook
     {
         int row = -1, col = -1;
         string type = null;
-        bool inCell = false, inV = false, inT = false, inSheetData = false, formula = false;
+        bool inCell = false, inV = false, inT = false, inF = false, inSheetData = false, formula = false;
         int phonetic = 0;
         var v = new StringBuilder();
         var t = new StringBuilder();
+        var f = new StringBuilder();
         using (XmlReader xr = Xml(e))
             while (xr.Read())
             {
@@ -294,10 +297,10 @@ public static class CaesarWorkbook
                                 if (ParseRef(cr, out cc, out crow)) { col = cc; if (crow >= 0) row = crow; } else col++;
                                 if (row < 0) row = 0;
                                 type = xr.GetAttribute("t");
-                                v.Length = 0; t.Length = 0; formula = false;
+                                v.Length = 0; t.Length = 0; f.Length = 0; formula = false;
                                 inCell = !xr.IsEmptyElement;
                                 break;
-                            case "f": if (inCell) formula = true; break;
+                            case "f": if (inCell) { formula = true; inF = !xr.IsEmptyElement; } break;
                             case "v": if (inCell && !xr.IsEmptyElement) inV = true; break;
                             case "t": if (inCell && !xr.IsEmptyElement) inT = true; break;
                             case "rPh": if (inCell && !xr.IsEmptyElement) phonetic++; break;
@@ -308,6 +311,7 @@ public static class CaesarWorkbook
                     case XmlNodeType.Whitespace:
                     case XmlNodeType.SignificantWhitespace:
                         if (inV) v.Append(xr.Value);
+                        else if (inF) f.Append(xr.Value);
                         else if (inT && phonetic == 0) t.Append(xr.Value);
                         break;
                     case XmlNodeType.EndElement:
@@ -315,6 +319,7 @@ public static class CaesarWorkbook
                         {
                             case "sheetData": inSheetData = false; break;
                             case "v": inV = false; break;
+                            case "f": inF = false; break;
                             case "t": inT = false; break;
                             case "rPh": phonetic = Math.Max(0, phonetic - 1); break;
                             case "c":
@@ -331,7 +336,11 @@ public static class CaesarWorkbook
                                     else if (type == "b") val = v.ToString().Trim() == "1" ? "TRUE" : v.Length > 0 ? "FALSE" : null;
                                     else if (v.Length > 0) val = v.ToString();
                                     else if (t.Length > 0) val = t.ToString();
-                                    if (val == null && formula && type != "e") sheet.Problems[XlsxBook.Ref(row, col)] = "a formula with no saved value (open the workbook in Excel and save it)";
+                                    if (val == null && formula && type != "e")
+                                    {
+                                        sheet.Problems[XlsxBook.Ref(row, col)] = "a formula with no saved value (open the workbook in Excel and save it)";
+                                        if (f.Length > 0) sheet.Formulas[XlsxBook.Ref(row, col)] = f.ToString();
+                                    }
                                     if (val != null) sheet.Set(row, col, XlsxBook.Unescape(val));
                                 }
                                 inCell = false;
