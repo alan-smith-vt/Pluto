@@ -1,3 +1,4 @@
+config: scripts\duct\duct-config.psd1
 rooms from duct-config.psd1: 3 codes
 cut points: 1 from <ROOT>\cuts\cuts.csv
 manual drop: 3 parts from <ROOT>\cuts\drop.txt
