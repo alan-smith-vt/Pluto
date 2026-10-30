@@ -154,7 +154,7 @@ if ($Box) {
         [DuctsToPluto]::Steel.AddRange($sr.Build((Resolve-Path $Steel).Path))
         Write-Output ("steel: {0} members from {1} ({2})" -f [DuctsToPluto]::Steel.Count, $Steel, ($sr.Summary() -replace "`n", "; "))
     }
-    Write-Output ("primary systems: " +$(if ([DuctsToPluto]::PrimarySystems.Count) { [DuctsToPluto]::PrimarySystems -join ", " } else { "none configured (DuctSystems in duct-config.psd1 or -Systems)" }))
+    Write-Output ("primary systems: " + $(if ([DuctsToPluto]::PrimarySystems.Count) { [DuctsToPluto]::PrimarySystems -join ", " } else { "none configured (DuctSystems in duct-config.psd1 or -Systems)" }))
     $r = [DuctsToPluto]::ExportRevit($Run, [IO.Path]::GetFullPath($Revit), $Out, $ModelId, $Unit, $Room, $Part)
     Write-Output $r.Note
 } elseif ($Probe) {
