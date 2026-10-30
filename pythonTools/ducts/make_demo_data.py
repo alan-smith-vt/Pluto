@@ -681,6 +681,8 @@ CONFIG = r"""# Demo duct-config.psd1 (synthetic data, make_demo_data.py). Copy t
 # pipeline on the demo data. Same keys as duct-config.example.psd1, plus DuctSteel.
 @{{
     WorkDir = '{root}'
+    # files shared with the add-ins (room boxes, service codes): the demo's own root, never the production folder
+    AddinDir = '{root}'
     SapDir  = ''
     # SYSA / SYSB / SYSC: the RunName service field ("A-B1-<service>-DUCT-<n>") has no hyphens, so no 'SYS-A'
     DuctSystems = @('SYSA=#4f8cff', 'SYSB=#ff8a3d', 'SYSC')
