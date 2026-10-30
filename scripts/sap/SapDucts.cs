@@ -85,6 +85,9 @@ public partial class SapDucts
             if (sec == NoSize) addTo("FLAG_NO_SIZE", name);
             if (sec == Stub) addTo("TAP_STUBS", name);
             foreach (string f in (r["Flags"] ?? "").Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)) addTo("FLAG_" + Clean(f), name);
+            // one group per unsupported span (frames.csv Span = US<n>, longest first; 2026-10-30 board laptop:936)
+            string span = Val(r, "Span");
+            if (span != "") addTo("SPAN_" + Clean(span), name);
         }
         // steel, supports, extra flags, plant axes (SapSteel.cs); nothing when none of their inputs is set
         string steelNote = AddSteelAndSupports(joints, sections, addTo, frameName);
@@ -103,13 +106,15 @@ public partial class SapDucts
         Check(M.File.Save(savePath), "Save " + savePath);
         var parts = new List<string>();
         foreach (KeyValuePair<string, List<string>> kv in groups) if (kv.Key.StartsWith("FLAG_")) parts.Add(kv.Key.Substring(5) + " " + kv.Value.Count);
+        var spans = groups.Where(g => g.Key.StartsWith("SPAN_")).ToList();
+        string spanNote = spans.Count == 0 ? "" : F("\nNEW unsupported spans: {0} spans ({1} frames), groups SPAN_<id>", spans.Count, spans.Sum(g => g.Value.Count));
         int defThk = rows.Count(r => r["Shape"] != "rigid" && (r.ContainsKey("ThkSource") ? r["ThkSource"] : "default") == "default");
         return F("NEW kept: " + filterNote + "\nNEW SAP model {0}: {1} frames, {2} joints, {3} sections{4}; material {5} (PLACEHOLDER)\nNEW orientation: {6} rect frames oriented, {7} without a width direction (FLAG_NO_ORIENTATION); thickness default 0.06 in on {8} frames\nNEW flag groups (frames): {9}{10}",
             Path.GetFileName(savePath), groups["DUCT_ALL"].Count, joints.Count, sections.Count + 1,
             skipped > 0 ? F(", {0} zero-length rows skipped ({1})", skipped, string.Join(" ", zeroRows.Take(10).ToArray()) + (zeroRows.Count > 10 ? " ..." : "")) : "",
             Mat, oriented, noDir, defThk, parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "none",
             failed.Count > 0 ? F("\nNEW SAP refused {0} frames (not in the model): {1}", failed.Count, string.Join("; ", failed.Take(10).ToArray()) + (failed.Count > 10 ? " ..." : "")) : "")
-            + (steelNote != "" ? "\n" + steelNote : "");
+            + spanNote + (steelNote != "" ? "\n" + steelNote : "");
     }
 
     // SAP's local-axis angle (degrees) that puts local 3 along the width direction w. Default axes (SAP): local 1 = I->J;
