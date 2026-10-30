@@ -43,6 +43,7 @@ foreach ($s in $suites) {
                 $argStr = (@("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", $full) + $extra | ForEach-Object { '"' + $_ + '"' }) -join " "
                 for ($try = 1; $try -le 2; $try++) {   # a hang is retried once
                     $pr = Start-Process $ps -ArgumentList $argStr -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError "$out.err"
+                    $null = $pr.Handle   # PS 5.1: without an open handle ExitCode reads null once the process is gone
                     if ($pr.WaitForExit($TimeoutMin * 60000)) { $pr.WaitForExit(); $ok = $pr.ExitCode -eq 0; $note = $(if ($try -gt 1) { "(after a hang) " } else { "" }); break }
                     & taskkill.exe /T /F /PID $pr.Id | Out-Null
                     $ok = $false; $note = "HANG (killed after $TimeoutMin min, twice)"
