@@ -20,8 +20,8 @@ public partial class SapDucts
 {
     public const string SteelMat = "STEEL_A992", SteelNoSize = "STEEL_NOSIZE", PlantSys = "PLANT";
     public string SteelFramesCsv, SteelJointsCsv, SupportsCsv, FlagsCsv;
-    // plant axes: a coordinate system turned about global Z (2026-10-22: the old model is turned 90 deg); NaN = none
-    public double PlantRotZ = 90;
+    // plant axes: a coordinate system turned about global Z (2026-10-22: the old model is turned 90 deg); NaN = none (default, 2026-10-30 user: opt-in)
+    public double PlantRotZ = double.NaN;
 
     // point groups, filled here, assigned with the frame groups in Build
     readonly Dictionary<string, List<string>> pointGroups = new Dictionary<string, List<string>>(StringComparer.Ordinal);

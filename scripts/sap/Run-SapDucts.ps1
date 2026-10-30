@@ -10,7 +10,7 @@
 #                -SteelJoints (default: the same name with steel_joints). Groups STEEL_ALL, STEEL_RELEASED, STEEL_<condition>
 #   -Supports    <base>.supports.csv: TAP_STUB frames duct joint -> steel joint, groups SUPPORT_ALL, SUPPORT_<type>
 #   -Flags       csv Frame,Flag: extra FLAG_ groups (FLAG_UNSUPPORTED_SPAN)
-#   -PlantRotZ   plant axes: coordinate system PLANT turned this many degrees about Z (default 90; "none": no system)
+#   -PlantRotZ   plant axes: coordinate system PLANT turned this many degrees about Z (opt-in, e.g. 90; default none)
 param(
     [Parameter(Mandatory = $true)][string]$Frames,
     [Parameter(Mandatory = $true)][string]$SavePath,
@@ -21,7 +21,7 @@ param(
     [string]$SteelJoints,
     [string]$Supports,
     [string]$Flags,
-    [string]$PlantRotZ = "90",
+    [string]$PlantRotZ = "none",
     [string]$SapDir = $env:PLUTO_SAP_DIR
 )
 $include = @($(if ($Fragments) { "fragment" }), $(if ($Other) { "other" }), $(if ($NavisOnly) { "navisworks-only" })) -join ","

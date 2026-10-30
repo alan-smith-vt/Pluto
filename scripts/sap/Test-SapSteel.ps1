@@ -46,7 +46,7 @@ $flags = W "test.flags.csv" @("Frame,Flag", "D2,UNSUPPORTED_SPAN")
 $sdb = Join-Path $Out "test_steel.sdb"
 $ps = Join-Path $env:WINDIR "System32\WindowsPowerShell\v1.0\powershell.exe"
 $extra = @(); if ($SapDir) { $extra = @("-SapDir", $SapDir) }
-& $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "Run-SapDucts.ps1") -Frames $frames -SavePath $sdb -SteelFrames $steel -Supports $supports -Flags $flags @extra
+& $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "Run-SapDucts.ps1") -Frames $frames -SavePath $sdb -SteelFrames $steel -Supports $supports -Flags $flags -PlantRotZ 90 @extra
 if ($LASTEXITCODE) { throw "Run-SapDucts failed" }
 $base = Join-Path $Out "test_steel"
 & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "Run-Sap.ps1") -Open $sdb -NoSaveSdb -Export $base -NoResults -NoViewerFile @extra | Select-String "^\[(export|mesh)|^RESULT" | ForEach-Object { $_.Line.Substring(0, [Math]::Min(200, $_.Line.Length)) }
