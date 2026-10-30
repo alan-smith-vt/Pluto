@@ -91,6 +91,18 @@ $r.Summary()
 Either list may be null/empty (not both). Verified 2026-09-01 same as above
 (strict C#5 compile + probe incl. cross-discipline node dedupe + reader readback).
 
+## Steel model: connectivity and boundary conditions (2026-10-30)
+
+`scripts/arms/SteelModel.cs` turns the member list into an analysis model (inches, input frame); shared geometry rules (CP offsets, web / LocalY, node dedupe, ramp) live once in `SteelGeom.cs`, used by SteelToPluto, CombinedToPluto and SteelModel.
+
+- **Snap**: an end within `SnapIn` (6 in) of another centreline connects. Within SnapIn of that member's end -> joins the end; else lands on the centreline and that member is split (continuous). Side landings within 1 in along a member = one joint.
+- **Open end** (nothing snapped): slope from horizontal < 45 deg -> PINNED, else FIXED. Farther than `FarIn` (24 in) from other steel -> flag OPEN_FAR (on the demo every open end is: column feet and wall ends are far from steel by nature; the flag is informational).
+- **Hinged** = M2M3 released, torsion kept: ends framing into a continuous member (framed), ends meeting ends (corner), exactly two collinear ends within 5 deg (collinear, own group so the rule can change). 3+ ends at a node with exactly one vertical: the vertical keeps its moments.
+- Files: `<out>.steel_joints.csv` (Joint S<n>, X/Y/Z_in, Restraint, Condition, Flags) and `<out>.steel_frames.csv` (Frame SF<n>, JointI/J, coords, Section + dims, Web, CP, OffY/OffZ, ReleaseI/J, EndI/J, MemberOid). Interface post: #hvac laptop:595.
+- Hooks for other lanes: `NearestFrame`, `SplitAt` (supports split the steel), `TopAt` (top of steel).
+- **Duct pipeline**: `DuctSteel` in duct-config.psd1 (or `-Steel`) makes `Export-DuctsViewer.ps1 -Revit` draw the steel in `<out>_clean.bin` (DuctsSteel.cs): groups `Steel: <section>` (white), end-marker collars `Steel end: open-pinned` (blue) / `open-fixed` (red) / `hinged` (yellow) / `collinear-hinged` (purple), node group `Flag: OPEN_FAR`. Steel meters are taken as the duct model frame (x 39.37 in), no other transform.
+- Tests: `scripts/arms/tests/Test-SteelModel.ps1` (synthetic case per rule).
+
 ## Related
 
 - [[vault/arms/pipe-csv-to-viewer|pipe-csv-to-viewer]] — the sibling pipe bridge
