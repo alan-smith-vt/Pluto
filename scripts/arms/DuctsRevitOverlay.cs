@@ -605,7 +605,7 @@ public partial class DuctsToPluto
         List<DuctSystem> systems = AnalyzeSystems(scope, conns, inScope, touch, nearPairs, sidePairs, beams, beamDim, nodes, off, scale, rows, rowsOf);
         // clean centreline model (DuctsClean.cs): <out>_clean.bin + <out>.frames.csv (the SAP input)
         foreach (Tuple<RvConn, double[]> c in EndContacts) sideNodes.Add(new[] { node(c.Item1), MakeNode(nodes, ref nextNode, c.Item2, off, scale) });   // end contacts: rigid links
-        HangerScope = inRoom; HangerRowsForView = rows;   // DuctsCleanHangers.cs: the room's rows for the hanger check
+        HangerScope = inRoom; HangerRowsForView = rows; NavRowFlags.Clear();   // reset per run: CheckHangers only runs when there is steel   // DuctsCleanHangers.cs: the room's rows for the hanger check
         string cleanNote = BuildClean(outBase, modelId, lengthUnit, scope, beams, beamDim, nodes, off, scale, nearPairs, sideNodes, navBeamRow, rows, k => node(k), attach);
         WriteRunsCsv(outBase + ".runs.csv", runSegs);
         foreach (RvEl e in scope)
