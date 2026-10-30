@@ -3,7 +3,7 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\arms\tests\Test-SteelModel.ps1
 # Exit code 0 = all pass.
 $ErrorActionPreference = "Stop"
-. (Join-Path $PSScriptRoot "..\..\lib\Config.ps1")
+. (Join-Path $PSScriptRoot "..\Import-Arms.ps1")
 $script:fail = 0; $script:pass = 0
 function Check($name, $cond) {
     if ($cond) { $script:pass++ } else { $script:fail++; Write-Output "FAIL: $name" }

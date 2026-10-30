@@ -23,7 +23,7 @@ Columns (v4.2): `ConnOid, PartOid, PartClass, X, Y, Z, RunOid, RunName, Room, Ud
 ## 2. Compile (fresh window)
 
 ```powershell
-. <repo>\scripts\lib\Config.ps1   # one Add-Type batch: scripts/lib + scripts/arms
+. <repo>\scripts\arms\Import-Arms.ps1   # core (scripts/lib) + arms + duct/model, cached dlls
 ```
 
 Everything loads in one `Add-Type` call (types can't be redefined: edit → new window). `Types.cs` defines `Vec3`; `PipeCsvReader.cs` defines `PipeBeam`. Do not also load the old `Stubs.cs`.

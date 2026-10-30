@@ -130,7 +130,7 @@ try {
         $out.model = $modelS2k; $out.resultsS2k = $resS2k
         if (-not $NoViewerFile) {
             if (-not $ModelId) { $ModelId = "sap/" + ([IO.Path]::GetFileNameWithoutExtension($held) -replace ' ', '_') }
-            . (Join-Path (Split-Path $PSScriptRoot) "lib\Config.ps1")
+            . (Join-Path (Split-Path $PSScriptRoot) "arms\Import-Arms.ps1")
             $r = [SapToPluto]::Export($modelS2k, $resS2k, $base, $ModelId, [bool]$Cylindrical, $(if ($Looks) { Full $Looks } else { $null }))
             foreach ($line in ($r.Summary() -split "`r?`n")) { if ($line.Trim()) { Say "export" $line } }
             $out.bin = "$base.bin"; $out.features = "$base.features.json"

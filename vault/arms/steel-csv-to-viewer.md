@@ -37,7 +37,7 @@ near-vertical member.
 ## 2. Run (production side, PowerShell 5.1, fresh window)
 
 ```powershell
-. <repo>\scripts\lib\Config.ps1   # one Add-Type batch: scripts/lib + scripts/arms
+. <repo>\scripts\arms\Import-Arms.ps1   # core (scripts/lib) + arms + duct/model, cached dlls
 $ex = New-Object SteelToPluto
 $ex.Rooms('C:\Temp\steel_v1.csv')                        # optional census
 $members = $ex.Build('C:\Temp\steel_v1.csv', '<room>')   # or $ex.Build($csv) for all
@@ -81,7 +81,7 @@ group per element). Unprefixed `PartOid`/`MemberOid` labels. Unsized groups are
 `UNSIZED PIPE` (red) and `UNSIZED STEEL` (orange).
 
 ```powershell
-. <repo>\scripts\lib\Config.ps1   # one Add-Type batch: scripts/lib + scripts/arms (CombinedToPluto included)
+. <repo>\scripts\arms\Import-Arms.ps1   # core (scripts/lib) + arms + duct/model, cached dlls (CombinedToPluto included)
 $pipes = (New-Object PipeCsvReader).Build('C:\Temp\pipe_v4.csv', '<room>')
 $steel = (New-Object SteelToPluto).Build('C:\Temp\steel_v1.csv', '<room>')
 $r = [CombinedToPluto]::Export($pipes, $steel, 'C:\Temp\plant_<room>', '<plant>/combined/<room>', 'in')

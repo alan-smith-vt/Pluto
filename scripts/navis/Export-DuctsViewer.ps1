@@ -1,6 +1,6 @@
 # A "Pluto Ducts" / "Pluto Fab" / "Pluto Box" run folder -> Pluto viewer file (.bin + .features.json) to load
 # with "Add overlay..." beside the SP3D plant file. Windows PowerShell 5.1; uses scripts\arms\DuctsToPluto.cs
-# (compiled with the lib by scripts\lib\Config.ps1).
+# (compiled with the arms by scripts\arms\Import-Arms.ps1).
 #   powershell -ExecutionPolicy Bypass -File scripts\navis\Export-DuctsViewer.ps1 -Run C:\Temp\hvac\ducts\<yyyyMMdd-HHmmss>
 #     [-Mesh [-Room <codes>]]  the raw triangles (ducts_tri.bin: Ducts + MEP Fabrication Ductwork) as a shell mesh
 #                        instead of beams, to check each element's actual geometry; default out <run>\ducts_mesh
@@ -87,7 +87,7 @@ if (-not $Out) { $Out = Join-Path $Run $(if ($Box) { "box" } elseif ($RvMesh) { 
 if (-not $ModelId) {
     $ModelId = $(if ($Box) { "hvac/box/" + (Split-Path $Run -Leaf) } elseif ($RvMesh) { "hvac/revit-mesh/" + (Split-Path $Run -Leaf) } else { "hvac/ducts/" + (Split-Path $Run -Leaf) + $(if ($Mesh) { "/mesh" } elseif ($Centrelines) { "/cl" } elseif ($Probe) { "/probe" } elseif ($Revit) { "/revit" } else { "" }) })
 }
-. (Join-Path (Split-Path $PSScriptRoot) "lib\Config.ps1")
+. (Join-Path (Split-Path $PSScriptRoot) "arms\Import-Arms.ps1")
 # side files (room boxes, service codes) live under WorkDir from the duct config; C:\Temp\hvac without one (the add-ins' folder)
 $workRoot = "C:\Temp\hvac"
 if (Test-Path $cfg) { $w = (Import-PowerShellDataFile $cfg).WorkDir; if ($w) { $workRoot = $w } }

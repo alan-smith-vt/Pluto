@@ -20,8 +20,8 @@ The current state and next task are in the Notes vault handoff (`Tools/Pluto Han
 ```text
 vault/             Obsidian vault (vault root = repo root) — ALL documentation
 scripts/           production C# 5 / PowerShell 5.1 toolchain: STAAD post-processing lib,
-  lib/               v4 writer, sidecar writer — one Add-Type batch via lib/Config.ps1
-  arms/              pipe / steel / combined CSV / SAP2000 -> .bin + sidecar
+  lib/               v4 writer, sidecar writer — core only, built by lib/Import-PlutoCore.ps1
+  arms/              pipe / steel / combined CSV / SAP2000 -> .bin + sidecar (arms/Import-Arms.ps1)
 viewer/            the viewer (open viewer/index.html; no build, no server)
 pythonTools/       development-side Python (sap/: SAP2000 tank generator -> .s2k)
 archive/           superseded code (old viewer, v3 writer) -- reference only

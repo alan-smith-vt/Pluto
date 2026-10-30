@@ -31,7 +31,7 @@ of rescued.
 ## 1. Compile (fresh window every time a .cs changes)
 
 ```powershell
-. <repo>\scripts\lib\Config.ps1   # one Add-Type batch: scripts/lib + scripts/arms
+. <repo>\scripts\arms\Import-Arms.ps1   # core (scripts/lib) + arms + duct/model, cached dlls
 ```
 
 One call — the files reference each other. `PipeCsvReader.cs` defines

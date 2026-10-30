@@ -15,7 +15,7 @@ pathway also uses) and the v4 writer. Replaces the Python `s2k_to_bin.py` from t
 SapViewer repo (archived: `pythonTools/sap/`), which wrote v3.
 
 Verified 2026-09-03 on the SapViewer tank model (`tank_hoop`, 756 joints / 720 quads,
-cases DEAD + HYDRO): PS 5.1 compile via `Config.ps1`, export, and a headless readback with
+cases DEAD + HYDRO): PS 5.1 compile via `Import-Arms.ps1`, export, and a headless readback with
 the viewer's own `PlutoFormat.load` (`node viewer/tests/readback_sap.js <outBase>`) —
 force values match the `.s2k` rows to float precision, joint-local displacements come
 out radial-outward in global, SAP Z-up axes preserved.
@@ -40,7 +40,7 @@ out radial-outward in global, SAP Z-up axes preserved.
 ## 2. Run (PowerShell 5.1, fresh window)
 
 ```powershell
-. <repo>\scripts\lib\Config.ps1   # one Add-Type batch: scripts/lib + scripts/arms
+. <repo>\scripts\arms\Import-Arms.ps1   # core (scripts/lib) + arms + duct/model, cached dlls
 $r = [SapToPluto]::Export('C:\Temp\tank.$2k', 'C:\Temp\results.s2k', 'C:\Temp\tank', 'sap/tank')
 $r.Summary()
 # geometry-only (no results yet): pass $null for the results file

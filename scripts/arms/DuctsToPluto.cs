@@ -6,7 +6,7 @@ using System.Text;
 
 // DuctsToPluto  --  a Navisworks "Pluto Ducts" run folder (scripts/navis/DuctsButton.cs) -> Pluto v4
 // geometry-only binary + features sidecar, to load as an overlay beside the SP3D plant file.
-// C# 5 / Add-Type (PowerShell 5.1) compatible; compiled with the arms by scripts/lib/Config.ps1.
+// C# 5 / Add-Type (PowerShell 5.1) compatible; compiled with the arms by scripts/arms/Import-Arms.ps1.
 //
 // Inputs (feet, plant frame: Navisworks X/Y/Z = plant E/N/EL):
 //   ducts.csv        one row per Ducts / Duct Fittings / Duct Accessories element: IfcGUID, Category,
