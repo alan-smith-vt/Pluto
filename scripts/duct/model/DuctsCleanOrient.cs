@@ -16,7 +16,6 @@ using System.Linq;
 // DuctRotateLargeVertical = $false in duct-config.psd1: flag only.
 public partial class DuctsToPluto
 {
-    public static bool RotateLargeVertical = true;
     const double OrientHorizDeg = 10, OrientTolIn = 1;
 
     static string ApplyOrientation(List<CEdge> clean, Dictionary<int, double[]> P)
@@ -36,7 +35,7 @@ public partial class DuctsToPluto
             var run = SizeRun(seed, inc); foreach (CEdge e in run) done.Add(e);
             foreach (CEdge e in run) if (state[e] == 1) { e.Flags.Add("LARGE_SIDE_VERTICAL"); flagged++; }
             string sys = seed.Src.Count > 0 ? seed.Src[0].SysName : seed.Source;
-            double len = run.Sum(e => Len(P[e.A], P[e.B]));
+            double len = run.Sum(e => DuctMath.Len(P[e.A], P[e.B]));
             string what = string.Format(Inv, "  {0} {1} run, {2} frame(s), {3:0.#} ft ({4} with the larger side vertical)", sys, DimText(seed.Dim), run.Count, len, run.Count(e => state[e] == 1));
             if (run.Any(e => state[e] == -1))
             {
@@ -45,16 +44,16 @@ public partial class DuctsToPluto
                 continue;
             }
             runs++;
-            if (!RotateLargeVertical) { list.Add(what + ": flagged only (DuctRotateLargeVertical off)"); continue; }
+            if (!Cfg.RotateLargeVertical) { list.Add(what + ": flagged only (DuctRotateLargeVertical off)"); continue; }
             foreach (CEdge e in run)
             {
-                double[] ax = Unit(Sub3(P[e.B], P[e.A]));
+                double[] ax = DuctMath.Unit(DuctMath.Sub3(P[e.B], P[e.A]));
                 e.Y = DuctOrient.Rotate(ax, e.Y); e.Flags.Add("ROTATED"); rotated++;
             }
             list.Add(what + ": rotated 90 deg about the centreline");
         }
         string head = string.Format(Inv, "orientation: {0} frame(s) with the larger side vertical (LARGE_SIDE_VERTICAL), {1} run(s), {2} frame(s) rotated{3}, conflicts {4} (ROTATION_CONFLICT)",
-            flagged, runs, rotated, RotateLargeVertical ? "" : " (rotation off)", conflicts);
+            flagged, runs, rotated, Cfg.RotateLargeVertical ? "" : " (rotation off)", conflicts);
         OrientNewLine = flagged + conflicts == 0 ? "" : string.Format(Inv, "NEW orientation: {0} frame(s) LARGE_SIDE_VERTICAL, {1} rotated in {2} run(s), {3} conflict(s)", flagged, rotated, runs, conflicts);
         return head + (list.Count > 0 ? "\n" + string.Join("\n", list.ToArray()) : "");
     }
@@ -70,9 +69,9 @@ public partial class DuctsToPluto
         if (ce.Rigid || ce.Dim == null || ce.Dim[0] == 1 || ce.Y == null) return 0;
         double[] d = ce.Dim;
         if (double.IsNaN(d[1]) || double.IsNaN(d[2])) return 0;
-        double[] ab = Sub3(P[ce.B], P[ce.A]); double L = Math.Sqrt(Dot3(ab, ab));
+        double[] ab = DuctMath.Sub3(P[ce.B], P[ce.A]); double L = Math.Sqrt(DuctMath.Dot3(ab, ab));
         if (L < 1e-9 || Math.Abs(ab[2]) / L > sinH) return 0;
-        double[] ax = Unit(ab), u = WidthDir(ce, P);
+        double[] ax = DuctMath.Unit(ab), u = WidthDir(ce, P);
         if (u == null) return 0;
         int st = DuctOrient.State(ax, u, d[1], d[2], OrientTolIn);
         if (ce.DimB == null) return st;

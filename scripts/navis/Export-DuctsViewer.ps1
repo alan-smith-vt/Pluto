@@ -33,6 +33,8 @@
 #                        kept frames ending at a cut get CUT_END (viewer "Clean: cut ends", SAP FLAG_CUT_END)
 #                        [-Steel <csv>|none]: utility rack steel (default: DuctSteel in the duct config) drawn in the
 #                        clean model with its end conditions; <out>.steel_joints.csv / .steel_frames.csv (SAP input)
+#     [-Config <psd1>]   the duct config every setting above comes from (read once, printed first); default
+#                        scripts\duct\duct-config.psd1 (absent = defaults)
 #     [-Out <base>]      default <run>\ducts  ->  <run>\ducts.bin + <run>\ducts.features.json
 #     [-Unit in]         file length unit; "in" matches the plant export
 #     [-ModelId <id>]    default hvac/ducts/<run folder name> (+ "/mesh")
@@ -63,14 +65,23 @@ param(
     [string]$Systems,
     [string]$Cuts,
     [string]$Steel,  # steel CSV for the clean model (default DuctSteel in the duct config); none = off
-    [string]$Drop   # add-on: hand-picked drop lists (viewer Cut picker), comma separated; default DuctDrop in the duct config; none = off
+    [string]$Drop,  # add-on: hand-picked drop lists (viewer Cut picker), comma separated; default DuctDrop in the duct config; none = off
+    [string]$Config # the duct config (.psd1); default scripts\duct\duct-config.psd1
 )
 $ErrorActionPreference = "Stop"
 $Part = $(if ($Part) { $Part -join "," } else { $null })
+# the duct config, read once: -Config, else scripts\duct\duct-config.psd1 (absent = every setting at its default)
+if ($Config) {
+    if (-not (Test-Path $Config)) { throw "config not found: $Config (-Config)" }
+    $cfg = (Resolve-Path $Config).Path
+} else { $cfg = Join-Path (Split-Path $PSScriptRoot) "duct\duct-config.psd1" }
+$dcfg = $(if (Test-Path $cfg) { Import-PowerShellDataFile $cfg } else { @{} })
+$repo = Split-Path (Split-Path $PSScriptRoot)   # a config inside the repo prints repo-relative (same text in every checkout)
+Write-Output ("config: {0}{1}" -f $(if ($cfg.StartsWith($repo + "\", [StringComparison]::OrdinalIgnoreCase)) { $cfg.Substring($repo.Length + 1) } else { $cfg }),
+    $(if (Test-Path $cfg) { "" } else { " (not found: defaults)" }))
 # -Revit without -Room: DuctRooms from the duct config (a fresh session lost the list once and ran the whole building)
-$cfg = Join-Path (Split-Path $PSScriptRoot) "duct\duct-config.psd1"
-if ($Revit -and -not $Room -and (Test-Path $cfg)) {   # an empty -Room $var counts as not given
-    $dr = @((Import-PowerShellDataFile $cfg).DuctRooms | Where-Object { $_ })
+if ($Revit -and -not $Room) {   # an empty -Room $var counts as not given
+    $dr = @($dcfg.DuctRooms | Where-Object { $_ })
     if ($dr.Count) { $Room = $dr -join ","; Write-Output ("rooms from duct-config.psd1: {0} codes" -f $dr.Count) }
 }
 if ($Room -eq "*") { $Room = "" }
@@ -88,90 +99,28 @@ if (-not $ModelId) {
     $ModelId = $(if ($Box) { "hvac/box/" + (Split-Path $Run -Leaf) } elseif ($RvMesh) { "hvac/revit-mesh/" + (Split-Path $Run -Leaf) } else { "hvac/ducts/" + (Split-Path $Run -Leaf) + $(if ($Mesh) { "/mesh" } elseif ($Centrelines) { "/cl" } elseif ($Probe) { "/probe" } elseif ($Revit) { "/revit" } else { "" }) })
 }
 . (Join-Path (Split-Path $PSScriptRoot) "arms\Import-Arms.ps1")
-# files shared with the add-ins (room boxes, service codes) live in AddinDir from the duct config, default the add-ins' C:\Temp\hvac
-$addinDir = [DuctsToPluto]::AddinDefaultDir
-if (Test-Path $cfg) { $w = (Import-PowerShellDataFile $cfg).AddinDir; if ($w) { $addinDir = $w } }
-[DuctsToPluto]::AddinDir = $addinDir
+. (Join-Path (Split-Path $PSScriptRoot) "duct\Get-DuctSettings.ps1")
+# every setting the converter takes, in one object (scripts\duct\model\DuctSettings.cs), handed to the Export* call
+$notes = New-Object 'System.Collections.Generic.List[string]'
+$ds = Get-DuctSettings -Data $dcfg -Mode $(if ($Revit) { "Revit" } elseif ($RvMesh) { "RevitMesh" } else { "" }) `
+    -Systems $Systems -Cuts $Cuts -Drop $Drop -Steel $Steel -Notes $notes
+$addinDir = $ds.AddinDir
 $t0 = Get-Date
 if ($Box) {
     $r = [DuctsToPluto]::ExportBox($Run, $Out, $ModelId, $Unit)
     Write-Output $r.Note
     Write-Output ("box mesh: {0} nodes; {1} items without triangles in the box" -f $r.Nodes, $r.Skipped)
 } elseif ($RvMesh) {
-    # Revit categories left out of the _norun file: RevitMeshNoRunExclude in duct-config.psd1
-    [DuctsToPluto]::NoRunExclude.Clear()
-    $cfg = Join-Path (Split-Path $PSScriptRoot) "duct\duct-config.psd1"
-    if (Test-Path $cfg) { foreach ($c in @((Import-PowerShellDataFile $cfg).RevitMeshNoRunExclude | Where-Object { $_ })) { [void][DuctsToPluto]::NoRunExclude.Add($c.Trim()) } }
-    $r = [DuctsToPluto]::ExportRevitMesh($Run, $Out, $ModelId, $Unit)
+    $r = [DuctsToPluto]::ExportRevitMesh($Run, $Out, $ModelId, $Unit, $ds)
     Write-Output $r.Note
     Write-Output ("Revit mesh: {0} nodes; {1} elements without triangles in the boxes" -f $r.Nodes, $r.Skipped)
 } elseif ($Mesh) {
     $r = [DuctsToPluto]::ExportMesh($Run, $Out, $ModelId, $Unit, $Room)
     Write-Output ("mesh: {0} nodes; {1} rows without triangles" -f $r.Nodes, $r.Skipped)
 } elseif ($Revit) {
-    $cfg = Join-Path (Split-Path $PSScriptRoot) "duct\duct-config.psd1"
-    if (-not $Systems -and (Test-Path $cfg)) { $Systems = ((Import-PowerShellDataFile $cfg).DuctSystems) -join "," }
-    [DuctsToPluto]::PrimarySystems.Clear(); [DuctsToPluto]::PrimaryColors.Clear()
-    foreach ($s in @($Systems -split '[,;\s]+' | Where-Object { $_ })) {
-        $n, $c = $s -split '=', 2
-        [DuctsToPluto]::PrimarySystems.Add($n)
-        if ($c) { [DuctsToPluto]::PrimaryColors[$n] = $c }
-    }
-    # pinned mains: "<name>=<Revit id>" (a fragment holding that part becomes "<name> 2", ...)
-    [DuctsToPluto]::PrimaryPins.Clear()
-    if (Test-Path $cfg) {
-        foreach ($p in @((Import-PowerShellDataFile $cfg).DuctMains | Where-Object { $_ })) {
-            $n, $id = $p -split '=', 2
-            if ($id) { [DuctsToPluto]::PrimaryPins.Add((New-Object 'System.Collections.Generic.KeyValuePair[string,string]' $n.Trim(), $id.Trim())) }
-        }
-    }
-    # scope cut points: a Run-Sap.ps1 -Points CSV (Name, Found, X_in, Y_in, Z_in) from -Cuts or DuctCuts in the config
-    [DuctsToPluto]::CutPoints.Clear()
-    if (-not $Cuts -and (Test-Path $cfg)) { $Cuts = (Import-PowerShellDataFile $cfg).DuctCuts }
-    if ($Cuts -and $Cuts -ne "none") {
-        if (-not (Test-Path $Cuts)) { throw "cut points file not found: $Cuts (DuctCuts in duct-config.psd1 or -Cuts; -Cuts none = no cuts)" }
-        $inv = [Globalization.CultureInfo]::InvariantCulture
-        foreach ($c in (Import-Csv $Cuts | Where-Object { $_.Found -eq "1" })) {
-            $xyz = [double[]]@([double]::Parse($c.X_in, $inv), [double]::Parse($c.Y_in, $inv), [double]::Parse($c.Z_in, $inv))
-            [DuctsToPluto]::CutPoints.Add((New-Object 'System.Collections.Generic.KeyValuePair[string,double[]]' $c.Name, $xyz))
-        }
-        Write-Output ("cut points: {0} from {1}" -f [DuctsToPluto]::CutPoints.Count, $Cuts)
-    }
-    # add-on (DuctsManualDrop.cs): hand-picked drops from the viewer's Cut picker
-    [DuctsToPluto]::ManualDrop.Clear()
-    # DuctDrop: one file or a list of files, only those named (no default); -Drop overrides, -Drop none = off
-    $dropFiles = @($(if ($Drop) { $Drop -split ',' } elseif (Test-Path $cfg) { (Import-PowerShellDataFile $cfg).DuctDrop }) |
-        ForEach-Object { "$_".Trim() } | Where-Object { $_ -and $_ -ne "none" })
-    foreach ($f in $dropFiles) {
-        if (-not (Test-Path $f)) { throw "drop list not found: $f (DuctDrop in duct-config.psd1 or -Drop; -Drop none = off)" }
-        Write-Output ("manual drop: {0} parts from {1}" -f [DuctsToPluto]::ReadManualDrop((Resolve-Path $f).Path), $f)
-    }
-    # utility rack steel in the clean model (DuctsSteel.cs): DuctSteel in the config (SteelToPluto CSV, meters, this frame);
-    # -Steel overrides, -Steel none = off. DuctSteelSnapIn / DuctSteelNearIn: connection snap and OPEN_NEAR distances (in)
-    [DuctsToPluto]::Steel.Clear()
-    $dcfg = $(if (Test-Path $cfg) { Import-PowerShellDataFile $cfg } else { @{} })
-    if (-not $Steel) { $Steel = $dcfg.DuctSteel }
-    [DuctsToPluto]::SteelSettings = New-Object 'SteelModel+Settings'
-    if ($dcfg.DuctSteelSnapIn) { [DuctsToPluto]::SteelSettings.SnapIn = [double]$dcfg.DuctSteelSnapIn }
-    if ($dcfg.DuctSteelNearIn) { [DuctsToPluto]::SteelSettings.NearIn = [double]$dcfg.DuctSteelNearIn }
-    # duct-to-steel supports (DuctsCleanSupports.cs): DuctSupportGapIn = largest duct bottom -> steel top gap that is a
-    # support (in), DuctSpanFt = unsupported span limit (ft); the gap histogram in match.txt helps choose the gap
-    [DuctsToPluto]::SupportSettings = New-Object 'DuctSupports+Settings'
-    if ($dcfg.DuctSupportGapIn) { [DuctsToPluto]::SupportSettings.GapMaxIn = [double]$dcfg.DuctSupportGapIn }
-    if ($dcfg.DuctSpanFt) { [DuctsToPluto]::SupportSettings.SpanFt = [double]$dcfg.DuctSpanFt }
-    # Navisworks hanger check (DuctsCleanHangers.cs): a hanger and a support match within DuctHangerMatchIn (in)
-    [DuctsToPluto]::HangerMatchIn = $(if ($dcfg.DuctHangerMatchIn) { [double]$dcfg.DuctHangerMatchIn } else { 24 })
-    # duct orientation (DuctsCleanOrient.cs): horizontal ducts with the larger side vertical are flagged and, unless
-    # DuctRotateLargeVertical = $false, rotated 90 deg about the centreline with their size run
-    [DuctsToPluto]::RotateLargeVertical = -not ($dcfg.ContainsKey('DuctRotateLargeVertical') -and -not $dcfg.DuctRotateLargeVertical)
-    if ($Steel -and $Steel -ne "none") {
-        if (-not (Test-Path $Steel)) { throw "steel CSV not found: $Steel (DuctSteel in duct-config.psd1 or -Steel; -Steel none = off)" }
-        $sr = New-Object SteelToPluto; $sr.Progress = $false
-        [DuctsToPluto]::Steel.AddRange($sr.Build((Resolve-Path $Steel).Path))
-        Write-Output ("steel: {0} members from {1} ({2})" -f [DuctsToPluto]::Steel.Count, $Steel, ($sr.Summary() -replace "`n", "; "))
-    }
-    Write-Output ("primary systems: " + $(if ([DuctsToPluto]::PrimarySystems.Count) { [DuctsToPluto]::PrimarySystems -join ", " } else { "none configured (DuctSystems in duct-config.psd1 or -Systems)" }))
-    $r = [DuctsToPluto]::ExportRevit($Run, [IO.Path]::GetFullPath($Revit), $Out, $ModelId, $Unit, $Room, $Part)
+    foreach ($n in $notes) { Write-Output $n }
+    Write-Output ("primary systems: " + $(if ($ds.PrimarySystems.Count) { $ds.PrimarySystems -join ", " } else { "none configured (DuctSystems in duct-config.psd1 or -Systems)" }))
+    $r = [DuctsToPluto]::ExportRevit($Run, [IO.Path]::GetFullPath($Revit), $Out, $ModelId, $Unit, $Room, $Part, $ds)
     Write-Output $r.Note
 } elseif ($Probe) {
     $r = [DuctsToPluto]::ExportProbe($Run, $Out, $ModelId, $Unit, $Room, $Part)

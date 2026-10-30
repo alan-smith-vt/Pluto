@@ -21,19 +21,9 @@ public partial class DuctsToPluto
 {
     const double MergeIn = 1, CollinearCos = 0.99939, LatTolIn = 1, GapFt = 2, GapLatIn = 2;   // cos 2 deg; gaps up to 24 in along, 2 in sideways
 
-    class CEdge
-    {
-        public int A, B; public bool Rigid; public double[] Dim, DimB, Y;   // Dim / DimB: { round 1/0, W, H, Dia } inches
-        public List<RvEl> Src = new List<RvEl>(); public HashSet<string> Flags = new HashSet<string>(StringComparer.Ordinal);
-        public string Source = "revit"; public string NavisId = ""; public bool Dead;
-        public double Thk = double.NaN;   // wall thickness (in) from Navisworks; NaN = not stated (frames.csv: 0.06 default)
-        public string Span = "";        // unsupported span id US<n> (DuctsCleanSupports.cs), frames.csv Span
-        public int Sys { get { return Src.Count > 0 ? Src[0].Sys : -1; } }
-    }
-
     static string BuildClean(string outBase, string modelId, string lengthUnit, List<RvEl> scope, Dictionary<int, RawViewerWriter.BeamMember> beams,
         Dictionary<int, double[]> beamDim, Dictionary<int, Node> nodes, double[] off, double scale, List<RvConn[]> nearPairs, List<int[]> sideNodes,
-        Dictionary<int, int> navBeamRow, List<Row> rows, Func<RvConn, int> nodeOf, Dictionary<RvConn, RvConn> attach)
+        Dictionary<int, int> navBeamRow, List<DuctRow> rows, Func<RvConn, int> nodeOf, Dictionary<RvConn, RvConn> attach)
     {
         Func<int, double[]> pos0 = id => NodeFt(nodes[id], off, scale);
         var edges = new List<CEdge>();
@@ -46,14 +36,14 @@ public partial class DuctsToPluto
                 var ce = new CEdge { A = g[0], B = g[1], Thk = e.Thk }; ce.Src.Add(e);
                 ce.Source = e.Only && e.LocRow < 0 ? "revit-only" : "revit";
                 double[] da = pos0(g[0]), db = pos0(g[1]);
-                double[] dir = Unit(Sub3(db, da));
+                double[] dir = DuctMath.Unit(DuctMath.Sub3(db, da));
                 int bid = -1;
                 foreach (int id in e.Beams)
                 {
                     RawViewerWriter.BeamMember m = beams[id];
                     if (m.NodeA != g[0] && m.NodeB != g[0] && m.NodeA != g[1] && m.NodeB != g[1]) continue;
-                    double[] bd = Unit(Sub3(pos0(m.NodeB), pos0(m.NodeA)));
-                    if (Math.Abs(Dot3(bd, dir)) > 0.999) { bid = id; break; }
+                    double[] bd = DuctMath.Unit(DuctMath.Sub3(pos0(m.NodeB), pos0(m.NodeA)));
+                    if (Math.Abs(DuctMath.Dot3(bd, dir)) > 0.999) { bid = id; break; }
                 }
                 double[] dim;
                 if (bid < 0 || !beamDim.TryGetValue(bid, out dim)) ce.Rigid = true;
@@ -65,13 +55,13 @@ public partial class DuctsToPluto
                         RvConn ka = e.Conns.Find(k => nodeOf(k) == g[0]), kb = e.Conns.Find(k => nodeOf(k) == g[1]);
                         if (ka != null && kb != null && !SameSize(ka, kb)) { ce.Dim = ConnDim(ka) ?? dim; ce.DimB = ConnDim(kb) ?? dim; }
                     }
-                    rawLen += Math.Sqrt(Dist2(da, db));
+                    rawLen += Math.Sqrt(DuctMath.Dist2(da, db));
                 }
                 edges.Add(ce);
             }
         foreach (KeyValuePair<int, int> kv in navBeamRow)
         {
-            RawViewerWriter.BeamMember m = beams[kv.Key]; Row r = rows[kv.Value];
+            RawViewerWriter.BeamMember m = beams[kv.Key]; DuctRow r = rows[kv.Value];
             string shape; double w, h, d;
             var ce = new CEdge { A = m.NodeA, B = m.NodeB, Source = "navisworks-only", NavisId = r.NavisId, Y = m.LocalY, Thk = !double.IsNaN(r.T) && r.T > 0 ? r.T : double.NaN };
             ce.Dim = NavSize(r, out shape, out w, out h, out d) ? new[] { shape == "round" ? 1.0 : 0.0, w, h, d } : new[] { 0.0, double.NaN, double.NaN, double.NaN };
@@ -110,7 +100,7 @@ public partial class DuctsToPluto
             for (int i = -1; i <= 1; i++) for (int j = -1; j <= 1; j++) for (int k = -1; k <= 1; k++)
             {
                 List<int> l; if (!grid.TryGetValue((cx + i) + "," + (cy + j) + "," + (cz + k), out l)) continue;
-                foreach (int m in l) if (m != n && Math.Sqrt(Dist2(q, pos0(m))) * 12 <= MergeIn) uni(n, m);
+                foreach (int m in l) if (m != n && Math.Sqrt(DuctMath.Dist2(q, pos0(m))) * 12 <= MergeIn) uni(n, m);
             }
         }
         var P = new Dictionary<int, double[]>(); var cnt = new Dictionary<int, int>();
@@ -149,22 +139,22 @@ public partial class DuctsToPluto
                     foreach (int na in new[] { a.A, a.B })
                     {
                         if (changed || deg[na] != 1) continue;
-                        double[] ua = Unit(Sub3(P[na], P[na == a.A ? a.B : a.A]));
+                        double[] ua = DuctMath.Unit(DuctMath.Sub3(P[na], P[na == a.A ? a.B : a.A]));
                         foreach (int nb in new[] { b.A, b.B })
                         {
                             if (changed || nb == na || deg[nb] != 1) continue;
-                            double[] ub = Unit(Sub3(P[nb], P[nb == b.A ? b.B : b.A]));
-                            if (Dot3(ua, ub) > -CollinearCos) continue;
-                            double[] g = Sub3(P[nb], P[na]); double along = Dot3(g, ua);
-                            double lat = Math.Sqrt(Math.Max(0, Dot3(g, g) - along * along));
+                            double[] ub = DuctMath.Unit(DuctMath.Sub3(P[nb], P[nb == b.A ? b.B : b.A]));
+                            if (DuctMath.Dot3(ua, ub) > -CollinearCos) continue;
+                            double[] g = DuctMath.Sub3(P[nb], P[na]); double along = DuctMath.Dot3(g, ua);
+                            double lat = Math.Sqrt(Math.Max(0, DuctMath.Dot3(g, g) - along * along));
                             if (along < 0 || along > GapFt || lat * 12 > GapLatIn) continue;
                             // rigid links on either end whose far end dangles within the gap: the gap's own link, dropped
                             foreach (CEdge rl in edges.Where(x => !x.Dead && x.Rigid && (x.A == na || x.B == na || x.A == nb || x.B == nb)).ToList())
                             {
                                 int o = rl.A == na || rl.A == nb ? rl.B : rl.A;
-                                if (o == na || o == nb || (degAll[o] == 1 && Len(P[o], P[na]) <= GapFt + 0.2)) rl.Dead = true;
+                                if (o == na || o == nb || (degAll[o] == 1 && DuctMath.Len(P[o], P[na]) <= GapFt + 0.2)) rl.Dead = true;
                             }
-                            P[na] = Lerp(P[na], P[nb], 0.5);
+                            P[na] = DuctMath.Lerp(P[na], P[nb], 0.5);
                             foreach (CEdge ce in edges) { if (ce.A == nb) ce.A = na; if (ce.B == nb) ce.B = na; if (ce.A == ce.B) ce.Dead = true; }
                             gapsClosed++; changed = true;
                         }
@@ -181,8 +171,8 @@ public partial class DuctsToPluto
                 foreach (int n in new[] { rl.A, rl.B })
                     foreach (CEdge de in edges.Where(x => !x.Dead && !x.Rigid && x.A != n && x.B != n).ToList())
                     {
-                        double t, lat; Project(P[de.A], P[de.B], P[n], out t, out lat);
-                        if (lat * 12 > LatTolIn || t * Len(P[de.A], P[de.B]) * 12 < MergeIn || (1 - t) * Len(P[de.A], P[de.B]) * 12 < MergeIn) continue;
+                        double t, lat; DuctMath.Project(P[de.A], P[de.B], P[n], out t, out lat);
+                        if (lat * 12 > LatTolIn || t * DuctMath.Len(P[de.A], P[de.B]) * 12 < MergeIn || (1 - t) * DuctMath.Len(P[de.A], P[de.B]) * 12 < MergeIn) continue;
                         edges.Add(CopyEdge(de, n, de.B)); de.B = n; changed = true; break;
                     }
         }
@@ -199,11 +189,11 @@ public partial class DuctsToPluto
                 {
                     CEdge a = live[i], b = live[j];
                     if (a.Sys != b.Sys) continue;
-                    double[] u = Unit(Sub3(P[a.B], P[a.A]));
-                    if (Math.Abs(Dot3(u, Unit(Sub3(P[b.B], P[b.A])))) < CollinearCos) continue;
-                    double tb0, lb0, tb1, lb1; Project(P[a.A], P[a.B], P[b.A], out tb0, out lb0); Project(P[a.A], P[a.B], P[b.B], out tb1, out lb1);
+                    double[] u = DuctMath.Unit(DuctMath.Sub3(P[a.B], P[a.A]));
+                    if (Math.Abs(DuctMath.Dot3(u, DuctMath.Unit(DuctMath.Sub3(P[b.B], P[b.A])))) < CollinearCos) continue;
+                    double tb0, lb0, tb1, lb1; DuctMath.Project(P[a.A], P[a.B], P[b.A], out tb0, out lb0); DuctMath.Project(P[a.A], P[a.B], P[b.B], out tb1, out lb1);
                     if (lb0 * 12 > LatTolIn || lb1 * 12 > LatTolIn) continue;
-                    double La = Len(P[a.A], P[a.B]), lo = Math.Max(0, Math.Min(tb0, tb1)) * La, hi = Math.Min(1, Math.Max(tb0, tb1)) * La;
+                    double La = DuctMath.Len(P[a.A], P[a.B]), lo = Math.Max(0, Math.Min(tb0, tb1)) * La, hi = Math.Min(1, Math.Max(tb0, tb1)) * La;
                     if ((hi - lo) * 12 <= MergeIn) continue;   // end to end or apart: not an overlap
                     if (!SameDim(a, b) || !SameThk(a, b))
                     {
@@ -212,7 +202,7 @@ public partial class DuctsToPluto
                         continue;
                     }
                     // chain through all four joints in order along a's axis
-                    var pts = new List<int> { a.A, a.B, b.A, b.B }.Distinct().OrderBy(n => Dot3(Sub3(P[n], P[a.A]), u)).ToList();
+                    var pts = new List<int> { a.A, a.B, b.A, b.B }.Distinct().OrderBy(n => DuctMath.Dot3(DuctMath.Sub3(P[n], P[a.A]), u)).ToList();
                     overlapFt += hi - lo; overlapMerged++;
                     a.Dead = true; b.Dead = true;
                     for (int k = 0; k + 1 < pts.Count; k++)
@@ -240,7 +230,7 @@ public partial class DuctsToPluto
                 CEdge a = kv.Value[0], b = kv.Value[1]; int n = kv.Key;
                 if (a.Rigid || b.Rigid || a.DimB != null || b.DimB != null || a.Sys != b.Sys || !SameDim(a, b) || !SameThk(a, b) || a.Source == "navisworks-only" || b.Source == "navisworks-only") continue;
                 int oa = a.A == n ? a.B : a.A, ob = b.A == n ? b.B : b.A;
-                if (oa == ob || Dot3(Unit(Sub3(P[oa], P[n])), Unit(Sub3(P[ob], P[n]))) > -CollinearCos) continue;
+                if (oa == ob || DuctMath.Dot3(DuctMath.Unit(DuctMath.Sub3(P[oa], P[n])), DuctMath.Unit(DuctMath.Sub3(P[ob], P[n]))) > -CollinearCos) continue;
                 CEdge ne = CopyEdge(a, oa, ob);
                 foreach (RvEl s in b.Src) if (!ne.Src.Contains(s)) ne.Src.Add(s);
                 ne.Flags.UnionWith(b.Flags);
@@ -253,20 +243,20 @@ public partial class DuctsToPluto
         string dropNote = ApplyManualDrop(clean, P);   // add-on, DuctsManualDrop.cs
         if (dropNote != "") cutNote += (cutNote != "" ? "\n" : "") + dropNote;
         string orientNote = ApplyOrientation(clean, P);   // DuctsCleanOrient.cs: before the supports (rotated depth)
-        SteelModel sm = Steel.Count > 0 ? SteelModel.Build(Steel, SteelSettings) : null;   // DuctsSteel.cs; split by supports from here on
+        SteelModel sm = Cfg.Steel.Count > 0 ? SteelModel.Build(Cfg.Steel, Cfg.SteelSettings) : null;   // DuctsSteel.cs; split by supports from here on
         SpanTotal = 0;
         SupportRun sr = sm != null ? ApplySupports(clean, P, sm, outBase, rows) : null;   // DuctsCleanSupports.cs: splits clean frames + steel
         SupportNewLine = sr != null ? SupportsNewLine(sr) + (sr.Hangers.NewLine != "" ? "\n" + sr.Hangers.NewLine : "") : "";
 
         // checks: length, deviation of the original connectors from the clean centreline
-        double cleanLen = clean.Where(x => !x.Rigid && x.Source != "navisworks-only").Sum(x => Len(P[x.A], P[x.B]));
+        double cleanLen = clean.Where(x => !x.Rigid && x.Source != "navisworks-only").Sum(x => DuctMath.Len(P[x.A], P[x.B]));
         var dev = new List<KeyValuePair<double, string>>();
         foreach (RvEl e in scope)
             foreach (RvConn k in e.Conns)
             {
                 if (attach.ContainsKey(k) || IsTapPoint(k)) continue;
                 double best = double.MaxValue;
-                foreach (CEdge ce in clean) { double t, lat; Project(P[ce.A], P[ce.B], k.P, out t, out lat); double[] q = Lerp(P[ce.A], P[ce.B], Math.Max(0, Math.Min(1, t))); best = Math.Min(best, Math.Sqrt(Dist2(q, k.P))); }
+                foreach (CEdge ce in clean) { double t, lat; DuctMath.Project(P[ce.A], P[ce.B], k.P, out t, out lat); double[] q = DuctMath.Lerp(P[ce.A], P[ce.B], Math.Max(0, Math.Min(1, t))); best = Math.Min(best, Math.Sqrt(DuctMath.Dist2(q, k.P))); }
                 if (best * 12 > 1) dev.Add(new KeyValuePair<double, string>(best * 12, e.Id + ":" + k.Key.Substring(k.Key.IndexOf(':') + 1)));
             }
         dev.Sort((x, y) => y.Key.CompareTo(x.Key));
@@ -286,8 +276,6 @@ public partial class DuctsToPluto
 
     // Scope cut points (2026-10-22, the SAP reviewer's cut nodes read from the reviewed SAP model: Run-Sap.ps1
     // -Points -> cut-points.csv, DuctCuts in duct-config.psd1): global inches, the Navisworks frame frames.csv uses
-    public static readonly List<KeyValuePair<string, double[]>> CutPoints = new List<KeyValuePair<string, double[]>>();
-    public static double CutSnapIn = 6, KeepSnapIn = 48;   // keep points may be picked on a duct surface, far from the centreline
 
     // Each cut point snaps to a clean joint within CutSnapIn, else to a point on a prismatic duct edge (split there).
     // The model is then cut at those joints: per system the largest connected piece (duct length) is kept, and every
@@ -296,28 +284,28 @@ public partial class DuctsToPluto
     // largest one; a system with keep points keeps only its marked pieces (for cuts where the shorter side is the scope).
     static string ApplyCuts(List<CEdge> clean, Dictionary<int, double[]> P)
     {
-        if (CutPoints.Count == 0) return "";
-        double snap = CutSnapIn / 12;
+        if (Cfg.CutPoints.Count == 0) return "";
+        double snap = Cfg.CutSnapIn / 12;
         var cutNodes = new HashSet<int>(); var report = new List<string>(); var notFound = new List<string>(); var cutName = new Dictionary<int, string>();
-        var keepPts = CutPoints.Where(x => x.Key.StartsWith("KEEP", StringComparison.OrdinalIgnoreCase)).ToList();
-        int nCuts = CutPoints.Count - keepPts.Count;
+        var keepPts = Cfg.CutPoints.Where(x => x.Key.StartsWith("KEEP", StringComparison.OrdinalIgnoreCase)).ToList();
+        int nCuts = Cfg.CutPoints.Count - keepPts.Count;
         int nextNode = P.Keys.Count > 0 ? P.Keys.Max() + 1 : 1;
-        foreach (KeyValuePair<string, double[]> cp in CutPoints.Except(keepPts))
+        foreach (KeyValuePair<string, double[]> cp in Cfg.CutPoints.Except(keepPts))
         {
             double[] p = { cp.Value[0] / 12, cp.Value[1] / 12, cp.Value[2] / 12 };
             var used = new HashSet<int>(clean.SelectMany(x => new[] { x.A, x.B }));
             int bestN = -1; double bestD = double.MaxValue;
-            foreach (int n in used) { double d = Len(P[n], p); if (d < bestD) { bestD = d; bestN = n; } }
+            foreach (int n in used) { double d = DuctMath.Len(P[n], p); if (d < bestD) { bestD = d; bestN = n; } }
             if (bestD <= snap) { cutNodes.Add(bestN); cutName[bestN] = cp.Key; report.Add(string.Format(Inv, "{0} joint N{1} ({2:0.##} in)", cp.Key, bestN, bestD * 12)); continue; }
             CEdge bestE = null; double bestT = 0, bestLat = double.MaxValue;
             foreach (CEdge ce in clean)
             {
                 if (ce.Rigid || ce.DimB != null) continue;
-                double t, lat; Project(P[ce.A], P[ce.B], p, out t, out lat);
+                double t, lat; DuctMath.Project(P[ce.A], P[ce.B], p, out t, out lat);
                 if (t > 0 && t < 1 && lat < bestLat) { bestLat = lat; bestT = t; bestE = ce; }
             }
             if (bestE == null || bestLat > snap) { notFound.Add(string.Format(Inv, "{0} (nearest joint {1:0.#} in)", cp.Key, bestD * 12)); continue; }
-            int m = nextNode++; P[m] = Lerp(P[bestE.A], P[bestE.B], bestT);
+            int m = nextNode++; P[m] = DuctMath.Lerp(P[bestE.A], P[bestE.B], bestT);
             clean.Remove(bestE); clean.Add(CopyEdge(bestE, bestE.A, m)); clean.Add(CopyEdge(bestE, m, bestE.B));
             cutNodes.Add(m); cutName[m] = cp.Key;
             report.Add(string.Format(Inv, "{0} on a duct, split ({1:0.##} in)", cp.Key, bestLat * 12));
@@ -341,7 +329,7 @@ public partial class DuctsToPluto
             }
             pieces.Add(l);
         }
-        Func<List<CEdge>, double> len = l => l.Where(x => !x.Rigid).Sum(x => Len(P[x.A], P[x.B]));
+        Func<List<CEdge>, double> len = l => l.Where(x => !x.Rigid).Sum(x => DuctMath.Len(P[x.A], P[x.B]));
         Func<List<CEdge>, string> sysOf = l => { CEdge e = l.FirstOrDefault(x => x.Src.Count > 0); return e != null ? e.Src[0].SysName : ""; };
         var keep = new Dictionary<string, HashSet<int>>(StringComparer.Ordinal); var byKeep = new HashSet<int>();
         foreach (KeyValuePair<string, double[]> kp in keepPts)
@@ -350,11 +338,11 @@ public partial class DuctsToPluto
             CEdge bestE = null; double bestD = double.MaxValue;
             foreach (CEdge ce in clean)
             {
-                double t, lat; Project(P[ce.A], P[ce.B], p, out t, out lat);
-                double d = Len(Lerp(P[ce.A], P[ce.B], Math.Max(0, Math.Min(1, t))), p);
+                double t, lat; DuctMath.Project(P[ce.A], P[ce.B], p, out t, out lat);
+                double d = DuctMath.Len(DuctMath.Lerp(P[ce.A], P[ce.B], Math.Max(0, Math.Min(1, t))), p);
                 if (d < bestD) { bestD = d; bestE = ce; }
             }
-            if (bestE == null || bestD > KeepSnapIn / 12) { notFound.Add(string.Format(Inv, "{0} (nearest element {1:0.#} in, limit {2:0.#} in)", kp.Key, bestD * 12, KeepSnapIn)); continue; }
+            if (bestE == null || bestD > Cfg.KeepSnapIn / 12) { notFound.Add(string.Format(Inv, "{0} (nearest element {1:0.#} in, limit {2:0.#} in)", kp.Key, bestD * 12, Cfg.KeepSnapIn)); continue; }
             int i = piece[bestE]; string s = sysOf(pieces[i]); HashSet<int> ks;
             if (!keep.TryGetValue(s, out ks)) { ks = new HashSet<int>(); keep[s] = ks; }
             ks.Add(i); byKeep.Add(i);
@@ -381,7 +369,7 @@ public partial class DuctsToPluto
         foreach (CEdge e in clean) if (cutNodes.Contains(e.A) || cutNodes.Contains(e.B)) { e.Flags.Add("CUT_END"); ends++; }
         return string.Format(Inv, "NEW cuts: {0} of {1} placed, {2} elements ({3:0.#} ft of duct) dropped beyond them, {4} kept elements end at a cut (CUT_END){5}\nNEW cut points: {6}\nNEW cut sides: {7}",
             nCuts - notFound.Count(x => !x.StartsWith("KEEP", StringComparison.OrdinalIgnoreCase)), nCuts, dropN, dropFt, ends,
-            notFound.Count > 0 ? "; NOT placed (no joint / duct within " + CutSnapIn.ToString("0.#", Inv) + " in): " + string.Join(", ", notFound.ToArray()) : "",
+            notFound.Count > 0 ? "; NOT placed (no joint / duct within " + Cfg.CutSnapIn.ToString("0.#", Inv) + " in): " + string.Join(", ", notFound.ToArray()) : "",
             string.Join("; ", report.ToArray()), string.Join("; ", sides.ToArray()));
     }
 
@@ -414,18 +402,7 @@ public partial class DuctsToPluto
         return Math.Abs(a.Thk - b.Thk) <= 0.001;
     }
 
-    static double Dot3(double[] a, double[] b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
-    static double[] Unit(double[] a) { double l = Math.Sqrt(Dot3(a, a)); return l < 1e-12 ? new double[] { 0, 0, 0 } : new[] { a[0] / l, a[1] / l, a[2] / l }; }
-    static double Len(double[] a, double[] b) { return Math.Sqrt(Dist2(a, b)); }
-    static double[] Lerp(double[] a, double[] b, double t) { return new[] { a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t }; }
 
-    // t along a->b (0..1 inside), lat = distance from the line (feet)
-    static void Project(double[] a, double[] b, double[] p, out double t, out double lat)
-    {
-        double[] ab = Sub3(b, a); double L2 = Dot3(ab, ab);
-        t = L2 < 1e-12 ? 0 : Dot3(Sub3(p, a), ab) / L2;
-        lat = Math.Sqrt(Dist2(Lerp(a, b, t), p));
-    }
 
     static string DimText(double[] d)
     {
@@ -469,7 +446,7 @@ public partial class DuctsToPluto
             beams[nb] = m;
             string sys = ce.Src.Count > 0 ? ce.Src[0].SysName : (ce.Source == "navisworks-only" ? "navisworks-only" : "?");
             labels[nb] = string.Format(Inv, "clean | system {0} | {1}{2} | {3:0.##} ft | parts {4}{5}",
-                sys, ce.Rigid ? "rigid link" : DimText(ce.Dim), ce.DimB != null ? " -> " + DimText(ce.DimB) : "", Len(P[ce.A], P[ce.B]),
+                sys, ce.Rigid ? "rigid link" : DimText(ce.Dim), ce.DimB != null ? " -> " + DimText(ce.DimB) : "", DuctMath.Len(P[ce.A], P[ce.B]),
                 ce.Src.Count > 0 ? string.Join(" ", ce.Src.Select(x => x.Id).ToArray()) : (ce.NavisId != "" ? "Navisworks #" + ce.NavisId : "-"),
                 ce.Flags.Count > 0 ? " | FLAGS " + string.Join(" ", ce.Flags.OrderBy(x => x, StringComparer.Ordinal).ToArray()) : "");
             List<uint> l; if (!bySys.TryGetValue(sys, out l)) { l = new List<uint>(); bySys[sys] = l; } l.Add((uint)nb);
@@ -509,9 +486,9 @@ public partial class DuctsToPluto
     static double[] WidthDir(CEdge ce, Dictionary<int, double[]> P)
     {
         if (ce.Y == null || ce.Rigid || (ce.Dim != null && ce.Dim[0] == 1)) return null;
-        double[] y = ce.Y, x = Unit(Sub3(P[ce.B], P[ce.A])); double dt = Dot3(y, x);
-        double[] yy = Unit(new[] { y[0] - dt * x[0], y[1] - dt * x[1], y[2] - dt * x[2] });
-        return Dot3(yy, yy) > 0.5 ? yy : null;
+        double[] y = ce.Y, x = DuctMath.Unit(DuctMath.Sub3(P[ce.B], P[ce.A])); double dt = DuctMath.Dot3(y, x);
+        double[] yy = DuctMath.Unit(new[] { y[0] - dt * x[0], y[1] - dt * x[1], y[2] - dt * x[2] });
+        return DuctMath.Dot3(yy, yy) > 0.5 ? yy : null;
     }
 
     // the SAP input: one frame per clean element, inches, Navisworks frame; W2 / H2 / Dia2 = a transition's other end;

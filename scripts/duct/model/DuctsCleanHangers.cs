@@ -13,9 +13,8 @@ using System.Linq;
 //                            have at least one hanger
 public partial class DuctsToPluto
 {
-    public static double HangerMatchIn = 24;
     static List<int> HangerScope = new List<int>();                 // the room's Navisworks row indices (ExportRevit)
-    static List<Row> HangerRowsForView = new List<Row>();           // rows, for the viewer labels
+    static List<DuctRow> HangerRowsForView = new List<DuctRow>();           // rows, for the viewer labels
     static readonly Dictionary<int, List<string>> NavRowFlags = new Dictionary<int, List<string>>();   // row -> extra flags (flags.csv)
 
     class HangerHit { public int Row; public int Edge = -1; public double T; public double[] At; public string System = ""; public int Support = -1; public double Dist = double.NaN; }
@@ -28,13 +27,13 @@ public partial class DuctsToPluto
     }
 
     // after the supports are placed, before supports.csv is written
-    static HangerRun CheckHangers(List<CEdge> clean, Dictionary<int, double[]> P, List<Row> rows, SupportRun run)
+    static HangerRun CheckHangers(List<CEdge> clean, Dictionary<int, double[]> P, List<DuctRow> rows, SupportRun run)
     {
         var hr = new HangerRun();
         NavRowFlags.Clear();
         foreach (int ri in HangerScope)
         {
-            Row r = rows[ri];
+            DuctRow r = rows[ri];
             if (r.Min == null || r.Max == null || r.Cat == null || r.Cat.IndexOf("Hanger", StringComparison.OrdinalIgnoreCase) < 0) continue;
             var h = new HangerHit { Row = ri };
             double[] c = { (r.Min[0] + r.Max[0]) / 2, (r.Min[1] + r.Max[1]) / 2, (r.Min[2] + r.Max[2]) / 2 };
@@ -48,13 +47,13 @@ public partial class DuctsToPluto
                 if (l2 < 1e-9) continue;   // vertical frame: no plan footprint along it
                 double t = ((c[0] - a[0]) * dx + (c[1] - a[1]) * dy) / l2;
                 if (t < 0 || t > 1) continue;
-                double[] q = Lerp(a, b, t);
+                double[] q = DuctMath.Lerp(a, b, t);
                 double lat = Math.Sqrt((c[0] - q[0]) * (c[0] - q[0]) + (c[1] - q[1]) * (c[1] - q[1]));
                 double half, depth;   // ft: half the plan width and half the depth of the section
                 if (ce.Dim[0] == 1) { half = depth = ce.Dim[3] / 24; }
                 else
                 {
-                    double[] ax = Unit(Sub3(b, a)), u = WidthDir(ce, P) ?? Unit(new[] { -ax[1], ax[0], 0 });
+                    double[] ax = DuctMath.Unit(DuctMath.Sub3(b, a)), u = WidthDir(ce, P) ?? DuctMath.Unit(new[] { -ax[1], ax[0], 0 });
                     double vert, hor; DuctOrient.Extents(ax, u, ce.Dim[1], ce.Dim[2], out vert, out hor);
                     half = hor / 24; depth = vert / 24;
                 }
@@ -67,8 +66,8 @@ public partial class DuctsToPluto
             if (run != null)
                 for (int k = 0; k < run.Ds.Supports.Count; k++)
                 {
-                    double d = Len(P[run.DuctJoint[k]], h.At) * 12;
-                    if (d <= HangerMatchIn && (double.IsNaN(h.Dist) || d < h.Dist)) { h.Dist = d; h.Support = k; }
+                    double d = DuctMath.Len(P[run.DuctJoint[k]], h.At) * 12;
+                    if (d <= Cfg.HangerMatchIn && (double.IsNaN(h.Dist) || d < h.Dist)) { h.Dist = d; h.Support = k; }
                 }
             if (h.Support < 0) { hr.NoSupport++; AddRowFlag(ri, "HANGER_NO_STEEL_SUPPORT"); }
             hr.Hits.Add(h);
@@ -80,7 +79,7 @@ public partial class DuctsToPluto
             {
                 DuctSupports.Support sp = run.Ds.Supports[k];
                 if (!withHangers.Contains(sp.System)) continue;
-                bool near = hr.Hits.Any(x => x.Edge >= 0 && Len(P[run.DuctJoint[k]], x.At) * 12 <= HangerMatchIn);
+                bool near = hr.Hits.Any(x => x.Edge >= 0 && DuctMath.Len(P[run.DuctJoint[k]], x.At) * 12 <= Cfg.HangerMatchIn);
                 if (!near) { sp.Flags.Add("SUPPORT_NO_HANGER"); hr.SupportsNoHanger++; }
             }
         }
@@ -89,11 +88,11 @@ public partial class DuctsToPluto
             n, n - hr.NoSupport - hr.OffDuct, hr.NoSupport, hr.OffDuct, hr.SupportsNoHanger);
         var lines = new List<string>();
         lines.Add(string.Format(Inv, "hangers (Navisworks, category *Hanger*): {0}, matched to a support within {1:0.#} in: {2}, no steel support {3}, off any duct {4}; supports without a hanger {5} (systems with hangers only)",
-            n, HangerMatchIn, n - hr.NoSupport - hr.OffDuct, hr.NoSupport, hr.OffDuct, hr.SupportsNoHanger));
+            n, Cfg.HangerMatchIn, n - hr.NoSupport - hr.OffDuct, hr.NoSupport, hr.OffDuct, hr.SupportsNoHanger));
         foreach (HangerHit h in hr.Hits)
             lines.Add(string.Format(Inv, "  #{0} {1}: {2}", rows[h.Row].NavisId, h.Edge < 0 ? "-" : h.System,
                 h.Edge < 0 ? "off any duct (HANGER_OFF_DUCT)"
-                : h.Support < 0 ? string.Format(Inv, "on F{0}, no support within {1:0.#} in (HANGER_NO_STEEL_SUPPORT)", h.Edge + 1, HangerMatchIn)
+                : h.Support < 0 ? string.Format(Inv, "on F{0}, no support within {1:0.#} in (HANGER_NO_STEEL_SUPPORT)", h.Edge + 1, Cfg.HangerMatchIn)
                 : string.Format(Inv, "on F{0}, support {1} at {2:0.#} in", h.Edge + 1, run.Ds.Supports[h.Support].Id, h.Dist)));
         hr.Note = n == 0 ? "hangers (Navisworks, category *Hanger*): none in the room" : string.Join("\n", lines.ToArray());
         return hr;
@@ -113,7 +112,7 @@ public partial class DuctsToPluto
     }
 
     // warn glyphs: a hanger without a support on its duct frame (t at the hanger), a support without a hanger on its stub
-    static void AddHangerGroups(FeaturesSidecar sc, HangerRun hr, SupportRun run, List<CEdge> clean, Dictionary<CEdge, int> beamOf, List<Row> rows, SupportView pv)
+    static void AddHangerGroups(FeaturesSidecar sc, HangerRun hr, SupportRun run, List<CEdge> clean, Dictionary<CEdge, int> beamOf, List<DuctRow> rows, SupportView pv)
     {
         if (hr == null) return;
         var a1 = new List<FeaturesSidecar.Anchor>(); var m1 = new List<uint>();

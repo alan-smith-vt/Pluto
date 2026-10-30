@@ -16,6 +16,7 @@ All Windows PowerShell 5.1 + C# 5 compiled on the fly (`Add-Type`). No installs,
    `$env:PLUTO_SAP_DIR`) says otherwise.
 3. **Config.** Copy `duct-config.example.psd1` to `duct-config.psd1` beside it and edit:
    - `WorkDir`: an empty folder for all outputs. One `WorkDir` (and one config) per model.
+   - `Export-DuctsViewer.ps1 -Config <psd1>` reads another config instead (it prints the one it read first).
    - `Group`: the SAP frame group holding **every** duct member (check tees: a group that misses a branch breaks the spans).
    - `Cases`: output case / combo names **copied from SAP** (Display > Show Tables, or `combos.tsv` from a survey), not from a spreadsheet.
    - `Dcr`, `Release`, `Optimize`: commented in the example file.

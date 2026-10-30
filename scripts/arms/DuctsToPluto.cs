@@ -12,7 +12,7 @@ using System.Text;
 //   ducts.csv        one row per Ducts / Duct Fittings / Duct Accessories element: IfcGUID, Category,
 //                    SystemName, Width_in, Height_in, Diameter_in, WallThk_in, bbox MinX..MaxZ, fitted
 //                    ends X1..Z2 (ducts)
-//   cl_segments.csv  Revit centreline segments: Row (1-based ducts.csv data row), Node1, Node2
+//   cl_segments.csv  Revit centreline segments: DuctRow (1-based ducts.csv data row), Node1, Node2
 //   cl_nodes.csv     Node, X, Y, Z, Degree (ends merged by the button)
 // Mapping:
 //   duct with a centreline      -> its centreline segment(s), box (W x H, wall) or pipe (D, wall) section
@@ -63,22 +63,17 @@ public partial class DuctsToPluto
     const int FanDegree = 5;
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
-    const string Fab = "MEP Fabrication Ductwork", FabHangers = "MEP Fabrication Hangers";
-
-    class Row
+    // The settings of the export running now (DuctSettings.cs): set by the Export* entry points from their settings
+    // argument, back to the defaults when they return. Transitional (split stage 1): the pieces split out in stages
+    // 2-5 take the settings as an argument instead and this field goes.
+    static DuctSettings Cfg = new DuctSettings();
+    static Result With(DuctSettings settings, Func<Result> run)
     {
-        public string Guid, NavisId, Cat, System, SizeText, Name, Shape;
-        public string Hidden = "";               // "self" / "ancestor" / "" (runs from 2026-10-06 on)
-        public double HiddenGeom;                 // own geometry items hidden (NaN on older runs)
-        public double W, H, D, T;                 // inches; NaN = unknown
-        public double FitA, FitB;                 // fitted cross-section, inches (fallback when no size)
-        public double FitLen;                     // fitted length, feet
-        public double NameW = double.NaN, NameH = double.NaN, NameD = double.NaN;   // size read from the Name (fabrication parts)
-        public double[] Min, Max, E1, E2;         // feet; null = absent
-        public string Room = "", RefLevel = "", Oid = "", Cwp = "";   // Custom room number etc. (runs from 2026-10-08 on)
-        public string RunName = "", Service = ""; // IfcObjectProperties.RunName "A-<bldg>-<service>-DUCT-<n>" (runs from 2026-10-07 on)
-        public bool Out;                          // service not in the requested list: not drawn (row kept so row numbers stay aligned)
+        Cfg = settings ?? new DuctSettings();
+        try { return run(); } finally { Cfg = new DuctSettings(); }
     }
+
+    const string Fab = "MEP Fabrication Ductwork", FabHangers = "MEP Fabrication Hangers";
 
     // The service field of a RunName ("A-<bldg>-<service>-DUCT-<n>" -> "<service>"), "" when it has no such field.
     static string ServiceOf(string runName)
@@ -102,7 +97,7 @@ public partial class DuctsToPluto
         var res = new Result();
         var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         if (services != null) foreach (string s in services) if (!string.IsNullOrEmpty(s) && s.Trim().Length > 0) keep.Add(s.Trim());
-        foreach (Row r in rows)
+        foreach (DuctRow r in rows)
         {
             if (r.RunName == "") res.NoRunName++;
             else if (keep.Count > 0 && !keep.Contains(r.Service)) { r.Out = true; res.ServiceOut++; }
@@ -125,13 +120,13 @@ public partial class DuctsToPluto
 
         // recentre on the bbox of everything (whole feet), as the steel / pipe bridges do
         double[] lo = { double.MaxValue, double.MaxValue, double.MaxValue }, hi = { double.MinValue, double.MinValue, double.MinValue };
-        foreach (Row r in rows) if (r.Min != null) for (int k = 0; k < 3; k++) { lo[k] = Math.Min(lo[k], r.Min[k]); hi[k] = Math.Max(hi[k], r.Max[k]); }
+        foreach (DuctRow r in rows) if (r.Min != null) for (int k = 0; k < 3; k++) { lo[k] = Math.Min(lo[k], r.Min[k]); hi[k] = Math.Max(hi[k], r.Max[k]); }
         foreach (double[] p in nodeXyz.Values) for (int k = 0; k < 3; k++) { lo[k] = Math.Min(lo[k], p[k]); hi[k] = Math.Max(hi[k], p[k]); }
         if (lo[0] == double.MaxValue) throw new Exception("DuctsToPluto: nothing with coordinates in " + runDir);
         double[] off = { Math.Round((lo[0] + hi[0]) / 2), Math.Round((lo[1] + hi[1]) / 2), Math.Round((lo[2] + hi[2]) / 2) };
 
         var nodes = new Dictionary<int, Node>();
-        var beamRow = new Dictionary<int, Row>();          // beam id -> its element row (service groups, run labels)
+        var beamRow = new Dictionary<int, DuctRow>();          // beam id -> its element row (service groups, run labels)
         var clToFile = new Dictionary<int, int>();          // cl node id -> file node id
         var keyToFile = new Dictionary<string, int>();      // fallback / block ends, deduped at 1e-4 ft
         int nextNode = 1, nextBeam = 1;
@@ -169,14 +164,14 @@ public partial class DuctsToPluto
         for (int i = 0; i < rows.Count; i++) if (string.Equals(rows[i].Cat, Fab, StringComparison.OrdinalIgnoreCase)) fabRows.Add(i + 1);
         var fabTri = ReadTriangles(Path.Combine(runDir, "ducts_tri.bin"), fabRows);
         var gFabMesh = new List<uint>();
-        Func<Row, string> labelOf = delegate(Row r)
+        Func<DuctRow, string> labelOf = delegate(DuctRow r)
         {
             return r.Guid + (r.NavisId != "" ? " #" + r.NavisId : "")
                 + " | " + r.System + " | " + (r.SizeText != "" ? r.SizeText : r.Name)   // IfcGUID is not unique: short NavisId too
                 + (r.RunName != "" ? " | run " + r.RunName : "");
         };
         // bbox block: a beam along the bbox's longest axis with a RECT of the other two extents; false when no bbox
-        Func<Row, List<uint>, bool> addBlock = delegate(Row r, List<uint> grp)
+        Func<DuctRow, List<uint>, bool> addBlock = delegate(DuctRow r, List<uint> grp)
         {
             if (r.Min == null) return false;
             double[] ext = { r.Max[0] - r.Min[0], r.Max[1] - r.Min[1], r.Max[2] - r.Min[2] };
@@ -205,7 +200,7 @@ public partial class DuctsToPluto
 
         for (int i = 0; i < rows.Count; i++)
         {
-            Row r = rows[i]; int rowNo = i + 1;
+            DuctRow r = rows[i]; int rowNo = i + 1;
             if (r.Out) continue;                       // service not requested (also never pending for bridging)
             List<int[]> segs; segsByRow.TryGetValue(rowNo, out segs);
             string label = labelOf(r);
@@ -343,7 +338,7 @@ public partial class DuctsToPluto
             double tol = 0.25 * scale;
             foreach (int i in pending)
             {
-                Row r = rows[i];
+                DuctRow r = rows[i];
                 bool fab = string.Equals(r.Cat, Fab, StringComparison.OrdinalIgnoreCase);
                 var ends = new List<int>();
                 if (r.Min != null)
@@ -421,7 +416,7 @@ public partial class DuctsToPluto
             var order = new List<string>();
             if (services != null) foreach (string s in services) if (s != null && s.Trim().Length > 0 && !order.Contains(s.Trim())) order.Add(s.Trim());
             var noRun = new List<uint>();
-            foreach (KeyValuePair<int, Row> kv in beamRow)
+            foreach (KeyValuePair<int, DuctRow> kv in beamRow)
             {
                 string svc = kv.Value.Service;
                 if (kv.Value.RunName == "") { noRun.Add((uint)kv.Key); continue; }
@@ -511,7 +506,7 @@ public partial class DuctsToPluto
         int nextNode = 1, nextElem = 1;
         foreach (KeyValuePair<int, float[]> rec in recs)
         {
-            Row r = rec.Key >= 1 && rec.Key <= rows.Count ? rows[rec.Key - 1] : null;
+            DuctRow r = rec.Key >= 1 && rec.Key <= rows.Count ? rows[rec.Key - 1] : null;
             string label = r == null ? "row " + rec.Key : r.Guid + (r.NavisId != "" ? " #" + r.NavisId : "")
                 + " | " + r.System + " | " + (r.SizeText != "" ? r.SizeText : r.Name);
             // hidden in Navisworks: own groups, so they can be toggled apart from what the model shows
@@ -582,7 +577,7 @@ public partial class DuctsToPluto
         }
         // the same recentring as Export (bbox of rows and centreline nodes, whole feet)
         double[] lo = { double.MaxValue, double.MaxValue, double.MaxValue }, hi = { double.MinValue, double.MinValue, double.MinValue };
-        foreach (Row r in rows) if (r.Min != null) for (int k = 0; k < 3; k++) { lo[k] = Math.Min(lo[k], r.Min[k]); hi[k] = Math.Max(hi[k], r.Max[k]); }
+        foreach (DuctRow r in rows) if (r.Min != null) for (int k = 0; k < 3; k++) { lo[k] = Math.Min(lo[k], r.Min[k]); hi[k] = Math.Max(hi[k], r.Max[k]); }
         foreach (double[] p in nodeXyz.Values) for (int k = 0; k < 3; k++) { lo[k] = Math.Min(lo[k], p[k]); hi[k] = Math.Max(hi[k], p[k]); }
         if (lo[0] == double.MaxValue) throw new Exception("DuctsToPluto: nothing with coordinates in " + runDir);
         double[] off = { Math.Round((lo[0] + hi[0]) / 2), Math.Round((lo[1] + hi[1]) / 2), Math.Round((lo[2] + hi[2]) / 2) };
@@ -608,9 +603,9 @@ public partial class DuctsToPluto
         var byRun = new Dictionary<string, List<uint>>(StringComparer.Ordinal); var fitted = new List<uint>(); var unoriented = new List<string>();
         var runsAt = new Dictionary<int, HashSet<string>>(); var degree = new Dictionary<int, int>();
         int nextBeam = 1, skipped = 0;
-        Func<Row, string> labelOf = r => (r.RunName != "" ? r.RunName : "(no RunName)") + " | " + r.Guid + (r.NavisId != "" ? " #" + r.NavisId : "")
+        Func<DuctRow, string> labelOf = r => (r.RunName != "" ? r.RunName : "(no RunName)") + " | " + r.Guid + (r.NavisId != "" ? " #" + r.NavisId : "")
             + " | " + r.Cat + " | " + (r.SizeText != "" ? r.SizeText : r.Name);
-        Func<Row, int, int, int> add = delegate(Row r, int a, int b)
+        Func<DuctRow, int, int, int> add = delegate(DuctRow r, int a, int b)
         {
             if (a == b) return 0;
             int id = nextBeam++;
@@ -635,7 +630,7 @@ public partial class DuctsToPluto
         var fabTri = ReadTriangles(Path.Combine(runDir, "ducts_tri.bin"), fabRows);
         for (int i = 0; i < rows.Count; i++)
         {
-            Row r = rows[i];
+            DuctRow r = rows[i];
             if (rowsWithCl.Contains(i + 1) || !fabRows.Contains(i + 1)) continue;
             bool nameSized = !double.IsNaN(r.NameW) || !double.IsNaN(r.NameD);
             if (!r.Name.TrimStart().StartsWith("Straight", StringComparison.OrdinalIgnoreCase) && !(nameSized && FitTrusted(r))) continue;   // as Export
@@ -704,29 +699,6 @@ public partial class DuctsToPluto
         return res;
     }
 
-    // ---- Opening probe (2026-10-08) ------------------------------------------------------------------
-    // Fabrication ductwork has no connector data (no Revit, SP3D models it as equipment), so connectors
-    // must come from the mesh. This probe asks whether they can: per fabrication part (optionally one
-    // Custom room number), weld its own triangles, chain the boundary edges (edges on one triangle) into
-    // loops, and describe each loop: centre, plane normal, round (diameter) or rectangular (a x b), planarity.
-    // An open-ended skin should give 2 loops on a straight / elbow, 3 on a tee; a closed solid gives none.
-    // Each opening is then matched to the nearest opening of another part: coincident and facing (joint),
-    // coaxial within 6 in (slip joint / gap), or unmatched. Nothing here builds the graph yet.
-    // Writes <out>.openings.csv, <out>.probe.txt and a viewer overlay: one 6 in stub per opening along its
-    // normal, groups by shape and by match status.
-    class Opening
-    {
-        public int Row; public string Shape; public double A, B, Dia;   // inches
-        public double[] C, N; public double Planar, Perim;              // C feet; Planar / Perim inches
-        public double[] Ua;                                            // rect: in-plane unit direction of side A (null for round)
-        public bool SizeOk; public string SizeBand = "no stated size"; public double Near = double.NaN, Dot = double.NaN; public int NearRow; public string Status = "";
-        public double DA = double.NaN, DB = double.NaN;                 // measured minus stated (larger / smaller side), inches
-        public Opening Mate;                                            // the matched connector (joint / near), null otherwise
-        public List<double[]> Cands;                                   // every ring centred at this end: { round 1/0, A, B, Dia } (MeshConnectors)
-        public List<Opening> Members;                                  // rings merged into this connector, smallest first
-        public int Rings = 1; public string Outer = "";                // rings merged into this connector; largest ring's size
-    }
-
     public static Result ExportProbe(string runDir, string outBase, string modelId, string lengthUnit, string room)
     {
         return ExportProbe(runDir, outBase, modelId, lengthUnit, room, null);
@@ -741,7 +713,7 @@ public partial class DuctsToPluto
         const double MatchIn = 1, SlipIn = 6, SideTolIn = 1.5, SplitAlongIn = 2;
         double scale = LengthScale(lengthUnit);
         var rows = ReadRows(Path.Combine(runDir, "ducts.csv"));
-        bool hasRoom = false; foreach (Row r in rows) if (r.Room != "") { hasRoom = true; break; }
+        bool hasRoom = false; foreach (DuctRow r in rows) if (r.Room != "") { hasRoom = true; break; }
         if (!string.IsNullOrEmpty(room) && !hasRoom)
             throw new Exception("DuctsToPluto: ducts.csv has no Room values (run Pluto Fab / Ducts with the 2026-10-08 build)");
         var want = new HashSet<int>();
@@ -756,7 +728,7 @@ public partial class DuctsToPluto
         var tri = ReadTriangles(Path.Combine(runDir, "ducts_tri.bin"), allFab);
 
         int partRow = 0, partLoops = 0; var partRings = new List<object[]>(); var partKind = new Dictionary<int, string>();
-        var all = new List<Opening>(); var loopsOf = new Dictionary<int, int[]>();   // row -> {connectors, small, interior, end rings}
+        var all = new List<DuctOpening>(); var loopsOf = new Dictionary<int, int[]>();   // row -> {connectors, small, interior, end rings}
         int noTri = 0;
         foreach (int row in allFab)
         {
@@ -765,7 +737,7 @@ public partial class DuctsToPluto
             bool watch = !string.IsNullOrEmpty(part) && rows[row - 1].NavisId.StartsWith(part.Trim(), StringComparison.OrdinalIgnoreCase);
             if (watch) { partRow = row; partLoops = 0; }
             int small, interior, nEnds;
-            List<Opening> conns = MeshConnectors(f, rows[row - 1], row, watch, partRings, partKind, ref partLoops, out small, out interior, out nEnds);
+            List<DuctOpening> conns = MeshConnectors(f, rows[row - 1], row, watch, partRings, partKind, ref partLoops, out small, out interior, out nEnds);
             all.AddRange(conns);
             if (want.Contains(row)) loopsOf[row] = new[] { conns.Count, small, interior, nEnds };
         }
@@ -773,7 +745,7 @@ public partial class DuctsToPluto
         // nearest opening on another part
         for (int i = 0; i < ops.Count; i++)
         {
-            Opening o = ops[i]; double best = double.MaxValue; int bj = -1;
+            DuctOpening o = ops[i]; double best = double.MaxValue; int bj = -1;
             for (int j = 0; j < all.Count; j++)
             {
                 if (all[j].Row == o.Row) continue;
@@ -791,12 +763,12 @@ public partial class DuctsToPluto
         // width). A connector that is not a joint, faces another part's end (dot < -0.9), lies in its plane
         // (within SplitAlongIn) and inside its outline (+1 in), and is smaller, joins that end; the big end
         // is marked "split" too. Nearest-opening matching alone joined only the branch nearest the centre.
-        int nSplit = 0; var splitBig = new HashSet<Opening>();
-        foreach (Opening o in ops)
+        int nSplit = 0; var splitBig = new HashSet<DuctOpening>();
+        foreach (DuctOpening o in ops)
         {
             if (o.Status.StartsWith("joint")) continue;
-            Opening best = null; double bestAlong = double.MaxValue;
-            foreach (Opening x in all)
+            DuctOpening best = null; double bestAlong = double.MaxValue;
+            foreach (DuctOpening x in all)
             {
                 if (x.Row == o.Row || o.N[0] * x.N[0] + o.N[1] * x.N[1] + o.N[2] * x.N[2] > -0.9) continue;
                 if (Area(o) >= Area(x)) continue;
@@ -814,13 +786,13 @@ public partial class DuctsToPluto
 
         // side branch: an unmatched connector lying on another part's wall (within SideTolIn) and facing it (a tap /
         // branch base on a main duct, whose prism has no opening there)
-        foreach (Opening o in ops)
+        foreach (DuctOpening o in ops)
         {
             if (o.Status != "unmatched") continue;
             double bestD = double.MaxValue; int bestRow = 0;
             foreach (int r2 in allFab)
             {
-                Row q = rows[r2 - 1]; float[] f2;
+                DuctRow q = rows[r2 - 1]; float[] f2;
                 if (r2 == o.Row || q.Min == null || !tri.TryGetValue(r2, out f2)) continue;
                 double pad = SideTolIn / 12;
                 if (o.C[0] < q.Min[0] - pad || o.C[0] > q.Max[0] + pad || o.C[1] < q.Min[1] - pad || o.C[1] > q.Max[1] + pad || o.C[2] < q.Min[2] - pad || o.C[2] > q.Max[2] + pad) continue;
@@ -836,7 +808,7 @@ public partial class DuctsToPluto
         // but their centreline line work (cl_segments.csv) does: the element's own free segment ends are its
         // connectors (point + outward direction). An unmatched / near fabrication connector within SlipIn of one,
         // coaxial, joins that fitting.
-        var fitEnds = new List<Opening>(); var fitRows = new HashSet<int>(); var fitWithCl = new HashSet<int>();
+        var fitEnds = new List<DuctOpening>(); var fitRows = new HashSet<int>(); var fitWithCl = new HashSet<int>();
         for (int i = 0; i < rows.Count; i++) if (rows[i].Cat.Equals("Duct Fittings", StringComparison.OrdinalIgnoreCase)) fitRows.Add(i + 1);
         string clSeg = Path.Combine(runDir, "cl_segments.csv"), clNod = Path.Combine(runDir, "cl_nodes.csv");
         if (File.Exists(clSeg) && File.Exists(clNod))
@@ -862,17 +834,17 @@ public partial class DuctsToPluto
                     double[] pe = xyz[d.Key], pn = xyz[nbr[d.Key]];
                     double[] dir = { pe[0] - pn[0], pe[1] - pn[1], pe[2] - pn[2] };
                     double dl = Math.Sqrt(dir[0] * dir[0] + dir[1] * dir[1] + dir[2] * dir[2]); if (dl < 1e-9) continue;
-                    var fe = new Opening(); fe.Row = kv.Key; fe.C = pe; fe.N = new[] { dir[0] / dl, dir[1] / dl, dir[2] / dl }; fe.Shape = "fitting end";
+                    var fe = new DuctOpening(); fe.Row = kv.Key; fe.C = pe; fe.N = new[] { dir[0] / dl, dir[1] / dl, dir[2] / dl }; fe.Shape = "fitting end";
                     fitEnds.Add(fe);
                 }
             }
         }
-        var fitMatched = new HashSet<Opening>();
-        foreach (Opening o in ops)
+        var fitMatched = new HashSet<DuctOpening>();
+        foreach (DuctOpening o in ops)
         {
             if (!(o.Status == "unmatched" || o.Status.StartsWith("near"))) continue;
-            double best = double.MaxValue; Opening bf = null;
-            foreach (Opening fe in fitEnds)
+            double best = double.MaxValue; DuctOpening bf = null;
+            foreach (DuctOpening fe in fitEnds)
             {
                 double dx = fe.C[0] - o.C[0], dy = fe.C[1] - o.C[1], dz = fe.C[2] - o.C[2];
                 double d = Math.Sqrt(dx * dx + dy * dy + dz * dz) * 12;
@@ -888,9 +860,9 @@ public partial class DuctsToPluto
         // CSV
         var csv = new List<string>();
         csv.Add("Row,NavisId,IfcGUID,Name,Type,StatedSize,Room,RunName,Shape,A_in,B_in,Dia_in,SizeOk,SizeBand,Rings,OuterRing,Cx_ft,Cy_ft,Cz_ft,Nx,Ny,Nz,Planarity_in,Perimeter_in,Nearest_in,NearestRow,NormalDot,Status");
-        foreach (Opening o in ops)
+        foreach (DuctOpening o in ops)
         {
-            Row r = rows[o.Row - 1];
+            DuctRow r = rows[o.Row - 1];
             csv.Add(string.Join(",", new[] { o.Row.ToString(Inv), r.NavisId, r.Guid, CsvCell(r.Name), PartType(r.Name), CsvCell(r.SizeText), CsvCell(r.Room), CsvCell(r.RunName), o.Shape,
                 F1(o.A), F1(o.B), F1(o.Dia), o.SizeOk ? "1" : "0", o.SizeBand, o.Rings.ToString(Inv), CsvCell(o.Outer), F3(o.C[0]), F3(o.C[1]), F3(o.C[2]), F3(o.N[0]), F3(o.N[1]), F3(o.N[2]),
                 F1(o.Planar), F1(o.Perim), F1(o.Near), o.NearRow > 0 ? o.NearRow.ToString(Inv) : "", F3(o.Dot), o.Status }));
@@ -900,7 +872,7 @@ public partial class DuctsToPluto
         // summary: per part type, how many big openings, shapes, size agreement, match status
         // probe.txt: header, then NEW (what the latest change adds), then the sections already reviewed
         var head = new StringBuilder(); var fresh = new StringBuilder(); var sum = new StringBuilder();
-        head.AppendLine(string.Format(Inv, "Opening probe {0}  room {1}", runDir, string.IsNullOrEmpty(room) ? "(all)" : room));
+        head.AppendLine(string.Format(Inv, "DuctOpening probe {0}  room {1}", runDir, string.IsNullOrEmpty(room) ? "(all)" : room));
         int rEnd = 0, rInt = 0, rSmall = 0; foreach (int[] v in loopsOf.Values) { rEnd += v[3]; rInt += v[2]; rSmall += v[1]; }
         sum.AppendLine(string.Format(Inv, "fabrication parts {0}; without triangles {1}; rings (perimeter >= {2} in): at ends {3}, interior {4}; smaller loops {5}", want.Count, noTri, BigPerimIn, rEnd, rInt, rSmall));
         sum.AppendLine(string.Format(Inv, "connectors (end rings merged per end) {0}", ops.Count));
@@ -918,7 +890,7 @@ public partial class DuctsToPluto
             sum.AppendLine("  " + t.Key + " -> " + string.Join("; ", parts.ToArray()));
         }
         var tally = new SortedDictionary<string, int>();
-        foreach (Opening o in ops)
+        foreach (DuctOpening o in ops)
         {
             foreach (string k in new[] { "shape " + o.Shape, "size vs stated: " + o.SizeBand,
                 "rings per connector " + o.Rings, "planarity " + (o.Planar <= 0.25 ? "<= 1/4 in" : o.Planar <= 1 ? "<= 1 in" : "> 1 in (not a flat opening)") })
@@ -930,7 +902,7 @@ public partial class DuctsToPluto
         // 3. unmatched by type (top 5)
         int nJ = 0, nS = 0, nF = 0, nN = 0, nU = 0;
         var unm = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (Opening o in ops)
+        foreach (DuctOpening o in ops)
         {
             string t = PartType(rows[o.Row - 1].Name) + (o.Shape == "round" ? " (r)" : "");
             if (o.Status.StartsWith("joint") || o.Status.StartsWith("split")) nJ++;
@@ -943,14 +915,14 @@ public partial class DuctsToPluto
         int fitIn = 0, fitInCl = 0, endsIn = 0, endsUsed = 0;
         foreach (int fr in fitRows)
             if (string.IsNullOrEmpty(room) || InRooms(rows[fr - 1].Room, room)) { fitIn++; if (fitWithCl.Contains(fr)) fitInCl++; }
-        foreach (Opening fe in fitEnds)
+        foreach (DuctOpening fe in fitEnds)
             if (string.IsNullOrEmpty(room) || InRooms(rows[fe.Row - 1].Room, room)) { endsIn++; if (fitMatched.Contains(fe)) endsUsed++; }
         sum.AppendLine(string.Format(Inv, "Revit fittings in room: {0}, with centreline {1}, ends {2}, ends joined to fab {3}", fitIn, fitInCl, endsIn, endsUsed));
         var ul = new List<KeyValuePair<string, int>>(unm); ul.Sort((x, y) => y.Value.CompareTo(x.Value));
         var u5 = new List<string>(); for (int q = 0; q < ul.Count && q < 5; q++) u5.Add(ul[q].Key + " " + ul[q].Value);
         sum.AppendLine("unmatched by type: " + (u5.Count > 0 ? string.Join(", ", u5.ToArray()) : "-"));
         var dist = new[] { 0, 0, 0, 0, 0 };
-        foreach (Opening o in ops) { double d = o.Near; dist[double.IsNaN(d) ? 4 : d <= 0.25 ? 0 : d <= 1 ? 1 : d <= 6 ? 2 : 3]++; }
+        foreach (DuctOpening o in ops) { double d = o.Near; dist[double.IsNaN(d) ? 4 : d <= 0.25 ? 0 : d <= 1 ? 1 : d <= 6 ? 2 : 3]++; }
         sum.AppendLine(string.Format(Inv, "nearest other opening: <= 1/4 in {0}; <= 1 in {1}; <= 6 in {2}; farther {3}; none {4}", dist[0], dist[1], dist[2], dist[3], dist[4]));
         // ---- connectivity graph overlay (<out>_graph.bin) ----
         // Each part = lines through its connectors (2: end to end; else a star from their mean). Joint mates share
@@ -966,7 +938,7 @@ public partial class DuctsToPluto
             if (!g0.TryGetValue(a1, out h)) { h = new HashSet<int>(); g0[a1] = h; } h.Add(b1);
             if (!g0.TryGetValue(b1, out h)) { h = new HashSet<int>(); g0[b1] = h; } h.Add(a1);
         };
-        foreach (Opening o in ops)
+        foreach (DuctOpening o in ops)
         {
             if (o.NearRow <= 0 || !allFab.Contains(o.NearRow)) continue;
             bool end = o.Status.StartsWith("joint") || o.Status.StartsWith("near");
@@ -996,15 +968,15 @@ public partial class DuctsToPluto
             }
             biggest = Math.Max(biggest, size); if (size == 1) single++;
         }
-        int nUnm = 0; foreach (Opening o in ops) if (o.Status == "unmatched") nUnm++;
+        int nUnm = 0; foreach (DuctOpening o in ops) if (o.Status == "unmatched") nUnm++;
         sum.AppendLine(string.Format(Inv, "graph: parts {0}, connected groups {1}, largest {2}, single parts {3}", loopsOf.Count, nComp, biggest, single));
         sum.AppendLine(string.Format(Inv, "RunName differs from both neighbours: {0} parts; unmatched connectors {1}", conflict.Count, nUnm));
 
         // NEW (3 lines, <= 5 items): connectors per part against what its type should have, and for the
         // misfits the closest pair of same-direction connectors (along / lateral, in): a pair that should
         // have merged into one end shows a small gap here, which says how far MergeAlongIn / MergeLatIn are off
-        var opsOf = new Dictionary<int, List<Opening>>();
-        foreach (Opening o in ops) { List<Opening> l; if (!opsOf.TryGetValue(o.Row, out l)) { l = new List<Opening>(); opsOf[o.Row] = l; } l.Add(o); }
+        var opsOf = new Dictionary<int, List<DuctOpening>>();
+        foreach (DuctOpening o in ops) { List<DuctOpening> l; if (!opsOf.TryGetValue(o.Row, out l)) { l = new List<DuctOpening>(); opsOf[o.Row] = l; } l.Add(o); }
         var unexpected = new HashSet<int>(); int nOk = 0, nUnknown = 0;
         var badType = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase); var gaps = new List<string>();
         foreach (KeyValuePair<int, int[]> kv in loopsOf)
@@ -1015,7 +987,7 @@ public partial class DuctsToPluto
             if (have == want0) { nOk++; continue; }
             unexpected.Add(kv.Key);
             string k = t + " " + have; int c; badType.TryGetValue(k, out c); badType[k] = c + 1;
-            List<Opening> l; double bA = double.NaN, bL = double.NaN, bS = double.MaxValue;
+            List<DuctOpening> l; double bA = double.NaN, bL = double.NaN, bS = double.MaxValue;
             if (opsOf.TryGetValue(kv.Key, out l))
                 for (int i = 0; i < l.Count; i++) for (int j = i + 1; j < l.Count; j++)
                 {
@@ -1027,7 +999,7 @@ public partial class DuctsToPluto
             if (gaps.Count < 5) gaps.Add(t + (double.IsNaN(bA) ? " none" : string.Format(Inv, " {0:0.#}/{1:0.#}", bA, bL)));
         }
         sum.AppendLine(string.Format(Inv, "connectors vs part type: as expected {0}, unexpected {1}, type not known {2}", nOk, unexpected.Count, nUnknown));
-        int bigIn = 0; foreach (Opening x in splitBig) if (want.Contains(x.Row)) bigIn++;
+        int bigIn = 0; foreach (DuctOpening x in splitBig) if (want.Contains(x.Row)) bigIn++;
         fresh.AppendLine(string.Format(Inv, "split joints: smaller connectors joined {0}, onto big ends {1} ({2} in this room)", nSplit, splitBig.Count, bigIn));
         var bt = new List<KeyValuePair<string, int>>(badType); bt.Sort((x, y) => y.Value.CompareTo(x.Value));
         var b5 = new List<string>(); for (int q = 0; q < bt.Count && q < 5; q++) b5.Add(bt[q].Key + " (" + bt[q].Value + ")");
@@ -1043,20 +1015,20 @@ public partial class DuctsToPluto
             if (partRow == 0) fresh.AppendLine("part " + part + ": not found among the fabrication parts (NavisId start)");
             else
             {
-                Row pr = rows[partRow - 1];
+                DuctRow pr = rows[partRow - 1];
                 fresh.AppendLine(string.Format(Inv, "part {0}: {1}, stated {2}, loops {3}, rings {4}", pr.NavisId.Substring(0, Math.Min(8, pr.NavisId.Length)), pr.Name, pr.SizeText, partLoops, partRings.Count));
                 var idx = new List<int>(); for (int i = 0; i < partRings.Count; i++) idx.Add(i);
-                idx.Sort((x, y) => ((Opening)partRings[y][0]).Perim.CompareTo(((Opening)partRings[x][0]).Perim));
+                idx.Sort((x, y) => ((DuctOpening)partRings[y][0]).Perim.CompareTo(((DuctOpening)partRings[x][0]).Perim));
                 var rs = new List<string>();
                 for (int q = 0; q < idx.Count && q < 5; q++)
                 {
-                    Opening o = (Opening)partRings[idx[q]][0]; string kind; partKind.TryGetValue(idx[q], out kind);
+                    DuctOpening o = (DuctOpening)partRings[idx[q]][0]; string kind; partKind.TryGetValue(idx[q], out kind);
                     rs.Add(string.Format(Inv, "{0} {1} n({2:0.##},{3:0.##},{4:0.##}) flat {5:0.#} off {6:0.#}", o.Shape == "round" ? "d" + o.Dia.ToString("0.#", Inv) : o.A.ToString("0.#", Inv) + "x" + o.B.ToString("0.#", Inv),
                         kind ?? "?", o.N[0], o.N[1], o.N[2], o.Planar, (double)partRings[idx[q]][2]));
                 }
                 fresh.AppendLine("rings: " + string.Join("; ", rs.ToArray()));
                 var cs = new List<string>();
-                foreach (Opening o in ops) if (o.Row == partRow && cs.Count < 5)
+                foreach (DuctOpening o in ops) if (o.Row == partRow && cs.Count < 5)
                     cs.Add(string.Format(Inv, "{0} off {1:0.#} {2}", o.Shape == "round" ? "d" + o.Dia.ToString("0.#", Inv) : o.A.ToString("0.#", Inv) + "x" + o.B.ToString("0.#", Inv), PartAxisOffset(pr, o), o.Status));
                 fresh.AppendLine("connectors: " + (cs.Count > 0 ? string.Join("; ", cs.ToArray()) : "none"));
             }
@@ -1068,7 +1040,7 @@ public partial class DuctsToPluto
         // overlay: 6 in stub per opening along its normal
         var nodes = new Dictionary<int, Node>(); int nextNode = 1;
         double[] lo = { double.MaxValue, double.MaxValue, double.MaxValue }, hi = { double.MinValue, double.MinValue, double.MinValue };
-        foreach (Opening o in ops) for (int k = 0; k < 3; k++) { lo[k] = Math.Min(lo[k], o.C[k]); hi[k] = Math.Max(hi[k], o.C[k]); }
+        foreach (DuctOpening o in ops) for (int k = 0; k < 3; k++) { lo[k] = Math.Min(lo[k], o.C[k]); hi[k] = Math.Max(hi[k], o.C[k]); }
         if (ops.Count == 0) { var r0 = new Result(); r0.Note = report; return r0; }
         double[] off = { Math.Round((lo[0] + hi[0]) / 2), Math.Round((lo[1] + hi[1]) / 2), Math.Round((lo[2] + hi[2]) / 2) };
         var sections = new List<RawViewerWriter.SectionDef>();
@@ -1076,9 +1048,9 @@ public partial class DuctsToPluto
         var beams = new Dictionary<int, RawViewerWriter.BeamMember>(); var labels = new Dictionary<int, string>();
         var gShape = new SortedDictionary<string, List<uint>>(); var gStatus = new SortedDictionary<string, List<uint>>(); var gSize = new List<uint>();
         int nb = 1;
-        foreach (Opening o in ops)
+        foreach (DuctOpening o in ops)
         {
-            Row r = rows[o.Row - 1];
+            DuctRow r = rows[o.Row - 1];
             int a = MakeNode(nodes, ref nextNode, o.C, off, scale);
             int b = MakeNode(nodes, ref nextNode, new[] { o.C[0] + o.N[0] * 0.5, o.C[1] + o.N[1] * 0.5, o.C[2] + o.N[2] * 0.5 }, off, scale);
             beams[nb] = Beam(nb, a, b, 0, nodes);
@@ -1101,8 +1073,8 @@ public partial class DuctsToPluto
         sc.ModelId = modelId; sc.GeometryHash = w.GeometryHash;
         sc.Units["length"] = lengthUnit;
         sc.Units["worldOffset"] = string.Format(Inv, "{0} {1} {2}", off[0] * scale, off[1] * scale, off[2] * scale);
-        foreach (KeyValuePair<string, List<uint>> kv in gShape) sc.AddGroup("Opening " + kv.Key, kv.Key == "round" ? "#3fe0e0" : "#4f8cff", "beams", kv.Value, new[] { "duct", "opening", kv.Key }, null);
-        if (gSize.Count > 0) sc.AddGroup("Opening size differs from stated", "#ff8a3d", "beams", gSize, new[] { "duct", "opening", "sizeDiffers" }, null);
+        foreach (KeyValuePair<string, List<uint>> kv in gShape) sc.AddGroup("DuctOpening " + kv.Key, kv.Key == "round" ? "#3fe0e0" : "#4f8cff", "beams", kv.Value, new[] { "duct", "opening", kv.Key }, null);
+        if (gSize.Count > 0) sc.AddGroup("DuctOpening size differs from stated", "#ff8a3d", "beams", gSize, new[] { "duct", "opening", "sizeDiffers" }, null);
         foreach (KeyValuePair<string, List<uint>> kv in gStatus)
             sc.AddGroup("Match: " + kv.Key, kv.Key == "joint" ? "#8ae04f" : kv.Key == "unmatched" ? "#ff3b3b" : "#ffd23f", "beams", kv.Value, new[] { "duct", "opening", "match" }, null);
         string scPath = outBase + ".features.json";
@@ -1116,14 +1088,14 @@ public partial class DuctsToPluto
     // One part's connectors from its mesh (the probe; shared with the Revit overlay, 2026-10-12): boundary loops ->
     // end rings -> merged per end -> position from the largest ring, size from the smallest ring concentric with it.
     // watch / partRings / partKind / partLoops feed the -Part report (false / null when not wanted).
-    static List<Opening> MeshConnectors(float[] f, Row r, int row, bool watch, List<object[]> partRings, Dictionary<int, string> partKind, ref int partLoops,
+    static List<DuctOpening> MeshConnectors(float[] f, DuctRow r, int row, bool watch, List<object[]> partRings, Dictionary<int, string> partKind, ref int partLoops,
         out int small, out int interior, out int nEnds)
     {
         small = 0; interior = 0;
-        var ends = new List<Opening>(); var inner = new List<Opening>();
+        var ends = new List<DuctOpening>(); var inner = new List<DuctOpening>();
         foreach (List<double[]> loop in BoundaryLoops(f, WeldFt))
         {
-            Opening o = Describe(loop);
+            DuctOpening o = Describe(loop);
             if (watch) partLoops++;
             if (watch && o != null && o.Perim >= BigPerimIn) partRings.Add(new object[] { Snapshot(o), loop.Count, PartAxisOffset(r, o) });   // a copy: merging later rewrites o
             if (o == null || o.Perim < BigPerimIn) { small++; continue; }
@@ -1151,11 +1123,11 @@ public partial class DuctsToPluto
         // off-centre rings (a flange outline in pieces) as extra connectors: a transition drawn as a T, a
         // tap base split in two (a V onto the main duct). Outlets side by side (pants wye) stay apart.
         ends.Sort((x, y) => x.Perim.CompareTo(y.Perim));
-        var conns = new List<Opening>();
-        foreach (Opening o in ends)
+        var conns = new List<DuctOpening>();
+        foreach (DuctOpening o in ends)
         {
-            Opening hit = null;
-            foreach (Opening c in conns)
+            DuctOpening hit = null;
+            foreach (DuctOpening c in conns)
             {
                 double dx = o.C[0] - c.C[0], dy = o.C[1] - c.C[1], dz = o.C[2] - c.C[2];
                 double along = Math.Abs(dx * c.N[0] + dy * c.N[1] + dz * c.N[2]) * 12, sep = Math.Sqrt(dx * dx + dy * dy + dz * dz) * 12;
@@ -1164,17 +1136,17 @@ public partial class DuctsToPluto
                 if (o.N[0] * c.N[0] + o.N[1] * c.N[1] + o.N[2] * c.N[2] > 0.95 && along <= MergeAlongIn && lateral <= inside) { hit = c; break; }
             }
             if (hit != null) { hit.Rings++; hit.Members.Add(o); hit.Outer = o.Shape == "round" ? string.Format(Inv, "round {0:0.#}", o.Dia) : string.Format(Inv, "{0:0.#}x{1:0.#}", o.A, o.B); continue; }
-            o.Members = new List<Opening> { o };
+            o.Members = new List<DuctOpening> { o };
             conns.Add(o);
         }
         // where and how big a connector is (2026-10-08, from a real eccentric transition: flange 82x36 off 0,
         // an extra 78.2x27.4 ring off 8.1 in at the same end): POSITION from the largest ring, the flange's
         // outer edge, which is centred on the duct; SIZE from the smallest ring concentric with it (within
         // 1 in), else the largest. Taking the smallest containing ring put that connector 8 in off-centre.
-        foreach (Opening o in conns)
+        foreach (DuctOpening o in conns)
         {
-            Opening big = o.Members[o.Members.Count - 1], sz = big;
-            foreach (Opening m in o.Members)                      // smallest first
+            DuctOpening big = o.Members[o.Members.Count - 1], sz = big;
+            foreach (DuctOpening m in o.Members)                      // smallest first
                 if (m == big || LateralIn(big, m) <= 1) { sz = m; break; }
             // 2026-10-12 (radius gooseneck, test room): the duct rim is an INTERIOR ring when the flange flares past
             // its plane (flange 17x15 end ring, rim 14x12 = the free size); a smaller interior ring facing the same
@@ -1183,8 +1155,8 @@ public partial class DuctsToPluto
             // ring centred on this end (end rings merged here, interior rings within RimSearchIn along it), for the
             // Revit overlay's size check; the connector's own size still follows the 3 in rule
             o.Cands = new List<double[]>();
-            foreach (Opening m in o.Members) if (m == big || LateralIn(big, m) <= 1) o.Cands.Add(new[] { m.Shape == "round" ? 1.0 : 0.0, m.A, m.B, m.Dia });
-            foreach (Opening m in inner)
+            foreach (DuctOpening m in o.Members) if (m == big || LateralIn(big, m) <= 1) o.Cands.Add(new[] { m.Shape == "round" ? 1.0 : 0.0, m.A, m.B, m.Dia });
+            foreach (DuctOpening m in inner)
             {
                 if (Math.Abs(m.N[0] * big.N[0] + m.N[1] * big.N[1] + m.N[2] * big.N[2]) < 0.95 || LateralIn(big, m) > 1) continue;
                 double dx = m.C[0] - big.C[0], dy = m.C[1] - big.C[1], dz = m.C[2] - big.C[2];
@@ -1276,7 +1248,7 @@ public partial class DuctsToPluto
 
     // Centre, Newell normal, planarity, perimeter; round when the radius varies < 6 % about the centre and the loop is circle-full,
     // else a x b along the in-plane principal axes (inches).
-    static Opening Describe(List<double[]> p)
+    static DuctOpening Describe(List<double[]> p)
     {
         int n = p.Count; double[] c = new double[3]; double per = 0; double[] nn = new double[3];
         for (int i = 0; i < n; i++)
@@ -1305,7 +1277,7 @@ public partial class DuctsToPluto
             sxx += xs[i] * xs[i]; syy += ys[i] * ys[i]; sxy += xs[i] * ys[i];
         }
         double rm = rs / n, cv = rm > 0 ? Math.Sqrt(Math.Max(0, rs2 / n - rm * rm)) / rm : 1;
-        var o = new Opening(); o.C = c; o.N = nn; o.Planar = planar * 12; o.Perim = per * 12;
+        var o = new DuctOpening(); o.C = c; o.N = nn; o.Planar = planar * 12; o.Perim = per * 12;
         // round needs both: radius nearly constant AND circle-like fullness 4 pi A / P^2 (circle 1, 24-gon 0.99,
         // square 0.79, 74 x 28 rectangle 0.57); the corners of any rectangle alone are equidistant from its centre
         double fullness = 4 * Math.PI * (nl / 2) / (per * per);
@@ -1324,15 +1296,15 @@ public partial class DuctsToPluto
     }
 
     // The probe's connectivity as a viewer overlay (see ExportProbe): part lines, shared joint nodes, link beams.
-    static void WriteGraph(string outBase, string modelId, string lengthUnit, double scale, List<Row> rows, List<Opening> ops, List<Opening> all,
-        Dictionary<int, float[]> tri, HashSet<int> want, HashSet<int> conflict, List<Opening> fitEnds, HashSet<int> unexpected)
+    static void WriteGraph(string outBase, string modelId, string lengthUnit, double scale, List<DuctRow> rows, List<DuctOpening> ops, List<DuctOpening> all,
+        Dictionary<int, float[]> tri, HashSet<int> want, HashSet<int> conflict, List<DuctOpening> fitEnds, HashSet<int> unexpected)
     {
         double[] lo = { double.MaxValue, double.MaxValue, double.MaxValue }, hi = { double.MinValue, double.MinValue, double.MinValue };
-        foreach (Opening o in ops) for (int k = 0; k < 3; k++) { lo[k] = Math.Min(lo[k], o.C[k]); hi[k] = Math.Max(hi[k], o.C[k]); }
+        foreach (DuctOpening o in ops) for (int k = 0; k < 3; k++) { lo[k] = Math.Min(lo[k], o.C[k]); hi[k] = Math.Max(hi[k], o.C[k]); }
         double[] off = { Math.Round((lo[0] + hi[0]) / 2), Math.Round((lo[1] + hi[1]) / 2), Math.Round((lo[2] + hi[2]) / 2) };
         var nodes = new Dictionary<int, Node>(); int nextNode = 1;
-        var nodeOf = new Dictionary<Opening, int>();
-        Func<Opening, int> conn = delegate(Opening o)
+        var nodeOf = new Dictionary<DuctOpening, int>();
+        Func<DuctOpening, int> conn = delegate(DuctOpening o)
         {
             int id; if (nodeOf.TryGetValue(o, out id)) return id;
             if (o.Mate != null && o.Status.StartsWith("joint") && nodeOf.TryGetValue(o.Mate, out id)) { nodeOf[o] = id; return id; }
@@ -1352,13 +1324,13 @@ public partial class DuctsToPluto
             if (a == b) return 0;
             beams[nb] = Beam(nb, a, b, sec, nodes); labels[nb] = label; return nb++;
         };
-        var byRow = new Dictionary<int, List<Opening>>();
-        foreach (Opening o in ops) { List<Opening> l; if (!byRow.TryGetValue(o.Row, out l)) { l = new List<Opening>(); byRow[o.Row] = l; } l.Add(o); }
-        var allByRow = new Dictionary<int, List<Opening>>();
-        foreach (Opening o in all) { List<Opening> l; if (!allByRow.TryGetValue(o.Row, out l)) { l = new List<Opening>(); allByRow[o.Row] = l; } l.Add(o); }
-        foreach (KeyValuePair<int, List<Opening>> kv in byRow)
+        var byRow = new Dictionary<int, List<DuctOpening>>();
+        foreach (DuctOpening o in ops) { List<DuctOpening> l; if (!byRow.TryGetValue(o.Row, out l)) { l = new List<DuctOpening>(); byRow[o.Row] = l; } l.Add(o); }
+        var allByRow = new Dictionary<int, List<DuctOpening>>();
+        foreach (DuctOpening o in all) { List<DuctOpening> l; if (!allByRow.TryGetValue(o.Row, out l)) { l = new List<DuctOpening>(); allByRow[o.Row] = l; } l.Add(o); }
+        foreach (KeyValuePair<int, List<DuctOpening>> kv in byRow)
         {
-            Row r = rows[kv.Key - 1];
+            DuctRow r = rows[kv.Key - 1];
             string label = (r.RunName != "" ? r.RunName : "(no RunName)") + " | " + r.Name + " | " + r.Guid + " #" + r.NavisId
                 + (conflict.Contains(kv.Key) ? " | RUNNAME DIFFERS FROM BOTH NEIGHBOURS" : "")
                 + (unexpected.Contains(kv.Key) ? " | " + kv.Value.Count + " CONNECTORS, UNEXPECTED FOR ITS TYPE" : "");
@@ -1370,7 +1342,7 @@ public partial class DuctsToPluto
                 // tee / lateral in one part: the through pair as a straight line, each other connector along
                 // its own axis back to where that axis meets the main line, so a lateral keeps its angle
                 // (a star from the mean zig-zagged the main run; the closest point drew laterals square)
-                Opening a = kv.Value[thr[0]], b = kv.Value[thr[1]];
+                DuctOpening a = kv.Value[thr[0]], b = kv.Value[thr[1]];
                 ids.Add(beam(conn(a), conn(b), 0, label));
                 for (int q = 0; q < kv.Value.Count; q++)
                 {
@@ -1382,9 +1354,9 @@ public partial class DuctsToPluto
             {
                 double[] c = new double[3];
                 if (kv.Value.Count == 1 && r.Min != null) for (int k = 0; k < 3; k++) c[k] = (r.Min[k] + r.Max[k]) / 2;
-                else { foreach (Opening o in kv.Value) for (int k = 0; k < 3; k++) c[k] += o.C[k] / kv.Value.Count; }
+                else { foreach (DuctOpening o in kv.Value) for (int k = 0; k < 3; k++) c[k] += o.C[k] / kv.Value.Count; }
                 int hub = pt(c);
-                foreach (Opening o in kv.Value) ids.Add(beam(hub, conn(o), 0, label));
+                foreach (DuctOpening o in kv.Value) ids.Add(beam(hub, conn(o), 0, label));
             }
             string run = r.RunName != "" ? "Run " + r.RunName : "No RunName";
             List<uint> g; if (!byRun.TryGetValue(run, out g)) { g = new List<uint>(); byRun[run] = g; }
@@ -1395,7 +1367,7 @@ public partial class DuctsToPluto
             if (id <= 0) return; List<uint> l; if (!gLink.TryGetValue(kind, out l)) { l = new List<uint>(); gLink[kind] = l; } l.Add((uint)id);
         };
         var unmatched = new List<uint>();
-        foreach (Opening o in ops)
+        foreach (DuctOpening o in ops)
         {
             string lbl = string.Format(Inv, "{0} | {1} #{2} -> row {3} | {4:0.#} in", o.Status, rows[o.Row - 1].Name, rows[o.Row - 1].NavisId, o.NearRow, o.Near);
             if (o.Status.StartsWith("split") && o.Mate != null)
@@ -1405,7 +1377,7 @@ public partial class DuctsToPluto
             else if (o.Status.StartsWith("side branch"))
             {
                 // closest point on the main part's own line (its two connectors), else the mean of its connectors
-                List<Opening> m; double[] q = null;
+                List<DuctOpening> m; double[] q = null;
                 if (allByRow.TryGetValue(o.NearRow, out m) && m.Count > 0)
                 {
                     if (m.Count == 2)
@@ -1415,14 +1387,14 @@ public partial class DuctsToPluto
                         double t = L2 > 0 ? ((o.C[0] - a[0]) * ab[0] + (o.C[1] - a[1]) * ab[1] + (o.C[2] - a[2]) * ab[2]) / L2 : 0;
                         t = Math.Max(0, Math.Min(1, t)); q = new[] { a[0] + ab[0] * t, a[1] + ab[1] * t, a[2] + ab[2] * t };
                     }
-                    else { q = new double[3]; foreach (Opening x in m) for (int k = 0; k < 3; k++) q[k] += x.C[k] / m.Count; }
+                    else { q = new double[3]; foreach (DuctOpening x in m) for (int k = 0; k < 3; k++) q[k] += x.C[k] / m.Count; }
                 }
                 if (q != null) addLink("Link: side branch", beam(conn(o), pt(q), 1, lbl));
             }
             else if (o.Status.StartsWith("fitting joint"))
             {
-                Opening fe = null; double bd = double.MaxValue;
-                foreach (Opening x in fitEnds)
+                DuctOpening fe = null; double bd = double.MaxValue;
+                foreach (DuctOpening x in fitEnds)
                 {
                     if (x.Row != o.NearRow) continue;
                     double d = (x.C[0] - o.C[0]) * (x.C[0] - o.C[0]) + (x.C[1] - o.C[1]) * (x.C[1] - o.C[1]) + (x.C[2] - o.C[2]) * (x.C[2] - o.C[2]);
@@ -1458,13 +1430,13 @@ public partial class DuctsToPluto
     // The main run through a part with 3+ connectors: the pair facing opposite ways (dot < -0.9), on one
     // axis (each centre within max(3 in, a quarter of its size) of the other's axis) and the same size
     // (within 1 in); the farthest-apart such pair. null = none (drawn as a star).
-    static int[] ThroughPair(List<Opening> c)
+    static int[] ThroughPair(List<DuctOpening> c)
     {
         int[] best = null; double bestD = -1;
         for (int i = 0; i < c.Count; i++)
             for (int j = i + 1; j < c.Count; j++)
             {
-                Opening a = c[i], b = c[j];
+                DuctOpening a = c[i], b = c[j];
                 if (a.N[0] * b.N[0] + a.N[1] * b.N[1] + a.N[2] * b.N[2] > -0.9) continue;
                 double sa = a.Shape == "round" ? a.Dia : a.A, sb = b.Shape == "round" ? b.Dia : b.A;
                 double ta = a.Shape == "round" ? a.Dia : a.B, tb = b.Shape == "round" ? b.Dia : b.B;
@@ -1479,7 +1451,7 @@ public partial class DuctsToPluto
     }
     // Where a branch connector's axis (its centre, back along its outward normal) comes closest to the
     // main segment a-b: the point on the segment. Parallel axes fall back to the closest point of p.
-    static double[] BranchJunction(double[] a, double[] b, Opening br)
+    static double[] BranchJunction(double[] a, double[] b, DuctOpening br)
     {
         double[] u = { b[0] - a[0], b[1] - a[1], b[2] - a[2] }, v = { -br.N[0], -br.N[1], -br.N[2] };
         double[] w = { a[0] - br.C[0], a[1] - br.C[1], a[2] - br.C[2] };
@@ -1505,7 +1477,7 @@ public partial class DuctsToPluto
     // eccentric transition's large-end loop ran back along open seams of its slanted panel (unwelded
     // T-junctions), and the loop's average pulled the connector toward the tapered side and into the part.
     // Round rings keep their circle fit; a rectangular ring gets a x b from the trimmed outline.
-    static void TrimToEnd(Opening o, List<double[]> loop, double tolIn)
+    static void TrimToEnd(DuctOpening o, List<double[]> loop, double tolIn)
     {
         double ext = double.MinValue;
         foreach (double[] q in loop) ext = Math.Max(ext, q[0] * o.N[0] + q[1] * o.N[1] + q[2] * o.N[2]);
@@ -1542,9 +1514,9 @@ public partial class DuctsToPluto
         }
     }
 
-    static Opening Snapshot(Opening o)
+    static DuctOpening Snapshot(DuctOpening o)
     {
-        var c = new Opening(); c.Shape = o.Shape; c.A = o.A; c.B = o.B; c.Dia = o.Dia; c.Planar = o.Planar; c.Perim = o.Perim;
+        var c = new DuctOpening(); c.Shape = o.Shape; c.A = o.A; c.B = o.B; c.Dia = o.Dia; c.Planar = o.Planar; c.Perim = o.Perim;
         c.C = (double[])o.C.Clone(); c.N = (double[])o.N.Clone();
         return c;
     }
@@ -1569,7 +1541,7 @@ public partial class DuctsToPluto
     }
 
     // Offset (inches) of a ring's centre from the part's bbox centre, measured across the ring's axis.
-    static double PartAxisOffset(Row r, Opening o)
+    static double PartAxisOffset(DuctRow r, DuctOpening o)
     {
         if (r.Min == null) return double.NaN;
         double dx = o.C[0] - (r.Min[0] + r.Max[0]) / 2, dy = o.C[1] - (r.Min[1] + r.Max[1]) / 2, dz = o.C[2] - (r.Min[2] + r.Max[2]) / 2;
@@ -1578,11 +1550,11 @@ public partial class DuctsToPluto
         return Math.Sqrt(lx * lx + ly * ly + lz * lz) * 12;
     }
 
-    // Opening area (sq in) for size comparisons.
-    static double Area(Opening o) { return o.Shape == "round" ? Math.PI * o.Dia * o.Dia / 4 : o.A * o.B; }
+    // DuctOpening area (sq in) for size comparisons.
+    static double Area(DuctOpening o) { return o.Shape == "round" ? Math.PI * o.Dia * o.Dia / 4 : o.A * o.B; }
 
     // Does point p (feet) lie inside x's outline, projected on x's plane, with tolIn slack?
-    static bool InsideOutline(Opening x, double[] p, double tolIn)
+    static bool InsideOutline(DuctOpening x, double[] p, double tolIn)
     {
         double dx = p[0] - x.C[0], dy = p[1] - x.C[1], dz = p[2] - x.C[2];
         double along = dx * x.N[0] + dy * x.N[1] + dz * x.N[2];
@@ -1598,7 +1570,7 @@ public partial class DuctsToPluto
     }
 
     // Offset of q's centre from m's axis (inches).
-    static double LateralIn(Opening m, Opening q)
+    static double LateralIn(DuctOpening m, DuctOpening q)
     {
         double dx = q.C[0] - m.C[0], dy = q.C[1] - m.C[1], dz = q.C[2] - m.C[2];
         double off = Math.Sqrt(dx * dx + dy * dy + dz * dz) * 12, along = Math.Abs(dx * m.N[0] + dy * m.N[1] + dz * m.N[2]) * 12;
@@ -1658,7 +1630,7 @@ public partial class DuctsToPluto
         s = s.Substring(0, i).Trim();
         return s == "" ? "(unnamed)" : s;
     }
-    static bool IsRound(Row r) { return r.Shape.IndexOf("round", StringComparison.OrdinalIgnoreCase) >= 0 || (!double.IsNaN(r.NameD) && double.IsNaN(r.NameW)); }
+    static bool IsRound(DuctRow r) { return r.Shape.IndexOf("round", StringComparison.OrdinalIgnoreCase) >= 0 || (!double.IsNaN(r.NameD) && double.IsNaN(r.NameW)); }
     static string F1(double v) { return double.IsNaN(v) ? "" : v.ToString("0.##", Inv); }
     static string F3(double v) { return double.IsNaN(v) ? "" : v.ToString("0.####", Inv); }
     static string CsvCell(string v) { v = v ?? ""; return v.IndexOfAny(new[] { ',', '"', '\n' }) >= 0 ? "\"" + v.Replace("\"", "\"\"") + "\"" : v; }
@@ -1705,6 +1677,18 @@ public partial class DuctsToPluto
     // / "Run: (no run name)" (insulation / lining take the covered duct's), "Fabrication" / "Not fabrication".
     // Written as <out>_run and <out>_norun like the box mesh.
     public static Result ExportRevitMesh(string runDir, string outBase, string modelId, string lengthUnit)
+    {
+        return ExportRevitMesh(runDir, outBase, modelId, lengthUnit, null);
+    }
+
+    // settings: the duct config (DuctSettings.cs, Export-DuctsViewer.ps1); null = defaults
+    public static Result ExportRevitMesh(string runDir, string outBase, string modelId, string lengthUnit, DuctSettings settings)
+    {
+        return With(settings, () => ExportRevitMeshCore(runDir, outBase, modelId, lengthUnit));
+    }
+
+    // runs with Cfg, set by With(...)
+    static Result ExportRevitMeshCore(string runDir, string outBase, string modelId, string lengthUnit)
     {
         double[] T = null;
         foreach (string line in File.ReadAllLines(Path.Combine(runDir, "mesh-boxes.txt")))
@@ -1763,7 +1747,6 @@ public partial class DuctsToPluto
     // sidecar; a part with no triangles is not written. Result = the run file; Note covers both.
     // Revit categories left out of the Revit mesh's _norun file (RevitMeshNoRunExclude in duct-config.psd1), exact
     // names, ignoring case
-    public static readonly HashSet<string> NoRunExclude = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
     static Result WriteMeshOverlays(List<KeyValuePair<int, float[]>> recs, List<Dictionary<string, string>> items, string runCol,
         string outBase, string modelId, string lengthUnit, string tag, MeshItemInfo info)
@@ -1775,7 +1758,7 @@ public partial class DuctsToPluto
             Dictionary<string, string> it = rec.Key >= 1 && rec.Key <= items.Count ? items[rec.Key - 1] : null;
             if (it != null && Get(it, runCol) != "") { withRun.Add(rec); continue; }
             string cat = it != null ? Get(it, "Category") : "";
-            if (tag == "revit" && NoRunExclude.Contains(cat)) { int c; excluded.TryGetValue(cat, out c); excluded[cat] = c + 1; continue; }
+            if (tag == "revit" && Cfg.NoRunExclude.Contains(cat)) { int c; excluded.TryGetValue(cat, out c); excluded[cat] = c + 1; continue; }
             noRun.Add(rec);
         }
         Result a = withRun.Count > 0 ? WriteMeshOverlay(withRun, items, outBase + "_run", modelId + "/run", lengthUnit, tag, info) : null;
@@ -1903,7 +1886,7 @@ public partial class DuctsToPluto
             n[0] /= l; n[1] /= l; n[2] /= l;
             double area = l / 2; tn[t] = n; ta[t] = area; total += area;
             int hit = -1;
-            for (int d = 0; d < dirs.Count; d++) if (Math.Abs(Dot(dirs[d], n)) > 0.999) { hit = d; break; }   // ± same direction, ~2.5 deg
+            for (int d = 0; d < dirs.Count; d++) if (Math.Abs(DuctMath.Dot3(dirs[d], n)) > 0.999) { hit = d; break; }   // ± same direction, ~2.5 deg
             if (hit < 0) { hit = dirs.Count; dirs.Add(n); dirArea.Add(0); }
             dirArea[hit] += area; td[t] = hit;
         }
@@ -1912,15 +1895,15 @@ public partial class DuctsToPluto
         order.Sort((a, b) => dirArea[b].CompareTo(dirArea[a]));
         // the frame: the largest direction, then the largest perpendicular to it, then the largest perpendicular to both
         var fam = new List<int> { order[0] };
-        foreach (int d in order) if (fam.Count == 1 && Math.Abs(Dot(dirs[d], dirs[fam[0]])) < 0.03) fam.Add(d);
+        foreach (int d in order) if (fam.Count == 1 && Math.Abs(DuctMath.Dot3(dirs[d], dirs[fam[0]])) < 0.03) fam.Add(d);
         if (fam.Count < 2) return null;
-        foreach (int d in order) if (fam.Count == 2 && Math.Abs(Dot(dirs[d], dirs[fam[0]])) < 0.03 && Math.Abs(Dot(dirs[d], dirs[fam[1]])) < 0.03) fam.Add(d);
+        foreach (int d in order) if (fam.Count == 2 && Math.Abs(DuctMath.Dot3(dirs[d], dirs[fam[0]])) < 0.03 && Math.Abs(DuctMath.Dot3(dirs[d], dirs[fam[1]])) < 0.03) fam.Add(d);
         if (fam.Count < 3) return null;
         if (dirArea[fam[0]] + dirArea[fam[1]] + dirArea[fam[2]] < 0.85 * total) return null;   // not a box (round, curved)
         // orthonormal frame from the three directions
         double[] a0 = (double[])dirs[fam[0]].Clone();
-        double[] a1 = Sub3(dirs[fam[1]], Scale3(a0, Dot(dirs[fam[1]], a0))); Normalize(a1);
-        double[] a2 = Cross3(a0, a1);
+        double[] a1 = DuctMath.Sub3(dirs[fam[1]], DuctMath.Scale3(a0, DuctMath.Dot3(dirs[fam[1]], a0))); Normalize(a1);
+        double[] a2 = DuctMath.Cross3(a0, a1);
         double[][] ax = { a0, a1, a2 };
         // per axis: planes by offset (0.03 ft bins), the two largest -> wall pair (size, smaller wall area); extent
         var size = new double[3]; var wall = new double[3]; var mid = new double[3]; var lo = new double[3]; var hi = new double[3];
@@ -1935,7 +1918,7 @@ public partial class DuctsToPluto
             var planes = new Dictionary<long, double>(); var planeOff = new Dictionary<long, double>();
             for (int t = 0; t < nt; t++)
             {
-                if (td[t] < 0 || Math.Abs(Dot(tn[t], ax[k])) < 0.999) continue;
+                if (td[t] < 0 || Math.Abs(DuctMath.Dot3(tn[t], ax[k])) < 0.999) continue;
                 int o = t * 9;
                 double p = ((f[o] + f[o + 3] + f[o + 6]) * ax[k][0] + (f[o + 1] + f[o + 4] + f[o + 7]) * ax[k][1] + (f[o + 2] + f[o + 5] + f[o + 8]) * ax[k][2]) / 3;
                 long key = (long)Math.Round(p / 0.03);   // float32 world coordinates near 1e5 ft are good to ~0.008 ft
@@ -1964,17 +1947,12 @@ public partial class DuctsToPluto
         // W = the side along the more horizontal cross axis (the beam's local y is horizontal), H the other
         if (Math.Abs(ax[pa][2]) > Math.Abs(ax[pb][2])) { int tmp = pa; pa = pb; pb = tmp; }
         var body = new Body { W = size[pa] * 12, H = size[pb] * 12, Len = hi[run] - lo[run] };
-        double[] c = Add3(Scale3(ax[pa], mid[pa]), Scale3(ax[pb], mid[pb]));
-        body.E1 = Add3(c, Scale3(ax[run], lo[run])); body.E2 = Add3(c, Scale3(ax[run], hi[run]));
+        double[] c = DuctMath.Add3(DuctMath.Scale3(ax[pa], mid[pa]), DuctMath.Scale3(ax[pb], mid[pb]));
+        body.E1 = DuctMath.Add3(c, DuctMath.Scale3(ax[run], lo[run])); body.E2 = DuctMath.Add3(c, DuctMath.Scale3(ax[run], hi[run]));
         return body;
     }
 
-    static double Dot(double[] p, double[] q) { return p[0] * q[0] + p[1] * q[1] + p[2] * q[2]; }
-    static double[] Sub3(double[] p, double[] q) { return new[] { p[0] - q[0], p[1] - q[1], p[2] - q[2] }; }
-    static double[] Add3(double[] p, double[] q) { return new[] { p[0] + q[0], p[1] + q[1], p[2] + q[2] }; }
-    static double[] Scale3(double[] p, double s) { return new[] { p[0] * s, p[1] * s, p[2] * s }; }
-    static double[] Cross3(double[] p, double[] q) { return new[] { p[1] * q[2] - p[2] * q[1], p[2] * q[0] - p[0] * q[2], p[0] * q[1] - p[1] * q[0] }; }
-    static void Normalize(double[] p) { double l = Math.Sqrt(Dot(p, p)); if (l > 0) { p[0] /= l; p[1] /= l; p[2] /= l; } }
+    static void Normalize(double[] p) { double l = Math.Sqrt(DuctMath.Dot3(p, p)); if (l > 0) { p[0] /= l; p[1] /= l; p[2] /= l; } }
 
     // ducts_tri.bin records of the wanted rows (int32 row, int32 nTri, nTri * 9 float32); others skipped
     static Dictionary<int, float[]> ReadTriangles(string path, HashSet<int> want)
@@ -1996,7 +1974,7 @@ public partial class DuctsToPluto
     }
 
     // Box (W x H, wall) or pipe (D, wall) per distinct size; unsized -> a 2 in pipe placeholder.
-    static int SectionFor(Row r, double scale, List<RawViewerWriter.SectionDef> sections, Dictionary<string, int> index, out bool sized)
+    static int SectionFor(DuctRow r, double scale, List<RawViewerWriter.SectionDef> sections, Dictionary<string, int> index, out bool sized)
     {
         double ft = scale / 12.0;                                   // inches -> file units
         double t = double.IsNaN(r.T) || r.T <= 0 ? 0.05 : r.T;      // wall: 0.05 in when absent (drawing only)
@@ -2065,7 +2043,7 @@ public partial class DuctsToPluto
 
     // Stated cross-section (inches), same precedence as SectionFor: round shape -> D x D; rectangular W x H from
     // the Size property, then the Name; a diameter. False when none.
-    static bool StatedSize(Row r, out double a, out double b)
+    static bool StatedSize(DuctRow r, out double a, out double b)
     {
         a = b = double.NaN;
         bool round = r.Shape.IndexOf("round", StringComparison.OrdinalIgnoreCase) >= 0;
@@ -2080,7 +2058,7 @@ public partial class DuctsToPluto
     // Axis-aligned straight from its bbox: the axis whose two OTHER extents match the stated section (either
     // order, 2 in); ends at the bbox faces on that axis, through the section centre. Several matches (a part
     // as long as it is wide): the longest. False when none (skewed, or not this size at all).
-    static bool BboxAxis(Row r, double a, double b, out double[] e1, out double[] e2)
+    static bool BboxAxis(DuctRow r, double a, double b, out double[] e1, out double[] e2)
     {
         e1 = e2 = null;
         if (r.Min == null) return false;
@@ -2104,7 +2082,7 @@ public partial class DuctsToPluto
     static bool Near(double measured, double stated) { return measured >= stated - 1 && measured <= stated + 8; }
 
     // the fitted section matches the stated one (either orientation, flange allowance) and the fit has length
-    static bool FitMatches(Row r, double a, double b)
+    static bool FitMatches(DuctRow r, double a, double b)
     {
         if (double.IsNaN(r.FitA) || double.IsNaN(r.FitB) || double.IsNaN(r.FitLen)) return false;
         bool sec = (Near(r.FitA, a) && Near(r.FitB, b)) || (Near(r.FitA, b) && Near(r.FitB, a));
@@ -2142,7 +2120,7 @@ public partial class DuctsToPluto
     // A fabrication straight's fit is trusted when its section matches the Name size (either orientation,
     // 2 in); with no size in the Name, when it is longer than its section (a short wide piece's fit takes
     // the width as its axis: the "142.78 x 15.91 (fit)" planes, 2026-10-05).
-    static bool FitTrusted(Row r)
+    static bool FitTrusted(DuctRow r)
     {
         if (double.IsNaN(r.FitA) || double.IsNaN(r.FitB) || double.IsNaN(r.FitLen) || r.E1 == null) return false;
         double sw = !double.IsNaN(r.NameD) ? r.NameD : r.NameW, sh = !double.IsNaN(r.NameD) ? r.NameD : r.NameH;
@@ -2176,12 +2154,12 @@ public partial class DuctsToPluto
         return n.id;
     }
 
-    static List<Row> ReadRows(string path)
+    static List<DuctRow> ReadRows(string path)
     {
-        var rows = new List<Row>();
+        var rows = new List<DuctRow>();
         foreach (Dictionary<string, string> c in ReadCsv(path))
         {
-            var r = new Row();
+            var r = new DuctRow();
             r.Guid = Get(c, "IfcGUID"); r.NavisId = Get(c, "NavisId"); r.Cat = Get(c, "Category"); r.System = Get(c, "SystemName"); r.SizeText = Get(c, "Size");
             r.Name = Get(c, "Name"); r.Shape = Get(c, "Shape"); r.FitA = Num(c, "FitA_in"); r.FitB = Num(c, "FitB_in"); r.FitLen = Num(c, "FitLength_ft");
             NameSize(r.Name, out r.NameW, out r.NameH, out r.NameD);

@@ -27,7 +27,7 @@ public partial class DuctsToPluto
         public int Outliers, SizeJumps, NameDev, SysDev;
     }
 
-    static List<RunSeg> AnalyzeRuns(List<RvEl> scope, List<Row> rows, Func<RvEl, List<int>> rowsOf, Func<RvConn, int> nodeOf,
+    static List<RunSeg> AnalyzeRuns(List<RvEl> scope, List<DuctRow> rows, Func<RvEl, List<int>> rowsOf, Func<RvConn, int> nodeOf,
         Dictionary<int, Node> nodes, double[] off, double scale, List<RvConn[]> nearPairs)
     {
         foreach (RvEl e in scope) e.Kind = KindOf(e);
@@ -104,7 +104,7 @@ public partial class DuctsToPluto
                 RvEl key = !sized(e) ? e : find(segOf, e);
                 RunSeg s; if (!segs.TryGetValue(key, out s)) { s = new RunSeg { Run = ri + 1, Seg = ++segNo, Kind = !sized(e) ? "transition" : "segment" }; segs[key] = s; res.Add(s); }
                 s.Els.Add(e); e.Seg = s.Seg;
-                foreach (int[] g in e.Segs) s.LengthFt += Math.Sqrt(Dist2(NodeFt(nodes[g[0]], off, scale), NodeFt(nodes[g[1]], off, scale)));
+                foreach (int[] g in e.Segs) s.LengthFt += Math.Sqrt(DuctMath.Dist2(NodeFt(nodes[g[0]], off, scale), NodeFt(nodes[g[1]], off, scale)));
             }
             // run majorities: Navisworks RunName (matched row) and Revit system
             string runName = Majority(members.Select(e => PartRunName(e, rows, rowsOf)));
@@ -225,7 +225,7 @@ public partial class DuctsToPluto
 
     // Navisworks RunName vs our runs (2026-10-12, user: check the splitting against the model's own run names):
     // per RunName the runs it spans (parts each), per run the names it mixes. Returns { summary line, detail block }.
-    static string[] RunNameCheck(List<RvEl> scope, List<Row> rows, Func<RvEl, List<int>> rowsOf)
+    static string[] RunNameCheck(List<RvEl> scope, List<DuctRow> rows, Func<RvEl, List<int>> rowsOf)
     {
         var byName = new SortedDictionary<string, SortedDictionary<int, int>>(StringComparer.Ordinal);
         var byRun = new SortedDictionary<int, SortedDictionary<string, int>>();
@@ -264,7 +264,7 @@ public partial class DuctsToPluto
     // a part's run name: its own Revit RunName parameter, else the Navisworks RunName of its row ONLY when matched by
     // IfcGUID (2026-10-12: a system A branch matched BY POSITION to the system B duct crossing over it took system B's name);
     // "" -> callers fall back to the Revit system name
-    static string PartRunName(RvEl e, List<Row> rows, Func<RvEl, List<int>> rowsOf)
+    static string PartRunName(RvEl e, List<DuctRow> rows, Func<RvEl, List<int>> rowsOf)
     {
         if (e.RunName != "") return e.RunName;
         if (e.Match == "") return "";
@@ -273,7 +273,7 @@ public partial class DuctsToPluto
     }
 
     // where a part's own system name comes from, for the label: "<name> (<source>)", or "none"
-    static string NameSource(RvEl e, List<Row> rows, Func<RvEl, List<int>> rowsOf)
+    static string NameSource(RvEl e, List<DuctRow> rows, Func<RvEl, List<int>> rowsOf)
     {
         string rn = PartRunName(e, rows, rowsOf);
         string src = e.RunName != "" ? "Revit RunName " + e.RunName : rn != "" ? "Navisworks RunName " + rn + " (GUID match)" : e.System != "" ? "Revit system " + e.System : "";

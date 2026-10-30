@@ -36,7 +36,7 @@ public partial class DuctsToPluto
     static List<DuctSystem> AnalyzeSystems(List<RvEl> scope, Dictionary<string, RvConn> conns, HashSet<RvEl> inScope,
         Dictionary<RvConn, RvConn> touch, List<RvConn[]> nearPairs, List<RvEl[]> sidePairs,
         Dictionary<int, RawViewerWriter.BeamMember> beams, Dictionary<int, double[]> beamDim, Dictionary<int, Node> nodes,
-        double[] off, double scale, List<Row> rows, Func<RvEl, List<int>> rowsOf)
+        double[] off, double scale, List<DuctRow> rows, Func<RvEl, List<int>> rowsOf)
     {
         var parent = new Dictionary<RvEl, RvEl>();
         foreach (RvEl e in scope) parent[e] = e;
@@ -97,7 +97,7 @@ public partial class DuctsToPluto
                 double[] dim; if (!beamDim.TryGetValue(id, out dim)) continue;
                 RawViewerWriter.BeamMember m = beams[id];
                 double[] a = NodeFt(nodes[m.NodeA], off, scale), b = NodeFt(nodes[m.NodeB], off, scale);
-                double L = Math.Sqrt(Dist2(a, b)); if (L <= 1e-6) continue;
+                double L = Math.Sqrt(DuctMath.Dist2(a, b)); if (L <= 1e-6) continue;
                 var bx = new PartBox { Owner = e, A = a, L = L, Round = dim[0] == 1 };
                 bx.X = new[] { (b[0] - a[0]) / L, (b[1] - a[1]) / L, (b[2] - a[2]) / L };
                 double[] y = m.LocalY ?? new double[] { 0, 0, 1 };
@@ -172,19 +172,19 @@ public partial class DuctsToPluto
         // primary systems (2026-10-15, user): per configured name the largest connected component IS that system;
         // every other component with that majority name is "<name> fragments" (a split at a tee shows up here and
         // is fixed in the joining, not hidden); components of any other name are "other: <name>"
-        if (PrimarySystems.Count > 0)
+        if (Cfg.PrimarySystems.Count > 0)
         {
             var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (DuctSystem s in res)   // biggest first
             {
-                if (PrimarySystems.Contains(s.Name)) { s.Primary = true; if (!seen.Add(s.Name)) { s.Name += " fragments"; s.Primary = false; } }
+                if (Cfg.PrimarySystems.Contains(s.Name)) { s.Primary = true; if (!seen.Add(s.Name)) { s.Name += " fragments"; s.Primary = false; } }
                 else s.Name = "other: " + s.Name;
                 foreach (RvEl e in s.Els) e.SysName = s.Name;
             }
             // pinned mains (2026-10-17, user: a room boundary cut one run in two; the smaller piece is a second main, not
             // a fragment): DuctMains "<name>=<Revit id>" promotes the fragment holding that part to "<name> 2", "<name> 3", ...
             PinNotes.Clear();
-            foreach (KeyValuePair<string, string> pin in PrimaryPins)
+            foreach (KeyValuePair<string, string> pin in Cfg.PrimaryPins)
             {
                 DuctSystem s = res.FirstOrDefault(x => x.Els.Exists(e => e.Id == pin.Value));
                 if (s == null) { PinNotes.Add(pin.Key + "=" + pin.Value + ": part not in scope"); continue; }
@@ -205,19 +205,16 @@ public partial class DuctsToPluto
 
     // set from the duct config (DuctSystems) by Export-DuctsViewer.ps1; empty = name systems as found.
     // Colours: "<name>=#rrggbb" entries; the fragments group gets a desaturated variant
-    public static readonly List<string> PrimarySystems = new List<string>();
-    public static readonly Dictionary<string, string> PrimaryColors = new Dictionary<string, string>(StringComparer.Ordinal);
     // DuctMains: (system name, Revit id) pins, set by Export-DuctsViewer.ps1; PinNotes: what each did (match.txt)
-    public static readonly List<KeyValuePair<string, string>> PrimaryPins = new List<KeyValuePair<string, string>>();
     static readonly List<string> PinNotes = new List<string>();
 
     // a configured primary name, or a pinned main "<name> <n>"; base = the configured name (colour)
     static bool IsPrimaryName(string n, out string baseName)
     {
         baseName = n;
-        if (PrimarySystems.Contains(n)) return true;
+        if (Cfg.PrimarySystems.Contains(n)) return true;
         Match m = Regex.Match(n ?? "", @"^(.+) (\d+)$");
-        if (m.Success && PrimarySystems.Contains(m.Groups[1].Value)) { baseName = m.Groups[1].Value; return true; }
+        if (m.Success && Cfg.PrimarySystems.Contains(m.Groups[1].Value)) { baseName = m.Groups[1].Value; return true; }
         return false;
     }
 
@@ -226,7 +223,7 @@ public partial class DuctsToPluto
     // unpainted; the user turns them back on in the Groups tab. Group names: "System <name> (n parts)" / "Clean: <name>"
     static void ApplySystemView(FeaturesSidecar sc)
     {
-        if (PrimarySystems.Count == 0) return;
+        if (Cfg.PrimarySystems.Count == 0) return;
         foreach (FeaturesSidecar.Group g in sc.Groups)
         {
             if (!g.Tags.Contains("system")) { g.Hidden = true; continue; }
@@ -234,7 +231,7 @@ public partial class DuctsToPluto
             string bn; bool prim = IsPrimaryName(n, out bn);
             if (n.StartsWith("other: ") || !(prim || n.EndsWith(" fragments"))) { g.Hidden = true; g.Invisible = true; continue; }
             bool frag = n.EndsWith(" fragments"); string c;
-            if (PrimaryColors.TryGetValue(frag ? n.Substring(0, n.Length - 10) : bn, out c)) g.Color = frag ? Desaturate(c) : c;
+            if (Cfg.PrimaryColors.TryGetValue(frag ? n.Substring(0, n.Length - 10) : bn, out c)) g.Color = frag ? Desaturate(c) : c;
         }
     }
 
@@ -244,7 +241,7 @@ public partial class DuctsToPluto
     {
         string bn, c; bool frag = (n ?? "").EndsWith(" fragments");
         if (frag) bn = n.Substring(0, n.Length - 10); else if (!IsPrimaryName(n, out bn)) return "";
-        return PrimaryColors.TryGetValue(bn, out c) ? (frag ? Desaturate(c) : c) : "";
+        return Cfg.PrimaryColors.TryGetValue(bn, out c) ? (frag ? Desaturate(c) : c) : "";
     }
 
     // frames.csv SystemRole (2026-10-17, the SAP export keeps mains by default): "main" (configured or pinned),
@@ -252,7 +249,7 @@ public partial class DuctsToPluto
     static string SystemRole(string n)
     {
         string bn;
-        if (PrimarySystems.Count == 0) return "main";
+        if (Cfg.PrimarySystems.Count == 0) return "main";
         if ((n ?? "").EndsWith(" fragments")) return "fragment";
         return IsPrimaryName(n, out bn) ? "main" : "other";
     }
@@ -276,10 +273,10 @@ public partial class DuctsToPluto
 
     // a part's system name: the first configured primary name (longest first) contained in its RunName or Revit
     // system name, ignoring case ("<SYS> 123", "A-x-<SYS>-DUCT-4" -> <SYS>); else SystemBase as before
-    static string SystemNameOf(RvEl e, List<Row> rows, Func<RvEl, List<int>> rowsOf)
+    static string SystemNameOf(RvEl e, List<DuctRow> rows, Func<RvEl, List<int>> rowsOf)
     {
         string rn = PartRunName(e, rows, rowsOf);
-        foreach (string p in PrimarySystems.OrderByDescending(x => x.Length))
+        foreach (string p in Cfg.PrimarySystems.OrderByDescending(x => x.Length))
             if (rn.IndexOf(p, StringComparison.OrdinalIgnoreCase) >= 0 || (e.System ?? "").IndexOf(p, StringComparison.OrdinalIgnoreCase) >= 0) return p;
         return SystemBase(rn, e.System);
     }
@@ -344,9 +341,9 @@ public partial class DuctsToPluto
             byName.Count(kv => kv.Value.Count > 1), mixed, systems.Sum(s => s.ProxJoins))
             + string.Format(Inv, "; weak joins blocked across two names {0}; parts connected across two names (SYSTEM_NAME_CONFLICT) {1}",
                 Blocked.Count, systems.Sum(s => s.Els.Count(e => e.Flags.Contains("SYSTEM_NAME_CONFLICT"))));
-        if (PrimarySystems.Count > 0)
+        if (Cfg.PrimarySystems.Count > 0)
             line = string.Format(Inv, "primary systems: {0}; other: {1} components ({2} parts)\n",
-                string.Join("; ", PrimarySystems.Select(p =>
+                string.Join("; ", Cfg.PrimarySystems.Select(p =>
                 {
                     DuctSystem m = systems.FirstOrDefault(s => s.Primary && s.Name == p);
                     var fr = systems.Where(s => s.Name == p + " fragments").ToList();
