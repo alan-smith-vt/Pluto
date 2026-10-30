@@ -5,6 +5,8 @@
     # ---- machine ----
     WorkDir = 'C:\Temp\hvac'          # every output goes under here (one sub-folder per runner)
     SapDir  = ''                      # '' = newest install; else e.g. 'C:\Program Files\Computers and Structures\SAP2000 22'
+    # AddinDir = 'C:\Temp\hvac'       # files shared with the Navisworks / Revit add-ins (room boxes, service codes);
+                                      # default C:\Temp\hvac, where the add-ins read them. Change only for a test copy.
 
     # ---- model ----
     # Primary duct systems (Export-DuctsViewer.ps1 -Revit): a part whose run / system name contains one of these

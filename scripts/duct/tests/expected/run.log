@@ -8,4 +8,5 @@ NEW room: Navisworks 108 rows (74 fab), Revit 106 el (74 fab), Navisworks withou
 NEW joints: connected 100 touching 0 near 2 side 0 outside 0 open 17
 NEW supports: 38 (guide 38), steel through a duct 0; unsupported spans > 10 ft 9: SYSC 44.3 ft, SYSA 21.5 ft, SYSA 20 ft, SYSB 20 ft, SYSA 18.3 ft, SYSA 13 ft, SYSB 12.5 ft, SYSA 12 ft ...
 NEW orientation: 7 frame(s) LARGE_SIDE_VERTICAL, 8 rotated in 5 run(s), 1 conflict(s)
-[done] <T>s. Read <ROOT>\out\revit.match.txt first. In the viewer: Choose files -> <ROOT>\out\revit_clean.bin + <ROOT>\out\revit_clean.features.json (the clean model); Add overlay... -> <ROOT>\out\revit.bin (the Revit overlay)
+[done] <T>s. Read <ROOT>\out\revit.match.txt first.
+       In the viewer: Choose files -> <ROOT>\out\revit_clean.bin + <ROOT>\out\revit_clean.features.json (the clean model); Add overlay... -> <ROOT>\out\revit.bin (the Revit overlay)
