@@ -719,7 +719,8 @@ public partial class DuctsToPluto
             "NEW fit {0:0.00} ft median ({1} pairs{2}, rot {3:0.###} deg, scale check {4:0.###})\nNEW room: Navisworks {5} rows ({6} fab), Revit {7} el ({8} fab), Navisworks without Revit {9} ({10} fab), Revit only {11} ({12} fab), category differs {13}, Revit only located in a Navisworks-only part {20} (Navisworks parts {21})\nNEW joints: connected {14} touching {15} near {16} side {17} outside {18} open {19}",
             medRes, used, means ? " by GUID group" : " 1:1", Math.Atan2(T[1], T[0]) * 180 / Math.PI, spread,
             inRoom.Count, navFab, scope.Count, rvFab, navMissing.Count, navFabMissing, rvOnly, rvOnlyFab, catDiff.Count,
-            nConnected, nTouch, nNear, nSide, nOutside, nOpen, located.Count, usedRow.Count);
+            nConnected, nTouch, nNear, nSide, nOutside, nOpen, located.Count, usedRow.Count)
+            + (SupportNewLine != "" ? "\n" + SupportNewLine : "");
         if (!string.IsNullOrEmpty(part) && part.Contains(","))
         {
             // -Part <id>,<id> (2026-10-17): the gap between two parts' systems, as the NEW block

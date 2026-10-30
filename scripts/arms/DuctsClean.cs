@@ -252,6 +252,8 @@ public partial class DuctsToPluto
         string dropNote = ApplyManualDrop(clean, P);   // add-on, DuctsManualDrop.cs
         if (dropNote != "") cutNote += (cutNote != "" ? "\n" : "") + dropNote;
         SteelModel sm = Steel.Count > 0 ? SteelModel.Build(Steel, SteelSettings) : null;   // DuctsSteel.cs; split by supports from here on
+        SupportRun sr = sm != null ? ApplySupports(clean, P, sm, outBase) : null;   // DuctsCleanSupports.cs: splits clean frames + steel
+        SupportNewLine = sr != null ? SupportsNewLine(sr) : "";
 
         // checks: length, deviation of the original connectors from the clean centreline
         double cleanLen = clean.Where(x => !x.Rigid && x.Source != "navisworks-only").Sum(x => Len(P[x.A], P[x.B]));
@@ -267,14 +269,15 @@ public partial class DuctsToPluto
         dev.Sort((x, y) => y.Key.CompareTo(x.Key));
 
         if (sm != null) sm.WriteCsv(outBase);
-        WriteCleanViewer(outBase + "_clean", modelId + "/clean", lengthUnit, clean, P, off, scale, sm);
+        WriteCleanViewer(outBase + "_clean", modelId + "/clean", lengthUnit, clean, P, off, scale, sm, sr);
         WriteCleanFrames(outBase + ".frames.csv", clean, P);
 
         return string.Format(Inv, "clean model (<out>_clean.bin, <out>.frames.csv): {0} elements ({1} rigid links) from {2} pieces; duct length {3:0.#} ft -> {4:0.#} ft, overlaps merged {5} ({6:0.#} ft), different-size overlaps {7} (OVERLAP_SIZE_CONFLICT), gaps closed {10}; connectors > 1 in from the clean line {8}{9}",
             clean.Count, clean.Count(x => x.Rigid), edges.Count(x => x.Src.Count > 0 || x.Source != "revit"), rawLen, cleanLen, overlapMerged, overlapFt, overlapConflict, dev.Count,
             dev.Count > 0 ? " (worst: " + string.Join(", ", dev.Take(5).Select(x => x.Value + " " + x.Key.ToString("0.#", Inv) + " in").ToArray()) + ")" : "", gapsClosed)
             + (cutNote != "" ? "\n" + cutNote : "")
-            + (sm != null ? "\n" + sm.Summary() + " (<out>.steel_joints.csv, <out>.steel_frames.csv)" : "");
+            + (sm != null ? "\n" + sm.Summary() + " (<out>.steel_joints.csv, <out>.steel_frames.csv)" : "")
+            + (sr != null ? "\n" + sr.Note : "");
     }
 
     // Scope cut points (2026-10-22, the SAP reviewer's cut nodes read from the reviewed SAP model: Run-Sap.ps1
@@ -426,7 +429,7 @@ public partial class DuctsToPluto
         return d[0] == 1 ? string.Format(Inv, "{0:0.#} dia", d[3]) : string.Format(Inv, "{0:0.#}x{1:0.#}", d[1], d[2]);
     }
 
-    static void WriteCleanViewer(string outBase, string modelId, string lengthUnit, List<CEdge> clean, Dictionary<int, double[]> P, double[] off, double scale, SteelModel sm)
+    static void WriteCleanViewer(string outBase, string modelId, string lengthUnit, List<CEdge> clean, Dictionary<int, double[]> P, double[] off, double scale, SteelModel sm, SupportRun sr)
     {
         var nodes = new Dictionary<int, Node>(); int next = 1; var map = new Dictionary<int, int>();
         Func<int, int> nd = n => { int id; if (!map.TryGetValue(n, out id)) { id = MakeNode(nodes, ref next, P[n], off, scale); map[n] = id; } return id; };
@@ -434,7 +437,7 @@ public partial class DuctsToPluto
         sections.Add(RawViewerWriter.SectionDef.Pipe("rigid link", (float)(1.5 * scale / 12), (float)(0.375 * scale / 12)));
         var secIx = new Dictionary<string, int>(StringComparer.Ordinal);
         var beams = new Dictionary<int, RawViewerWriter.BeamMember>(); var labels = new Dictionary<int, string>();
-        var bySys = new SortedDictionary<string, List<uint>>(StringComparer.Ordinal); var gRigid = new List<uint>(); var gTrans = new List<uint>(); var gConf = new List<uint>(); var gCut = new List<uint>();
+        var bySys = new SortedDictionary<string, List<uint>>(StringComparer.Ordinal); var gRigid = new List<uint>(); var gTrans = new List<uint>(); var gConf = new List<uint>(); var gCut = new List<uint>(); var gSpan = new List<uint>();
         int nb = 1; double ft = scale / 12;
         foreach (CEdge ce in clean)
         {
@@ -470,14 +473,17 @@ public partial class DuctsToPluto
             if (ce.DimB != null) gTrans.Add((uint)nb);
             if (ce.Flags.Contains("OVERLAP_SIZE_CONFLICT")) gConf.Add((uint)nb);
             if (ce.Flags.Contains("CUT_END")) gCut.Add((uint)nb);
+            if (ce.Flags.Contains("UNSUPPORTED_SPAN")) gSpan.Add((uint)nb);
             nb++;
         }
         SteelView sv = sm != null ? AddSteel(sm, nodes, ref next, sections, beams, labels, ref nb, off, scale) : null;
+        var shells = new Dictionary<int, Element>(); var shellLabels = new Dictionary<int, string>();
+        SupportView pv = AddSupports(sr, P, nodes, ref next, sections, beams, labels, ref nb, shells, shellLabels, off, scale);
         if (beams.Count == 0) return;
         var comps = new List<RawViewerWriter.Component>(); comps.Add(new RawViewerWriter.Component("Axial N", "force", "kip"));
         var units = new Dictionary<string, string>(); units["length"] = lengthUnit;
-        var w = new RawViewerWriter(outBase + ".bin", nodes, null, null, null, beams, sections, comps, modelId, units);
-        w.SetBeamLabels(labels); w.Write(false);
+        var w = new RawViewerWriter(outBase + ".bin", nodes, shells.Count > 0 ? shells : null, null, shells.Count > 0 ? comps : null, beams, sections, comps, modelId, units);
+        w.SetBeamLabels(labels); if (shells.Count > 0) w.SetShellLabels(shellLabels); w.Write(false);
         var sc = new FeaturesSidecar(); sc.ModelId = modelId; sc.GeometryHash = w.GeometryHash;
         sc.Units["length"] = lengthUnit; sc.Units["worldOffset"] = string.Format(Inv, "{0} {1} {2}", off[0] * scale, off[1] * scale, off[2] * scale);
         string[] pal = { "#4f8cff", "#ff8a3d", "#3fe0e0", "#b07cff", "#8ae04f", "#ffd23f", "#ff5fa2", "#f0f0f0" }; int pi = 0;
@@ -485,9 +491,11 @@ public partial class DuctsToPluto
         if (gRigid.Count > 0) sc.AddGroup("Clean: rigid links", "#ff3b3b", "beams", gRigid, new[] { "duct", "clean", "link" }, "RIGID");
         if (gTrans.Count > 0) sc.AddGroup("Clean: transitions", "#ffd23f", "beams", gTrans, new[] { "duct", "clean", "transition" }, null);
         if (gConf.Count > 0) sc.AddGroup("Flag: OVERLAP_SIZE_CONFLICT", "#ff5fa2", "beams", gConf, new[] { "duct", "clean", "flag" }, "FLAG_OVERLAP_SIZE_CONFLICT");
+        if (gSpan.Count > 0) sc.AddGroup("Flag: UNSUPPORTED_SPAN", "#ff5fa2", "beams", gSpan, new[] { "duct", "clean", "flag" }, "FLAG_UNSUPPORTED_SPAN");
         if (gCut.Count > 0) sc.AddGroup("Clean: cut ends", "#ffffff", "beams", gCut, new[] { "duct", "clean", "cut" }, "FLAG_CUT_END");
         ApplySystemView(sc);
         AddSteelGroups(sc, sv);
+        AddSupportGroups(sc, pv);
         File.WriteAllText(outBase + ".features.json", sc.ToJson(), new UTF8Encoding(false));
     }
 

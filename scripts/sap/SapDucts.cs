@@ -10,7 +10,7 @@ using System.IO;
 using System.Linq;
 using SAP2000v1;
 
-public class SapDucts
+public partial class SapDucts
 {
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
     // Mat: PLACEHOLDER (2026-10-17, user: material is a major open TODO): galvanized-steel values under a name that
@@ -44,6 +44,7 @@ public class SapDucts
         Action<string, string> addTo = (g, f) => { List<string> l; if (!groups.TryGetValue(g, out l)) { l = new List<string>(); groups[g] = l; } l.Add(f); };
         int skipped = 0, oriented = 0, noDir = 0;
         var zeroRows = new List<string>(); var failed = new List<string>();
+        var frameName = new Dictionary<string, string>(StringComparer.Ordinal);   // frames.csv Frame -> SAP frame
         var groupColor = new Dictionary<string, int>(StringComparer.Ordinal);   // SYS_ group -> the run colour (frames.csv SystemColor)
         foreach (Dictionary<string, string> r in rows)
         {
@@ -60,6 +61,7 @@ public class SapDucts
                 failed.Add(F("{0} ({1} -> {2}, {3:0.###} in, parts {4})", r["Frame"], r["JointI"], r["JointJ"], Math.Sqrt(dx * dx + dy * dy + dz * dz), r["RevitElementId"]));
                 continue;
             }
+            frameName[r["Frame"]] = name;
             // orientation (2026-10-17): the box's width (W_in) along local 3, from the frame's width direction
             if (r["Shape"] == "rect" && sec != NoSize)
             {
@@ -84,12 +86,19 @@ public class SapDucts
             if (sec == Stub) addTo("TAP_STUBS", name);
             foreach (string f in (r["Flags"] ?? "").Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)) addTo("FLAG_" + Clean(f), name);
         }
+        // steel, supports, extra flags, plant axes (SapSteel.cs); nothing when none of their inputs is set
+        string steelNote = AddSteelAndSupports(joints, sections, addTo, frameName);
         // SYS_ groups defined last and the only coloured ones (Display Options > Color By: Groups)
         foreach (KeyValuePair<string, List<string>> kv in groups.OrderBy(g => g.Key.StartsWith("SYS_") ? 1 : 0).ToList())
         {
             int col; if (!groupColor.TryGetValue(kv.Key, out col)) col = -1;
             Check(M.GroupDef.SetGroup(kv.Key, col, true, true, true, true, true, true, true, true, true, true, true), "SetGroup " + kv.Key);
             foreach (string f in kv.Value) Check(M.FrameObj.SetGroupAssign(f, kv.Key, false, eItemType.Objects), "SetGroupAssign " + f + " " + kv.Key);
+        }
+        foreach (KeyValuePair<string, List<string>> kv in pointGroups)
+        {
+            if (!groups.ContainsKey(kv.Key)) Check(M.GroupDef.SetGroup(kv.Key, -1, true, true, true, true, true, true, true, true, true, true, true), "SetGroup " + kv.Key);
+            foreach (string p in kv.Value) Check(M.PointObj.SetGroupAssign(p, kv.Key, false, eItemType.Objects), "SetGroupAssign " + p + " " + kv.Key);
         }
         Check(M.File.Save(savePath), "Save " + savePath);
         var parts = new List<string>();
@@ -99,7 +108,8 @@ public class SapDucts
             Path.GetFileName(savePath), groups["DUCT_ALL"].Count, joints.Count, sections.Count + 1,
             skipped > 0 ? F(", {0} zero-length rows skipped ({1})", skipped, string.Join(" ", zeroRows.Take(10).ToArray()) + (zeroRows.Count > 10 ? " ..." : "")) : "",
             Mat, oriented, noDir, defThk, parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "none",
-            failed.Count > 0 ? F("\nNEW SAP refused {0} frames (not in the model): {1}", failed.Count, string.Join("; ", failed.Take(10).ToArray()) + (failed.Count > 10 ? " ..." : "")) : "");
+            failed.Count > 0 ? F("\nNEW SAP refused {0} frames (not in the model): {1}", failed.Count, string.Join("; ", failed.Take(10).ToArray()) + (failed.Count > 10 ? " ..." : "")) : "")
+            + (steelNote != "" ? "\n" + steelNote : "");
     }
 
     // SAP's local-axis angle (degrees) that puts local 3 along the width direction w. Default axes (SAP): local 1 = I->J;

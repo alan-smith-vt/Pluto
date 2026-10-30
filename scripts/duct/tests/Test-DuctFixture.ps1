@@ -22,10 +22,16 @@ try {
     Copy-Item (Join-Path $root "duct-config.psd1") $cfg
     $out = Join-Path $root "out"
     New-Item -ItemType Directory $out | Out-Null
-    $log = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repo "scripts\navis\Export-DuctsViewer.ps1") `
+    $exporter = Join-Path $repo "scripts\navis\Export-DuctsViewer.ps1"
+    # the Revit path (clean model, steel, supports) and the Navisworks-only path (-Run alone: ducts.bin)
+    $log = & powershell -NoProfile -ExecutionPolicy Bypass -File $exporter `
         -Run (Join-Path $root "ducts\$run") -Revit (Join-Path $root "revit\$run") -Out (Join-Path $out "revit") 2>&1
-    if ($LASTEXITCODE -ne 0) { $log | Out-Host; throw "Export-DuctsViewer.ps1 failed" }
+    if ($LASTEXITCODE -ne 0) { $log | Out-Host; throw "Export-DuctsViewer.ps1 -Revit failed" }
     $log | Out-File (Join-Path $out "run.log") -Encoding utf8
+    $log = & powershell -NoProfile -ExecutionPolicy Bypass -File $exporter `
+        -Run (Join-Path $root "ducts\$run") -Out (Join-Path $out "navis") 2>&1
+    if ($LASTEXITCODE -ne 0) { $log | Out-Host; throw "Export-DuctsViewer.ps1 -Run failed" }
+    $log | Out-File (Join-Path $out "navis-run.log") -Encoding utf8
 } finally {
     Remove-Item $cfg -ErrorAction SilentlyContinue
     if (Test-Path $cfgBak) { Move-Item $cfgBak $cfg -Force }

@@ -6,4 +6,5 @@ primary systems: SYSA, SYSB, SYSC
 NEW fit 0.01 ft median (74 pairs 1:1, rot 30.006 deg, scale check 1)
 NEW room: Navisworks 85 rows (58 fab), Revit 83 el (58 fab), Navisworks without Revit 4 (1 fab), Revit only 2 (1 fab), category differs 0, Revit only located in a Navisworks-only part 1 (Navisworks parts 1)
 NEW joints: connected 77 touching 0 near 2 side 0 outside 0 open 13
+NEW supports: 39 (guide 39), steel through a duct 0; unsupported spans > 10 ft 7: SYSA 21.5 ft, SYSA 20 ft, SYSB 20 ft, SYSC 20 ft, SYSA 18.3 ft, SYSA 13 ft, other: EXH 12 ft
 [done] <T>s. In the viewer: Add overlay... -> <ROOT>\out\revit.bin

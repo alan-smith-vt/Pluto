@@ -148,6 +148,11 @@ if ($Box) {
     [DuctsToPluto]::SteelSettings = New-Object 'SteelModel+Settings'
     if ($dcfg.DuctSteelSnapIn) { [DuctsToPluto]::SteelSettings.SnapIn = [double]$dcfg.DuctSteelSnapIn }
     if ($dcfg.DuctSteelNearIn) { [DuctsToPluto]::SteelSettings.NearIn = [double]$dcfg.DuctSteelNearIn }
+    # duct-to-steel supports (DuctsCleanSupports.cs): DuctSupportGapIn = largest duct bottom -> steel top gap that is a
+    # support (in), DuctSpanFt = unsupported span limit (ft); the gap histogram in match.txt helps choose the gap
+    [DuctsToPluto]::SupportSettings = New-Object 'DuctSupports+Settings'
+    if ($dcfg.DuctSupportGapIn) { [DuctsToPluto]::SupportSettings.GapMaxIn = [double]$dcfg.DuctSupportGapIn }
+    if ($dcfg.DuctSpanFt) { [DuctsToPluto]::SupportSettings.SpanFt = [double]$dcfg.DuctSpanFt }
     if ($Steel -and $Steel -ne "none") {
         if (-not (Test-Path $Steel)) { throw "steel CSV not found: $Steel (DuctSteel in duct-config.psd1 or -Steel; -Steel none = off)" }
         $sr = New-Object SteelToPluto; $sr.Progress = $false

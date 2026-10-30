@@ -116,7 +116,15 @@ public class SapExport
     }
 
     // PowerShell cannot pass the COM model to a constructor: build the mesh from the session.
-    public static Mesh BuildMesh(SapSession s) { return new Mesh(s.Model); }
+    // The mesh is read from the analysis elements: a model never run has none until the analysis model is made
+    // (2026-10-30: -Export -NoResults on a freshly built model exported 0 points)
+    public static Mesh BuildMesh(SapSession s)
+    {
+        int n = 0; string[] names = null;
+        s.Model.PointElm.GetNameList(ref n, ref names);
+        if (n == 0 && s.Model.Analyze.CreateAnalysisModel() != 0) throw new Exception("CreateAnalysisModel failed");
+        return new Mesh(s.Model);
+    }
 
     // The model tables (analysis mesh) as .s2k text.
     public static string ModelS2k(SapSession s, Mesh mesh)
