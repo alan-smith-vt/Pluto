@@ -50,6 +50,8 @@ System names are `SYSA` / `SYSB` / `SYSC`, not `SYS-A`: RunName is `A-B1-<servic
 | SYSC 18x36 end: bend up, 11.5 ft rect riser, bend, 4 ft at the top | riser carrying a large-side-vertical duct's width direction |
 | SYSC 10 dia round tap off the 18x36's top, 5 ft up | round riser off a large-side-vertical duct |
 | SYSC 12x8 shoe tap off the 18x36's side, 3 ft, bend down, 6 ft hanging | branch hanging off a large-side-vertical duct |
+| SYSB 20x30 shoe tap north at X 1017: 3 ft larger side vertical, riser 4 ft, elbow to +X that turns the width with it (last 6 ft: larger side horizontal) | one same-size run with both orientations: ROTATION_CONFLICT |
+| SYSA 16x28 shoe tap south at X 1006: 3 ft larger side vertical, transition to 28x16, 4 ft | rotation stops at a transition |
 | EXH 10 dia | other system |
 | 3 fab Rod Hanger rows (Navisworks only) | hanger category, Navisworks-only, unsized |
 
