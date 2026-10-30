@@ -132,7 +132,3 @@
 #glyphLegend .gl-row { cursor: pointer; border-radius: 3px; padding: 0 3px; margin: 0 -3px; }
 #glyphLegend .gl-row:hover { background: rgba(255, 255, 255, 0.06); }
 #glyphLegend .gl-row.gl-on { background: rgba(255, 255, 255, 0.12); }
-#glyphLegend .gl-step { display: flex; align-items: center; gap: 6px; margin: 2px 0 4px 25px; color: #c8cad0; }
-#glyphLegend .gl-step button { background: #2a2d36; color: #e8e8ee; border: 1px solid #3a3e4a; border-radius: 3px; padding: 0 6px; cursor: pointer; font-size: 12px; }
-#glyphLegend .gl-step .gl-k { font-variant-numeric: tabular-nums; }
-#glyphLegend .gl-step .gl-lab { flex: 1; color: #9aa0ab; }

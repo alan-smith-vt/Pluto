@@ -242,13 +242,13 @@ var FEAGlyphs = (function () {
         '  vec2 d = (c1.xy / c1.w - c0.xy / c0.w) * viewport;',
         '  float l = length(d); return l > 1e-6 ? d / l : vec2(0.0); }',
         'void main() {',
-        '  vC = dim > 1.5 ? color : dim > 0.5 ? color * 0.3 : color; vG = glyph;',   // dim: 0 normal, 1 dimmed, 2 the focused one
+        '  vC = dim > 1.5 ? color : dim > 0.5 ? color * 0.3 : color; vG = glyph;',   // dim: 0 normal, 1 dimmed, 2 highlighted (legend click)
         '  vec4 mv = modelViewMatrix * vec4(position, 1.0);',
         '  float depth = orthoDepth > 0.0 ? orthoDepth : -mv.z;',
         '  vec4 mvp = mv;',
         '  if (orthoDepth > 0.0) mvp.z += pull; else { float l = length(mv.xyz); mvp.xyz *= max(l - pull, 0.5 * l) / max(l, 1e-6); }',
         '  vec4 c0 = projectionMatrix * mvp;',
-        '  float show = (tier > 0.5 || depth < detailFar) ? 1.0 : 0.0;',
+        '  float show = (tier > 0.5 || depth < detailFar || dim > 1.5) ? 1.0 : 0.0;',   // a highlighted group shows at any distance
         '  vec2 off = vec2(0.0); vRot = vec2(1.0, 0.0);',
         '  if (inset > 0.0) off = screenDir(c0, along * 1e-3 * abs(mv.z) + along * 1e-6) * inset;',
         // dir mostly along the line of sight (a column foot seen from above): its screen
@@ -390,7 +390,8 @@ var FEAGlyphs = (function () {
             var d = L.data, mw = L.points.matrixWorld, far = L.span * DETAIL_FRAC;
             for (var i = 0; i < d.n; i++) {
                 v0.set(d.pos[i * 3], d.pos[i * 3 + 1], d.pos[i * 3 + 2]).applyMatrix4(mw);
-                if (d.tier[i] < 0.5) {     // same depth the shader uses: view-space z (or the ortho stand-in)
+                var lit = focus && focus.L === L && d.meta[i].gi === focus.gi;   // highlighted: shown at any distance
+                if (d.tier[i] < 0.5 && !lit) {     // same depth the shader uses: view-space z (or the ortho stand-in)
                     var depth = orthoDepth || -v2.copy(v0).applyMatrix4(camera.matrixWorldInverse).z;
                     if (depth >= far) continue;
                 }
@@ -464,63 +465,32 @@ var FEAGlyphs = (function () {
         el.addEventListener('mouseleave', function () { tip.style.display = 'none'; });
     }
 
-    // ---- walk a group: legend click -> focus, step through its glyphs --------
-    // Clicking a legend row focuses that group: its glyphs stay, every other
-    // glyph dims, and a stepper (◂ k / n ▸) flies the camera to each one in
-    // turn with its label. N / Shift+N step, Esc (or clicking the row again)
-    // ends it. This is how a user works through a check list item by item.
-    var focus = null;   // { L, gi, idx: [point indices], k }
+    // ---- highlight a group: legend click ----------------------------------------
+    // Clicking a legend row highlights every glyph of that group (drawn larger)
+    // and dims all the others, so the user sees where all of one kind are.
+    // Clicking the row again, or Esc, clears it. The camera does not move.
+    var focus = null;   // { L, gi }
     function setDim() {
         layers.forEach(function (L) {
             if (!L.points) return;
             var a = L.points.geometry.getAttribute('dim');
-            for (var i = 0; i < L.data.n; i++) {
-                a.array[i] = !focus ? 0 : (focus.L !== L || L.data.meta[i].gi !== focus.gi) ? 1
-                           : (i === focus.idx[focus.k] ? 2 : 0);
-            }
+            for (var i = 0; i < L.data.n; i++)
+                a.array[i] = !focus ? 0 : (focus.L === L && L.data.meta[i].gi === focus.gi) ? 2 : 1;
             a.needsUpdate = true;
         });
         if (typeof needsRender !== 'undefined') needsRender = true;
     }
-    function worldOf(L, i) {
-        return new THREE.Vector3(L.data.pos[i * 3], L.data.pos[i * 3 + 1], L.data.pos[i * 3 + 2]).applyMatrix4(L.points.matrixWorld);
-    }
-    // keep the view direction, land close enough to read the glyph (not closer each step)
-    function flyTo(L, p) {
-        if (typeof tweenFocusTo !== 'function' || typeof focusTween === 'undefined') return;
-        var dir = camera.position.clone().sub(controls.target);
-        if (dir.lengthSq() < 1e-12) dir.set(0, 0, 1); else dir.normalize();
-        var dist = Math.min(camera.position.distanceTo(controls.target), Math.max(L.span * 0.12, 1));
-        tweenFocusTo(p);
-        focusTween.camFrom = camera.position.clone();
-        focusTween.camTo = p.clone().addScaledVector(dir, dist);
-        focusTween.duration = 500;
-    }
-    function step(d) {
-        if (!focus || !focus.idx.length) return;
-        focus.k = (focus.k + d + focus.idx.length) % focus.idx.length;
-        setDim();
-        flyTo(focus.L, worldOf(focus.L, focus.idx[focus.k]));
-        drawLegend();
-    }
     function focusGroup(L, gi) {
-        if (focus && focus.L === L && focus.gi === gi) { focus = null; setDim(); drawLegend(); return; }
-        var idx = [];
-        for (var i = 0; i < L.data.n; i++) if (L.data.meta[i].gi === gi) idx.push(i);
-        focus = { L: L, gi: gi, idx: idx, k: -1 };
-        step(1);
-        if (!idx.length) { setDim(); drawLegend(); }
+        focus = (focus && focus.L === L && focus.gi === gi) ? null : { L: L, gi: gi };
+        setDim();
+        drawLegend();
     }
     var keysBound = false;
     function bindKeys() {
         if (keysBound || typeof document === 'undefined' || !document.addEventListener) return;
         keysBound = true;
         document.addEventListener('keydown', function (e) {
-            if (!focus) return;
-            var t = e.target && e.target.tagName;
-            if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return;
-            if (e.key === 'n' || e.key === 'N') { step(e.shiftKey ? -1 : 1); e.preventDefault(); }
-            else if (e.key === 'Escape') { focus = null; setDim(); drawLegend(); }
+            if (focus && e.key === 'Escape') { focus = null; setDim(); drawLegend(); }
         });
     }
 
@@ -528,7 +498,7 @@ var FEAGlyphs = (function () {
     // Glyph rows by section (glyph + words + count), from every model with a
     // glyph layer. Hidden groups are left out; a group with no glyphs placed
     // still lists with 0 so a missing anchor set is visible. Rows are buttons:
-    // click = walk that group (above).
+    // click = highlight that group (above).
     function drawLegend() {
         if (typeof document === 'undefined' || !document.body) return;
         var el = document.getElementById('glyphLegend');
@@ -539,9 +509,6 @@ var FEAGlyphs = (function () {
         if (!el) {
             el = document.createElement('div'); el.id = 'glyphLegend'; document.body.appendChild(el);
             el.addEventListener('click', function (e) {
-                var b = e.target.closest('[data-step]');
-                if (b) { step(+b.getAttribute('data-step')); return; }
-                if (e.target.closest('[data-close]')) { focus = null; setDim(); drawLegend(); return; }
                 var row = e.target.closest('.gl-row');
                 if (row && el._rows) { var x = el._rows[+row.getAttribute('data-i')]; focusGroup(x.L, x.r.gi); }
             });
@@ -560,17 +527,10 @@ var FEAGlyphs = (function () {
             if (r.tier === 'exception' && r.section) head = r.section;
             if (head !== sec) { sec = head; html += '<div class="gl-sec">' + esc(head) + '</div>'; }
             html += '<div class="gl-row' + (r.tier === 'detail' ? ' gl-detail' : '') + (on ? ' gl-on' : '') + '" data-i="' + i + '" title="' +
-                (on ? 'click to stop' : 'click to step through these') + ' · ' + (r.tier === 'detail' ? 'shown when zoomed in' : 'always shown') +
+                (on ? 'click (or Esc) to clear' : 'click to highlight all of these') + ' · ' + (r.tier === 'detail' ? 'shown when zoomed in' : 'always shown') +
                 (r.missing ? ' · ' + r.missing + ' anchor(s) not in the model' : '') + '">' +
                 '<img src="' + glyphSrc(r.glyph, r.color) + '" width="18" height="18"><span class="gl-name">' + esc(r.label) +
                 '</span><span class="gl-n">' + r.n + '</span></div>';
-            if (on && focus.idx.length) {
-                var m = x.L.data.meta[focus.idx[focus.k]];
-                html += '<div class="gl-step"><button data-step="-1" title="previous (Shift+N)">◂</button>' +
-                    '<span class="gl-k">' + (focus.k + 1) + ' / ' + focus.idx.length + '</span>' +
-                    '<button data-step="1" title="next (N)">▸</button>' +
-                    '<span class="gl-lab">' + esc(m.label || '') + '</span><button data-close="1" title="stop (Esc)">✕</button></div>';
-            }
         });
         el.innerHTML = html;
         el.style.display = '';
@@ -580,7 +540,7 @@ var FEAGlyphs = (function () {
         update: update, remove: remove, pick: pick, collect: collect,
         setOccluder: function (fn) { occluder = fn; },     // tests: (cssX, cssY) -> world point | null
         names: function () { return NAMES.slice(); }, glyphSrc: glyphSrc,
-        focusGroup: function (L, gi) { focusGroup(L, gi); }, step: step,
+        focusGroup: function (L, gi) { focusGroup(L, gi); },
         _focus: function () { return focus; },
         _layers: function () { return layers; }
     };

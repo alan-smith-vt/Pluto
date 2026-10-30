@@ -642,6 +642,7 @@ async function loadModels(entriesIn) {
         var perFile = accepted.map(function (a) {
             return a.model.header.nFieldLC;
         }).join('+');
+        collapseFieldSections(feaSet.nLC === 0);
         log('Loaded ' + accepted.length + ' file(s) · ' + feaSet.nLC + ' LCs' +
             (accepted.length > 1 ? ' (' + perFile + '), geometry verified' : '') +
             ' · ' + model.header.nElements + ' elements.' +
@@ -654,6 +655,23 @@ async function loadModels(entriesIn) {
         log('Load failed: ' + err.message);
         if (window.console) console.error(err);
     }
+}
+
+// The Field and Display sections only matter for result models: with no load
+// cases (a check model) they start collapsed to their headers. A header click
+// opens / closes its section either way.
+function collapseFieldSections(on) {
+    ['fieldSection', 'displaySection'].forEach(function (id) {
+        var sec = document.getElementById(id);
+        if (!sec) return;
+        var head = sec.querySelector('.fea-sub');
+        if (head && !head._toggle) {
+            head._toggle = true;
+            head.classList.add('fea-sub-toggle');
+            head.addEventListener('click', function () { sec.classList.toggle('fea-collapsed'); });
+        }
+        sec.classList.toggle('fea-collapsed', !!on);
+    });
 }
 
 function disposeCurrentModel() {
