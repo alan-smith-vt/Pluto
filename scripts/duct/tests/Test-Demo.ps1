@@ -151,8 +151,12 @@ if (-not $NoSap) {
         $a = Anchors ("SUPPORT_" + $t.Name)
         Check "sap" "SUPPORT_$($t.Name) glyphs = supports.csv, each at the duct end with a direction" ($a.Count -eq $t.Count -and @($a | Where-Object { $_.t -ne 0 -or -not $_.dir }).Count -eq 0) "$($a.Count) vs $($t.Count)"
     }
+    # user decision laptop:797: only the real checks get warn; every other FLAG_ group is grey context
+    $checks = "FLAG_UNSUPPORTED_SPAN", "FLAG_OPEN_NEAR", "FLAG_LARGE_SIDE_VERTICAL", "FLAG_ROTATION_CONFLICT", "FLAG_NO_SIZE", "FLAG_NO_ORIENTATION"
     $flags = @($si.Keys | Where-Object { $_ -like "FLAG_*" })
-    Check "sap" "every FLAG_ group marks with warn, never repaints" ($flags.Count -gt 0 -and @($flags | Where-Object { $si[$_].look.glyph -ne "warn" }).Count -eq 0) ($flags -join " ")
+    $badChk = @($flags | Where-Object { $checks -contains $_ -and $si[$_].look.glyph -ne "warn" })
+    $badCtx = @($flags | Where-Object { $checks -notcontains $_ -and ($si[$_].look -or -not (@($si[$_].tags) -contains "context")) })
+    Check "sap" "check flags mark with warn, other flags are context" ($flags -contains "FLAG_UNSUPPORTED_SPAN" -and $badChk.Count -eq 0 -and $badCtx.Count -eq 0) ((@($badChk) + @($badCtx)) -join " ")
     $secs = @($oids.Values | Sort-Object -Unique)
     Check "sap" "steel section groups are context" (@($secs | Where-Object { -not ($si.ContainsKey($_) -and @($si[$_].tags) -contains "context") }).Count -eq 0) ($secs -join " ")
 }

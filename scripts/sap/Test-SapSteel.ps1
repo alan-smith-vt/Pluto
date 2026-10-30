@@ -101,6 +101,7 @@ Expect "FLAG_UNSUPPORTED_SPAN warn exception mid" ("{0} {1} {2}" -f $g.look.glyp
 $g = G "STEEL_OPEN_FIXED"
 Expect "STEEL_OPEN_FIXED disc, no anchors (one per node)" ("{0} {1}" -f $g.look.glyph, ($null -eq $g.anchors)) "disc True"
 Expect "W12X26 context" (@((G "W12X26").tags) -contains "context") $true
-Expect "DUCT_ALL plain" ($null -eq (G "DUCT_ALL").look -and -not (@((G "DUCT_ALL").tags) -contains "context")) $true
+Expect "DUCT_ALL context, no glyph" ($null -eq (G "DUCT_ALL").look -and (@((G "DUCT_ALL").tags) -contains "context")) $true
+Expect "FLAG_LARGE_GAP (not a check) context, no glyph" ($null -eq (G "FLAG_LARGE_GAP").look -and (@((G "FLAG_LARGE_GAP").tags) -contains "context")) $true
 if ($fail) { throw "$fail checks failed (tables in $base.model.s2k)" }
 Write-Output "all checks passed; viewer file $base.bin"
