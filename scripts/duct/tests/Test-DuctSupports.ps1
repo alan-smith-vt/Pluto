@@ -1,8 +1,8 @@
-# DuctSupports / DuctSupportShapes unit checks (synthetic cases). Windows PowerShell 5.1:
+# DuctSupports unit checks (synthetic cases). Windows PowerShell 5.1:
 #   powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\duct\tests\Test-DuctSupports.ps1
 $ErrorActionPreference = 'Stop'
 $duct = Join-Path (Split-Path $PSScriptRoot -Parent) 'model'
-Add-Type -Path (Join-Path $duct 'DuctSupports.cs'), (Join-Path $duct 'DuctSupportShapes.cs') -ReferencedAssemblies System.Core
+Add-Type -Path (Join-Path $duct 'DuctSupports.cs') -ReferencedAssemblies System.Core
 $fail = 0
 function Check($name, $cond) { if ($cond) { Write-Host "ok   $name" } else { Write-Host "FAIL $name"; $script:fail++ } }
 function D($ja, $jb, $a, $b, $w, $h) {
@@ -62,16 +62,5 @@ Check 'one span over 10 ft' ($sp.Count -eq 1)
 Check 'span length 180 in, bounded by 1 support' ($sp.Count -eq 1 -and [math]::Abs($sp[0].LengthIn - 180) -lt 1e-6 -and $sp[0].Supports -eq 1)
 Check 'span holds frames 0,1,5,6' ($sp.Count -eq 1 -and (($sp[0].Ducts | Sort-Object) -join ',') -eq '0,1,5,6')
 
-# icons: guide (ring + double arrow), anchor, other; 24x12 duct at Z 120 along X -> size 14.4, lift 3
-$set = New-Object 'DuctSupportShapes+Settings'
-$c = [double[]]@(0, 0, 120); $ax = [double[]]@(1, 0, 0); $u = [double[]]@(0, 1, 0)
-$tri = [DuctSupportShapes]::Icon('guide', $c, $ax, $u, 24, 12, $set)
-Check 'guide: 176 triangles (4 boxes, shaft, 2 heads)' ($tri.Count -eq 176)
-$xs = @(); $zs = @(); foreach ($x in $tri) { for ($k = 0; $k -lt 3; $k++) { $xs += $x[3 * $k]; $zs += $x[3 * $k + 2] } }
-Check 'guide: bottom 3 in above the duct top (129), top at 143.4' ([math]::Abs(($zs | Measure-Object -Minimum).Minimum - 129) -lt 1e-9 -and [math]::Abs(($zs | Measure-Object -Maximum).Maximum - 143.4) -lt 1e-9)
-Check 'guide: arrow tips 1.1 x size along the duct' ([math]::Abs(($xs | Measure-Object -Maximum).Maximum - 15.84) -lt 1e-9 -and [math]::Abs(($xs | Measure-Object -Minimum).Minimum + 15.84) -lt 1e-9)
-Check 'anchor: 16 triangles' (([DuctSupportShapes]::Icon('anchor', $c, $ax, $u, 24, 12, $set)).Count -eq 16)
-Check 'unknown type: octahedron' (([DuctSupportShapes]::Icon('spring', $c, $ax, $u, 24, 12, $set)).Count -eq 8)
-Check 'size clamped (100 in wide duct -> 30)' ([DuctSupportShapes]::IconSize(100, $set) -eq 30 -and [DuctSupportShapes]::IconSize(6, $set) -eq 10)
 
 if ($fail -gt 0) { Write-Host "$fail FAILED"; exit 1 } else { Write-Host 'all passed' }

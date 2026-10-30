@@ -10,13 +10,12 @@ using System.Text;
 // SUPPORT) and a TAP_STUB link between them (SAP side: <out>.supports.csv). Then the span check: clean frames of a
 // horizontal stretch longer than SpanFt between supports get UNSUPPORTED_SPAN (frames.csv Flags, the parts'
 // flags.csv rows, SAP group FLAG_UNSUPPORTED_SPAN).
-// Viewer (<out>_clean.bin): the stub as a thin beam ("Support: TAP_STUB"), the support icon as solid shells (DuctSupportShapes.Icon), one group
-// per type ("Support: guide"), "Flag: UNSUPPORTED_SPAN" on the flagged frames. Hover label = support id, type, gap.
+// Viewer (<out>_clean.bin): the stub as a thin beam ("Support: TAP_STUB"), the support as a glyph on the stub (viewer look group,
+// one per type: guide = ring-arrows, anchor = anchor) ("Support: guide"), "Flag: UNSUPPORTED_SPAN" on the flagged frames. Hover label = support id, type, gap.
 // Settings from duct-config.psd1 (Export-DuctsViewer.ps1): DuctSupportGapIn, DuctSpanFt.
 public partial class DuctsToPluto
 {
     public static DuctSupports.Settings SupportSettings = new DuctSupports.Settings();
-    public static DuctSupportShapes.Settings SupportShapeSettings = new DuctSupportShapes.Settings();
 
     class SupportRun
     {
@@ -180,18 +179,18 @@ public partial class DuctsToPluto
     class SupportView
     {
         public List<uint> Stubs = new List<uint>();
-        public SortedDictionary<string, List<uint>> Shapes = new SortedDictionary<string, List<uint>>(StringComparer.Ordinal);
+        public SortedDictionary<string, List<FeaturesSidecar.Anchor>> ByType = new SortedDictionary<string, List<FeaturesSidecar.Anchor>>(StringComparer.Ordinal);
+        public SortedDictionary<string, List<uint>> StubsByType = new SortedDictionary<string, List<uint>>(StringComparer.Ordinal);
     }
 
-    // stubs as beams (duct joint -> steel joint), shapes as shells
+    // stubs as beams (duct joint -> steel joint); the support glyph sits on the stub's duct end (t = 0), turned to the duct
     static SupportView AddSupports(SupportRun run, Dictionary<int, double[]> P, Dictionary<int, Node> nodes, ref int next, List<RawViewerWriter.SectionDef> sections,
-        Dictionary<int, RawViewerWriter.BeamMember> beams, Dictionary<int, string> labels, ref int nb, Dictionary<int, Element> shells, Dictionary<int, string> shellLabels,
-        double[] off, double scale)
+        Dictionary<int, RawViewerWriter.BeamMember> beams, Dictionary<int, string> labels, ref int nb, double[] off, double scale)
     {
         var v = new SupportView();
         if (run == null || run.Ds.Supports.Count == 0) return v;
         sections.Add(RawViewerWriter.SectionDef.Pipe("TAP_STUB", (float)(1.0 * scale / 12), (float)(0.25 * scale / 12)));
-        int sec = sections.Count - 1, ne = shells.Count + 1;
+        int sec = sections.Count - 1;
         for (int i = 0; i < run.Ds.Supports.Count; i++)
         {
             DuctSupports.Support sp = run.Ds.Supports[i]; SteelModel.Joint j = run.SteelJoint[i];
@@ -200,27 +199,66 @@ public partial class DuctsToPluto
                 sp.Id, sp.Type, sp.Gap, run.Dim[i][0], run.Dim[i][1], sp.System, run.DuctJoint[i], sp.Section, j.Name,
                 sp.Flags.Count > 0 ? " | FLAGS " + string.Join(" ", sp.Flags.ToArray()) : "");
             int a = MakeNode(nodes, ref next, pd, off, scale), b = MakeNode(nodes, ref next, ps, off, scale);
-            var m = Beam(nb, a, b, sec, nodes); beams[nb] = m; labels[nb] = label; v.Stubs.Add((uint)nb); nb++;
-            List<uint> g; if (!v.Shapes.TryGetValue(sp.Type, out g)) { g = new List<uint>(); v.Shapes[sp.Type] = g; }
-            double[] c = { pd[0] * 12, pd[1] * 12, pd[2] * 12 };
-            foreach (double[] t in DuctSupportShapes.Icon(sp.Type, c, sp.Axis, run.Across[i], run.Dim[i][0], run.Dim[i][1], SupportShapeSettings))
-            {
-                var el = new Element(); el.id = ne++; el.nNodes = 3; el.n = new Node[4];
-                for (int k = 0; k < 3; k++) el.n[k] = nodes[MakeNode(nodes, ref next, new[] { t[3 * k] / 12, t[3 * k + 1] / 12, t[3 * k + 2] / 12 }, off, scale)];
-                shells[el.id] = el; shellLabels[el.id] = label; g.Add((uint)el.id);
-            }
+            var m = Beam(nb, a, b, sec, nodes); beams[nb] = m; labels[nb] = label; v.Stubs.Add((uint)nb);
+            List<FeaturesSidecar.Anchor> l; if (!v.ByType.TryGetValue(sp.Type, out l)) { l = new List<FeaturesSidecar.Anchor>(); v.ByType[sp.Type] = l; v.StubsByType[sp.Type] = new List<uint>(); }
+            l.Add(new FeaturesSidecar.Anchor { Domain = "beams", Id = (uint)nb, T = 0, Dir = sp.Axis,
+                Label = string.Format(Inv, "{0} gap {1:0.##} in", sp.Id, sp.Gap) });
+            v.StubsByType[sp.Type].Add((uint)nb);
+            nb++;
         }
         return v;
     }
 
-    static readonly string[] SupportColors = { "#ffc04d", "#ff7a3b", "#3fe0a0", "#c06bff" };
+    // glyph per support type (shape = meaning; registered viewer glyphs), unknown types a plain square
+    static string SupportGlyph(string type) { return type == "guide" ? "ring-arrows" : type == "anchor" ? "anchor" : "square"; }
 
     static void AddSupportGroups(FeaturesSidecar sc, SupportView v)
     {
         if (v == null) return;
-        if (v.Stubs.Count > 0) sc.AddGroup("Support: TAP_STUB", "#ff3b3b", "beams", v.Stubs, new[] { "duct", "support", "link" }, "TAP_STUBS");
-        int i = 0;
-        foreach (KeyValuePair<string, List<uint>> kv in v.Shapes)
-            sc.AddGroup("Support: " + kv.Key, SupportColors[i++ % SupportColors.Length], "shells", kv.Value, new[] { "duct", "support", "shape" }, "SUPPORT_" + kv.Key.ToUpperInvariant());
+        if (v.Stubs.Count > 0) sc.AddGroup("Support: TAP_STUB", "#5a5f68", "beams", v.Stubs, new[] { "duct", "support", "link" }, "TAP_STUBS");
+        foreach (KeyValuePair<string, List<FeaturesSidecar.Anchor>> kv in v.ByType)
+        {
+            string name = kv.Key.Length > 0 ? char.ToUpperInvariant(kv.Key[0]) + kv.Key.Substring(1) : kv.Key;
+            FeaturesSidecar.Group g = sc.AddLookGroup("Support: " + kv.Key, null,
+                new FeaturesSidecar.Look { Glyph = SupportGlyph(kv.Key), Tier = "detail", Label = name, Section = "Supports" },
+                kv.Value, new[] { "duct", "support" }, "beams", v.StubsByType[kv.Key]);
+            g.StaadName = "SUPPORT_" + kv.Key.ToUpperInvariant();
+        }
+    }
+
+    // unsupported spans: one warn glyph per span at its length-weighted centre (the frame nearest to it, t there);
+    // members = the flagged frames (selection, SAP group); never repaints them
+    static void AddSpanGroup(FeaturesSidecar sc, SupportRun run, List<CEdge> clean, Dictionary<int, double[]> P, Dictionary<CEdge, int> beamOf, List<uint> flagged)
+    {
+        if (flagged.Count == 0) return;
+        var anchors = new List<FeaturesSidecar.Anchor>();
+        if (run != null)
+            foreach (DuctSupports.Span s in run.Spans)
+            {
+                double[] c = { 0, 0, 0 }; double w = 0;
+                foreach (int i in s.Ducts)
+                {
+                    CEdge ce = clean[i]; if (ce.Rigid) continue;
+                    double L = Len(P[ce.A], P[ce.B]); double[] m = Lerp(P[ce.A], P[ce.B], 0.5);
+                    for (int k = 0; k < 3; k++) c[k] += m[k] * L; w += L;
+                }
+                if (w <= 0) continue;
+                for (int k = 0; k < 3; k++) c[k] /= w;
+                CEdge best = null; double bt = 0.5, bd = double.MaxValue;
+                foreach (int i in s.Ducts)
+                {
+                    CEdge ce = clean[i]; int id; if (ce.Rigid || !beamOf.TryGetValue(ce, out id)) continue;
+                    double t, lat; Project(P[ce.A], P[ce.B], c, out t, out lat); t = Math.Max(0, Math.Min(1, t));
+                    double d = Math.Sqrt(Dist2(Lerp(P[ce.A], P[ce.B], t), c));
+                    if (d < bd) { bd = d; best = ce; bt = t; }
+                }
+                if (best != null)
+                    anchors.Add(new FeaturesSidecar.Anchor { Domain = "beams", Id = (uint)beamOf[best], T = Math.Round(bt, 4),
+                        Label = string.Format(Inv, "{0} {1:0.#} ft, {2} support(s)", s.System, s.LengthIn / 12, s.Supports) });
+            }
+        FeaturesSidecar.Group g = sc.AddLookGroup("Flag: UNSUPPORTED_SPAN", null,
+            new FeaturesSidecar.Look { Glyph = "warn", Tier = "exception", Label = string.Format(Inv, "Unsupported span > {0:0.#} ft", SupportSettings.SpanFt), Section = "Checks" },
+            anchors, new[] { "duct", "clean", "flag" }, "beams", flagged);
+        g.StaadName = "FLAG_UNSUPPORTED_SPAN";
     }
 }
