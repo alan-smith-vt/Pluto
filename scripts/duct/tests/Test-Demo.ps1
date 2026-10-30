@@ -103,17 +103,21 @@ Check "spans" "unsupported spans flagged" (@($fr | Where-Object { $_.Flags -matc
 foreach ($b in "revit", "revit_clean") {
     Check "viewer" "$b.bin + features.json" ((Test-Path "$o\$b.bin") -and (Get-Item "$o\$b.bin").Length -gt 0 -and (Test-Path "$o\$b.features.json"))
 }
-$groups = @{}
+$groups = @{}; $anchors = @{}
 if (Test-Path "$o\revit_clean.features.json") {
     $fj = Get-Content "$o\revit_clean.features.json" -Raw | ConvertFrom-Json
-    foreach ($g in $fj.groups.items) { $k = 0; foreach ($mm in $g.members) { $k += @($mm.ids).Count }; $groups[$g.name] = $k }
+    foreach ($g in $fj.groups.items) { $k = 0; foreach ($mm in $g.members) { $k += @($mm.ids).Count }; $groups[$g.name] = $k; $anchors[$g.name] = @($g.anchors).Count }
 }
-foreach ($g in "Steel end: open-pinned", "Steel end: open-fixed", "Steel end: hinged", "Steel end: collinear-hinged", "Flag: UNSUPPORTED_SPAN") {
-    Check "viewer" "clean group '$g'" ($groups.ContainsKey($g) -and $groups[$g] -gt 0)
-}
+Check "viewer" "clean group 'Flag: UNSUPPORTED_SPAN'" ($groups["Flag: UNSUPPORTED_SPAN"] -gt 0)
+# end-condition glyphs: one anchor per steel frame end of that condition (hinged = released corner / framed ends)
+$ends = @($sf | ForEach-Object { "$($_.EndI)|$($_.ReleaseI)"; "$($_.EndJ)|$($_.ReleaseJ)" })
+$want = [ordered]@{ "End: open-pinned" = @($ends | Where-Object { $_ -like "open-pinned|*" }).Count; "End: open-fixed" = @($ends | Where-Object { $_ -like "open-fixed|*" }).Count
+    "End: hinged" = @($ends | Where-Object { $_ -eq "corner|M2M3" -or $_ -eq "framed|M2M3" }).Count; "End: collinear-hinged" = @($ends | Where-Object { $_ -eq "collinear|M2M3" }).Count }
+foreach ($g in $want.Keys) { Check "viewer" "'$g' glyphs = steel_frames.csv ends" ($want[$g] -gt 0 -and $anchors[$g] -eq $want[$g]) "$($anchors[$g]) vs $($want[$g])" }
 Check "viewer" "a 'Steel: <section>' group per section" (@($oids.Values | Sort-Object -Unique | Where-Object { -not $groups.ContainsKey("Steel: $_") }).Count -eq 0)
 Check "viewer" "one TAP_STUB beam per support" ($groups["Support: TAP_STUB"] -eq $sp.Count) "$($groups['Support: TAP_STUB']) vs $($sp.Count)"
-Check "viewer" "support shapes (shells) present" (@($groups.Keys | Where-Object { $_ -like "Support: *" -and $_ -ne "Support: TAP_STUB" -and $groups[$_] -gt 0 }).Count -gt 0)
+$types = @($sp | ForEach-Object { $_.Type } | Sort-Object -Unique)
+foreach ($t in $types) { Check "viewer" "'Support: $t' glyphs = supports.csv rows of that type" ($anchors["Support: $t"] -eq @($sp | Where-Object { $_.Type -eq $t }).Count) "$($anchors["Support: $t"])" }
 
 # ---- SAP (Run-SapDucts' own summary lines against the CSVs it was given)
 if (-not $NoSap) {
