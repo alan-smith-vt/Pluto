@@ -36,6 +36,7 @@ $Config = (Resolve-Path $Config).Path
 $cfg = Import-PowerShellDataFile $Config
 foreach ($p in @($Run, $Revit)) { if (-not (Test-Path $p -PathType Container)) { throw "not a folder: $p" } }
 $Run = (Resolve-Path $Run).Path; $Revit = (Resolve-Path $Revit).Path
+if (-not $Out -and $From -ne "model") { throw "-From $From needs -Out <the earlier run's folder>" }
 if (-not $Out) {
     $work = $(if ($cfg.WorkDir) { $cfg.WorkDir } else { "C:\Temp\hvac" })
     $Out = Join-Path $work ("model\" + (Get-Date -Format "yyyyMMdd-HHmmss"))
