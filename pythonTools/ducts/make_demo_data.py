@@ -14,6 +14,7 @@ import argparse
 import math
 import os
 import random
+import shutil
 import struct
 import uuid
 
@@ -371,11 +372,28 @@ def build_ducts():
     rc.gap(10)                                          # 10 in gap between two open ends, lined up
     rc.straight(20, piece=5)
     rc.transition(Size(18, 36))
-    rc.straight(30, piece=5)
+    tail = rc.straight(30, piece=5)
 
     # ---- other system: a short exhaust run in ROOM-02 (not a primary system)
     ro = Runner("EXH", (1070, 534.0, 117.0), X, Size(d=10), "fab", "Carbon Steel", 0.0276)
     ro.straight(12, piece=6)
+
+    # ---- orientation case (appended last, own random stream, so the parts above keep their ids and GUIDs): the
+    # SYSC 18x36 (larger dimension vertical) gets a rect riser at its end that carries its width direction up, a
+    # round riser tapped off its top, and a rect branch off its side that turns down and hangs
+    global rng
+    main_rng, rng = rng, random.Random(11)
+    rc.bend(Z)
+    rc.straight(8, piece=4)
+    rc.bend(X)
+    rc.straight(4)
+    rup = rc.tap(tail[4], 0.5, Z, Size(d=10), kind="Round Tap")
+    rup.straight(5)
+    rdn = rc.tap(tail[2], 0.5, Y, Size(12, 8))
+    rdn.straight(3)
+    rdn.bend(-Z)
+    rdn.straight(6, piece=3)
+    rng = main_rng
     return drop_ids
 
 
@@ -682,6 +700,7 @@ def main():
     write_cuts(root, drop_ids)
     with open(os.path.join(root, "duct-config.psd1"), "w", encoding="utf-8") as f:
         f.write(CONFIG.format(root=root))
+    shutil.copyfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), "demo-README.md"), os.path.join(root, "README.md"))
     print("ducts  %s: %d rows" % (nd, len(rows)))
     print("revit  %s: %d elements" % (rd, sum(1 for p in PARTS if p.revit)))
     print("steel  %s" % steel)
