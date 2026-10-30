@@ -109,3 +109,23 @@
     margin-top: 8px; padding-top: 8px;
     display: flex; gap: 5px; flex-wrap: wrap;
 }
+
+/* Glyph legend + hover tip (scripts/glyphs.js): sits right of the field legend */
+#glyphLegend {
+    position: fixed; left: calc(272px + 16px + 248px + 10px); bottom: 14px; z-index: 12;
+    min-width: 200px; max-width: 280px; max-height: 50vh; overflow-y: auto;
+    background: rgba(16, 16, 20, 0.86); backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 6px;
+    padding: 6px 10px; font-size: 12px; line-height: 1.45; color: #d8dae0;
+}
+#glyphLegend .gl-sec { color: #8a8f9a; font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; margin-top: 5px; }
+#glyphLegend .gl-sec:first-child { margin-top: 0; }
+#glyphLegend .gl-row { display: flex; align-items: center; gap: 7px; }
+#glyphLegend .gl-name { flex: 1; }
+#glyphLegend .gl-n { color: #8a8f9a; font-variant-numeric: tabular-nums; }
+.glyph-tip {
+    position: fixed; display: none; align-items: center; gap: 6px; z-index: 40; pointer-events: none;
+    background: rgba(12, 13, 18, 0.95); border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 4px;
+    padding: 3px 8px; font-size: 12px; color: #e8e8ee; white-space: nowrap;
+}
+.glyph-tip .glyph-tip-sub { color: #9aa0ab; }

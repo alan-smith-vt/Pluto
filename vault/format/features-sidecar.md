@@ -122,6 +122,40 @@ C# side: `scripts/lib/sidecar/FeaturesSidecar.cs` — `AddGroup(...)`, `AddNodeG
 `ComputeGeometryHash(blocks)`, `ToJson()`, `ToStaadGroupBlock()` (bridge to the existing
 STAAD group writer; adjust prefixes to its conventions when ported).
 
+#### Glyph groups: `look` + `anchors` (2026-10-30)
+Encoding rule: **colour = identity of one chosen dimension, shape = meaning, words in the legend.** A group carrying `look` is drawn as screen-space glyphs (`viewer/scripts/glyphs.js`) and **never paints its members**. Its `members` still drive selection, the eye and STAAD groups. Flags mark and never repaint.
+
+```json
+{ "name": "End: hinged", "color": "#e8e8ee", "tags": ["end"],
+  "look": { "glyph": "half", "tier": "detail", "label": "Hinged", "section": "Member ends", "insetPx": 10 },
+  "anchors": [ {"domain": "beams", "id": 12, "t": 0}, {"domain": "beams", "id": 12, "t": 1, "label": "SF12 at S40"},
+               {"domain": "nodes", "id": 5, "dir": [1, 0, 0]} ] }
+```
+- **`look.glyph`**: `circle disc half diamond square triangle warn tick cross ring-arrows anchor`. An unknown name draws `square`. Suggested conventions:
+  - member ends: ○ pinned, ● fixed, ◐ hinge, ◆ collinear hinge, with a neutral tint;
+  - supports: one shape per type (`ring-arrows` guide, `anchor` anchor);
+  - `warn` for checks.
+- **`look.tier`**:
+  - `exception`: always shown;
+  - `detail` (the default): shown once the camera is nearer than 0.45 × the model span.
+- **`look.label`** is the legend text (default: the group name). **`look.section`** is the legend heading. **`look.insetPx`** (default 10) is the on-screen inset for `t` = 0 / 1, toward the member's other end, so the ends meeting at one joint don't stack.
+- **`color`** tints the glyph. If absent: neutral `#e8e8ee`, or the reserved alarm `#ff4d6d` for `warn`. Nothing else should use the alarm colour.
+- **`anchors`**: one glyph each.
+  - `domain`: `beams` | `shells` | `nodes`. `id` is the real id.
+  - `t` is 0–1 along a beam from its I-end; nodes and shells use the node or centroid.
+  - `dir` (optional): a world vector the sprite turns to (glyphs face +x).
+  - `label` (optional): the tooltip text after the glyph label.
+  - With no `anchors`, there is one glyph per member (centroid / node). Ids not in the model are counted in the legend tooltip, not drawn.
+- **`hidden: true`** hides a look group's glyphs. A look group without the flag starts **shown**: it paints nothing, so there is no precedence to opt into.
+- Tag background groups `context`. Without a `color` they paint the neutral grey `#8b919c` instead of a palette hue.
+- **Viewer:**
+  - one `THREE.Points` per model over a canvas glyph atlas, at a constant pixel size;
+  - a hover tooltip next to the cursor (glyph + label · anchor label);
+  - a legend bottom-left, built from the same atlas pixels: checks first, then by section.
+  - Measured: 10k glyphs at no visible frame cost.
+- **C#:** `FeaturesSidecar.Look`, `FeaturesSidecar.Anchor`, `Group.Look`, `Group.Anchors`, `AddLookGroup(...)`.
+- **Tests:** `node viewer/tests/test_glyphs.js`; `scripts/lib/sidecar/Test-FeaturesSidecarLook.ps1` (PS 5.1).
+
 Steel + pipes trib study: color W shapes one group, pipes grouped by size / insulation via
 tags; the trib analysis reads the same groups back to know which pipes sit on which steel.
 
