@@ -31,7 +31,7 @@ public partial class DuctsToPluto
         public HashSet<int> Rigid = new HashSet<int>();   // clean indices of rigid links (span frame counts leave them out)
     }
 
-    static SupportRun ApplySupports(List<CEdge> clean, Dictionary<int, double[]> P, SteelModel sm, string outBase, List<Row> rows)
+    static SupportRun ApplySupports(List<CEdge> clean, Dictionary<int, double[]> P, SteelModel sm, string outBase, List<DuctRow> rows)
     {
         var run = new SupportRun(); var ds = new DuctSupports(SupportSettings); run.Ds = ds;
         var ducts = DuctRecords(clean, P);
@@ -70,14 +70,14 @@ public partial class DuctsToPluto
         {
             CEdge ce = clean[k]; List<int> sps;
             if (!bySeg.TryGetValue(k, out sps)) { outEdges.Add(ce); continue; }
-            double L = Len(P[ce.A], P[ce.B]) * 12; int prev = ce.A;
+            double L = DuctMath.Len(P[ce.A], P[ce.B]) * 12; int prev = ce.A;
             foreach (int i in sps)
             {
                 double s = ds.Supports[i].S;
                 if (s * L <= 1) { ductJ[i] = ce.A; continue; }
                 if ((1 - s) * L <= 1) { ductJ[i] = ce.B; continue; }
-                if (prev != ce.A && Len(P[prev], Lerp(P[ce.A], P[ce.B], s)) * 12 <= 1) { ductJ[i] = prev; continue; }
-                int nk = nextKey++; P[nk] = Lerp(P[ce.A], P[ce.B], s);
+                if (prev != ce.A && DuctMath.Len(P[prev], DuctMath.Lerp(P[ce.A], P[ce.B], s)) * 12 <= 1) { ductJ[i] = prev; continue; }
+                int nk = nextKey++; P[nk] = DuctMath.Lerp(P[ce.A], P[ce.B], s);
                 outEdges.Add(CopyEdge(ce, prev, nk)); prev = nk; ductJ[i] = nk;
             }
             outEdges.Add(prev == ce.A ? ce : CopyEdge(ce, prev, ce.B));
@@ -91,7 +91,7 @@ public partial class DuctsToPluto
             SteelMember b = sm.Members[frames[sp.SteelIx].Source];
             run.SteelMember.Add(b.MemberOid ?? "");
             double[] u = d.WidthDir ?? new[] { -sp.Axis[1], sp.Axis[0], 0 }; double w = d.Round ? d.Dia : d.W, h = d.Round ? d.Dia : d.H;
-            if (Math.Abs(u[2]) > 0.7) { u = Unit(new[] { -sp.Axis[1], sp.Axis[0], 0 }); double x = w; w = h; h = x; }   // width vertical: across = H
+            if (Math.Abs(u[2]) > 0.7) { u = DuctMath.Unit(new[] { -sp.Axis[1], sp.Axis[0], 0 }); double x = w; w = h; h = x; }   // width vertical: across = H
             run.Across.Add(u); run.Dim.Add(new[] { w, h });
         }
 
@@ -256,7 +256,7 @@ public partial class DuctsToPluto
                 foreach (int i in s.Ducts)
                 {
                     CEdge ce = clean[i]; if (ce.Rigid) continue;
-                    double L = Len(P[ce.A], P[ce.B]); double[] m = Lerp(P[ce.A], P[ce.B], 0.5);
+                    double L = DuctMath.Len(P[ce.A], P[ce.B]); double[] m = DuctMath.Lerp(P[ce.A], P[ce.B], 0.5);
                     for (int k = 0; k < 3; k++) c[k] += m[k] * L; w += L;
                 }
                 if (w <= 0) continue;
@@ -265,8 +265,8 @@ public partial class DuctsToPluto
                 foreach (int i in s.Ducts)
                 {
                     CEdge ce = clean[i]; int id; if (ce.Rigid || !beamOf.TryGetValue(ce, out id)) continue;
-                    double t, lat; Project(P[ce.A], P[ce.B], c, out t, out lat); t = Math.Max(0, Math.Min(1, t));
-                    double d = Math.Sqrt(Dist2(Lerp(P[ce.A], P[ce.B], t), c));
+                    double t, lat; DuctMath.Project(P[ce.A], P[ce.B], c, out t, out lat); t = Math.Max(0, Math.Min(1, t));
+                    double d = Math.Sqrt(DuctMath.Dist2(DuctMath.Lerp(P[ce.A], P[ce.B], t), c));
                     if (d < bd) { bd = d; best = ce; bt = t; }
                 }
                 if (best != null)

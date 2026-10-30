@@ -22,40 +22,11 @@ using System.Text;
 // Revit-only elements).
 public partial class DuctsToPluto
 {
-    class RvEl
-    {
-        public string Id, Uid, Guid, GuidCalc, Cat, Fam, Type, Size, System, Level, Match = "", RunName = "";   // RunName: Revit parameter (runs from 2026-10-12 on)
-        public bool Fab, Only;
-        public int LocRow = -1;   // Revit-only: the Navisworks-only row it lies inside (same part, other IfcGUID)
-        public List<RvConn> Conns = new List<RvConn>();
-        public List<int> Beams = new List<int>();
-        public List<int[]> Segs = new List<int[]>();   // SAP frames: { node i, node j, connector whose size it takes (-1 = the element's) }
-        public List<string> Flags = new List<string>(), Detail = new List<string>();
-        public double[] C, P;     // centre: Revit internal / Navisworks frame (feet)
-        public string Kind = "";  // DuctsRunGraph: straight / bend / transition / branch / end / equipment
-        public int Run = -1, Seg = -1;   // DuctsRunGraph run and segment ids (-1 = none)
-        public int Sys = -1; public string SysName = "";   // DuctsSystems: connected component and its name
-        public double Thk = double.NaN;   // wall thickness (in) from its Navisworks row's WallThk_in; NaN = not stated
-        public double[] Voted;    // the segment's voted size { round 1/0, big side or dia, small side } (null = none)
-    }
 
-    class RvConn
+    // As a probe DuctOpening, to reuse ThroughPair / BranchJunction (round = "round", else A x B, A the larger).
+    static DuctOpening AsOpening(RvConn k)
     {
-        public RvEl Owner;
-        public string Key, Type;
-        public double[] P, D;     // Navisworks frame after the fit; D = outward (BasisZ)
-        public double[] WX;       // Width direction (BasisX; runs from 2026-10-12 on, else null), after the fit
-        public string Shape;      // Rectangular / Round / Oval
-        public double W, H, Dia;  // inches, NaN = n/a
-        public List<string> To = new List<string>();
-        public Opening Mesh;      // the probe's connector on the matched Navisworks row at this end (mesh-measured size)
-        public int MeshRow = -1;  // the row (0-based) that mesh connector belongs to
-    }
-
-    // As a probe Opening, to reuse ThroughPair / BranchJunction (round = "round", else A x B, A the larger).
-    static Opening AsOpening(RvConn k)
-    {
-        var o = new Opening(); o.C = k.P; o.N = k.D;
+        var o = new DuctOpening(); o.C = k.P; o.N = k.D;
         if (k.Shape == "Round") { o.Shape = "round"; o.Dia = k.Dia; }
         else { o.Shape = "rect"; o.A = Math.Max(k.W, k.H); o.B = Math.Min(k.W, k.H); }
         return o;
@@ -87,7 +58,7 @@ public partial class DuctsToPluto
         var navByGuid = new Dictionary<string, List<int>>(StringComparer.Ordinal);
         for (int i = 0; i < rows.Count; i++)
         {
-            Row r = rows[i]; if (r.Guid == "" || r.Min == null || r.Max == null) continue;
+            DuctRow r = rows[i]; if (r.Guid == "" || r.Min == null || r.Max == null) continue;
             List<int> l; if (!navByGuid.TryGetValue(r.Guid, out l)) { l = new List<int>(); navByGuid[r.Guid] = l; } l.Add(i);
         }
 
@@ -212,7 +183,7 @@ public partial class DuctsToPluto
             double bv = double.MaxValue;
             foreach (int i in navMissing)
             {
-                Row r = rows[i]; bool inside = true;
+                DuctRow r = rows[i]; bool inside = true;
                 for (int a = 0; a < 3; a++) if (e.P[a] < r.Min[a] - 0.1 || e.P[a] > r.Max[a] + 0.1) { inside = false; break; }
                 if (!inside) continue;
                 double v = (r.Max[0] - r.Min[0] + 0.1) * (r.Max[1] - r.Min[1] + 0.1) * (r.Max[2] - r.Min[2] + 0.1);
@@ -240,7 +211,7 @@ public partial class DuctsToPluto
                 foreach (RvConn q in l)
                 {
                     if (q.Owner == k.Owner) continue;
-                    double d = Dist2(k.P, q.P); if (d <= bd) { bd = d; best = q; }
+                    double d = DuctMath.Dist2(k.P, q.P); if (d <= bd) { bd = d; best = q; }
                 }
             }
             if (best != null) touch[k] = best;
@@ -257,7 +228,7 @@ public partial class DuctsToPluto
             foreach (RvEl e2 in scope)
             {
                 if (e2 == k.Owner) continue;
-                foreach (RvConn q in e2.Conns) { double d = Math.Sqrt(Dist2(k.P, q.P)); if (d < bd) { bd = d; best = q; } }
+                foreach (RvConn q in e2.Conns) { double d = Math.Sqrt(DuctMath.Dist2(k.P, q.P)); if (d < bd) { bd = d; best = q; } }
             }
             if (best != null) attach[k] = best;
         }
@@ -362,7 +333,7 @@ public partial class DuctsToPluto
                             int jn = MakeNode(nodes, ref nextNode, f, off, scale);
                             ids.Add(RvBeam(beams, labels, ref nb, jn, node(e.Conns[q]), nodes, label));
                             e.Segs.Add(new[] { jn, node(e.Conns[q]), q });
-                            junc.Add(new KeyValuePair<double, int>(Dist2(a.P, f), jn));
+                            junc.Add(new KeyValuePair<double, int>(DuctMath.Dist2(a.P, f), jn));
                         }
                     junc.Sort((u, v) => u.Key.CompareTo(v.Key));
                     int prev = node(a);
@@ -409,7 +380,7 @@ public partial class DuctsToPluto
             {
                 if (q == k || q.Owner == k.Owner || linked.Contains(q)) continue;
                 if (k.D[0] * q.D[0] + k.D[1] * q.D[1] + k.D[2] * q.D[2] > -0.9) continue;
-                double d = Math.Sqrt(Dist2(k.P, q.P)); if (d > bd) continue;
+                double d = Math.Sqrt(DuctMath.Dist2(k.P, q.P)); if (d > bd) continue;
                 double along = (q.P[0] - k.P[0]) * k.D[0] + (q.P[1] - k.P[1]) * k.D[1] + (q.P[2] - k.P[2]) * k.D[2];
                 if (Math.Sqrt(Math.Max(0, d * d - along * along)) * 12 > 1) continue;
                 if ((endPiece.Contains(k) || endPiece.Contains(q)) && along * 12 < 0.5) continue;
@@ -436,8 +407,8 @@ public partial class DuctsToPluto
             {
                 if (m[0].Owner == k.Owner) continue;
                 double[] f = BranchJunction(m[0].P, m[1].P, AsOpening(k));
-                if (Math.Sqrt(Dist2(f, m[0].P)) * 12 < 1 || Math.Sqrt(Dist2(f, m[1].P)) * 12 < 1) continue;
-                double d = Math.Sqrt(Dist2(f, k.P));
+                if (Math.Sqrt(DuctMath.Dist2(f, m[0].P)) * 12 < 1 || Math.Sqrt(DuctMath.Dist2(f, m[1].P)) * 12 < 1) continue;
+                double d = Math.Sqrt(DuctMath.Dist2(f, k.P));
                 if (d > HalfSizeFt(m[0]) + 0.25 || d >= bd) continue;
                 bd = d; bestF = f; bestM = m;
             }
@@ -512,13 +483,13 @@ public partial class DuctsToPluto
         foreach (int i in navMissing)
         {
             if (partners.ContainsKey(i)) continue;
-            Row r = rows[i]; string by = null;
+            DuctRow r = rows[i]; string by = null;
             foreach (RvEl e in scope)
             {
                 foreach (int[] g in e.Segs)
                 {
                     double[] a = NodeFt(nodes[g[0]], off, scale), b = NodeFt(nodes[g[1]], off, scale);
-                    int n = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(Dist2(a, b)) / 0.25));
+                    int n = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(DuctMath.Dist2(a, b)) / 0.25));
                     for (int s2 = 0; s2 <= n && by == null; s2++)
                     {
                         double t = (double)s2 / n; bool inside = true;
@@ -558,7 +529,7 @@ public partial class DuctsToPluto
         };
         foreach (RvEl e in scope)
         {
-            int nr = NavRow(e, rowsOf(e)); Row r = nr >= 0 ? rows[nr] : null;
+            int nr = NavRow(e, rowsOf(e)); DuctRow r = nr >= 0 ? rows[nr] : null;
             double t = r != null && !double.IsNaN(r.T) && r.T > 0 ? r.T : 0.06;
             e.Thk = r != null && !double.IsNaN(r.T) && r.T > 0 ? r.T : double.NaN;
             var connOf = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -592,7 +563,7 @@ public partial class DuctsToPluto
         }
         foreach (KeyValuePair<int, int> kv in navBeamRow)
         {
-            Row r = rows[kv.Value]; string shape; double w, h, d;
+            DuctRow r = rows[kv.Value]; string shape; double w, h, d;
             if (NavSize(r, out shape, out w, out h, out d))
                 beams[kv.Key].SectionIndex = sec(shape, w, h, d, !double.IsNaN(r.T) && r.T > 0 ? r.T : 0.06);
         }
@@ -816,7 +787,7 @@ public partial class DuctsToPluto
     public static string RevitMeshBoxFile { get { return Path.Combine(AddinDir, @"revit\mesh-boxes.txt"); } }
     const double RoomBoxMarginFt = 1;
 
-    static string WriteRoomBoxes(List<Row> rows, string room, double[] T, string navisRun, string revitRun)
+    static string WriteRoomBoxes(List<DuctRow> rows, string room, double[] T, string navisRun, string revitRun)
     {
         var codes = new List<string>();
         foreach (string r in room.Split(new[] { ',', ';', ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
@@ -831,7 +802,7 @@ public partial class DuctsToPluto
         {
             double[] lo = { double.MaxValue, double.MaxValue, double.MaxValue }, hi = { double.MinValue, double.MinValue, double.MinValue };
             int n = 0;
-            foreach (Row r in rows)
+            foreach (DuctRow r in rows)
             {
                 if (r.Min == null || r.Max == null || !InRooms(r.Room, code)) continue;
                 n++;
@@ -872,7 +843,7 @@ public partial class DuctsToPluto
         var bad = new List<string>();
         foreach (RvConn k in e.Conns)
         {
-            Opening o = k.Mesh; if (o == null || IsTapPoint(k)) continue;   // a tap point has no mesh end of its own
+            DuctOpening o = k.Mesh; if (o == null || IsTapPoint(k)) continue;   // a tap point has no mesh end of its own
             // confirmed when ANY ring centred at that end matches (flange edge, duct rim further back, ...)
             bool ok = false;
             var rings = new List<string>();
@@ -892,7 +863,7 @@ public partial class DuctsToPluto
     // Stated size of the Navisworks row (Width / Height / Diameter, else read from the Name) against the element's
     // Revit connector sizes: null when any connector matches within 0.5 in (eccentric transitions and tees carry
     // several sizes) or either side is unknown, else "Navisworks <size> vs Revit <sizes>".
-    static string SizeDiff(RvEl e, Row r)
+    static string SizeDiff(RvEl e, DuctRow r)
     {
         double w = !double.IsNaN(r.W) ? r.W : r.NameW, h = !double.IsNaN(r.H) ? r.H : r.NameH, d = !double.IsNaN(r.D) ? r.D : r.NameD;
         bool rect = !double.IsNaN(w) && !double.IsNaN(h), round = !rect && !double.IsNaN(d);
@@ -921,14 +892,14 @@ public partial class DuctsToPluto
 
     // <out>.flags.csv: one row per flagged part, Revit elements in scope, then Navisworks-only rows. Regenerated
     // every run; flags clear themselves when the upstream models are fixed.
-    static void WriteFlagsCsv(string path, List<RvEl> scope, List<Row> rows, Func<RvEl, List<int>> rowsOf, List<int> navOnly, Dictionary<int, string> navCovered)
+    static void WriteFlagsCsv(string path, List<RvEl> scope, List<DuctRow> rows, Func<RvEl, List<int>> rowsOf, List<int> navOnly, Dictionary<int, string> navCovered)
     {
         var s = new StringBuilder();
         s.AppendLine("Source,RevitElementId,NavisId,RevitIfcGUID,NavisIfcGUID,RevitCategory,RevitFab,NavisCategory,Match,RevitSize,NavisSize,Flags,Detail");
         foreach (RvEl e in scope)
         {
             if (e.Flags.Count == 0) continue;
-            List<int> pr = rowsOf(e); int nr = NavRow(e, pr); Row r = nr >= 0 ? rows[nr] : null;
+            List<int> pr = rowsOf(e); int nr = NavRow(e, pr); DuctRow r = nr >= 0 ? rows[nr] : null;
             string how = e.Match != "" ? "guid" : e.LocRow >= 0 ? "position" : "none";
             s.AppendLine(string.Join(",", new[] { "Revit", e.Id, r != null ? r.NavisId : "", e.Guid != "" ? e.Guid : e.GuidCalc, r != null ? r.Guid : "",
                 e.Cat, e.Fab ? "1" : "0", r != null ? r.Cat : "", how, e.Size, r != null ? r.SizeText : "",
@@ -936,12 +907,12 @@ public partial class DuctsToPluto
         }
         foreach (int i in navOnly)
         {
-            Row r = rows[i];
+            DuctRow r = rows[i];
             s.AppendLine(string.Join(",", new[] { "Navisworks", "", r.NavisId, "", r.Guid, "", "", r.Cat, "none", "", r.SizeText, NavRowFlagText(i), r.Name + "; SAP frame" }.Select(CsvCell).ToArray()));
         }
         foreach (KeyValuePair<int, string> kv in navCovered)
         {
-            Row r = rows[kv.Key];
+            DuctRow r = rows[kv.Key];
             s.AppendLine(string.Join(",", new[] { "Navisworks", kv.Value, r.NavisId, "", r.Guid, "", "", r.Cat, "covered", "", r.SizeText, NavRowFlagText(kv.Key),
                 r.Name + "; covered by Revit " + kv.Value + ", no frame" }.Select(CsvCell).ToArray()));
         }
@@ -955,7 +926,7 @@ public partial class DuctsToPluto
     // connector; branch pieces take their own connector's size. Navisworks-only rows: their axis (X1..Z2, else
     // the bbox's long axis) between joints of their own (not connected). Elements with one connector (caps,
     // terminals) have no frame. Thickness: the row's WallThk_in, else 0.06 in (ThkSource "default").
-    static string WriteFramesCsv(string path, List<RvEl> scope, List<Row> rows, Func<RvEl, List<int>> rowsOf, List<int> navOnly,
+    static string WriteFramesCsv(string path, List<RvEl> scope, List<DuctRow> rows, Func<RvEl, List<int>> rowsOf, List<int> navOnly,
         Dictionary<int, Node> nodes, double[] off, double scale)
     {
         var s = new StringBuilder();
@@ -972,7 +943,7 @@ public partial class DuctsToPluto
         foreach (RvEl e in scope)
         {
             if (e.Segs.Count == 0) { noFrame++; continue; }
-            List<int> pr = rowsOf(e); int nr = NavRow(e, pr); Row r = nr >= 0 ? rows[nr] : null;
+            List<int> pr = rowsOf(e); int nr = NavRow(e, pr); DuctRow r = nr >= 0 ? rows[nr] : null;
             double t = r != null && !double.IsNaN(r.T) && r.T > 0 ? r.T : 0.06;
             string flags = string.Join(" ", e.Flags.ToArray());
             foreach (int[] g in e.Segs)
@@ -988,7 +959,7 @@ public partial class DuctsToPluto
         }
         foreach (int i in navOnly)
         {
-            Row r = rows[i]; double[] p, q;
+            DuctRow r = rows[i]; double[] p, q;
             NavAxis(r, out p, out q);
             string shape; double w, h, d;
             string ssrc = NavSize(r, out shape, out w, out h, out d) ? "navisworks" : "none";
@@ -1007,14 +978,14 @@ public partial class DuctsToPluto
     // Navisworks row, any category (Revit fab parts are often Ducts / Fittings in Navisworks); each Revit connector
     // takes the row's mesh connector nearest it within MeshMatchIn, facing the same way (dot > 0.7).
     const double MeshMatchIn = 4;
-    static string MatchMeshConnectors(string navisRun, List<Row> rows, List<RvEl> scope, Func<RvEl, List<int>> rowsOf)
+    static string MatchMeshConnectors(string navisRun, List<DuctRow> rows, List<RvEl> scope, Func<RvEl, List<int>> rowsOf)
     {
         var want = new HashSet<int>();
         foreach (RvEl e in scope) foreach (int i in rowsOf(e)) want.Add(i + 1);
         string triPath = Path.Combine(navisRun, "ducts_tri.bin");
         if (!File.Exists(triPath)) return "mesh connector sizes: no ducts_tri.bin in the Navisworks run";
         var tri = ReadTriangles(triPath, want);
-        var meshOf = new Dictionary<int, List<Opening>>();
+        var meshOf = new Dictionary<int, List<DuctOpening>>();
         int noTri = 0, dummy = 0;
         foreach (int row in want)
         {
@@ -1031,11 +1002,11 @@ public partial class DuctsToPluto
                 double bd = MeshMatchIn / 12;
                 foreach (int i in rowsOf(e))
                 {
-                    List<Opening> ol; if (!meshOf.TryGetValue(i, out ol)) continue;
-                    foreach (Opening o in ol)
+                    List<DuctOpening> ol; if (!meshOf.TryGetValue(i, out ol)) continue;
+                    foreach (DuctOpening o in ol)
                     {
                         if (o.N[0] * k.D[0] + o.N[1] * k.D[1] + o.N[2] * k.D[2] <= 0.7) continue;
-                        double d = Math.Sqrt(Dist2(o.C, k.P)); if (d < bd) { bd = d; k.Mesh = o; k.MeshRow = i; }
+                        double d = Math.Sqrt(DuctMath.Dist2(o.C, k.P)); if (d < bd) { bd = d; k.Mesh = o; k.MeshRow = i; }
                     }
                 }
                 if (k.Mesh != null) got++;
@@ -1052,7 +1023,7 @@ public partial class DuctsToPluto
         return pr.Count > 0 ? pr[0] : -1;
     }
 
-    static string MeshSize(Opening o)
+    static string MeshSize(DuctOpening o)
     {
         if (o == null) return "-";
         return o.Shape == "round" ? string.Format(Inv, "{0:0.#} dia", o.Dia) : string.Format(Inv, "{0:0.#}x{1:0.#}", o.A, o.B);
@@ -1063,13 +1034,13 @@ public partial class DuctsToPluto
     // element's non-branch connectors (ssrc "revit-transition" when they differ: a reducer drawn at its big
     // end); the Navisworks stated size of row r only when Revit has none. ssrc = revit / revit-transition /
     // navisworks / none.
-    static void SegSize(RvEl e, int q, Row r, out string shape, out double w, out double h, out double d, out string ssrc)
+    static void SegSize(RvEl e, int q, DuctRow r, out string shape, out double w, out double h, out double d, out string ssrc)
     {
         RvConn used; SegSize(e, q, r, out shape, out w, out h, out d, out ssrc, out used);
     }
 
     // as above; used = the Revit connector the size came from (null for navisworks / none)
-    static void SegSize(RvEl e, int q, Row r, out string shape, out double w, out double h, out double d, out string ssrc, out RvConn used)
+    static void SegSize(RvEl e, int q, DuctRow r, out string shape, out double w, out double h, out double d, out string ssrc, out RvConn used)
     {
         RvConn k = null; bool differ = false; used = null;
         if (q >= 0) k = e.Conns[q];
@@ -1145,7 +1116,7 @@ public partial class DuctsToPluto
                 if (e == pe) continue;
                 foreach (RvConn q in e.Conns)
                 {
-                    double d = Math.Sqrt(Dist2(k.P, q.P)) * 12; if (d > 36) continue;
+                    double d = Math.Sqrt(DuctMath.Dist2(k.P, q.P)) * 12; if (d > 36) continue;
                     double along = ((q.P[0] - k.P[0]) * k.D[0] + (q.P[1] - k.P[1]) * k.D[1] + (q.P[2] - k.P[2]) * k.D[2]) * 12;
                     double lat = Math.Sqrt(Math.Max(0, d * d - along * along));
                     double ang = Math.Acos(Math.Max(-1, Math.Min(1, k.D[0] * q.D[0] + k.D[1] * q.D[1] + k.D[2] * q.D[2]))) * 180 / Math.PI;
@@ -1165,7 +1136,7 @@ public partial class DuctsToPluto
         if (a.D[0] * b.D[0] + a.D[1] * b.D[1] + a.D[2] * b.D[2] > -0.95) return -1;
         double[] w = { b.P[0] - a.P[0], b.P[1] - a.P[1], b.P[2] - a.P[2] };
         double along = w[0] * b.D[0] + w[1] * b.D[1] + w[2] * b.D[2];
-        double lat = Math.Sqrt(Math.Max(0, Dist2(a.P, b.P) - along * along)) * 12;
+        double lat = Math.Sqrt(Math.Max(0, DuctMath.Dist2(a.P, b.P) - along * along)) * 12;
         if (lat <= 1) return -1;
         // same size at both ends = an S-offset: drawn as its diagonal (the chord), not outlet axis + stub
         // (2026-10-12, test room: an S-bend got a sideways bar); taps / eccentric reducers change size
@@ -1186,7 +1157,7 @@ public partial class DuctsToPluto
         double den = uu * vv - uv * uv;
         if (den < 1e-6) return null;
         double s = (uv * vw - vv * uw) / den, t = (uu * vw - uv * uw) / den;
-        double span = Math.Sqrt(Dist2(a.P, b.P));
+        double span = Math.Sqrt(DuctMath.Dist2(a.P, b.P));
         if (s <= 0 || t <= 0 || s > 3 * span || t > 3 * span) return null;
         double[] pa = { a.P[0] + s * u[0], a.P[1] + s * u[1], a.P[2] + s * u[2] }, pb = { b.P[0] + t * v[0], b.P[1] + t * v[1], b.P[2] + t * v[2] };
         return new[] { (pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2, (pa[2] + pb[2]) / 2 };
@@ -1195,7 +1166,7 @@ public partial class DuctsToPluto
     // Revit "Curve" connector: where a tap meets a duct's side (not an end of the part)
     // why a Revit element is not in the export (2026-10-15: a run-named element in the middle of a duct was missing):
     // the scope takes matched elements whose Navisworks row is in the room list, Revit-only ones by position
-    static string OutOfScopeReason(string id, Dictionary<string, RvEl> els, List<Row> rows, Dictionary<string, List<int>> navByGuid,
+    static string OutOfScopeReason(string id, Dictionary<string, RvEl> els, List<DuctRow> rows, Dictionary<string, List<int>> navByGuid,
         HashSet<string> roomGuids, Func<double[], double, bool> inBox, string room)
     {
         RvEl e; if (!els.TryGetValue(id, out e)) return "no such ElementId in elements.csv (the Revit export skipped it)";
@@ -1214,7 +1185,7 @@ public partial class DuctsToPluto
     // part's bbox + 0.1 ft), each with run name, room and whether its IfcGUID is shared by other rows or matched.
     static string GapReport(RvEl pa, RvEl pb, List<DuctSystem> systems, List<RvEl> scope, Dictionary<string, RvConn> conns, HashSet<RvEl> inScope,
         Dictionary<RvConn, RvConn> touch, HashSet<RvConn> nearSet, HashSet<RvConn> linked, Dictionary<RvConn, RvConn> attach,
-        List<Row> rows, List<int> inRoom, Dictionary<string, List<int>> navByGuid, HashSet<string> matchedGuids)
+        List<DuctRow> rows, List<int> inRoom, Dictionary<string, List<int>> navByGuid, HashSet<string> matchedGuids)
     {
         DuctSystem sa = systems.Find(s => s.Id == pa.Sys), sb = systems.Find(s => s.Id == pb.Sys);
         Func<RvEl, DuctSystem, string> sysText = (e, s) => s == null ? e.Id + " in no system" : string.Format(Inv, "{0} in '{1}' (C{2}, {3} parts)", e.Id, s.Name, s.Id, s.Els.Count);
@@ -1227,7 +1198,7 @@ public partial class DuctsToPluto
         RvConn ka = null, kb = null; double best = double.MaxValue;
         foreach (RvEl x in ea) foreach (RvConn p in x.Conns) if (free(p))
             foreach (RvEl y in eb) foreach (RvConn q in y.Conns) if (free(q))
-            { double d = Dist2(p.P, q.P); if (d < best) { best = d; ka = p; kb = q; } }
+            { double d = DuctMath.Dist2(p.P, q.P); if (d < best) { best = d; ka = p; kb = q; } }
         if (ka == null) return l1 + "\nNEW ends: no free end on " + (ea.Exists(x => x.Conns.Exists(k => free(k))) ? pb.Id : pa.Id) + "'s side\nNEW between: -";
         double dist = Math.Sqrt(best) * 12;
         double along = ((kb.P[0] - ka.P[0]) * ka.D[0] + (kb.P[1] - ka.P[1]) * ka.D[1] + (kb.P[2] - ka.P[2]) * ka.D[2]) * 12;
@@ -1257,7 +1228,7 @@ public partial class DuctsToPluto
         }
         foreach (int i in inRoom)
         {
-            Row r = rows[i]; if (!crosses(r.Min, r.Max)) continue;
+            DuctRow r = rows[i]; if (!crosses(r.Min, r.Max)) continue;
             if (r.Guid != "" && (r.Guid == ka.Owner.Match || r.Guid == kb.Owner.Match) && navByGuid[r.Guid].Count == 1) continue;   // the end parts' own rows
             int shared = r.Guid != "" && navByGuid.ContainsKey(r.Guid) ? navByGuid[r.Guid].Count : 0;
             between.Add(string.Format(Inv, "Navisworks #{0} {1} '{2}' run '{3}' room '{4}'{5}", r.NavisId.Length > 8 ? r.NavisId.Substring(0, 8) : r.NavisId, r.Cat, r.Name, r.RunName, r.Room,
@@ -1270,13 +1241,13 @@ public partial class DuctsToPluto
     // -Part with a Navisworks id (2026-10-17: a segment in the Navisworks box mesh was in neither Revit mesh nor
     // flags.csv): the row as read from ducts.csv, whether the room filter and the rooms' box take it, the Revit
     // elements sharing its IfcGUID or lying inside its bbox, and what the overlay makes of it. 3 NEW lines.
-    static string NavisPartReport(string p, List<int> hits, List<Row> rows, Dictionary<string, RvEl> els, List<RvEl> scope,
+    static string NavisPartReport(string p, List<int> hits, List<DuctRow> rows, Dictionary<string, RvEl> els, List<RvEl> scope,
         Dictionary<string, List<int>> navByGuid, HashSet<string> roomGuids, Func<double[], double, bool> inBox, string room)
     {
         if (hits.Count > 1)
             return string.Format(Inv, "NEW part {0}: {1} Navisworks rows match, give more of the NavisId: {2}", p, hits.Count,
                 string.Join(", ", hits.Take(5).Select(i => "#" + rows[i].NavisId + " " + rows[i].Cat).ToArray()));
-        Row r = rows[hits[0]];
+        DuctRow r = rows[hits[0]];
         double[] c = r.Min != null && r.Max != null ? new[] { (r.Min[0] + r.Max[0]) / 2, (r.Min[1] + r.Max[1]) / 2, (r.Min[2] + r.Max[2]) / 2 } : null;
         bool roomOk = room == null || InRooms(r.Room, room);
         string l1 = string.Format(Inv, "NEW part #{0}: {1} '{2}' {3}, RunName '{4}', room '{5}' ({6}), {7}{8}", r.NavisId, r.Cat, r.Name, r.SizeText, r.RunName, r.Room,
@@ -1313,7 +1284,7 @@ public partial class DuctsToPluto
     }
 
     // A Navisworks row's axis (feet): X1..Z2, else the bbox's long axis through its centre
-    static void NavAxis(Row r, out double[] p, out double[] q)
+    static void NavAxis(DuctRow r, out double[] p, out double[] q)
     {
         if (r.E1 != null) { p = r.E1; q = r.E2; return; }
         int ax = 0; for (int a = 1; a < 3; a++) if (r.Max[a] - r.Min[a] > r.Max[ax] - r.Min[ax]) ax = a;
@@ -1323,7 +1294,7 @@ public partial class DuctsToPluto
     }
 
     // Navisworks stated size: Width / Height / Diameter, else read from the Name
-    static bool NavSize(Row r, out string shape, out double w, out double h, out double d)
+    static bool NavSize(DuctRow r, out string shape, out double w, out double h, out double d)
     {
         w = !double.IsNaN(r.W) ? r.W : r.NameW; h = !double.IsNaN(r.H) ? r.H : r.NameH; d = !double.IsNaN(r.D) ? r.D : r.NameD;
         if (!double.IsNaN(w) && !double.IsNaN(h)) { shape = "rect"; d = double.NaN; return true; }
@@ -1341,7 +1312,6 @@ public partial class DuctsToPluto
         beams[nb] = Beam(nb, a, b, 0, nodes); labels[nb] = label; return nb++;
     }
 
-    static double Dist2(double[] p, double[] q) { double dx = p[0] - q[0], dy = p[1] - q[1], dz = p[2] - q[2]; return dx * dx + dy * dy + dz * dz; }
 
     // Rotation about Z + translation taking p onto q (least squares in XY, median in Z), refitted twice without
     // pairs whose residual exceeds max(0.5 ft, 3 x median). Returns { cos, sin, tx, ty, tz }; spread = RMS

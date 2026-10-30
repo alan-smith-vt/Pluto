@@ -45,7 +45,7 @@ public partial class DuctsToPluto
             if (ps.Count == 0 || !ps.All(ManualDrop.Contains)) continue;
             foreach (string p in ps) hit.Add(p);
             if (e.Flags.Contains("CUT_END")) { atCut++; continue; }
-            if (!e.Rigid) ft += Len(P[e.A], P[e.B]);
+            if (!e.Rigid) ft += DuctMath.Len(P[e.A], P[e.B]);
             clean.Remove(e); dropped++;
         }
         var unused = ManualDrop.Where(x => !hit.Contains(x)).ToList();

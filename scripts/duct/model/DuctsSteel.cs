@@ -58,7 +58,7 @@ public partial class DuctsToPluto
             var m = Beam(nb, jointNode[f.I], jointNode[f.J], s, nodes);
             m.LocalY = SteelGeom.ResolveLocalY(b, ref dummy); m.OffsetAy = oy; m.OffsetBy = oy; m.OffsetAz = oz; m.OffsetBz = oz;
             beams[nb] = m;
-            double L = Math.Sqrt(Dist2(sm.JointPos(f.I), sm.JointPos(f.J)));
+            double L = Math.Sqrt(DuctMath.Dist2(sm.JointPos(f.I), sm.JointPos(f.J)));
             labels[nb] = string.Format(Inv, "steel | {0} | {1} | {2:0.##} ft | {3} {4} {5} - {6} {7} {8}{9}", f.Name, name, L / 12,
                 sm.Joints[f.I - 1].Name, f.EndI, f.ReleaseI, sm.Joints[f.J - 1].Name, f.EndJ, f.ReleaseJ,
                 string.IsNullOrEmpty(b.MemberOid) ? "" : " | " + b.MemberOid);

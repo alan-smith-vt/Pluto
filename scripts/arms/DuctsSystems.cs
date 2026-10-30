@@ -36,7 +36,7 @@ public partial class DuctsToPluto
     static List<DuctSystem> AnalyzeSystems(List<RvEl> scope, Dictionary<string, RvConn> conns, HashSet<RvEl> inScope,
         Dictionary<RvConn, RvConn> touch, List<RvConn[]> nearPairs, List<RvEl[]> sidePairs,
         Dictionary<int, RawViewerWriter.BeamMember> beams, Dictionary<int, double[]> beamDim, Dictionary<int, Node> nodes,
-        double[] off, double scale, List<Row> rows, Func<RvEl, List<int>> rowsOf)
+        double[] off, double scale, List<DuctRow> rows, Func<RvEl, List<int>> rowsOf)
     {
         var parent = new Dictionary<RvEl, RvEl>();
         foreach (RvEl e in scope) parent[e] = e;
@@ -97,7 +97,7 @@ public partial class DuctsToPluto
                 double[] dim; if (!beamDim.TryGetValue(id, out dim)) continue;
                 RawViewerWriter.BeamMember m = beams[id];
                 double[] a = NodeFt(nodes[m.NodeA], off, scale), b = NodeFt(nodes[m.NodeB], off, scale);
-                double L = Math.Sqrt(Dist2(a, b)); if (L <= 1e-6) continue;
+                double L = Math.Sqrt(DuctMath.Dist2(a, b)); if (L <= 1e-6) continue;
                 var bx = new PartBox { Owner = e, A = a, L = L, Round = dim[0] == 1 };
                 bx.X = new[] { (b[0] - a[0]) / L, (b[1] - a[1]) / L, (b[2] - a[2]) / L };
                 double[] y = m.LocalY ?? new double[] { 0, 0, 1 };
@@ -276,7 +276,7 @@ public partial class DuctsToPluto
 
     // a part's system name: the first configured primary name (longest first) contained in its RunName or Revit
     // system name, ignoring case ("<SYS> 123", "A-x-<SYS>-DUCT-4" -> <SYS>); else SystemBase as before
-    static string SystemNameOf(RvEl e, List<Row> rows, Func<RvEl, List<int>> rowsOf)
+    static string SystemNameOf(RvEl e, List<DuctRow> rows, Func<RvEl, List<int>> rowsOf)
     {
         string rn = PartRunName(e, rows, rowsOf);
         foreach (string p in PrimarySystems.OrderByDescending(x => x.Length))
