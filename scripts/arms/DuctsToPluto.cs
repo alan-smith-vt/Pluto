@@ -63,6 +63,16 @@ public partial class DuctsToPluto
     const int FanDegree = 5;
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
+    // The settings of the export running now (DuctSettings.cs): set by the Export* entry points from their settings
+    // argument, back to the defaults when they return. Transitional (split stage 1): the pieces split out in stages
+    // 2-5 take the settings as an argument instead and this field goes.
+    static DuctSettings Cfg = new DuctSettings();
+    static Result With(DuctSettings settings, Func<Result> run)
+    {
+        Cfg = settings ?? new DuctSettings();
+        try { return run(); } finally { Cfg = new DuctSettings(); }
+    }
+
     const string Fab = "MEP Fabrication Ductwork", FabHangers = "MEP Fabrication Hangers";
 
     // The service field of a RunName ("A-<bldg>-<service>-DUCT-<n>" -> "<service>"), "" when it has no such field.
@@ -1668,6 +1678,18 @@ public partial class DuctsToPluto
     // Written as <out>_run and <out>_norun like the box mesh.
     public static Result ExportRevitMesh(string runDir, string outBase, string modelId, string lengthUnit)
     {
+        return ExportRevitMesh(runDir, outBase, modelId, lengthUnit, null);
+    }
+
+    // settings: the duct config (DuctSettings.cs, Export-DuctsViewer.ps1); null = defaults
+    public static Result ExportRevitMesh(string runDir, string outBase, string modelId, string lengthUnit, DuctSettings settings)
+    {
+        return With(settings, () => ExportRevitMeshCore(runDir, outBase, modelId, lengthUnit));
+    }
+
+    // runs with Cfg, set by With(...)
+    static Result ExportRevitMeshCore(string runDir, string outBase, string modelId, string lengthUnit)
+    {
         double[] T = null;
         foreach (string line in File.ReadAllLines(Path.Combine(runDir, "mesh-boxes.txt")))
         {
@@ -1725,7 +1747,6 @@ public partial class DuctsToPluto
     // sidecar; a part with no triangles is not written. Result = the run file; Note covers both.
     // Revit categories left out of the Revit mesh's _norun file (RevitMeshNoRunExclude in duct-config.psd1), exact
     // names, ignoring case
-    public static readonly HashSet<string> NoRunExclude = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
     static Result WriteMeshOverlays(List<KeyValuePair<int, float[]>> recs, List<Dictionary<string, string>> items, string runCol,
         string outBase, string modelId, string lengthUnit, string tag, MeshItemInfo info)
@@ -1737,7 +1758,7 @@ public partial class DuctsToPluto
             Dictionary<string, string> it = rec.Key >= 1 && rec.Key <= items.Count ? items[rec.Key - 1] : null;
             if (it != null && Get(it, runCol) != "") { withRun.Add(rec); continue; }
             string cat = it != null ? Get(it, "Category") : "";
-            if (tag == "revit" && NoRunExclude.Contains(cat)) { int c; excluded.TryGetValue(cat, out c); excluded[cat] = c + 1; continue; }
+            if (tag == "revit" && Cfg.NoRunExclude.Contains(cat)) { int c; excluded.TryGetValue(cat, out c); excluded[cat] = c + 1; continue; }
             noRun.Add(rec);
         }
         Result a = withRun.Count > 0 ? WriteMeshOverlay(withRun, items, outBase + "_run", modelId + "/run", lengthUnit, tag, info) : null;

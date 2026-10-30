@@ -14,11 +14,10 @@ using System.Linq;
 
 public partial class DuctsToPluto
 {
-    public static readonly HashSet<string> ManualDrop = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
     // Adds one list's parts to ManualDrop (several lists add up; the caller clears); returns the parts it read.
     // A cut-points CSV (Run-Sap -Points header) given here by mistake is refused rather than read as ids.
-    public static int ReadManualDrop(string path)
+    public static int ReadManualDrop(DuctSettings settings, string path)
     {
         int n = 0;
         foreach (string raw in File.ReadAllLines(path))
@@ -27,14 +26,14 @@ public partial class DuctsToPluto
             s = s.Trim(); if (s == "") continue;
             if (s.StartsWith("Name,Found", StringComparison.OrdinalIgnoreCase))
                 throw new Exception("DuctsToPluto: " + path + " is a cut points CSV (DuctCuts), not a drop list (DuctDrop)");
-            ManualDrop.Add(s); n++;
+            settings.ManualDrop.Add(s); n++;
         }
         return n;
     }
 
     static string ApplyManualDrop(List<CEdge> clean, Dictionary<int, double[]> P)
     {
-        if (ManualDrop.Count == 0) return "";
+        if (Cfg.ManualDrop.Count == 0) return "";
         Func<CEdge, List<string>> partsOf = e => e.Src.Count > 0 ? e.Src.Select(x => x.Id).ToList()
             : e.NavisId != "" ? new List<string> { "N:" + e.NavisId } : new List<string>();
         var hit = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -42,15 +41,15 @@ public partial class DuctsToPluto
         foreach (CEdge e in clean.ToList())
         {
             List<string> ps = partsOf(e);
-            if (ps.Count == 0 || !ps.All(ManualDrop.Contains)) continue;
+            if (ps.Count == 0 || !ps.All(Cfg.ManualDrop.Contains)) continue;
             foreach (string p in ps) hit.Add(p);
             if (e.Flags.Contains("CUT_END")) { atCut++; continue; }
             if (!e.Rigid) ft += DuctMath.Len(P[e.A], P[e.B]);
             clean.Remove(e); dropped++;
         }
-        var unused = ManualDrop.Where(x => !hit.Contains(x)).ToList();
+        var unused = Cfg.ManualDrop.Where(x => !hit.Contains(x)).ToList();
         return string.Format(Inv, "NEW manual drop (DuctDrop): {0} listed, {1} members ({2:0.#} ft) dropped, {3} kept because they end at a cut{4}",
-            ManualDrop.Count, dropped, ft, atCut,
+            Cfg.ManualDrop.Count, dropped, ft, atCut,
             unused.Count > 0 ? string.Format(Inv, "; {0} not in the clean model: {1}", unused.Count, string.Join(" ", unused.Take(10).ToArray()) + (unused.Count > 10 ? " ..." : "")) : "");
     }
 }

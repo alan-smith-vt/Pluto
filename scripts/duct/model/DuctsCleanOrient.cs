@@ -16,7 +16,6 @@ using System.Linq;
 // DuctRotateLargeVertical = $false in duct-config.psd1: flag only.
 public partial class DuctsToPluto
 {
-    public static bool RotateLargeVertical = true;
     const double OrientHorizDeg = 10, OrientTolIn = 1;
 
     static string ApplyOrientation(List<CEdge> clean, Dictionary<int, double[]> P)
@@ -45,7 +44,7 @@ public partial class DuctsToPluto
                 continue;
             }
             runs++;
-            if (!RotateLargeVertical) { list.Add(what + ": flagged only (DuctRotateLargeVertical off)"); continue; }
+            if (!Cfg.RotateLargeVertical) { list.Add(what + ": flagged only (DuctRotateLargeVertical off)"); continue; }
             foreach (CEdge e in run)
             {
                 double[] ax = DuctMath.Unit(DuctMath.Sub3(P[e.B], P[e.A]));
@@ -54,7 +53,7 @@ public partial class DuctsToPluto
             list.Add(what + ": rotated 90 deg about the centreline");
         }
         string head = string.Format(Inv, "orientation: {0} frame(s) with the larger side vertical (LARGE_SIDE_VERTICAL), {1} run(s), {2} frame(s) rotated{3}, conflicts {4} (ROTATION_CONFLICT)",
-            flagged, runs, rotated, RotateLargeVertical ? "" : " (rotation off)", conflicts);
+            flagged, runs, rotated, Cfg.RotateLargeVertical ? "" : " (rotation off)", conflicts);
         OrientNewLine = flagged + conflicts == 0 ? "" : string.Format(Inv, "NEW orientation: {0} frame(s) LARGE_SIDE_VERTICAL, {1} rotated in {2} run(s), {3} conflict(s)", flagged, rotated, runs, conflicts);
         return head + (list.Count > 0 ? "\n" + string.Join("\n", list.ToArray()) : "");
     }

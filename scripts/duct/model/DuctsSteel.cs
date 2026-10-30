@@ -13,8 +13,6 @@ using System.Linq;
 //   "Flag: OPEN_NEAR": warn glyph on the joint, open ends within NearIn of other steel (a probably missed connection)
 public partial class DuctsToPluto
 {
-    public static readonly List<SteelMember> Steel = new List<SteelMember>();
-    public static SteelModel.Settings SteelSettings = new SteelModel.Settings();
 
     // end group (SteelModel.EndGroup) -> glyph, tier, legend label
     static readonly string[][] SteelEndLooks = {

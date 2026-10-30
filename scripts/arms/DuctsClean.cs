@@ -243,7 +243,7 @@ public partial class DuctsToPluto
         string dropNote = ApplyManualDrop(clean, P);   // add-on, DuctsManualDrop.cs
         if (dropNote != "") cutNote += (cutNote != "" ? "\n" : "") + dropNote;
         string orientNote = ApplyOrientation(clean, P);   // DuctsCleanOrient.cs: before the supports (rotated depth)
-        SteelModel sm = Steel.Count > 0 ? SteelModel.Build(Steel, SteelSettings) : null;   // DuctsSteel.cs; split by supports from here on
+        SteelModel sm = Cfg.Steel.Count > 0 ? SteelModel.Build(Cfg.Steel, Cfg.SteelSettings) : null;   // DuctsSteel.cs; split by supports from here on
         SpanTotal = 0;
         SupportRun sr = sm != null ? ApplySupports(clean, P, sm, outBase, rows) : null;   // DuctsCleanSupports.cs: splits clean frames + steel
         SupportNewLine = sr != null ? SupportsNewLine(sr) + (sr.Hangers.NewLine != "" ? "\n" + sr.Hangers.NewLine : "") : "";
@@ -276,8 +276,6 @@ public partial class DuctsToPluto
 
     // Scope cut points (2026-10-22, the SAP reviewer's cut nodes read from the reviewed SAP model: Run-Sap.ps1
     // -Points -> cut-points.csv, DuctCuts in duct-config.psd1): global inches, the Navisworks frame frames.csv uses
-    public static readonly List<KeyValuePair<string, double[]>> CutPoints = new List<KeyValuePair<string, double[]>>();
-    public static double CutSnapIn = 6, KeepSnapIn = 48;   // keep points may be picked on a duct surface, far from the centreline
 
     // Each cut point snaps to a clean joint within CutSnapIn, else to a point on a prismatic duct edge (split there).
     // The model is then cut at those joints: per system the largest connected piece (duct length) is kept, and every
@@ -286,13 +284,13 @@ public partial class DuctsToPluto
     // largest one; a system with keep points keeps only its marked pieces (for cuts where the shorter side is the scope).
     static string ApplyCuts(List<CEdge> clean, Dictionary<int, double[]> P)
     {
-        if (CutPoints.Count == 0) return "";
-        double snap = CutSnapIn / 12;
+        if (Cfg.CutPoints.Count == 0) return "";
+        double snap = Cfg.CutSnapIn / 12;
         var cutNodes = new HashSet<int>(); var report = new List<string>(); var notFound = new List<string>(); var cutName = new Dictionary<int, string>();
-        var keepPts = CutPoints.Where(x => x.Key.StartsWith("KEEP", StringComparison.OrdinalIgnoreCase)).ToList();
-        int nCuts = CutPoints.Count - keepPts.Count;
+        var keepPts = Cfg.CutPoints.Where(x => x.Key.StartsWith("KEEP", StringComparison.OrdinalIgnoreCase)).ToList();
+        int nCuts = Cfg.CutPoints.Count - keepPts.Count;
         int nextNode = P.Keys.Count > 0 ? P.Keys.Max() + 1 : 1;
-        foreach (KeyValuePair<string, double[]> cp in CutPoints.Except(keepPts))
+        foreach (KeyValuePair<string, double[]> cp in Cfg.CutPoints.Except(keepPts))
         {
             double[] p = { cp.Value[0] / 12, cp.Value[1] / 12, cp.Value[2] / 12 };
             var used = new HashSet<int>(clean.SelectMany(x => new[] { x.A, x.B }));
@@ -344,7 +342,7 @@ public partial class DuctsToPluto
                 double d = DuctMath.Len(DuctMath.Lerp(P[ce.A], P[ce.B], Math.Max(0, Math.Min(1, t))), p);
                 if (d < bestD) { bestD = d; bestE = ce; }
             }
-            if (bestE == null || bestD > KeepSnapIn / 12) { notFound.Add(string.Format(Inv, "{0} (nearest element {1:0.#} in, limit {2:0.#} in)", kp.Key, bestD * 12, KeepSnapIn)); continue; }
+            if (bestE == null || bestD > Cfg.KeepSnapIn / 12) { notFound.Add(string.Format(Inv, "{0} (nearest element {1:0.#} in, limit {2:0.#} in)", kp.Key, bestD * 12, Cfg.KeepSnapIn)); continue; }
             int i = piece[bestE]; string s = sysOf(pieces[i]); HashSet<int> ks;
             if (!keep.TryGetValue(s, out ks)) { ks = new HashSet<int>(); keep[s] = ks; }
             ks.Add(i); byKeep.Add(i);
@@ -371,7 +369,7 @@ public partial class DuctsToPluto
         foreach (CEdge e in clean) if (cutNodes.Contains(e.A) || cutNodes.Contains(e.B)) { e.Flags.Add("CUT_END"); ends++; }
         return string.Format(Inv, "NEW cuts: {0} of {1} placed, {2} elements ({3:0.#} ft of duct) dropped beyond them, {4} kept elements end at a cut (CUT_END){5}\nNEW cut points: {6}\nNEW cut sides: {7}",
             nCuts - notFound.Count(x => !x.StartsWith("KEEP", StringComparison.OrdinalIgnoreCase)), nCuts, dropN, dropFt, ends,
-            notFound.Count > 0 ? "; NOT placed (no joint / duct within " + CutSnapIn.ToString("0.#", Inv) + " in): " + string.Join(", ", notFound.ToArray()) : "",
+            notFound.Count > 0 ? "; NOT placed (no joint / duct within " + Cfg.CutSnapIn.ToString("0.#", Inv) + " in): " + string.Join(", ", notFound.ToArray()) : "",
             string.Join("; ", report.ToArray()), string.Join("; ", sides.ToArray()));
     }
 

@@ -13,7 +13,6 @@ using System.Linq;
 //                            have at least one hanger
 public partial class DuctsToPluto
 {
-    public static double HangerMatchIn = 24;
     static List<int> HangerScope = new List<int>();                 // the room's Navisworks row indices (ExportRevit)
     static List<DuctRow> HangerRowsForView = new List<DuctRow>();           // rows, for the viewer labels
     static readonly Dictionary<int, List<string>> NavRowFlags = new Dictionary<int, List<string>>();   // row -> extra flags (flags.csv)
@@ -68,7 +67,7 @@ public partial class DuctsToPluto
                 for (int k = 0; k < run.Ds.Supports.Count; k++)
                 {
                     double d = DuctMath.Len(P[run.DuctJoint[k]], h.At) * 12;
-                    if (d <= HangerMatchIn && (double.IsNaN(h.Dist) || d < h.Dist)) { h.Dist = d; h.Support = k; }
+                    if (d <= Cfg.HangerMatchIn && (double.IsNaN(h.Dist) || d < h.Dist)) { h.Dist = d; h.Support = k; }
                 }
             if (h.Support < 0) { hr.NoSupport++; AddRowFlag(ri, "HANGER_NO_STEEL_SUPPORT"); }
             hr.Hits.Add(h);
@@ -80,7 +79,7 @@ public partial class DuctsToPluto
             {
                 DuctSupports.Support sp = run.Ds.Supports[k];
                 if (!withHangers.Contains(sp.System)) continue;
-                bool near = hr.Hits.Any(x => x.Edge >= 0 && DuctMath.Len(P[run.DuctJoint[k]], x.At) * 12 <= HangerMatchIn);
+                bool near = hr.Hits.Any(x => x.Edge >= 0 && DuctMath.Len(P[run.DuctJoint[k]], x.At) * 12 <= Cfg.HangerMatchIn);
                 if (!near) { sp.Flags.Add("SUPPORT_NO_HANGER"); hr.SupportsNoHanger++; }
             }
         }
@@ -89,11 +88,11 @@ public partial class DuctsToPluto
             n, n - hr.NoSupport - hr.OffDuct, hr.NoSupport, hr.OffDuct, hr.SupportsNoHanger);
         var lines = new List<string>();
         lines.Add(string.Format(Inv, "hangers (Navisworks, category *Hanger*): {0}, matched to a support within {1:0.#} in: {2}, no steel support {3}, off any duct {4}; supports without a hanger {5} (systems with hangers only)",
-            n, HangerMatchIn, n - hr.NoSupport - hr.OffDuct, hr.NoSupport, hr.OffDuct, hr.SupportsNoHanger));
+            n, Cfg.HangerMatchIn, n - hr.NoSupport - hr.OffDuct, hr.NoSupport, hr.OffDuct, hr.SupportsNoHanger));
         foreach (HangerHit h in hr.Hits)
             lines.Add(string.Format(Inv, "  #{0} {1}: {2}", rows[h.Row].NavisId, h.Edge < 0 ? "-" : h.System,
                 h.Edge < 0 ? "off any duct (HANGER_OFF_DUCT)"
-                : h.Support < 0 ? string.Format(Inv, "on F{0}, no support within {1:0.#} in (HANGER_NO_STEEL_SUPPORT)", h.Edge + 1, HangerMatchIn)
+                : h.Support < 0 ? string.Format(Inv, "on F{0}, no support within {1:0.#} in (HANGER_NO_STEEL_SUPPORT)", h.Edge + 1, Cfg.HangerMatchIn)
                 : string.Format(Inv, "on F{0}, support {1} at {2:0.#} in", h.Edge + 1, run.Ds.Supports[h.Support].Id, h.Dist)));
         hr.Note = n == 0 ? "hangers (Navisworks, category *Hanger*): none in the room" : string.Join("\n", lines.ToArray());
         return hr;

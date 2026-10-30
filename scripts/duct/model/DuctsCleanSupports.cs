@@ -15,7 +15,6 @@ using System.Text;
 // Settings from duct-config.psd1 (Export-DuctsViewer.ps1): DuctSupportGapIn, DuctSpanFt.
 public partial class DuctsToPluto
 {
-    public static DuctSupports.Settings SupportSettings = new DuctSupports.Settings();
 
     class SupportRun
     {
@@ -33,7 +32,7 @@ public partial class DuctsToPluto
 
     static SupportRun ApplySupports(List<CEdge> clean, Dictionary<int, double[]> P, SteelModel sm, string outBase, List<DuctRow> rows)
     {
-        var run = new SupportRun(); var ds = new DuctSupports(SupportSettings); run.Ds = ds;
+        var run = new SupportRun(); var ds = new DuctSupports(Cfg.Supports); run.Ds = ds;
         var ducts = DuctRecords(clean, P);
         var steel = new List<DuctSupports.Steel>(); var frames = new List<SteelModel.Frame>();
         if (sm != null)
@@ -274,7 +273,7 @@ public partial class DuctsToPluto
                         Label = string.Format(Inv, "{0} {1} {2:0.#} ft, {3} support(s)", s.Id, s.System, s.LengthIn / 12, s.Supports) });
             }
         FeaturesSidecar.Group g = sc.AddLookGroup("Flag: UNSUPPORTED_SPAN", null,
-            new FeaturesSidecar.Look { Glyph = "warn", Tier = "exception", Label = string.Format(Inv, "Unsupported spans > {0:0.#} ft", SupportSettings.SpanFt), Section = "Checks" },
+            new FeaturesSidecar.Look { Glyph = "warn", Tier = "exception", Label = string.Format(Inv, "Unsupported spans > {0:0.#} ft", Cfg.Supports.SpanFt), Section = "Checks" },
             anchors, new[] { "duct", "clean", "flag" }, "beams", flagged);
         g.StaadName = "FLAG_UNSUPPORTED_SPAN";
     }

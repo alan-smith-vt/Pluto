@@ -43,10 +43,22 @@ public partial class DuctsToPluto
 
     public static Result ExportRevit(string navisRun, string revitRun, string outBase, string modelId, string lengthUnit, string room)
     {
-        return ExportRevit(navisRun, revitRun, outBase, modelId, lengthUnit, room, null);
+        return ExportRevit(navisRun, revitRun, outBase, modelId, lengthUnit, room, null, null);
     }
 
     public static Result ExportRevit(string navisRun, string revitRun, string outBase, string modelId, string lengthUnit, string room, string part)
+    {
+        return ExportRevit(navisRun, revitRun, outBase, modelId, lengthUnit, room, part, null);
+    }
+
+    // settings: the duct config (DuctSettings.cs, Export-DuctsViewer.ps1); null = defaults
+    public static Result ExportRevit(string navisRun, string revitRun, string outBase, string modelId, string lengthUnit, string room, string part, DuctSettings settings)
+    {
+        return With(settings, () => ExportRevitCore(navisRun, revitRun, outBase, modelId, lengthUnit, room, part));
+    }
+
+    // runs with Cfg, set by With(...)
+    static Result ExportRevitCore(string navisRun, string revitRun, string outBase, string modelId, string lengthUnit, string room, string part)
     {
         double scale = LengthScale(lengthUnit);
         var rows = ReadRows(Path.Combine(navisRun, "ducts.csv"));
@@ -632,7 +644,7 @@ public partial class DuctsToPluto
             // Single loose parts go together in one group so the list stays short.
             var looseParts = new List<uint>();
             // primary systems configured: one group per name ("<name>", "<name> fragments", "other: <name>")
-            if (PrimarySystems.Count > 0)
+            if (Cfg.PrimarySystems.Count > 0)
             {
                 int gi = 0;
                 foreach (IGrouping<string, DuctSystem> byName in systems.GroupBy(g => g.Name).OrderBy(g => g.Key.StartsWith("other: ") ? 2 : g.Key.EndsWith(" fragments") ? 1 : 0).ThenBy(g => g.Key, StringComparer.Ordinal))
@@ -781,10 +793,9 @@ public partial class DuctsToPluto
     //                                     that run converts back to the Navisworks frame on its own
     // Both are overwritten by every -Revit -Room run. AddinDir: the duct config's AddinDir (Export-DuctsViewer sets it),
     // default the add-ins' own folder; a demo / test config points it at its own root.
-    public const string AddinDefaultDir = @"C:\Temp\hvac";
-    public static string AddinDir = AddinDefaultDir;
-    public static string NavisRoomBoxFile { get { return Path.Combine(AddinDir, @"box\room-boxes.txt"); } }
-    public static string RevitMeshBoxFile { get { return Path.Combine(AddinDir, @"revit\mesh-boxes.txt"); } }
+    public const string AddinDefaultDir = DuctSettings.AddinDefaultDir;
+    static string NavisRoomBoxFile { get { return Path.Combine(Cfg.AddinDir, @"box\room-boxes.txt"); } }
+    static string RevitMeshBoxFile { get { return Path.Combine(Cfg.AddinDir, @"revit\mesh-boxes.txt"); } }
     const double RoomBoxMarginFt = 1;
 
     static string WriteRoomBoxes(List<DuctRow> rows, string room, double[] T, string navisRun, string revitRun)
@@ -829,7 +840,7 @@ public partial class DuctsToPluto
         Directory.CreateDirectory(Path.GetDirectoryName(RevitMeshBoxFile));
         File.WriteAllLines(NavisRoomBoxFile, nav.ToArray(), new UTF8Encoding(false));
         File.WriteAllLines(RevitMeshBoxFile, rv.ToArray(), new UTF8Encoding(false));
-        bool notAddins = !string.Equals(Path.GetFullPath(AddinDir).TrimEnd('\\'), AddinDefaultDir, StringComparison.OrdinalIgnoreCase);
+        bool notAddins = !string.Equals(Path.GetFullPath(Cfg.AddinDir).TrimEnd('\\'), AddinDefaultDir, StringComparison.OrdinalIgnoreCase);
         return string.Format(Inv, "room boxes: {0} written to {1} (Pluto Box) and {2} (Revit Pluto Mesh){3}{4}", nBox, NavisRoomBoxFile, RevitMeshBoxFile,
             missing.Count > 0 ? "; no rows for " + string.Join(", ", missing.ToArray()) : "",
             notAddins ? " (add-ins read " + AddinDefaultDir + ": not updated)" : "");
