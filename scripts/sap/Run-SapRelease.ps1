@@ -1,4 +1,4 @@
-# Expansion-joint release models over the SAP2000 OAPI. Windows PowerShell 5.1. Called by duct\Run-ReleaseCheck.ps1.
+# Expansion-joint release models over the SAP2000 OAPI. Windows PowerShell 5.1. Called by duct\Run-JointReleaseCheck.ps1 and duct\Run-JointOptimizer.ps1.
 #   .\Run-SapRelease.ps1 -LinkModel   -Candidates "123,456" -SavePath C:\Temp\hvac\link.sdb   -OutDir C:\Temp\hvac\link   -Group "DUCT_ALL" [-Factor 1000]
 #   .\Run-SapRelease.ps1 -DirectModel -Candidates "123,456" -SavePath C:\Temp\hvac\direct.sdb -OutDir C:\Temp\hvac\direct -Group "DUCT_ALL"
 #   .\Run-SapRelease.ps1 -TestModel -SavePath C:\Temp\hvac\test.sdb          (builds and runs the synthetic duct; SAP 26 here)

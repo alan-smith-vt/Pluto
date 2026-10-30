@@ -1,8 +1,8 @@
-# Expansion-joint optimizer, offline steps (HVAC). Windows PowerShell 5.1, no SAP. Called by Run-Optimizer.ps1.
-#   .\Run-DuctOptimize.ps1 -Select   -ConnectedDir ...\connected -Spec auto|"12,34"|list.txt [-MaxCandidates 20] -OutDir ...\opt
-#   .\Run-DuctOptimize.ps1 -Optimize -LinkDir ...\link -TablesDir ...\tables -OutDir ...\opt -Vectors "..." -Dead "1 DEAD" -Steel Steel_Loading -Seismic "a,b,c"
+# Expansion-joint optimizer, offline steps (HVAC). Windows PowerShell 5.1, no SAP. Called by Run-JointOptimizer.ps1.
+#   .\steps\Optimize-Joints.ps1 -Select   -ConnectedDir ...\connected -Spec auto|"12,34"|list.txt [-MaxCandidates 20] -OutDir ...\opt
+#   .\steps\Optimize-Joints.ps1 -Optimize -LinkDir ...\link -TablesDir ...\tables -OutDir ...\opt -Vectors "..." -Dead "1 DEAD" -Steel Steel_Loading -Seismic "a,b,c"
 #                          [-ConnectedDir ...\connected] [-MaxJoints 10] [-OnePerSpan false] [-Swap false] [-Removal false] [-MaxEvaluations 0] [-SingularPivot 1e-8] [-EndsOnly] [-ComboLS C] [-Limit 1.0]
-#   .\Run-DuctOptimize.ps1 -Report   -OutDir ...\opt -Title "..." [-Facts "a|b"] [-ConnectedDir ...] [-DcrConnected dir] [-DcrBase dir] [-DcrFinal dir] [-DcrDirect dir] [-Limit 1.0]
+#   .\steps\Optimize-Joints.ps1 -Report   -OutDir ...\opt -Title "..." [-Facts "a|b"] [-ConnectedDir ...] [-DcrConnected dir] [-DcrBase dir] [-DcrFinal dir] [-DcrDirect dir] [-Limit 1.0]
 # -Select writes OutDir\candidates-selected.tsv + selected.txt. -Optimize writes evaluations.tsv, steps.tsv, chosen.txt / chosen.tsv,
 # candidates-used.tsv, envelope-base.tsv, envelope-final.tsv, optimize.txt. -Report writes OutDir\optimizer-report.html.
 param(
@@ -36,7 +36,8 @@ function Split-List([string]$s) { if (-not $s) { return @() }; return @($s -spli
 function IsOn([string]$s) { return $s -match "^(1|true|yes)$" }
 function Full([string]$p) { if ($p) { return [IO.Path]::GetFullPath($p) } else { return $null } }
 if (-not ($Select -or $Optimize -or $Report)) { throw "Pass -Select, -Optimize or -Report." }
-Add-Type -Path (Join-Path $PSScriptRoot "DuctDcr.cs"), (Join-Path $PSScriptRoot "DuctRelease.cs"), (Join-Path $PSScriptRoot "DuctReport.cs"), (Join-Path $PSScriptRoot "DuctOptimize.cs"), (Join-Path $PSScriptRoot "DuctOptReport.cs")
+$duct = Split-Path $PSScriptRoot   # scripts\duct: the C# sources and tables of the step
+Add-Type -Path (Join-Path $duct "DuctDcr.cs"), (Join-Path $duct "DuctRelease.cs"), (Join-Path $duct "DuctReport.cs"), (Join-Path $duct "DuctOptimize.cs"), (Join-Path $duct "DuctOptReport.cs")
 $null = New-Item -ItemType Directory -Force $OutDir
 $OutDir = (Resolve-Path $OutDir).Path
 
@@ -49,7 +50,7 @@ if ($Optimize) {
     $vec = Split-List $Vectors; $seis = Split-List $Seismic
     if ($vec.Count -eq 0) { throw "-Vectors is required" }
     Write-Host "reading $LinkDir ..."
-    $opt = [DuctOptimize]::Load((Resolve-Path $LinkDir).Path, (Full $ConnectedDir), (Resolve-Path $TablesDir).Path, (Join-Path $PSScriptRoot "duct-materials.csv"),
+    $opt = [DuctOptimize]::Load((Resolve-Path $LinkDir).Path, (Full $ConnectedDir), (Resolve-Path $TablesDir).Path, (Join-Path $duct "duct-materials.csv"),
         [string[]]$vec, $Dead, $Steel, [string[]]$seis, [bool]$EndsOnly, $ComboLS, $Limit)
     $opt.SingularPivot = $SingularPivot
     Write-Host $opt.Info.ToString()

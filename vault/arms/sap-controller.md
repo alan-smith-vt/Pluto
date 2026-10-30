@@ -78,6 +78,6 @@ Supports are rigid frames (`TAP_STUB`), like the duct tap stubs, not link object
 - `offset_study.py --run` (beam): the CSV is identical apart from 1e-15 run-to-run noise in one row.
 - Axis probe as recorded 2026-09-14.
 - Survey OK.
-- Duct `Run-ReleaseCheck.ps1 -TestModel`: see the handoff.
+- Duct `Run-JointReleaseCheck.ps1 -TestModel`: see the handoff.
 
 Not yet run on SAP 22: the first production run of any runner is that check.

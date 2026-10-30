@@ -1,6 +1,6 @@
 # Offline expansion-joint release (Woodbury) from a link-model export, and the HTML report. Windows PowerShell 5.1, no SAP.
-#   .\Run-DuctRelease.ps1 -Release -LinkDir ...\link -OutDir ...\released -Dead "1 DEAD" -Steel Steel_Loading -Seismic "3 Seismic X,4 Seismic Z,5 Seismic Y - vert" -Combo18 "18 BLC 7B" -Vectors "1 DEAD,Steel_Loading,...,19 BLC 7C,20 BLC 7D" [-Candidates 12,34] [-ConnectedDir ...\connected] [-DirectDir ...\direct] [-CheckCombos "1 DEAD,18 BLC 7B,19 BLC 7C,20 BLC 7D"] [-Tolerance 1e-4]
-#   .\Run-DuctRelease.ps1 -Report -OutDir ...\released -Title "..." [-DcrConnected ...\dcr-connected] [-DcrReleased ...] [-DcrDirect ...] [-Limit 1.0] [-Facts "a|b|c"]
+#   .\steps\Release-Joints.ps1 -Release -LinkDir ...\link -OutDir ...\released -Dead "1 DEAD" -Steel Steel_Loading -Seismic "3 Seismic X,4 Seismic Z,5 Seismic Y - vert" -Combo18 "18 BLC 7B" -Vectors "1 DEAD,Steel_Loading,...,19 BLC 7C,20 BLC 7D" [-Candidates 12,34] [-ConnectedDir ...\connected] [-DirectDir ...\direct] [-CheckCombos "1 DEAD,18 BLC 7B,19 BLC 7C,20 BLC 7D"] [-Tolerance 1e-4]
+#   .\steps\Release-Joints.ps1 -Report -OutDir ...\released -Title "..." [-DcrConnected ...\dcr-connected] [-DcrReleased ...] [-DcrDirect ...] [-Limit 1.0] [-Facts "a|b|c"]
 # -Release writes OutDir\forces.tsv (corrected vectors + rebuilt combo 18), release.txt, compare-*.txt, and compare.bin (for -Report).
 param(
     [switch]$Release,
@@ -22,7 +22,8 @@ param(
 )
 $ErrorActionPreference = "Stop"
 function Split-List([string]$s) { if (-not $s) { return @() }; return @($s -split "," | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
-Add-Type -Path (Join-Path $PSScriptRoot "DuctRelease.cs"), (Join-Path $PSScriptRoot "DuctReport.cs")
+$duct = Split-Path $PSScriptRoot   # scripts\duct: the C# sources and tables of the step
+Add-Type -Path (Join-Path $duct "DuctRelease.cs"), (Join-Path $duct "DuctReport.cs")
 $null = New-Item -ItemType Directory -Force $OutDir
 $OutDir = (Resolve-Path $OutDir).Path
 
