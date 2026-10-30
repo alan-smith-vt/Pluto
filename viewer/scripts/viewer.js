@@ -2313,8 +2313,19 @@ drawLegend();
 updateViewCaption();
 
 // URL-driven load: index.html?bin=<url>[&features=<url>] (same-origin fetch;
-// run_sap.py serves the repo root and opens this). Falls back to the demo.
-(function () {
+// run_sap.py serves the repo root and opens this). Falls back to the demo when
+// the MODEL fails; a features failure keeps the model and says so.
+// Runs once every script has executed: started from here, a cached .bin could
+// finish before features.js was parsed and the features were skipped without a
+// word (2026-10-30).
+function featuresUrlFailed(fUrl, reason) {
+    var msg = 'Features not loaded: ' + reason + ' (' + fUrl + ')';
+    log('⚠ ' + msg);
+    if (window.console) console.error('[viewer] ' + msg);
+    var hint = document.getElementById('featName');
+    if (hint) { hint.textContent = '⚠ ' + msg; hint.style.color = '#ff4d6d'; }
+}
+function urlLoad() {
     var q = new URLSearchParams(window.location.search);
     var binUrl = q.get('bin');
     if (!binUrl) { loadDemo(); return; }
@@ -2327,12 +2338,17 @@ updateViewCaption();
         return loadModels([{ file: blob, name: trimExt(base(binUrl)) }]);
     }).then(function () {
         var fUrl = q.get('features');
-        if (!fUrl || !window.FEAFeatures) return;
+        if (!fUrl) return;
+        if (!window.FEAFeatures) { featuresUrlFailed(fUrl, 'the features module is not loaded'); return; }
         return fetch(fUrl).then(function (r) {
-            if (!r.ok) throw new Error(r.status + ' ' + r.statusText + ' for ' + fUrl);
+            if (!r.ok) throw new Error(r.status + ' ' + r.statusText);
             return r.blob();
         }).then(function (blob) {
             return FEAFeatures.loadFile(new File([blob], base(fUrl), { type: 'application/json' }));
+        }).then(function () {
+            if (!FEAFeatures.fileName()) featuresUrlFailed(fUrl, 'not a valid pluto-features file');
+        }).catch(function (err) {
+            featuresUrlFailed(fUrl, err.message);
         });
     }).then(async function () {
         // overlays: &ov=<bin url>[,<features url>] (repeatable)
@@ -2348,4 +2364,6 @@ updateViewCaption();
         log('URL load failed: ' + err.message);
         loadDemo();
     });
-})();
+}
+if (document.readyState === 'complete') urlLoad();
+else window.addEventListener('load', urlLoad);
