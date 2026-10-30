@@ -8,6 +8,7 @@ NEW fit 0.01 ft median (90 pairs 1:1, rot 30.004 deg, scale check 1)
 NEW room: Navisworks 108 rows (74 fab), Revit 106 el (74 fab), Navisworks without Revit 4 (1 fab), Revit only 2 (1 fab), category differs 0, Revit only located in a Navisworks-only part 1 (Navisworks parts 1)
 NEW joints: connected 100 touching 0 near 2 side 0 outside 0 open 17
 NEW supports: 38 (guide 38), steel through a duct 0; unsupported spans > 10 ft: 9 spans (25 frames): US1 SYSC 44.3 ft, US2 SYSA 21.5 ft, US3 SYSA 20 ft, US4 SYSB 20 ft, US5 SYSA 18.3 ft, US6 SYSA 13 ft, US7 SYSB 12.5 ft, US8 SYSA 12 ft ...
+NEW floating: 5 pieces (5 frames) with no support, left out of SAP (FLOATING): other: EXH 12 ft (F74), SYSA fragments 8 ft (F7), navisworks-only 7 ft (F18), navisworks-only 7 ft (F19), navisworks-only 7 ft (F20)
 NEW hangers: 3 Navisworks hangers, matched 0, no steel support 3 (HANGER_NO_STEEL_SUPPORT), off any duct 0 (HANGER_OFF_DUCT); supports without a hanger 13 (SUPPORT_NO_HANGER)
 NEW orientation: 7 frame(s) LARGE_SIDE_VERTICAL, 8 rotated in 5 run(s), 1 conflict(s)
 [done] <T>s. Read <ROOT>\out\revit.match.txt first.

@@ -246,7 +246,7 @@ public partial class DuctsToPluto
         SteelModel sm = Cfg.Steel.Count > 0 ? SteelModel.Build(Cfg.Steel, Cfg.SteelSettings) : null;   // DuctsSteel.cs; split by supports from here on
         SpanTotal = 0;
         SupportRun sr = sm != null ? ApplySupports(clean, P, sm, outBase, rows) : null;   // DuctsCleanSupports.cs: splits clean frames + steel
-        SupportNewLine = sr != null ? SupportsNewLine(sr) + (sr.Hangers.NewLine != "" ? "\n" + sr.Hangers.NewLine : "") : "";
+        SupportNewLine = sr != null ? SupportsNewLine(sr) + (sr.FloatNewLine != "" ? "\n" + sr.FloatNewLine : "") + (sr.Hangers.NewLine != "" ? "\n" + sr.Hangers.NewLine : "") : "";
 
         // checks: length, deviation of the original connectors from the clean centreline
         double cleanLen = clean.Where(x => !x.Rigid && x.Source != "navisworks-only").Sum(x => DuctMath.Len(P[x.A], P[x.B]));
@@ -477,6 +477,7 @@ public partial class DuctsToPluto
         AddSteelGroups(sc, sv);
         AddSupportGroups(sc, pv);
         AddSpanGroup(sc, sr, clean, P, beamOf, gSpan);
+        AddFloatingGroup(sc, sr, clean, P, beamOf);   // DuctsCleanSupports.cs: stability rule 1
         AddHangerGroups(sc, sr != null ? sr.Hangers : null, sr, clean, beamOf, HangerRowsForView, pv);   // DuctsCleanHangers.cs   // DuctsCleanSupports.cs: warn glyph per span
         File.WriteAllText(outBase + ".features.json", sc.ToJson(), new UTF8Encoding(false));
     }
