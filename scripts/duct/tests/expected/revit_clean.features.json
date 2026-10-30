@@ -1,0 +1,15 @@
+{
+  "format": "pluto-features",
+  "version": 1,
+  "model": {"modelId": "hvac/ducts/20261030-120000/revit/clean", "geometryHash": "sha256:792b31731a59610450abc572a9e173ae296f7a7d64fa90261b5bab68df85f482", "units": {"length": "in", "worldOffset": "13080 6192 1392"}},
+  "groups": {"version": 1, "items": [
+    {"id": "<ID>", "name": "Clean: SYSA", "color": "#4f8cff", "tags": ["duct", "clean", "system"], "members": [{"domain": "beams", "ids": [1,2,3,4,14,15,16,17,18,19,29]}]},
+    {"id": "<ID>", "name": "Clean: SYSA fragments", "color": "#879dc5", "tags": ["duct", "clean", "system"], "members": [{"domain": "beams", "ids": [5]}]},
+    {"id": "<ID>", "name": "Clean: SYSB", "color": "#ff8a3d", "tags": ["duct", "clean", "system"], "members": [{"domain": "beams", "ids": [6,7,8,20,21,22,23]}]},
+    {"id": "<ID>", "name": "Clean: SYSC", "color": "#b07cff", "tags": ["duct", "clean", "system"], "members": [{"domain": "beams", "ids": [9,10,24,25,26,27]}]},
+    {"id": "<ID>", "name": "Clean: navisworks-only", "color": "#8ae04f", "hidden": true, "invisible": true, "tags": ["duct", "clean", "system"], "members": [{"domain": "beams", "ids": [11,12,13]}]},
+    {"id": "<ID>", "name": "Clean: other: EXH", "color": "#ffd23f", "hidden": true, "invisible": true, "tags": ["duct", "clean", "system"], "members": [{"domain": "beams", "ids": [28]}]},
+    {"id": "<ID>", "name": "Clean: rigid links", "color": "#ff3b3b", "hidden": true, "tags": ["duct", "clean", "link"], "export": {"staadName": "RIGID"}, "members": [{"domain": "beams", "ids": [1,3,7,10]}]},
+    {"id": "<ID>", "name": "Clean: cut ends", "color": "#ffffff", "hidden": true, "tags": ["duct", "clean", "cut"], "export": {"staadName": "FLAG_CUT_END"}, "members": [{"domain": "beams", "ids": [29]}]}
+  ]}
+}

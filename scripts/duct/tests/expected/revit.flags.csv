@@ -1,0 +1,26 @@
+Source,RevitElementId,NavisId,RevitIfcGUID,NavisIfcGUID,RevitCategory,RevitFab,NavisCategory,Match,RevitSize,NavisSize,Flags,Detail
+Revit,400001,4a23d5962217beaddbc496cb8e81973e,2Jo69Ck7R4Btr8UBs7FS7o,2Jo69Ck7R4Btr8UBs7FS7o,MEP Fabrication Ductwork,1,MEP Fabrication Ductwork,guid,"74""x28""",,OPEN_END,
+Revit,400002,babced2057ee05cde00902c77ebff206,3IFdNDOlC87Q$sexwkcVNV,3IFdNDOlC87Q$sexwkcVNV,MEP Fabrication Ductwork,1,MEP Fabrication Ductwork,guid,"74""x28""",,SPLIT,3 Navisworks : 3 Revit
+Revit,400003,ae658f33fe3b890b93f448b3a5aa3c81,3IFdNDOlC87Q$sexwkcVNV,3IFdNDOlC87Q$sexwkcVNV,MEP Fabrication Ductwork,1,MEP Fabrication Ductwork,guid,"74""x28""",,SPLIT,3 Navisworks : 3 Revit
+Revit,400004,8cdb305fdd2e16096e36aab0d1bc52d9,3IFdNDOlC87Q$sexwkcVNV,3IFdNDOlC87Q$sexwkcVNV,MEP Fabrication Ductwork,1,MEP Fabrication Ductwork,guid,"74""x28""",,SPLIT,3 Navisworks : 3 Revit
+Revit,400008,efe09f07cefe2a1f727d83495822cb77,0cBXkLjSgSOUpTP$j33ZyX,2kASDTyPhQz0ziAFnPzMtg,MEP Fabrication Ductwork,1,MEP Fabrication Ductwork,position,"74""x28""",,GUID_MISMATCH,Navisworks GUID 2kASDTyPhQz0ziAFnPzMtg
+Revit,400013,e53169606ce193c22eefa279b02e3d8d,32ngb8ETDAXY5NYGsXpJ$f,32ngb8ETDAXY5NYGsXpJ$f,MEP Fabrication Ductwork,1,MEP Fabrication Ductwork,guid,"74""x28""-60""x24""",,SIZE_DIFFERS,Revit 60x24 vs mesh rings 74x28
+Revit,400022,5f93d180c5ef5cfb3099f27150cb407a,2oFP1bWl8on9ksZ6ZD6aJV,2oFP1bWl8on9ksZ6ZD6aJV,MEP Fabrication Ductwork,1,MEP Fabrication Ductwork,guid,"60""x24""",,OPEN_END,
+Revit,400026,f18bde0e86417b604ce3b0cc1202952f,09oxvVDSJJDwA50GT4cGWt,09oxvVDSJJDwA50GT4cGWt,MEP Fabrication Ductwork,1,MEP Fabrication Ductwork,guid,"24""x12""",,OPEN_END,
+Revit,400029,54ea2061fc27d6835fb6d625d6d106fb,0Io6R3Ir67NoveEALgONx4,0Io6R3Ir67NoveEALgONx4,MEP Fabrication Ductwork,1,MEP Fabrication Ductwork,guid,"14""ø",,RUNNAME_DEVIATION SYSTEM_CHANGE SYSTEM_NAME_CONFLICT,RunName A-B1-SYSB-DUCT-3 in run of A-B1-SYSA-DUCT-1; system SYSB Supply in run of SYSA Supply; own name SYSB in system SYSA
+Revit,400031,773afe02f4ef6142b72fac4a79a5fd62,1p5m4x87WO8hkYg5XeZc08,1p5m4x87WO8hkYg5XeZc08,MEP Fabrication Ductwork,1,MEP Fabrication Ductwork,guid,"14""ø",,OPEN_END,
+Revit,400032,faf20ac0292322d35364e64d8b6bfeae,3Wt$G$N1cJUfewkAPoKVq8,3Wt$G$N1cJUfewkAPoKVq8,MEP Fabrication Ductwork,1,MEP Fabrication Ductwork,guid,"30""x18""",,OPEN_END,
+Revit,400033,3ece9f2c2f8c6c083f5783ea707c5f3d,3D9XAQCr$vMTHrwUFbbZYl,3D9XAQCr$vMTHrwUFbbZYl,Ducts,0,Ducts,guid,"48""x24""",48x24,OPEN_END,
+Revit,400036,,38qCoJBKoYqadr6djrr2kP,,Duct Accessories,0,,none,"48""x24""",,REVIT_ONLY,
+Revit,400055,f5fa5d74cd2e4676fe85dfb1380ab1d7,3QNoFj7WZmp719rrjXDScp,3QNoFj7WZmp719rrjXDScp,Duct Fittings,0,Duct Fittings,guid,"48""x24""",48x24,SIZE_DIFFERS OPEN_END,Revit 48x24 vs mesh rings 50x26 / Revit 48x24 vs mesh rings 50x26
+Revit,400057,2f87a4293bcfecf9daab2302248a1edf,2Vcfz_sAkJcn7AfHi11Q9b,2Vcfz_sAkJcn7AfHi11Q9b,Ducts,0,Ducts,guid,"12""ø","12""ø",OPEN_END,
+Revit,400058,7f8870a93f1efd5b7dca9202b34ed4fa,3iJQpLBcP$RAuEFXrTHy$7,3iJQpLBcP$RAuEFXrTHy$7,MEP Fabrication Ductwork,1,MEP Fabrication Ductwork,guid,"24""ø",,OPEN_END,
+Revit,400070,b79c2b6377c82d55033aacd6e4653d35,37CIe0PcuDyflWnFlzmLuU,37CIe0PcuDyflWnFlzmLuU,MEP Fabrication Ductwork,1,MEP Fabrication Ductwork,guid,"24""ø",,NEAR_GAP,
+Revit,400071,250bc6e7e3aa471c8da9ec93738d7ccc,14KS9lHvCn29vhfTzEkIgS,14KS9lHvCn29vhfTzEkIgS,MEP Fabrication Ductwork,1,MEP Fabrication Ductwork,guid,"24""ø",,NEAR_GAP,
+Revit,400075,054bcbcb22662de7898e8ddacdf3da53,3HYVNk4Kl0jv9FjVfm7bD$,3HYVNk4Kl0jv9FjVfm7bD$,MEP Fabrication Ductwork,1,MEP Fabrication Ductwork,guid,"24""ø-18""x36""",,SIZE_DIFFERS,Revit 24 dia vs mesh rings 36x24 / Revit 18x36 vs mesh rings 36x24
+Revit,400081,d239bf0b46d8ec2ed9991d0c9c5a8a4f,2_YaRb72K8iu7nujDSJrhj,2_YaRb72K8iu7nujDSJrhj,MEP Fabrication Ductwork,1,MEP Fabrication Ductwork,guid,"18""x36""",,OPEN_END,
+Revit,400082,01bb277e526e2f0ba5f08356626ea6b3,0yYGqD0qF$oJrZEmvwajbj,0yYGqD0qF$oJrZEmvwajbj,MEP Fabrication Ductwork,1,MEP Fabrication Ductwork,guid,"10""ø",,OPEN_END,
+Revit,400083,ff92655e9eb7ce5b89db1c3f4ffaaa98,3mucNcItmTBgfVfQs136W$,3mucNcItmTBgfVfQs136W$,MEP Fabrication Ductwork,1,MEP Fabrication Ductwork,guid,"10""ø",,OPEN_END,
+Navisworks,,d0dde8e0bf187fee87b72d51b10b43a1,,3tnxj5iv18TCqlpJOr_puh,,,MEP Fabrication Hangers,none,,,NAVIS_ONLY,Rod Hanger; SAP frame
+Navisworks,,c9a27dd402bf72176952aa64b115d13b,,0Lkek9dMEbhrKbQOqN7Dj5,,,MEP Fabrication Hangers,none,,,NAVIS_ONLY,Rod Hanger; SAP frame
+Navisworks,,7d8c9a1885c23dcff2a565ea2ba83bac,,0d0coC13PM$YIPqFIKD3C9,,,MEP Fabrication Hangers,none,,,NAVIS_ONLY,Rod Hanger; SAP frame

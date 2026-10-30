@@ -1,0 +1,8 @@
+rooms from duct-config.psd1: 3 codes
+cut points: 1 from <ROOT>\cuts\cuts.csv
+manual drop: 3 parts from <ROOT>\cuts\drop.txt
+primary systems: SYSA, SYSB, SYSC
+NEW fit 0.01 ft median (74 pairs 1:1, rot 30.006 deg, scale check 1)
+NEW room: Navisworks 85 rows (58 fab), Revit 83 el (58 fab), Navisworks without Revit 4 (1 fab), Revit only 2 (1 fab), category differs 0, Revit only located in a Navisworks-only part 1 (Navisworks parts 1)
+NEW joints: connected 77 touching 0 near 2 side 0 outside 0 open 13
+[done] <T>s. In the viewer: Add overlay... -> <ROOT>\out\revit.bin
