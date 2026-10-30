@@ -90,4 +90,12 @@ assert(gl[5].hidden === true, 'look group with hidden: true stays hidden');
 assert(gl[3].count === 1 && gl[3].painted === 0, 'look group still resolves its members (selection), paints none');
 assert(Array.from(res.beam).join() === '0,0', 'plain group paints as before');
 
+// ---- context groups without a colour paint neutral grey -----------------------
+FEAFeatures.setEnvelope({ format: 'pluto-features', version: 1, model: { geometryHash: 'h' }, groups: { version: 1, items: [
+  { name: 'Bg', tags: ['context'], members: [{ domain: 'beams', ids: [12] }], hidden: false },
+  { name: 'Plain', members: [{ domain: 'beams', ids: [13] }], hidden: false } ] } }, 't.features.json');
+const g2 = FEAFeatures._groupList();
+assert(g2[0].rgb.join() === '139,145,156', 'context group without colour gets the neutral grey');
+assert(g2[1].rgb.join() !== '139,145,156', 'plain group without colour keeps the auto palette');
+
 if (fails) { console.error(fails + ' failure(s)'); process.exit(1); } else console.log('all passed');

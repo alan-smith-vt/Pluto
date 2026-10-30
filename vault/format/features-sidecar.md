@@ -147,7 +147,7 @@ Encoding rule: **colour = identity of one chosen dimension, shape = meaning, wor
   - `label` (optional): the tooltip text after the glyph label.
   - With no `anchors`, there is one glyph per member (centroid / node). Ids not in the model are counted in the legend tooltip, not drawn.
 - **`hidden: true`** hides a look group's glyphs. A look group without the flag starts **shown**: it paints nothing, so there is no precedence to opt into.
-- Tag background groups `context` and give them one neutral colour (e.g. steel sections `#8b919c`).
+- Tag background groups `context`. Without a `color` they paint the neutral grey `#8b919c` instead of a palette hue.
 - **Viewer:**
   - one `THREE.Points` per model over a canvas glyph atlas, at a constant pixel size;
   - a hover tooltip next to the cursor (glyph + label · anchor label);

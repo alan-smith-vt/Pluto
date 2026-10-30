@@ -255,7 +255,7 @@ var FEAFeatures = (function () {
 
         var rgb = [];
         items.forEach(function (g, gi) {
-            var color = g.color ? hexToRgb(g.color) : autoColor(gi);
+            var color = g.color ? hexToRgb(g.color) : isContext(g) ? CONTEXT_RGB : autoColor(gi);
             rgb.push(color);
             var count = 0, nodeCount = 0, nodeIdx = [];
             var hidden = groupHidden(g), invisible = groupInvisible(g);
@@ -463,6 +463,10 @@ var FEAFeatures = (function () {
     // Overlays (defaultShown): absent = on, so an exporter's groups paint as they did before stage 2.
     // Look groups (glyphs) show unless the item says `hidden: true`: they mark
     // things and paint nothing, so there is no precedence to opt into.
+    // Context groups (tag `context`) without a colour paint one neutral grey,
+    // so background never borrows a palette hue.
+    var CONTEXT_RGB = [0x8b, 0x91, 0x9c];
+    function isContext(g) { return Array.isArray(g.tags) && g.tags.indexOf('context') >= 0; }
     function isLookGroup(g) { return !!(g && g.look && typeof g.look === 'object'); }
     function groupHidden(g) {
         if (isLookGroup(g) && g.hidden === undefined) return false;
