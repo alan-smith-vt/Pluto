@@ -803,13 +803,15 @@ public partial class DuctsToPluto
     }
 
     // Room boxes for the two mesh exports (2026-10-13): per room code, the bbox of its Navisworks rows + RoomBoxMarginFt.
-    //   C:\Temp\hvac\box\room-boxes.txt     Navisworks document units (as ducts.csv): Pluto Box's "room boxes" option
-    //   C:\Temp\hvac\revit\mesh-boxes.txt   the same boxes in Revit internal feet (the fitted frame inverted, the
-    //                                       rotated box's bbox) + a "fit" line: Pluto Mesh copies it into its run, so
-    //                                       that run converts back to the Navisworks frame on its own
-    // Both are overwritten by every -Revit -Room run.
-    public const string NavisRoomBoxFile = @"C:\Temp\hvac\box\room-boxes.txt";
-    public const string RevitMeshBoxFile = @"C:\Temp\hvac\revit\mesh-boxes.txt";
+    //   <WorkRoot>\box\room-boxes.txt     Navisworks document units (as ducts.csv): Pluto Box's "room boxes" option
+    //   <WorkRoot>\revit\mesh-boxes.txt   the same boxes in Revit internal feet (the fitted frame inverted, the
+    //                                     rotated box's bbox) + a "fit" line: Pluto Mesh copies it into its run, so
+    //                                     that run converts back to the Navisworks frame on its own
+    // Both are overwritten by every -Revit -Room run. WorkRoot: WorkDir in the duct config (Export-DuctsViewer sets it);
+    // the add-ins read C:\Temp\hvac, so production keeps WorkDir there and a demo / test run writes under its own root.
+    public static string WorkRoot = @"C:\Temp\hvac";
+    public static string NavisRoomBoxFile { get { return Path.Combine(WorkRoot, @"box\room-boxes.txt"); } }
+    public static string RevitMeshBoxFile { get { return Path.Combine(WorkRoot, @"revit\mesh-boxes.txt"); } }
     const double RoomBoxMarginFt = 1;
 
     static string WriteRoomBoxes(List<Row> rows, string room, double[] T, string navisRun, string revitRun)

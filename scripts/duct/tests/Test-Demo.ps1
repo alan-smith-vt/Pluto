@@ -50,6 +50,10 @@ if ($m.Success) {
 }
 $m = [regex]::Match($match, 'NEW room: Navisworks (\d+) rows[^,]*, Revit (\d+) el')
 Check "overlay" "every Navisworks row and Revit element in scope" ($m.Success -and [int]$m.Groups[1].Value -eq $nav.Count -and [int]$m.Groups[2].Value -eq $els.Count) $m.Value
+# side files go under the demo's WorkDir, never the production C:\Temp\hvac the add-ins read
+$m = [regex]::Match($match, 'room boxes: \d+ written to (.+?) \(Pluto Box\) and (.+?) \(Revit Pluto Mesh\)')
+Check "overlay" "room boxes written under the demo root" ($m.Success -and $m.Groups[1].Value.StartsWith($Root) -and $m.Groups[2].Value.StartsWith($Root) -and
+    (Test-Path $m.Groups[1].Value) -and (Test-Path $m.Groups[2].Value)) $m.Value
 
 # ---- clean model (frames.csv)
 $fr = Rows "$o\revit.frames.csv"

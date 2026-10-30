@@ -38,12 +38,14 @@
 #     [-ModelId <id>]    default hvac/ducts/<run folder name> (+ "/mesh")
 #     [-Services <list>] draw only these services (the service field of IfcObjectProperties.RunName,
 #                        "A-<bldg>-<service>-DUCT-<n>"), comma separated; default: the codes in
-#                        C:\Temp\hvac\service-codes.txt (Pluto Service's file) when it exists; "*" = all.
+#                        <WorkDir>\service-codes.txt (Pluto Service's file) when it exists; "*" = all.
+#                        WorkDir: from the duct config, default C:\Temp\hvac (where the add-ins read and write)
 #                        Rows without a RunName are always drawn, in their own group.
 #   A Pluto Box run (C:\Temp\hvac\box\<run>: box_items.csv + box_tri.bin) is detected: every item in the box as
 #   a shell mesh: groups per element category, per RunName (+ "no run name") and per hidden state (Visible /
 #   Hidden: self / Hidden by: <item>, red); default out <run>\box. With -Revit -Room the overlay writes the room
-#   boxes for the Box dialog's "room boxes" option (C:\Temp\hvac\box\room-boxes.txt) and for Revit Pluto Mesh.
+#   boxes for the Box dialog's "room boxes" option (<WorkDir>\box\room-boxes.txt) and for Revit Pluto Mesh
+#   (<WorkDir>\revit\mesh-boxes.txt).
 #   A Revit Pluto Mesh run (C:\Temp\hvac\revit-mesh\<run>: mesh_items.csv + mesh_tri.bin) is detected too: Revit
 #   solids as a shell mesh in the Navisworks frame, groups per category, RunName, fabrication; default out <run>\revit_mesh.
 param(
@@ -86,6 +88,10 @@ if (-not $ModelId) {
     $ModelId = $(if ($Box) { "hvac/box/" + (Split-Path $Run -Leaf) } elseif ($RvMesh) { "hvac/revit-mesh/" + (Split-Path $Run -Leaf) } else { "hvac/ducts/" + (Split-Path $Run -Leaf) + $(if ($Mesh) { "/mesh" } elseif ($Centrelines) { "/cl" } elseif ($Probe) { "/probe" } elseif ($Revit) { "/revit" } else { "" }) })
 }
 . (Join-Path (Split-Path $PSScriptRoot) "lib\Config.ps1")
+# side files (room boxes, service codes) live under WorkDir from the duct config; C:\Temp\hvac without one (the add-ins' folder)
+$workRoot = "C:\Temp\hvac"
+if (Test-Path $cfg) { $w = (Import-PowerShellDataFile $cfg).WorkDir; if ($w) { $workRoot = $w } }
+[DuctsToPluto]::WorkRoot = $workRoot
 $t0 = Get-Date
 if ($Box) {
     $r = [DuctsToPluto]::ExportBox($Run, $Out, $ModelId, $Unit)
@@ -172,7 +178,7 @@ if ($Box) {
     $r = [DuctsToPluto]::ExportCentrelines($Run, $Out, $ModelId, $Unit)
     Write-Output $r.Note
 } else {
-    $codesFile = "C:\Temp\hvac\service-codes.txt"
+    $codesFile = Join-Path $workRoot "service-codes.txt"
     if (-not $Services -and (Test-Path $codesFile)) { $Services = (Get-Content $codesFile -Raw) }
     $svc = $null
     if ($Services -and $Services.Trim() -ne "*") { $svc = [string[]]@($Services -split '[,;\r\n]' | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
@@ -180,4 +186,9 @@ if ($Box) {
     $r.Summary()
 }
 $files = $(if ($Box -or $RvMesh) { (@("_run", "_norun") | ForEach-Object { "$Out$_.bin" } | Where-Object { Test-Path $_ }) -join " and " } else { "$Out.bin" })
-Write-Output ("[done] {0:0}s. In the viewer: Add overlay... -> {1}" -f ((Get-Date) - $t0).TotalSeconds, $files)
+$secs = ((Get-Date) - $t0).TotalSeconds
+if ($Revit -and (Test-Path "${Out}_clean.bin")) {
+    Write-Output ("[done] {0:0.0}s. Read {1}.match.txt first. In the viewer: Choose files -> {1}_clean.bin + {1}_clean.features.json (the clean model); Add overlay... -> {1}.bin (the Revit overlay)" -f $secs, $Out)
+} else {
+    Write-Output ("[done] {0:0.0}s. In the viewer: Add overlay... -> {1}" -f $secs, $files)
+}
