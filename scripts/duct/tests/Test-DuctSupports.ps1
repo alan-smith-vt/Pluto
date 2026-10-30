@@ -1,7 +1,7 @@
 # DuctSupports / DuctSupportShapes unit checks (synthetic cases). Windows PowerShell 5.1:
 #   powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\duct\tests\Test-DuctSupports.ps1
 $ErrorActionPreference = 'Stop'
-$duct = Split-Path $PSScriptRoot -Parent
+$duct = Join-Path (Split-Path $PSScriptRoot -Parent) 'model'
 Add-Type -Path (Join-Path $duct 'DuctSupports.cs'), (Join-Path $duct 'DuctSupportShapes.cs') -ReferencedAssemblies System.Core
 $fail = 0
 function Check($name, $cond) { if ($cond) { Write-Host "ok   $name" } else { Write-Host "FAIL $name"; $script:fail++ } }
