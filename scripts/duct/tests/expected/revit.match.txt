@@ -1,7 +1,7 @@
 NEW fit 0.01 ft median (90 pairs 1:1, rot 30.004 deg, scale check 1)
 NEW room: Navisworks 108 rows (74 fab), Revit 106 el (74 fab), Navisworks without Revit 4 (1 fab), Revit only 2 (1 fab), category differs 0, Revit only located in a Navisworks-only part 1 (Navisworks parts 1)
 NEW joints: connected 100 touching 0 near 2 side 0 outside 0 open 17
-NEW supports: 38 (guide 38), steel through a duct 0; unsupported spans > 10 ft 9: SYSC 44.3 ft, SYSA 21.5 ft, SYSA 20 ft, SYSB 20 ft, SYSA 18.3 ft, SYSA 13 ft, SYSB 12.5 ft, SYSA 12 ft ...
+NEW supports: 38 (guide 38), steel through a duct 0; unsupported spans > 10 ft: 9 spans (25 frames): US1 SYSC 44.3 ft, US2 SYSA 21.5 ft, US3 SYSA 20 ft, US4 SYSB 20 ft, US5 SYSA 18.3 ft, US6 SYSA 13 ft, US7 SYSB 12.5 ft, US8 SYSA 12 ft ...
 NEW hangers: 3 Navisworks hangers, matched 0, no steel support 3 (HANGER_NO_STEEL_SUPPORT), off any duct 0 (HANGER_OFF_DUCT); supports without a hanger 13 (SUPPORT_NO_HANGER)
 NEW orientation: 7 frame(s) LARGE_SIDE_VERTICAL, 8 rotated in 5 run(s), 1 conflict(s)
 room boxes: 3 written to <ROOT>\box\room-boxes.txt (Pluto Box) and <ROOT>\revit\mesh-boxes.txt (Revit Pluto Mesh)
@@ -26,16 +26,16 @@ orientation: 7 frame(s) with the larger side vertical (LARGE_SIDE_VERTICAL), 5 r
   SYSB 20x30 run, 3 frame(s), 20 ft (1 with the larger side vertical): ROTATION_CONFLICT, a horizontal frame of the run already has its larger side horizontal
   SYSA 16x28 run, 2 frame(s), 6.1 ft (1 with the larger side vertical): rotated 90 deg about the centreline
 supports (<out>.supports.csv): 38 (guide 38), gap <= 4.5 in, steel overlapping the duct bottom 4, steel through the duct 0 (no support), steel along the duct under it 0 (not modelled)
-unsupported spans > 10 ft: 9 (longest: SYSC 44.3 ft (1 support(s)), SYSA 21.5 ft (2 support(s)), SYSA 20 ft (2 support(s)), SYSB 20 ft (2 support(s)), SYSA 18.3 ft (2 support(s))) (UNSUPPORTED_SPAN)
-  SYSC 44.3 ft, 1 support(s) at its ends, frames F12 F13 F14 F15 F66 F72 F73 F75 F79
-  SYSA 21.5 ft, 2 support(s) at its ends, frames F5 F31 F37 F86
-  SYSA 20 ft, 2 support(s) at its ends, frames F4 F24 F32
-  SYSB 20 ft, 2 support(s) at its ends, frames F46
-  SYSA 18.3 ft, 2 support(s) at its ends, frames F3 F21 F30 F38
-  SYSA 13 ft, 1 support(s) at its ends, frames F6 F33
-  SYSB 12.5 ft, 3 support(s) at its ends, frames F8 F41 F42 F82
-  SYSA 12 ft, 1 support(s) at its ends, frames F1 F2 F23 F85
-  other: EXH 12 ft, 0 support(s) at its ends, frames F74
+unsupported spans > 10 ft (UNSUPPORTED_SPAN): 9 spans (25 frames); longest: US1 SYSC 44.3 ft, US2 SYSA 21.5 ft, US3 SYSA 20 ft, US4 SYSB 20 ft, US5 SYSA 18.3 ft
+  US1 SYSC 44.3 ft, 1 support(s) at its ends, 6 frame(s): F12 F66 F72 F73 F75 F79
+  US2 SYSA 21.5 ft, 2 support(s) at its ends, 3 frame(s): F31 F37 F86
+  US3 SYSA 20 ft, 2 support(s) at its ends, 3 frame(s): F4 F24 F32
+  US4 SYSB 20 ft, 2 support(s) at its ends, 1 frame(s): F46
+  US5 SYSA 18.3 ft, 2 support(s) at its ends, 3 frame(s): F21 F30 F38
+  US6 SYSA 13 ft, 1 support(s) at its ends, 2 frame(s): F6 F33
+  US7 SYSB 12.5 ft, 3 support(s) at its ends, 3 frame(s): F41 F42 F82
+  US8 SYSA 12 ft, 1 support(s) at its ends, 3 frame(s): F2 F23 F85
+  US9 other: EXH 12 ft, 0 support(s) at its ends, 1 frame(s): F74
 gap histogram (duct bottom -> steel top, in; 43 crossings in [-12, 48], bin 1 in; support <= 4.5):
   [    -1,      0)     4 ################
   [     0,      1)    10 ########################################
