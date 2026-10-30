@@ -10,9 +10,11 @@
 //
 // Rendering: per model ONE THREE.Points over every glyph, sampling a canvas
 // atlas (one cell per glyph name, white shape + dark halo, tinted by the
-// group colour). Constant pixel size. Exception glyphs draw over everything;
-// detail glyphs are depth-tested after a pull of PULL_FRAC x span toward the
-// camera, so an anchor inside a solid (a duct centreline) shows on its surface.
+// group colour). Size: WORLD_FRAC x span in world units, so it shrinks with
+// distance, clamped to [MIN_PX, MAX_PX] px. Every glyph is depth-tested after a
+// pull of PULL_FRAC x span toward the camera, so an anchor inside a solid (a duct
+// centreline) shows on its surface and geometry in front hides it. Only the
+// alarm glyph (warn) also draws as a faint ghost through geometry.
 // Support glyphs (support-fixed / support-pinned) hang from their node with
 // the base along `dir` (default: out of the member at a beam end, else world -Z). Per point: an inset along the beam
 // toward its other end (t = 0 / 1 anchors of one joint don't stack), an
@@ -40,9 +42,10 @@ var FEAGlyphs = (function () {
     var PX = 22;                 // glyph size, CSS px
     var PICK_PX = 12;            // hover radius, CSS px
     var DETAIL_FRAC = 0.45;      // detail tier shows below this camera distance / model span
+    var WORLD_FRAC = 0.008;      // glyph world size = this x model span; drawn at that size, clamped to
+    var MIN_PX = 9, MAX_PX = 26; // [MIN_PX, MAX_PX] CSS px, so far glyphs read as far but stay legible
     var PULL_FRAC = 0.01;        // detail glyphs draw this x model span toward the camera, so an anchor
-                                 // inside a solid (a duct centreline) still shows on its surface;
-                                 // exception glyphs draw over everything
+                                 // inside a solid (a duct centreline) still shows on its surface
     var NEUTRAL = '#e8e8ee';
     var ALARM = '#ff4d6d';       // reserved: `warn` default; nothing else should use it
 
@@ -232,6 +235,7 @@ var FEAGlyphs = (function () {
     var VS = [
         'attribute vec3 along; attribute vec3 gdir; attribute vec3 color; attribute float glyph; attribute float tier; attribute float inset; attribute float gscale;',
         'uniform float size; uniform vec2 viewport; uniform float detailFar; uniform float orthoDepth; uniform float pull;',
+        'uniform float worldSize; uniform float pxPerUnit; uniform float orthoPx; uniform float minPx; uniform float maxPx; uniform float dpr; uniform float ghost; uniform float warnIdx;',
         'varying vec3 vC; varying float vG; varying vec2 vRot;',
         'vec2 screenDir(vec4 c0, vec3 w) {',
         '  vec4 c1 = projectionMatrix * modelViewMatrix * vec4(position + w, 1.0);',
@@ -254,12 +258,16 @@ var FEAGlyphs = (function () {
         '    if (length(dv.xy) < 0.35) vRot = vec2(0.0, -1.0);',
         '    else { vec2 r = screenDir(c0, normalize(gdir) * 1e-3 * abs(mv.z) + gdir * 1e-6); if (length(r) > 0.0) vRot = r; } }',
         '  c0.xy += off / viewport * c0.w;',
-        '  if (tier > 0.5) c0.z = -0.999 * c0.w;',   // exceptions: over everything
+        // size: a world size that shrinks with distance (far reads as far), clamped so it stays legible
+        '  float px = orthoPx > 0.0 ? worldSize * orthoPx : worldSize * pxPerUnit / max(depth, 1e-3);',
+        '  px = clamp(px, minPx, maxPx) * dpr;',
+        // ghost pass: only the alarm glyph, drawn faint through geometry (depth test off)
+        '  if (ghost > 0.5 && abs(glyph - warnIdx) > 0.5) show = 0.0;',
         '  gl_Position = c0;',
-        '  gl_PointSize = size * gscale * show; }'
+        '  gl_PointSize = px * gscale * show; }'
     ].join('\n');
     var FS = [
-        'uniform sampler2D atlas; uniform float count;',
+        'uniform sampler2D atlas; uniform float count; uniform float ghost;',
         'varying vec3 vC; varying float vG; varying vec2 vRot;',
         'void main() {',
         '  vec2 p = gl_PointCoord - 0.5; p.y = -p.y;',
@@ -267,17 +275,20 @@ var FEAGlyphs = (function () {
         '  if (p.x < 0.0 || p.x > 1.0 || p.y < 0.0 || p.y > 1.0) discard;',
         '  vec4 t = texture2D(atlas, vec2((vG + p.x) / count, p.y));',
         '  if (t.a < 0.35) discard;',
-        '  gl_FragColor = vec4(t.rgb * vC, 1.0); }'
+        '  gl_FragColor = vec4(t.rgb * vC, ghost > 0.5 ? 0.3 : 1.0); }'
     ].join('\n');
 
     // ---- per-model layer ------------------------------------------------
     var texture = null;
-    function material() {
+    function material(ghost) {
         if (!texture) { texture = new THREE.CanvasTexture(atlas()); texture.flipY = true; }
         return new THREE.ShaderMaterial({
             vertexShader: VS, fragmentShader: FS,
+            transparent: !!ghost, depthTest: !ghost, depthWrite: !ghost,
             uniforms: { atlas: { value: texture }, count: { value: NAMES.length }, size: { value: PX },
-                        viewport: { value: new THREE.Vector2(1, 1) }, detailFar: { value: 1e30 }, orthoDepth: { value: 0 }, pull: { value: 0 } }
+                        viewport: { value: new THREE.Vector2(1, 1) }, detailFar: { value: 1e30 }, orthoDepth: { value: 0 }, pull: { value: 0 },
+                        worldSize: { value: 1 }, pxPerUnit: { value: 1 }, orthoPx: { value: 0 }, minPx: { value: MIN_PX }, maxPx: { value: MAX_PX },
+                        dpr: { value: 1 }, ghost: { value: ghost ? 1 : 0 }, warnIdx: { value: NAMES.indexOf('warn') } }
         });
     }
     function spanOf(v) {
@@ -292,6 +303,10 @@ var FEAGlyphs = (function () {
         var sz = renderer.getSize(new THREE.Vector2());
         u.viewport.value.set(sz.x / 2, sz.y / 2);     // NDC -> CSS px half-extent
         u.size.value = PX * dpr;
+        u.dpr.value = dpr;
+        u.worldSize.value = span * WORLD_FRAC;
+        u.pxPerUnit.value = camera.isOrthographicCamera ? 0 : sz.y / (2 * Math.tan(camera.fov * Math.PI / 360));
+        u.orthoPx.value = camera.isOrthographicCamera ? sz.y * camera.zoom / (camera.top - camera.bottom) : 0;
         u.detailFar.value = span * DETAIL_FRAC;
         u.pull.value = span * PULL_FRAC;
         u.orthoDepth.value = camera.isOrthographicCamera ? (camera.top - camera.bottom) / camera.zoom * 1.07 : 0;
@@ -321,6 +336,12 @@ var FEAGlyphs = (function () {
             pts.frustumCulled = false;
             pts.renderOrder = 10;
             pts.onBeforeRender = function () { frameUniforms(pts.material.uniforms, L.span); };
+            // ghost: the alarm glyph again, faint and not depth-tested, drawn first so a
+            // visible one paints over it; a hidden one still shows as a ghost
+            var gh = new THREE.Points(geo, material(true));
+            gh.frustumCulled = false; gh.renderOrder = 9;
+            gh.onBeforeRender = function () { frameUniforms(gh.material.uniforms, L.span); };
+            pts.add(gh);
             L.points = pts;
             var parent = ctx.markerParent && ctx.markerParent();
             if (parent) parent.add(pts);
@@ -340,8 +361,8 @@ var FEAGlyphs = (function () {
 
     // ---- picking (CPU, screen space; mirrors the vertex shader) ---------
     // Candidates within PICK_PX of the cursor, nearest first; the first one
-    // the scene does not hide wins. Hidden = what the shader hides: an
-    // exception glyph never; a detail glyph when a ray through its centre
+    // the scene does not hide wins. Hidden = what the shader hides: the warn
+    // glyph never (its ghost shows); any other glyph when a ray through its centre
     // pixel hits geometry nearer than the glyph pulled PULL_FRAC x span
     // toward the camera.
     var occluder = function (cssX, cssY) {      // -> world point of the nearest visible surface, or null
@@ -388,7 +409,7 @@ var FEAGlyphs = (function () {
         cands.sort(function (a, b) { return a.dd - b.dd; });
         for (var c = 0; c < cands.length; c++) {
             var k = cands[c];
-            if (k.L.data.tier[k.i] < 0.5) {
+            if (k.L.data.glyph[k.i] !== NAMES.indexOf('warn')) {     // the alarm glyph shows (as a ghost) through geometry
                 var p = occluder(k.sx, k.sy);
                 if (p && eyeDepth(p) < k.depth - k.L.span * PULL_FRAC) continue;
             }
