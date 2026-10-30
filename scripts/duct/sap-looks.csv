@@ -1,6 +1,8 @@
 # Glyph looks for the HVAC duct + steel SAP model's viewer file (Run-Sap.ps1 -Export ... -Looks scripts\duct\sap-looks.csv).
 # Rules: scripts\arms\SapLooks.cs; schema: board laptop:697 (approved 653 + 657). First matching row wins.
 # Groups come from SapDucts / SapSteel (STEEL_ / SUPPORT_ / FLAG_) and SapToPluto (sections).
+# User decision 2026-10-30 (board laptop:797): only real checks get the alarm glyph; other flags and the aggregate
+# groups are grey context (selectable, never painted); colour = system (SYS_ groups).
 Group,Glyph,At,Tier,Label,Section,Color,Dir,Context
 STEEL_OPEN_FIXED,disc,members,exception,Fixed (open end),Member ends,,,
 STEEL_OPEN_PINNED,circle,members,exception,Pinned (open end),Member ends,,,
@@ -8,7 +10,22 @@ STEEL_RELEASED,half,ends-released,detail,Hinged end (M2+M3),Member ends,,,
 STEEL_COLLINEAR,diamond,members,detail,Collinear hinge,Member ends,,,
 SUPPORT_GUIDE,ring-arrows,ends-I,detail,Guide,Supports,,adjacent,
 SUPPORT_ANCHOR,anchor,ends-I,detail,Anchor,Supports,,adjacent,
-FLAG_*,warn,mid,exception,,Checks,,,
+FLAG_UNSUPPORTED_SPAN,warn,mid,exception,Unsupported span > 10 ft,Checks,,,
+FLAG_OPEN_NEAR,warn,members,exception,Open end near steel (missed connection?),Checks,,,
+FLAG_LARGE_SIDE_VERTICAL,warn,mid,exception,Larger side vertical,Checks,,,
+FLAG_ROTATION_CONFLICT,warn,mid,exception,Rotation conflict,Checks,,,
+FLAG_NO_SIZE,warn,mid,exception,No size,Checks,,,
+FLAG_NO_ORIENTATION,warn,mid,exception,No width direction,Checks,,,
+FLAG_*,,,,,,,,yes
+STEEL_ALL,,,,,,,,yes
+SUPPORT_ALL,,,,,,,,yes
+TAP_STUBS,,,,,,,,yes
+DUCT_ALL,,,,,,,,yes
+SRC_*,,,,,,,,yes
+STEEL_CORNER,,,,,,,,yes
+STEEL_FRAMED,,,,,,,,yes
+Restrained *,,,,,,,,yes
+Released *,,,,,,,,yes
 W*,,,,,,,,yes
 DUCT_*_t*,,,,,,,,yes
 DUCT_NOSIZE,,,,,,,,yes
