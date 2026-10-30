@@ -49,7 +49,7 @@ $pex.Summary()
 ```
 
 - `'<room>'` → `$null` for the whole plant. Several rooms: `'R1, R2; R3'` (`,` or `;`, 2026-10-02), any match keeps the row. Multi-room values match by token,
-  including prefix-elided ones (`A-123/321` = A-123 and A-321).
+  including prefix-elided ones (`R-100/200` = R-100 and R-200).
 - Third argument = bbox CSV path (not a flag). Omit it (or pass `$null`) and
   behaviour is byte-identical to the pre-fallback builder.
 - `Summary()` line 3: `fallback: rescued / rejected / noBbox`. Expect rescued

@@ -296,8 +296,8 @@ public class PipeCsvReader
 
     // A row's Room can hold several rooms. Match the whole string or any
     // '/', ',' or ';' delimited token (trimmed, case-insensitive). Tokens
-    // after the first may elide the shared prefix: "A-123/321" = A-123 and
-    // A-321. A short token is expanded two ways against the FIRST token and
+    // after the first may elide the shared prefix: "R-100/200" = R-100 and
+    // R-200. A short token is expanded two ways against the FIRST token and
     // matches on either: prefix up to the last '-' + token ("A-" + "321"),
     // and tail replacement (first token with its last N chars swapped).
     // filter: one room, or several separated by ',' or ';' ("R1, R2; R3"): a row is kept when it

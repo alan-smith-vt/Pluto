@@ -14,10 +14,15 @@ Thumbs.db
 # graph settings follow the clone (colour groups + the filter hiding handoffs; vault/_meta/graph-colors.json is the source)
 !/.obsidian/graph.json
 
-.pdf
+*.pdf
 
 # production-side settings (copy of duct-config.example.psd1)
 scripts/duct/duct-config.psd1
 
 # Navisworks add-in build output
 scripts/navis/bin/
+# Revit add-in build output
+scripts/revit/bin/
+
+# showcase scratch output
+showcase_tmp/
