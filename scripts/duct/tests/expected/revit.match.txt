@@ -15,7 +15,7 @@ NEW cuts: 1 of 1 placed, 1 elements (5 ft of duct) dropped beyond them, 1 kept e
 NEW cut points: CUT1 on a duct, split (0.03 in)
 NEW cut sides: CUT1: dropped 5 ft SYSA (1 el) | kept 179 ft SYSA (11 el) (largest)
 NEW manual drop (DuctDrop): 3 listed, 1 members (6.5 ft) dropped, 0 kept because they end at a cut; 1 not in the clean model: 999999
-steel model: 74 members -> 140 frames, 129 joints (collinear 4, corner 25, framed 27, interior 39, open-fixed 30, open-pinned 4); ends snapped 114 (27 onto a member's side); open 34 (0 OPEN_NEAR, other steel within 24 in); released ends (M2M3) 107; zero length dropped 0 (<out>.steel_joints.csv, <out>.steel_frames.csv)
+steel model: 75 members -> 141 frames, 131 joints (collinear 4, corner 25, framed 27, interior 39, open-fixed 30, open-pinned 6); ends snapped 114 (27 onto a member's side); open 36 (1 OPEN_NEAR, other steel within 24 in); released ends (M2M3) 107; zero length dropped 0 (<out>.steel_joints.csv, <out>.steel_frames.csv)
 supports (<out>.supports.csv): 39 (guide 39), gap <= 4.5 in, steel overlapping the duct bottom 3, steel through the duct 0 (no support), steel along the duct under it 0 (not modelled)
 unsupported spans > 10 ft: 8 (longest: SYSA 21.5 ft (2 support(s)), SYSA 20 ft (2 support(s)), SYSB 20 ft (2 support(s)), SYSC 20 ft (2 support(s)), SYSA 18.3 ft (2 support(s))) (UNSUPPORTED_SPAN)
   SYSA 21.5 ft, 2 support(s) at its ends, frames F3 F26 F32 F77

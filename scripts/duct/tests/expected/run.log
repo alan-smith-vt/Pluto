@@ -1,7 +1,7 @@
 rooms from duct-config.psd1: 3 codes
 cut points: 1 from <ROOT>\cuts\cuts.csv
 manual drop: 3 parts from <ROOT>\cuts\drop.txt
-steel: 74 members from <ROOT>\steel\steel.csv (room=(all) rows=74 kept=74 members=74 unsized=0 zeroLength=0; orient: missing=0 badVector=0  dimConflicts=0  cp: offCentroid=36 unmapped=0)
+steel: 75 members from <ROOT>\steel\steel.csv (room=(all) rows=75 kept=75 members=75 unsized=0 zeroLength=0; orient: missing=0 badVector=0  dimConflicts=0  cp: offCentroid=36 unmapped=0)
 primary systems: SYSA, SYSB, SYSC
 NEW fit 0.01 ft median (83 pairs 1:1, rot 30.005 deg, scale check 1)
 NEW room: Navisworks 97 rows (70 fab), Revit 95 el (70 fab), Navisworks without Revit 4 (1 fab), Revit only 2 (1 fab), category differs 0, Revit only located in a Navisworks-only part 1 (Navisworks parts 1)
