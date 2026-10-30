@@ -12,12 +12,18 @@ $workingDir = $basePath + "WorkingDirectory\"
 $csFiles = Get-ChildItem -Path $PSScriptRoot, (Join-Path $PSScriptRoot "..\arms"), (Join-Path $PSScriptRoot "..\duct\model") -Recurse -Filter *.cs | Select-Object -ExpandProperty FullName
 $excelAssembly = [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.Office.Interop.Excel")
 
-$refAssemblies = @($excelAssembly.Location,
-	"System.Console", "System.IO",
+# References by full path where the Framework folder has the dll. A bare name only resolves while nothing
+# else is loaded: once the SAP API is in the session every bare name fails with 0x80131502
+# (2026-10-30, Run-Sap -Export). A name with no dll there is passed on as before.
+$fwDir = [System.Runtime.InteropServices.RuntimeEnvironment]::GetRuntimeDirectory()
+$refAssemblies = @($excelAssembly.Location) + @("System.Console", "System.IO",
 	"System.Collections", "System.Numerics",
 	"System.Numerics.Vectors", "System.Web.Extensions",
-	"System.Net.Http", "System.Xml","System.Xml.Linq", 
-	"System.IO.Compression", "System.IO.Compression.FileSystem")
+	"System.Net.Http", "System.Xml","System.Xml.Linq",
+	"System.IO.Compression", "System.IO.Compression.FileSystem") | ForEach-Object {
+	$p = Join-Path $fwDir "$_.dll"
+	if ($_ -like "*\*") { $_ } elseif (Test-Path $p) { $p } else { $_ }
+} | Where-Object { $_ }
 
 Add-Type -path $csFiles -ReferencedAssemblies $refAssemblies
 
