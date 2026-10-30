@@ -100,7 +100,7 @@ Expect "SUPPORT_GUIDE anchor at the duct end, along the duct" ("{0} {1}" -f @($g
 $g = G "FLAG_UNSUPPORTED_SPAN"
 Expect "FLAG_UNSUPPORTED_SPAN warn exception mid" ("{0} {1} {2}" -f $g.look.glyph, $g.look.tier, @($g.anchors)[0].t) "warn exception 0.5"
 $g = G "STEEL_OPEN_FIXED"
-Expect "STEEL_OPEN_FIXED disc, no anchors (one per node)" ("{0} {1}" -f $g.look.glyph, ($null -eq $g.anchors)) "disc True"
+Expect "STEEL_OPEN_FIXED support-fixed, no anchors (one per node)" ("{0} {1}" -f $g.look.glyph, ($null -eq $g.anchors)) "support-fixed True"
 Expect "W12X26 context" (@((G "W12X26").tags) -contains "context") $true
 Expect "DUCT_ALL context, no glyph" ($null -eq (G "DUCT_ALL").look -and (@((G "DUCT_ALL").tags) -contains "context")) $true
 Expect "FLAG_LARGE_GAP (not a check) context, no glyph" ($null -eq (G "FLAG_LARGE_GAP").look -and (@((G "FLAG_LARGE_GAP").tags) -contains "context")) $true
