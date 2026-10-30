@@ -2,14 +2,14 @@
 # SAP model as a viewer file. Windows PowerShell 5.1.
 #   powershell -ExecutionPolicy Bypass -File scripts\duct\Run-HvacModel.ps1 -Config <duct-config.psd1>
 #       -Run <Navisworks ducts run> -Revit <Revit connectors run> [-Out <folder>]
-#       [-From model|sap|view] [-To model|sap|view] [-SapPid <pid> | -UseHost] [-Fragments] [-Other] [-NavisOnly]
+#       [-From model|sap|view] [-To model|sap|view] [-Fragments] [-Other] [-NavisOnly]
 # Steps (each in its own powershell.exe; log <Out>\logs\<n>-<step>.log, everything also in <Out>\run.log):
 #   1 model  Export-DuctsViewer -Config -Run -Revit -Out <Out>\model\revit   (overlay, clean model, CSVs, match.txt)
 #   2 sap    Run-SapDucts -Frames / -SteelFrames / -Supports from step 1 -SavePath <Out>\sap\hvac.sdb
 #   3 view   Run-Sap -Open <Out>\sap\hvac.sdb -NoSaveSdb -Export <Out>\sap\hvac -NoResults -Looks sap-looks.csv
 # Every setting comes from -Config (rooms, systems, cuts, drops, steel, WorkDir, AddinDir). -Out default: a new
-# <WorkDir>\model\<yyyyMMdd-HHmmss>. SAP: -SapPid / -UseHost are passed to steps 2 and 3 as given; without them each
-# SAP step starts and closes its own SAP. A failed step stops the run (exit 1) with the command that resumes it
+# <WorkDir>\model\<yyyyMMdd-HHmmss>. SAP: each SAP step starts and closes its own SAP (it never attaches to a SAP
+# you have open). A failed step stops the run (exit 1) with the command that resumes it
 # (-Out <same> -From <step>); nothing earlier is deleted or overwritten.
 param(
     [Parameter(Mandatory = $true)][string]$Config,
@@ -18,8 +18,6 @@ param(
     [string]$Out,
     [ValidateSet("model", "sap", "view")][string]$From = "model",
     [ValidateSet("model", "sap", "view")][string]$To = "view",
-    [int]$SapPid,
-    [switch]$UseHost,
     [switch]$Fragments,
     [switch]$Other,
     [switch]$NavisOnly
@@ -49,12 +47,11 @@ $null = New-Item -ItemType Directory -Force (Join-Path $Out "logs"), (Join-Path 
 $runLog = Join-Path $Out "run.log"
 $base = Join-Path $Out "model\revit"
 $sdb = Join-Path $Out "sap\hvac.sdb"
-$sapArgs = @(); if ($SapPid) { $sapArgs += @("-SapPid", "$SapPid") }; if ($UseHost) { $sapArgs += "-UseHost" }
 
 function Say([string]$s) { Write-Host $s; Add-Content -Path $runLog -Value $s -Encoding UTF8 }
 function Quote([string]$a) { if ($a -match '[\s"]') { '"' + $a.Replace('"', '\"') + '"' } else { $a } }
 $resume = "powershell -ExecutionPolicy Bypass -File " + (Quote $PSCommandPath) + " -Config " + (Quote $Config) + " -Run " + (Quote $Run) +
-    " -Revit " + (Quote $Revit) + " -Out " + (Quote $Out) + $(if ($SapPid) { " -SapPid $SapPid" }) + $(if ($UseHost) { " -UseHost" }) +
+    " -Revit " + (Quote $Revit) + " -Out " + (Quote $Out) +
     $(if ($Fragments) { " -Fragments" }) + $(if ($Other) { " -Other" }) + $(if ($NavisOnly) { " -NavisOnly" })
 
 # one step in its own process, time-limited; stops the run with the resume command on failure
@@ -94,12 +91,14 @@ if ($i0 -le 1 -and $i1 -ge 1) {
     if (Test-Path "$base.steel_frames.csv") { $a += @("-SteelFrames", "$base.steel_frames.csv") }
     if (Test-Path "$base.supports.csv") { $a += @("-Supports", "$base.supports.csv") }
     if ($Fragments) { $a += "-Fragments" }; if ($Other) { $a += "-Other" }; if ($NavisOnly) { $a += "-NavisOnly" }
-    Step 2 "sap" (Join-Path $scripts "sap\Run-SapDucts.ps1") ($a + $sapArgs)
+    Step 2 "sap" (Join-Path $scripts "sap\Run-SapDucts.ps1") $a
+    $sl = Get-Content (Join-Path $Out "logs\2-sap.log") -ErrorAction SilentlyContinue
+    foreach ($l in @($sl | Where-Object { $_ -match '^NEW (kept|SAP model)' })) { Say ("   " + $l.Substring(0, [Math]::Min(200, $l.Length))) }
 }
 if ($i0 -le 2 -and $i1 -ge 2) {
     if (-not (Test-Path $sdb)) { Say "[FAILED] step 3 view: no $sdb (run step sap first)"; exit 1 }
     Step 3 "view" (Join-Path $scripts "sap\Run-Sap.ps1") (@("-Open", $sdb, "-NoSaveSdb", "-Export", (Join-Path $Out "sap\hvac"), "-NoResults",
-        "-Looks", (Join-Path $PSScriptRoot "sap-looks.csv")) + $sapArgs)
+        "-Looks", (Join-Path $PSScriptRoot "sap-looks.csv")))
 }
 
 $el = (Get-Date) - $t00

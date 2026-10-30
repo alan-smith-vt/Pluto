@@ -1,11 +1,11 @@
 # The whole duct pipeline on the synthetic demo, in one command. Windows PowerShell 5.1.
-#   powershell -ExecutionPolicy Bypass -File scripts\duct\Run-Demo.ps1 [-Root <dir>] [-NoSap] [-SapPid <pid> | -UseHost]
+#   powershell -ExecutionPolicy Bypass -File scripts\duct\Run-Demo.ps1 [-Root <dir>] [-NoSap]
 # 1. pythonTools\ducts\make_demo_data.py -> <Root> (Navisworks + Revit runs, rack steel, cuts, drop list, demo config)
 # 2. Run-HvacModel.ps1 -Config <Root>\duct-config.psd1 -> <Root>\out: model\revit.* (overlay, clean model with steel and
 #    supports, frames / steel / supports CSVs, match.txt), sap\hvac.sdb and sap\hvac.bin + features (the SAP model with
 #    glyph looks), logs\ and run.log. -NoSap stops after the model step.
 # The repo's duct-config.psd1 is never touched. <Root>\out from an earlier demo run is replaced.
-param([string]$Root = (Join-Path $env:TEMP "hvac-demo"), [switch]$NoSap, [int]$SapPid, [switch]$UseHost)
+param([string]$Root = (Join-Path $env:TEMP "hvac-demo"), [switch]$NoSap)
 $ErrorActionPreference = "Stop"
 $repo = Split-Path (Split-Path $PSScriptRoot)
 $Root = [IO.Path]::GetFullPath($Root)
@@ -26,7 +26,6 @@ $a = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScript
     "-Config", (Join-Path $Root "duct-config.psd1"), "-Run", (Join-Path $Root "ducts\$run"), "-Revit", (Join-Path $Root "revit\$run"),
     "-Out", $out, "-Fragments", "-Other")
 if ($NoSap) { $a += @("-To", "model") }
-if ($SapPid) { $a += @("-SapPid", "$SapPid") }; if ($UseHost) { $a += "-UseHost" }
 Step "Run-HvacModel"
 & $ps @a
 if ($LASTEXITCODE -ne 0) { throw "Run-HvacModel.ps1 failed (see $out\run.log)" }

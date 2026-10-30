@@ -200,7 +200,7 @@ From the Navisworks and Revit exports to the SAP model and its viewer file, in o
 
 ```powershell
 .\Run-HvacModel.ps1 -Config <duct-config.psd1> -Run C:\Temp\hvac\ducts\<run> -Revit C:\Temp\hvac\revit\<run>
-    [-Out <folder>] [-From model|sap|view] [-To model|sap|view] [-SapPid <pid> | -UseHost] [-Fragments] [-Other] [-NavisOnly]
+    [-Out <folder>] [-From model|sap|view] [-To model|sap|view] [-Fragments] [-Other] [-NavisOnly]
 ```
 
 | step | runs | writes under `-Out` (default a new `<WorkDir>\model\<yyyyMMdd-HHmmss>`) |
@@ -213,14 +213,13 @@ From the Navisworks and Revit exports to the SAP model and its viewer file, in o
   are always given: no "newest export" guess.
 - Each step runs in its own process (log `logs\<n>-<step>.log`; everything in `run.log`). A failed step stops the run
   and prints the log tail and the command that resumes it (`-Out <same> -From <step>`); earlier outputs are kept.
-- SAP: `-SapPid` / `-UseHost` go to both SAP steps; without them each step starts and closes its own SAP and never
-  touches one you have open.
+- SAP: each SAP step starts and closes its own SAP and never touches one you have open.
 - The last lines say what to check next: `match.txt`, then the two viewer files, then the `.sdb`.
 
 ## Synthetic demo (whole pipeline, no project data)
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\duct\Run-Demo.ps1 [-Root <dir>] [-NoSap] [-SapPid <pid> | -UseHost]
+powershell -ExecutionPolicy Bypass -File scripts\duct\Run-Demo.ps1 [-Root <dir>] [-NoSap]
 ```
 
 Generates the demo with `pythonTools\ducts\make_demo_data.py` (fixed seed): Navisworks and Revit runs, rack steel,
