@@ -34,7 +34,7 @@ function Ends($sm, $oid) {
 $sm = Model @((M "B" 0 0 120 240 0 120))
 $e = Ends $sm "B"
 Check "1 horizontal open = pinned" ($e.I -eq "open-pinned" -and $e.J -eq "open-pinned" -and $e.JI.Restraint -eq "PINNED" -and $e.RI -eq "")
-Check "1 lone member open ends OPEN_FAR" ($e.JI.Flags -contains "OPEN_FAR")
+Check "1 lone member: no OPEN_NEAR" (-not ($e.JI.Flags -contains "OPEN_NEAR"))
 
 # 2 open vertical: fixed
 $e = Ends (Model @((M "C" 0 0 0 0 0 144))) "C"
@@ -59,7 +59,7 @@ $e = Ends (Model @((M "COL" 0 0 0 0 0 240), (M "BM" 5 0 120 120 0 120))) "BM"
 Check "5a 5 in snaps" ($e.I -eq "framed")
 $e = Ends (Model @((M "COL" 0 0 0 0 0 240), (M "BM" 7 0 120 120 0 120))) "BM"
 Check "5b 7 in open" ($e.I -eq "open-pinned")
-Check "5c open end 7 in from steel: not OPEN_FAR" (-not ($e.JI.Flags -contains "OPEN_FAR"))
+Check "5c open end 7 in from steel: OPEN_NEAR" ($e.JI.Flags -contains "OPEN_NEAR")
 
 # 6 corner: two beams ending at one point (2 in apart)
 $sm = Model @((M "A" 0 0 120 120 0 120), (M "B" 120 2 120 120 120 120))
@@ -87,10 +87,10 @@ foreach ($o in "E", "W", "N", "S") { $x = Ends $sm $o; if ($x.RI -ne "M2M3") { $
 Check "9 horizontals hinged at the column top" $ok
 Check "9 column top kept" ((Ends $sm "COL").RJ -eq "")
 
-# 10 OPEN_FAR threshold: open end 30 in from other steel flagged, 12 in not
+# 10 OPEN_NEAR threshold: open end 12 in from other steel flagged, 30 in not
 $sm = Model @((M "A" 0 0 0 240 0 0), (M "B" 100 30 0 100 300 0), (M "C" 200 12 0 200 300 0))
-Check "10a 30 in -> OPEN_FAR" ((Ends $sm "B").JI.Flags -contains "OPEN_FAR")
-Check "10b 12 in -> no flag" (-not ((Ends $sm "C").JI.Flags -contains "OPEN_FAR"))
+Check "10a 30 in -> no flag" (-not ((Ends $sm "B").JI.Flags -contains "OPEN_NEAR"))
+Check "10b 12 in -> OPEN_NEAR" ((Ends $sm "C").JI.Flags -contains "OPEN_NEAR")
 
 # 11 CSV files
 $tmp = Join-Path $env:TEMP ("steelmodel_test_" + [guid]::NewGuid().ToString("N"))

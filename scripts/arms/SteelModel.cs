@@ -14,7 +14,7 @@ using System.Text;
 // (it stays continuous). Ends that snap nowhere and are not snapped onto are OPEN.
 // Boundary conditions (rules agreed with the user; vault: steel model):
 //   open end      member below SlopePinnedDeg from horizontal -> PINNED (U1-3), else FIXED (all 6); farther than
-//                 FarIn from any other steel -> flag OPEN_FAR
+//                 within NearIn of other steel (but beyond SnapIn) -> flag OPEN_NEAR, a probably missed connection
 //   framed        an end landing on a continuous member -> M2M3 released (torsion kept)
 //   corner        ends meeting ends -> M2M3 on all of them, except: three or more ends where exactly one is vertical
 //                 (within VerticalDeg) and the rest are not -> the vertical keeps its moments
@@ -24,7 +24,7 @@ public class SteelModel
 {
     public class Settings
     {
-        public double SnapIn = 6, FarIn = 24, CollinearDeg = 5, SlopePinnedDeg = 45, VerticalDeg = 10;
+        public double SnapIn = 6, NearIn = 24, CollinearDeg = 5, SlopePinnedDeg = 45, VerticalDeg = 10;
         public double MergeIn = 1;   // joints landing on one member within this distance along it are one joint
     }
 
@@ -48,7 +48,7 @@ public class SteelModel
     public readonly List<SteelMember> Members = new List<SteelMember>();
     public readonly List<Joint> Joints = new List<Joint>();
     public readonly List<Frame> Frames = new List<Frame>();
-    public int Snapped, OnSide, Open, OpenFar, ZeroLength;
+    public int Snapped, OnSide, Open, OpenNear, ZeroLength;
 
     public SteelModel(Settings s) { S = s ?? new Settings(); }
 
@@ -208,7 +208,7 @@ public class SteelModel
                 Open++;
                 double near = double.MaxValue, t, d; double[] p = { jt.X, jt.Y, jt.Z };
                 for (int j = 0; j < n; j++) { if (j == m) continue; Proj(A[j], B[j], p, out t, out d); near = Math.Min(near, d); }
-                if (near > S.FarIn) { jt.Flags.Add("OPEN_FAR"); OpenFar++; }
+                if (near <= S.NearIn) { jt.Flags.Add("OPEN_NEAR"); OpenNear++; }
                 continue;
             }
             if (ends.Count == 2)
@@ -297,8 +297,8 @@ public class SteelModel
                       .Select(g => g.Key + " " + g.Count()).ToArray();
         int rel = Frames.Count(f => f.ReleaseI != "") + Frames.Count(f => f.ReleaseJ != "");
         return string.Format(Inv, "steel model: {0} members -> {1} frames, {2} joints ({3}); ends snapped {4} ({5} onto a member's side); " +
-            "open {6} ({7} OPEN_FAR > {8} in); released ends (M2M3) {9}; zero length dropped {10}",
-            Members.Count, Frames.Count, Joints.Count, string.Join(", ", c), Snapped, OnSide, Open, OpenFar, S.FarIn, rel, ZeroLength);
+            "open {6} ({7} OPEN_NEAR, other steel within {8} in); released ends (M2M3) {9}; zero length dropped {10}",
+            Members.Count, Frames.Count, Joints.Count, string.Join(", ", c), Snapped, OnSide, Open, OpenNear, S.NearIn, rel, ZeroLength);
     }
 
     // ---------- files (inches) ----------

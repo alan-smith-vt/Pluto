@@ -141,13 +141,13 @@ if ($Box) {
         Write-Output ("manual drop: {0} parts from {1}" -f [DuctsToPluto]::ReadManualDrop((Resolve-Path $f).Path), $f)
     }
     # utility rack steel in the clean model (DuctsSteel.cs): DuctSteel in the config (SteelToPluto CSV, meters, this frame);
-    # -Steel overrides, -Steel none = off. DuctSteelSnapIn / DuctSteelFarIn: connection snap and OPEN_FAR distances (in)
+    # -Steel overrides, -Steel none = off. DuctSteelSnapIn / DuctSteelNearIn: connection snap and OPEN_NEAR distances (in)
     [DuctsToPluto]::Steel.Clear()
     $dcfg = $(if (Test-Path $cfg) { Import-PowerShellDataFile $cfg } else { @{} })
     if (-not $Steel) { $Steel = $dcfg.DuctSteel }
     [DuctsToPluto]::SteelSettings = New-Object 'SteelModel+Settings'
     if ($dcfg.DuctSteelSnapIn) { [DuctsToPluto]::SteelSettings.SnapIn = [double]$dcfg.DuctSteelSnapIn }
-    if ($dcfg.DuctSteelFarIn) { [DuctsToPluto]::SteelSettings.FarIn = [double]$dcfg.DuctSteelFarIn }
+    if ($dcfg.DuctSteelNearIn) { [DuctsToPluto]::SteelSettings.NearIn = [double]$dcfg.DuctSteelNearIn }
     if ($Steel -and $Steel -ne "none") {
         if (-not (Test-Path $Steel)) { throw "steel CSV not found: $Steel (DuctSteel in duct-config.psd1 or -Steel; -Steel none = off)" }
         $sr = New-Object SteelToPluto; $sr.Progress = $false

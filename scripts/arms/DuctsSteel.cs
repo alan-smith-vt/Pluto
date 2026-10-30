@@ -9,7 +9,7 @@ using System.Linq;
 //   frames as I sections (CP offsets, web orientation), one group per section ("Steel: <section>")
 //   end markers: a collar (short tube around the section) near each end, one group per end condition:
 //     "Steel end: open-pinned" / "open-fixed" / "hinged" (M2M3, framed or corner) / "collinear-hinged"
-//   "Flag: OPEN_FAR": node group, open ends farther than FarIn from any other steel
+//   "Flag: OPEN_NEAR": node group, open ends within NearIn of other steel (a probably missed connection)
 public partial class DuctsToPluto
 {
     public static readonly List<SteelMember> Steel = new List<SteelMember>();
@@ -22,7 +22,7 @@ public partial class DuctsToPluto
     {
         public SortedDictionary<string, List<uint>> BySection = new SortedDictionary<string, List<uint>>(StringComparer.Ordinal);
         public Dictionary<string, List<uint>> ByEnd = new Dictionary<string, List<uint>>(StringComparer.Ordinal);
-        public List<uint> OpenFar = new List<uint>();
+        public List<uint> OpenNear = new List<uint>();
     }
 
     // frames + collars into the clean model's tables; joints in inches -> the clean model's feet
@@ -87,7 +87,7 @@ public partial class DuctsToPluto
                 nb++;
             }
         }
-        foreach (SteelModel.Joint j in sm.Joints) if (j.Flags.Contains("OPEN_FAR")) v.OpenFar.Add((uint)jointNode[j.Id]);
+        foreach (SteelModel.Joint j in sm.Joints) if (j.Flags.Contains("OPEN_NEAR")) v.OpenNear.Add((uint)jointNode[j.Id]);
         return v;
     }
 
@@ -103,6 +103,6 @@ public partial class DuctsToPluto
             if (v.ByEnd.TryGetValue(SteelEndGroups[i], out l))
                 sc.AddGroup("Steel end: " + SteelEndGroups[i], SteelEndColors[i], "beams", l, new[] { "steel", "end" }, null);
         }
-        if (v.OpenFar.Count > 0) sc.AddNodeGroup("Flag: OPEN_FAR", "#ff5fa2", v.OpenFar, new[] { "steel", "flag" }, "FLAG_OPEN_FAR");
+        if (v.OpenNear.Count > 0) sc.AddNodeGroup("Flag: OPEN_NEAR", "#ff5fa2", v.OpenNear, new[] { "steel", "flag" }, "FLAG_OPEN_NEAR");
     }
 }
