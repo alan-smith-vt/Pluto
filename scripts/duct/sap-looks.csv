@@ -4,8 +4,8 @@
 # User decision 2026-10-30 (board laptop:797): only real checks get the alarm glyph; other flags and the aggregate
 # groups are grey context (selectable, never painted); colour = system (SYS_ groups).
 Group,Glyph,At,Tier,Label,Section,Color,Dir,Context
-STEEL_OPEN_FIXED,disc,members,exception,Fixed (open end),Member ends,,,
-STEEL_OPEN_PINNED,circle,members,exception,Pinned (open end),Member ends,,,
+STEEL_OPEN_FIXED,support-fixed,members,exception,Fixed (open end),Member ends,,,
+STEEL_OPEN_PINNED,support-pinned,members,exception,Pinned (open end),Member ends,,,
 STEEL_RELEASED,half,ends-released,detail,Hinged end (M2+M3),Member ends,,,
 STEEL_COLLINEAR,diamond,members,detail,Collinear hinge,Member ends,,,
 SUPPORT_GUIDE,ring-arrows,ends-I,detail,Guide,Supports,,adjacent,
