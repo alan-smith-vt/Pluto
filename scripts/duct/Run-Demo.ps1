@@ -3,7 +3,8 @@
 # 1. pythonTools\ducts\make_demo_data.py -> <Root> (Navisworks + Revit runs, rack steel, cuts, drop list, demo config)
 # 2. Export-DuctsViewer.ps1 -Run -Revit with the demo config -> <Root>\out\revit.* (overlay, clean model with steel
 #    and supports, frames / steel / supports CSVs, match.txt)
-# 3. Run-SapDucts.ps1 with steel, supports and the flag groups -> <Root>\sap\demo.sdb (skipped with -NoSap)
+# 3. Run-SapDucts.ps1 with steel, supports and the flag groups -> <Root>\sap\demo.sdb, then Run-Sap.ps1 -Export
+#    -NoResults -Looks scripts\duct\sap-looks.csv -> <Root>\sap\demo.bin + features (skipped with -NoSap)
 # The exporter reads scripts\duct\duct-config.psd1: the demo config is swapped in for step 2 and the user's put back.
 param([string]$Root = (Join-Path $env:TEMP "hvac-demo"), [switch]$NoSap)
 $ErrorActionPreference = "Stop"
@@ -37,5 +38,10 @@ if (-not $NoSap) {
         -Frames (Join-Path $out "revit.frames.csv") -SteelFrames (Join-Path $out "revit.steel_frames.csv") `
         -Supports (Join-Path $out "revit.supports.csv") -SavePath (Join-Path $Root "sap\demo.sdb") -Fragments -Other
     if ($LASTEXITCODE -ne 0) { throw "Run-SapDucts.ps1 failed" }
+    Step "Run-Sap -Export (SAP model -> viewer, glyph looks)"
+    & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $repo "scripts\sap\Run-Sap.ps1") `
+        -Open (Join-Path $Root "sap\demo.sdb") -NoSaveSdb -Export (Join-Path $Root "sap\demo") -NoResults `
+        -Looks (Join-Path $repo "scripts\duct\sap-looks.csv")
+    if ($LASTEXITCODE -ne 0) { throw "Run-Sap.ps1 -Export failed" }
 }
-Step "done. Viewer: $out\revit_clean.bin (+ revit.bin overlay)$(if (-not $NoSap) { "; SAP: $Root\sap\demo.sdb" })"
+Step "done. Viewer: $out\revit_clean.bin (+ revit.bin overlay)$(if (-not $NoSap) { "; SAP: $Root\sap\demo.sdb, viewer $Root\sap\demo.bin" })"
