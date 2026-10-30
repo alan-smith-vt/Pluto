@@ -251,6 +251,7 @@ public partial class DuctsToPluto
         string cutNote = ApplyCuts(clean, P);
         string dropNote = ApplyManualDrop(clean, P);   // add-on, DuctsManualDrop.cs
         if (dropNote != "") cutNote += (cutNote != "" ? "\n" : "") + dropNote;
+        SteelModel sm = Steel.Count > 0 ? SteelModel.Build(Steel, SteelSettings) : null;   // DuctsSteel.cs; split by supports from here on
 
         // checks: length, deviation of the original connectors from the clean centreline
         double cleanLen = clean.Where(x => !x.Rigid && x.Source != "navisworks-only").Sum(x => Len(P[x.A], P[x.B]));
@@ -265,13 +266,15 @@ public partial class DuctsToPluto
             }
         dev.Sort((x, y) => y.Key.CompareTo(x.Key));
 
-        WriteCleanViewer(outBase + "_clean", modelId + "/clean", lengthUnit, clean, P, off, scale);
+        if (sm != null) sm.WriteCsv(outBase);
+        WriteCleanViewer(outBase + "_clean", modelId + "/clean", lengthUnit, clean, P, off, scale, sm);
         WriteCleanFrames(outBase + ".frames.csv", clean, P);
 
         return string.Format(Inv, "clean model (<out>_clean.bin, <out>.frames.csv): {0} elements ({1} rigid links) from {2} pieces; duct length {3:0.#} ft -> {4:0.#} ft, overlaps merged {5} ({6:0.#} ft), different-size overlaps {7} (OVERLAP_SIZE_CONFLICT), gaps closed {10}; connectors > 1 in from the clean line {8}{9}",
             clean.Count, clean.Count(x => x.Rigid), edges.Count(x => x.Src.Count > 0 || x.Source != "revit"), rawLen, cleanLen, overlapMerged, overlapFt, overlapConflict, dev.Count,
             dev.Count > 0 ? " (worst: " + string.Join(", ", dev.Take(5).Select(x => x.Value + " " + x.Key.ToString("0.#", Inv) + " in").ToArray()) + ")" : "", gapsClosed)
-            + (cutNote != "" ? "\n" + cutNote : "");
+            + (cutNote != "" ? "\n" + cutNote : "")
+            + (sm != null ? "\n" + sm.Summary() + " (<out>.steel_joints.csv, <out>.steel_frames.csv)" : "");
     }
 
     // Scope cut points (2026-10-22, the SAP reviewer's cut nodes read from the reviewed SAP model: Run-Sap.ps1
@@ -423,7 +426,7 @@ public partial class DuctsToPluto
         return d[0] == 1 ? string.Format(Inv, "{0:0.#} dia", d[3]) : string.Format(Inv, "{0:0.#}x{1:0.#}", d[1], d[2]);
     }
 
-    static void WriteCleanViewer(string outBase, string modelId, string lengthUnit, List<CEdge> clean, Dictionary<int, double[]> P, double[] off, double scale)
+    static void WriteCleanViewer(string outBase, string modelId, string lengthUnit, List<CEdge> clean, Dictionary<int, double[]> P, double[] off, double scale, SteelModel sm)
     {
         var nodes = new Dictionary<int, Node>(); int next = 1; var map = new Dictionary<int, int>();
         Func<int, int> nd = n => { int id; if (!map.TryGetValue(n, out id)) { id = MakeNode(nodes, ref next, P[n], off, scale); map[n] = id; } return id; };
@@ -469,6 +472,7 @@ public partial class DuctsToPluto
             if (ce.Flags.Contains("CUT_END")) gCut.Add((uint)nb);
             nb++;
         }
+        SteelView sv = sm != null ? AddSteel(sm, nodes, ref next, sections, beams, labels, ref nb, off, scale) : null;
         if (beams.Count == 0) return;
         var comps = new List<RawViewerWriter.Component>(); comps.Add(new RawViewerWriter.Component("Axial N", "force", "kip"));
         var units = new Dictionary<string, string>(); units["length"] = lengthUnit;
@@ -483,7 +487,8 @@ public partial class DuctsToPluto
         if (gConf.Count > 0) sc.AddGroup("Flag: OVERLAP_SIZE_CONFLICT", "#ff5fa2", "beams", gConf, new[] { "duct", "clean", "flag" }, "FLAG_OVERLAP_SIZE_CONFLICT");
         if (gCut.Count > 0) sc.AddGroup("Clean: cut ends", "#ffffff", "beams", gCut, new[] { "duct", "clean", "cut" }, "FLAG_CUT_END");
         ApplySystemView(sc);
-            File.WriteAllText(outBase + ".features.json", sc.ToJson(), new UTF8Encoding(false));
+        AddSteelGroups(sc, sv);
+        File.WriteAllText(outBase + ".features.json", sc.ToJson(), new UTF8Encoding(false));
     }
 
     // a rectangular edge's width direction (W_in lies along it), unit and square to the edge; null = not known (rigid,
