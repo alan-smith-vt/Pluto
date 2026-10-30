@@ -131,6 +131,30 @@ if (-not $NoSap) {
     $m = [regex]::Match($logText, 'NEW supports: (\d+) TAP_STUB links')
     Check "sap" "TAP_STUB links = supports.csv" ($m.Success -and [int]$m.Groups[1].Value -eq $sp.Count) $m.Value
     Check "sap" "every rect frame oriented" ($logText -match 'NEW orientation: \d+ rect frames oriented, 0 without')
+
+    # SAP model -> viewer with glyph looks (scripts\duct\sap-looks.csv): anchors against the CSVs SAP was built from
+    $sfj = "$Root\sap\demo.features.json"
+    Check "sap" "demo.bin + features.json exported" ((Test-Path "$Root\sap\demo.bin") -and (Test-Path $sfj))
+    $si = @{}
+    if (Test-Path $sfj) { foreach ($g in (Get-Content $sfj -Raw | ConvertFrom-Json).groups.items) { $si[$g.name] = $g } }
+    function Anchors([string]$g) { if ($si.ContainsKey($g) -and $si[$g].anchors) { @($si[$g].anchors) } else { @() } }
+    function NodeCount([string]$g) { $k = 0; if ($si.ContainsKey($g)) { foreach ($mm in $si[$g].members) { if ($mm.domain -eq "nodes") { $k += @($mm.nodeIds).Count } } }; $k }
+    $relEnds = @($sf | Where-Object { $_.ReleaseI -eq "M2M3" }).Count + @($sf | Where-Object { $_.ReleaseJ -eq "M2M3" }).Count
+    $a = Anchors "STEEL_RELEASED"
+    Check "sap" "hinge glyphs (STEEL_RELEASED anchors) = M2M3 ends in steel_frames.csv" ($si["STEEL_RELEASED"].look.glyph -eq "half" -and $a.Count -eq $relEnds) "$($a.Count) vs $relEnds"
+    Check "sap" "hinge glyphs sit at beam ends (t 0 / 1)" (@($a | Where-Object { $_.t -ne 0 -and $_.t -ne 1 }).Count -eq 0)
+    foreach ($c in "open-fixed", "open-pinned") {
+        $g = "STEEL_" + $c.Replace("-", "_").ToUpperInvariant(); $want = @($sj | Where-Object { $_.Condition -eq $c }).Count
+        Check "sap" "$g glyph per joint = $c joints" ($si.ContainsKey($g) -and $si[$g].look.tier -eq "exception" -and (NodeCount $g) -eq $want) "$(NodeCount $g) vs $want"
+    }
+    foreach ($t in @($sp | Group-Object { $_.Type.ToUpperInvariant() })) {
+        $a = Anchors ("SUPPORT_" + $t.Name)
+        Check "sap" "SUPPORT_$($t.Name) glyphs = supports.csv, each at the duct end with a direction" ($a.Count -eq $t.Count -and @($a | Where-Object { $_.t -ne 0 -or -not $_.dir }).Count -eq 0) "$($a.Count) vs $($t.Count)"
+    }
+    $flags = @($si.Keys | Where-Object { $_ -like "FLAG_*" })
+    Check "sap" "every FLAG_ group marks with warn, never repaints" ($flags.Count -gt 0 -and @($flags | Where-Object { $si[$_].look.glyph -ne "warn" }).Count -eq 0) ($flags -join " ")
+    $secs = @($oids.Values | Sort-Object -Unique)
+    Check "sap" "steel section groups are context" (@($secs | Where-Object { -not ($si.ContainsKey($_) -and @($si[$_].tags) -contains "context") }).Count -eq 0) ($secs -join " ")
 }
 
 Write-Output ("{0} checks, {1} failed" -f $script:n, $script:fails)
