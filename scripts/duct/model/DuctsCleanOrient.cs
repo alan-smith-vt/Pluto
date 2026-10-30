@@ -36,7 +36,7 @@ public partial class DuctsToPluto
             foreach (CEdge e in run) if (state[e] == 1) { e.Flags.Add("LARGE_SIDE_VERTICAL"); flagged++; }
             string sys = seed.Src.Count > 0 ? seed.Src[0].SysName : seed.Source;
             double len = run.Sum(e => DuctMath.Len(P[e.A], P[e.B]));
-            string what = string.Format(Inv, "  {0} {1} run, {2} frame(s), {3:0.#} ft ({4} with the larger side vertical)", sys, DimText(seed.Dim), run.Count, len, run.Count(e => state[e] == 1));
+            string what = string.Format(Inv, "  {0} {1} run, {2} frame(s), {3:0.#} ft ({4} with the larger side vertical)", sys, CleanModel.DimText(seed.Dim), run.Count, len, run.Count(e => state[e] == 1));
             if (run.Any(e => state[e] == -1))
             {
                 foreach (CEdge e in run) e.Flags.Add("ROTATION_CONFLICT");

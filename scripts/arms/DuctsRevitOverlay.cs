@@ -256,13 +256,13 @@ public partial class DuctsToPluto
                 while (!nodeOf.ContainsKey(end.Key) && attach.TryGetValue(end, out aq) && visited.Add(end)) { chain.Add(end); end = aq; }
                 if (!nodeOf.TryGetValue(end.Key, out id))
                 {
-                    if (attach.ContainsKey(end)) { id = MakeNode(nodes, ref nextNode, end.P, off, scale); nodeOf[end.Key] = id; }
+                    if (attach.ContainsKey(end)) { id = DuctGeom.MakeNode(nodes, ref nextNode, end.P, off, scale); nodeOf[end.Key] = id; }
                     else id = node(end);   // not attached: the plain path below, no further recursion
                 }
                 foreach (RvConn c in chain) nodeOf[c.Key] = id;
                 return id;
             }
-            id = MakeNode(nodes, ref nextNode, k.P, off, scale); nodeOf[k.Key] = id;
+            id = DuctGeom.MakeNode(nodes, ref nextNode, k.P, off, scale); nodeOf[k.Key] = id;
             foreach (string t in k.To) { RvConn q; if (conns.TryGetValue(t, out q) && inScope.Contains(q.Owner) && !nodeOf.ContainsKey(t)) nodeOf[t] = id; }
             RvConn tq; if (touch.TryGetValue(k, out tq) && !nodeOf.ContainsKey(tq.Key)) nodeOf[tq.Key] = id;
             return id;
@@ -295,7 +295,7 @@ public partial class DuctsToPluto
                     RvConn o = e.Conns[ecc], i = e.Conns[1 - ecc];
                     double back = (o.P[0] - i.P[0]) * o.D[0] + (o.P[1] - i.P[1]) * o.D[1] + (o.P[2] - i.P[2]) * o.D[2];
                     double[] foot = { o.P[0] - back * o.D[0], o.P[1] - back * o.D[1], o.P[2] - back * o.D[2] };
-                    int fn = MakeNode(nodes, ref nextNode, foot, off, scale);
+                    int fn = DuctGeom.MakeNode(nodes, ref nextNode, foot, off, scale);
                     ids.Add(RvBeam(beams, labels, ref nb, fn, node(o), nodes, label));
                     e.Segs.Add(new[] { fn, node(o), -1 });
                     int sid = RvBeam(beams, labels, ref nb, node(i), fn, nodes, label + " | offset stub");
@@ -304,7 +304,7 @@ public partial class DuctsToPluto
                 }
                 else if (corner != null)
                 {
-                    int cn = MakeNode(nodes, ref nextNode, corner, off, scale);
+                    int cn = DuctGeom.MakeNode(nodes, ref nextNode, corner, off, scale);
                     ids.Add(RvBeam(beams, labels, ref nb, node(e.Conns[0]), cn, nodes, label));
                     ids.Add(RvBeam(beams, labels, ref nb, cn, node(e.Conns[1]), nodes, label));
                     e.Segs.Add(new[] { node(e.Conns[0]), cn, -1 });
@@ -334,7 +334,7 @@ public partial class DuctsToPluto
                         if (q != thr[0] && q != thr[1])
                         {
                             double[] f = BranchJunction(a.P, b.P, ops[q]);
-                            int jn = MakeNode(nodes, ref nextNode, f, off, scale);
+                            int jn = DuctGeom.MakeNode(nodes, ref nextNode, f, off, scale);
                             ids.Add(RvBeam(beams, labels, ref nb, jn, node(e.Conns[q]), nodes, label));
                             e.Segs.Add(new[] { jn, node(e.Conns[q]), q });
                             junc.Add(new KeyValuePair<double, int>(DuctMath.Dist2(a.P, f), jn));
@@ -346,7 +346,7 @@ public partial class DuctsToPluto
                 }
                 else
                 {
-                    int hub = MakeNode(nodes, ref nextNode, e.P, off, scale);
+                    int hub = DuctGeom.MakeNode(nodes, ref nextNode, e.P, off, scale);
                     for (int q = 0; q < e.Conns.Count; q++)
                     {
                         ids.Add(RvBeam(beams, labels, ref nb, hub, node(e.Conns[q]), nodes, label));
@@ -418,7 +418,7 @@ public partial class DuctsToPluto
             }
             if (bestF == null) continue;
             linked.Add(k); sidePairs.Add(new[] { k.Owner, bestM[0].Owner });
-            int jn = MakeNode(nodes, ref nextNode, bestF, off, scale); sideNodes.Add(new[] { node(k), jn });
+            int jn = DuctGeom.MakeNode(nodes, ref nextNode, bestF, off, scale); sideNodes.Add(new[] { node(k), jn });
             int id = RvBeam(beams, labels, ref nb, node(k), jn, nodes,
                 string.Format(Inv, "side branch: Revit {0} -> side of {1} | {2:0.#} in from its line", k.Owner.Id, bestM[0].Owner.Id, bd * 12));
             if (id > 0) gSide.Add((uint)id);
@@ -511,7 +511,7 @@ public partial class DuctsToPluto
         foreach (int i in navOnly)
         {
             double[] p, q; NavAxis(rows[i], out p, out q);
-            int id = RvBeam(beams, labels, ref nb, MakeNode(nodes, ref nextNode, p, off, scale), MakeNode(nodes, ref nextNode, q, off, scale), nodes,
+            int id = RvBeam(beams, labels, ref nb, DuctGeom.MakeNode(nodes, ref nextNode, p, off, scale), DuctGeom.MakeNode(nodes, ref nextNode, q, off, scale), nodes,
                 "Navisworks #" + rows[i].NavisId + " | " + rows[i].Cat + " | " + rows[i].Name + " | " + rows[i].SizeText + " | room " + (rows[i].Room != "" ? rows[i].Room : "(none)") + " | NO REVIT MATCH | FLAGS NAVIS_ONLY");
             if (id > 0) { gNavOnly.Add((uint)id); navBeamRow[id] = i; }
         }
@@ -580,7 +580,7 @@ public partial class DuctsToPluto
         foreach (RvConn k in open) if (!touch.ContainsKey(k) && !nearSet.Contains(k) && !linked.Contains(k) && !attach.ContainsKey(k)) freeEnds.Add(k);
         List<DuctSystems.DuctSystem> systems = sysAn.AnalyzeSystems(scope, conns, inScope, touch, nearPairs, sidePairs, beams, beamDim, nodes, off, scale, rows, rowsOf, freeEnds);
         // clean centreline model (DuctsClean.cs): <out>_clean.bin + <out>.frames.csv (the SAP input)
-        foreach (Tuple<RvConn, double[]> c in sysAn.EndContacts) sideNodes.Add(new[] { node(c.Item1), MakeNode(nodes, ref nextNode, c.Item2, off, scale) });   // end contacts: rigid links
+        foreach (Tuple<RvConn, double[]> c in sysAn.EndContacts) sideNodes.Add(new[] { node(c.Item1), DuctGeom.MakeNode(nodes, ref nextNode, c.Item2, off, scale) });   // end contacts: rigid links
         HangerScope = inRoom; HangerRowsForView = rows; NavRowFlags.Clear();   // reset per run: CheckHangers only runs when there is steel   // DuctsCleanHangers.cs: the room's rows for the hanger check
         string cleanNote = BuildClean(outBase, modelId, lengthUnit, scope, beams, beamDim, nodes, off, scale, nearPairs, sideNodes, navBeamRow, rows, k => node(k), attach);
         DuctRunGraph.WriteRunsCsv(outBase + ".runs.csv", runSegs);
@@ -1296,7 +1296,7 @@ public partial class DuctsToPluto
     static int RvBeam(Dictionary<int, RawViewerWriter.BeamMember> beams, Dictionary<int, string> labels, ref int nb, int a, int b, Dictionary<int, Node> nodes, string label)
     {
         if (a == b) return 0;
-        beams[nb] = Beam(nb, a, b, 0, nodes); labels[nb] = label; return nb++;
+        beams[nb] = DuctGeom.Beam(nb, a, b, 0, nodes); labels[nb] = label; return nb++;
     }
 
 

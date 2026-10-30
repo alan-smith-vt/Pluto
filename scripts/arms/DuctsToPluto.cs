@@ -75,7 +75,6 @@ public partial class DuctsToPluto
 
     const string Fab = "MEP Fabrication Ductwork", FabHangers = "MEP Fabrication Hangers";
 
-
     public static Result Export(string runDir, string outBase, string modelId, string lengthUnit)
     {
         return Export(runDir, outBase, modelId, lengthUnit, null);
@@ -136,7 +135,7 @@ public partial class DuctsToPluto
         {
             int f;
             if (clToFile.TryGetValue(id, out f)) return f;
-            f = MakeNode(nodes, ref nextNode, nodeXyz[id], off, scale);
+            f = DuctGeom.MakeNode(nodes, ref nextNode, nodeXyz[id], off, scale);
             clToFile[id] = f;
             return f;
         };
@@ -145,7 +144,7 @@ public partial class DuctsToPluto
             string key = string.Format(Inv, "{0:F4}|{1:F4}|{2:F4}", p[0], p[1], p[2]);
             int f;
             if (keyToFile.TryGetValue(key, out f)) return f;
-            f = MakeNode(nodes, ref nextNode, p, off, scale);
+            f = DuctGeom.MakeNode(nodes, ref nextNode, p, off, scale);
             keyToFile[key] = f;
             return f;
         };
@@ -186,7 +185,7 @@ public partial class DuctsToPluto
                 sections.Add(RawViewerWriter.SectionDef.Rect(bname, (float)Math.Max(bY * scale, 1e-3), (float)Math.Max(hZ * scale, 1e-3)));
             }
             int bid = nextBeam++;
-            beams[bid] = Beam(bid, ptNode(pa), ptNode(pb), bs, nodes);
+            beams[bid] = DuctGeom.Beam(bid, ptNode(pa), ptNode(pb), bs, nodes);
             labels[bid] = labelOf(r); beamRow[bid] = r;
             grp.Add((uint)bid);
             return true;
@@ -285,7 +284,7 @@ public partial class DuctsToPluto
                 {
                     if (d[0] == d[1]) continue;
                     int id = nextBeam++;
-                    beams[id] = Beam(id, d[0], d[1], sec, nodes);
+                    beams[id] = DuctGeom.Beam(id, d[0], d[1], sec, nodes);
                     labels[id] = label; beamRow[id] = r;
                     network.Add(id);
                     if (!sized) gUnsized.Add((uint)id);
@@ -369,7 +368,7 @@ public partial class DuctsToPluto
                 {
                     claimed.Add(e);
                     int id = nextBeam++;
-                    beams[id] = Beam(id, e, wn, sized ? sec : secOf[e], nodes);   // unsized fitting: its duct's section
+                    beams[id] = DuctGeom.Beam(id, e, wn, sized ? sec : secOf[e], nodes);   // unsized fitting: its duct's section
                     labels[id] = labelOf(r); beamRow[id] = r;
                     network.Add(id);
                     (fab ? gFabBridge : gFitBridge).Add((uint)id);
@@ -517,7 +516,7 @@ public partial class DuctsToPluto
                     double[] p = { f[t + 3 * c], f[t + 3 * c + 1], f[t + 3 * c + 2] };
                     string key = string.Format(Inv, "{0:F4}|{1:F4}|{2:F4}", p[0], p[1], p[2]);
                     int nid;
-                    if (!keyToNode.TryGetValue(key, out nid)) { nid = MakeNode(nodes, ref nextNode, p, off, scale); keyToNode[key] = nid; }
+                    if (!keyToNode.TryGetValue(key, out nid)) { nid = DuctGeom.MakeNode(nodes, ref nextNode, p, off, scale); keyToNode[key] = nid; }
                     el.n[c] = nodes[nid];
                 }
                 elems[el.id] = el; labels[el.id] = label; g.Add((uint)el.id);
@@ -581,14 +580,14 @@ public partial class DuctsToPluto
         Func<int, int> clNode = delegate(int id)
         {
             int f;
-            if (!clToFile.TryGetValue(id, out f)) { f = MakeNode(nodes, ref nextNode, nodeXyz[id], off, scale); clToFile[id] = f; }
+            if (!clToFile.TryGetValue(id, out f)) { f = DuctGeom.MakeNode(nodes, ref nextNode, nodeXyz[id], off, scale); clToFile[id] = f; }
             return f;
         };
         Func<double[], int> ptNode = delegate(double[] p)
         {
             string key = string.Format(Inv, "{0:F4}|{1:F4}|{2:F4}", p[0], p[1], p[2]);
             int f;
-            if (!keyToFile.TryGetValue(key, out f)) { f = MakeNode(nodes, ref nextNode, p, off, scale); keyToFile[key] = f; }
+            if (!keyToFile.TryGetValue(key, out f)) { f = DuctGeom.MakeNode(nodes, ref nextNode, p, off, scale); keyToFile[key] = f; }
             return f;
         };
         var sections = new List<RawViewerWriter.SectionDef>();
@@ -603,7 +602,7 @@ public partial class DuctsToPluto
         {
             if (a == b) return 0;
             int id = nextBeam++;
-            beams[id] = Beam(id, a, b, 0, nodes); labels[id] = labelOf(r);
+            beams[id] = DuctGeom.Beam(id, a, b, 0, nodes); labels[id] = labelOf(r);
             List<uint> l; if (!byRun.TryGetValue(r.RunName, out l)) { l = new List<uint>(); byRun[r.RunName] = l; }
             l.Add((uint)id);
             foreach (int n in new[] { a, b })
@@ -1045,9 +1044,9 @@ public partial class DuctsToPluto
         foreach (DuctOpening o in ops)
         {
             DuctRow r = rows[o.Row - 1];
-            int a = MakeNode(nodes, ref nextNode, o.C, off, scale);
-            int b = MakeNode(nodes, ref nextNode, new[] { o.C[0] + o.N[0] * 0.5, o.C[1] + o.N[1] * 0.5, o.C[2] + o.N[2] * 0.5 }, off, scale);
-            beams[nb] = Beam(nb, a, b, 0, nodes);
+            int a = DuctGeom.MakeNode(nodes, ref nextNode, o.C, off, scale);
+            int b = DuctGeom.MakeNode(nodes, ref nextNode, new[] { o.C[0] + o.N[0] * 0.5, o.C[1] + o.N[1] * 0.5, o.C[2] + o.N[2] * 0.5 }, off, scale);
+            beams[nb] = DuctGeom.Beam(nb, a, b, 0, nodes);
             labels[nb] = string.Format(Inv, "{0} #{1} | {2} | stated {3} | opening {4} | {5} | nearest {6} in", r.Guid, r.NavisId, r.Name, r.SizeText,
                 o.Shape == "round" ? string.Format(Inv, "round {0:0.#}", o.Dia) : string.Format(Inv, "{0:0.#}x{1:0.#}", o.A, o.B), o.Status, F1(o.Near));
             List<uint> l;
@@ -1302,11 +1301,11 @@ public partial class DuctsToPluto
         {
             int id; if (nodeOf.TryGetValue(o, out id)) return id;
             if (o.Mate != null && o.Status.StartsWith("joint") && nodeOf.TryGetValue(o.Mate, out id)) { nodeOf[o] = id; return id; }
-            id = MakeNode(nodes, ref nextNode, o.C, off, scale); nodeOf[o] = id;
+            id = DuctGeom.MakeNode(nodes, ref nextNode, o.C, off, scale); nodeOf[o] = id;
             if (o.Mate != null && o.Status.StartsWith("joint")) nodeOf[o.Mate] = id;
             return id;
         };
-        Func<double[], int> pt = p => MakeNode(nodes, ref nextNode, p, off, scale);
+        Func<double[], int> pt = p => DuctGeom.MakeNode(nodes, ref nextNode, p, off, scale);
         var sections = new List<RawViewerWriter.SectionDef>();
         sections.Add(RawViewerWriter.SectionDef.Pipe("part", (float)(3 * scale / 12), (float)(0.5 * scale / 12)));
         sections.Add(RawViewerWriter.SectionDef.Pipe("link", (float)(1.5 * scale / 12), (float)(0.375 * scale / 12)));
@@ -1316,7 +1315,7 @@ public partial class DuctsToPluto
         Func<int, int, int, string, int> beam = delegate(int a, int b, int sec, string label)
         {
             if (a == b) return 0;
-            beams[nb] = Beam(nb, a, b, sec, nodes); labels[nb] = label; return nb++;
+            beams[nb] = DuctGeom.Beam(nb, a, b, sec, nodes); labels[nb] = label; return nb++;
         };
         var byRow = new Dictionary<int, List<DuctOpening>>();
         foreach (DuctOpening o in ops) { List<DuctOpening> l; if (!byRow.TryGetValue(o.Row, out l)) { l = new List<DuctOpening>(); byRow[o.Row] = l; } l.Add(o); }
@@ -1779,7 +1778,7 @@ public partial class DuctsToPluto
                     double[] p = { f[t + 3 * c], f[t + 3 * c + 1], f[t + 3 * c + 2] };
                     string key = string.Format(Inv, "{0:F4}|{1:F4}|{2:F4}", p[0], p[1], p[2]);
                     int nid;
-                    if (!keyToNode.TryGetValue(key, out nid)) { nid = MakeNode(nodes, ref nextNode, p, off, scale); keyToNode[key] = nid; }
+                    if (!keyToNode.TryGetValue(key, out nid)) { nid = DuctGeom.MakeNode(nodes, ref nextNode, p, off, scale); keyToNode[key] = nid; }
                     el.n[c] = nodes[nid];
                 }
                 elems[el.id] = el; labels[el.id] = label;
@@ -2097,32 +2096,6 @@ public partial class DuctsToPluto
         double sw = !double.IsNaN(r.NameD) ? r.NameD : r.NameW, sh = !double.IsNaN(r.NameD) ? r.NameD : r.NameH;
         if (double.IsNaN(sw) || double.IsNaN(sh)) return r.FitLen * 12 > Math.Max(r.FitA, r.FitB);
         return (Near(r.FitA, sw) && Near(r.FitB, sh)) || (Near(r.FitA, sh) && Near(r.FitB, sw));
-    }
-
-    static RawViewerWriter.BeamMember Beam(int id, int a, int b, int sec, Dictionary<int, Node> nodes)
-    {
-        var m = new RawViewerWriter.BeamMember();
-        m.Id = id; m.NodeA = a; m.NodeB = b; m.SectionIndex = sec;
-        Node na = nodes[a], nb = nodes[b];
-        double dx = nb.xyz.X - na.xyz.X, dy = nb.xyz.Y - na.xyz.Y, dz = nb.xyz.Z - na.xyz.Z;
-        double l = Math.Sqrt(dx * dx + dy * dy + dz * dz);
-        if (l > 0) { dx /= l; dy /= l; dz /= l; }
-        // y = up x axis (horizontal, so z = x cross y is as vertical as possible); vertical member: y = X
-        double yx = -dy, yy = dx, yz = 0;
-        double yl = Math.Sqrt(yx * yx + yy * yy);
-        m.LocalY = yl < 1e-6 ? new double[] { 1, 0, 0 } : new double[] { yx / yl, yy / yl, yz };
-        return m;
-    }
-
-    static int MakeNode(Dictionary<int, Node> nodes, ref int next, double[] p, double[] off, double scale)
-    {
-        var n = new Node();
-        n.id = next++;
-        n.xyz.X = (float)((p[0] - off[0]) * scale);
-        n.xyz.Y = (float)((p[1] - off[1]) * scale);
-        n.xyz.Z = (float)((p[2] - off[2]) * scale);
-        nodes[n.id] = n;
-        return n.id;
     }
 
     static List<DuctRow> ReadRows(string path)

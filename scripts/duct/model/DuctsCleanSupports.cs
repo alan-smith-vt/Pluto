@@ -77,9 +77,9 @@ public partial class DuctsToPluto
                 if ((1 - s) * L <= 1) { ductJ[i] = ce.B; continue; }
                 if (prev != ce.A && DuctMath.Len(P[prev], DuctMath.Lerp(P[ce.A], P[ce.B], s)) * 12 <= 1) { ductJ[i] = prev; continue; }
                 int nk = nextKey++; P[nk] = DuctMath.Lerp(P[ce.A], P[ce.B], s);
-                outEdges.Add(CopyEdge(ce, prev, nk)); prev = nk; ductJ[i] = nk;
+                outEdges.Add(CleanModel.CopyEdge(ce, prev, nk)); prev = nk; ductJ[i] = nk;
             }
-            outEdges.Add(prev == ce.A ? ce : CopyEdge(ce, prev, ce.B));
+            outEdges.Add(prev == ce.A ? ce : CleanModel.CopyEdge(ce, prev, ce.B));
         }
         clean.Clear(); clean.AddRange(outEdges);
 
@@ -214,8 +214,8 @@ public partial class DuctsToPluto
             string label = string.Format(Inv, "support {0} | {1} | gap {2:0.##} in | duct {3:0.#}x{4:0.#} {5} at N{6} | steel {7} at {8}{9}",
                 sp.Id, sp.Type, sp.Gap, run.Dim[i][0], run.Dim[i][1], sp.System, run.DuctJoint[i], sp.Section, j.Name,
                 sp.Flags.Count > 0 ? " | FLAGS " + string.Join(" ", sp.Flags.ToArray()) : "");
-            int a = MakeNode(nodes, ref next, pd, off, scale), b = MakeNode(nodes, ref next, ps, off, scale);
-            var m = Beam(nb, a, b, sec, nodes); beams[nb] = m; labels[nb] = label; v.Stubs.Add((uint)nb);
+            int a = DuctGeom.MakeNode(nodes, ref next, pd, off, scale), b = DuctGeom.MakeNode(nodes, ref next, ps, off, scale);
+            var m = DuctGeom.Beam(nb, a, b, sec, nodes); beams[nb] = m; labels[nb] = label; v.Stubs.Add((uint)nb);
             List<FeaturesSidecar.Anchor> l; if (!v.ByType.TryGetValue(sp.Type, out l)) { l = new List<FeaturesSidecar.Anchor>(); v.ByType[sp.Type] = l; v.StubsByType[sp.Type] = new List<uint>(); }
             l.Add(new FeaturesSidecar.Anchor { Domain = "beams", Id = (uint)nb, T = 0, Dir = sp.Axis,
                 Label = string.Format(Inv, "{0} gap {1:0.##} in", sp.Id, sp.Gap) });

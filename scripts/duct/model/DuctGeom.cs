@@ -59,4 +59,32 @@ public static class DuctGeom
         string[] f = (runName ?? "").Split('-');
         return f.Length >= 4 ? f[2].Trim() : "";
     }
+
+    // a beam a -> b with a horizontal local y (vertical member: y = X); overlay / clean viewer files
+    public static RawViewerWriter.BeamMember Beam(int id, int a, int b, int sec, Dictionary<int, Node> nodes)
+    {
+        var m = new RawViewerWriter.BeamMember();
+        m.Id = id; m.NodeA = a; m.NodeB = b; m.SectionIndex = sec;
+        Node na = nodes[a], nb = nodes[b];
+        double dx = nb.xyz.X - na.xyz.X, dy = nb.xyz.Y - na.xyz.Y, dz = nb.xyz.Z - na.xyz.Z;
+        double l = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+        if (l > 0) { dx /= l; dy /= l; dz /= l; }
+        // y = up x axis (horizontal, so z = x cross y is as vertical as possible); vertical member: y = X
+        double yx = -dy, yy = dx, yz = 0;
+        double yl = Math.Sqrt(yx * yx + yy * yy);
+        m.LocalY = yl < 1e-6 ? new double[] { 1, 0, 0 } : new double[] { yx / yl, yy / yl, yz };
+        return m;
+    }
+
+    // a viewer node at p (feet) in the file's frame (offset, scale)
+    public static int MakeNode(Dictionary<int, Node> nodes, ref int next, double[] p, double[] off, double scale)
+    {
+        var n = new Node();
+        n.id = next++;
+        n.xyz.X = (float)((p[0] - off[0]) * scale);
+        n.xyz.Y = (float)((p[1] - off[1]) * scale);
+        n.xyz.Z = (float)((p[2] - off[2]) * scale);
+        nodes[n.id] = n;
+        return n.id;
+    }
 }
