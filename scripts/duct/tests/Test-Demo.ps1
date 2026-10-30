@@ -114,9 +114,10 @@ if (Test-Path "$o\revit_clean.features.json") {
     foreach ($g in $fj.groups.items) { $k = 0; foreach ($mm in $g.members) { $k += @($mm.ids).Count }; $groups[$g.name] = $k; $anchors[$g.name] = @($g.anchors).Count }
 }
 Check "viewer" "clean group 'Flag: UNSUPPORTED_SPAN'" ($groups["Flag: UNSUPPORTED_SPAN"] -gt 0)
-# end-condition glyphs: one anchor per steel frame end of that condition (hinged = released corner / framed ends)
-$ends = @($sf | ForEach-Object { "$($_.EndI)|$($_.ReleaseI)"; "$($_.EndJ)|$($_.ReleaseJ)" })
-$want = [ordered]@{ "End: open-pinned" = @($ends | Where-Object { $_ -like "open-pinned|*" }).Count; "End: open-fixed" = @($ends | Where-Object { $_ -like "open-fixed|*" }).Count
+# end-condition glyphs: one anchor per steel frame end of that condition (hinged = released corner / framed ends, plus the
+# end kept only for stability at an all-hinged joint, Stability = kept; fixed = open-fixed and column-base ends)
+$ends = @($sf | ForEach-Object { "$($_.EndI)|$(if ($_.StabilityI -eq "kept") { "M2M3" } else { $_.ReleaseI })"; "$($_.EndJ)|$(if ($_.StabilityJ -eq "kept") { "M2M3" } else { $_.ReleaseJ })" })
+$want = [ordered]@{ "End: open-pinned" = @($ends | Where-Object { $_ -like "open-pinned|*" }).Count; "End: open-fixed" = @($ends | Where-Object { $_ -like "open-fixed|*" -or $_ -like "column-base|*" }).Count
     "End: hinged" = @($ends | Where-Object { $_ -eq "corner|M2M3" -or $_ -eq "framed|M2M3" }).Count; "End: collinear-hinged" = @($ends | Where-Object { $_ -eq "collinear|M2M3" }).Count }
 foreach ($g in $want.Keys) { Check "viewer" "'$g' glyphs = steel_frames.csv ends" ($want[$g] -gt 0 -and $anchors[$g] -eq $want[$g]) "$($anchors[$g]) vs $($want[$g])" }
 Check "viewer" "a 'Steel: <section>' group per section" (@($oids.Values | Sort-Object -Unique | Where-Object { -not $groups.ContainsKey("Steel: $_") }).Count -eq 0)

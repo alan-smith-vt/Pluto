@@ -20,6 +20,12 @@ using System.Text;
 //                 (within VerticalDeg) and the rest are not -> the vertical keeps its moments
 //   collinear     exactly two ends meeting, axes within CollinearDeg -> M2M3 on both, condition 'collinear' (own
 //                 viewer group so the rule can change)
+// Stability rules (user decision 2026-10-30, the demo SAP model could not run MODAL):
+//   column-base   the bottom end of a vertical member with nothing below it (a brace landing there too) -> FIXED,
+//                 the column keeps its moments, the others M2M3
+//   kept moments  a joint where every end would be M2M3 (corner, collinear): one member keeps its moments (vertical,
+//                 deepest, longest; Frame.KeptI/J) so the joint rotation has stiffness; statics unchanged
+//   PINNED+T      a lone member pinned at both ends: its I joint also holds rotation about the member axis (TAxis)
 public class SteelModel
 {
     public class Settings
@@ -31,8 +37,9 @@ public class SteelModel
     public class Joint
     {
         public int Id; public double X, Y, Z;
-        public string Restraint = "";    // PINNED | FIXED | ""
-        public string Condition = "";    // open-pinned | open-fixed | framed | corner | collinear | ""
+        public string Restraint = "";    // PINNED | PINNED+T (also torsion about TAxis) | FIXED | ""
+        public string Condition = "";    // open-pinned | open-fixed | column-base | framed | corner | collinear | ""
+        public double[] TAxis;           // PINNED+T: the unit member axis the rotation is held about
         public List<string> Flags = new List<string>();
         public string Name { get { return "S" + Id; } }
     }
@@ -41,6 +48,7 @@ public class SteelModel
     {
         public int Id, I, J, Source;          // Source = index into Members
         public string ReleaseI = "", ReleaseJ = "", EndI = "interior", EndJ = "interior";
+        public bool KeptI, KeptJ;             // the end keeps its moments only for stability (rule 3): a hinge all the same
         public string Name { get { return "SF" + Id; } }
     }
 
@@ -48,7 +56,7 @@ public class SteelModel
     public readonly List<SteelMember> Members = new List<SteelMember>();
     public readonly List<Joint> Joints = new List<Joint>();
     public readonly List<Frame> Frames = new List<Frame>();
-    public int Snapped, OnSide, Open, OpenNear, ZeroLength;
+    public int Snapped, OnSide, Open, OpenNear, ZeroLength, ColumnBases, KeptMoments, TorsionHeld;
 
     public SteelModel(Settings s) { S = s ?? new Settings(); }
 
@@ -211,21 +219,54 @@ public class SteelModel
                 if (near <= S.NearIn) { jt.Flags.Add("OPEN_NEAR"); OpenNear++; }
                 continue;
             }
+            // column base (rule 2, 2026-10-30): the bottom end of a vertical member where every member there rises (a
+            // brace landing on the column foot); a hung-frame knee (beam level with the joint) is not a base
+            double[] jp = { jt.X, jt.Y, jt.Z };
+            var colBase = ends.Where(e => SlopeDeg(A[e >> 1], B[e >> 1]) >= 90 - S.VerticalDeg && OtherEnd(A, B, e)[2] > jp[2]).ToList();
+            if (colBase.Count > 0 && ends.All(e => OtherEnd(A, B, e)[2] > jp[2] + S.SnapIn))
+            {
+                jt.Condition = "column-base"; jt.Restraint = "FIXED"; ColumnBases++;
+                foreach (int e in ends) SetEnd(endFrame[e], e == colBase[0] ? "column-base" : "corner", e == colBase[0] ? "" : "M2M3");
+                continue;
+            }
+            string cond = "corner";
             if (ends.Count == 2)
             {
                 double[] u = Axis(A, B, ends[0] >> 1), v = Axis(A, B, ends[1] >> 1);
-                if (Math.Abs(Dot(u, v)) >= cosCol)
-                {
-                    jt.Condition = "collinear";
-                    foreach (int e in ends) SetEnd(endFrame[e], "collinear", "M2M3");
-                    continue;
-                }
+                if (Math.Abs(Dot(u, v)) >= cosCol) cond = "collinear";
             }
-            jt.Condition = "corner";
+            jt.Condition = cond;
             var vert = ends.Where(e => SlopeDeg(A[e >> 1], B[e >> 1]) >= 90 - S.VerticalDeg).ToList();
-            int keep = ends.Count >= 3 && vert.Count == 1 ? vert[0] : -1;
-            foreach (int e in ends) SetEnd(endFrame[e], "corner", e == keep ? "" : "M2M3");
+            int keep = cond == "corner" && ends.Count >= 3 && vert.Count == 1 ? vert[0] : -1;
+            // every end hinged would leave the joint's rotation with no stiffness (rule 3, 2026-10-30): one member keeps
+            // its moments; joint equilibrium still makes its end moment zero, so the statics are those of the hinges
+            bool kept = keep < 0;
+            if (kept) { keep = KeepOne(ends, A, B); KeptMoments++; }
+            foreach (int e in ends) SetEnd(endFrame[e], cond, e == keep ? "" : "M2M3");
+            if (kept) { var fe = endFrame[keep]; if (fe.Value) fe.Key.KeptI = true; else fe.Key.KeptJ = true; }
         }
+
+        // a lone member pinned at both ends spins about its own axis (rule 4, 2026-10-30): its I joint also holds
+        // the rotation about the member axis (PINNED+T, TAxis); bending stays free
+        foreach (Frame f in Frames)
+        {
+            Joint ji = Joints[f.I - 1], jj = Joints[f.J - 1];
+            if (ji.Restraint != "PINNED" || jj.Restraint != "PINNED" || f.EndI == "interior" || f.EndJ == "interior") continue;
+            if (Frames.Count(g => g.I == f.I || g.J == f.I) != 1 || Frames.Count(g => g.I == f.J || g.J == f.J) != 1) continue;
+            double[] a = JointPos(f.I), b = JointPos(f.J); double L = Dist(a, b);
+            ji.Restraint = "PINNED+T"; ji.TAxis = new[] { (b[0] - a[0]) / L, (b[1] - a[1]) / L, (b[2] - a[2]) / L };
+            TorsionHeld++;
+        }
+    }
+
+    static double[] OtherEnd(double[][] A, double[][] B, int e) { return (e & 1) == 0 ? B[e >> 1] : A[e >> 1]; }
+
+    // the end that keeps its moments at an all-hinged joint: a vertical member, then the deepest section, then the longest
+    int KeepOne(List<int> ends, double[][] A, double[][] B)
+    {
+        return ends.OrderByDescending(e => SlopeDeg(A[e >> 1], B[e >> 1]) >= 90 - S.VerticalDeg ? 1 : 0)
+                   .ThenByDescending(e => double.IsNaN(Members[e >> 1].D) ? 0 : Members[e >> 1].D)
+                   .ThenByDescending(e => Dist(A[e >> 1], B[e >> 1])).ThenBy(e => e).First();
     }
 
     static void SetEnd(KeyValuePair<Frame, bool> fe, string cond, string release)
@@ -286,8 +327,15 @@ public class SteelModel
     // the viewer group an end belongs to (null = none: continuous, or a corner vertical kept)
     public static string EndGroup(string cond, string release)
     {
+        return EndGroup(cond, release, false);
+    }
+
+    // kept: the end keeps its moments only for stability (Frame.KeptI/J), drawn as the hinge it is
+    public static string EndGroup(string cond, string release, bool kept)
+    {
         if (cond == "open-pinned" || cond == "open-fixed") return cond;
-        if (release != "M2M3") return null;
+        if (cond == "column-base") return "open-fixed";
+        if (release != "M2M3" && !kept) return null;
         return cond == "collinear" ? "collinear-hinged" : "hinged";
     }
 
@@ -297,8 +345,10 @@ public class SteelModel
                       .Select(g => g.Key + " " + g.Count()).ToArray();
         int rel = Frames.Count(f => f.ReleaseI != "") + Frames.Count(f => f.ReleaseJ != "");
         return string.Format(Inv, "steel model: {0} members -> {1} frames, {2} joints ({3}); ends snapped {4} ({5} onto a member's side); " +
-            "open {6} ({7} OPEN_NEAR, other steel within {8} in); released ends (M2M3) {9}; zero length dropped {10}",
-            Members.Count, Frames.Count, Joints.Count, string.Join(", ", c), Snapped, OnSide, Open, OpenNear, S.NearIn, rel, ZeroLength);
+            "open {6} ({7} OPEN_NEAR, other steel within {8} in); released ends (M2M3) {9}; zero length dropped {10}; " +
+            "stability: column bases {11}, all-hinged joints with one member kept {12}, lone members with torsion held {13}",
+            Members.Count, Frames.Count, Joints.Count, string.Join(", ", c), Snapped, OnSide, Open, OpenNear, S.NearIn, rel, ZeroLength,
+            ColumnBases, KeptMoments, TorsionHeld);
     }
 
     // ---------- files (inches) ----------
@@ -306,13 +356,15 @@ public class SteelModel
     public void WriteCsv(string outBase)
     {
         var s = new StringBuilder();
-        s.AppendLine("Joint,X_in,Y_in,Z_in,Restraint,Condition,Flags");
+        s.AppendLine("Joint,X_in,Y_in,Z_in,Restraint,Condition,Flags,TAxisX,TAxisY,TAxisZ");
         foreach (Joint j in Joints)
-            s.AppendLine(string.Join(",", new[] { j.Name, R3(j.X), R3(j.Y), R3(j.Z), j.Restraint, j.Condition, string.Join(" ", j.Flags.ToArray()) }));
+            s.AppendLine(string.Join(",", new[] { j.Name, R3(j.X), R3(j.Y), R3(j.Z), j.Restraint, j.Condition, string.Join(" ", j.Flags.ToArray()),
+                j.TAxis != null ? j.TAxis[0].ToString("0.######", Inv) : "", j.TAxis != null ? j.TAxis[1].ToString("0.######", Inv) : "",
+                j.TAxis != null ? j.TAxis[2].ToString("0.######", Inv) : "" }));
         File.WriteAllText(outBase + ".steel_joints.csv", s.ToString(), new UTF8Encoding(false));
 
         s = new StringBuilder();
-        s.AppendLine("Frame,JointI,JointJ,XI_in,YI_in,ZI_in,XJ_in,YJ_in,ZJ_in,Section,D_in,Bf_in,Tf_in,Tw_in,WebX,WebY,WebZ,CP,OffY_in,OffZ_in,ReleaseI,ReleaseJ,EndI,EndJ,MemberOid,Flags");
+        s.AppendLine("Frame,JointI,JointJ,XI_in,YI_in,ZI_in,XJ_in,YJ_in,ZJ_in,Section,D_in,Bf_in,Tf_in,Tw_in,WebX,WebY,WebZ,CP,OffY_in,OffZ_in,ReleaseI,ReleaseJ,EndI,EndJ,MemberOid,Flags,StabilityI,StabilityJ");
         foreach (Frame f in Frames)
         {
             SteelMember b = Members[f.Source]; Joint ji = Joints[f.I - 1], jj = Joints[f.J - 1];
@@ -322,7 +374,7 @@ public class SteelModel
             s.AppendLine(string.Join(",", new[] { f.Name, ji.Name, jj.Name, R3(ji.X), R3(ji.Y), R3(ji.Z), R3(jj.X), R3(jj.Y), R3(jj.Z),
                 Csv(sized ? b.SectionName : "UNSIZED"), sized ? R3(b.D * InPerM) : "", sized ? R3(b.Bf * InPerM) : "", sized ? R3(b.Tf * InPerM) : "", sized ? R3(b.Tw * InPerM) : "",
                 web[0].ToString("0.######", Inv), web[1].ToString("0.######", Inv), web[2].ToString("0.######", Inv),
-                b.Cp.ToString(Inv), R3(oy), R3(oz), f.ReleaseI, f.ReleaseJ, f.EndI, f.EndJ, Csv(b.MemberOid ?? ""), sized ? "" : "UNSIZED" }));
+                b.Cp.ToString(Inv), R3(oy), R3(oz), f.ReleaseI, f.ReleaseJ, f.EndI, f.EndJ, Csv(b.MemberOid ?? ""), sized ? "" : "UNSIZED", f.KeptI ? "kept" : "", f.KeptJ ? "kept" : "" }));
         }
         File.WriteAllText(outBase + ".steel_frames.csv", s.ToString(), new UTF8Encoding(false));
     }
