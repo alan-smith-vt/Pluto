@@ -8,7 +8,7 @@
 #   Axis probe (builds its own two-cantilever model; close your model first, or run in a second SAP):
 #     powershell.exe -NonInteractive -File scripts\sap\Run-SapSurvey.ps1 -Probe [-OutDir C:\Temp\sapsurvey]
 #   -OutDir default: with -Candidates and a scripts\duct\duct-config.psd1, <WorkDir>\optimize\connected (where
-#   Run-Optimizer.ps1 reads it); otherwise $env:TEMP\sapsurvey.
+#   Run-JointOptimizer.ps1 reads it); otherwise $env:TEMP\sapsurvey.
 #   -SapDir "C:\Program Files\Computers and Structures\SAP2000 22" picks the install (default: newest, or $env:PLUTO_SAP_DIR).
 param(
     [switch]$Survey,
