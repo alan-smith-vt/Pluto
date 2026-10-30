@@ -6,6 +6,7 @@
 Group,Glyph,At,Tier,Label,Section,Color,Dir,Context
 STEEL_OPEN_FIXED,support-fixed,members,exception,Fixed (open end),Member ends,,,
 STEEL_OPEN_PINNED,support-pinned,members,exception,Pinned (open end),Member ends,,,
+STEEL_COLUMN_BASE,support-fixed,members,exception,Fixed support (column base),Member ends,,,
 STEEL_RELEASED,half,ends-released,detail,Hinged end (M2+M3),Member ends,,,
 STEEL_COLLINEAR,diamond,members,detail,Collinear hinge,Member ends,,,
 SUPPORT_GUIDE,ring-arrows,ends-I,detail,Guide,Supports,,adjacent,
