@@ -3,8 +3,8 @@ cut points: 1 from <ROOT>\cuts\cuts.csv
 manual drop: 3 parts from <ROOT>\cuts\drop.txt
 steel: 74 members from <ROOT>\steel\steel.csv (room=(all) rows=74 kept=74 members=74 unsized=0 zeroLength=0; orient: missing=0 badVector=0  dimConflicts=0  cp: offCentroid=36 unmapped=0)
 primary systems: SYSA, SYSB, SYSC
-NEW fit 0.01 ft median (74 pairs 1:1, rot 30.006 deg, scale check 1)
-NEW room: Navisworks 85 rows (58 fab), Revit 83 el (58 fab), Navisworks without Revit 4 (1 fab), Revit only 2 (1 fab), category differs 0, Revit only located in a Navisworks-only part 1 (Navisworks parts 1)
-NEW joints: connected 77 touching 0 near 2 side 0 outside 0 open 13
-NEW supports: 39 (guide 39), steel through a duct 0; unsupported spans > 10 ft 7: SYSA 21.5 ft, SYSA 20 ft, SYSB 20 ft, SYSC 20 ft, SYSA 18.3 ft, SYSA 13 ft, other: EXH 12 ft
+NEW fit 0.01 ft median (83 pairs 1:1, rot 30.005 deg, scale check 1)
+NEW room: Navisworks 97 rows (70 fab), Revit 95 el (70 fab), Navisworks without Revit 4 (1 fab), Revit only 2 (1 fab), category differs 0, Revit only located in a Navisworks-only part 1 (Navisworks parts 1)
+NEW joints: connected 89 touching 0 near 2 side 0 outside 0 open 15
+NEW supports: 39 (guide 39), steel through a duct 0; unsupported spans > 10 ft 8: SYSA 21.5 ft, SYSA 20 ft, SYSB 20 ft, SYSC 20 ft, SYSA 18.3 ft, SYSC 14.8 ft, SYSA 13 ft, other: EXH 12 ft
 [done] <T>s. In the viewer: Add overlay... -> <ROOT>\out\revit.bin

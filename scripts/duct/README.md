@@ -162,6 +162,19 @@ comment lists its full arguments.
   `CarbonSections` list (the SAP material is surveyed but not used); joints are full 6-DOF disconnects; all load
   cases must be linear static.
 
+## Synthetic demo (whole pipeline, no project data)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\duct\Run-Demo.ps1 [-Root <dir>] [-NoSap]
+```
+
+Generates the demo with `pythonTools\ducts\make_demo_data.py` (fixed seed). It writes Navisworks and Revit runs,
+rack steel, cuts, a drop list and a demo config to `<Root>` (default `%TEMP%\hvac-demo`). It then runs
+`Export-DuctsViewer.ps1 -Run -Revit` with the demo config swapped in (your `duct-config.psd1` is put back),
+writing to `<Root>\out\revit.*`. Last, it runs `Run-SapDucts.ps1` with the steel and the supports, writing
+`<Root>\sap\demo.sdb`. View `<Root>\out\revit_clean.bin`. `<Root>\README.md` lists which pipeline feature each
+synthetic item exercises. `scripts\duct\tests\Test-DuctFixture.ps1` diffs the same export against `tests\expected\`.
+
 ## When something fails
 
 - **"running scripts is disabled"**: the `Set-ExecutionPolicy` line above, once per console.
