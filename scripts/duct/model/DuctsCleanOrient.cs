@@ -8,7 +8,7 @@ using System.Linq;
 //   LARGE_SIDE_VERTICAL: a horizontal rect frame (within OrientHorizDeg) whose vertical extent beats its horizontal
 //     extent by more than OrientTolIn (a transition only when both its ends are).
 //   Rotation: the width direction turns 90 deg about the frame's own axis (Y -> axis x Y); W / H, joints and the
-//     centreline stay. It spreads from a flagged frame through its size run: rect frames of the same W x H joined
+//     centreline stay. It spreads from a flagged frame through its size run: rect frames of the same W x H (in order) joined
 //     end to end (a joint with exactly these two clean frames), through bends and risers; it stops at transitions
 //     (a transition is a run of its own), branch joints, rigid links and open ends. Rotated frames: ROTATED.
 //   A run that also holds a horizontal frame with its larger side already horizontal is not rotated:
@@ -61,6 +61,9 @@ public partial class DuctsToPluto
 
     static string OrientNewLine = "";
 
+    // same W and same H in order (SameDim ignores order: a 16x28 -> 28x16 twist is one size there, two runs here)
+    static bool SameWH(CEdge a, CEdge b) { return Math.Abs(a.Dim[1] - b.Dim[1]) <= 0.5 && Math.Abs(a.Dim[2] - b.Dim[2]) <= 0.5; }
+
     // +1 / -1 / 0, see ApplyOrientation
     static int OrientState(CEdge ce, Dictionary<int, double[]> P, double sinH)
     {
@@ -93,7 +96,7 @@ public partial class DuctsToPluto
                 List<CEdge> at = inc[n];
                 if (at.Count != 2) continue;   // open end or branch joint
                 CEdge o = at[0] == e ? at[1] : at[0];
-                if (seen.Contains(o) || o.Rigid || o.DimB != null || o.Dim == null || o.Dim[0] != 0 || o.Y == null || !SameDim(e, o)) continue;
+                if (seen.Contains(o) || o.Rigid || o.DimB != null || o.Dim == null || o.Dim[0] != 0 || o.Y == null || !SameWH(e, o)) continue;
                 seen.Add(o); run.Add(o); stack.Push(o);
             }
         }
