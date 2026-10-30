@@ -5,7 +5,7 @@ param(
     [switch]$TBeam = $false,
     [int[]]$LCs = $null
 )
-. ".\lib\Config.ps1"
+. (Join-Path $PSScriptRoot "lib\Config.ps1")
 $workingDir = "" ## sanitized
 $outdir = "" ## sanitized
 if (!(Test-Path $outdir)) { $null = New-Item -ItemType Directory -Path $outdir }

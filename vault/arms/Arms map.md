@@ -3,8 +3,9 @@
 *↑ [[vault/Pluto Home|Home]]*
 
 Hub for `vault/arms/` — one usage note per import/export arm. The C# for each lives in
-`scripts/arms/` and loads with the lib through `scripts/lib/Config.ps1` (one Add-Type batch,
-PowerShell 5.1, C# 5). Every arm writes the same pair: `<outBase>.bin` (v4) +
+`scripts/arms/` and loads through `scripts/arms/Import-Arms.ps1`: the core (`scripts/lib`) builds
+alone into a cached dll, and the arms + `scripts/duct/model` build in one batch against it (PowerShell 5.1,
+C# 5; cache in `%TEMP%\pluto-cs\`, in-memory fallback if a dll can't be written or loaded). Every arm writes the same pair: `<outBase>.bin` (v4) +
 `<outBase>.features.json` (sidecar groups). Drop both on the viewer together.
 
 ## Plant (production side, SQL exports)

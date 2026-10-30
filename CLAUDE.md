@@ -13,7 +13,7 @@ Repo root is the Obsidian vault; tool documentation lives under `vault/`.
   `DUCT_ALL`, `<project dir>`). Handoffs, project studies and anything tied to a real job go in
   the Notes vault (production-machine only). History was purged of such data on 2026-09-17.
 - All C# is **C# 5**, loaded via `Add-Type` under **Windows PowerShell 5.1**, warnings-as-errors.
-  Compile-check by dot-sourcing `scripts/lib/Config.ps1` from a PS 5.1 `-NonInteractive` run
+  Compile-check by dot-sourcing `scripts/arms/Import-Arms.ps1` (core + arms; `scripts/lib/Import-PlutoCore.ps1` = core only) from a PS 5.1 `-NonInteractive` run
   (`C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe`, never `pwsh`).
 - Binary = results / geometry, C#-written, write-once. User-defined things go in the sidecar.
 - Python only under `pythonTools/` (development side). Nothing in `scripts/` may need it.

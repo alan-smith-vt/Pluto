@@ -95,7 +95,7 @@ using System.Text;
 // if it is ever wanted.
 //
 // Usage from PowerShell 5.1:
-//   . <repo>\scripts\lib\Config.ps1
+//   . <repo>\scripts\arms\Import-Arms.ps1
 //   $r = [SapToPluto]::Export('C:\Temp\tank.s2k', 'C:\Temp\results.s2k', 'C:\Temp\tank', 'sap/tank')
 //   $r.Summary()
 // then drop tank.bin + tank.features.json on the viewer together.
