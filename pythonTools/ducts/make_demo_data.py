@@ -223,12 +223,19 @@ class Runner:
             out.append(p)
         return out
 
-    def bend(self, d2):
+    def bend(self, d2, carry=False):
+        """carry: the width direction turns with the elbow (rotation d -> d2), as a real elbow does, instead of
+        being reset to horizontal."""
         d2 = unit(d2)
         p = self._part("Bend")
         a = max(self.size.half(True), self.size.half(False)) + 3 * FT
         corner = self.p + self.d * a
-        w2 = horiz_w(d2, self.w)
+        if carry:
+            k = np.cross(self.d, d2); s = np.linalg.norm(k); c = float(np.dot(self.d, d2))
+            k = k / s if s > 1e-9 else k
+            w2 = unit(self.w * c + np.cross(k, self.w) * s + k * np.dot(k, self.w) * (1 - c))
+        else:
+            w2 = horiz_w(d2, self.w)
         c1 = Conn(p, self.p, -self.d, self.size, self.w); self._link(c1)
         end = corner + d2 * a
         c2 = Conn(p, end, d2, self.size, w2)
@@ -338,7 +345,7 @@ def build_ducts():
     # the hung beams (bottom 1.5 in above them), a Revit-only damper
     B = Size(48, 24); yb = 525.5
     rs = Runner("SYSB", (1002, yb, z_on_steel(TOP_OF_STEEL, 2.0, B)), X, B, "revit", CS, 0.0478, insul=1.5)
-    rs.straight(30, piece=10)
+    first_b = rs.straight(30, piece=10)
     rs.inline("Damper", 1.0, navis=False)              # Revit only
     mt = rs.straight(10)[0]
     rs.straight(56, piece=10)
@@ -393,6 +400,20 @@ def build_ducts():
     rdn.straight(3)
     rdn.bend(-Z)
     rdn.straight(6, piece=3)
+    # rotation conflict: one same-size 20x30 run off SYSB going north, larger side vertical, a riser, then an elbow
+    # that carries the width direction round so the last leg has its larger side horizontal
+    rcf = rs.tap(first_b[1], 0.5, Y, Size(20, 30))
+    rcf.straight(3)
+    rcf.bend(Z, carry=True)
+    rcf.straight(4)
+    rcf.bend(X, carry=True)
+    rcf.straight(6, piece=3)
+    # rotation stops at a transition: a 16x28 run off SYSA going south (larger side vertical), then a transition to
+    # 28x16 (larger side horizontal)
+    rtr = ra.tap(first[0], 0.5, -Y, Size(16, 28))
+    rtr.straight(3)
+    rtr.transition(Size(28, 16))
+    rtr.straight(4)
     rng = main_rng
     return drop_ids
 
