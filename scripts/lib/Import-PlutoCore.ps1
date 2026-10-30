@@ -4,9 +4,14 @@
 # Core only: domain code (arms, duct model) compiles in its own batch against this dll.
 # The dll is cached under %TEMP%\pluto-cs\ (or $env:PLUTO_CS_CACHE), keyed on every source file (path + content), the reference list
 # and the runtime, so an unchanged core is not recompiled and a changed one never reuses a stale build.
-# Fallback ($PlutoCoreDll = $null): if the dll cannot be written or loaded (e.g. an allow-list policy on
-# user temp folders), the core compiles in memory as before; Import-Arms.ps1 then compiles core + arms in
-# one in-memory batch (it sets $PlutoWantArms so the core is not compiled twice).
+# Fallback ($PlutoCoreDll = $null, $PlutoInMemory = $true): if the dll cannot be written or loaded (e.g. an
+# allow-list policy on user temp folders), the core compiles in memory as before. In-memory batches cannot
+# reference each other, so in the fallback a session holds ONE in-memory batch with the core in it:
+#   - Import-Arms.ps1 compiles core + arms in one batch (it sets $PlutoWantArms so the core is not compiled
+#     here first); if the core is already in memory without the arms it stops with a clear error.
+#   - Import-SapApi.ps1 loads the core only as a dll ($PlutoCoreOptional): in the fallback the SAP classes build
+#     without the core. (Refactor #4: SAP classes that use core types need core + SAP in one batch there.)
+# $PlutoCoreOptional = $true (set by the caller): skip the in-memory fallback, leave the core unloaded.
 
 # References by full path where the Framework folder has the dll. A bare name only resolves while nothing
 # else is loaded: once the SAP API is in the session every bare name fails with 0x80131502
@@ -50,15 +55,21 @@ function Import-PlutoCs([string]$Name, [string[]]$Sources, [string[]]$References
         try { Move-Item $tmp $dll -ErrorAction Stop } catch { Remove-Item $tmp -ErrorAction SilentlyContinue }
     }
     # 3. load (an allow-list policy may refuse a dll from a user folder: in memory)
-    try { [void][System.Reflection.Assembly]::LoadFrom($dll); return $dll }
+    try { [void][System.Reflection.Assembly]::LoadFrom($dll) }
     catch { Write-Warning ("Pluto: cached build {0} not loadable ({1}); compiling in memory" -f $dll, $_.Exception.Message); return $null }
+    # 4. prune: older builds of this name, unused for 7 days (one in use by another session is skipped)
+    Get-ChildItem $dir -Filter "$Name-*.dll" -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -ne $dll -and $_.LastWriteTime -lt (Get-Date).AddDays(-7) } |
+        ForEach-Object { Remove-Item $_.FullName -ErrorAction SilentlyContinue }
+    $dll
 }
 
 if (-not ('FeaturesSidecar' -as [type])) {
     $coreCs = Get-ChildItem -Path $PSScriptRoot -Recurse -Filter *.cs | Select-Object -ExpandProperty FullName
     $PlutoCoreDll = Import-PlutoCs "PlutoCore" $coreCs $PlutoRefs
-    if (-not $PlutoCoreDll -and -not $PlutoWantArms) { Add-Type -Path $coreCs -ReferencedAssemblies $PlutoRefs }
+    $PlutoInMemory = (-not $PlutoCoreDll)
+    if ($PlutoInMemory -and -not $PlutoWantArms -and -not $PlutoCoreOptional) { Add-Type -Path $coreCs -ReferencedAssemblies $PlutoRefs }
 } elseif (-not $PlutoCoreDll) {
     $loc = ([type]'FeaturesSidecar').Assembly.Location
-    if ($loc) { $PlutoCoreDll = $loc }
+    if ($loc) { $PlutoCoreDll = $loc } else { $PlutoInMemory = $true }
 }

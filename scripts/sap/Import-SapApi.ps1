@@ -13,9 +13,11 @@ if (-not $SapDir -or -not (Test-Path (Join-Path $SapDir "SAP2000v1.dll"))) { thr
 $SapExe = Join-Path $SapDir "SAP2000.exe"
 $sapDll = Join-Path $SapDir "SAP2000v1.dll"
 if (-not ("SapSession" -as [type])) {
-    # the core (scripts\lib) first, so the SAP classes can use its helpers; without a cached core dll
-    # (in-memory fallback, see Import-PlutoCore.ps1) they build without it
-    . (Join-Path $PSScriptRoot "..\lib\Import-PlutoCore.ps1")
+    # the core (scripts\lib) first, as a dll only, so the SAP classes can use its helpers; without a cached
+    # core dll (in-memory fallback, see Import-PlutoCore.ps1) they build without it and the core stays
+    # unloaded, so a later arms\Import-Arms.ps1 (Run-Sap -Export) can still put core + arms in one batch
+    $PlutoCoreOptional = $true
+    try { . (Join-Path $PSScriptRoot "..\lib\Import-PlutoCore.ps1") } finally { $PlutoCoreOptional = $null }
     [void][System.Reflection.Assembly]::LoadFrom($sapDll)   # so the Add-Type'd code resolves it at run time
     $sapCs = Get-ChildItem -Path $PSScriptRoot -Filter "Sap*.cs" | Select-Object -ExpandProperty FullName
     # netstandard: SAP 26's dll targets it; harmless for SAP 22
