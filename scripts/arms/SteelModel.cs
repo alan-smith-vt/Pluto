@@ -195,76 +195,83 @@ public class SteelModel
             if (!endsAt.TryGetValue(jid, out l)) { l = new List<int>(); endsAt[jid] = l; }
             l.Add(e);
         }
-        double cosCol = Math.Cos(S.CollinearDeg * Math.PI / 180);
         foreach (KeyValuePair<int, List<int>> kv in endsAt)
-        {
-            Joint jt = Joints[kv.Key - 1]; List<int> ends = kv.Value;
-            if (through.Contains(jt))
-            {
-                jt.Condition = "framed";
-                foreach (int e in ends) SetEnd(endFrame[e], "framed", "M2M3");
-                continue;
-            }
-            if (ends.Count == 1)
-            {
-                int e = ends[0], m = e >> 1;
-                double slope = SlopeDeg(A[m], B[m]);
-                bool pinned = slope < S.SlopePinnedDeg;
-                jt.Condition = pinned ? "open-pinned" : "open-fixed";
-                jt.Restraint = pinned ? "PINNED" : "FIXED";
-                SetEnd(endFrame[e], jt.Condition, "");
-                Open++;
-                double near = double.MaxValue, t, d; double[] p = { jt.X, jt.Y, jt.Z };
-                for (int j = 0; j < n; j++) { if (j == m) continue; Proj(A[j], B[j], p, out t, out d); near = Math.Min(near, d); }
-                if (near <= S.NearIn) { jt.Flags.Add("OPEN_NEAR"); OpenNear++; }
-                continue;
-            }
-            // column base (rule 2, 2026-10-30): the bottom end of a vertical member where every member there rises (a
-            // brace landing on the column foot); a hung-frame knee (beam level with the joint) is not a base
-            double[] jp = { jt.X, jt.Y, jt.Z };
-            var colBase = ends.Where(e => SlopeDeg(A[e >> 1], B[e >> 1]) >= 90 - S.VerticalDeg && OtherEnd(A, B, e)[2] > jp[2]).ToList();
-            if (colBase.Count > 0 && ends.All(e => OtherEnd(A, B, e)[2] > jp[2] + S.SnapIn))
-            {
-                jt.Condition = "column-base"; jt.Restraint = "FIXED"; ColumnBases++;
-                foreach (int e in ends) SetEnd(endFrame[e], e == colBase[0] ? "column-base" : "corner", e == colBase[0] ? "" : "M2M3");
-                continue;
-            }
-            string cond = "corner";
-            if (ends.Count == 2)
-            {
-                double[] u = Axis(A, B, ends[0] >> 1), v = Axis(A, B, ends[1] >> 1);
-                if (Math.Abs(Dot(u, v)) >= cosCol) cond = "collinear";
-            }
-            jt.Condition = cond;
-            var vert = ends.Where(e => SlopeDeg(A[e >> 1], B[e >> 1]) >= 90 - S.VerticalDeg).ToList();
-            int keep = cond == "corner" && ends.Count >= 3 && vert.Count == 1 ? vert[0] : -1;
-            // every end hinged would leave the joint's rotation with no stiffness (rule 3, 2026-10-30): one member keeps
-            // its moments; joint equilibrium still makes its end moment zero, so the statics are those of the hinges
-            bool kept = keep < 0;
-            if (kept) { keep = KeepOne(ends, A, B); KeptMoments++; }
-            foreach (int e in ends) SetEnd(endFrame[e], cond, e == keep ? "" : "M2M3");
-            if (kept) { var fe = endFrame[keep]; if (fe.Value) fe.Key.KeptI = true; else fe.Key.KeptJ = true; }
-        }
+            ClassifyJoint(Joints[kv.Key - 1], kv.Value, through.Contains(Joints[kv.Key - 1]), endFrame, A, B);
+        HoldLoneTorsion();
+    }
 
-        // a lone member pinned at both ends spins about its own axis (rule 4, 2026-10-30): its I joint also holds
-        // the rotation about the member axis (PINNED+T, TAxis); bending stays free
+    // the condition, restraint and end releases at one joint from the member ends there (ids 2m+k)
+    void ClassifyJoint(Joint jt, List<int> ends, bool onThrough, Dictionary<int, KeyValuePair<Frame, bool>> endFrame,
+                       double[][] A, double[][] B)
+    {
+        if (onThrough)
+        {
+            jt.Condition = "framed";
+            foreach (int e in ends) SetEnd(endFrame[e], "framed", "M2M3");
+            return;
+        }
+        if (ends.Count == 1)
+        {
+            int e = ends[0], m = e >> 1;
+            bool pinned = SlopeDeg(A[m], B[m]) < S.SlopePinnedDeg;
+            jt.Condition = pinned ? "open-pinned" : "open-fixed";
+            jt.Restraint = pinned ? "PINNED" : "FIXED";
+            SetEnd(endFrame[e], jt.Condition, "");
+            Open++;
+            double near = double.MaxValue, t, d; double[] p = { jt.X, jt.Y, jt.Z };
+            for (int j = 0; j < A.Length; j++) { if (j == m) continue; Proj(A[j], B[j], p, out t, out d); near = Math.Min(near, d); }
+            if (near <= S.NearIn) { jt.Flags.Add("OPEN_NEAR"); OpenNear++; }
+            return;
+        }
+        // column base (rule 2, 2026-10-30): every member at the joint rises from it (by more than SnapIn) and one of them
+        // is vertical, e.g. a brace landing on the column foot; a hung-frame knee (beam level with the joint) is not a
+        // base. Two verticals: the one KeepOne prefers (deepest, longest) is the column.
+        double z = jt.Z;
+        if (ends.All(e => OtherEnd(A, B, e)[2] > z + S.SnapIn) && ends.Any(e => IsVertical(A, B, e)))
+        {
+            int col = KeepOne(ends.Where(e => IsVertical(A, B, e)).ToList(), A, B);
+            jt.Condition = "column-base"; jt.Restraint = "FIXED"; ColumnBases++;
+            foreach (int e in ends) SetEnd(endFrame[e], e == col ? "column-base" : "corner", e == col ? "" : "M2M3");
+            return;
+        }
+        string cond = "corner";
+        if (ends.Count == 2 && Math.Abs(Dot(Axis(A, B, ends[0] >> 1), Axis(A, B, ends[1] >> 1))) >= Math.Cos(S.CollinearDeg * Math.PI / 180))
+            cond = "collinear";
+        jt.Condition = cond;
+        var vert = ends.Where(e => IsVertical(A, B, e)).ToList();
+        int keep = cond == "corner" && ends.Count >= 3 && vert.Count == 1 ? vert[0] : -1;
+        // every end hinged would leave the joint's rotation with no stiffness (rule 3, 2026-10-30): one member keeps
+        // its moments; joint equilibrium still makes its end moment zero, so the statics are those of the hinges
+        bool kept = keep < 0;
+        if (kept) { keep = KeepOne(ends, A, B); KeptMoments++; }
+        foreach (int e in ends) SetEnd(endFrame[e], cond, e == keep ? "" : "M2M3");
+        if (kept) { var fe = endFrame[keep]; if (fe.Value) fe.Key.KeptI = true; else fe.Key.KeptJ = true; }
+    }
+
+    // a lone member pinned at both ends spins about its own axis (rule 4, 2026-10-30): its I joint also holds the
+    // rotation about the member axis (PINNED+T, TAxis); bending stays free
+    void HoldLoneTorsion()
+    {
+        var degree = new int[Joints.Count + 1];   // frame ends per joint id
+        foreach (Frame f in Frames) { degree[f.I]++; degree[f.J]++; }
         foreach (Frame f in Frames)
         {
             Joint ji = Joints[f.I - 1], jj = Joints[f.J - 1];
-            if (ji.Restraint != "PINNED" || jj.Restraint != "PINNED" || f.EndI == "interior" || f.EndJ == "interior") continue;
-            if (Frames.Count(g => g.I == f.I || g.J == f.I) != 1 || Frames.Count(g => g.I == f.J || g.J == f.J) != 1) continue;
+            if (ji.Restraint != "PINNED" || jj.Restraint != "PINNED" || degree[f.I] != 1 || degree[f.J] != 1) continue;
             double[] a = JointPos(f.I), b = JointPos(f.J); double L = Dist(a, b);
             ji.Restraint = "PINNED+T"; ji.TAxis = new[] { (b[0] - a[0]) / L, (b[1] - a[1]) / L, (b[2] - a[2]) / L };
             TorsionHeld++;
         }
     }
 
+    bool IsVertical(double[][] A, double[][] B, int e) { return SlopeDeg(A[e >> 1], B[e >> 1]) >= 90 - S.VerticalDeg; }
+
     static double[] OtherEnd(double[][] A, double[][] B, int e) { return (e & 1) == 0 ? B[e >> 1] : A[e >> 1]; }
 
     // the end that keeps its moments at an all-hinged joint: a vertical member, then the deepest section, then the longest
     int KeepOne(List<int> ends, double[][] A, double[][] B)
     {
-        return ends.OrderByDescending(e => SlopeDeg(A[e >> 1], B[e >> 1]) >= 90 - S.VerticalDeg ? 1 : 0)
+        return ends.OrderByDescending(e => IsVertical(A, B, e) ? 1 : 0)
                    .ThenByDescending(e => double.IsNaN(Members[e >> 1].D) ? 0 : Members[e >> 1].D)
                    .ThenByDescending(e => Dist(A[e >> 1], B[e >> 1])).ThenBy(e => e).First();
     }
