@@ -165,6 +165,27 @@ if (-not $NoSap) {
     Check "sap" "check flags mark with warn, other flags are context" ($flags -contains "FLAG_UNSUPPORTED_SPAN" -and $badChk.Count -eq 0 -and $badCtx.Count -eq 0) ((@($badChk) + @($badCtx)) -join " ")
     $secs = @($oids.Values | Sort-Object -Unique)
     Check "sap" "steel section groups are context" (@($secs | Where-Object { -not ($si.ContainsKey($_) -and @($si[$_].tags) -contains "context") }).Count -eq 0) ($secs -join " ")
+
+    # MODAL runs: the built model analysed on a copy (the .sdb itself is not written). Stable = SAP's .LOG has no
+    # "UNSTABLE" warning and 0 negative eigenvalues, and mode 1 has a period. Time-limited: an unstable model can stall
+    # MODAL for good, which is exactly what this guards against (the stability rules, laptop:1162).
+    $sdb = "$Root\out\sap\hvac.sdb"; $copy = "$Root\out\sap\modal-check.sdb"; $mlog = "$Root\out\sap\modal-check.run.log"
+    if (Test-Path $sdb) {
+        $runSap = Join-Path $repo "scripts\sap\Run-Sap.ps1"
+        $argStr = (@("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", $runSap, "-Open", $sdb, "-NoSaveSdb", "-RunOnCopy", $copy) | ForEach-Object { '"' + $_ + '"' }) -join " "
+        $pr = Start-Process (Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe") -ArgumentList $argStr -NoNewWindow -PassThru -RedirectStandardOutput $mlog -RedirectStandardError "$mlog.err"
+        $null = $pr.Handle
+        $done = $pr.WaitForExit(5 * 60000)
+        if (-not $done) { & taskkill.exe /T /F /PID $pr.Id | Out-Null } else { $pr.WaitForExit() }
+        Check "sap" "MODAL run finishes within 5 min (Run-Sap -RunOnCopy)" ($done -and $pr.ExitCode -eq 0) $(if (-not $done) { "killed after 5 min: MODAL stalled?" } else { "exit $($pr.ExitCode); log $mlog" })
+        $alog = [IO.Path]::ChangeExtension($copy, ".LOG")
+        $lt = $(if (Test-Path $alog) { Get-Content $alog -Raw } else { "" })
+        $neg = [regex]::Matches($lt, 'NUMBER OF NEGATIVE EIGENVALUES\s*=\s*(\d+)')
+        $t1 = [regex]::Match($lt, 'Found mode\s+1 of\s+\d+:.*?T=\s*([0-9.Ee+-]+)')
+        Check "sap" "analysis log: no UNSTABLE / ILL-CONDITIONED warning" ($lt -ne "" -and $lt -notmatch 'UNSTABLE OR ILL-CONDITIONED') $alog
+        Check "sap" "analysis log: 0 negative eigenvalues" ($neg.Count -gt 0 -and @($neg | Where-Object { $_.Groups[1].Value -ne "0" }).Count -eq 0) (($neg | ForEach-Object { $_.Value }) -join "; ")
+        Check "sap" "MODAL mode 1 has a period" ($t1.Success -and (Num $t1.Groups[1].Value) -gt 0) $(if ($t1.Success) { "T1 = " + $t1.Groups[1].Value + " s" } else { "no 'Found mode 1' line" })
+    }
 }
 
 Write-Output ("{0} checks, {1} failed" -f $script:n, $script:fails)
