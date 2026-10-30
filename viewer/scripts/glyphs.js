@@ -10,15 +10,18 @@
 //
 // Rendering: per model ONE THREE.Points over every glyph, sampling a canvas
 // atlas (one cell per glyph name, white shape + dark halo, tinted by the
-// group colour). Constant pixel size, depth-tested, drawn slightly toward the
-// camera so a glyph on a surface wins. Per point: an inset along the beam
+// group colour). Constant pixel size. Exception glyphs draw over everything;
+// detail glyphs are depth-tested after a pull of PULL_FRAC x span toward the
+// camera, so an anchor inside a solid (a duct centreline) shows on its surface.
+// Support glyphs (support-fixed / support-pinned) hang from their node with
+// the base along `dir` (default: out of the member at a beam end, else world -Z). Per point: an inset along the beam
 // toward its other end (t = 0 / 1 anchors of one joint don't stack), an
 // optional world `dir` the sprite turns to, and a tier: `exception` always
 // shows, `detail` only once the camera is nearer than DETAIL_FRAC x the
 // model span. 10k glyphs measured at no visible frame cost (RTX laptop).
 //
 // Hover: a tooltip next to the cursor ("<glyph> label · anchor label"),
-// picked on the CPU in screen space. Legend: built from the same groups and
+// picked on the CPU in screen space; a glyph the scene hides is skipped. Legend: built from the same groups and
 // the same atlas pixels, bottom-left of the viewport.
 //
 // Pure part (collect) runs headless: node viewer/tests/test_glyphs.js
@@ -26,11 +29,20 @@
 
 var FEAGlyphs = (function () {
 
-    var NAMES = ['circle', 'disc', 'half', 'diamond', 'square', 'triangle', 'warn', 'tick', 'cross', 'ring-arrows', 'anchor'];
+    var NAMES = ['circle', 'disc', 'half', 'diamond', 'square', 'triangle', 'warn', 'tick', 'cross', 'ring-arrows', 'anchor',
+                 'support-fixed', 'support-pinned'];
+    // Support glyphs (SAP/STAAD style) hang off the node: the node is the cell
+    // centre and the base lies toward +x, which `dir` turns to point away from
+    // the member (default: out of the member for a beam-end anchor, else world -Z). Drawn larger so the half-cell reads.
+    var BASE_GLYPH = { 'support-fixed': 1, 'support-pinned': 1 };
+    var BASE_SCALE = 1.6;
     var CELL = 64;
     var PX = 22;                 // glyph size, CSS px
     var PICK_PX = 12;            // hover radius, CSS px
     var DETAIL_FRAC = 0.45;      // detail tier shows below this camera distance / model span
+    var PULL_FRAC = 0.01;        // detail glyphs draw this x model span toward the camera, so an anchor
+                                 // inside a solid (a duct centreline) still shows on its surface;
+                                 // exception glyphs draw over everything
     var NEUTRAL = '#e8e8ee';
     var ALARM = '#ff4d6d';       // reserved: `warn` default; nothing else should use it
 
@@ -48,7 +60,7 @@ var FEAGlyphs = (function () {
     // items: features groups; views: { shell, beam } (elems records are
     // [count, n0, n1, ...] into that view's nodes); hiddenOf(g) -> bool.
     function collect(items, views, hiddenOf) {
-        var pos = [], along = [], dir = [], col = [], gly = [], tier = [], inset = [], meta = [], legend = [];
+        var pos = [], along = [], dir = [], col = [], gly = [], tier = [], inset = [], scale = [], meta = [], legend = [];
         var maps = {};
         function mapFor(fam) {
             if (maps[fam]) return maps[fam];
@@ -103,19 +115,23 @@ var FEAGlyphs = (function () {
                 pos.push(at.p[0], at.p[1], at.p[2]);
                 var a = at.a || [0, 0, 0];
                 along.push(a[0], a[1], a[2]);
-                var d = Array.isArray(an.dir) && an.dir.length === 3 ? an.dir : [0, 0, 0];
+                var isBase = !!BASE_GLYPH[NAMES[gIdx]];
+                // support base: explicit dir, else out of the member at a beam end, else world -Z
+                var d = Array.isArray(an.dir) && an.dir.length === 3 ? an.dir
+                      : !isBase ? [0, 0, 0] : at.a ? [-at.a[0], -at.a[1], -at.a[2]] : [0, 0, -1];
                 dir.push(+d[0] || 0, +d[1] || 0, +d[2] || 0);
                 col.push(rgb[0], rgb[1], rgb[2]);
                 gly.push(gIdx);
                 tier.push(isExc ? 1 : 0);
-                inset.push(at.a ? ins : 0);
+                inset.push(at.a && !isBase ? ins : 0);   // a support sits on its node, not inset
+                scale.push(isBase ? BASE_SCALE : 1);
                 meta.push({ gi: gi, ai: ai, label: an.label || '' });
                 row.n++;
             });
         });
         return { n: meta.length, pos: Float32Array.from(pos), along: Float32Array.from(along), dir: Float32Array.from(dir),
                  col: Float32Array.from(col), glyph: Float32Array.from(gly), tier: Float32Array.from(tier),
-                 inset: Float32Array.from(inset), meta: meta, legend: legend };
+                 inset: Float32Array.from(inset), scale: Float32Array.from(scale), meta: meta, legend: legend };
     }
 
     // ---- atlas (canvas, drawn once) -------------------------------------
@@ -147,6 +163,20 @@ var FEAGlyphs = (function () {
                 [-1, 1].forEach(function (s) { solid(function () { g.moveTo(c + s * r * 1.55, c); g.lineTo(c + s * r * 1.05, c - r * 0.4); g.lineTo(c + s * r * 1.05, c + r * 0.4); g.closePath(); }); });
                 g.lineWidth = 4; g.strokeStyle = INK; g.fillStyle = INK; g.beginPath(); g.arc(c, c, r * 0.55, 0, Math.PI * 2); g.fill();
                 halo(circ(r * 0.5), 3); break;
+            // supports: node at the cell centre, base toward +x (dir turns it)
+            case 'support-fixed': (function () {
+                var x0 = c + 2, x1 = CELL - 9, h = r * 1.15;           // block from the node to the base plate
+                solid(function () { g.rect(x0, c - h, x1 - x0, 2 * h); });
+                g.strokeStyle = INK; g.lineWidth = 2;                    // hatch: SAP-style fixity
+                for (var k = -2; k <= 2; k++) { g.beginPath(); g.moveTo(x0 + 4, c + k * h * 0.42 - 4); g.lineTo(x1 - 4, c + k * h * 0.42 + 4); g.stroke(); }
+                halo(function () { g.moveTo(x1 + 3, c - h - 4); g.lineTo(x1 + 3, c + h + 4); }, 3);   // ground line
+            })(); break;
+            case 'support-pinned': (function () {
+                var x1 = CELL - 10, h = r * 1.05;                        // triangle: apex on the node, base toward +x
+                solid(function () { g.moveTo(c + 1, c); g.lineTo(x1, c - h); g.lineTo(x1, c + h); g.closePath(); });
+                halo(function () { g.moveTo(x1 + 4, c - h - 4); g.lineTo(x1 + 4, c + h + 4); }, 3);   // ground line
+                g.fillStyle = INK; g.beginPath(); g.arc(c + 1, c, 3.5, 0, Math.PI * 2); g.fill();      // the pin
+            })(); break;
             case 'anchor':
                 solid(function () { g.moveTo(c, c - r * 0.05); g.lineTo(c + r * 1.1, c + r * 1.1); g.lineTo(c - r * 1.1, c + r * 1.1); g.closePath(); });
                 solid(function () { g.rect(c - r * 0.6, c - r * 1.15, r * 1.2, r * 1.1); }); break;
@@ -168,16 +198,20 @@ var FEAGlyphs = (function () {
         if (imgCache[key]) return imgCache[key];
         var cv = document.createElement('canvas'); cv.width = cv.height = CELL;
         var g = cv.getContext('2d'), i = glyphIndex(name);
+        if (BASE_GLYPH[NAMES[i]]) { g.translate(CELL / 2, CELL / 2); g.rotate(Math.PI / 2); g.translate(-CELL * 0.75, -CELL / 2); }   // base down, node near the top
         g.drawImage(atlas(), i * CELL, 0, CELL, CELL, 0, 0, CELL, CELL);
+        g.setTransform(1, 0, 0, 1, 0, 0);
         g.globalCompositeOperation = 'multiply'; g.fillStyle = color; g.fillRect(0, 0, CELL, CELL);
-        g.globalCompositeOperation = 'destination-in'; g.drawImage(atlas(), i * CELL, 0, CELL, CELL, 0, 0, CELL, CELL);
+        g.globalCompositeOperation = 'destination-in';
+        if (BASE_GLYPH[NAMES[i]]) { g.translate(CELL / 2, CELL / 2); g.rotate(Math.PI / 2); g.translate(-CELL * 0.75, -CELL / 2); }
+        g.drawImage(atlas(), i * CELL, 0, CELL, CELL, 0, 0, CELL, CELL);
         return (imgCache[key] = cv.toDataURL());
     }
 
     // ---- shaders ---------------------------------------------------------
     var VS = [
-        'attribute vec3 along; attribute vec3 gdir; attribute vec3 color; attribute float glyph; attribute float tier; attribute float inset;',
-        'uniform float size; uniform vec2 viewport; uniform float detailFar; uniform float orthoDepth;',
+        'attribute vec3 along; attribute vec3 gdir; attribute vec3 color; attribute float glyph; attribute float tier; attribute float inset; attribute float gscale;',
+        'uniform float size; uniform vec2 viewport; uniform float detailFar; uniform float orthoDepth; uniform float pull;',
         'varying vec3 vC; varying float vG; varying vec2 vRot;',
         'vec2 screenDir(vec4 c0, vec3 w) {',
         '  vec4 c1 = projectionMatrix * modelViewMatrix * vec4(position + w, 1.0);',
@@ -186,16 +220,18 @@ var FEAGlyphs = (function () {
         'void main() {',
         '  vC = color; vG = glyph;',
         '  vec4 mv = modelViewMatrix * vec4(position, 1.0);',
-        '  vec4 c0 = projectionMatrix * mv;',
         '  float depth = orthoDepth > 0.0 ? orthoDepth : -mv.z;',
+        '  vec4 mvp = mv;',
+        '  if (orthoDepth > 0.0) mvp.z += pull; else { float l = length(mv.xyz); mvp.xyz *= max(l - pull, 0.5 * l) / max(l, 1e-6); }',
+        '  vec4 c0 = projectionMatrix * mvp;',
         '  float show = (tier > 0.5 || depth < detailFar) ? 1.0 : 0.0;',
         '  vec2 off = vec2(0.0); vRot = vec2(1.0, 0.0);',
         '  if (inset > 0.0) off = screenDir(c0, along * 1e-3 * abs(mv.z) + along * 1e-6) * inset;',
         '  if (length(gdir) > 0.0) { vec2 r = screenDir(c0, normalize(gdir) * 1e-3 * abs(mv.z) + gdir * 1e-6); if (length(r) > 0.0) vRot = r; }',
         '  c0.xy += off / viewport * c0.w;',
-        '  c0.z -= 0.002 * c0.w;',
+        '  if (tier > 0.5) c0.z = -0.999 * c0.w;',   // exceptions: over everything
         '  gl_Position = c0;',
-        '  gl_PointSize = size * show; }'
+        '  gl_PointSize = size * gscale * show; }'
     ].join('\n');
     var FS = [
         'uniform sampler2D atlas; uniform float count;',
@@ -216,7 +252,7 @@ var FEAGlyphs = (function () {
         return new THREE.ShaderMaterial({
             vertexShader: VS, fragmentShader: FS,
             uniforms: { atlas: { value: texture }, count: { value: NAMES.length }, size: { value: PX },
-                        viewport: { value: new THREE.Vector2(1, 1) }, detailFar: { value: 1e30 }, orthoDepth: { value: 0 } }
+                        viewport: { value: new THREE.Vector2(1, 1) }, detailFar: { value: 1e30 }, orthoDepth: { value: 0 }, pull: { value: 0 } }
         });
     }
     function spanOf(v) {
@@ -232,6 +268,7 @@ var FEAGlyphs = (function () {
         u.viewport.value.set(sz.x / 2, sz.y / 2);     // NDC -> CSS px half-extent
         u.size.value = PX * dpr;
         u.detailFar.value = span * DETAIL_FRAC;
+        u.pull.value = span * PULL_FRAC;
         u.orthoDepth.value = camera.isOrthographicCamera ? (camera.top - camera.bottom) / camera.zoom * 1.07 : 0;
     }
 
@@ -254,6 +291,7 @@ var FEAGlyphs = (function () {
             geo.setAttribute('glyph', new THREE.BufferAttribute(data.glyph, 1));
             geo.setAttribute('tier', new THREE.BufferAttribute(data.tier, 1));
             geo.setAttribute('inset', new THREE.BufferAttribute(data.inset, 1));
+            geo.setAttribute('gscale', new THREE.BufferAttribute(data.scale, 1));
             var pts = new THREE.Points(geo, material());
             pts.frustumCulled = false;
             pts.renderOrder = 10;
@@ -276,37 +314,63 @@ var FEAGlyphs = (function () {
     }
 
     // ---- picking (CPU, screen space; mirrors the vertex shader) ---------
-    var v0 = null, v1 = null;
+    // Candidates within PICK_PX of the cursor, nearest first; the first one
+    // the scene does not hide wins. Hidden = what the shader hides: an
+    // exception glyph never; a detail glyph when a ray through its centre
+    // pixel hits geometry nearer than the glyph pulled PULL_FRAC x span
+    // toward the camera.
+    var occluder = function (cssX, cssY) {      // -> world point of the nearest visible surface, or null
+        if (typeof feaPick !== 'function') return null;
+        var r = renderer.domElement.getBoundingClientRect();
+        var h = feaPick(r.left + cssX, r.top + cssY);
+        return h && h.point ? h.point : null;
+    };
+    // view depth of a world point (perspective: distance from the eye, which the pull shortens)
+    function eyeDepth(p) {
+        return camera.isOrthographicCamera ? -p.clone().applyMatrix4(camera.matrixWorldInverse).z : p.distanceTo(camera.position);
+    }
+    var v0 = null, v1 = null, v2 = null;
     function pick(cssX, cssY) {
         if (typeof THREE === 'undefined' || !layers.length) return null;
-        v0 = v0 || new THREE.Vector3(); v1 = v1 || new THREE.Vector3();
+        v0 = v0 || new THREE.Vector3(); v1 = v1 || new THREE.Vector3(); v2 = v2 || new THREE.Vector3();
+        camera.updateMatrixWorld();
         var sz = renderer.getSize(new THREE.Vector2()), hw = sz.x / 2, hh = sz.y / 2;
-        var best = null, bestD = PICK_PX * PICK_PX;
+        var cands = [], R2 = PICK_PX * PICK_PX;
+        var orthoDepth = camera.isOrthographicCamera ? (camera.top - camera.bottom) / camera.zoom * 1.07 : 0;
         layers.forEach(function (L) {
             if (!L.points || !L.points.visible || !L.points.parent) return;
             if (L.ctx.look && L.ctx.look.visible === false) return;
             var d = L.data, mw = L.points.matrixWorld, far = L.span * DETAIL_FRAC;
             for (var i = 0; i < d.n; i++) {
                 v0.set(d.pos[i * 3], d.pos[i * 3 + 1], d.pos[i * 3 + 2]).applyMatrix4(mw);
-                if (d.tier[i] < 0.5) {
-                    var depth = camera.isOrthographicCamera ? (camera.top - camera.bottom) / camera.zoom * 1.07 : v0.distanceTo(camera.position);
+                if (d.tier[i] < 0.5) {     // same depth the shader uses: view-space z (or the ortho stand-in)
+                    var depth = orthoDepth || -v2.copy(v0).applyMatrix4(camera.matrixWorldInverse).z;
                     if (depth >= far) continue;
                 }
                 v1.copy(v0).project(camera);
-                if (v1.z > 1) continue;
+                if (v1.z > 1 || v1.z < -1) continue;
                 var sx = (v1.x + 1) * hw, sy = (1 - v1.y) * hh;
                 if (d.inset[i] > 0) {
-                    v0.add(new THREE.Vector3(d.along[i * 3], d.along[i * 3 + 1], d.along[i * 3 + 2]).multiplyScalar(1e-3 * v0.distanceTo(camera.position) + 1e-6)).project(camera);
-                    var ex = (v0.x + 1) * hw - sx, ey = (1 - v0.y) * hh - sy, el = Math.hypot(ex, ey);
+                    v2.set(d.along[i * 3], d.along[i * 3 + 1], d.along[i * 3 + 2]).multiplyScalar(1e-3 * v0.distanceTo(camera.position) + 1e-6);
+                    v2.add(v0).project(camera);
+                    var ex = (v2.x + 1) * hw - sx, ey = (1 - v2.y) * hh - sy, el = Math.hypot(ex, ey);
                     if (el > 1e-6) { sx += ex / el * d.inset[i]; sy += ey / el * d.inset[i]; }
                 }
                 var dd = (sx - cssX) * (sx - cssX) + (sy - cssY) * (sy - cssY);
-                if (dd < bestD) { bestD = dd; best = { layer: L, i: i }; }
+                if (dd < R2) cands.push({ L: L, i: i, dd: dd, sx: sx, sy: sy, depth: eyeDepth(v0) });
             }
         });
-        if (!best) return null;
-        var m = best.layer.data.meta[best.i], row = best.layer.data.legend.filter(function (r) { return r.gi === m.gi; })[0];
-        return { glyph: row.glyph, color: row.color, label: row.label, anchorLabel: m.label, group: best.layer.items[m.gi] };
+        cands.sort(function (a, b) { return a.dd - b.dd; });
+        for (var c = 0; c < cands.length; c++) {
+            var k = cands[c];
+            if (k.L.data.tier[k.i] < 0.5) {
+                var p = occluder(k.sx, k.sy);
+                if (p && eyeDepth(p) < k.depth - k.L.span * PULL_FRAC) continue;
+            }
+            var m = k.L.data.meta[k.i], row = k.L.data.legend.filter(function (r) { return r.gi === m.gi; })[0];
+            return { glyph: row.glyph, color: row.color, label: row.label, anchorLabel: m.label, group: k.L.items[m.gi] };
+        }
+        return null;
     }
 
     // ---- hover tooltip ----------------------------------------------------
@@ -367,6 +431,7 @@ var FEAGlyphs = (function () {
 
     return {
         update: update, remove: remove, pick: pick, collect: collect,
+        setOccluder: function (fn) { occluder = fn; },     // tests: (cssX, cssY) -> world point | null
         names: function () { return NAMES.slice(); }, glyphSrc: glyphSrc,
         _layers: function () { return layers; }
     };
