@@ -77,10 +77,10 @@ All stages run inside `DuctsToPluto.ExportRevit` (`scripts/arms/DuctsRevitOverla
 > | `JOINED_BY_PROXIMITY` / `SYSTEM_NAME_CONFLICT` | from the systems (6) |
 > | `OVERLAP_SIZE_CONFLICT` | clean model: overlapping collinear pieces of different sizes (both kept) |
 
-> [!info]- 5. Lines and segments (`DuctsRunGraph.cs`)
+> [!info]- 5. Lines and segments (`scripts/duct/model/DuctRunGraph.cs`, class `DuctRunGraph`)
 > Kinds: straight, bend, transition (2 ends of different size), branch (3+), end (1), equipment. **Run ports** = both ends of 2-end parts and the through pair of a branch fitting; a joint continues a line when exactly two run ports meet there (an attachment may sit on it too), and near links continue it. Lines are cut into **segments** at transitions (and reducing tees). Size vote per segment: each Revit connector 1, each mesh-confirmed connector 1 more, each Navisworks stated size 0.5. `RunEnds` says why each line stops.
 
-> [!info]- 6. Systems (`DuctsSystems.cs`)
+> [!info]- 6. Systems (`scripts/duct/model/DuctSystems.cs`, class `DuctSystems`: one instance per export, settings by argument)
 > A system (what the user calls a run, e.g. `<SYS>`) is a connected component. **Strong joins** (always): Revit connection, touching, attachment, near link, side link, **end contact** (a *free* end inside another part's box + 6 in). **Weak join**: proximity only (a centreline point inside another part's box + 6 in, no free end involved) → joins only when the two groups' **majority** names agree or one has none; else blocked and listed. Two passes: name-agreeing proximity first, then the rest. Name per part: its own Revit `RunName`, else the Navisworks RunName on a **GUID** match only (never a position match), else the Revit system name without its trailing number; RunName `A-<bldg>-<service>-DUCT-<n>` → service. Majority per system; parts that differ → `SYSTEM_NAME_CONFLICT`.
 
 > [!info]- 7. Clean model (`DuctsClean.cs`)

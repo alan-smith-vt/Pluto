@@ -12,15 +12,19 @@ using System.Text.RegularExpressions;
 //   (overlaps of any length, gaps up to 6 in, a branch butting into a side). Side-by-side ducts stay apart.
 // Each connected component is a system, named by the majority service of its parts (Navisworks / Revit RunName
 // "A-<bldg>-<service>-DUCT-<n>" -> service, else the Revit system name without its trailing number). Joins made
-// only by proximity are flagged JOINED_BY_PROXIMITY on both parts. Lines / segments (DuctsRunGraph) sit inside.
-public partial class DuctsToPluto
+// only by proximity are flagged JOINED_BY_PROXIMITY on both parts. Lines / segments (DuctRunGraph) sit inside.
+public class DuctSystems
 {
-    const double ProxTolFt = 0.5;
-    static readonly HashSet<RvConn> FreeEnds = new HashSet<RvConn>();   // set by the overlay before AnalyzeSystems
-    static readonly List<Tuple<RvConn, double[]>> EndContacts = new List<Tuple<RvConn, double[]>>();   // free end -> point on the other centreline
-    static readonly List<string> Blocked = new List<string>();   // weak joins refused across two system names (last AnalyzeSystems)
+    static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+    readonly DuctSettings Settings;   // primary systems, colours, pinned mains
+    public DuctSystems(DuctSettings settings) { Settings = settings ?? new DuctSettings(); }
 
-    class DuctSystem
+    const double ProxTolFt = 0.5;
+    HashSet<RvConn> freeEnds = new HashSet<RvConn>();   // free ends of the current AnalyzeSystems call (its argument)
+    public readonly List<Tuple<RvConn, double[]>> EndContacts = new List<Tuple<RvConn, double[]>>();   // free end -> point on the other centreline
+    public readonly List<string> Blocked = new List<string>();   // weak joins refused across two system names (last AnalyzeSystems)
+
+    public class DuctSystem
     {
         public int Id; public string Name = ""; public List<RvEl> Els = new List<RvEl>();
         public SortedDictionary<string, int> Names = new SortedDictionary<string, int>(StringComparer.Ordinal);
@@ -33,15 +37,15 @@ public partial class DuctsToPluto
         public double[] Lo, Hi;
     }
 
-    static List<DuctSystem> AnalyzeSystems(List<RvEl> scope, Dictionary<string, RvConn> conns, HashSet<RvEl> inScope,
+    // systems = connected components of the parts (strong joins, then name-checked proximity), named by majority,
+    // then primary systems and pinned mains. freeEnds: the overlay's open ends that are no link / touch / attachment
+    public List<DuctSystem> AnalyzeSystems(List<RvEl> scope, Dictionary<string, RvConn> conns, HashSet<RvEl> inScope,
         Dictionary<RvConn, RvConn> touch, List<RvConn[]> nearPairs, List<RvEl[]> sidePairs,
         Dictionary<int, RawViewerWriter.BeamMember> beams, Dictionary<int, double[]> beamDim, Dictionary<int, Node> nodes,
-        double[] off, double scale, List<DuctRow> rows, Func<RvEl, List<int>> rowsOf)
+        double[] off, double scale, List<DuctRow> rows, Func<RvEl, List<int>> rowsOf, HashSet<RvConn> freeEnds)
     {
-        var parent = new Dictionary<RvEl, RvEl>();
-        foreach (RvEl e in scope) parent[e] = e;
-        Func<RvEl, RvEl> find = null;
-        find = e => { while (parent[e] != e) { parent[e] = parent[parent[e]]; e = parent[e]; } return e; };
+        this.freeEnds = freeEnds ?? new HashSet<RvConn>();
+        Blocked.Clear(); EndContacts.Clear();
         // names first (2026-10-12: a weak join bridged system A into the system B run next to it in a test room). STRONG joins
         // (Revit connection, touching ends, near links, side-branch links: an end butting into or facing another
         // part is a connection; user 2026-10-12: two systems never connect into each other) always join. Only
@@ -51,41 +55,78 @@ public partial class DuctsToPluto
         // (test room: one branch piece with Revit RunName system B in a system A branch).
         var nameOf = new Dictionary<RvEl, string>();
         foreach (RvEl e in scope) nameOf[e] = SystemNameOf(e, rows, rowsOf);
-        // group root -> name counts; a group's name is its MAJORITY (one mislabelled part must not let a weak
-        // join through: user, 2026-10-12, suspects a single mislabelled segment in a test room)
-        var names = new Dictionary<RvEl, Dictionary<string, int>>();
-        foreach (RvEl e in scope) { names[e] = new Dictionary<string, int>(StringComparer.Ordinal); if (nameOf[e] != "") names[e][nameOf[e]] = 1; }
-        Func<RvEl, string> major = r => names[r].Count == 0 ? "" : names[r].OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.Ordinal).First().Key;
-        Action<RvEl, RvEl> union = (a, b) =>
+        var js = new Joins(scope, nameOf, Blocked);
+        JoinStrong(js, scope, conns, inScope, touch, nearPairs, sidePairs);
+        JoinByProximity(js, scope, beams, beamDim, nodes, off, scale);
+        List<DuctSystem> res = NameSystems(js, scope);
+        ApplyPrimaries(res);
+        return res;
+    }
+
+    // union-find over the parts with each group's name counts (strong joins always, weak ones name-checked)
+    class Joins
+    {
+        readonly Dictionary<RvEl, RvEl> parent = new Dictionary<RvEl, RvEl>();
+        readonly Dictionary<RvEl, Dictionary<string, int>> names = new Dictionary<RvEl, Dictionary<string, int>>();
+        readonly List<string> blocked;
+        public readonly Dictionary<RvEl, string> NameOf;
+
+        public Joins(List<RvEl> scope, Dictionary<RvEl, string> nameOf, List<string> blocked)
+        {
+            NameOf = nameOf; this.blocked = blocked;
+            foreach (RvEl e in scope) parent[e] = e;
+            // group root -> name counts; a group's name is its MAJORITY (one mislabelled part must not let a weak
+            // join through: user, 2026-10-12, suspects a single mislabelled segment in a test room)
+            foreach (RvEl e in scope) { names[e] = new Dictionary<string, int>(StringComparer.Ordinal); if (nameOf[e] != "") names[e][nameOf[e]] = 1; }
+        }
+
+        public RvEl Find(RvEl e) { while (parent[e] != e) { parent[e] = parent[parent[e]]; e = parent[e]; } return e; }
+
+        public string Major(RvEl r) { return names[r].Count == 0 ? "" : names[r].OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.Ordinal).First().Key; }
+
+        void Union(RvEl a, RvEl b)
         {
             if (a == null || b == null || !parent.ContainsKey(a) || !parent.ContainsKey(b)) return;
-            RvEl ra = find(a), rb = find(b); if (ra == rb) return;
+            RvEl ra = Find(a), rb = Find(b); if (ra == rb) return;
             parent[ra] = rb;
             foreach (KeyValuePair<string, int> kv in names[ra]) { int c; names[rb].TryGetValue(kv.Key, out c); names[rb][kv.Key] = c + kv.Value; }
-        };
-        Blocked.Clear(); EndContacts.Clear();
-        Action<RvEl, RvEl> strong = (a, b) =>
+        }
+
+        public void Strong(RvEl a, RvEl b)
         {
             if (a == b || !parent.ContainsKey(a) || !parent.ContainsKey(b)) return;
-            union(a, b);
-        };
-        Func<RvEl, RvEl, string, bool> weak = (a, b, kind) =>
+            Union(a, b);
+        }
+
+        public bool Weak(RvEl a, RvEl b, string kind)
         {
             if (a == b || !parent.ContainsKey(a) || !parent.ContainsKey(b)) return false;
-            string na = major(find(a)), nb = major(find(b));
+            string na = Major(Find(a)), nb = Major(Find(b));
             if (na != "" && nb != "" && na != nb)
             {
-                Blocked.Add(string.Format(Inv, "{0}: {1} ({2}) - {3} ({4})", kind, a.Id, na, b.Id, nb));
+                blocked.Add(string.Format(Inv, "{0}: {1} ({2}) - {3} ({4})", kind, a.Id, na, b.Id, nb));
                 return false;
             }
-            union(a, b); return true;
-        };
+            Union(a, b); return true;
+        }
+    }
+
+    // strong joins: Revit connections, touching ends, near links, side-branch links
+    void JoinStrong(Joins js, List<RvEl> scope, Dictionary<string, RvConn> conns, HashSet<RvEl> inScope,
+        Dictionary<RvConn, RvConn> touch, List<RvConn[]> nearPairs, List<RvEl[]> sidePairs)
+    {
         foreach (RvEl e in scope)
             foreach (RvConn k in e.Conns)
-                foreach (string t in k.To) { RvConn q; if (conns.TryGetValue(t, out q) && inScope.Contains(q.Owner)) strong(e, q.Owner); }
-        foreach (KeyValuePair<RvConn, RvConn> kv in touch) strong(kv.Key.Owner, kv.Value.Owner);
-        foreach (RvConn[] p in nearPairs) strong(p[0].Owner, p[1].Owner);
-        foreach (RvEl[] p in sidePairs) strong(p[0], p[1]);
+                foreach (string t in k.To) { RvConn q; if (conns.TryGetValue(t, out q) && inScope.Contains(q.Owner)) js.Strong(e, q.Owner); }
+        foreach (KeyValuePair<RvConn, RvConn> kv in touch) js.Strong(kv.Key.Owner, kv.Value.Owner);
+        foreach (RvConn[] p in nearPairs) js.Strong(p[0].Owner, p[1].Owner);
+        foreach (RvEl[] p in sidePairs) js.Strong(p[0], p[1]);
+    }
+
+    // proximity over the drawn boxes: an open end against another part joins (strong); centrelines close by are weak
+    void JoinByProximity(Joins js, List<RvEl> scope, Dictionary<int, RawViewerWriter.BeamMember> beams, Dictionary<int, double[]> beamDim,
+        Dictionary<int, Node> nodes, double[] off, double scale)
+    {
         // proximity candidates, applied in two passes (below)
         var cands = new List<Tuple<RvEl, RvEl, string>>();
 
@@ -96,7 +137,7 @@ public partial class DuctsToPluto
             {
                 double[] dim; if (!beamDim.TryGetValue(id, out dim)) continue;
                 RawViewerWriter.BeamMember m = beams[id];
-                double[] a = NodeFt(nodes[m.NodeA], off, scale), b = NodeFt(nodes[m.NodeB], off, scale);
+                double[] a = DuctGeom.NodeFt(nodes[m.NodeA], off, scale), b = DuctGeom.NodeFt(nodes[m.NodeB], off, scale);
                 double L = Math.Sqrt(DuctMath.Dist2(a, b)); if (L <= 1e-6) continue;
                 var bx = new PartBox { Owner = e, A = a, L = L, Round = dim[0] == 1 };
                 bx.X = new[] { (b[0] - a[0]) / L, (b[1] - a[1]) / L, (b[2] - a[2]) / L };
@@ -117,7 +158,7 @@ public partial class DuctsToPluto
             for (int j = i + 1; j < boxes.Count; j++)
             {
                 PartBox p = boxes[i], q = boxes[j];
-                if (p.Owner == q.Owner || find(p.Owner) == find(q.Owner)) continue;
+                if (p.Owner == q.Owner || js.Find(p.Owner) == js.Find(q.Owner)) continue;
                 bool overlap = true;
                 for (int k = 0; k < 3 && overlap; k++) if (p.Hi[k] < q.Lo[k] || q.Hi[k] < p.Lo[k]) overlap = false;
                 if (!overlap || !(LineInBox(p, q) || LineInBox(q, p))) continue;
@@ -126,9 +167,9 @@ public partial class DuctsToPluto
                 // only centrelines crossing / running close stay name-checked
                 if (OpenEndInBox(p, q.Owner) || OpenEndInBox(q, p.Owner))
                 {
-                    strong(p.Owner, q.Owner);
-                    AddFlag(p.Owner, "JOINED_BY_PROXIMITY", "end contact with " + q.Owner.Id);
-                    AddFlag(q.Owner, "JOINED_BY_PROXIMITY", "end contact with " + p.Owner.Id);
+                    js.Strong(p.Owner, q.Owner);
+                    DuctRunGraph.AddFlag(p.Owner, "JOINED_BY_PROXIMITY", "end contact with " + q.Owner.Id);
+                    DuctRunGraph.AddFlag(q.Owner, "JOINED_BY_PROXIMITY", "end contact with " + p.Owner.Id);
                     continue;
                 }
                 cands.Add(Tuple.Create(p.Owner, q.Owner, "proximity"));
@@ -136,27 +177,32 @@ public partial class DuctsToPluto
         // pass 1: proximity between groups that both carry a name and agree; pass 2: the rest (a group without a name)
         Action<Tuple<RvEl, RvEl, string>> apply = c =>
         {
-            if (find(c.Item1) == find(c.Item2) || !weak(c.Item1, c.Item2, c.Item3) || c.Item3 != "proximity") return;
-            AddFlag(c.Item1, "JOINED_BY_PROXIMITY", "joined to " + c.Item2.Id + " by proximity");
-            AddFlag(c.Item2, "JOINED_BY_PROXIMITY", "joined to " + c.Item1.Id + " by proximity");
+            if (js.Find(c.Item1) == js.Find(c.Item2) || !js.Weak(c.Item1, c.Item2, c.Item3) || c.Item3 != "proximity") return;
+            DuctRunGraph.AddFlag(c.Item1, "JOINED_BY_PROXIMITY", "joined to " + c.Item2.Id + " by proximity");
+            DuctRunGraph.AddFlag(c.Item2, "JOINED_BY_PROXIMITY", "joined to " + c.Item1.Id + " by proximity");
         };
         foreach (Tuple<RvEl, RvEl, string> c in cands)
         {
-            string na = major(find(c.Item1)), nb = major(find(c.Item2));
+            string na = js.Major(js.Find(c.Item1)), nb = js.Major(js.Find(c.Item2));
             if (na != "" && na == nb) apply(c);
         }
         foreach (Tuple<RvEl, RvEl, string> c in cands) apply(c);
 
+    }
+
+    // components -> systems, biggest first, named by majority; parts whose own name differs get SYSTEM_NAME_CONFLICT
+    List<DuctSystem> NameSystems(Joins js, List<RvEl> scope)
+    {
         // components -> systems, biggest first, named by majority service
         var comp = new Dictionary<RvEl, List<RvEl>>();
-        foreach (RvEl e in scope) { RvEl r = find(e); List<RvEl> l; if (!comp.TryGetValue(r, out l)) { l = new List<RvEl>(); comp[r] = l; } l.Add(e); }
+        foreach (RvEl e in scope) { RvEl r = js.Find(e); List<RvEl> l; if (!comp.TryGetValue(r, out l)) { l = new List<RvEl>(); comp[r] = l; } l.Add(e); }
         var res = new List<DuctSystem>();
         foreach (List<RvEl> l in comp.Values.OrderByDescending(x => x.Count))
         {
             var s = new DuctSystem { Id = res.Count + 1 }; s.Els = l;
             foreach (RvEl e in l)
             {
-                string n = nameOf[e];
+                string n = js.NameOf[e];
                 if (n == "") continue; int c; s.Names.TryGetValue(n, out c); s.Names[n] = c + 1;
             }
             s.Name = s.Names.Count > 0 ? s.Names.OrderByDescending(kv => kv.Value).First().Key : "unnamed";
@@ -165,26 +211,32 @@ public partial class DuctsToPluto
                 e.Sys = s.Id; e.SysName = s.Name;
                 if (e.Flags.Contains("JOINED_BY_PROXIMITY")) s.ProxJoins++;
                 // majority rules: a part whose own name differs from its system's is flagged (the data mislabels it)
-                if (nameOf[e] != "" && nameOf[e] != s.Name) AddFlag(e, "SYSTEM_NAME_CONFLICT", "own name " + nameOf[e] + " in system " + s.Name);
+                if (js.NameOf[e] != "" && js.NameOf[e] != s.Name) DuctRunGraph.AddFlag(e, "SYSTEM_NAME_CONFLICT", "own name " + js.NameOf[e] + " in system " + s.Name);
             }
             res.Add(s);
         }
+        return res;
+    }
+
+    // primary systems and pinned mains (no-op without configured primary systems)
+    void ApplyPrimaries(List<DuctSystem> res)
+    {
         // primary systems (2026-10-15, user): per configured name the largest connected component IS that system;
         // every other component with that majority name is "<name> fragments" (a split at a tee shows up here and
         // is fixed in the joining, not hidden); components of any other name are "other: <name>"
-        if (Cfg.PrimarySystems.Count > 0)
+        if (Settings.PrimarySystems.Count > 0)
         {
             var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (DuctSystem s in res)   // biggest first
             {
-                if (Cfg.PrimarySystems.Contains(s.Name)) { s.Primary = true; if (!seen.Add(s.Name)) { s.Name += " fragments"; s.Primary = false; } }
+                if (Settings.PrimarySystems.Contains(s.Name)) { s.Primary = true; if (!seen.Add(s.Name)) { s.Name += " fragments"; s.Primary = false; } }
                 else s.Name = "other: " + s.Name;
                 foreach (RvEl e in s.Els) e.SysName = s.Name;
             }
             // pinned mains (2026-10-17, user: a room boundary cut one run in two; the smaller piece is a second main, not
             // a fragment): DuctMains "<name>=<Revit id>" promotes the fragment holding that part to "<name> 2", "<name> 3", ...
             PinNotes.Clear();
-            foreach (KeyValuePair<string, string> pin in Cfg.PrimaryPins)
+            foreach (KeyValuePair<string, string> pin in Settings.PrimaryPins)
             {
                 DuctSystem s = res.FirstOrDefault(x => x.Els.Exists(e => e.Id == pin.Value));
                 if (s == null) { PinNotes.Add(pin.Key + "=" + pin.Value + ": part not in scope"); continue; }
@@ -200,30 +252,29 @@ public partial class DuctsToPluto
                 PinNotes.Add(string.Format(Inv, "{0}={1}: C{2} ({3} parts) -> {4}", pin.Key, pin.Value, s.Id, s.Els.Count, s.Name));
             }
         }
-        return res;
     }
 
     // set from the duct config (DuctSystems) by Export-DuctsViewer.ps1; empty = name systems as found.
     // Colours: "<name>=#rrggbb" entries; the fragments group gets a desaturated variant
     // DuctMains: (system name, Revit id) pins, set by Export-DuctsViewer.ps1; PinNotes: what each did (match.txt)
-    static readonly List<string> PinNotes = new List<string>();
+    public readonly List<string> PinNotes = new List<string>();
 
     // a configured primary name, or a pinned main "<name> <n>"; base = the configured name (colour)
-    static bool IsPrimaryName(string n, out string baseName)
+    public bool IsPrimaryName(string n, out string baseName)
     {
         baseName = n;
-        if (Cfg.PrimarySystems.Contains(n)) return true;
+        if (Settings.PrimarySystems.Contains(n)) return true;
         Match m = Regex.Match(n ?? "", @"^(.+) (\d+)$");
-        if (m.Success && Cfg.PrimarySystems.Contains(m.Groups[1].Value)) { baseName = m.Groups[1].Value; return true; }
+        if (m.Success && Settings.PrimarySystems.Contains(m.Groups[1].Value)) { baseName = m.Groups[1].Value; return true; }
         return false;
     }
 
     // the system view (2026-10-15, user): with primary systems configured, each system group in its configured colour
     // (fragments desaturated), "other: <name>" groups not drawn, every other group (categories, links, joints, flags)
     // unpainted; the user turns them back on in the Groups tab. Group names: "System <name> (n parts)" / "Clean: <name>"
-    static void ApplySystemView(FeaturesSidecar sc)
+    public void ApplySystemView(FeaturesSidecar sc)
     {
-        if (Cfg.PrimarySystems.Count == 0) return;
+        if (Settings.PrimarySystems.Count == 0) return;
         foreach (FeaturesSidecar.Group g in sc.Groups)
         {
             if (!g.Tags.Contains("system")) { g.Hidden = true; continue; }
@@ -231,25 +282,25 @@ public partial class DuctsToPluto
             string bn; bool prim = IsPrimaryName(n, out bn);
             if (n.StartsWith("other: ") || !(prim || n.EndsWith(" fragments"))) { g.Hidden = true; g.Invisible = true; continue; }
             bool frag = n.EndsWith(" fragments"); string c;
-            if (Cfg.PrimaryColors.TryGetValue(frag ? n.Substring(0, n.Length - 10) : bn, out c)) g.Color = frag ? Desaturate(c) : c;
+            if (Settings.PrimaryColors.TryGetValue(frag ? n.Substring(0, n.Length - 10) : bn, out c)) g.Color = frag ? Desaturate(c) : c;
         }
     }
 
     // the configured colour of a system name as the viewer paints it (mains and pinned mains as configured, fragments
     // desaturated), "" for anything else; frames.csv SystemColor -> SAP group colours (2026-10-17)
-    static string SystemColor(string n)
+    public string SystemColor(string n)
     {
         string bn, c; bool frag = (n ?? "").EndsWith(" fragments");
         if (frag) bn = n.Substring(0, n.Length - 10); else if (!IsPrimaryName(n, out bn)) return "";
-        return Cfg.PrimaryColors.TryGetValue(bn, out c) ? (frag ? Desaturate(c) : c) : "";
+        return Settings.PrimaryColors.TryGetValue(bn, out c) ? (frag ? Desaturate(c) : c) : "";
     }
 
     // frames.csv SystemRole (2026-10-17, the SAP export keeps mains by default): "main" (configured or pinned),
     // "fragment", "other"; with no primary systems configured every system is a "main"
-    static string SystemRole(string n)
+    public string SystemRole(string n)
     {
         string bn;
-        if (Cfg.PrimarySystems.Count == 0) return "main";
+        if (Settings.PrimarySystems.Count == 0) return "main";
         if ((n ?? "").EndsWith(" fragments")) return "fragment";
         return IsPrimaryName(n, out bn) ? "main" : "other";
     }
@@ -273,10 +324,10 @@ public partial class DuctsToPluto
 
     // a part's system name: the first configured primary name (longest first) contained in its RunName or Revit
     // system name, ignoring case ("<SYS> 123", "A-x-<SYS>-DUCT-4" -> <SYS>); else SystemBase as before
-    static string SystemNameOf(RvEl e, List<DuctRow> rows, Func<RvEl, List<int>> rowsOf)
+    public string SystemNameOf(RvEl e, List<DuctRow> rows, Func<RvEl, List<int>> rowsOf)
     {
-        string rn = PartRunName(e, rows, rowsOf);
-        foreach (string p in Cfg.PrimarySystems.OrderByDescending(x => x.Length))
+        string rn = DuctRunGraph.PartRunName(e, rows, rowsOf);
+        foreach (string p in Settings.PrimarySystems.OrderByDescending(x => x.Length))
             if (rn.IndexOf(p, StringComparison.OrdinalIgnoreCase) >= 0 || (e.System ?? "").IndexOf(p, StringComparison.OrdinalIgnoreCase) >= 0) return p;
         return SystemBase(rn, e.System);
     }
@@ -295,12 +346,12 @@ public partial class DuctsToPluto
 
     // a FREE end of part e inside p's box + ProxTolFt; each one found is recorded in EndContacts with the nearest
     // point on p's centreline (the clean model makes it a rigid link)
-    static bool OpenEndInBox(PartBox p, RvEl e)
+    bool OpenEndInBox(PartBox p, RvEl e)
     {
         bool hit = false;
         foreach (RvConn k in e.Conns)
         {
-            if (!FreeEnds.Contains(k) || !PointInBox(p, k.P)) continue;
+            if (!freeEnds.Contains(k) || !PointInBox(p, k.P)) continue;
             double t = Math.Max(0, Math.Min(p.L, (k.P[0] - p.A[0]) * p.X[0] + (k.P[1] - p.A[1]) * p.X[1] + (k.P[2] - p.A[2]) * p.X[2]));
             EndContacts.Add(Tuple.Create(k, new[] { p.A[0] + p.X[0] * t, p.A[1] + p.X[1] * t, p.A[2] + p.X[2] * t }));
             hit = true;
@@ -318,15 +369,15 @@ public partial class DuctsToPluto
     }
 
     // "A-<bldg>-<service>-DUCT-<n>" -> service; else the system name without a trailing number ("<SYS>-<number>" -> <SYS>)
-    static string SystemBase(string runName, string system)
+    public static string SystemBase(string runName, string system)
     {
-        string sv = ServiceOf(runName);
+        string sv = DuctGeom.ServiceOf(runName);
         if (sv != "") return sv;
         return Regex.Replace(system ?? "", @"[\s\-_]*\d+$", "").Trim();
     }
 
     // systems line for match.txt + detail: per name the components it spans (parts), per component the names it mixes
-    static string[] SystemsNote(List<DuctSystem> systems)
+    public string[] SystemsNote(List<DuctSystem> systems)
     {
         var byName = new SortedDictionary<string, List<string>>(StringComparer.Ordinal);
         foreach (DuctSystem s in systems)
@@ -341,9 +392,9 @@ public partial class DuctsToPluto
             byName.Count(kv => kv.Value.Count > 1), mixed, systems.Sum(s => s.ProxJoins))
             + string.Format(Inv, "; weak joins blocked across two names {0}; parts connected across two names (SYSTEM_NAME_CONFLICT) {1}",
                 Blocked.Count, systems.Sum(s => s.Els.Count(e => e.Flags.Contains("SYSTEM_NAME_CONFLICT"))));
-        if (Cfg.PrimarySystems.Count > 0)
+        if (Settings.PrimarySystems.Count > 0)
             line = string.Format(Inv, "primary systems: {0}; other: {1} components ({2} parts)\n",
-                string.Join("; ", Cfg.PrimarySystems.Select(p =>
+                string.Join("; ", Settings.PrimarySystems.Select(p =>
                 {
                     DuctSystem m = systems.FirstOrDefault(s => s.Primary && s.Name == p);
                     var fr = systems.Where(s => s.Name == p + " fragments").ToList();

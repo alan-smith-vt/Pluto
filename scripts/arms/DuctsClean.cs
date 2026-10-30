@@ -25,7 +25,7 @@ public partial class DuctsToPluto
         Dictionary<int, double[]> beamDim, Dictionary<int, Node> nodes, double[] off, double scale, List<RvConn[]> nearPairs, List<int[]> sideNodes,
         Dictionary<int, int> navBeamRow, List<DuctRow> rows, Func<RvConn, int> nodeOf, Dictionary<RvConn, RvConn> attach)
     {
-        Func<int, double[]> pos0 = id => NodeFt(nodes[id], off, scale);
+        Func<int, double[]> pos0 = id => DuctGeom.NodeFt(nodes[id], off, scale);
         var edges = new List<CEdge>();
         double rawLen = 0;
         // 1. raw edges from each element's pieces
@@ -53,7 +53,7 @@ public partial class DuctsToPluto
                     if (e.Kind == "transition")
                     {
                         RvConn ka = e.Conns.Find(k => nodeOf(k) == g[0]), kb = e.Conns.Find(k => nodeOf(k) == g[1]);
-                        if (ka != null && kb != null && !SameSize(ka, kb)) { ce.Dim = ConnDim(ka) ?? dim; ce.DimB = ConnDim(kb) ?? dim; }
+                        if (ka != null && kb != null && !DuctRunGraph.SameSize(ka, kb)) { ce.Dim = ConnDim(ka) ?? dim; ce.DimB = ConnDim(kb) ?? dim; }
                     }
                     rawLen += Math.Sqrt(DuctMath.Dist2(da, db));
                 }
@@ -64,7 +64,7 @@ public partial class DuctsToPluto
             RawViewerWriter.BeamMember m = beams[kv.Key]; DuctRow r = rows[kv.Value];
             string shape; double w, h, d;
             var ce = new CEdge { A = m.NodeA, B = m.NodeB, Source = "navisworks-only", NavisId = r.NavisId, Y = m.LocalY, Thk = !double.IsNaN(r.T) && r.T > 0 ? r.T : double.NaN };
-            ce.Dim = NavSize(r, out shape, out w, out h, out d) ? new[] { shape == "round" ? 1.0 : 0.0, w, h, d } : new[] { 0.0, double.NaN, double.NaN, double.NaN };
+            ce.Dim = DuctGeom.NavSize(r, out shape, out w, out h, out d) ? new[] { shape == "round" ? 1.0 : 0.0, w, h, d } : new[] { 0.0, double.NaN, double.NaN, double.NaN };
             ce.Flags.Add("NAVIS_ONLY");
             edges.Add(ce);
         }
@@ -254,7 +254,7 @@ public partial class DuctsToPluto
         foreach (RvEl e in scope)
             foreach (RvConn k in e.Conns)
             {
-                if (attach.ContainsKey(k) || IsTapPoint(k)) continue;
+                if (attach.ContainsKey(k) || DuctGeom.IsTapPoint(k)) continue;
                 double best = double.MaxValue;
                 foreach (CEdge ce in clean) { double t, lat; DuctMath.Project(P[ce.A], P[ce.B], k.P, out t, out lat); double[] q = DuctMath.Lerp(P[ce.A], P[ce.B], Math.Max(0, Math.Min(1, t))); best = Math.Min(best, Math.Sqrt(DuctMath.Dist2(q, k.P))); }
                 if (best * 12 > 1) dev.Add(new KeyValuePair<double, string>(best * 12, e.Id + ":" + k.Key.Substring(k.Key.IndexOf(':') + 1)));
@@ -473,7 +473,7 @@ public partial class DuctsToPluto
         if (gTrans.Count > 0) sc.AddGroup("Clean: transitions", "#ffd23f", "beams", gTrans, new[] { "duct", "clean", "transition" }, null);
         if (gConf.Count > 0) sc.AddGroup("Flag: OVERLAP_SIZE_CONFLICT", "#ff5fa2", "beams", gConf, new[] { "duct", "clean", "flag" }, "FLAG_OVERLAP_SIZE_CONFLICT");
         if (gCut.Count > 0) sc.AddGroup("Clean: cut ends", "#ffffff", "beams", gCut, new[] { "duct", "clean", "cut" }, "FLAG_CUT_END");
-        ApplySystemView(sc);
+        new DuctSystems(Cfg).ApplySystemView(sc);
         AddSteelGroups(sc, sv);
         AddSupportGroups(sc, pv);
         AddSpanGroup(sc, sr, clean, P, beamOf, gSpan);
@@ -514,8 +514,8 @@ public partial class DuctsToPluto
                 string.Join(" ", ce.Flags.OrderBy(x => x, StringComparer.Ordinal).ToArray()),
                 ce.Src.Count > 0 ? ce.Src[0].SysName : ce.Source,
                 wd != null ? wd[0].ToString("0.######", Inv) : "", wd != null ? wd[1].ToString("0.######", Inv) : "", wd != null ? wd[2].ToString("0.######", Inv) : "",
-                SystemColor(ce.Src.Count > 0 ? ce.Src[0].SysName : ""),
-                ce.Src.Count > 0 ? SystemRole(ce.Src[0].SysName) : ce.Source == "navisworks-only" ? "navisworks-only" : "", ce.Span }.Select(CsvCell).ToArray()));
+                new DuctSystems(Cfg).SystemColor(ce.Src.Count > 0 ? ce.Src[0].SysName : ""),
+                ce.Src.Count > 0 ? new DuctSystems(Cfg).SystemRole(ce.Src[0].SysName) : ce.Source == "navisworks-only" ? "navisworks-only" : "", ce.Span }.Select(DuctGeom.CsvCell).ToArray()));
         }
         File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));
     }

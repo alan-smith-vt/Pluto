@@ -75,12 +75,6 @@ public partial class DuctsToPluto
 
     const string Fab = "MEP Fabrication Ductwork", FabHangers = "MEP Fabrication Hangers";
 
-    // The service field of a RunName ("A-<bldg>-<service>-DUCT-<n>" -> "<service>"), "" when it has no such field.
-    static string ServiceOf(string runName)
-    {
-        string[] f = (runName ?? "").Split('-');
-        return f.Length >= 4 ? f[2].Trim() : "";
-    }
 
     public static Result Export(string runDir, string outBase, string modelId, string lengthUnit)
     {
@@ -666,13 +660,13 @@ public partial class DuctsToPluto
         sc.Units["worldOffset"] = string.Format(Inv, "{0} {1} {2}", off[0] * scale, off[1] * scale, off[2] * scale);
         string[] pal = { "#ff4fd8", "#ffd23f", "#4f8cff", "#3fe0e0", "#ff8a3d", "#8ae04f", "#b07cff", "#f0f0f0" };
         var runs = new List<string>(byRun.Keys);
-        runs.Sort((x, y) => { int c = string.Compare(ServiceOf(x), ServiceOf(y), StringComparison.OrdinalIgnoreCase); return c != 0 ? c : string.Compare(x, y, StringComparison.OrdinalIgnoreCase); });
+        runs.Sort((x, y) => { int c = string.Compare(DuctGeom.ServiceOf(x), DuctGeom.ServiceOf(y), StringComparison.OrdinalIgnoreCase); return c != 0 ? c : string.Compare(x, y, StringComparison.OrdinalIgnoreCase); });
         int pi = 0;
         foreach (string run in runs)
         {
             List<uint> l = byRun[run]; l.Sort();
             if (run == "") sc.AddGroup("No RunName", "#ff3b3b", "beams", l, new[] { "duct", "centreline", "noRunName" }, "CL_NO_RUNNAME");
-            else sc.AddGroup("Run " + run, pal[pi++ % pal.Length], "beams", l, new[] { "duct", "centreline", "run", ServiceOf(run) }, null);
+            else sc.AddGroup("Run " + run, pal[pi++ % pal.Length], "beams", l, new[] { "duct", "centreline", "run", DuctGeom.ServiceOf(run) }, null);
         }
         fitted.Sort();
         if (fitted.Count > 0) sc.AddGroup("Fabrication straights (no centreline: mesh body or bbox axis)", "#ffc04d", "beams", fitted, new[] { "duct", "centreline", "fitted" }, "CL_FITTED");
@@ -863,8 +857,8 @@ public partial class DuctsToPluto
         foreach (DuctOpening o in ops)
         {
             DuctRow r = rows[o.Row - 1];
-            csv.Add(string.Join(",", new[] { o.Row.ToString(Inv), r.NavisId, r.Guid, CsvCell(r.Name), PartType(r.Name), CsvCell(r.SizeText), CsvCell(r.Room), CsvCell(r.RunName), o.Shape,
-                F1(o.A), F1(o.B), F1(o.Dia), o.SizeOk ? "1" : "0", o.SizeBand, o.Rings.ToString(Inv), CsvCell(o.Outer), F3(o.C[0]), F3(o.C[1]), F3(o.C[2]), F3(o.N[0]), F3(o.N[1]), F3(o.N[2]),
+            csv.Add(string.Join(",", new[] { o.Row.ToString(Inv), r.NavisId, r.Guid, DuctGeom.CsvCell(r.Name), PartType(r.Name), DuctGeom.CsvCell(r.SizeText), DuctGeom.CsvCell(r.Room), DuctGeom.CsvCell(r.RunName), o.Shape,
+                F1(o.A), F1(o.B), F1(o.Dia), o.SizeOk ? "1" : "0", o.SizeBand, o.Rings.ToString(Inv), DuctGeom.CsvCell(o.Outer), F3(o.C[0]), F3(o.C[1]), F3(o.C[2]), F3(o.N[0]), F3(o.N[1]), F3(o.N[2]),
                 F1(o.Planar), F1(o.Perim), F1(o.Near), o.NearRow > 0 ? o.NearRow.ToString(Inv) : "", F3(o.Dot), o.Status }));
         }
         File.WriteAllLines(outBase + ".openings.csv", csv.ToArray());
@@ -1335,7 +1329,7 @@ public partial class DuctsToPluto
                 + (conflict.Contains(kv.Key) ? " | RUNNAME DIFFERS FROM BOTH NEIGHBOURS" : "")
                 + (unexpected.Contains(kv.Key) ? " | " + kv.Value.Count + " CONNECTORS, UNEXPECTED FOR ITS TYPE" : "");
             var ids = new List<int>();
-            int[] thr = kv.Value.Count >= 3 ? ThroughPair(kv.Value) : null;
+            int[] thr = kv.Value.Count >= 3 ? DuctGeom.ThroughPair(kv.Value) : null;
             if (kv.Value.Count == 2) ids.Add(beam(conn(kv.Value[0]), conn(kv.Value[1]), 0, label));
             else if (thr != null)
             {
@@ -1427,28 +1421,6 @@ public partial class DuctsToPluto
         File.WriteAllText(outBase + ".features.json", sc.ToJson(), new UTF8Encoding(false));
     }
 
-    // The main run through a part with 3+ connectors: the pair facing opposite ways (dot < -0.9), on one
-    // axis (each centre within max(3 in, a quarter of its size) of the other's axis) and the same size
-    // (within 1 in); the farthest-apart such pair. null = none (drawn as a star).
-    static int[] ThroughPair(List<DuctOpening> c)
-    {
-        int[] best = null; double bestD = -1;
-        for (int i = 0; i < c.Count; i++)
-            for (int j = i + 1; j < c.Count; j++)
-            {
-                DuctOpening a = c[i], b = c[j];
-                if (a.N[0] * b.N[0] + a.N[1] * b.N[1] + a.N[2] * b.N[2] > -0.9) continue;
-                double sa = a.Shape == "round" ? a.Dia : a.A, sb = b.Shape == "round" ? b.Dia : b.A;
-                double ta = a.Shape == "round" ? a.Dia : a.B, tb = b.Shape == "round" ? b.Dia : b.B;
-                if (a.Shape != b.Shape || Math.Abs(sa - sb) > 1 || Math.Abs(ta - tb) > 1) continue;
-                double dx = b.C[0] - a.C[0], dy = b.C[1] - a.C[1], dz = b.C[2] - a.C[2];
-                double d = Math.Sqrt(dx * dx + dy * dy + dz * dz) * 12, along = Math.Abs(dx * a.N[0] + dy * a.N[1] + dz * a.N[2]) * 12;
-                double lateral = Math.Sqrt(Math.Max(0, d * d - along * along));
-                if (lateral > Math.Max(3, 0.25 * Math.Min(sa, ta))) continue;
-                if (d > bestD) { bestD = d; best = new[] { i, j }; }
-            }
-        return best;
-    }
     // Where a branch connector's axis (its centre, back along its outward normal) comes closest to the
     // main segment a-b: the point on the segment. Parallel axes fall back to the closest point of p.
     static double[] BranchJunction(double[] a, double[] b, DuctOpening br)
@@ -1633,7 +1605,6 @@ public partial class DuctsToPluto
     static bool IsRound(DuctRow r) { return r.Shape.IndexOf("round", StringComparison.OrdinalIgnoreCase) >= 0 || (!double.IsNaN(r.NameD) && double.IsNaN(r.NameW)); }
     static string F1(double v) { return double.IsNaN(v) ? "" : v.ToString("0.##", Inv); }
     static string F3(double v) { return double.IsNaN(v) ? "" : v.ToString("0.####", Inv); }
-    static string CsvCell(string v) { v = v ?? ""; return v.IndexOfAny(new[] { ',', '"', '\n' }) >= 0 ? "\"" + v.Replace("\"", "\"\"") + "\"" : v; }
 
     // A "Pluto Box" run (scripts/navis/BoxButton.cs: every geometry item inside a box or the room boxes) -> shell
     // overlay. box_tri.bin: int32 row (1-based box_items.csv data row), int32 nTri, nTri * 9 float32 (world feet).
@@ -2164,7 +2135,7 @@ public partial class DuctsToPluto
             r.Name = Get(c, "Name"); r.Shape = Get(c, "Shape"); r.FitA = Num(c, "FitA_in"); r.FitB = Num(c, "FitB_in"); r.FitLen = Num(c, "FitLength_ft");
             NameSize(r.Name, out r.NameW, out r.NameH, out r.NameD);
             r.Hidden = Get(c, "Hidden"); r.HiddenGeom = Num(c, "HiddenGeom");
-            r.RunName = Get(c, "RunName"); r.Service = ServiceOf(r.RunName);
+            r.RunName = Get(c, "RunName"); r.Service = DuctGeom.ServiceOf(r.RunName);
             r.Room = Get(c, "Room"); r.RefLevel = Get(c, "RefLevel"); r.Oid = Get(c, "OID"); r.Cwp = Get(c, "CWP");
             r.W = Num(c, "Width_in"); r.H = Num(c, "Height_in"); r.D = Num(c, "Diameter_in"); r.T = Num(c, "WallThk_in");
             double[] mn = { Num(c, "MinX"), Num(c, "MinY"), Num(c, "MinZ") }, mx = { Num(c, "MaxX"), Num(c, "MaxY"), Num(c, "MaxZ") };

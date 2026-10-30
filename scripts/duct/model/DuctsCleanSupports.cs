@@ -152,7 +152,7 @@ public partial class DuctsToPluto
             s.AppendLine(string.Join(",", new[] { sp.Id, sp.Type, "N" + run.DuctJoint[i], R3(d[0] * 12), R3(d[1] * 12), R3(d[2] * 12),
                 j.Name, R3(j.X), R3(j.Y), R3(j.Z), run.SteelMember[i],
                 sp.Axis[0].ToString("0.######", Inv), sp.Axis[1].ToString("0.######", Inv), sp.Axis[2].ToString("0.######", Inv),
-                R3(sp.Gap), sp.System, sp.Section, string.Join(" ", sp.Flags.ToArray()) }.Select(CsvCell).ToArray()));
+                R3(sp.Gap), sp.System, sp.Section, string.Join(" ", sp.Flags.ToArray()) }.Select(DuctGeom.CsvCell).ToArray()));
         }
         File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));
     }
