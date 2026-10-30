@@ -4,8 +4,8 @@ NEW joints: connected 100 touching 0 near 2 side 0 outside 0 open 17
 NEW supports: 38 (guide 38), steel through a duct 0; unsupported spans > 10 ft: 9 spans (25 frames): US1 SYSC 44.3 ft, US2 SYSA 21.5 ft, US3 SYSA 20 ft, US4 SYSB 20 ft, US5 SYSA 18.3 ft, US6 SYSA 13 ft, US7 SYSB 12.5 ft, US8 SYSA 12 ft ...
 NEW hangers: 3 Navisworks hangers, matched 0, no steel support 3 (HANGER_NO_STEEL_SUPPORT), off any duct 0 (HANGER_OFF_DUCT); supports without a hanger 13 (SUPPORT_NO_HANGER)
 NEW orientation: 7 frame(s) LARGE_SIDE_VERTICAL, 8 rotated in 5 run(s), 1 conflict(s)
-room boxes: 3 written to <ROOT>\box\room-boxes.txt (Pluto Box) and <ROOT>\revit\mesh-boxes.txt (Revit Pluto Mesh)
-flags (parts; <out>.flags.csv): GUID_MISMATCH 1, NEAR_GAP 2, OPEN_END 16, REVIT_ONLY 1, RUNNAME_DEVIATION 1, SIZE_DIFFERS 4, SPLIT 3, SYSTEM_CHANGE 1, SYSTEM_NAME_CONFLICT 1, UNSUPPORTED_SPAN 70, NAVIS_ONLY 3 (+ 0 covered by a Revit part, no frame)
+room boxes: 3 written to C:\Temp\hvac\box\room-boxes.txt (Pluto Box) and C:\Temp\hvac\revit\mesh-boxes.txt (Revit Pluto Mesh)
+flags (parts; <out>.flags.csv): GUID_MISMATCH 1, NEAR_GAP 2, OPEN_END 16, REVIT_ONLY 1, RUNNAME_DEVIATION 1, SIZE_DIFFERS 4, SPLIT 3, SYSTEM_CHANGE 1, SYSTEM_NAME_CONFLICT 1, UNSUPPORTED_SPAN 70 parts (9 spans), NAVIS_ONLY 3 (+ 0 covered by a Revit part, no frame)
 SAP frames (<out>.frames.csv): 133 (3 from Navisworks-only rows), Revit elements without a frame (1 connector) 0, frames without a size 3, rigid tap stubs 9
 mesh connector sizes: 210 of 219 Revit connectors matched a mesh connector within 4 in; matched Navisworks rows 105 (0 without triangles)
 runs (<out>.runs.csv): 12 runs, 14 segments + 2 transitions; parts: straight 89, bend 8, branch 7, transition 2

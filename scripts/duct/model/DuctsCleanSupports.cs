@@ -100,6 +100,7 @@ public partial class DuctsToPluto
         var sj = new HashSet<int>(ductJ);
         run.Spans = ds.Spans(after, sj);
         for (int k = 0; k < run.Spans.Count; k++) run.Spans[k].Id = "US" + (k + 1);   // longest first
+        SpanTotal = run.Spans.Count;
         for (int k = 0; k < clean.Count; k++) if (clean[k].Rigid) run.Rigid.Add(k);
         foreach (DuctSupports.Span s in run.Spans)
             foreach (int i in s.Ducts)
@@ -172,6 +173,7 @@ public partial class DuctsToPluto
 
     // match.txt NEW block line, set by BuildClean ("" = no steel)
     static string SupportNewLine = "";
+    static int SpanTotal;   // span count for the match.txt parts summary, set by ApplySupports
 
     static string SupportsNewLine(SupportRun run)
     {
