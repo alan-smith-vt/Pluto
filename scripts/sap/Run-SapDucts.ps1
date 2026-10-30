@@ -5,7 +5,7 @@
 # it at -SavePath. If a model is open in SAP it is reopened afterwards so SAP is left where it was.
 # Only the primary systems (mains and pinned mains) go in by default; -Fragments, -Other (other systems) and
 # -NavisOnly (Navisworks rows with no Revit part) add those. Frames flagged FLOATING (a duct piece with no support) are
-# left out (stability rule 1; -KeepFloating keeps them). Each frame's GUID field names its Revit / Navisworks ids.
+# left out (stability rule 1). Each frame's GUID field names its Revit / Navisworks ids.
 # Steel and supports (SapSteel.cs; each optional):
 #   -SteelFrames <out>.steel_frames.csv  W sections, M2+M3 releases, cardinal points; joints and restraints from
 #                -SteelJoints (default: the same name with steel_joints). Groups STEEL_ALL, STEEL_RELEASED, STEEL_<condition>
@@ -18,7 +18,6 @@ param(
     [switch]$Fragments,
     [switch]$Other,
     [switch]$NavisOnly,
-    [switch]$KeepFloating,
     [string]$SteelFrames,
     [string]$SteelJoints,
     [string]$Supports,
@@ -38,7 +37,6 @@ if ($SteelFrames) { $d.SteelFramesCsv = [IO.Path]::GetFullPath($SteelFrames) }
 if ($SteelJoints) { $d.SteelJointsCsv = [IO.Path]::GetFullPath($SteelJoints) }
 if ($Supports) { $d.SupportsCsv = [IO.Path]::GetFullPath($Supports) }
 if ($Flags) { $d.FlagsCsv = [IO.Path]::GetFullPath($Flags) }
-$d.KeepFloating = [bool]$KeepFloating
 $d.PlantRotZ = $(if ($PlantRotZ -eq "none") { [double]::NaN } else { [double]::Parse($PlantRotZ, [Globalization.CultureInfo]::InvariantCulture) })
 $original = $null
 try { $original = $d.ModelPath() } catch { }   # PowerShell cannot call the COM model directly

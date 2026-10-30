@@ -29,8 +29,8 @@ public partial class SapDucts
     {
         List<Dictionary<string, string>> rows = ReadCsv(framesCsv);
         if (rows.Count == 0) throw new Exception("no frames in " + framesCsv);
-        string floatNote = KeepFloating ? "" : DropFloating(rows);
-        if (rows.Count == 0) throw new Exception("every frame in " + framesCsv + " is FLOATING (no support): nothing left for SAP (-KeepFloating keeps them)");
+        string floatNote = DropFloating(rows);
+        if (rows.Count == 0) throw new Exception("every frame in " + framesCsv + " is FLOATING (no support): nothing left for SAP");
         string filterNote = FilterRoles(rows, include) + floatNote;
         Check(M.InitializeNewModel(eUnits.kip_in_F), "InitializeNewModel");
         Check(M.File.NewBlank(), "NewBlank");
@@ -172,8 +172,6 @@ public partial class SapDucts
 
     // Stability rule 1 (user, 2026-10-30, board laptop:1172): a duct piece with no support at all (flag FLOATING on all
     // its frames, rigid links included) is left out of the SAP model; its free rigid-body modes made MODAL hang.
-    // KeepFloating keeps them (a check by hand).
-    public bool KeepFloating;
 
     static string DropFloating(List<Dictionary<string, string>> rows)
     {
