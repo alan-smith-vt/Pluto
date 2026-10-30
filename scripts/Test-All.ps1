@@ -14,6 +14,7 @@ $demoRoot = Join-Path $Log "demo"
 # name, kind (ps / node / pytest), path (repo-relative), extra args, needs SAP
 $suites = @(
     @("viewer",          "node",   "viewer\tests",                                   @(),                     $false),
+    @("core-import",     "ps",     "scripts\lib\tests\Test-PlutoImport.ps1",         @(),                     $false),
     @("sidecar-look",    "ps",     "scripts\lib\sidecar\Test-FeaturesSidecarLook.ps1", @(),                   $false),
     @("steel-model",     "ps",     "scripts\arms\tests\Test-SteelModel.ps1",         @(),                     $false),
     @("duct-orient",     "ps",     "scripts\duct\tests\Test-DuctOrient.ps1",         @(),                     $false),
@@ -28,6 +29,12 @@ $suites = @(
 
 $null = New-Item -ItemType Directory -Force $Log
 $rows = @(); $failed = 0
+# a Test-*.ps1 in the repo that is not in the list above is reported, so a new suite is not silently skipped
+$listed = @($suites | ForEach-Object { [IO.Path]::GetFileName($_[2]) })
+foreach ($f in Get-ChildItem (Join-Path $repo "scripts") -Recurse -Filter "Test-*.ps1" | Where-Object { $_.Name -ne "Test-All.ps1" -and $listed -notcontains $_.Name }) {
+    Write-Host ("  not in Test-All's list: {0}" -f $f.FullName.Substring($repo.Length + 1)) -ForegroundColor Yellow
+    $rows += [pscustomobject]@{ Suite = $f.BaseName; Result = "NOT LISTED (add it to Test-All.ps1)"; Seconds = "" }
+}
 foreach ($s in $suites) {
     $name, $kind, $path, $extra, $needsSap = $s
     if ($Only -and $name -notlike $Only) { continue }
