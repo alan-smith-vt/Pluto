@@ -3,7 +3,7 @@
 #     powershell.exe -NonInteractive -File scripts\sap\Run-SapSurvey.ps1 -Survey [-OutDir C:\Temp\sapsurvey] [-SampleFrames 5] [-ModelPath X.sdb]
 #   First-pass expansion-joint candidates from the DUCT group's connectivity (read-only):
 #     powershell.exe -NonInteractive -File scripts\sap\Run-SapSurvey.ps1 -Candidates [-Group DUCT] [-AngleTol 5] [-OutDir ...] [-ModelPath X.sdb]
-#   Frame forces of a group for every combo, kip-in, from existing results (input of scripts\duct\Run-DuctDcr.ps1 -Evaluate):
+#   Frame forces of a group for every combo, kip-in, from existing results (input of scripts\duct\steps\Run-DuctDcr.ps1 -Evaluate):
 #     .\Run-SapSurvey.ps1 -Forces -Group "DUCT_ALL" [-IncludeCases] -OutDir C:\Temp\sapforces
 #   Axis probe (builds its own two-cantilever model; close your model first, or run in a second SAP):
 #     powershell.exe -NonInteractive -File scripts\sap\Run-SapSurvey.ps1 -Probe [-OutDir C:\Temp\sapsurvey]
@@ -31,7 +31,7 @@ if (-not $OutDir) {
     $OutDir = Join-Path $env:TEMP "sapsurvey"
     $ductConfig = Join-Path (Split-Path $PSScriptRoot) "duct\duct-config.psd1"
     if ($Candidates -and (Test-Path $ductConfig)) {
-        . (Join-Path (Split-Path $PSScriptRoot) "duct\Read-DuctConfig.ps1")
+        . (Join-Path (Split-Path $PSScriptRoot) "duct\lib\DuctConfig.ps1")
         $OutDir = Join-Path (Read-DuctConfig $ductConfig).WorkDir "optimize\connected"
     }
 }

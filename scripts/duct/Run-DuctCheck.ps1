@@ -12,14 +12,14 @@ param(
     [bool]$RebuildSections = $true
 )
 $ErrorActionPreference = "Stop"
-. (Join-Path $PSScriptRoot "Read-DuctConfig.ps1")
+. (Join-Path $PSScriptRoot "lib\DuctConfig.ps1"); . (Join-Path $PSScriptRoot "lib\Steps.ps1")
 $C = Read-DuctConfig $Config
 $work = Join-Path $C.WorkDir "ductcheck"
 $sapOut = Join-Path $work "sap"
 $tables = Join-Path $work "tables"
 $dcrOut = Join-Path $work "dcr"
 $null = New-Item -ItemType Directory -Force $sapOut, $tables, $dcrOut
-$dcr = Join-Path $PSScriptRoot "Run-DuctDcr.ps1"
+$dcr = Join-Path $PSScriptRoot "steps\Run-DuctDcr.ps1"
 $survey = Join-Path (Split-Path $PSScriptRoot) "sap\Run-SapSurvey.ps1"
 Write-Host ("duct check: group {0}   work dir {1}   config {2}" -f $C.Group, $work, $C.Path) -ForegroundColor Yellow
 

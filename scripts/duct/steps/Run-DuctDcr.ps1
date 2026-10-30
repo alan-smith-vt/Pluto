@@ -1,8 +1,8 @@
 # Duct DCRs (HVAC). Windows PowerShell 5.1; no SAP needed. From a PowerShell console:
 #   Set-ExecutionPolicy -Scope Process Bypass
-#   .\Run-DuctDcr.ps1 -Check                                                  # reproduce the Mathcad template results
-#   .\Run-DuctDcr.ps1 -Skeleton -SectionsTsv C:\Temp\sapsurvey\sections.tsv [-ForcesTsv ...\forces.tsv] [-Material CARBON] [-CarbonSections A,B] [-CapacitiesCsv standard-capacities.csv] [-StiffenerSpacing 24] -OutCsv duct-sections.csv
-#   .\Run-DuctDcr.ps1 -Evaluate -ForcesTsv C:\Temp\sapforces\forces.tsv -TablesDir C:\Temp\ducttables -OutDir C:\Temp\ductdcr [-Limit 1.0] [-EndsOnly] [-NoShear] [-Combos DEAD,COMB18 [-ComboLS C]]
+#   .\steps\Run-DuctDcr.ps1 -Check                                                  # reproduce the Mathcad template results
+#   .\steps\Run-DuctDcr.ps1 -Skeleton -SectionsTsv C:\Temp\sapsurvey\sections.tsv [-ForcesTsv ...\forces.tsv] [-Material CARBON] [-CarbonSections A,B] [-CapacitiesCsv standard-capacities.csv] [-StiffenerSpacing 24] -OutCsv duct-sections.csv
+#   .\steps\Run-DuctDcr.ps1 -Evaluate -ForcesTsv C:\Temp\sapforces\forces.tsv -TablesDir C:\Temp\ducttables -OutDir C:\Temp\ductdcr [-Limit 1.0] [-EndsOnly] [-NoShear] [-Combos DEAD,COMB18 [-ComboLS C]]
 # TablesDir holds duct-sections.csv, and optionally duct-combos.csv (replaced by -Combos) and duct-materials.csv
 # (default: the one beside this script). Layout: Notes vault, Projects/<project>/HVAC Member Table.md.
 param(
@@ -30,7 +30,8 @@ if ($Combos) { $Combos = @($Combos | ForEach-Object { $_ -split "," } | Where-Ob
 if ($CarbonSections) { $CarbonSections = @($CarbonSections | ForEach-Object { $_ -split "," } | Where-Object { $_.Trim() }) }
 if (-not ($Check -or $Skeleton -or $Evaluate)) { throw "Pass -Check, -Skeleton or -Evaluate." }
 
-Add-Type -Path (Join-Path $PSScriptRoot "DuctDcr.cs"), (Join-Path $PSScriptRoot "DuctEvaluate.cs")
+$duct = Split-Path $PSScriptRoot   # scripts\duct: the C# sources and tables of the step
+Add-Type -Path (Join-Path $duct "DuctDcr.cs"), (Join-Path $duct "DuctEvaluate.cs")
 
 if ($Check) {
     $ok = $false
@@ -41,5 +42,5 @@ if ($Skeleton) {
     [DuctEvaluate]::Skeleton((Resolve-Path $SectionsTsv).Path, $(if ($ForcesTsv) { (Resolve-Path $ForcesTsv).Path } else { $null }), $Material, [IO.Path]::GetFullPath($OutCsv), $(if ($CapacitiesCsv) { (Resolve-Path $CapacitiesCsv).Path } else { $null }), $CarbonSections, $StiffenerSpacing)
 }
 if ($Evaluate) {
-    [DuctEvaluate]::Run((Resolve-Path $ForcesTsv).Path, (Resolve-Path $TablesDir).Path, [IO.Path]::GetFullPath($OutDir), $Limit, [bool]$EndsOnly, [bool]$NoShear, $Combos, $ComboLS, (Join-Path $PSScriptRoot "duct-materials.csv"))
+    [DuctEvaluate]::Run((Resolve-Path $ForcesTsv).Path, (Resolve-Path $TablesDir).Path, [IO.Path]::GetFullPath($OutDir), $Limit, [bool]$EndsOnly, [bool]$NoShear, $Combos, $ComboLS, (Join-Path $duct "duct-materials.csv"))
 }

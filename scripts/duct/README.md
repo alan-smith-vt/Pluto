@@ -31,6 +31,32 @@ All Windows PowerShell 5.1 + C# 5 compiled on the fly (`Add-Type`). No installs,
    attach to the running SAP. They never write your model: edits happen on save-as copies under `WorkDir`, and
    the original is reopened afterwards. Leave SAP alone while a step runs; if SAP shows a dialog the script waits for it.
 
+## What you run (user commands, in workflow order)
+
+| step | command | what it does |
+|---|---|---|
+| model | `..\navis\Export-DuctsViewer.ps1 -Run <ducts run> -Revit <revit run>`, then `..\sap\Run-SapDucts.ps1 -Frames <out>.frames.csv` | clean duct model with steel and supports, viewer files, then the SAP model (vault: revit-duct-model) |
+| check | `.\Run-DuctCheck.ps1` | DCRs of the model open in SAP |
+| release check | `.\Run-JointReleaseCheck.ps1` | validate expansion-joint release by superposition on the open model |
+| optimize | `.\Run-JointOptimizer.ps1` | expansion-joint search on the open model, with an HTML report |
+| demo | `.\Run-Demo.ps1` | the whole pipeline on the synthetic demo |
+
+**Renamed 2026-10-30:** `Run-Optimizer.ps1` is now `Run-JointOptimizer.ps1`, `Run-ReleaseCheck.ps1` is now
+`Run-JointReleaseCheck.ps1`. The old names still work for one release: they print the new command line and run it.
+
+**Steps** (`steps\`): what the commands above call. They run by hand too, for checks and reruns.
+
+| step script | what it does | called by |
+|---|---|---|
+| `steps\Run-DuctDcr.ps1` | offline DCRs: `-Check` (template), `-Skeleton`, `-Evaluate` | Run-DuctCheck, Run-JointReleaseCheck, Run-JointOptimizer |
+| `steps\Run-ComboCheck.ps1` | rebuild combo 18 from forces.tsv vs SAP (diagnostic) | by hand |
+| `steps\Release-Joints.ps1` | offline release (Woodbury) + HTML report | Run-JointReleaseCheck, Run-JointOptimizer |
+| `steps\Optimize-Joints.ps1` | the optimizer's offline steps (`-Select`, `-Optimize`) | Run-JointOptimizer |
+| `..\sap\Run-SapSurvey.ps1`, `..\sap\Run-SapRelease.ps1` | SAP-side survey, link / direct models | the commands above; Survey also by hand |
+
+`lib\DuctConfig.ps1` (Read-DuctConfig, case lists) and `lib\Steps.ps1` (Invoke-Step, the per-step child run) are
+dot-sourced by the commands; not run on their own.
+
 ## The runners, in the order you would use them on a new model
 
 Each runner prints timestamped steps, runs each step in its own `powershell.exe` (so it can be rerun in the same
@@ -38,13 +64,13 @@ console), and stops at the first failure.
 
 | # | command | SAP? | time | what it answers |
 |---|---|---|---|---|
-| 1 | `.\Run-DuctDcr.ps1 -Check` | no | s | does the capacity code still reproduce the Mathcad template (1e-9)? |
+| 1 | `.\steps\Run-DuctDcr.ps1 -Check` | no | s | does the capacity code still reproduce the Mathcad template (1e-9)? |
 | 2 | `..\sap\Run-SapSurvey.ps1 -Survey` | yes, read-only | min | what is in the model: sections, materials, groups, cases, combos |
 | 3 | `.\Run-DuctCheck.ps1` | yes, read-only | min | DCRs of the model as it is |
-| 4 | `.\Run-ComboCheck.ps1` | no | s | is the SRSS combo rebuilt exactly from its cases? (must be OK before any release) |
-| 5 | `.\Run-ReleaseCheck.ps1` | yes | 10s of min | does release-by-superposition equal a real disconnect, for the joints in `Release.Candidates`? |
-| 6 | `.\Run-Optimizer.ps1 -MaxCandidates 20` | yes | 10s of min | trial search on a spread sample: read the report before scaling up |
-| 7 | `.\Run-Optimizer.ps1` with `MaxCandidates = 0` | yes | hours | the full search + direct validation of the chosen set |
+| 4 | `.\steps\Run-ComboCheck.ps1` | no | s | is the SRSS combo rebuilt exactly from its cases? (must be OK before any release) |
+| 5 | `.\Run-JointReleaseCheck.ps1` | yes | 10s of min | does release-by-superposition equal a real disconnect, for the joints in `Release.Candidates`? |
+| 6 | `.\Run-JointOptimizer.ps1 -MaxCandidates 20` | yes | 10s of min | trial search on a spread sample: read the report before scaling up |
+| 7 | `.\Run-JointOptimizer.ps1` with `MaxCandidates = 0` | yes | hours | the full search + direct validation of the chosen set |
 
 ### Run-DuctCheck.ps1 — DCRs of the model as it is
 
@@ -59,36 +85,36 @@ per section: dimensions, material, allowable overrides, stiffener spacing: **edi
 inputs**), `dcr\` (`dcr-summary.txt`, `dcr-frames.tsv` = one row per frame with the envelope and shear columns,
 `dcr-stations.tsv` = every station and combo, `shear-capacity.tsv`).
 
-### Run-ComboCheck.ps1
+### steps\Run-ComboCheck.ps1
 
 ```powershell
-.\Run-ComboCheck.ps1 [-ForcesTsv <path>]     # default WorkDir\ductcheck\sap\forces.tsv
+.\steps\Run-ComboCheck.ps1 [-ForcesTsv <path>]     # default WorkDir\ductcheck\sap\forces.tsv
 ```
 
 Rebuilds `Cases.Combo18` as Dead + Steel ± SRSS(Seismic) per force component and compares with SAP's own rows.
 
-### Run-ReleaseCheck.ps1 — validate the method on one or a few joints
+### Run-JointReleaseCheck.ps1 — validate the method on one or a few joints
 
 ```powershell
-.\Run-ReleaseCheck.ps1                       # joints from Release.Candidates
-.\Run-ReleaseCheck.ps1 -Candidates "123,456"
-.\Run-ReleaseCheck.ps1 -SkipSap              # redo the offline steps and the report from the existing exports
-.\Run-ReleaseCheck.ps1 -TestModel            # builds a small synthetic duct in SAP first (no real model needed)
+.\Run-JointReleaseCheck.ps1                       # joints from Release.Candidates
+.\Run-JointReleaseCheck.ps1 -Candidates "123,456"
+.\Run-JointReleaseCheck.ps1 -SkipSap              # redo the offline steps and the report from the existing exports
+.\Run-JointReleaseCheck.ps1 -TestModel            # builds a small synthetic duct in SAP first (no real model needed)
 ```
 
 Outputs under `WorkDir\release\`; read `released\release-report.html`. Expect released vs direct ~1e-9 of peak
 and identical DCRs; link model vs connected ~1e-4.
 
-### Run-Optimizer.ps1 — the search
+### Run-JointOptimizer.ps1 — the search
 
 ```powershell
-.\Run-Optimizer.ps1                          # everything: steps 1-8 below
-.\Run-Optimizer.ps1 -MaxCandidates 20 -MaxJoints 10     # trial; overrides the config for this run
-.\Run-Optimizer.ps1 -SkipSap                 # reuse the SAP exports: tables, search, release, report (no validation run)
-.\Run-Optimizer.ps1 -SkipSap -MaxJoints 60   # same, letting the search go further
-.\Run-Optimizer.ps1 -SkipSap -SkipSearch     # reuse opt\chosen.txt too: release + report only (minutes)
-.\Run-Optimizer.ps1 -NoValidate              # full run without the direct model of the chosen set
-.\Run-Optimizer.ps1 -TestModel               # on the synthetic duct
+.\Run-JointOptimizer.ps1                          # everything: steps 1-8 below
+.\Run-JointOptimizer.ps1 -MaxCandidates 20 -MaxJoints 10     # trial; overrides the config for this run
+.\Run-JointOptimizer.ps1 -SkipSap                 # reuse the SAP exports: tables, search, release, report (no validation run)
+.\Run-JointOptimizer.ps1 -SkipSap -MaxJoints 60   # same, letting the search go further
+.\Run-JointOptimizer.ps1 -SkipSap -SkipSearch     # reuse opt\chosen.txt too: release + report only (minutes)
+.\Run-JointOptimizer.ps1 -NoValidate              # full run without the direct model of the chosen set
+.\Run-JointOptimizer.ps1 -TestModel               # on the synthetic duct
 ```
 
 | step | does | output under `WorkDir\optimize\` |
@@ -115,7 +141,7 @@ Things to know:
   $set = (Get-Content "$opt\opt\chosen.txt" -Raw).Trim()
   ..\sap\Run-SapRelease.ps1 -DirectModel -Candidates $set -SavePath "$opt\direct.sdb" -OutDir "$opt\direct" -Group "<Group>"
   [IO.File]::WriteAllText("$opt\direct\set.txt", $set)
-  .\Run-Optimizer.ps1 -SkipSap -SkipSearch
+  .\Run-JointOptimizer.ps1 -SkipSap -SkipSearch
   ```
 
   The direct run is compared only when `direct\set.txt` equals the chosen set; otherwise the report says it was not compared.
@@ -140,11 +166,11 @@ Things to know:
 ..\sap\Run-SapRelease.ps1 -TestModel   -SavePath <x.sdb>
 
 # Offline (scripts\duct). No SAP.
-.\Run-DuctDcr.ps1 -Check
-.\Run-DuctDcr.ps1 -Skeleton -SectionsTsv <sections.tsv> [-ForcesTsv <forces.tsv>] [-Material 304L] [-CarbonSections A,B] [-CapacitiesCsv <csv>] [-StiffenerSpacing 24] -OutCsv duct-sections.csv
-.\Run-DuctDcr.ps1 -Evaluate -ForcesTsv <forces.tsv> -TablesDir <dir> -OutDir <dir> [-Limit 1.0] [-EndsOnly] [-NoShear] [-Combos "a,b"] [-ComboLS C]
-.\Run-DuctRelease.ps1  -Release | -Report ...        # argument lists in the file header
-.\Run-DuctOptimize.ps1 -Select | -Optimize | -Report ...
+.\steps\Run-DuctDcr.ps1 -Check
+.\steps\Run-DuctDcr.ps1 -Skeleton -SectionsTsv <sections.tsv> [-ForcesTsv <forces.tsv>] [-Material 304L] [-CarbonSections A,B] [-CapacitiesCsv <csv>] [-StiffenerSpacing 24] -OutCsv duct-sections.csv
+.\steps\Run-DuctDcr.ps1 -Evaluate -ForcesTsv <forces.tsv> -TablesDir <dir> -OutDir <dir> [-Limit 1.0] [-EndsOnly] [-NoShear] [-Combos "a,b"] [-ComboLS C]
+.\steps\Release-Joints.ps1 -Release | -Report ...        # argument lists in the file header
+.\steps\Optimize-Joints.ps1 -Select | -Optimize | -Report ...
 ```
 
 Without `-OutDir` the survey writes to `%TEMP%\sapsurvey` (except `-Candidates`, see above). Every script's header
@@ -190,5 +216,5 @@ synthetic item exercises. `scripts\duct\tests\Test-DuctFixture.ps1` diffs the sa
 
 `DuctDcr.cs` capacities and DCRs · `DuctEvaluate.cs` tables in, DCR files out · `DuctCombo.cs` SRSS combo rebuild ·
 `DuctRelease.cs` Woodbury release + comparisons · `DuctOptimize.cs` the search · `DuctReport.cs`, `DuctOptReport.cs` HTML ·
-`Read-DuctConfig.ps1` config loader + step runner · `..\sap\SapSurvey.cs` read-only survey · `..\sap\SapRelease.cs` link / direct / test models.
+`lib\DuctConfig.ps1` config loader, `lib\Steps.ps1` step runner · `..\sap\SapSurvey.cs` read-only survey · `..\sap\SapRelease.cs` link / direct / test models.
 Files are CRLF.
