@@ -621,8 +621,11 @@ def build_steel():
         mem((x, 521.5, 130.0), (x, 521.5, 122.0), "W6X15", "", web=X)
         mem((x, 529.5, 130.0), (x, 529.5, 122.0), "W6X15", "", web=X)
         mem((x, 521.5, 122.0), (x, 529.5, 122.0), "W10X33", 8)
-    # a stray beam far from the rack: open far
+    # a stray beam far from the rack: two plain open ends
     mem((1186, 520.0, 121.0), (1192, 520.0, 121.0), "W6X15", 8)
+    # a near miss: a strut on the rack's outer line stopping 12 in short of the X 1180 column (beyond the 6 in snap,
+    # within 24 in): its west end is an open end flagged OPEN_NEAR; clear of every duct
+    mem((1190, 510.0, 108.0), (1181, 510.0, 108.0), "W6X15", "")
     return M
 
 
