@@ -131,7 +131,7 @@ Encoding rule: **colour = identity of one chosen dimension, shape = meaning, wor
   "anchors": [ {"domain": "beams", "id": 12, "t": 0}, {"domain": "beams", "id": 12, "t": 1, "label": "SF12 at S40"},
                {"domain": "nodes", "id": 5, "dir": [1, 0, 0]} ] }
 ```
-- **`look.glyph`**: `circle disc half diamond square triangle warn tick cross ring-arrows anchor support-fixed support-pinned`. Support glyphs (SAP/STAAD style: hatched block = fixed, triangle = pinned) hang from their node, drawn larger and never inset. Their base points along `dir`; without one, out of the member for a beam-end anchor, else world -Z. An unknown name draws `square`. Suggested conventions:
+- **`look.glyph`**: `circle disc half diamond square triangle warn tick cross ring-arrows anchor support-fixed support-pinned`. Support glyphs (SAP/STAAD 3D style, pre-rendered isometric: two crossing perpendicular squares = fixed, two crossing perpendicular triangles = pinned) hang from their node, drawn 2.2x and never inset. Their base points along `dir`; without one, out of the member for a beam-end anchor, else world -Z. An unknown name draws `square`. Suggested conventions:
   - member ends: ○ pinned, ● fixed, ◐ hinge, ◆ collinear hinge, with a neutral tint;
   - supports: one shape per type (`ring-arrows` guide, `anchor` anchor);
   - `warn` for checks.

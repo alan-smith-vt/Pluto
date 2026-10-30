@@ -35,7 +35,7 @@ var FEAGlyphs = (function () {
     // centre and the base lies toward +x, which `dir` turns to point away from
     // the member (default: out of the member for a beam-end anchor, else world -Z). Drawn larger so the half-cell reads.
     var BASE_GLYPH = { 'support-fixed': 1, 'support-pinned': 1 };
-    var BASE_SCALE = 1.6;
+    var BASE_SCALE = 2.2;
     var CELL = 64;
     var PX = 22;                 // glyph size, CSS px
     var PICK_PX = 12;            // hover radius, CSS px
@@ -164,18 +164,38 @@ var FEAGlyphs = (function () {
                 g.lineWidth = 4; g.strokeStyle = INK; g.fillStyle = INK; g.beginPath(); g.arc(c, c, r * 0.55, 0, Math.PI * 2); g.fill();
                 halo(circ(r * 0.5), 3); break;
             // supports: node at the cell centre, base toward +x (dir turns it)
-            case 'support-fixed': (function () {
-                var x0 = c + 2, x1 = CELL - 9, h = r * 1.15;           // block from the node to the base plate
-                solid(function () { g.rect(x0, c - h, x1 - x0, 2 * h); });
-                g.strokeStyle = INK; g.lineWidth = 2;                    // hatch: SAP-style fixity
-                for (var k = -2; k <= 2; k++) { g.beginPath(); g.moveTo(x0 + 4, c + k * h * 0.42 - 4); g.lineTo(x1 - 4, c + k * h * 0.42 + 4); g.stroke(); }
-                halo(function () { g.moveTo(x1 + 3, c - h - 4); g.lineTo(x1 + 3, c + h + 4); }, 3);   // ground line
-            })(); break;
+            // SAP/STAAD 3D supports as a pre-rendered isometric view: two plates
+            // crossing at right angles on the vertical through the node. Drawn
+            // upright (node at the top, base below) and turned so "down" is +x.
+            // Back half of the depth plate, then the front plate, then the
+            // front half of the depth plate, so the plates read as crossing.
+            case 'support-fixed':
             case 'support-pinned': (function () {
-                var x1 = CELL - 10, h = r * 1.05;                        // triangle: apex on the node, base toward +x
-                solid(function () { g.moveTo(c + 1, c); g.lineTo(x1, c - h); g.lineTo(x1, c + h); g.closePath(); });
-                halo(function () { g.moveTo(x1 + 4, c - h - 4); g.lineTo(x1 + 4, c + h + 4); }, 3);   // ground line
-                g.fillStyle = INK; g.beginPath(); g.arc(c + 1, c, 3.5, 0, Math.PI * 2); g.fill();      // the pin
+                var pin = name === 'support-pinned';
+                var H = pin ? 27 : 25, w = pin ? 15 : 12;                // height (node -> base), half width
+                var dx = 0.6 * w, dy = -0.35 * w;                        // isometric depth axis (upright frame)
+                function poly(pts, fill) {
+                    g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
+                    for (var k = 1; k < pts.length; k++) g.lineTo(pts[k][0], pts[k][1]);
+                    g.closePath(); g.fillStyle = fill; g.fill();
+                    g.lineWidth = 2.5; g.strokeStyle = INK; g.stroke();
+                }
+                g.save(); g.translate(c, c); g.rotate(-Math.PI / 2);    // upright (0, +y down) -> canvas +x
+                var back, front, face;
+                if (pin) {
+                    face = [[0, 0], [-w, H], [w, H]];
+                    back = [[0, 0], [0, H], [dx, H + dy]];
+                    front = [[0, 0], [0, H], [-dx, H - dy]];
+                } else {
+                    face = [[-w, 0], [w, 0], [w, H], [-w, H]];
+                    back = [[0, 0], [dx, dy], [dx, H + dy], [0, H]];
+                    front = [[0, 0], [-dx, -dy], [-dx, H - dy], [0, H]];
+                }
+                poly(back, '#8d8d8d');
+                poly(face, '#ffffff');
+                poly(front, '#c4c4c4');
+                g.fillStyle = INK; g.beginPath(); g.arc(0, 0, pin ? 3.5 : 3, 0, Math.PI * 2); g.fill();   // the node
+                g.restore();
             })(); break;
             case 'anchor':
                 solid(function () { g.moveTo(c, c - r * 0.05); g.lineTo(c + r * 1.1, c + r * 1.1); g.lineTo(c - r * 1.1, c + r * 1.1); g.closePath(); });
@@ -198,12 +218,12 @@ var FEAGlyphs = (function () {
         if (imgCache[key]) return imgCache[key];
         var cv = document.createElement('canvas'); cv.width = cv.height = CELL;
         var g = cv.getContext('2d'), i = glyphIndex(name);
-        if (BASE_GLYPH[NAMES[i]]) { g.translate(CELL / 2, CELL / 2); g.rotate(Math.PI / 2); g.translate(-CELL * 0.75, -CELL / 2); }   // base down, node near the top
+        if (BASE_GLYPH[NAMES[i]]) { g.translate(CELL / 2, 8); g.scale(1.4, 1.4); g.rotate(Math.PI / 2); g.translate(-CELL / 2, -CELL / 2); }   // base down, node near the top
         g.drawImage(atlas(), i * CELL, 0, CELL, CELL, 0, 0, CELL, CELL);
         g.setTransform(1, 0, 0, 1, 0, 0);
         g.globalCompositeOperation = 'multiply'; g.fillStyle = color; g.fillRect(0, 0, CELL, CELL);
         g.globalCompositeOperation = 'destination-in';
-        if (BASE_GLYPH[NAMES[i]]) { g.translate(CELL / 2, CELL / 2); g.rotate(Math.PI / 2); g.translate(-CELL * 0.75, -CELL / 2); }
+        if (BASE_GLYPH[NAMES[i]]) { g.translate(CELL / 2, 8); g.scale(1.4, 1.4); g.rotate(Math.PI / 2); g.translate(-CELL / 2, -CELL / 2); }
         g.drawImage(atlas(), i * CELL, 0, CELL, CELL, 0, 0, CELL, CELL);
         return (imgCache[key] = cv.toDataURL());
     }
