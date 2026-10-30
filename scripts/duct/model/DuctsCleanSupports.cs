@@ -28,6 +28,7 @@ public partial class DuctsToPluto
         public List<DuctSupports.Span> Spans = new List<DuctSupports.Span>();
         public string Note = "";
         public HangerRun Hangers;   // DuctsCleanHangers.cs
+        public HashSet<int> Rigid = new HashSet<int>();   // clean indices of rigid links (span frame counts leave them out)
     }
 
     static SupportRun ApplySupports(List<CEdge> clean, Dictionary<int, double[]> P, SteelModel sm, string outBase, List<Row> rows)
@@ -98,15 +99,18 @@ public partial class DuctsToPluto
         var after = DuctRecords(clean, P);
         var sj = new HashSet<int>(ductJ);
         run.Spans = ds.Spans(after, sj);
+        for (int k = 0; k < run.Spans.Count; k++) run.Spans[k].Id = "US" + (k + 1);   // longest first
+        SpanTotal = run.Spans.Count;
+        for (int k = 0; k < clean.Count; k++) if (clean[k].Rigid) run.Rigid.Add(k);
         foreach (DuctSupports.Span s in run.Spans)
             foreach (int i in s.Ducts)
             {
                 CEdge ce = clean[i]; if (ce.Rigid) continue;   // every duct frame of the stretch is flagged; rigid links are not
-                ce.Flags.Add("UNSUPPORTED_SPAN");
+                ce.Flags.Add("UNSUPPORTED_SPAN"); ce.Span = s.Id;
                 foreach (RvEl e in ce.Src)
                 {
                     if (!e.Flags.Contains("UNSUPPORTED_SPAN")) e.Flags.Add("UNSUPPORTED_SPAN");
-                    string det = string.Format(Inv, "unsupported span {0:0.#} ft ({1} support(s) at its ends)", s.LengthIn / 12, s.Supports);
+                    string det = string.Format(Inv, "unsupported span {0}: {1:0.#} ft, {2} support(s) at its ends", s.Id, s.LengthIn / 12, s.Supports);
                     if (!e.Detail.Contains(det)) e.Detail.Add(det);
                 }
             }
@@ -158,25 +162,36 @@ public partial class DuctsToPluto
     {
         DuctSupports ds = run.Ds; DuctSupports.Settings st = ds.Set;
         var types = ds.Supports.GroupBy(x => x.Type).OrderBy(g => g.Key, StringComparer.Ordinal).Select(g => g.Key + " " + g.Count()).ToArray();
-        string worst = string.Join(", ", run.Spans.Take(5).Select(x => string.Format(Inv, "{0} {1:0.#} ft ({2} support(s))", x.System, x.LengthIn / 12, x.Supports)).ToArray());
+        string worst = string.Join(", ", run.Spans.Take(5).Select(x => string.Format(Inv, "{0} {1} {2:0.#} ft", x.Id, x.System, x.LengthIn / 12)).ToArray());
         return string.Format(Inv, "supports (<out>.supports.csv): {0} ({1}), gap <= {2:0.##} in, steel overlapping the duct bottom {3}, steel through the duct {4} (no support), steel along the duct under it {5} (not modelled)\n",
                 ds.Supports.Count, types.Length > 0 ? string.Join(", ", types) : "-", st.GapMaxIn, ds.Supports.Count(x => x.Flags.Contains("STEEL_OVERLAP")), ds.Clashes, ds.Parallel)
-            + string.Format(Inv, "unsupported spans > {0:0.#} ft: {1}{2} (UNSUPPORTED_SPAN)\n", st.SpanFt, run.Spans.Count, worst != "" ? " (longest: " + worst + ")" : "")
-            + string.Join("", run.Spans.Select(x => string.Format(Inv, "  {0} {1:0.#} ft, {2} support(s) at its ends, frames {3}\n", x.System, x.LengthIn / 12, x.Supports,
-                string.Join(" ", x.Ducts.Select(i => "F" + (i + 1)).ToArray()))).ToArray())   // frames.csv names (F = clean index + 1)
+            + string.Format(Inv, "unsupported spans > {0:0.#} ft (UNSUPPORTED_SPAN): {1}{2}\n", st.SpanFt, SpanCount(run), worst != "" ? "; longest: " + worst : "")
+            + string.Join("", run.Spans.Select(x => string.Format(Inv, "  {0} {1} {2:0.#} ft, {3} support(s) at its ends, {4} frame(s): {5}\n", x.Id, x.System, x.LengthIn / 12, x.Supports,
+                SpanFrames(run, x).Count, string.Join(" ", SpanFrames(run, x).Select(i => "F" + (i + 1)).ToArray()))).ToArray())   // frames.csv names (F = clean index + 1)
             + ds.Histogram().TrimEnd();
     }
 
     // match.txt NEW block line, set by BuildClean ("" = no steel)
     static string SupportNewLine = "";
+    static int SpanTotal;   // span count for the match.txt parts summary, set by ApplySupports
 
     static string SupportsNewLine(SupportRun run)
     {
-        return string.Format(Inv, "NEW supports: {0} ({1}), steel through a duct {2}; unsupported spans > {3:0.#} ft {4}{5}",
+        return string.Format(Inv, "NEW supports: {0} ({1}), steel through a duct {2}; unsupported spans > {3:0.#} ft: {4}{5}",
             run.Ds.Supports.Count, string.Join(", ", run.Ds.Supports.GroupBy(x => x.Type).OrderBy(g => g.Key, StringComparer.Ordinal).Select(g => g.Key + " " + g.Count()).ToArray()),
-            run.Ds.Clashes, run.Ds.Set.SpanFt, run.Spans.Count,
-            run.Spans.Count > 0 ? ": " + string.Join(", ", run.Spans.Take(8).Select(x => string.Format(Inv, "{0} {1:0.#} ft", x.System, x.LengthIn / 12)).ToArray()) + (run.Spans.Count > 8 ? " ..." : "") : "");
+            run.Ds.Clashes, run.Ds.Set.SpanFt, SpanCount(run),
+            run.Spans.Count > 0 ? ": " + string.Join(", ", run.Spans.Take(8).Select(x => string.Format(Inv, "{0} {1} {2:0.#} ft", x.Id, x.System, x.LengthIn / 12)).ToArray()) + (run.Spans.Count > 8 ? " ..." : "") : "");
     }
+
+    // the headline count is spans; frames only with their unit (user decision): "9 spans (25 frames)"
+    static string SpanCount(SupportRun run)
+    {
+        int n = run.Spans.Count, f = run.Spans.Sum(x => SpanFrames(run, x).Count);
+        return string.Format(Inv, "{0} span{1} ({2} frame{3})", n, n == 1 ? "" : "s", f, f == 1 ? "" : "s");
+    }
+
+    // the duct frames of a span (clean indices), rigid links left out as in the flag
+    static List<int> SpanFrames(SupportRun run, DuctSupports.Span s) { return s.Ducts.Where(i => !run.Rigid.Contains(i)).ToList(); }
 
     class SupportView
     {
@@ -256,10 +271,10 @@ public partial class DuctsToPluto
                 }
                 if (best != null)
                     anchors.Add(new FeaturesSidecar.Anchor { Domain = "beams", Id = (uint)beamOf[best], T = Math.Round(bt, 4),
-                        Label = string.Format(Inv, "{0} {1:0.#} ft, {2} support(s)", s.System, s.LengthIn / 12, s.Supports) });
+                        Label = string.Format(Inv, "{0} {1} {2:0.#} ft, {3} support(s)", s.Id, s.System, s.LengthIn / 12, s.Supports) });
             }
         FeaturesSidecar.Group g = sc.AddLookGroup("Flag: UNSUPPORTED_SPAN", null,
-            new FeaturesSidecar.Look { Glyph = "warn", Tier = "exception", Label = string.Format(Inv, "Unsupported span > {0:0.#} ft", SupportSettings.SpanFt), Section = "Checks" },
+            new FeaturesSidecar.Look { Glyph = "warn", Tier = "exception", Label = string.Format(Inv, "Unsupported spans > {0:0.#} ft", SupportSettings.SpanFt), Section = "Checks" },
             anchors, new[] { "duct", "clean", "flag" }, "beams", flagged);
         g.StaadName = "FLAG_UNSUPPORTED_SPAN";
     }

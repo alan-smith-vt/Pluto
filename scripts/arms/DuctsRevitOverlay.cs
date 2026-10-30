@@ -749,7 +749,7 @@ public partial class DuctsToPluto
         {
             if (kv.Key == "NAVIS_ONLY") continue;   // rows, not Revit elements: counted below
             int n = 0; foreach (RvEl e in scope) if (e.Flags.Contains(kv.Key)) n++;
-            fc.Add(kv.Key + " " + n);
+            fc.Add(kv.Key == "UNSUPPORTED_SPAN" ? string.Format(Inv, "UNSUPPORTED_SPAN {0} parts ({1} span{2})", n, SpanTotal, SpanTotal == 1 ? "" : "s") : kv.Key + " " + n);   // the span number stays spans (user decision)
         }
         fc.Add(string.Format(Inv, "NAVIS_ONLY {0} (+ {1} covered by a Revit part, no frame)", navOnly.Count, navCovered.Count));
         s.AppendLine("flags (parts; <out>.flags.csv): " + string.Join(", ", fc.ToArray()));

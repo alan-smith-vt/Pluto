@@ -57,6 +57,7 @@ public class DuctSupports
 
     public class Span
     {
+        public string Id = "";             // US<n>, longest first (set by the caller)
         public List<int> Ducts = new List<int>();
         public double LengthIn;
         public int Supports;               // support joints bounding the stretch
