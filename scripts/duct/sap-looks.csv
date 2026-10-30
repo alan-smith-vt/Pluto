@@ -17,6 +17,7 @@ FLAG_ROTATION_CONFLICT,warn,mid,exception,Rotation conflict,Checks,,,
 FLAG_NO_SIZE,warn,mid,exception,No size,Checks,,,
 FLAG_NO_ORIENTATION,warn,mid,exception,No width direction,Checks,,,
 FLAG_*,,,,,,,,yes
+SPAN_*,,,,,,,,yes
 STEEL_ALL,,,,,,,,yes
 SUPPORT_ALL,,,,,,,,yes
 TAP_STUBS,,,,,,,,yes

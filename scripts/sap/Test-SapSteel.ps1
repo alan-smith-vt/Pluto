@@ -15,10 +15,10 @@ function W([string]$name, [string[]]$lines) { $p = Join-Path $Out $name; [IO.Fil
 
 # ducts along X at z 150 (24x12 box, bottom at 144): N1 - N2 - N3 - N4
 $frames = W "test.frames.csv" @(
-    "Frame,JointI,JointJ,XI_in,YI_in,ZI_in,XJ_in,YJ_in,ZJ_in,Shape,W_in,H_in,Dia_in,Thk_in,WX,WY,WZ,Source,Flags,RevitElementId",
-    "D1,N1,N2,0,0,150,60,0,150,rect,24,12,,0.06,0,1,0,revit,,1",
-    "D2,N2,N3,60,0,150,420,0,150,rect,24,12,,0.06,0,1,0,revit,,2",
-    "D3,N3,N4,420,0,150,480,0,150,rect,24,12,,0.06,0,1,0,revit,,3")
+    "Frame,JointI,JointJ,XI_in,YI_in,ZI_in,XJ_in,YJ_in,ZJ_in,Shape,W_in,H_in,Dia_in,Thk_in,WX,WY,WZ,Source,Flags,RevitElementId,Span",
+    "D1,N1,N2,0,0,150,60,0,150,rect,24,12,,0.06,0,1,0,revit,,1,",
+    "D2,N2,N3,60,0,150,420,0,150,rect,24,12,,0.06,0,1,0,revit,,2,US1",
+    "D3,N3,N4,420,0,150,480,0,150,rect,24,12,,0.06,0,1,0,revit,,3,")
 # rack 1 at x 60: columns S1-S2, S3-S4, beam split at SS1 (the support joint); rack 2 at x 420: columns S5-S6,
 # S10-S8, beam S6-S8 whole (the support joint SS2 is new: auto-meshed); cantilever S6-S9 pinned at the wall
 $joints = W "test.steel_joints.csv" @(
@@ -83,6 +83,7 @@ Expect "STEEL_ALL frames" (InGroup "STEEL_ALL" "Frame") 9
 Expect "STEEL_OPEN_FIXED joints" (InGroup "STEEL_OPEN_FIXED" "Joint") 4
 Expect "FLAG_OPEN_NEAR joints" (InGroup "FLAG_OPEN_NEAR" "Joint") 1
 Expect "FLAG_UNSUPPORTED_SPAN frames" (InGroup "FLAG_UNSUPPORTED_SPAN" "Frame") 1
+Expect "SPAN_US1 frames (frames.csv Span)" (InGroup "SPAN_US1" "Frame") 1
 Expect "FLAG_NO_SIZE frames" (InGroup "FLAG_NO_SIZE" "Frame") 1
 Expect "PLANT coordinate system" @(Rows "COORDINATE SYSTEMS" | Where-Object { $_ -match "Name=`"?PLANT" }).Count 1
 Expect "viewer file" (Test-Path "$base.bin") $true
@@ -103,5 +104,6 @@ Expect "STEEL_OPEN_FIXED disc, no anchors (one per node)" ("{0} {1}" -f $g.look.
 Expect "W12X26 context" (@((G "W12X26").tags) -contains "context") $true
 Expect "DUCT_ALL context, no glyph" ($null -eq (G "DUCT_ALL").look -and (@((G "DUCT_ALL").tags) -contains "context")) $true
 Expect "FLAG_LARGE_GAP (not a check) context, no glyph" ($null -eq (G "FLAG_LARGE_GAP").look -and (@((G "FLAG_LARGE_GAP").tags) -contains "context")) $true
+Expect "SPAN_US1 context, no glyph" ($null -eq (G "SPAN_US1").look -and (@((G "SPAN_US1").tags) -contains "context")) $true
 if ($fail) { throw "$fail checks failed (tables in $base.model.s2k)" }
 Write-Output "all checks passed; viewer file $base.bin"
