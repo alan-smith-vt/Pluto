@@ -22,7 +22,8 @@ public partial class DuctsToPluto
 
     static string BuildClean(string outBase, string modelId, string lengthUnit, List<RvEl> scope, Dictionary<int, RawViewerWriter.BeamMember> beams,
         Dictionary<int, double[]> beamDim, Dictionary<int, Node> nodes, double[] off, double scale, List<RvConn[]> nearPairs, List<int[]> sideNodes,
-        Dictionary<int, int> navBeamRow, List<DuctRow> rows, Func<RvConn, int> nodeOf, Dictionary<RvConn, RvConn> attach)
+        Dictionary<int, int> navBeamRow, List<DuctRow> rows, Func<RvConn, int> nodeOf, Dictionary<RvConn, RvConn> attach,
+        List<int> hangerScope, out SupportRun sr, out string orientNewLine)
     {
         Func<int, double[]> pos0 = id => DuctGeom.NodeFt(nodes[id], off, scale);
         var cm = CleanModel.FromPieces(scope, beams, beamDim, pos0, navBeamRow, rows, sideNodes, nodeOf);
@@ -36,11 +37,16 @@ public partial class DuctsToPluto
         string cutNote = CleanModel.ApplyCuts(clean, P, Cfg);
         string dropNote = CleanModel.ApplyManualDrop(clean, P, Cfg);   // add-on, the viewer's Cut picker
         if (dropNote != "") cutNote += (cutNote != "" ? "\n" : "") + dropNote;
-        string orientNote = ApplyOrientation(clean, P);   // DuctsCleanOrient.cs: before the supports (rotated depth)
+        string orientNote = Orienter.Apply(clean, P, Cfg.RotateLargeVertical, out orientNewLine);   // before the supports (rotated depth)
         SteelModel sm = Cfg.Steel.Count > 0 ? SteelModel.Build(Cfg.Steel, Cfg.SteelSettings) : null;   // SteelViewWriter.cs draws it; split by supports from here on
-        SpanTotal = 0;
-        SupportRun sr = sm != null ? ApplySupports(clean, P, sm, outBase, rows) : null;   // DuctsCleanSupports.cs: splits clean frames + steel
-        SupportNewLine = sr != null ? SupportsNewLine(sr) + (sr.FloatNewLine != "" ? "\n" + sr.FloatNewLine : "") + (sr.Hangers.NewLine != "" ? "\n" + sr.Hangers.NewLine : "") : "";
+        sr = null;
+        if (sm != null)   // SupportPlacer: supports, spans, floating pieces, hangers; the steel splits are applied here
+        {
+            var frames = new List<SteelModel.Frame>();
+            sr = SupportPlacer.Place(clean, P, SteelRecords(sm, frames), Cfg, rows, hangerScope);
+            ApplySteelSplits(sm, frames, sr);
+            SupportPlacer.WriteSupportsCsv(outBase + ".supports.csv", sr, P);
+        }
 
         // checks: length, deviation of the original connectors from the clean centreline
         double cleanLen = clean.Where(x => !x.Rigid && x.Source != "navisworks-only").Sum(x => DuctMath.Len(P[x.A], P[x.B]));
@@ -56,7 +62,7 @@ public partial class DuctsToPluto
         dev.Sort((x, y) => y.Key.CompareTo(x.Key));
 
         if (sm != null) sm.WriteCsv(outBase);
-        WriteCleanViewer(outBase + "_clean", modelId + "/clean", lengthUnit, clean, P, off, scale, sm, sr);
+        WriteCleanViewer(outBase + "_clean", modelId + "/clean", lengthUnit, clean, P, off, scale, sm, sr, rows);
         WriteCleanFrames(outBase + ".frames.csv", clean, P);
 
         return string.Format(Inv, "clean model (<out>_clean.bin, <out>.frames.csv): {0} elements ({1} rigid links) from {2} pieces; duct length {3:0.#} ft -> {4:0.#} ft, overlaps merged {5} ({6:0.#} ft), different-size overlaps {7} (OVERLAP_SIZE_CONFLICT), gaps closed {10}; connectors > 1 in from the clean line {8}{9}",
@@ -70,7 +76,7 @@ public partial class DuctsToPluto
 
 
 
-    static void WriteCleanViewer(string outBase, string modelId, string lengthUnit, List<CEdge> clean, Dictionary<int, double[]> P, double[] off, double scale, SteelModel sm, SupportRun sr)
+    static void WriteCleanViewer(string outBase, string modelId, string lengthUnit, List<CEdge> clean, Dictionary<int, double[]> P, double[] off, double scale, SteelModel sm, SupportRun sr, List<DuctRow> rows)
     {
         var nodes = new Dictionary<int, Node>(); int next = 1; var map = new Dictionary<int, int>();
         Func<int, int> nd = n => { int id; if (!map.TryGetValue(n, out id)) { id = DuctGeom.MakeNode(nodes, ref next, P[n], off, scale); map[n] = id; } return id; };
@@ -102,7 +108,7 @@ public partial class DuctsToPluto
             }
             int a = nd(ce.A), b = nd(ce.B); if (a == b) continue;
             var m = DuctGeom.Beam(nb, a, b, s, nodes);
-            m.LocalY = WidthDir(ce, P);
+            m.LocalY = DuctGeom.WidthDir(ce, P);
             beams[nb] = m;
             string sys = ce.Src.Count > 0 ? ce.Src[0].SysName : (ce.Source == "navisworks-only" ? "navisworks-only" : "?");
             labels[nb] = string.Format(Inv, "clean | system {0} | {1}{2} | {3:0.##} ft | parts {4}{5}",
@@ -119,7 +125,7 @@ public partial class DuctsToPluto
             nb++;
         }
         SteelViewWriter.View sv = sm != null ? SteelViewWriter.Add(sm, nodes, ref next, sections, beams, labels, ref nb, off, scale) : null;
-        SupportView pv = AddSupports(sr, P, nodes, ref next, sections, beams, labels, ref nb, off, scale);
+        SupportView pv = SupportViewWriter.AddSupports(sr, P, nodes, ref next, sections, beams, labels, ref nb, off, scale);
         if (beams.Count == 0) return;
         var comps = new List<RawViewerWriter.Component>(); comps.Add(new RawViewerWriter.Component("Axial N", "force", "kip"));
         var units = new Dictionary<string, string>(); units["length"] = lengthUnit;
@@ -135,22 +141,13 @@ public partial class DuctsToPluto
         if (gCut.Count > 0) sc.AddGroup("Clean: cut ends", "#ffffff", "beams", gCut, new[] { "duct", "clean", "cut" }, "FLAG_CUT_END");
         new DuctSystems(Cfg).ApplySystemView(sc);
         SteelViewWriter.AddGroups(sc, sv);
-        AddSupportGroups(sc, pv);
-        AddSpanGroup(sc, sr, clean, P, beamOf, gSpan);
-        AddFloatingGroup(sc, sr, clean, P, beamOf);   // DuctsCleanSupports.cs: stability rule 1
-        AddHangerGroups(sc, sr != null ? sr.Hangers : null, sr, clean, beamOf, HangerRowsForView, pv);   // DuctsCleanHangers.cs   // DuctsCleanSupports.cs: warn glyph per span
+        SupportViewWriter.AddSupportGroups(sc, pv);
+        SupportViewWriter.AddSpanGroup(sc, sr, clean, P, beamOf, gSpan);
+        SupportViewWriter.AddFloatingGroup(sc, sr, clean, P, beamOf);   // stability rule 1
+        SupportViewWriter.AddHangerGroups(sc, sr, clean, beamOf, rows, pv);   // the hanger checks
         File.WriteAllText(outBase + ".features.json", sc.ToJson(), new UTF8Encoding(false));
     }
 
-    // a rectangular edge's width direction (W_in lies along it), unit and square to the edge; null = not known (rigid,
-    // round, or the run had no connector width directions)
-    static double[] WidthDir(CEdge ce, Dictionary<int, double[]> P)
-    {
-        if (ce.Y == null || ce.Rigid || (ce.Dim != null && ce.Dim[0] == 1)) return null;
-        double[] y = ce.Y, x = DuctMath.Unit(DuctMath.Sub3(P[ce.B], P[ce.A])); double dt = DuctMath.Dot3(y, x);
-        double[] yy = DuctMath.Unit(new[] { y[0] - dt * x[0], y[1] - dt * x[1], y[2] - dt * x[2] });
-        return DuctMath.Dot3(yy, yy) > 0.5 ? yy : null;
-    }
 
     // the SAP input: one frame per clean element, inches, Navisworks frame; W2 / H2 / Dia2 = a transition's other end;
     // WX / WY / WZ = the width direction (SapDucts sets the local axis angle from it); Thk_in = the parts' Navisworks
@@ -164,12 +161,12 @@ public partial class DuctsToPluto
         {
             double[] a = P[ce.A], b = P[ce.B]; double[] d = ce.Dim ?? new[] { 0.0, double.NaN, double.NaN, double.NaN }, d2 = ce.DimB;
             string shape = ce.Rigid ? "rigid" : d[0] == 1 ? "round" : "rect";
-            double[] wd = WidthDir(ce, P);
+            double[] wd = DuctGeom.WidthDir(ce, P);
             s.AppendLine(string.Join(",", new[] { "F" + (++f), "N" + ce.A, "N" + ce.B,
-                R3(a[0] * 12), R3(a[1] * 12), R3(a[2] * 12), R3(b[0] * 12), R3(b[1] * 12), R3(b[2] * 12), shape,
-                ce.Rigid ? "" : R3(d[1]), ce.Rigid ? "" : R3(d[2]), ce.Rigid ? "" : R3(d[3]),
-                d2 != null ? R3(d2[1]) : "", d2 != null ? R3(d2[2]) : "", d2 != null ? R3(d2[3]) : "",
-                ce.Rigid ? "" : double.IsNaN(ce.Thk) ? "0.06" : R3(ce.Thk), ce.Rigid ? "" : double.IsNaN(ce.Thk) ? "default" : "navisworks",
+                DuctGeom.R3(a[0] * 12), DuctGeom.R3(a[1] * 12), DuctGeom.R3(a[2] * 12), DuctGeom.R3(b[0] * 12), DuctGeom.R3(b[1] * 12), DuctGeom.R3(b[2] * 12), shape,
+                ce.Rigid ? "" : DuctGeom.R3(d[1]), ce.Rigid ? "" : DuctGeom.R3(d[2]), ce.Rigid ? "" : DuctGeom.R3(d[3]),
+                d2 != null ? DuctGeom.R3(d2[1]) : "", d2 != null ? DuctGeom.R3(d2[2]) : "", d2 != null ? DuctGeom.R3(d2[3]) : "",
+                ce.Rigid ? "" : double.IsNaN(ce.Thk) ? "0.06" : DuctGeom.R3(ce.Thk), ce.Rigid ? "" : double.IsNaN(ce.Thk) ? "default" : "navisworks",
                 ce.Rigid ? "rigid" : d2 != null ? "transition" : "revit", ce.Source,
                 string.Join(";", ce.Src.Select(x => x.Id).ToArray()), ce.NavisId,
                 string.Join(" ", ce.Flags.OrderBy(x => x, StringComparer.Ordinal).ToArray()),
@@ -179,5 +176,45 @@ public partial class DuctsToPluto
                 ce.Src.Count > 0 ? new DuctSystems(Cfg).SystemRole(ce.Src[0].SysName) : ce.Source == "navisworks-only" ? "navisworks-only" : "", ce.Span }.Select(DuctGeom.CsvCell).ToArray()));
         }
         File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));
+    }
+    // steel frames as plain records for SupportPlacer (inches; top of steel at both ends); frames keeps the order
+    static List<DuctSupports.Steel> SteelRecords(SteelModel sm, List<SteelModel.Frame> frames)
+    {
+        var steel = new List<DuctSupports.Steel>();
+        foreach (SteelModel.Frame f in sm.Frames)
+        {
+            SteelMember b = sm.Members[f.Source];
+            steel.Add(new DuctSupports.Steel { I = sm.JointPos(f.I), J = sm.JointPos(f.J), TopI = sm.TopAt(f, 0)[2], TopJ = sm.TopAt(f, 1)[2],
+                Name = f.Name, Section = string.IsNullOrEmpty(b.SectionName) ? "UNNAMED" : b.SectionName });
+            frames.Add(f);
+        }
+        return steel;
+    }
+
+    // the split requests of the supports (SteelIx, T) applied to the steel model: per frame, highest t first (SplitAt
+    // keeps the I part in f, so lower t rescale by the cut); fills each support's steel joint and source member
+    static void ApplySteelSplits(SteelModel sm, List<SteelModel.Frame> frames, SupportRun run)
+    {
+        DuctSupports ds = run.Ds;
+        var steelJ = new SteelModel.Joint[ds.Supports.Count];
+        foreach (IGrouping<int, int> g in Enumerable.Range(0, ds.Supports.Count).GroupBy(i => ds.Supports[i].SteelIx))
+        {
+            SteelModel.Frame f = frames[g.Key]; double end = 1;
+            foreach (int i in g.OrderByDescending(i => ds.Supports[i].T))
+            {
+                double t = ds.Supports[i].T;
+                if (end <= 1e-9) { steelJ[i] = sm.Joints[f.I - 1]; continue; }
+                int i0 = f.I, j0 = f.J;
+                SteelModel.Joint j = sm.SplitAt(f, t / end, "SUPPORT");
+                steelJ[i] = j;
+                if (j.Id != i0 && j.Id != j0) end = t;   // a new joint: f is now the part up to it
+            }
+        }
+        for (int i = 0; i < ds.Supports.Count; i++)
+        {
+            SteelModel.Joint j = steelJ[i];
+            run.SteelJoint.Add(new SteelPoint { Name = j.Name, X = j.X, Y = j.Y, Z = j.Z });
+            run.SteelSource.Add(sm.Members[frames[ds.Supports[i].SteelIx].Source].MemberOid ?? "");
+        }
     }
 }

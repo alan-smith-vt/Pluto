@@ -80,6 +80,6 @@ public class CEdge
     public List<RvEl> Src = new List<RvEl>(); public HashSet<string> Flags = new HashSet<string>(StringComparer.Ordinal);
     public string Source = "revit"; public string NavisId = ""; public bool Dead;
     public double Thk = double.NaN;   // wall thickness (in) from Navisworks; NaN = not stated (frames.csv: 0.06 default)
-    public string Span = "";        // unsupported span id US<n> (DuctsCleanSupports.cs), frames.csv Span
+    public string Span = "";        // unsupported span id US<n> (SupportPlacer.cs), frames.csv Span
     public int Sys { get { return Src.Count > 0 ? Src[0].Sys : -1; } }
 }

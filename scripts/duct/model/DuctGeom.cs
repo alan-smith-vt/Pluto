@@ -1,10 +1,12 @@
 using System;
+using System.Globalization;
 using System.Collections.Generic;
 
 // Small shared helpers of the duct converters over DuctModel records (split stage 2: out of the DuctsToPluto
 // partial). Tap points, openings and the through pair of a fitting, Navisworks row sizes, node coordinates, CSV cells.
 public static class DuctGeom
 {
+    static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
     public static bool IsTapPoint(RvConn k) { return string.Equals(k.Type, "Curve", StringComparison.OrdinalIgnoreCase); }
     // As a probe DuctOpening, to reuse ThroughPair / BranchJunction (round = "round", else A x B, A the larger).
     public static DuctOpening AsOpening(RvConn k)
@@ -87,4 +89,14 @@ public static class DuctGeom
         nodes[n.id] = n;
         return n.id;
     }
+    // a rectangular edge's width direction (W_in lies along it), unit and square to the edge; null = not known (rigid,
+    // round, or the run had no connector width directions)
+    public static double[] WidthDir(CEdge ce, Dictionary<int, double[]> P)
+    {
+        if (ce.Y == null || ce.Rigid || (ce.Dim != null && ce.Dim[0] == 1)) return null;
+        double[] y = ce.Y, x = DuctMath.Unit(DuctMath.Sub3(P[ce.B], P[ce.A])); double dt = DuctMath.Dot3(y, x);
+        double[] yy = DuctMath.Unit(new[] { y[0] - dt * x[0], y[1] - dt * x[1], y[2] - dt * x[2] });
+        return DuctMath.Dot3(yy, yy) > 0.5 ? yy : null;
+    }
+    public static string R3(double v) { return double.IsNaN(v) ? "" : v.ToString("0.###", Inv); }
 }

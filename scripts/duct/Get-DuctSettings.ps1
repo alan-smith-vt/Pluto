@@ -51,13 +51,13 @@ function Get-DuctSettings {
     if (-not $Steel) { $Steel = $Data.DuctSteel }
     if ($Data.DuctSteelSnapIn) { $ds.SteelSettings.SnapIn = [double]$Data.DuctSteelSnapIn }
     if ($Data.DuctSteelNearIn) { $ds.SteelSettings.NearIn = [double]$Data.DuctSteelNearIn }
-    # duct-to-steel supports (DuctsCleanSupports.cs): DuctSupportGapIn = largest duct bottom -> steel top gap that is a
+    # duct-to-steel supports (duct\model\SupportPlacer.cs): DuctSupportGapIn = largest duct bottom -> steel top gap that is a
     # support (in), DuctSpanFt = unsupported span limit (ft); the gap histogram in match.txt helps choose the gap
     if ($Data.DuctSupportGapIn) { $ds.Supports.GapMaxIn = [double]$Data.DuctSupportGapIn }
     if ($Data.DuctSpanFt) { $ds.Supports.SpanFt = [double]$Data.DuctSpanFt }
-    # Navisworks hanger check (DuctsCleanHangers.cs): a hanger and a support match within DuctHangerMatchIn (in)
+    # Navisworks hanger check (duct\model\HangerCheck.cs): a hanger and a support match within DuctHangerMatchIn (in)
     if ($Data.DuctHangerMatchIn) { $ds.HangerMatchIn = [double]$Data.DuctHangerMatchIn }
-    # duct orientation (DuctsCleanOrient.cs): horizontal ducts with the larger side vertical are flagged and, unless
+    # duct orientation (duct\model\Orienter.cs): horizontal ducts with the larger side vertical are flagged and, unless
     # DuctRotateLargeVertical = $false, rotated 90 deg about the centreline with their size run
     $ds.RotateLargeVertical = -not ($Data.ContainsKey('DuctRotateLargeVertical') -and -not $Data.DuctRotateLargeVertical)
     if ($Steel -and $Steel -ne "none") {

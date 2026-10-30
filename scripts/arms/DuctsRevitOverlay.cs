@@ -581,8 +581,8 @@ public partial class DuctsToPluto
         List<DuctSystems.DuctSystem> systems = sysAn.AnalyzeSystems(scope, conns, inScope, touch, nearPairs, sidePairs, beams, beamDim, nodes, off, scale, rows, rowsOf, freeEnds);
         // clean centreline model (DuctsClean.cs): <out>_clean.bin + <out>.frames.csv (the SAP input)
         foreach (Tuple<RvConn, double[]> c in sysAn.EndContacts) sideNodes.Add(new[] { node(c.Item1), DuctGeom.MakeNode(nodes, ref nextNode, c.Item2, off, scale) });   // end contacts: rigid links
-        HangerScope = inRoom; HangerRowsForView = rows; NavRowFlags.Clear();   // reset per run: CheckHangers only runs when there is steel   // DuctsCleanHangers.cs: the room's rows for the hanger check
-        string cleanNote = BuildClean(outBase, modelId, lengthUnit, scope, beams, beamDim, nodes, off, scale, nearPairs, sideNodes, navBeamRow, rows, k => node(k), attach);
+        SupportRun sr; string orientNew;   // supports / orientation results for the NEW block and flags.csv
+        string cleanNote = BuildClean(outBase, modelId, lengthUnit, scope, beams, beamDim, nodes, off, scale, nearPairs, sideNodes, navBeamRow, rows, k => node(k), attach, inRoom, out sr, out orientNew);
         DuctRunGraph.WriteRunsCsv(outBase + ".runs.csv", runSegs);
         foreach (RvEl e in scope)
         {
@@ -603,7 +603,7 @@ public partial class DuctsToPluto
                 foreach (int id in e.Beams) l.Add((uint)id);
             }
         if (gNavOnly.Count > 0) flagGroups["NAVIS_ONLY"] = gNavOnly;
-        WriteFlagsCsv(outBase + ".flags.csv", scope, rows, rowsOf, navOnly, navCovered);
+        WriteFlagsCsv(outBase + ".flags.csv", scope, rows, rowsOf, navOnly, navCovered, sr != null ? sr.Hangers : null);
         string framesNote = WriteFramesCsv(outBase + ".parts_frames.csv", scope, rows, rowsOf, navOnly, nodes, off, scale);
 
         var res = new Result();
@@ -697,8 +697,8 @@ public partial class DuctsToPluto
             medRes, used, means ? " by GUID group" : " 1:1", Math.Atan2(T[1], T[0]) * 180 / Math.PI, spread,
             inRoom.Count, navFab, scope.Count, rvFab, navMissing.Count, navFabMissing, rvOnly, rvOnlyFab, catDiff.Count,
             nConnected, nTouch, nNear, nSide, nOutside, nOpen, located.Count, usedRow.Count)
-            + (SupportNewLine != "" ? "\n" + SupportNewLine : "")
-            + (OrientNewLine != "" ? "\n" + OrientNewLine : "");
+            + (sr != null && sr.NewLine != "" ? "\n" + sr.NewLine : "")
+            + (orientNew != "" ? "\n" + orientNew : "");
         if (!string.IsNullOrEmpty(part) && part.Contains(","))
         {
             // -Part <id>,<id> (2026-10-17): the gap between two parts' systems, as the NEW block
@@ -725,7 +725,7 @@ public partial class DuctsToPluto
         {
             if (kv.Key == "NAVIS_ONLY") continue;   // rows, not Revit elements: counted below
             int n = 0; foreach (RvEl e in scope) if (e.Flags.Contains(kv.Key)) n++;
-            fc.Add(kv.Key == "UNSUPPORTED_SPAN" ? string.Format(Inv, "UNSUPPORTED_SPAN {0} parts ({1} span{2})", n, SpanTotal, SpanTotal == 1 ? "" : "s") : kv.Key + " " + n);   // the span number stays spans (user decision)
+            fc.Add(kv.Key == "UNSUPPORTED_SPAN" ? string.Format(Inv, "UNSUPPORTED_SPAN {0} parts ({1} span{2})", n, sr != null ? sr.Spans.Count : 0, sr != null && sr.Spans.Count == 1 ? "" : "s") : kv.Key + " " + n);   // the span number stays spans (user decision)
         }
         fc.Add(string.Format(Inv, "NAVIS_ONLY {0} (+ {1} covered by a Revit part, no frame)", navOnly.Count, navCovered.Count));
         s.AppendLine("flags (parts; <out>.flags.csv): " + string.Join(", ", fc.ToArray()));
@@ -896,7 +896,7 @@ public partial class DuctsToPluto
 
     // <out>.flags.csv: one row per flagged part, Revit elements in scope, then Navisworks-only rows. Regenerated
     // every run; flags clear themselves when the upstream models are fixed.
-    static void WriteFlagsCsv(string path, List<RvEl> scope, List<DuctRow> rows, Func<RvEl, List<int>> rowsOf, List<int> navOnly, Dictionary<int, string> navCovered)
+    static void WriteFlagsCsv(string path, List<RvEl> scope, List<DuctRow> rows, Func<RvEl, List<int>> rowsOf, List<int> navOnly, Dictionary<int, string> navCovered, HangerRun hangers)
     {
         var s = new StringBuilder();
         s.AppendLine("Source,RevitElementId,NavisId,RevitIfcGUID,NavisIfcGUID,RevitCategory,RevitFab,NavisCategory,Match,RevitSize,NavisSize,Flags,Detail");
@@ -912,12 +912,12 @@ public partial class DuctsToPluto
         foreach (int i in navOnly)
         {
             DuctRow r = rows[i];
-            s.AppendLine(string.Join(",", new[] { "Navisworks", "", r.NavisId, "", r.Guid, "", "", r.Cat, "none", "", r.SizeText, NavRowFlagText(i), r.Name + "; SAP frame" }.Select(DuctGeom.CsvCell).ToArray()));
+            s.AppendLine(string.Join(",", new[] { "Navisworks", "", r.NavisId, "", r.Guid, "", "", r.Cat, "none", "", r.SizeText, HangerCheck.NavRowFlagText(hangers, i), r.Name + "; SAP frame" }.Select(DuctGeom.CsvCell).ToArray()));
         }
         foreach (KeyValuePair<int, string> kv in navCovered)
         {
             DuctRow r = rows[kv.Key];
-            s.AppendLine(string.Join(",", new[] { "Navisworks", kv.Value, r.NavisId, "", r.Guid, "", "", r.Cat, "covered", "", r.SizeText, NavRowFlagText(kv.Key),
+            s.AppendLine(string.Join(",", new[] { "Navisworks", kv.Value, r.NavisId, "", r.Guid, "", "", r.Cat, "covered", "", r.SizeText, HangerCheck.NavRowFlagText(hangers, kv.Key),
                 r.Name + "; covered by Revit " + kv.Value + ", no frame" }.Select(DuctGeom.CsvCell).ToArray()));
         }
         File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));
@@ -941,8 +941,8 @@ public partial class DuctsToPluto
             (ji, jj, p, q, shape, w, h, d, t, tsrc, ssrc, src, rid, nid, flags) =>
             {
                 nf++;
-                s.AppendLine(string.Join(",", new[] { "F" + nf, ji, jj, R3(p[0]), R3(p[1]), R3(p[2]), R3(q[0]), R3(q[1]), R3(q[2]), shape,
-                    R3(w), R3(h), R3(d), R3(t), tsrc, ssrc, src, rid, nid, flags }.Select(DuctGeom.CsvCell).ToArray()));
+                s.AppendLine(string.Join(",", new[] { "F" + nf, ji, jj, DuctGeom.R3(p[0]), DuctGeom.R3(p[1]), DuctGeom.R3(p[2]), DuctGeom.R3(q[0]), DuctGeom.R3(q[1]), DuctGeom.R3(q[2]), shape,
+                    DuctGeom.R3(w), DuctGeom.R3(h), DuctGeom.R3(d), DuctGeom.R3(t), tsrc, ssrc, src, rid, nid, flags }.Select(DuctGeom.CsvCell).ToArray()));
             };
         foreach (RvEl e in scope)
         {
@@ -1291,7 +1291,6 @@ public partial class DuctsToPluto
 
 
 
-    static string R3(double v) { return double.IsNaN(v) ? "" : v.ToString("0.###", Inv); }
 
     static int RvBeam(Dictionary<int, RawViewerWriter.BeamMember> beams, Dictionary<int, string> labels, ref int nb, int a, int b, Dictionary<int, Node> nodes, string label)
     {
