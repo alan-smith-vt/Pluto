@@ -18,6 +18,7 @@ $suites = @(
     @("steel-model",     "ps",     "scripts\arms\tests\Test-SteelModel.ps1",         @(),                     $false),
     @("duct-orient",     "ps",     "scripts\duct\tests\Test-DuctOrient.ps1",         @(),                     $false),
     @("duct-supports",   "ps",     "scripts\duct\tests\Test-DuctSupports.ps1",       @(),                     $false),
+    @("duct-dcr-chain",  "ps",     "scripts\duct\tests\Test-DuctDcrChain.ps1",   @(),                     $false),
     @("duct-fixture",    "ps",     "scripts\duct\tests\Test-DuctFixture.ps1",        @(),                     $false),
     @("demo",            "ps",     "scripts\duct\tests\Test-Demo.ps1",               @("-Root", $demoRoot, "-NoSap"), $false),
     @("demo-sap",        "ps",     "scripts\duct\tests\Test-Demo.ps1",               @("-Root", $demoRoot),   $true),
