@@ -62,12 +62,16 @@ Check 'one span over 10 ft' ($sp.Count -eq 1)
 Check 'span length 200 in, bounded by 1 support' ($sp.Count -eq 1 -and [math]::Abs($sp[0].LengthIn - 200) -lt 1e-6 -and $sp[0].Supports -eq 1)
 Check 'span holds frames 0,1,5,6' ($sp.Count -eq 1 -and (($sp[0].Ducts | Sort-Object) -join ',') -eq '0,1,5,6')
 
-# guide shape: 8 triangles, all within the box around the duct
+# icons: guide (ring + double arrow), anchor, other; 24x12 duct at Z 120 along X -> size 14.4, lift 3
 $set = New-Object 'DuctSupportShapes+Settings'
-$tri = [DuctSupportShapes]::Guide([double[]]@(0, 0, 120), [double[]]@(1, 0, 0), [double[]]@(0, 1, 0), 24, 12, 8, $set)
-Check 'guide: 8 triangles' ($tri.Count -eq 8)
-$zs = @(); $ys = @(); foreach ($x in $tri) { for ($k = 0; $k -lt 3; $k++) { $zs += $x[3 * $k + 2]; $ys += $x[3 * $k + 1] } }
-Check 'guide: base plate on the steel top (112), top plate above the duct (126.25)' ([math]::Abs(($zs | Measure-Object -Minimum).Minimum - 112) -lt 1e-9 -and [math]::Abs(($zs | Measure-Object -Maximum).Maximum - 126.25) -lt 1e-9)
-Check 'guide: ears 2 in beyond the side plates' ([math]::Abs(($ys | Measure-Object -Maximum).Maximum - 14.25) -lt 1e-9)
+$c = [double[]]@(0, 0, 120); $ax = [double[]]@(1, 0, 0); $u = [double[]]@(0, 1, 0)
+$tri = [DuctSupportShapes]::Icon('guide', $c, $ax, $u, 24, 12, $set)
+Check 'guide: 176 triangles (4 boxes, shaft, 2 heads)' ($tri.Count -eq 176)
+$xs = @(); $zs = @(); foreach ($x in $tri) { for ($k = 0; $k -lt 3; $k++) { $xs += $x[3 * $k]; $zs += $x[3 * $k + 2] } }
+Check 'guide: bottom 3 in above the duct top (129), top at 143.4' ([math]::Abs(($zs | Measure-Object -Minimum).Minimum - 129) -lt 1e-9 -and [math]::Abs(($zs | Measure-Object -Maximum).Maximum - 143.4) -lt 1e-9)
+Check 'guide: arrow tips 1.1 x size along the duct' ([math]::Abs(($xs | Measure-Object -Maximum).Maximum - 15.84) -lt 1e-9 -and [math]::Abs(($xs | Measure-Object -Minimum).Minimum + 15.84) -lt 1e-9)
+Check 'anchor: 16 triangles' (([DuctSupportShapes]::Icon('anchor', $c, $ax, $u, 24, 12, $set)).Count -eq 16)
+Check 'unknown type: octahedron' (([DuctSupportShapes]::Icon('spring', $c, $ax, $u, 24, 12, $set)).Count -eq 8)
+Check 'size clamped (100 in wide duct -> 30)' ([DuctSupportShapes]::IconSize(100, $set) -eq 30 -and [DuctSupportShapes]::IconSize(6, $set) -eq 10)
 
 if ($fail -gt 0) { Write-Host "$fail FAILED"; exit 1 } else { Write-Host 'all passed' }

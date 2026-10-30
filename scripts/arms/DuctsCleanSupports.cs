@@ -10,7 +10,7 @@ using System.Text;
 // SUPPORT) and a TAP_STUB link between them (SAP side: <out>.supports.csv). Then the span check: clean frames of a
 // horizontal stretch longer than SpanFt between supports get UNSUPPORTED_SPAN (frames.csv Flags, the parts'
 // flags.csv rows, SAP group FLAG_UNSUPPORTED_SPAN).
-// Viewer (<out>_clean.bin): the stub as a thin beam ("Support: TAP_STUB"), the support shape as shells, one group
+// Viewer (<out>_clean.bin): the stub as a thin beam ("Support: TAP_STUB"), the support icon as solid shells (DuctSupportShapes.Icon), one group
 // per type ("Support: guide"), "Flag: UNSUPPORTED_SPAN" on the flagged frames. Hover label = support id, type, gap.
 // Settings from duct-config.psd1 (Export-DuctsViewer.ps1): DuctSupportGapIn, DuctSpanFt.
 public partial class DuctsToPluto
@@ -202,8 +202,7 @@ public partial class DuctsToPluto
             var m = Beam(nb, a, b, sec, nodes); beams[nb] = m; labels[nb] = label; v.Stubs.Add((uint)nb); nb++;
             List<uint> g; if (!v.Shapes.TryGetValue(sp.Type, out g)) { g = new List<uint>(); v.Shapes[sp.Type] = g; }
             double[] c = { pd[0] * 12, pd[1] * 12, pd[2] * 12 };
-            double below = c[2] - (sp.PD[2] - run.Dim[i][1] / 2 - sp.Gap);   // centreline down to the steel top
-            foreach (double[] t in SupportShape(sp.Type, c, sp.Axis, run.Across[i], run.Dim[i][0], run.Dim[i][1], below))
+            foreach (double[] t in DuctSupportShapes.Icon(sp.Type, c, sp.Axis, run.Across[i], run.Dim[i][0], run.Dim[i][1], SupportShapeSettings))
             {
                 var el = new Element(); el.id = ne++; el.nNodes = 3; el.n = new Node[4];
                 for (int k = 0; k < 3; k++) el.n[k] = nodes[MakeNode(nodes, ref next, new[] { t[3 * k] / 12, t[3 * k + 1] / 12, t[3 * k + 2] / 12 }, off, scale)];
@@ -211,12 +210,6 @@ public partial class DuctsToPluto
             }
         }
         return v;
-    }
-
-    // one shape per support type; types without their own shape yet are drawn as a guide
-    static List<double[]> SupportShape(string type, double[] c, double[] axis, double[] across, double w, double h, double below)
-    {
-        return DuctSupportShapes.Guide(c, axis, across, w, h, below, SupportShapeSettings);
     }
 
     static readonly string[] SupportColors = { "#ffc04d", "#ff7a3b", "#3fe0a0", "#c06bff" };
