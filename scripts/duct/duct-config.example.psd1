@@ -25,6 +25,12 @@
     RevitMeshNoRunExclude = @()
     # Add-on: hand-picked clean-model drops, the lists the viewer's Cut picker downloads (Revit part ids, not the
     # cut points CSV). One file or several; every listed member is removed after the cuts. @() = off.
+    # Utility rack steel for the clean model (Export-DuctsViewer.ps1 -Revit; -Steel overrides): the SteelToPluto CSV
+    # (meters, the duct model's frame). '' = no steel. Snap: an end within DuctSteelSnapIn of another member's
+    # centreline connects to it; open ends within DuctSteelNearIn of other steel get OPEN_NEAR (missed connection?).
+    DuctSteel = ''                    # e.g. 'C:\Temp\hvac\steel\steel.csv'
+    DuctSteelSnapIn = 6
+    DuctSteelNearIn = 24
     DuctDrop = @()   # e.g. @('C:\Temp\hvac\cuts\drop.txt', 'C:\Temp\hvac\cuts\drop-yellow.txt')
     Group = 'DUCT_ALL'                # SAP frame group holding every duct member
 

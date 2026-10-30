@@ -31,6 +31,8 @@
 #                        scripts\sap\Run-Sap.ps1 -Points (cut nodes read from a SAP model): each snaps to a clean
 #                        joint or duct within 6 in; per system the largest piece is kept, pieces beyond a cut dropped;
 #                        kept frames ending at a cut get CUT_END (viewer "Clean: cut ends", SAP FLAG_CUT_END)
+#                        [-Steel <csv>|none]: utility rack steel (default: DuctSteel in the duct config) drawn in the
+#                        clean model with its end conditions; <out>.steel_joints.csv / .steel_frames.csv (SAP input)
 #     [-Out <base>]      default <run>\ducts  ->  <run>\ducts.bin + <run>\ducts.features.json
 #     [-Unit in]         file length unit; "in" matches the plant export
 #     [-ModelId <id>]    default hvac/ducts/<run folder name> (+ "/mesh")
@@ -58,6 +60,7 @@ param(
     [string]$Services,
     [string]$Systems,
     [string]$Cuts,
+    [string]$Steel,  # steel CSV for the clean model (default DuctSteel in the duct config); none = off
     [string]$Drop   # add-on: hand-picked drop lists (viewer Cut picker), comma separated; default DuctDrop in the duct config; none = off
 )
 $ErrorActionPreference = "Stop"
@@ -136,6 +139,20 @@ if ($Box) {
     foreach ($f in $dropFiles) {
         if (-not (Test-Path $f)) { throw "drop list not found: $f (DuctDrop in duct-config.psd1 or -Drop; -Drop none = off)" }
         Write-Output ("manual drop: {0} parts from {1}" -f [DuctsToPluto]::ReadManualDrop((Resolve-Path $f).Path), $f)
+    }
+    # utility rack steel in the clean model (DuctsSteel.cs): DuctSteel in the config (SteelToPluto CSV, meters, this frame);
+    # -Steel overrides, -Steel none = off. DuctSteelSnapIn / DuctSteelNearIn: connection snap and OPEN_NEAR distances (in)
+    [DuctsToPluto]::Steel.Clear()
+    $dcfg = $(if (Test-Path $cfg) { Import-PowerShellDataFile $cfg } else { @{} })
+    if (-not $Steel) { $Steel = $dcfg.DuctSteel }
+    [DuctsToPluto]::SteelSettings = New-Object 'SteelModel+Settings'
+    if ($dcfg.DuctSteelSnapIn) { [DuctsToPluto]::SteelSettings.SnapIn = [double]$dcfg.DuctSteelSnapIn }
+    if ($dcfg.DuctSteelNearIn) { [DuctsToPluto]::SteelSettings.NearIn = [double]$dcfg.DuctSteelNearIn }
+    if ($Steel -and $Steel -ne "none") {
+        if (-not (Test-Path $Steel)) { throw "steel CSV not found: $Steel (DuctSteel in duct-config.psd1 or -Steel; -Steel none = off)" }
+        $sr = New-Object SteelToPluto; $sr.Progress = $false
+        [DuctsToPluto]::Steel.AddRange($sr.Build((Resolve-Path $Steel).Path))
+        Write-Output ("steel: {0} members from {1} ({2})" -f [DuctsToPluto]::Steel.Count, $Steel, ($sr.Summary() -replace "`n", "; "))
     }
     Write-Output ("primary systems: " + $(if ([DuctsToPluto]::PrimarySystems.Count) { [DuctsToPluto]::PrimarySystems -join ", " } else { "none configured (DuctSystems in duct-config.psd1 or -Systems)" }))
     $r = [DuctsToPluto]::ExportRevit($Run, [IO.Path]::GetFullPath($Revit), $Out, $ModelId, $Unit, $Room, $Part)

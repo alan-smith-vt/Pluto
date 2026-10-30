@@ -172,7 +172,7 @@ public class SteelToPluto
     public static Result Export(List<SteelMember> members, string outBase, string modelId, string lengthUnit)
     {
         if (members == null || members.Count == 0) throw new Exception("SteelToPluto: no members.");
-        double scale = LengthScale(lengthUnit);
+        double scale = SteelGeom.LengthScale(lengthUnit);
 
         // Recenter at the bbox center (whole meters) -- same float32 wobble fix
         // as the pipe bridge; offset recorded in the sidecar.
@@ -209,9 +209,9 @@ public class SteelToPluto
         foreach (SteelMember b in members)
         {
             // degenerate (zero length): drop BEFORE minting nodes, no orphans
-            if (CoordKey(b.P0, NodeRound) == CoordKey(b.P1, NodeRound)) continue;
-            int a = NodeFor(b.P0, off, scale, NodeRound, nodeIdByKey, nodes, ref nextNode);
-            int z = NodeFor(b.P1, off, scale, NodeRound, nodeIdByKey, nodes, ref nextNode);
+            if (SteelGeom.CoordKey(b.P0, NodeRound) == SteelGeom.CoordKey(b.P1, NodeRound)) continue;
+            int a = SteelGeom.NodeFor(b.P0, off, scale, NodeRound, nodeIdByKey, nodes, ref nextNode);
+            int z = SteelGeom.NodeFor(b.P1, off, scale, NodeRound, nodeIdByKey, nodes, ref nextNode);
 
             bool sized = !(double.IsNaN(b.D) || double.IsNaN(b.Bf) || double.IsNaN(b.Tf) || double.IsNaN(b.Tw));
             int sec;
@@ -248,14 +248,14 @@ public class SteelToPluto
             m.NodeA = a;
             m.NodeB = z;
             m.SectionIndex = sec;
-            m.LocalY = ResolveLocalY(b, ref orientDefaulted);
+            m.LocalY = SteelGeom.ResolveLocalY(b, ref orientDefaulted);
             double oy, oz;
-            CpOffsets(b.Cp, (sized ? b.Bf : UBf) * scale / 2, (sized ? b.D : UD) * scale / 2, out oy, out oz);
+            SteelGeom.CpOffsets(b.Cp, (sized ? b.Bf : UBf) * scale / 2, (sized ? b.D : UD) * scale / 2, out oy, out oz);
             m.OffsetAy = oy; m.OffsetBy = oy; m.OffsetAz = oz; m.OffsetBz = oz;
             if (oy != 0 || oz != 0) cpApplied++;
             beamMembers[m.Id] = m;
             beamLabels[m.Id] = b.MemberOid ?? "";
-            AddTo(bySection, sec, (uint)m.Id);
+            SteelGeom.AddTo(bySection, sec, (uint)m.Id);
             nextBeam++;
         }
 
@@ -287,7 +287,7 @@ public class SteelToPluto
             List<uint> ids;
             if (!bySection.TryGetValue(si, out ids)) continue;
             sc.AddGroup(sections[si].Name, "#f2f2f5", "beams", ids,
-                        new[] { "steel", "section" }, StaadName(sections[si].Name));
+                        new[] { "steel", "section" }, SteelGeom.StaadName(sections[si].Name));
         }
         if (unsizedIds.Count > 0) sc.AddGroup("UNSIZED", "#ff3b3b", "beams", unsizedIds, new[] { "steel", "unsized" }, "STEEL_UNSIZED");
         string scPath = outBase + ".features.json";
@@ -301,111 +301,6 @@ public class SteelToPluto
     }
 
     // ---------- helpers ----------
-
-    // SP3D 15-point cardinal code -> section-local (y=flange, z=web) offset of the
-    // ring center relative to the routed line, in FILE units. The line passes
-    // THROUGH the cardinal point, so the ring shifts the opposite way:
-    //   cols: 1,4,7 left (-y) | 2,5,8 center | 3,6,9 right (+y)
-    //   rows: 1,2,3 bottom (-z) | 4,5,6 middle | 7,8,9 top (+z)
-    //   e.g. CP 8 (top-center, CONFIRMED vs Navisworks) -> ring drops by halfD.
-    // 10 = centroid; 11..15 (shear-center codes) = centroid for doubly-symmetric W.
-    public static void CpOffsets(int cp, double halfBf, double halfD, out double oy, out double oz)
-    {
-        oy = 0; oz = 0;
-        if (cp < 1 || cp > 9) return;
-        int col = (cp - 1) % 3;          // 0 left, 1 center, 2 right
-        int row = (cp - 1) / 3;          // 0 bottom, 1 middle, 2 top
-        oy = col == 0 ? halfBf : col == 2 ? -halfBf : 0;
-        oz = row == 0 ? halfD : row == 2 ? -halfD : 0;
-    }
-
-    // The CSV YDir is the WEB direction (bottom -> top flange). The viewer's
-    // section outline runs the depth along local *z* (beamGeometry.js iShape),
-    // so the writer's LocalY must be the FLANGE direction: LocalY = web x axis
-    // (then local z = axis x LocalY = web). Fallback web (missing or
-    // parallel-to-axis vector): global Z, or global X for a vertical member.
-    static double[] ResolveLocalY(SteelMember b, ref int defaulted)
-    {
-        double ax = b.P1.X - b.P0.X, ay = b.P1.Y - b.P0.Y, az = b.P1.Z - b.P0.Z;
-        double al = Math.Sqrt(ax * ax + ay * ay + az * az);
-        if (al > 1e-12) { ax /= al; ay /= al; az /= al; }
-
-        double yx = 0, yy = 0, yz = 1;
-        bool haveCsv = b.ValidY;
-        if (haveCsv) { yx = b.LocalY.X; yy = b.LocalY.Y; yz = b.LocalY.Z; }
-        double dot = yx * ax + yy * ay + yz * az;
-        if (!haveCsv || Math.Abs(dot) > 0.99)
-        {
-            defaulted++;
-            // default up = global Z, or global X for a near-vertical member
-            if (Math.Abs(az) > 0.99) { yx = 1; yy = 0; yz = 0; } else { yx = 0; yy = 0; yz = 1; }
-            dot = yx * ax + yy * ay + yz * az;
-        }
-        // project the web off the axis and renormalize
-        yx -= dot * ax; yy -= dot * ay; yz -= dot * az;
-        double l = Math.Sqrt(yx * yx + yy * yy + yz * yz);
-        yx /= l; yy /= l; yz /= l;
-        // flange direction = web x axis (unit: both unit and orthogonal)
-        return new double[] { yy * az - yz * ay, yz * ax - yx * az, yx * ay - yy * ax };
-    }
-
-    // 12-step ramp (blue -> green -> yellow -> orange -> red); same as the pipe bridge.
-    static readonly string[] Ramp = {
-        "#3b4cc0", "#4f7fd8", "#6fa8e6", "#8fd0d8", "#a5dca0", "#c9e35a",
-        "#f2e34a", "#f6be2e", "#f39221", "#e8641c", "#d13a1f", "#b40426" };
-    static string SizeColor(int i, int n)
-    {
-        if (n <= 1) return Ramp[6];
-        int idx = (int)Math.Round((double)i * (Ramp.Length - 1) / Math.Max(n - 1, 1));
-        return Ramp[Math.Min(Math.Max(idx, 0), Ramp.Length - 1)];
-    }
-    static string StaadName(string sectionName)
-    {
-        var chars = sectionName.Select(c => char.IsLetterOrDigit(c) ? c : '_').ToArray();
-        return new string(chars).ToUpperInvariant();
-    }
-
-    static double LengthScale(string unit)
-    {
-        switch ((unit ?? "m").ToLowerInvariant())
-        {
-            case "m": return 1.0;
-            case "mm": return 1000.0;
-            case "in": return 1.0 / 0.0254;
-            case "ft": return 1.0 / 0.3048;
-            default: throw new Exception("SteelToPluto: unknown length unit '" + unit + "'.");
-        }
-    }
-
-    static string CoordKey(Vec3 p, double round)
-    {
-        return string.Format(CultureInfo.InvariantCulture, "{0}|{1}|{2}",
-            Math.Round(p.X / round), Math.Round(p.Y / round), Math.Round(p.Z / round));
-    }
-
-    static int NodeFor(Vec3 p, Vec3 off, double scale, double round, Dictionary<string, int> byKey,
-                       Dictionary<int, Node> nodes, ref int next)
-    {
-        string key = CoordKey(p, round);
-        int id;
-        if (byKey.TryGetValue(key, out id)) return id;
-        id = next++;
-        byKey[key] = id;
-        var n = new Node();
-        n.id = id;
-        n.xyz.X = (float)((p.X - off.X) * scale);
-        n.xyz.Y = (float)((p.Y - off.Y) * scale);
-        n.xyz.Z = (float)((p.Z - off.Z) * scale);
-        nodes[id] = n;
-        return id;
-    }
-
-    static void AddTo<K>(Dictionary<K, List<uint>> map, K key, uint id)
-    {
-        List<uint> list;
-        if (!map.TryGetValue(key, out list)) { list = new List<uint>(); map[key] = list; }
-        list.Add(id);
-    }
 
     static string Get(Dictionary<string, string> r, string col)
     {
