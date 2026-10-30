@@ -131,13 +131,13 @@ Encoding rule: **colour = identity of one chosen dimension, shape = meaning, wor
   "anchors": [ {"domain": "beams", "id": 12, "t": 0}, {"domain": "beams", "id": 12, "t": 1, "label": "SF12 at S40"},
                {"domain": "nodes", "id": 5, "dir": [1, 0, 0]} ] }
 ```
-- **`look.glyph`**: `circle disc half diamond square triangle warn tick cross ring-arrows anchor`. An unknown name draws `square`. Suggested conventions:
+- **`look.glyph`**: `circle disc half diamond square triangle warn tick cross ring-arrows anchor support-fixed support-pinned`. Support glyphs (SAP/STAAD 3D style, pre-rendered isometric: two crossing perpendicular squares = fixed, two crossing perpendicular triangles = pinned) hang from their node, drawn 2.2x and never inset. Their base points along `dir`; without one, out of the member for a beam-end anchor, else world -Z. An unknown name draws `square`. Suggested conventions:
   - member ends: ○ pinned, ● fixed, ◐ hinge, ◆ collinear hinge, with a neutral tint;
   - supports: one shape per type (`ring-arrows` guide, `anchor` anchor);
   - `warn` for checks.
 - **`look.tier`**:
-  - `exception`: always shown;
-  - `detail` (the default): shown once the camera is nearer than 0.45 × the model span.
+  - `exception`: always shown, drawn over all geometry;
+  - `detail` (the default): shown once the camera is nearer than 0.45 × the model span; depth-tested after a pull of 1 % of the span toward the camera, so an anchor inside a solid (a duct centreline) shows on its surface.
 - **`look.label`** is the legend text (default: the group name). **`look.section`** is the legend heading. **`look.insetPx`** (default 10) is the on-screen inset for `t` = 0 / 1, toward the member's other end, so the ends meeting at one joint don't stack.
 - **`color`** tints the glyph. If absent: neutral `#e8e8ee`, or the reserved alarm `#ff4d6d` for `warn`. Nothing else should use the alarm colour.
 - **`anchors`**: one glyph each.
@@ -150,7 +150,7 @@ Encoding rule: **colour = identity of one chosen dimension, shape = meaning, wor
 - Tag background groups `context`. Without a `color` they paint the neutral grey `#8b919c` instead of a palette hue.
 - **Viewer:**
   - one `THREE.Points` per model over a canvas glyph atlas, at a constant pixel size;
-  - a hover tooltip next to the cursor (glyph + label · anchor label);
+  - a hover tooltip next to the cursor (glyph + label · anchor label); a glyph the scene hides is not picked;
   - a legend bottom-left, built from the same atlas pixels: checks first, then by section.
   - Measured: 10k glyphs at no visible frame cost.
 - **C#:** `FeaturesSidecar.Look`, `FeaturesSidecar.Anchor`, `Group.Look`, `Group.Anchors`, `AddLookGroup(...)`.

@@ -324,3 +324,9 @@ input[type=range] { accent-color: #6c8cff; }
 #calcCard td.cc-num { text-align: right; white-space: nowrap; }
 #calcCard tr.cc-win td { color: #ffd479; }
 #calcCard .cc-alarm { color: #ff64ff; }
+
+/* Collapsible Field / Display sections (collapsed for models with no load cases) */
+.fea-sub-toggle { cursor: pointer; user-select: none; }
+.fea-sub-toggle::before { content: "\25BE  "; color: #8a8f9a; }
+.fea-collapsed .fea-sub-toggle::before { content: "\25B8  "; }
+.fea-collapsed > :not(.fea-sub) { display: none !important; }

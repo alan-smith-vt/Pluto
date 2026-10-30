@@ -150,8 +150,18 @@ var FEAFeatures = (function () {
         if (elName && shown()) elName.textContent = S.fileName;
         checkBinding();
         if (window.FEAFiles && shown()) FEAFiles.syncUI();
+        // A model with no load cases is a check model: its groups ARE the content.
+        // Show them painted (groups without a `hidden` flag on, as for overlays) and
+        // open the Groups tab, instead of a grey model with everything 2-3 clicks away.
+        var checkModel = C.kind === 'primary' && window.feaSet && feaSet.nLC === 0;
+        if (checkModel) S.defaultShown = true;
         resolve();
         if (elToggle && shown()) elToggle.disabled = !S.resolved;
+        if (checkModel && S.resolved && !S.enabled) {
+            S.enabled = true;
+            if (elToggle && shown()) elToggle.checked = true;
+            if (elPanel && shown()) elPanel.classList.remove('collapsed');
+        }
         sync();
         var g = (obj.groups && obj.groups.items) ? obj.groups.items.length : 0;
         log('Features: ' + S.fileName + ' loaded (' + g + ' group(s)' +

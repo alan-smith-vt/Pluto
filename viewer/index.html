@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FEA Per-Corner Field Viewer</title>
+<title>Pluto Viewer</title>
 <link rel="stylesheet" href="styles/viewer.css">
 <link rel="stylesheet" href="styles/sectionCut.css">
 <link rel="stylesheet" href="styles/predicates.css">
@@ -18,8 +18,8 @@
 <div id="feaPanel">
 
     <div class="fea-section">
-        <div class="fea-title">FEA Field Viewer</div>
-        <div class="fea-hint" style="margin-top:3px;">Per-corner stress &amp; displacement, true bilinear quads.</div>
+        <div class="fea-title">Pluto Viewer</div>
+        <div class="fea-hint" style="margin-top:3px;">Models, checks and analysis results.</div>
     </div>
 
     <div class="fea-section">
@@ -66,7 +66,7 @@
         </div>
     </div>
 
-    <div class="fea-section">
+    <div class="fea-section" id="fieldSection">
         <div class="fea-sub">Field</div>
         <div class="fea-row" id="envComputeRow">
             <button id="btnComputeEnv" class="fea-btn">Compute envelopes</button>
@@ -96,7 +96,7 @@
         </div>
     </div>
 
-    <div class="fea-section">
+    <div class="fea-section" id="displaySection">
         <div class="fea-sub">Display</div>
         <div class="fea-row">
             <span class="fea-label">Colormap</span>
