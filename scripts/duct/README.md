@@ -36,7 +36,7 @@ All Windows PowerShell 5.1 + C# 5 compiled on the fly (`Add-Type`). No installs,
 
 | step | command | what it does |
 |---|---|---|
-| model | `..\navis\Export-DuctsViewer.ps1 -Run <ducts run> -Revit <revit run>`, then `..\sap\Run-SapDucts.ps1 -Frames <out>.frames.csv` | clean duct model with steel and supports, viewer files, then the SAP model (vault: revit-duct-model) |
+| model | `.\Run-HvacModel.ps1 -Config <psd1> -Run <ducts run> -Revit <revit run>` | clean duct model with steel and supports, viewer files, the SAP model and its viewer file (see "Building the model" below; vault: revit-duct-model) |
 | check | `.\Run-DuctCheck.ps1` | DCRs of the model open in SAP |
 | release check | `.\Run-JointReleaseCheck.ps1` | validate expansion-joint release by superposition on the open model |
 | optimize | `.\Run-JointOptimizer.ps1` | expansion-joint search on the open model, with an HTML report |
