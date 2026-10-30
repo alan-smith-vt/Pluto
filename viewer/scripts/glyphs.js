@@ -247,7 +247,12 @@ var FEAGlyphs = (function () {
         '  float show = (tier > 0.5 || depth < detailFar) ? 1.0 : 0.0;',
         '  vec2 off = vec2(0.0); vRot = vec2(1.0, 0.0);',
         '  if (inset > 0.0) off = screenDir(c0, along * 1e-3 * abs(mv.z) + along * 1e-6) * inset;',
-        '  if (length(gdir) > 0.0) { vec2 r = screenDir(c0, normalize(gdir) * 1e-3 * abs(mv.z) + gdir * 1e-6); if (length(r) > 0.0) vRot = r; }',
+        // dir mostly along the line of sight (a column foot seen from above): its screen
+        // direction is noise, so stand the glyph upright with +x (the base) screen-down
+        '  if (length(gdir) > 0.0) {',
+        '    vec3 dv = normalize((modelViewMatrix * vec4(normalize(gdir), 0.0)).xyz);',
+        '    if (length(dv.xy) < 0.35) vRot = vec2(0.0, -1.0);',
+        '    else { vec2 r = screenDir(c0, normalize(gdir) * 1e-3 * abs(mv.z) + gdir * 1e-6); if (length(r) > 0.0) vRot = r; } }',
         '  c0.xy += off / viewport * c0.w;',
         '  if (tier > 0.5) c0.z = -0.999 * c0.w;',   // exceptions: over everything
         '  gl_Position = c0;',
