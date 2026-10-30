@@ -32,6 +32,10 @@
 // "pipes by size" refine on top. The Groups tab (2026-09-03) exposes that:
 // per-group enable (persisted as `hidden: true` on the item), colour edit,
 // and drag reorder (mutates envelope.groups.items order, so Export keeps it).
+//
+// Look groups (2026-10-30): a group with a `look` is drawn as glyphs by
+// glyphs.js (FEAGlyphs.update after every resolve) and never paints its
+// members; it starts shown unless the item says `hidden: true`.
 // ================================================================
 
 var FEAFeatures = (function () {
