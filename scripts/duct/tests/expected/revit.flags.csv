@@ -81,6 +81,6 @@ Revit,400103,369580ffa46b7f177f6262b4fff8987d,2ltNpQN9hcyC1j6TYchRpN,2ltNpQN9hcy
 Revit,400104,ee1e8faf62ec9eae0b8c90f1f4916c21,0o2EDUWup6Pm1CXWZhrCu9,0o2EDUWup6Pm1CXWZhrCu9,MEP Fabrication Ductwork,1,MEP Fabrication Ductwork,guid,"16""x28""",,UNSUPPORTED_SPAN,unsupported span 12 ft (1 support(s) at its ends)
 Revit,400105,e5c551f80d83bd8563d420baaf3031e2,1nyL$7s$rapdkazYab31V5,1nyL$7s$rapdkazYab31V5,MEP Fabrication Ductwork,1,MEP Fabrication Ductwork,guid,"16""x28""-28""x16""",,SIZE_DIFFERS,Revit 16x28 vs mesh rings 28x28 / Revit 28x16 vs mesh rings 28x28
 Revit,400106,aafaebfe23c881e9715f8ae15d015d21,2o6e9SszWV5CxIVE6rwFQ6,2o6e9SszWV5CxIVE6rwFQ6,MEP Fabrication Ductwork,1,MEP Fabrication Ductwork,guid,"28""x16""",,OPEN_END,
-Navisworks,,d0dde8e0bf187fee87b72d51b10b43a1,,3tnxj5iv18TCqlpJOr_puh,,,MEP Fabrication Hangers,none,,,NAVIS_ONLY,Rod Hanger; SAP frame
-Navisworks,,c9a27dd402bf72176952aa64b115d13b,,0Lkek9dMEbhrKbQOqN7Dj5,,,MEP Fabrication Hangers,none,,,NAVIS_ONLY,Rod Hanger; SAP frame
-Navisworks,,7d8c9a1885c23dcff2a565ea2ba83bac,,0d0coC13PM$YIPqFIKD3C9,,,MEP Fabrication Hangers,none,,,NAVIS_ONLY,Rod Hanger; SAP frame
+Navisworks,,d0dde8e0bf187fee87b72d51b10b43a1,,3tnxj5iv18TCqlpJOr_puh,,,MEP Fabrication Hangers,none,,,NAVIS_ONLY HANGER_NO_STEEL_SUPPORT,Rod Hanger; SAP frame
+Navisworks,,c9a27dd402bf72176952aa64b115d13b,,0Lkek9dMEbhrKbQOqN7Dj5,,,MEP Fabrication Hangers,none,,,NAVIS_ONLY HANGER_NO_STEEL_SUPPORT,Rod Hanger; SAP frame
+Navisworks,,7d8c9a1885c23dcff2a565ea2ba83bac,,0d0coC13PM$YIPqFIKD3C9,,,MEP Fabrication Hangers,none,,,NAVIS_ONLY HANGER_NO_STEEL_SUPPORT,Rod Hanger; SAP frame

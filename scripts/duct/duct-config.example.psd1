@@ -36,6 +36,9 @@
     # UNSUPPORTED_SPAN. match.txt prints a gap histogram of every crossing to choose the gap.
     DuctSupportGapIn = 4.5
     DuctSpanFt = 10
+    # Navisworks hanger check (report only): a hanger and a steel support within DuctHangerMatchIn (in) along the
+    # duct match; HANGER_NO_STEEL_SUPPORT / HANGER_OFF_DUCT / SUPPORT_NO_HANGER otherwise.
+    DuctHangerMatchIn = 24
     # Horizontal ducts with the larger side vertical: flagged LARGE_SIDE_VERTICAL and rotated 90 deg about the
     # centreline together with their same-size run (risers included). $false = flag only.
     DuctRotateLargeVertical = $true

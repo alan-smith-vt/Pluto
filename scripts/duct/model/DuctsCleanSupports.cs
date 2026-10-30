@@ -27,9 +27,10 @@ public partial class DuctsToPluto
         public List<double[]> Across = new List<double[]>();       // per support: horizontal width direction
         public List<DuctSupports.Span> Spans = new List<DuctSupports.Span>();
         public string Note = "";
+        public HangerRun Hangers;   // DuctsCleanHangers.cs
     }
 
-    static SupportRun ApplySupports(List<CEdge> clean, Dictionary<int, double[]> P, SteelModel sm, string outBase)
+    static SupportRun ApplySupports(List<CEdge> clean, Dictionary<int, double[]> P, SteelModel sm, string outBase, List<Row> rows)
     {
         var run = new SupportRun(); var ds = new DuctSupports(SupportSettings); run.Ds = ds;
         var ducts = DuctRecords(clean, P);
@@ -109,8 +110,9 @@ public partial class DuctsToPluto
                     if (!e.Detail.Contains(det)) e.Detail.Add(det);
                 }
             }
+        run.Hangers = CheckHangers(clean, P, rows, run);   // flags only (SUPPORT_NO_HANGER into supports.csv)
         WriteSupportsCsv(outBase + ".supports.csv", run, P);
-        run.Note = SupportsNote(run);
+        run.Note = SupportsNote(run) + "\n" + run.Hangers.Note;
         return run;
     }
 
