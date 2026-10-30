@@ -49,12 +49,8 @@ $extra = @(); if ($SapDir) { $extra = @("-SapDir", $SapDir) }
 & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "Run-SapDucts.ps1") -Frames $frames -SavePath $sdb -SteelFrames $steel -Supports $supports -Flags $flags -PlantRotZ 90 @extra
 if ($LASTEXITCODE) { throw "Run-SapDucts failed" }
 $base = Join-Path $Out "test_steel"
-& $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "Run-Sap.ps1") -Open $sdb -NoSaveSdb -Export $base -NoResults -NoViewerFile @extra | Select-String "^\[(export|mesh)|^RESULT" | ForEach-Object { $_.Line.Substring(0, [Math]::Min(200, $_.Line.Length)) }
+& $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "Run-Sap.ps1") -Open $sdb -NoSaveSdb -Export $base -NoResults @extra | Select-String "^\[(export|mesh)|^RESULT" | ForEach-Object { $_.Line.Substring(0, [Math]::Min(200, $_.Line.Length)) }
 if ($LASTEXITCODE) { throw "Run-Sap -Export failed" }
-# .bin in a fresh process: lib\Config.ps1's Add-Type fails ("System.Console") once SAP is attached in the session
-$lib = Join-Path (Split-Path $PSScriptRoot) "lib\Config.ps1"
-& $ps -NoProfile -ExecutionPolicy Bypass -Command ". '$lib'; [SapToPluto]::Export('$base.model.s2k', `$null, '$base', 'sap/test_steel', `$false).Summary()"
-if ($LASTEXITCODE) { throw "SapToPluto failed" }
 
 # the exported model tables: rows per table, and a row's fields
 $tables = @{}; $cur = $null
