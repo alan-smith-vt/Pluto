@@ -102,7 +102,7 @@ using System.Text;
 
 public class SapExportResult
 {
-    public string BinPath, SidecarPath, SidecarMerge;
+    public string BinPath, SidecarPath, SidecarMerge, Looks;
     public int Nodes, Elements, LoadCases, ForceRows, ForceRowsUsed, DispRows, DispRowsUsed, Groups;
     public int Frames, FrameSections, FramesUnknownShape, FrameForceRows, FrameForceRowsUsed;
     public int FramesRotated, FramesAdvancedAxes, FramesOffsetOtherCsys, FramesReleased, Links;
@@ -128,6 +128,7 @@ public class SapExportResult
         if (FramesRotated + FramesReleased + Links > 0)
             sb.AppendLine(string.Format("  {0} frames with a local axes angle, {1} with end releases; {2} links", FramesRotated, FramesReleased, Links));
         sb.AppendLine(string.Format("  {0} groups -> {1}", Groups, SidecarPath));
+        if (Looks != null) sb.AppendLine("  " + Looks);
         if (!string.IsNullOrEmpty(SidecarMerge)) sb.AppendLine("  " + SidecarMerge);
         sb.AppendLine("  bin -> " + BinPath);
         foreach (string w in Warnings) sb.AppendLine("  WARN " + w);
@@ -237,6 +238,12 @@ public class SapToPluto
     // cylindrical: add "Translation R" / "Translation T" displacement components
     // resolved about the plan (X,Y) centroid of all nodes -- tanks and silos.
     public static SapExportResult Export(string modelS2k, string resultsS2k, string outBase, string modelId, bool cylindrical)
+    {
+        return Export(modelS2k, resultsS2k, outBase, modelId, cylindrical, null);
+    }
+
+    // looksCsv: optional glyph rules for the sidecar groups (SapLooks.cs); null / "" = none
+    public static SapExportResult Export(string modelS2k, string resultsS2k, string outBase, string modelId, bool cylindrical, string looksCsv)
     {
         if (modelS2k == null || !File.Exists(modelS2k)) throw new Exception("SapToPluto: model file not found: " + modelS2k);
         var res = new SapExportResult();
@@ -753,17 +760,21 @@ public class SapToPluto
         var byRelease = new Dictionary<string, List<uint>>();
         var releaseOrder = new List<string>();
         string[] relDof = { "P", "V2", "V3", "T", "M2", "M3" };
+        var releasedEnds = new Dictionary<int, bool[]>();   // beam -> I / J released (any DOF), for glyph anchors
         foreach (var r in model.GetTable("FRAME RELEASE ASSIGNMENTS 1 - GENERAL"))
         {
             string f, v;
             if (!r.TryGetValue("Frame", out f) || !beams.ContainsKey(Int(f))) continue;
             var ends = new List<string>();
+            var rel = new bool[2];
             foreach (string end in new[] { "I", "J" })
             {
                 var on = new List<string>();
                 foreach (string d in relDof) if (r.TryGetValue(d + end, out v) && v.StartsWith("y", StringComparison.OrdinalIgnoreCase)) on.Add(d);
                 ends.Add(end + ": " + (on.Count == 0 ? "-" : string.Join("+", on)));
+                rel[end == "I" ? 0 : 1] = on.Count > 0;
             }
+            releasedEnds[Int(f)] = rel;
             if (r.TryGetValue("PartialFix", out v) && v.StartsWith("y", StringComparison.OrdinalIgnoreCase)) ends.Add("partial");
             Add(byRelease, releaseOrder, string.Join(" / ", ends), (uint)Int(f));
             res.FramesReleased++;
@@ -821,6 +832,13 @@ public class SapToPluto
                 if (grp == null) sc.AddNodeGroup(g, null, ids, new[] { "sap", "group" }, StaadName(g));
                 else grp.Members.Add(new FeaturesSidecar.Member { Domain = "nodes", NodeIds = ids });
             }
+        }
+
+        if (!string.IsNullOrEmpty(looksCsv))
+        {
+            SapLooks looks = SapLooks.Read(looksCsv);
+            looks.Apply(sc, beams, nodes, releasedEnds);
+            res.Looks = looks.Summary();
         }
 
         // the previous sidecar is the user's layer: keep section cuts, predicates,

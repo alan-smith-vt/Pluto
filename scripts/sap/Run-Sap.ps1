@@ -18,7 +18,7 @@
 #   export   -Export <base> (or an existing folder: <folder>\<model name>): analysis mesh -> <base>.model.s2k + <base>.labels.csv, results ->
 #            <base>.results.s2k (-NoResults: geometry only; -FinalOnly: staged cases' last step only),
 #            then SapToPluto -> <base>.bin + <base>.features.json (-NoViewerFile: stop at the .s2k;
-#            -Cylindrical: add Translation R / T)
+#            -Cylindrical: add Translation R / T; -Looks <csv>: glyph rules for the groups, SapLooks.cs)
 #   test     -SelfTest <dir>: 20 ft beam, 10 kip at midspan -> V 5 kip, M 50 kip-ft
 #
 # Every line of progress starts with "[step]"; the last line is "RESULT {json}" (machine-readable).
@@ -43,6 +43,7 @@ param(
     [switch]$NoViewerFile,
     [switch]$Cylindrical,
     [string]$ModelId,
+    [string]$Looks,
     [string]$SelfTest,
     [string]$SapDir
 )
@@ -130,7 +131,7 @@ try {
         if (-not $NoViewerFile) {
             if (-not $ModelId) { $ModelId = "sap/" + ([IO.Path]::GetFileNameWithoutExtension($held) -replace ' ', '_') }
             . (Join-Path (Split-Path $PSScriptRoot) "lib\Config.ps1")
-            $r = [SapToPluto]::Export($modelS2k, $resS2k, $base, $ModelId, [bool]$Cylindrical)
+            $r = [SapToPluto]::Export($modelS2k, $resS2k, $base, $ModelId, [bool]$Cylindrical, $(if ($Looks) { Full $Looks } else { $null }))
             foreach ($line in ($r.Summary() -split "`r?`n")) { if ($line.Trim()) { Say "export" $line } }
             $out.bin = "$base.bin"; $out.features = "$base.features.json"
         }

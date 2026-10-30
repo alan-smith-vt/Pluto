@@ -1,0 +1,16 @@
+# Glyph looks for the HVAC duct + steel SAP model's viewer file (Run-Sap.ps1 -Export ... -Looks scripts\duct\sap-looks.csv).
+# Rules: scripts\arms\SapLooks.cs; schema: board laptop:697 (approved 653 + 657). First matching row wins.
+# Groups come from SapDucts / SapSteel (STEEL_ / SUPPORT_ / FLAG_) and SapToPluto (sections).
+Group,Glyph,At,Tier,Label,Section,Color,Dir,Context
+STEEL_OPEN_FIXED,disc,members,exception,Fixed (open end),Member ends,,,
+STEEL_OPEN_PINNED,circle,members,exception,Pinned (open end),Member ends,,,
+STEEL_RELEASED,half,ends-released,detail,Hinged end (M2+M3),Member ends,,,
+STEEL_COLLINEAR,diamond,members,detail,Collinear hinge,Member ends,,,
+SUPPORT_GUIDE,ring-arrows,ends-I,detail,Guide,Supports,,adjacent,
+SUPPORT_ANCHOR,anchor,ends-I,detail,Anchor,Supports,,adjacent,
+FLAG_*,warn,mid,exception,,Checks,,,
+W*,,,,,,,,yes
+DUCT_*_t*,,,,,,,,yes
+DUCT_NOSIZE,,,,,,,,yes
+TAP_STUB,,,,,,,,yes
+STEEL_NOSIZE,,,,,,,,yes
