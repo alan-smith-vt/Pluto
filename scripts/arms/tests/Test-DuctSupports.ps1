@@ -57,9 +57,9 @@ $t = (D 2 7 @(60, 0, 0) @(60, 20, 0) 0 0); $t.Rigid = $true; $c.Add($t)
 $c.Add((D 7 8 @(60, 20, 0) @(60, 80, 0) 12 12))
 $sj = New-Object 'System.Collections.Generic.HashSet[int]'; [void]$sj.Add(3)
 $sp = $ds.Spans($c, $sj)
-# left stretch: 60 + 60 + 20 + 60 = 200 in > 120 -> flagged; right stretch 120 in = 10 ft -> not (> only)
+# left stretch: 60 + 60 + 60 = 180 in (the rigid tap joins, adds no length) > 120 -> flagged; right stretch 120 in = 10 ft -> not (> only)
 Check 'one span over 10 ft' ($sp.Count -eq 1)
-Check 'span length 200 in, bounded by 1 support' ($sp.Count -eq 1 -and [math]::Abs($sp[0].LengthIn - 200) -lt 1e-6 -and $sp[0].Supports -eq 1)
+Check 'span length 180 in, bounded by 1 support' ($sp.Count -eq 1 -and [math]::Abs($sp[0].LengthIn - 180) -lt 1e-6 -and $sp[0].Supports -eq 1)
 Check 'span holds frames 0,1,5,6' ($sp.Count -eq 1 -and (($sp[0].Ducts | Sort-Object) -join ',') -eq '0,1,5,6')
 
 # icons: guide (ring + double arrow), anchor, other; 24x12 duct at Z 120 along X -> size 14.4, lift 3

@@ -27,6 +27,6 @@
     {"id": "<ID>", "name": "Flag: SPLIT", "color": "#ff3b3b", "hidden": true, "tags": ["duct", "revit", "flag"], "export": {"staadName": "FLAG_SPLIT"}, "members": [{"domain": "beams", "ids": [2,3,4]}]},
     {"id": "<ID>", "name": "Flag: SYSTEM_CHANGE", "color": "#f0f0f0", "hidden": true, "tags": ["duct", "revit", "flag"], "export": {"staadName": "FLAG_SYSTEM_CHANGE"}, "members": [{"domain": "beams", "ids": [33]}]},
     {"id": "<ID>", "name": "Flag: SYSTEM_NAME_CONFLICT", "color": "#ff5fa2", "hidden": true, "tags": ["duct", "revit", "flag"], "export": {"staadName": "FLAG_SYSTEM_NAME_CONFLICT"}, "members": [{"domain": "beams", "ids": [33]}]},
-    {"id": "<ID>", "name": "Flag: UNSUPPORTED_SPAN", "color": "#ffd23f", "hidden": true, "tags": ["duct", "revit", "flag"], "export": {"staadName": "FLAG_UNSUPPORTED_SPAN"}, "members": [{"domain": "beams", "ids": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,31,32,33,34,35,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91]}]}
+    {"id": "<ID>", "name": "Flag: UNSUPPORTED_SPAN", "color": "#ffd23f", "hidden": true, "tags": ["duct", "revit", "flag"], "export": {"staadName": "FLAG_UNSUPPORTED_SPAN"}, "members": [{"domain": "beams", "ids": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,31,32,33,34,35,41,42,43,44,45,46,47,48,49,50,51,72,73,74,75,76,77,78,79,80,81,82,83,84,85,86,87,88,89,90,91]}]}
   ]}
 }

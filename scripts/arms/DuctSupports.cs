@@ -178,7 +178,7 @@ public class DuctSupports
             if (!use[i]) continue;
             Span sp; int r = root(i);
             if (!comps.TryGetValue(r, out sp)) { sp = new Span(); comps[r] = sp; }
-            sp.Ducts.Add(i); sp.LengthIn += Math.Sqrt(Dist2(ducts[i].A, ducts[i].B));
+            sp.Ducts.Add(i); if (!ducts[i].Rigid) sp.LengthIn += Math.Sqrt(Dist2(ducts[i].A, ducts[i].B));   // rigid links join, add no length
             if (sp.System == "" && !ducts[i].Rigid) sp.System = ducts[i].System;
         }
         var res = new List<Span>();
