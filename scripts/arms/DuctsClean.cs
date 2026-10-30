@@ -37,7 +37,7 @@ public partial class DuctsToPluto
         string dropNote = CleanModel.ApplyManualDrop(clean, P, Cfg);   // add-on, the viewer's Cut picker
         if (dropNote != "") cutNote += (cutNote != "" ? "\n" : "") + dropNote;
         string orientNote = ApplyOrientation(clean, P);   // DuctsCleanOrient.cs: before the supports (rotated depth)
-        SteelModel sm = Cfg.Steel.Count > 0 ? SteelModel.Build(Cfg.Steel, Cfg.SteelSettings) : null;   // DuctsSteel.cs; split by supports from here on
+        SteelModel sm = Cfg.Steel.Count > 0 ? SteelModel.Build(Cfg.Steel, Cfg.SteelSettings) : null;   // SteelViewWriter.cs draws it; split by supports from here on
         SpanTotal = 0;
         SupportRun sr = sm != null ? ApplySupports(clean, P, sm, outBase, rows) : null;   // DuctsCleanSupports.cs: splits clean frames + steel
         SupportNewLine = sr != null ? SupportsNewLine(sr) + (sr.Hangers.NewLine != "" ? "\n" + sr.Hangers.NewLine : "") : "";

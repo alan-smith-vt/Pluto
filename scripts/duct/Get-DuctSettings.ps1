@@ -39,14 +39,14 @@ function Get-DuctSettings {
         }
         $Notes.Add(("cut points: {0} from {1}" -f $ds.CutPoints.Count, $Cuts))
     }
-    # add-on (DuctsManualDrop.cs): hand-picked drop lists from the viewer's Cut picker; DuctDrop names one file or a
+    # add-on (CleanModel.ApplyManualDrop): hand-picked drop lists from the viewer's Cut picker; DuctDrop names one file or a
     # list, only those named (no default); -Drop overrides, -Drop none = off
     $dropFiles = @($(if ($Drop) { $Drop -split ',' } else { $Data.DuctDrop }) | ForEach-Object { "$_".Trim() } | Where-Object { $_ -and $_ -ne "none" })
     foreach ($f in $dropFiles) {
         if (-not (Test-Path $f)) { throw "drop list not found: $f (DuctDrop in duct-config.psd1 or -Drop; -Drop none = off)" }
         $Notes.Add(("manual drop: {0} parts from {1}" -f [DuctsToPluto]::ReadManualDrop($ds, (Resolve-Path $f).Path), $f))
     }
-    # utility rack steel in the clean model (DuctsSteel.cs): DuctSteel (SteelToPluto CSV, meters, this frame); -Steel
+    # utility rack steel in the clean model (SteelViewWriter.cs): DuctSteel (SteelToPluto CSV, meters, this frame); -Steel
     # overrides, -Steel none = off. DuctSteelSnapIn / DuctSteelNearIn: connection snap and OPEN_NEAR distances (in)
     if (-not $Steel) { $Steel = $Data.DuctSteel }
     if ($Data.DuctSteelSnapIn) { $ds.SteelSettings.SnapIn = [double]$Data.DuctSteelSnapIn }
