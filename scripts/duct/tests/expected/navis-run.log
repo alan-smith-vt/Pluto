@@ -1,0 +1,9 @@
+services: all (no filter); rows dropped by service 0; rows without RunName 0 (drawn, own group); beams by service: EXH 2, SYSA 36, SYSB 27, SYSC 25
+nodes=105 beams=90: ducts 20 (fitted-end fallback 0), fitting centreline 6, fitting blocks 0, accessory blocks 0
+fabrication: beams 53 (straights from bbox + size 53), blocks 2 (fit rejected 0); hanger blocks 3
+fabrication straights measured from the mesh body (walls, flanges excluded): agrees with stated size 0, differs (drawn from the mesh, own group) 0; placed from the mesh 0
+fabrication straights not measurable and not matching their stated size (still drawn; <out>.fab-mismatch.txt) 0; fittings bridged 0 (fabrication 3)
+symbol-fan segments dropped 0, loose ends 20, unsized 0, rows skipped (no geometry) 0
+<ROOT>\out\navis.bin
+<ROOT>\out\navis.features.json
+[done] <T>s. In the viewer: Add overlay... -> <ROOT>\out\navis.bin
