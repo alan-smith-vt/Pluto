@@ -104,6 +104,11 @@ and identical DCRs; link model vs connected ~1e-4.
 
 Things to know:
 
+- **Known limitation: greedy misses joints that only help together.** The search adds one joint at a time and stops
+  when no single joint lowers the score, so a set where each joint alone does nothing but two together do is never
+  found ("greedy stopped: no candidate improves the score" while a pair would help); swap only exchanges joints
+  already chosen. Shown on a synthetic model in `tests\Test-DuctDcrChain.ps1`. Not being improved (2026-10-30):
+  to test a suspected pair, score it by hand (next item).
 - **Copy `opt\` before a rerun** you may want to compare (`opt-41`, ...): each run overwrites it.
 - **Score a given joint set without searching:** write the joint names, comma-separated on one line, into
   `opt\chosen.txt` (the format the search writes), then `-SkipSap -SkipSearch`. The joints must be among the

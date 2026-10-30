@@ -314,7 +314,8 @@ try {
     Check "DuctOptimize: never two joints in one span (OnePerSpan)" (@($spans | Sort-Object -Unique).Count -eq $spans.Count) ("spans " + ($spans -join ","))
     Check "DuctOptimize: greedy + swap + removal no worse than greedy alone" ($fScore.Excess -le $gScore.Excess + 1e-9) ("{0:G6} vs {1:G6}" -f $fScore.Excess, $gScore.Excess)
     # greedy's own guarantee: its first step is the best single joint when one improves on nothing released, and it
-    # stops at none when none does. (It is not a global optimum: on this model no single joint helps but the pair J2 + J4 does,
+    # stops at none when none does. KNOWN LIMITATION (scripts\duct\README.md, optimizer not being improved): it is not a
+    # global optimum. On this model no single joint helps but the pair J2 + J4 does,
     # so greedy, which only ever adds one improving joint at a time, stops at none. Exhaustive best is printed.)
     $singles = @(0..3 | ForEach-Object { $o2.Evaluate([int[]]@($_), $false).Excess })
     $bestSingle = ($singles | Measure-Object -Minimum).Minimum
