@@ -9,33 +9,24 @@ $ErrorActionPreference = "Stop"
 $repo = Split-Path (Split-Path (Split-Path $PSScriptRoot))
 $expected = Join-Path $PSScriptRoot "expected"
 $root = Join-Path ([IO.Path]::GetTempPath()) ("pluto-duct-fixture-" + [Guid]::NewGuid().ToString("N").Substring(0, 8))
-$cfg = Join-Path $repo "scripts\duct\duct-config.psd1"
-$cfgBak = $cfg + ".fixture-bak"
+$cfg = Join-Path $root "duct-config.psd1"   # the demo's own config, passed with -Config (the repo's is never touched)
 $run = "20261030-120000"
 
 & python (Join-Path $repo "pythonTools\ducts\make_demo_data.py") --out $root | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "make_demo_data.py failed" }
 
-# the exporter reads scripts\duct\duct-config.psd1: swap in the demo config for the run, put the user's back after
-if (Test-Path $cfg) { Move-Item $cfg $cfgBak -Force }
-try {
-    Copy-Item (Join-Path $root "duct-config.psd1") $cfg
-    $out = Join-Path $root "out"
-    New-Item -ItemType Directory $out | Out-Null
-    $exporter = Join-Path $repo "scripts\navis\Export-DuctsViewer.ps1"
-    # the Revit path (clean model, steel, supports) and the Navisworks-only path (-Run alone: ducts.bin)
-    $log = & powershell -NoProfile -ExecutionPolicy Bypass -File $exporter `
-        -Run (Join-Path $root "ducts\$run") -Revit (Join-Path $root "revit\$run") -Out (Join-Path $out "revit") 2>&1
-    if ($LASTEXITCODE -ne 0) { $log | Out-Host; throw "Export-DuctsViewer.ps1 -Revit failed" }
-    $log | Out-File (Join-Path $out "run.log") -Encoding utf8
-    $log = & powershell -NoProfile -ExecutionPolicy Bypass -File $exporter `
-        -Run (Join-Path $root "ducts\$run") -Out (Join-Path $out "navis") 2>&1
-    if ($LASTEXITCODE -ne 0) { $log | Out-Host; throw "Export-DuctsViewer.ps1 -Run failed" }
-    $log | Out-File (Join-Path $out "navis-run.log") -Encoding utf8
-} finally {
-    Remove-Item $cfg -ErrorAction SilentlyContinue
-    if (Test-Path $cfgBak) { Move-Item $cfgBak $cfg -Force }
-}
+$out = Join-Path $root "out"
+New-Item -ItemType Directory $out | Out-Null
+$exporter = Join-Path $repo "scripts\navis\Export-DuctsViewer.ps1"
+# the Revit path (clean model, steel, supports) and the Navisworks-only path (-Run alone: ducts.bin)
+$log = & powershell -NoProfile -ExecutionPolicy Bypass -File $exporter -Config $cfg `
+    -Run (Join-Path $root "ducts\$run") -Revit (Join-Path $root "revit\$run") -Out (Join-Path $out "revit") 2>&1
+if ($LASTEXITCODE -ne 0) { $log | Out-Host; throw "Export-DuctsViewer.ps1 -Revit failed" }
+$log | Out-File (Join-Path $out "run.log") -Encoding utf8
+$log = & powershell -NoProfile -ExecutionPolicy Bypass -File $exporter -Config $cfg `
+    -Run (Join-Path $root "ducts\$run") -Out (Join-Path $out "navis") 2>&1
+if ($LASTEXITCODE -ne 0) { $log | Out-Host; throw "Export-DuctsViewer.ps1 -Run failed" }
+$log | Out-File (Join-Path $out "navis-run.log") -Encoding utf8
 
 # text outputs only (.bin is checked through geometryHash in its features); temp root normalised
 $got = @{}

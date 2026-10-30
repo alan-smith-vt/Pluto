@@ -1,4 +1,4 @@
-config: scripts\duct\duct-config.psd1
+config: <ROOT>\duct-config.psd1
 services: all (no filter); rows dropped by service 0; rows without RunName 0 (drawn, own group); beams by service: EXH 2, SYSA 41, SYSB 36, SYSC 40
 nodes=141 beams=119: ducts 24 (fitted-end fallback 0), fitting centreline 11, fitting blocks 0, accessory blocks 0
 fabrication: beams 62 (straights from bbox + size 62), blocks 5 (fit rejected 0); hanger blocks 3
