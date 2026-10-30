@@ -49,7 +49,7 @@ $extra = @(); if ($SapDir) { $extra = @("-SapDir", $SapDir) }
 & $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "Run-SapDucts.ps1") -Frames $frames -SavePath $sdb -SteelFrames $steel -Supports $supports -Flags $flags -PlantRotZ 90 @extra
 if ($LASTEXITCODE) { throw "Run-SapDucts failed" }
 $base = Join-Path $Out "test_steel"
-& $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "Run-Sap.ps1") -Open $sdb -NoSaveSdb -Export $base -NoResults @extra | Select-String "^\[(export|mesh)|^RESULT" | ForEach-Object { $_.Line.Substring(0, [Math]::Min(200, $_.Line.Length)) }
+& $ps -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "Run-Sap.ps1") -Open $sdb -NoSaveSdb -Export $base -NoResults -Looks (Join-Path (Split-Path $PSScriptRoot) "duct\sap-looks.csv") @extra | Select-String "^\[(export|mesh)|^RESULT" | ForEach-Object { $_.Line.Substring(0, [Math]::Min(200, $_.Line.Length)) }
 if ($LASTEXITCODE) { throw "Run-Sap -Export failed" }
 
 # the exported model tables: rows per table, and a row's fields
@@ -86,5 +86,21 @@ Expect "FLAG_UNSUPPORTED_SPAN frames" (InGroup "FLAG_UNSUPPORTED_SPAN" "Frame") 
 Expect "FLAG_NO_SIZE frames" (InGroup "FLAG_NO_SIZE" "Frame") 1
 Expect "PLANT coordinate system" @(Rows "COORDINATE SYSTEMS" | Where-Object { $_ -match "Name=`"?PLANT" }).Count 1
 Expect "viewer file" (Test-Path "$base.bin") $true
+# glyph looks (scripts\duct\sap-looks.csv): anchors from the model
+$items = @((Get-Content "$base.features.json" -Raw | ConvertFrom-Json).groups.items)
+function G([string]$n) { $items | Where-Object { $_.name -eq $n } | Select-Object -First 1 }
+$g = G "STEEL_RELEASED"
+Expect "STEEL_RELEASED glyph" $g.look.glyph "half"
+Expect "STEEL_RELEASED anchors (released ends only)" @($g.anchors).Count 5
+Expect "STEEL_RELEASED anchors at t 0 / 1" @($g.anchors | Where-Object { $_.t -eq 0 -or $_.t -eq 1 }).Count 5
+$g = G "SUPPORT_GUIDE"
+Expect "SUPPORT_GUIDE glyph" $g.look.glyph "ring-arrows"
+Expect "SUPPORT_GUIDE anchor at the duct end, along the duct" ("{0} {1}" -f @($g.anchors)[0].t, [Math]::Abs(@($g.anchors)[0].dir[0])) "0 1"
+$g = G "FLAG_UNSUPPORTED_SPAN"
+Expect "FLAG_UNSUPPORTED_SPAN warn exception mid" ("{0} {1} {2}" -f $g.look.glyph, $g.look.tier, @($g.anchors)[0].t) "warn exception 0.5"
+$g = G "STEEL_OPEN_FIXED"
+Expect "STEEL_OPEN_FIXED disc, no anchors (one per node)" ("{0} {1}" -f $g.look.glyph, ($null -eq $g.anchors)) "disc True"
+Expect "W12X26 context" (@((G "W12X26").tags) -contains "context") $true
+Expect "DUCT_ALL plain" ($null -eq (G "DUCT_ALL").look -and -not (@((G "DUCT_ALL").tags) -contains "context")) $true
 if ($fail) { throw "$fail checks failed (tables in $base.model.s2k)" }
 Write-Output "all checks passed; viewer file $base.bin"
