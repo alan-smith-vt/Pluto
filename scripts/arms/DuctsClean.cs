@@ -251,6 +251,7 @@ public partial class DuctsToPluto
         string cutNote = ApplyCuts(clean, P);
         string dropNote = ApplyManualDrop(clean, P);   // add-on, DuctsManualDrop.cs
         if (dropNote != "") cutNote += (cutNote != "" ? "\n" : "") + dropNote;
+        string orientNote = ApplyOrientation(clean, P);   // DuctsCleanOrient.cs: before the supports (rotated depth)
         SteelModel sm = Steel.Count > 0 ? SteelModel.Build(Steel, SteelSettings) : null;   // DuctsSteel.cs; split by supports from here on
         SupportRun sr = sm != null ? ApplySupports(clean, P, sm, outBase) : null;   // DuctsCleanSupports.cs: splits clean frames + steel
         SupportNewLine = sr != null ? SupportsNewLine(sr) : "";
@@ -277,6 +278,7 @@ public partial class DuctsToPluto
             dev.Count > 0 ? " (worst: " + string.Join(", ", dev.Take(5).Select(x => x.Value + " " + x.Key.ToString("0.#", Inv) + " in").ToArray()) + ")" : "", gapsClosed)
             + (cutNote != "" ? "\n" + cutNote : "")
             + (sm != null ? "\n" + sm.Summary() + " (<out>.steel_joints.csv, <out>.steel_frames.csv)" : "")
+            + "\n" + orientNote
             + (sr != null ? "\n" + sr.Note : "");
     }
 

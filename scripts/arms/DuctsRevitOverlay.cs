@@ -720,7 +720,8 @@ public partial class DuctsToPluto
             medRes, used, means ? " by GUID group" : " 1:1", Math.Atan2(T[1], T[0]) * 180 / Math.PI, spread,
             inRoom.Count, navFab, scope.Count, rvFab, navMissing.Count, navFabMissing, rvOnly, rvOnlyFab, catDiff.Count,
             nConnected, nTouch, nNear, nSide, nOutside, nOpen, located.Count, usedRow.Count)
-            + (SupportNewLine != "" ? "\n" + SupportNewLine : "");
+            + (SupportNewLine != "" ? "\n" + SupportNewLine : "")
+            + (OrientNewLine != "" ? "\n" + OrientNewLine : "");
         if (!string.IsNullOrEmpty(part) && part.Contains(","))
         {
             // -Part <id>,<id> (2026-10-17): the gap between two parts' systems, as the NEW block

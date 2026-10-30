@@ -89,6 +89,15 @@ All stages run inside `DuctsToPluto.ExportRevit` (`scripts/arms/DuctsRevitOverla
 > [!info]- 8. SAP (`scripts/sap/SapDucts.cs`)
 > New blank model (kip, in), `DUCT_STEEL` placeholder material (E 29000 ksi), `SetTube` / `SetPipe` per size (0.06 in wall default), rigid stubs = `TAP_STUB` (stiff, weightless), groups `DUCT_ALL`, `SRC_<source>`, `FLAG_<flag>`, `TAP_STUBS`; joints named from the CSV (`MergeOff`). No loads or cases. Steel + supports (`SapSteel.cs`, 2026-10-30): see the steel rows in [[vault/arms/sap-controller|sap-controller]]. **To do:** transitions as non-prismatic sections (`PropFrame.SetNonPrismatic`, start / end tube from `W/H` and `W2/H2`).
 
+> [!info]- 8a. Orientation: larger side vertical (`scripts/duct/model/DuctsCleanOrient.cs`, 2026-10-30)
+> Runs in `BuildClean` before the supports (the support gap uses the rotated depth).
+> - `LARGE_SIDE_VERTICAL`: a horizontal rect clean frame (within 10 deg) whose vertical extent beats its horizontal extent by more than 1 in. A transition is flagged only when both of its ends are, so a 16x28 -> 28x16 twist is left alone.
+> - **Rotation** (user decision: about the centreline): the width direction turns 90 deg about the frame's own axis. W / H, the joints and the centreline stay; frames.csv `WX..WZ` carry it to SAP. It spreads through the frame's **size run**: rect frames of the same W x H joined at joints holding exactly these two clean frames, through bends and risers. It stops at transitions (each one is a run of its own), branch joints, rigid links and open ends. Rotated frames get `ROTATED`.
+> - A run that also holds a horizontal frame with its larger side already horizontal is not rotated: `ROTATION_CONFLICT` on all its frames, listed in match.txt.
+> - The bottom of a rotated duct rises (H - W) / 2, so supports can drop off (demo: the 18x36 loses its rack supports, expected).
+> - `DuctRotateLargeVertical = $false` in duct-config.psd1: flag only. match.txt: `NEW orientation:` line, and the run list in the clean model block.
+> - Tests: `scripts\duct\tests\Test-DuctOrient.ps1` (geometry); the fixture covers the runs.
+
 > [!info]- 8b. Supports and unsupported spans (`scripts/duct/model/`: `DuctsCleanSupports.cs`, `DuctSupports.cs`, `DuctSupportShapes.cs`, 2026-10-30; compiled with the arms by `scripts/lib/Config.ps1`)
 > Runs in `BuildClean` when there is steel (`DuctSteel`), after the `SteelModel` is built ([[vault/arms/steel-csv-to-viewer|steel-csv-to-viewer]]).
 > - **Support** = a horizontal steel frame crossing in plan **under** a horizontal clean duct frame (within 10 deg of horizontal, plan angle >= 20 deg), gap duct bottom -> steel top (`SteelModel.TopAt`) in [-1, `DuctSupportGapIn`] in (default 4.5). Duct bottom = centreline minus the half depth from its width direction (a duct with its larger side vertical counts its width). Gap < 0 = `STEEL_OVERLAP` (still a support); below -1 in = steel through the duct (counted, no support). Steel running along the duct under it is counted only.

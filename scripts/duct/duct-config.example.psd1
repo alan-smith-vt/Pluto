@@ -36,6 +36,9 @@
     # UNSUPPORTED_SPAN. match.txt prints a gap histogram of every crossing to choose the gap.
     DuctSupportGapIn = 4.5
     DuctSpanFt = 10
+    # Horizontal ducts with the larger side vertical: flagged LARGE_SIDE_VERTICAL and rotated 90 deg about the
+    # centreline together with their same-size run (risers included). $false = flag only.
+    DuctRotateLargeVertical = $true
     DuctDrop = @()   # e.g. @('C:\Temp\hvac\cuts\drop.txt', 'C:\Temp\hvac\cuts\drop-yellow.txt')
     Group = 'DUCT_ALL'                # SAP frame group holding every duct member
 
