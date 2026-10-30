@@ -8,10 +8,13 @@
 # 2. DuctCombo: SAP-style combo rows built here are recognised; one perturbed row is caught.
 # 3. DuctDcr: the Mathcad template check (DuctEvaluate.CheckTemplate, golden values from the sheets) and invariants
 #    (DCR linear in load, tension / compression split by sign, stress increase 1.5 except limit states A / B).
+# 4. DuctOptimize: 4 candidates in 2 spans on the same kind of model. The score of a set equals an envelope computed
+#    here from a direct re-solve; the search keeps MaxJoints and one joint per span, swap / removal are never worse
+#    than greedy alone, greedy's first step is the best single joint, and accepted steps never raise the excess.
 param([switch]$Keep)
 $ErrorActionPreference = "Stop"
 $duct = Split-Path $PSScriptRoot
-Add-Type -Path (Join-Path $duct "DuctDcr.cs"), (Join-Path $duct "DuctEvaluate.cs"), (Join-Path $duct "DuctCombo.cs"), (Join-Path $duct "DuctRelease.cs"), (Join-Path $duct "DuctReport.cs")
+Add-Type -Path (Join-Path $duct "DuctDcr.cs"), (Join-Path $duct "DuctEvaluate.cs"), (Join-Path $duct "DuctCombo.cs"), (Join-Path $duct "DuctRelease.cs"), (Join-Path $duct "DuctReport.cs"), (Join-Path $duct "DuctOptimize.cs"), (Join-Path $duct "DuctOptReport.cs")
 Add-Type -TypeDefinition @'
 using System;
 using System.Collections.Generic;
@@ -149,6 +152,40 @@ public class ReleaseModel
         for (int q = 0; q < b.Length; q++) for (int k = 0; k < 6; k++) { d = Math.Max(d, Math.Abs(a[q][k] - b[q][k])); peak = Math.Max(peak, Math.Abs(b[q][k])); }
         return d / peak;
     }
+
+    // The optimizer's score, computed independently: release = direct re-solve without the links of `released`;
+    // per frame (two rows each) the envelope over dead, 18 Max, 18 Min, C19 of the axial term (tension wT / compression
+    // wC), |M2| wMa and |M3| wMb, summed; excess = sum of max(env - limit, 0) over frames.
+    public double Excess(ICollection<string> released, double[] w, double limit, out int over, out double max)
+    {
+        var keep = new List<string>(); foreach (string n in LinkNames) if (!released.Contains(n)) keep.Add(n);
+        var K = Stiffness(keep);
+        var F = new Dictionary<string, double[][]>();
+        foreach (var kv in Loads) F[kv.Key] = Forces(Solve(K, kv.Value));
+        int nf = Rows / 2; var eA = new double[nf]; var eMa = new double[nf]; var eMb = new double[nf];
+        for (int q = 0; q < Rows; q++)
+        {
+            var checks = new List<double[]>();
+            checks.Add(F["DEAD"][q]); checks.Add(F["C19"][q]);
+            var mx = new double[6]; var mn = new double[6];
+            foreach (int c in new[] { 0, 4, 5 })
+            {
+                double lin = F["DEAD"][q][c] + F["STEEL"][q][c];
+                double sr = Math.Sqrt(Math.Pow(F["SX"][q][c], 2) + Math.Pow(F["SZ"][q][c], 2) + Math.Pow(F["SY"][q][c], 2));
+                mx[c] = lin + sr; mn[c] = lin - sr;
+            }
+            checks.Add(mx); checks.Add(mn);
+            int fi = q / 2;
+            foreach (double[] v in checks)
+            {
+                double a = v[0] > 0 ? v[0] * w[0] : -v[0] * w[1];
+                eA[fi] = Math.Max(eA[fi], a); eMa[fi] = Math.Max(eMa[fi], Math.Abs(v[4]) * w[2]); eMb[fi] = Math.Max(eMb[fi], Math.Abs(v[5]) * w[3]);
+            }
+        }
+        double ex = 0; over = 0; max = 0;
+        for (int i = 0; i < nf; i++) { double e = eA[i] + eMa[i] + eMb[i]; if (e > limit) { ex += e - limit; over++; } max = Math.Max(max, e); }
+        return ex;
+    }
 }
 '@
 
@@ -243,6 +280,55 @@ try {
     $dm = [DuctDcr]::FromSap($cap, 1.0, 0, 0, 0, -50, -80)
     Check "DuctDcr: moment signs do not matter" ([Math]::Abs($dm.Combined - ([DuctDcr]::FromSap($cap, 1.0, 0, 0, 0, 50, 80)).Combined) -lt 1e-15)
     Check "DuctDcr: combined = max(T, C) + Ma + Mb; governing = max(combined, shear)" ([Math]::Abs($d1.Combined - ([Math]::Max($d1.DcrT, $d1.DcrC) + $d1.DcrMa + $d1.DcrMb)) -lt 1e-15 -and $d1.Governing -eq [Math]::Max($d1.Combined, [Math]::Max($d1.DcrVa, $d1.DcrVb)))
+
+    # ---- 4. DuctOptimize: 4 candidate joints (J1 J2 in span 1, J3 J4 in span 2) on one section
+    $om = [ReleaseModel]::Make(31, 4, -1)
+    $ld = Join-Path $tmp "opt-link"; $om.Export($ld)
+    $td = Join-Path $tmp "opt-tables"; $cd = Join-Path $tmp "opt-connected"; $null = New-Item -ItemType Directory $td, $cd
+    [IO.File]::WriteAllLines((Join-Path $td "duct-sections.csv"), [string[]]@("Section,Material,a_in,b_in,t_in,stiff_a,stiff_b", "DUCT,304L,28,74,0.0625,yes,yes"))
+    [IO.File]::WriteAllLines((Join-Path $cd "duct-joints.tsv"), [string[]]@("Joint`tSpan`tX_in`tY_in`tZ_in", "J1`t1`t0`t0`t0", "J2`t1`t60`t0`t0", "J3`t2`t300`t0`t0", "J4`t2`t360`t0`t0"))
+    [IO.File]::WriteAllLines((Join-Path $cd "spans.tsv"), [string[]]@("Span`tSupportJoints", "1`t2", "2`t2"))
+    $load = { [DuctOptimize]::Load($ld, $cd, $td, (Join-Path $duct "duct-materials.csv"), $vectors, "DEAD", "STEEL", $seis, $true, "C", 1.0) }
+    $o = & $load
+    Check "DuctOptimize: loads 4 candidates and 4 frames" ($o.Cands.Count -eq 4 -and $o.Frames.Count -eq 4) ("{0} candidates, {1} frames" -f $o.Cands.Count, $o.Frames.Count)
+    # weights as the optimizer uses them (DuctCapacity of the table's section, 1.5 increase for limit state C)
+    $sx = [DuctTables]::Sections((Join-Path $td "duct-sections.csv"), [DuctTables]::Materials((Join-Path $duct "duct-materials.csv")))
+    $cp = [DuctCapacity]::Compute($sx["DUCT"]); $f = 1.5
+    $w = [double[]]@((1 / ($cp.Ag * $f * $cp.SigTAll)), (1 / ($cp.Ae * $f * $cp.SigCAll)), (1 / ($cp.Sae * $f * $cp.SigMaAll)), (1 / ($cp.Sbe * $f * $cp.SigMbAll)))
+    $base = $o.Evaluate([int[]]@(), $false)
+    $o.Limit = 0.6 * $base.Max                     # every set starts over the limit somewhere
+    foreach ($set in @(@(), @(0), @(2), @(0, 2), @(1, 3), @(0, 1, 2, 3))) {
+        $s = $o.Evaluate([int[]]$set, $false)
+        $rel = New-Object 'System.Collections.Generic.List[string]'; foreach ($i in $set) { $rel.Add("L" + ($i + 1)) }
+        $over = 0; $mx = 0.0; $ex = $om.Excess($rel, $w, $o.Limit, [ref]$over, [ref]$mx)
+        $lbl = "{" + (($set | ForEach-Object { "J" + ($_ + 1) }) -join ",") + "}"
+        Check "DuctOptimize: score of $lbl = independent envelope (direct re-solve)" (-not $s.Singular -and [Math]::Abs($s.Excess - $ex) -le 1e-7 * [Math]::Max(1, $ex) -and $s.Over -eq $over -and [Math]::Abs($s.Max - $mx) -le 1e-7 * $mx) ("excess {0:G6} vs {1:G6}, over {2} vs {3}" -f $s.Excess, $ex, $s.Over, $over)
+    }
+    # search rules
+    $o1 = & $load; $o1.Limit = $o.Limit
+    $greedyOnly = $o1.Run(2, $true, $false, $false, 0, 1); $gScore = $o1.Evaluate([int[]]$greedyOnly, $false)
+    $o2 = & $load; $o2.Limit = $o.Limit
+    $full = $o2.Run(2, $true, $true, $true, 0, 3); $fScore = $o2.Evaluate([int[]]$full, $false)
+    $spans = @($full | ForEach-Object { $o2.Cands[$_].Span })
+    Check "DuctOptimize: at most MaxJoints (2) chosen" ($full.Count -le 2) ("chose " + (($full | ForEach-Object { $o2.Cands[$_].Joint }) -join ","))
+    Check "DuctOptimize: never two joints in one span (OnePerSpan)" (@($spans | Sort-Object -Unique).Count -eq $spans.Count) ("spans " + ($spans -join ","))
+    Check "DuctOptimize: greedy + swap + removal no worse than greedy alone" ($fScore.Excess -le $gScore.Excess + 1e-9) ("{0:G6} vs {1:G6}" -f $fScore.Excess, $gScore.Excess)
+    # greedy's own guarantee: its first step is the best single joint when one improves on nothing released, and it
+    # stops at none when none does. (It is not a global optimum: on this model no single joint helps but the pair J2 + J4 does,
+    # so greedy, which only ever adds one improving joint at a time, stops at none. Exhaustive best is printed.)
+    $singles = @(0..3 | ForEach-Object { $o2.Evaluate([int[]]@($_), $false).Excess })
+    $bestSingle = ($singles | Measure-Object -Minimum).Minimum
+    $first = $(if ($o2.Steps.Count -gt 1) { $o2.Steps[1].Set } else { @() })
+    $okGreedy = $(if ($bestSingle -lt $base.Excess - 1e-9) { $first.Count -eq 1 -and [Math]::Abs($singles[$first[0]] - $bestSingle) -le 1e-12 } else { $full.Count -eq 0 })
+    Check "DuctOptimize: greedy takes the best single joint, or stops at none when no single joint helps" $okGreedy ("singles " + (($singles | ForEach-Object { $_.ToString("G4") }) -join " ") + ", base " + $base.Excess.ToString("G4"))
+    $best = [double]::PositiveInfinity; $bestSet = ""
+    foreach ($a in @(-1, 0, 1)) { foreach ($b in @(-1, 2, 3)) {
+        $set = @(@($a, $b) | Where-Object { $_ -ge 0 }); $sc = $o2.Evaluate([int[]]$set, $false)
+        if (-not $sc.Singular -and $sc.Excess -lt $best) { $best = $sc.Excess; $bestSet = ($set | ForEach-Object { "J" + ($_ + 1) }) -join "," } } }
+    Write-Output ("info DuctOptimize: search result excess {0:G6}; exhaustive best one-per-span set {{{1}}} excess {2:G6}" -f $fScore.Excess, $bestSet, $best)
+    $acc = @($o2.Steps | ForEach-Object { $_.Score.Excess })
+    $mono = $true; for ($i = 1; $i -lt $acc.Count; $i++) { if ($acc[$i] -gt $acc[$i - 1] + 1e-9) { $mono = $false } }
+    Check "DuctOptimize: accepted steps never raise the excess" $mono ($acc -join " -> ")
 } finally {
     if ($Keep) { Write-Output "kept: $tmp" } elseif (Test-Path $tmp) { Remove-Item $tmp -Recurse -Force }
 }
