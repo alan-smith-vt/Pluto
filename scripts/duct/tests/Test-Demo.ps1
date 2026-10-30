@@ -1,9 +1,9 @@
-# End-to-end demo acceptance check: runs scripts\duct\Run-Demo.ps1 (generate -> Export-DuctsViewer -Revit -> Run-SapDucts)
+# End-to-end demo acceptance check: runs scripts\duct\Run-Demo.ps1 (generate -> Run-HvacModel: model, sap, view)
 # and checks that every stage's outputs exist and agree with each other: data, Revit fit, clean model, cuts / drops,
 # steel, supports, spans, viewer files, SAP model. Invariants, not counts (the counts move with every feature; exact
 # outputs are Test-DuctFixture.ps1's job). Windows PowerShell 5.1.
 #   powershell -ExecutionPolicy Bypass -File scripts\duct\tests\Test-Demo.ps1 [-Root <dir>] [-NoSap] [-NoRun]
-# -NoRun checks an earlier run's <Root> as it is (its Run-SapDucts log is <Root>\run-demo.log). Exit 1 on any FAIL.
+# -NoRun checks an earlier run's <Root> as it is (step logs in <Root>\out\run.log). Exit 1 on any FAIL.
 param([string]$Root = (Join-Path $env:TEMP "hvac-demo-check"), [switch]$NoSap, [switch]$NoRun)
 $ErrorActionPreference = "Stop"
 $repo = Split-Path (Split-Path (Split-Path $PSScriptRoot))
@@ -27,7 +27,8 @@ if (-not $NoRun) {
     & (Join-Path $env:SystemRoot "System32\WindowsPowerShell\v1.0\powershell.exe") @a *>&1 | Out-File $log -Encoding utf8
     Check "run" "Run-Demo.ps1 exit 0" ($LASTEXITCODE -eq 0) "log $log"
 }
-$logText = $(if (Test-Path $log) { Get-Content $log -Raw } else { "" })
+$runLog = Join-Path $Root "out\run.log"   # Run-HvacModel: every step's output
+$logText = $(if (Test-Path $runLog) { Get-Content $runLog -Raw } elseif (Test-Path $log) { Get-Content $log -Raw } else { "" })
 
 # ---- data
 $d = Join-Path $Root "ducts\$runId"; $r = Join-Path $Root "revit\$runId"
@@ -40,7 +41,7 @@ $cfg = Import-PowerShellDataFile "$Root\duct-config.psd1"
 Check "data" "config DuctSteel names the demo steel" ($cfg.DuctSteel -eq "$Root\steel\steel.csv") $cfg.DuctSteel
 
 # ---- overlay (Revit fit onto Navisworks): the generator's known transform is a 30 deg turn about Z
-$o = Join-Path $Root "out"
+$o = Join-Path $Root "out\model"
 $match = $(if (Test-Path "$o\revit.match.txt") { Get-Content "$o\revit.match.txt" -Raw } else { "" })
 $m = [regex]::Match($match, 'NEW fit ([0-9.]+) ft median \(\d+ pairs[^,]*, rot ([-0-9.]+) deg')
 Check "overlay" "fit line in match.txt" $m.Success
@@ -125,7 +126,7 @@ foreach ($t in $types) { Check "viewer" "'Support: $t' glyphs = supports.csv row
 
 # ---- SAP (Run-SapDucts' own summary lines against the CSVs it was given)
 if (-not $NoSap) {
-    Check "sap" "demo.sdb saved" (Test-Path "$Root\sap\demo.sdb")
+    Check "sap" "hvac.sdb saved" (Test-Path "$Root\out\sap\hvac.sdb")
     $m = [regex]::Match($logText, 'NEW steel: (\d+) frames.*restraints (\d+) pinned \+ (\d+) fixed')
     Check "sap" "steel frames = steel_frames.csv" ($m.Success -and [int]$m.Groups[1].Value -eq $sf.Count) $m.Value
     if ($m.Success) {
@@ -137,8 +138,8 @@ if (-not $NoSap) {
     Check "sap" "every rect frame oriented" ($logText -match 'NEW orientation: \d+ rect frames oriented, 0 without')
 
     # SAP model -> viewer with glyph looks (scripts\duct\sap-looks.csv): anchors against the CSVs SAP was built from
-    $sfj = "$Root\sap\demo.features.json"
-    Check "sap" "demo.bin + features.json exported" ((Test-Path "$Root\sap\demo.bin") -and (Test-Path $sfj))
+    $sfj = "$Root\out\sap\hvac.features.json"
+    Check "sap" "hvac.bin + features.json exported" ((Test-Path "$Root\out\sap\hvac.bin") -and (Test-Path $sfj))
     $si = @{}
     if (Test-Path $sfj) { foreach ($g in (Get-Content $sfj -Raw | ConvertFrom-Json).groups.items) { $si[$g.name] = $g } }
     function Anchors([string]$g) { if ($si.ContainsKey($g) -and $si[$g].anchors) { @($si[$g].anchors) } else { @() } }

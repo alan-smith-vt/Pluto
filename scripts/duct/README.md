@@ -194,18 +194,40 @@ comment lists its full arguments.
   `CarbonSections` list (the SAP material is surveyed but not used); joints are full 6-DOF disconnects; all load
   cases must be linear static.
 
+## Building the model: Run-HvacModel.ps1
+
+From the Navisworks and Revit exports to the SAP model and its viewer file, in one command:
+
+```powershell
+.\Run-HvacModel.ps1 -Config <duct-config.psd1> -Run C:\Temp\hvac\ducts\<run> -Revit C:\Temp\hvac\revit\<run>
+    [-Out <folder>] [-From model|sap|view] [-To model|sap|view] [-SapPid <pid> | -UseHost] [-Fragments] [-Other] [-NavisOnly]
+```
+
+| step | runs | writes under `-Out` (default a new `<WorkDir>\model\<yyyyMMdd-HHmmss>`) |
+|---|---|---|
+| model | `..\navis\Export-DuctsViewer.ps1 -Config -Run -Revit` | `model\revit.*`: overlay, clean model (ducts, steel, supports), frames / steel / supports CSVs, `match.txt` |
+| sap | `..\sap\Run-SapDucts.ps1` with the steel and supports of step 1 | `sap\hvac.sdb` (no loads; material placeholder) |
+| view | `..\sap\Run-Sap.ps1 -Open -Export -NoResults -Looks sap-looks.csv` | `sap\hvac.bin` + features: the SAP model as built, with glyphs |
+
+- Every setting comes from `-Config` (rooms, systems, cuts, drops, steel, `WorkDir`, `AddinDir`). `-Run` and `-Revit`
+  are always given: no "newest export" guess.
+- Each step runs in its own process (log `logs\<n>-<step>.log`; everything in `run.log`). A failed step stops the run
+  and prints the log tail and the command that resumes it (`-Out <same> -From <step>`); earlier outputs are kept.
+- SAP: `-SapPid` / `-UseHost` go to both SAP steps; without them each step starts and closes its own SAP and never
+  touches one you have open.
+- The last lines say what to check next: `match.txt`, then the two viewer files, then the `.sdb`.
+
 ## Synthetic demo (whole pipeline, no project data)
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\duct\Run-Demo.ps1 [-Root <dir>] [-NoSap]
+powershell -ExecutionPolicy Bypass -File scripts\duct\Run-Demo.ps1 [-Root <dir>] [-NoSap] [-SapPid <pid> | -UseHost]
 ```
 
-Generates the demo with `pythonTools\ducts\make_demo_data.py` (fixed seed). It writes Navisworks and Revit runs,
-rack steel, cuts, a drop list and a demo config to `<Root>` (default `%TEMP%\hvac-demo`). It then runs
-`Export-DuctsViewer.ps1 -Run -Revit` with the demo config swapped in (your `duct-config.psd1` is put back),
-writing to `<Root>\out\revit.*`. Last, it runs `Run-SapDucts.ps1` with the steel and the supports, writing
-`<Root>\sap\demo.sdb`. View `<Root>\out\revit_clean.bin`. `<Root>\README.md` lists which pipeline feature each
-synthetic item exercises. `scripts\duct\tests\Test-DuctFixture.ps1` diffs the same export against `tests\expected\`.
+Generates the demo with `pythonTools\ducts\make_demo_data.py` (fixed seed): Navisworks and Revit runs, rack steel,
+cuts, a drop list and a demo config in `<Root>` (default `%TEMP%\hvac-demo`). Then `Run-HvacModel.ps1 -Config
+<Root>\duct-config.psd1 -Out <Root>\out` (`-NoSap`: the model step only). The repo's `duct-config.psd1` is never
+touched. `<Root>\README.md` lists which pipeline feature each synthetic item exercises. `tests\Test-Demo.ps1` checks
+every stage of a demo run; `tests\Test-DuctFixture.ps1` diffs the model step against `tests\expected\`.
 
 ## When something fails
 
