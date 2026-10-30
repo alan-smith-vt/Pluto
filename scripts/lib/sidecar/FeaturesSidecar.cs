@@ -70,6 +70,29 @@ public class FeaturesSidecar
         public bool? Hidden;             // viewer enable flag (null = not written)
         public bool? Invisible;          // viewer eye off: members not drawn (null = not written)
         public string RawJson;           // a user group carried over verbatim from a previous sidecar
+        public Look Look;                // glyph group (null = not written); never paints its members
+        public List<Anchor> Anchors = new List<Anchor>();   // where the glyphs go (empty = one per member)
+    }
+
+    // Glyph encoding (vault/format/features-sidecar.md, "look"): shape carries
+    // the meaning, `Group.Color` tints the glyph. Glyph names: circle disc half
+    // diamond square triangle warn tick cross ring-arrows anchor.
+    public class Look
+    {
+        public string Glyph;
+        public string Tier;              // "exception" | "detail" (null = not written; viewer default detail)
+        public string Label;             // legend text (null = group name)
+        public string Section;           // legend heading
+        public double? InsetPx;          // screen inset for t = 0 / 1
+    }
+
+    public class Anchor
+    {
+        public string Domain;            // "beams" | "shells" | "nodes"
+        public uint Id;                  // real element / node id
+        public double? T;                // 0..1 along a beam from its I-end (null = centroid)
+        public double[] Dir;             // world vector the sprite turns to (null = upright)
+        public string Label;             // hover text after the glyph label
     }
 
     // ---- merge with the previous sidecar ----------------------------------
@@ -164,6 +187,24 @@ public class FeaturesSidecar
         return g;
     }
 
+    // Glyph group: one glyph per anchor, tinted by `color` (null = viewer
+    // default: neutral, or the alarm colour for "warn"). Members are optional
+    // (selection / STAAD); a look group never paints them.
+    public Group AddLookGroup(string name, string color, Look look, IEnumerable<Anchor> anchors,
+                              IEnumerable<string> tags = null, string membersDomain = null, IEnumerable<uint> memberIds = null)
+    {
+        var g = new Group { Name = name, Color = color, Look = look };
+        if (tags != null) g.Tags.AddRange(tags);
+        if (anchors != null) g.Anchors.AddRange(anchors);
+        if (memberIds != null)
+        {
+            if (membersDomain == "nodes") g.Members.Add(new Member { Domain = "nodes", NodeIds = memberIds.ToList() });
+            else g.Members.Add(new Member { Domain = membersDomain ?? "beams", Ids = memberIds.ToList() });
+        }
+        Groups.Add(g);
+        return g;
+    }
+
     // ---- geometryHash ----------------------------------------------------
     // blocksInOrder: the raw bytes of NODE, NDID, ELEM(d0..dn), ELID(d0..dn),
     // SECT, BPRP(d0..dn) -- omit blocks the file does not contain.
@@ -206,12 +247,15 @@ public class FeaturesSidecar
             sb.Append("    {");
             sb.Append("\"id\": ").Append(Q(g.Id)).Append(", ");
             sb.Append("\"name\": ").Append(Q(g.Name)).Append(", ");
-            if (g.Color != null) sb.Append("\"color\": ").Append(Q(g.Color)).Append(", ");
+            if (!string.IsNullOrEmpty(g.Color)) sb.Append("\"color\": ").Append(Q(g.Color)).Append(", ");
             if (g.Hidden.HasValue) sb.Append("\"hidden\": ").Append(g.Hidden.Value ? "true" : "false").Append(", ");
             if (g.Invisible.HasValue) sb.Append("\"invisible\": ").Append(g.Invisible.Value ? "true" : "false").Append(", ");
             sb.Append("\"tags\": [").Append(string.Join(", ", g.Tags.Select(Q))).Append("], ");
             if (g.SourcePredicateId != null) sb.Append("\"source\": {\"predicateId\": ").Append(Q(g.SourcePredicateId)).Append("}, ");
             if (g.StaadName != null) sb.Append("\"export\": {\"staadName\": ").Append(Q(g.StaadName)).Append("}, ");
+            if (g.Look != null) sb.Append("\"look\": ").Append(LookJson(g.Look)).Append(", ");
+            if (g.Anchors.Count > 0)
+                sb.Append("\"anchors\": [").Append(string.Join(", ", g.Anchors.Select(AnchorJson))).Append("], ");
             sb.Append("\"members\": [");
             for (int m = 0; m < g.Members.Count; m++)
             {
@@ -232,6 +276,29 @@ public class FeaturesSidecar
         sb.Append("\n}\n");
         return sb.ToString();
     }
+
+    private static string LookJson(Look l)
+    {
+        var parts = new List<string>();
+        parts.Add("\"glyph\": " + Q(l.Glyph));
+        if (l.Tier != null) parts.Add("\"tier\": " + Q(l.Tier));
+        if (l.Label != null) parts.Add("\"label\": " + Q(l.Label));
+        if (l.Section != null) parts.Add("\"section\": " + Q(l.Section));
+        if (l.InsetPx.HasValue) parts.Add("\"insetPx\": " + N(l.InsetPx.Value));
+        return "{" + string.Join(", ", parts) + "}";
+    }
+
+    private static string AnchorJson(Anchor a)
+    {
+        var sb = new StringBuilder("{\"domain\": ").Append(Q(a.Domain)).Append(", \"id\": ").Append(a.Id);
+        if (a.T.HasValue) sb.Append(", \"t\": ").Append(N(a.T.Value));
+        if (a.Dir != null && a.Dir.Length == 3)
+            sb.Append(", \"dir\": [").Append(N(a.Dir[0])).Append(",").Append(N(a.Dir[1])).Append(",").Append(N(a.Dir[2])).Append("]");
+        if (a.Label != null) sb.Append(", \"label\": ").Append(Q(a.Label));
+        return sb.Append("}").ToString();
+    }
+
+    private static string N(double v) { return v.ToString("R", CultureInfo.InvariantCulture); }
 
     private static string Q(string s)
     {
