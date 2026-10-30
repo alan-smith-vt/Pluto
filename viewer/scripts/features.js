@@ -255,6 +255,7 @@ var FEAFeatures = (function () {
             rgb.push(color);
             var count = 0, nodeCount = 0, nodeIdx = [];
             var hidden = groupHidden(g), invisible = groupInvisible(g);
+            var paints = !hidden && !isLookGroup(g);    // a look group is drawn as glyphs, never painted
             // Work on a COPY: predicate members expand into explicit entries
             // appended to the queue; the envelope itself is never mutated.
             var members = (Array.isArray(g.members) ? g.members : (g.members ? [g.members] : [])).slice();
@@ -276,7 +277,7 @@ var FEAFeatures = (function () {
                         if (ni === undefined) { out.unmatched++; return; }
                         nodeCount++;
                         nodeIdx.push(ni);
-                        if (!hidden && out.nodes) out.nodes[ni] = gi;
+                        if (paints && out.nodes) out.nodes[ni] = gi;
                     });
                     return;
                 }
@@ -287,7 +288,7 @@ var FEAFeatures = (function () {
                     var idx = map.get(id);
                     if (idx === undefined) { out.unmatched++; return; }
                     count++;
-                    if (!hidden) arr[idx] = gi;
+                    if (paints) arr[idx] = gi;
                     if (invisible) out[fam + 'Off'][idx] = 1;
                 });
             })(members[mi]);
@@ -306,6 +307,7 @@ var FEAFeatures = (function () {
         S.markerData = buildMarkerData();     // also fills nodePainted / nodeNudged
         S.resolved = out;
         S.palette = FEAShaders.makePaletteTexture(rgb);
+        if (window.FEAGlyphs) FEAGlyphs.update(C, items, views, groupHidden);
     }
 
     // ---- apply to materials -----------------------------------------
@@ -455,7 +457,11 @@ var FEAFeatures = (function () {
     // Enabled state: a group paints only when the item says `hidden: false`;
     // absent or true = off. Ticking always writes the flag explicitly.
     // Overlays (defaultShown): absent = on, so an exporter's groups paint as they did before stage 2.
+    // Look groups (glyphs) show unless the item says `hidden: true`: they mark
+    // things and paint nothing, so there is no precedence to opt into.
+    function isLookGroup(g) { return !!(g && g.look && typeof g.look === 'object'); }
     function groupHidden(g) {
+        if (isLookGroup(g) && g.hidden === undefined) return false;
         return g.hidden === undefined ? !S.defaultShown : !!g.hidden;
     }
     function writeHidden(g, hidden) {
@@ -700,7 +706,7 @@ var FEAFeatures = (function () {
             else { resolve(); sync(); }
         });
     }
-    function detach(ctx) { withState(ctx, function () { disposeMarkers(); if (S.palette) { S.palette.dispose(); S.palette = null; } }); }
+    function detach(ctx) { if (window.FEAGlyphs) FEAGlyphs.remove(ctx); withState(ctx, function () { disposeMarkers(); if (S.palette) { S.palette.dispose(); S.palette = null; } }); }
 
     bind(ctxActive());
 
