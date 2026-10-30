@@ -22,6 +22,8 @@ This is the only route that runs on the production machine (SAP 22, no Python). 
 | `SapSurvey.cs` | read-only survey of a model (materials, sections, frames, links, joints, patterns, cases, combos, groups → TSVs), expansion-joint candidates, force export by group, the axis probe. Derives from `SapSession` |
 | `SapRelease.cs` | HVAC link / direct release models, the synthetic duct test model. Uses a `SapSurvey` |
 | `SapDucts.cs` | HVAC duct model from a clean `frames.csv` ([[vault/arms/revit-duct-model\|revit-duct-model]]): new blank model, tube / pipe sections, rigid tap stubs, `DUCT_ALL` / `SRC_` / `FLAG_` groups. Uses a `SapSurvey` |
+| `SapSteel.cs` | `partial SapDucts`: utility rack steel (W sections, M2+M3 releases, cardinal points, open-end restraints), duct-to-steel `TAP_STUB` supports, extra flag groups, `PLANT` axes |
+| `Test-SapSteel.ps1` | round trip test: synthetic ducts + steel + supports → `Run-SapDucts` → `Run-Sap -Export -NoResults` → table checks |
 | `Import-SapApi.ps1` | dot-sourced by every runner: finds the install (`-SapDir`, `PLUTO_SAP_DIR`, else the newest `SAP2000 NN`), loads `SAP2000v1.dll`, compiles every `Sap*.cs` in one batch |
 | `Run-Sap.ps1` | the general runner (below); Python's only entry point |
 | `Run-SapSurvey.ps1`, `Run-SapRelease.ps1` | survey / candidates / forces / probe; release models (duct workflow) |
@@ -43,6 +45,9 @@ This is the only route that runs on the production machine (SAP 22, no Python). 
 | survey, candidates, forces by group, axis probe | `SapSurvey` | `Run-SapSurvey.ps1` | duct workflow |
 | link / direct release models, synthetic duct | `SapRelease` | `Run-SapRelease.ps1` | duct workflow |
 | duct model from a clean `frames.csv` (geometry, sections, groups; no supports / loads yet; non-prismatic transitions to do) | `SapDucts.Build` | `Run-SapDucts.ps1 -Frames <csv> -SavePath <sdb>` | duct workflow |
+| steel in the duct model: steel model's `steel_joints.csv` / `steel_frames.csv` (inches) → `SetISection` per section name (D, Bf, Tf, Tw; none → `STEEL_NOSIZE` + `FLAG_NO_SIZE`), web → local 2, CP → insertion point, `ReleaseI/J = M2M3` → M2 + M3 released (torsion kept), `Restraint` PINNED (U1-3) / FIXED (all 6); groups `STEEL_ALL`, `STEEL_RELEASED`, point groups `STEEL_<condition>`, `FLAG_<flag>` | `SapDucts.AddSteel` | `Run-SapDucts.ps1 -SteelFrames <csv> [-SteelJoints <csv>]` | duct workflow |
+| duct-to-steel supports: `supports.csv` → `TAP_STUB` frame duct joint → steel joint (a steel joint not in the steel files is made at SX..SZ and its member auto-meshed at intermediate joints); groups `SUPPORT_ALL`, `SUPPORT_<type>`, `TAP_STUBS`, `FLAG_<flag>` | `SapDucts.AddSupports` | `-Supports <csv>` | duct workflow |
+| extra flag groups (`Frame,Flag` csv, e.g. `UNSUPPORTED_SPAN`); plant axes = coordinate system `PLANT` turned about Z | `AddSteelAndSupports` | `-Flags <csv>`, `-PlantRotZ <deg>` (opt-in; default none) | duct workflow |
 | self test: 20 ft beam, 10 kip midspan → 5 kip, 50 kip-ft | `WriteTestBeamS2k` | `-SelfTest <dir>` | install check |
 
 `Run-Sap.ps1` prints `[step]` progress lines and ends with `RESULT {json}` (version, counts,
@@ -57,6 +62,12 @@ groups, units, cases, output paths). Steps run in a fixed order: attach → open
 - Nonlinear static output is set to step-by-step (`SetOptionNLStatic(2)`). The default envelope rows zero the principals and von Mises.
 - PowerShell cannot call methods on the COM model or pass it to a constructor. Go through a C# method (`SapExport.BuildMesh(session)`).
 - From Python: the runner's output goes to a log file and stdin is closed. A SAP started by the child inherits its handles, so reading a pipe to EOF would hang until SAP exits.
+
+## Duct + steel round trip (2026-10-30)
+
+`powershell -ExecutionPolicy Bypass -File scripts\sap\Test-SapSteel.ps1 [-Out <dir>]` writes a synthetic set (two rack frames, a wall-pinned cantilever, two supports, one span flag), builds it, exports it and checks the exported `model.s2k`: frame elements, joints, releases (M2+M3 only), fixed / pinned restraints, insertion points, `SUPPORT_` / `STEEL_` / `FLAG_` groups, `PLANT`. Viewer check: load `<out>\test_steel.bin`; the groups panel lists `SUPPORT_ALL`, `STEEL_OPEN_FIXED` etc.; releases, restraints and links show as in SAP.
+On real data: `Run-SapDucts.ps1 -Frames <out>.frames.csv -SteelFrames <out>.steel_frames.csv -Supports <base>.supports.csv -Flags <flags.csv> -SavePath <x.sdb>`, then `Run-Sap.ps1 -Open <x.sdb> -NoSaveSdb -Export <base> -NoResults`, and load `<base>.bin` beside the clean `.bin`.
+Supports are rigid frames (`TAP_STUB`), like the duct tap stubs, not link objects; the guide / anchor DOFs will become end releases at the duct end once the support type table exists.
 
 ## Verified 2026-10-02 (SAP 26.3.0)
 
