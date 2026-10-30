@@ -8,7 +8,7 @@ using System.Linq;
 // restraints), writes <out>.steel_joints.csv / .steel_frames.csv and draws it in <out>_clean.bin:
 //   frames as I sections (CP offsets, web orientation), one context group per section ("Steel: <section>", grey)
 //   end conditions as viewer glyphs (sidecar look + anchors, approved 2026-10-30 #hvac-2 laptop:697), one glyph per
-//   frame end at t = 0 / 1, legend section "Member ends": "End: open-pinned" (circle) / "End: open-fixed" (disc),
+//   frame end at t = 0 / 1, legend section "Member ends": "End: open-pinned" (support-pinned) / "End: open-fixed" (support-fixed),
 //   always shown; "End: hinged" (half) / "End: collinear-hinged" (diamond), shown zoomed in
 //   "Flag: OPEN_NEAR": warn glyph on the joint, open ends within NearIn of other steel (a probably missed connection)
 public partial class DuctsToPluto
@@ -18,8 +18,8 @@ public partial class DuctsToPluto
 
     // end group (SteelModel.EndGroup) -> glyph, tier, legend label
     static readonly string[][] SteelEndLooks = {
-        new[] { "open-pinned", "circle", "exception", "Pinned (open end)" },
-        new[] { "open-fixed", "disc", "exception", "Fixed (open end)" },
+        new[] { "open-pinned", "support-pinned", "exception", "Pinned (open end)" },
+        new[] { "open-fixed", "support-fixed", "exception", "Fixed (open end)" },
         new[] { "hinged", "half", "detail", "Hinged (M2+M3 released)" },
         new[] { "collinear-hinged", "diamond", "detail", "Collinear splice, hinged" } };
 
