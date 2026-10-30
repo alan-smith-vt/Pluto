@@ -605,6 +605,7 @@ public partial class DuctsToPluto
         List<DuctSystem> systems = AnalyzeSystems(scope, conns, inScope, touch, nearPairs, sidePairs, beams, beamDim, nodes, off, scale, rows, rowsOf);
         // clean centreline model (DuctsClean.cs): <out>_clean.bin + <out>.frames.csv (the SAP input)
         foreach (Tuple<RvConn, double[]> c in EndContacts) sideNodes.Add(new[] { node(c.Item1), MakeNode(nodes, ref nextNode, c.Item2, off, scale) });   // end contacts: rigid links
+        HangerScope = inRoom; HangerRowsForView = rows;   // DuctsCleanHangers.cs: the room's rows for the hanger check
         string cleanNote = BuildClean(outBase, modelId, lengthUnit, scope, beams, beamDim, nodes, off, scale, nearPairs, sideNodes, navBeamRow, rows, k => node(k), attach);
         WriteRunsCsv(outBase + ".runs.csv", runSegs);
         foreach (RvEl e in scope)
@@ -931,12 +932,12 @@ public partial class DuctsToPluto
         foreach (int i in navOnly)
         {
             Row r = rows[i];
-            s.AppendLine(string.Join(",", new[] { "Navisworks", "", r.NavisId, "", r.Guid, "", "", r.Cat, "none", "", r.SizeText, "NAVIS_ONLY", r.Name + "; SAP frame" }.Select(CsvCell).ToArray()));
+            s.AppendLine(string.Join(",", new[] { "Navisworks", "", r.NavisId, "", r.Guid, "", "", r.Cat, "none", "", r.SizeText, NavRowFlagText(i), r.Name + "; SAP frame" }.Select(CsvCell).ToArray()));
         }
         foreach (KeyValuePair<int, string> kv in navCovered)
         {
             Row r = rows[kv.Key];
-            s.AppendLine(string.Join(",", new[] { "Navisworks", kv.Value, r.NavisId, "", r.Guid, "", "", r.Cat, "covered", "", r.SizeText, "NAVIS_ONLY",
+            s.AppendLine(string.Join(",", new[] { "Navisworks", kv.Value, r.NavisId, "", r.Guid, "", "", r.Cat, "covered", "", r.SizeText, NavRowFlagText(kv.Key),
                 r.Name + "; covered by Revit " + kv.Value + ", no frame" }.Select(CsvCell).ToArray()));
         }
         File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));

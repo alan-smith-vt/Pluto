@@ -153,6 +153,8 @@ if ($Box) {
     [DuctsToPluto]::SupportSettings = New-Object 'DuctSupports+Settings'
     if ($dcfg.DuctSupportGapIn) { [DuctsToPluto]::SupportSettings.GapMaxIn = [double]$dcfg.DuctSupportGapIn }
     if ($dcfg.DuctSpanFt) { [DuctsToPluto]::SupportSettings.SpanFt = [double]$dcfg.DuctSpanFt }
+    # Navisworks hanger check (DuctsCleanHangers.cs): a hanger and a support match within DuctHangerMatchIn (in)
+    [DuctsToPluto]::HangerMatchIn = $(if ($dcfg.DuctHangerMatchIn) { [double]$dcfg.DuctHangerMatchIn } else { 24 })
     # duct orientation (DuctsCleanOrient.cs): horizontal ducts with the larger side vertical are flagged and, unless
     # DuctRotateLargeVertical = $false, rotated 90 deg about the centreline with their size run
     [DuctsToPluto]::RotateLargeVertical = -not ($dcfg.ContainsKey('DuctRotateLargeVertical') -and -not $dcfg.DuctRotateLargeVertical)
