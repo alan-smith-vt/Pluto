@@ -26,6 +26,7 @@ One command turns a **Pluto Ducts** run (Navisworks add-in, `scripts/navis`) and
 > |---|---|
 > | `.bin` / `.features.json` | part-level overlay: every Revit part as a box / pipe at its size and orientation, links (near / side / rigid stubs), joint node groups, `Flag: <name>` groups, `System <name>` groups; hover label = part, kind, system (own name and its source), line / segment, voted size, flags |
 > | `_clean.bin` / `_clean.features.json` | the clean model: `Clean: <system>`, `Clean: rigid links`, `Clean: transitions`, `Flag: OVERLAP_SIZE_CONFLICT`; label = system, size (→ other end for transitions), length, source parts, flags |
+> | `.supports.csv` | duct-to-steel supports (SAP input with `.frames.csv` and the steel CSVs): `SupportId, Type, DuctJoint, DX,DY,DZ, SteelJoint, SX,SY,SZ, SteelMember, AxisX..Z` (duct direction = link local 1), `Gap_in, System, Section, Flags`; inches, the frames.csv frame |
 > | `.frames.csv` | **SAP input** = the clean model: joints, inches (Navisworks frame, absolute), shape (`rect` / `round` / `rigid`), W / H / Dia, W2 / H2 / Dia2 (a transition's other end), source Revit ids, flags |
 > | `.parts_frames.csv` | the part-level frames (pre-clean), for comparison |
 > | `.flags.csv` | one row per flagged part: both ids, both GUIDs, both categories, match method (`guid` / `position` / `none`), sizes, flags, details |
@@ -88,11 +89,20 @@ All stages run inside `DuctsToPluto.ExportRevit` (`scripts/arms/DuctsRevitOverla
 > [!info]- 8. SAP (`scripts/sap/SapDucts.cs`)
 > New blank model (kip, in), `DUCT_STEEL` placeholder material (E 29000 ksi), `SetTube` / `SetPipe` per size (0.06 in wall default), rigid stubs = `TAP_STUB` (stiff, weightless), groups `DUCT_ALL`, `SRC_<source>`, `FLAG_<flag>`, `TAP_STUBS`; joints named from the CSV (`MergeOff`). No loads or cases. Steel + supports (`SapSteel.cs`, 2026-10-30): see the steel rows in [[vault/arms/sap-controller|sap-controller]]. **To do:** transitions as non-prismatic sections (`PropFrame.SetNonPrismatic`, start / end tube from `W/H` and `W2/H2`).
 
+> [!info]- 8b. Supports and unsupported spans (`scripts/duct/model/`: `DuctsCleanSupports.cs`, `DuctSupports.cs`, `DuctSupportShapes.cs`, 2026-10-30; compiled with the arms by `scripts/lib/Config.ps1`)
+> Runs in `BuildClean` when there is steel (`DuctSteel`), after the `SteelModel` is built ([[vault/arms/steel-csv-to-viewer|steel-csv-to-viewer]]).
+> - **Support** = a horizontal steel frame crossing in plan **under** a horizontal clean duct frame (within 10 deg of horizontal, plan angle >= 20 deg), gap duct bottom -> steel top (`SteelModel.TopAt`) in [-1, `DuctSupportGapIn`] in (default 4.5). Duct bottom = centreline minus the half depth from its width direction (a duct with its larger side vertical counts its width). Gap < 0 = `STEEL_OVERLAP` (still a support); below -1 in = steel through the duct (counted, no support). Steel running along the duct under it is counted only.
+> - Per support: the clean frame is split at the crossing (a joint within 1 in of an end is reused), the steel frame is split there (`SteelModel.SplitAt`, joint flag `SUPPORT`), and a `TAP_STUB` link joins the two joints in SAP (`.supports.csv`). Type `guide` for every support for now; the guide / anchor DOF table (alias -> DOF pattern) comes later, in the config.
+> - **Span check**: horizontal duct frames joined at shared joints (rigid links join them but add no length and are not flagged), cut at support joints and at non-horizontal frames; a stretch longer than `DuctSpanFt` (10) -> `UNSUPPORTED_SPAN` on **every duct frame of that stretch** (pieces of any length; frames.csv has more rows because frames are split at supports) (frames.csv Flags, SAP `FLAG_UNSUPPORTED_SPAN`) and on their parts (flags.csv, with the length in Detail). A branch off a supported main counts into the main's stretch.
+> - **match.txt**: `NEW supports:` line (count per type, steel through ducts, span count and the longest); in the clean model block the span list (system, length, supports at its ends, frames) and a **gap histogram** of every crossing (-12..48 in, 1 in bins) to choose `DuctSupportGapIn`.
+> - **Viewer** (`_clean.bin`): stub = thin beam, group `Support: TAP_STUB`; icon = closed solid shells, one group per type (`Support: guide`, SAP name `SUPPORT_GUIDE`); `Flag: UNSUPPORTED_SPAN` (beams). Hover label: `support SP<n> | type | gap | duct size, system, joint | steel section, joint`. **Icons** (`DuctSupportShapes.Icon`), 3 in above the duct top, size 0.6 x duct width (10..30 in): guide = a square ring square to the duct with a double-headed arrow along it (slides axially); anchor = a cube on a downward pyramid; any other type = an octahedron.
+> - Tests: `scripts\duct\tests\Test-DuctSupports.ps1` (PS 5.1).
+
 > [!info]- Decisions and limits
 > - Flags are facts; no review status (the upstream models get fixed, the model is regenerated).
 > - Two systems never connect into each other (user): an end butting into a duct is a connection; a duct passing by is not.
 > - Taps start at the face of the duct they come off + rigid link (ducts never pass inside ducts). Asymmetric tapered taps are drawn on the outlet axis at the larger size (accepted simplification; options recorded in the Notes handoff).
-> - Supports come from the steel the ducts pass over, not from duct attachments.
+> - Supports come from the steel the ducts pass over, not from duct attachments (8b).
 > - Mesh (`ducts_tri.bin`) has triangles for straights and fab parts only, not fittings / accessories: mesh checks cover straights mostly.
 > - Not handled yet: round wyes (category Duct Fittings, no triangles), Navisworks `Material` as a third name source, whole-building runs (pairing checked in one room only).
 

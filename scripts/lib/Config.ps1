@@ -6,9 +6,10 @@ $workingDir = $basePath + "WorkingDirectory\"
 
 #Write-Host "$PSScriptRoot"
 
-# One Add-Type batch: the lib (this folder) + the Pluto arms (../arms). Path-anchored on this
+# One Add-Type batch: the lib (this folder) + the Pluto arms (../arms) + the duct model code the duct arms call
+# (../duct/model; the rest of scripts/duct compiles on its own). Path-anchored on this
 # file so the caller's working directory does not matter (was ".\lib\" -- cwd-relative).
-$csFiles = Get-ChildItem -Path $PSScriptRoot, (Join-Path $PSScriptRoot "..\arms") -Recurse -Filter *.cs | Select-Object -ExpandProperty FullName
+$csFiles = Get-ChildItem -Path $PSScriptRoot, (Join-Path $PSScriptRoot "..\arms"), (Join-Path $PSScriptRoot "..\duct\model") -Recurse -Filter *.cs | Select-Object -ExpandProperty FullName
 $excelAssembly = [System.Reflection.Assembly]::LoadWithPartialName("Microsoft.Office.Interop.Excel")
 
 $refAssemblies = @($excelAssembly.Location,

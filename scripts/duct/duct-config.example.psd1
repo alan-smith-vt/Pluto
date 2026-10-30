@@ -31,6 +31,11 @@
     DuctSteel = ''                    # e.g. 'C:\Temp\hvac\steel\steel.csv'
     DuctSteelSnapIn = 6
     DuctSteelNearIn = 24
+    # Duct-to-steel supports: steel under a horizontal duct with a gap (duct bottom -> steel top) up to DuctSupportGapIn
+    # is a support (TAP_STUB link, <out>.supports.csv); duct stretches longer than DuctSpanFt between supports get
+    # UNSUPPORTED_SPAN. match.txt prints a gap histogram of every crossing to choose the gap.
+    DuctSupportGapIn = 4.5
+    DuctSpanFt = 10
     DuctDrop = @()   # e.g. @('C:\Temp\hvac\cuts\drop.txt', 'C:\Temp\hvac\cuts\drop-yellow.txt')
     Group = 'DUCT_ALL'                # SAP frame group holding every duct member
 
