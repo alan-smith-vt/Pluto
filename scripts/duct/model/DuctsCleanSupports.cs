@@ -106,7 +106,7 @@ public partial class DuctsToPluto
             foreach (int i in s.Ducts)
             {
                 CEdge ce = clean[i]; if (ce.Rigid) continue;   // every duct frame of the stretch is flagged; rigid links are not
-                ce.Flags.Add("UNSUPPORTED_SPAN");
+                ce.Flags.Add("UNSUPPORTED_SPAN"); ce.Span = s.Id;
                 foreach (RvEl e in ce.Src)
                 {
                     if (!e.Flags.Contains("UNSUPPORTED_SPAN")) e.Flags.Add("UNSUPPORTED_SPAN");

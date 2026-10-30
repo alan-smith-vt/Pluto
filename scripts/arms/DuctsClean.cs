@@ -27,6 +27,7 @@ public partial class DuctsToPluto
         public List<RvEl> Src = new List<RvEl>(); public HashSet<string> Flags = new HashSet<string>(StringComparer.Ordinal);
         public string Source = "revit"; public string NavisId = ""; public bool Dead;
         public double Thk = double.NaN;   // wall thickness (in) from Navisworks; NaN = not stated (frames.csv: 0.06 default)
+        public string Span = "";        // unsupported span id US<n> (DuctsCleanSupports.cs), frames.csv Span
         public int Sys { get { return Src.Count > 0 ? Src[0].Sys : -1; } }
     }
 
@@ -519,7 +520,7 @@ public partial class DuctsToPluto
     static void WriteCleanFrames(string path, List<CEdge> clean, Dictionary<int, double[]> P)
     {
         var s = new StringBuilder();
-        s.AppendLine("Frame,JointI,JointJ,XI_in,YI_in,ZI_in,XJ_in,YJ_in,ZJ_in,Shape,W_in,H_in,Dia_in,W2_in,H2_in,Dia2_in,Thk_in,ThkSource,SizeSource,Source,RevitElementId,NavisId,Flags,System,WX,WY,WZ,SystemColor,SystemRole");
+        s.AppendLine("Frame,JointI,JointJ,XI_in,YI_in,ZI_in,XJ_in,YJ_in,ZJ_in,Shape,W_in,H_in,Dia_in,W2_in,H2_in,Dia2_in,Thk_in,ThkSource,SizeSource,Source,RevitElementId,NavisId,Flags,System,WX,WY,WZ,SystemColor,SystemRole,Span");
         int f = 0;
         foreach (CEdge ce in clean)
         {
@@ -537,7 +538,7 @@ public partial class DuctsToPluto
                 ce.Src.Count > 0 ? ce.Src[0].SysName : ce.Source,
                 wd != null ? wd[0].ToString("0.######", Inv) : "", wd != null ? wd[1].ToString("0.######", Inv) : "", wd != null ? wd[2].ToString("0.######", Inv) : "",
                 SystemColor(ce.Src.Count > 0 ? ce.Src[0].SysName : ""),
-                ce.Src.Count > 0 ? SystemRole(ce.Src[0].SysName) : ce.Source == "navisworks-only" ? "navisworks-only" : "" }.Select(CsvCell).ToArray()));
+                ce.Src.Count > 0 ? SystemRole(ce.Src[0].SysName) : ce.Source == "navisworks-only" ? "navisworks-only" : "", ce.Span }.Select(CsvCell).ToArray()));
         }
         File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));
     }
