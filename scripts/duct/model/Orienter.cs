@@ -37,7 +37,7 @@ public static class Orienter
             if (state[seed] != 1 || done.Contains(seed)) continue;
             var run = SizeRun(seed, inc); foreach (CEdge e in run) done.Add(e);
             foreach (CEdge e in run) if (state[e] == 1) { e.Flags.Add("LARGE_SIDE_VERTICAL"); flagged++; }
-            string sys = seed.Src.Count > 0 ? seed.Src[0].SysName : seed.Source;
+            string sys = DuctGeom.SystemOf(seed);
             double len = run.Sum(e => DuctMath.Len(P[e.A], P[e.B]));
             string what = string.Format(Inv, "  {0} {1} run, {2} frame(s), {3:0.#} ft ({4} with the larger side vertical)", sys, CleanModel.DimText(seed.Dim), run.Count, len, run.Count(e => state[e] == 1));
             if (run.Any(e => state[e] == -1))

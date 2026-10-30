@@ -385,7 +385,7 @@ public class CleanModel
 
     public static CEdge CopyEdge(CEdge s, int a, int b)
     {
-        var e = new CEdge { A = a, B = b, Rigid = s.Rigid, Dim = s.Dim, DimB = s.DimB, Y = s.Y, Source = s.Source, NavisId = s.NavisId, Thk = s.Thk };
+        var e = new CEdge { A = a, B = b, Rigid = s.Rigid, Dim = s.Dim, DimB = s.DimB, Y = s.Y, Source = s.Source, NavisId = s.NavisId, Thk = s.Thk, SysName = s.SysName };
         e.Src.AddRange(s.Src); e.Flags.UnionWith(s.Flags);
         return e;
     }

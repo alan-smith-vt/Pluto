@@ -59,7 +59,7 @@ public static class HangerCheck
                 if (double.IsNaN(half) || lat > half + 0.5) continue;
                 if (r.Min[2] < q[2] - depth - 1 || r.Min[2] > q[2] + depth + 6) continue;
                 double score = lat + Math.Abs(r.Min[2] - (q[2] + depth));
-                if (score < best) { best = score; h.Edge = i; h.T = t; h.At = q; h.System = ce.Src.Count > 0 ? ce.Src[0].SysName : ce.Source; }
+                if (score < best) { best = score; h.Edge = i; h.T = t; h.At = q; h.System = DuctGeom.SystemOf(ce); }
             }
             if (h.Edge < 0) { hr.OffDuct++; AddRowFlag(hr, ri, "HANGER_OFF_DUCT"); hr.Hits.Add(h); continue; }
             if (run != null)

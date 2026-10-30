@@ -89,6 +89,12 @@ All stages run inside `DuctsToPluto.ExportRevit` (`scripts/arms/DuctsRevitOverla
 > [!info]- 8. SAP (`scripts/sap/SapDucts.cs`)
 > New blank model (kip, in), `DUCT_STEEL` placeholder material (E 29000 ksi), `SetTube` / `SetPipe` per size (0.06 in wall default), rigid stubs = `TAP_STUB` (stiff, weightless), groups `DUCT_ALL`, `SRC_<source>`, `FLAG_<flag>`, `TAP_STUBS`; joints named from the CSV (`MergeOff`). No loads or cases. Steel + supports (`SapSteel.cs`, 2026-10-30): see the steel rows in [[vault/arms/sap-controller|sap-controller]]. **To do:** transitions as non-prismatic sections (`PropFrame.SetNonPrismatic`, start / end tube from `W/H` and `W2/H2`).
 
+> [!info]- 7b. Gap bridging (`scripts/duct/model/NavBridge.cs`, user decision 2026-10-30)
+> Runs on the clean frames right after the clean model, before the cuts. A Navisworks-only straight with both ends free whose axis lines up with an open Revit duct end at one or both ends (within 1 ft along the axis and 2 in sideways, the Revit frame within 10 deg and pointing at it) is joined to the Revit end(s), so the duct is connected (before: a floating Navisworks-only SAP frame).
+> - **Size:** both sides the same = that size; different = a transition from one to the other; one side only = that side's size. Width direction and system from the neighbour (`CEdge.SysName`, `DuctGeom.SystemOf`); source `navisworks-bridge`, so SAP keeps it as a frame of that system.
+> - **Flags:** `NAVIS_BRIDGE`; `SIZE_FROM_NEIGHBOURS` when the size differs from the Navisworks stated one (the stated size is in the match.txt list). match.txt: `NEW bridges:` line and the list. Parts that line up with nothing stay `NAVIS_ONLY`.
+> - Tests: `scripts\duct\tests\Test-NavBridge.ps1` (two-sided, transition, one-sided, three no-bridge cases).
+
 > [!info]- 8a. Orientation: larger side vertical (`scripts/duct/model/Orienter.cs`, class `Orienter`, 2026-10-30)
 > Runs in `BuildClean` before the supports (the support gap uses the rotated depth).
 > - `LARGE_SIDE_VERTICAL`: a horizontal rect clean frame (within 10 deg) whose vertical extent beats its horizontal extent by more than 1 in. A transition is flagged only when both of its ends are, so a 16x28 -> 28x16 twist is left alone.

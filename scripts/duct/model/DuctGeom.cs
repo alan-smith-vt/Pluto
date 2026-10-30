@@ -99,4 +99,6 @@ public static class DuctGeom
         return DuctMath.Dot3(yy, yy) > 0.5 ? yy : null;
     }
     public static string R3(double v) { return double.IsNaN(v) ? "" : v.ToString("0.###", Inv); }
+    // the system a clean frame belongs to: its first source part's, else its own (a gap bridge), else its source kind
+    public static string SystemOf(CEdge ce) { return ce.Src.Count > 0 ? ce.Src[0].SysName : ce.SysName != "" ? ce.SysName : ce.Source; }
 }

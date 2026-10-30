@@ -105,7 +105,7 @@ public static class SupportPlacer
         {
             double[] a = P[ce.A], b = P[ce.B];
             var d = new DuctSupports.Duct { JointA = ce.A, JointB = ce.B, A = new[] { a[0] * 12, a[1] * 12, a[2] * 12 }, B = new[] { b[0] * 12, b[1] * 12, b[2] * 12 },
-                Rigid = ce.Rigid, WidthDir = DuctGeom.WidthDir(ce, P), System = ce.Src.Count > 0 ? ce.Src[0].SysName : ce.Source };
+                Rigid = ce.Rigid, WidthDir = DuctGeom.WidthDir(ce, P), System = DuctGeom.SystemOf(ce) };
             if (!ce.Rigid && ce.Dim != null)
             {
                 double[] dm = ce.Dim;
@@ -186,7 +186,7 @@ public static class SupportPlacer
     public static string PieceText(List<int> l, List<CEdge> clean, Dictionary<int, double[]> P)
     {
         CEdge first = l.Select(i => clean[i]).FirstOrDefault(c => c.Src.Count > 0) ?? clean[l[0]];
-        string sys = first.Src.Count > 0 ? first.Src[0].SysName : first.Source;
+        string sys = DuctGeom.SystemOf(first);
         return string.Format(Inv, "{0} {1:0.#} ft ({2})", sys, l.Sum(i => clean[i].Rigid ? 0 : DuctMath.Len(P[clean[i].A], P[clean[i].B])),
             string.Join(" ", l.Select(i => "F" + (i + 1)).ToArray()));   // frames.csv names
     }

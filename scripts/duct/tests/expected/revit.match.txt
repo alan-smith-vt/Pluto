@@ -19,6 +19,7 @@ NEW cut points: CUT1 on a duct, split (0.03 in)
 NEW cut sides: CUT1: dropped 5 ft SYSA (1 el) | kept 189.1 ft SYSA (16 el) (largest)
 NEW manual drop (DuctDrop): 3 listed, 1 members (6.5 ft) dropped, 0 kept because they end at a cut; 1 not in the clean model: 999999
 steel model: 75 members -> 140 frames, 130 joints (collinear 4, corner 25, framed 27, interior 38, open-fixed 30, open-pinned 6); ends snapped 114 (27 onto a member's side); open 36 (1 OPEN_NEAR, other steel within 24 in); released ends (M2M3) 107; zero length dropped 0 (<out>.steel_joints.csv, <out>.steel_frames.csv)
+gap bridges (NAVIS_BRIDGE, Navisworks-only parts lined up with open Revit ends): 0
 orientation: 7 frame(s) with the larger side vertical (LARGE_SIDE_VERTICAL), 5 run(s), 8 frame(s) rotated, conflicts 1 (ROTATION_CONFLICT)
   SYSC 18x36 run, 1 frame(s), 2 ft (1 with the larger side vertical): rotated 90 deg about the centreline
   SYSC 18x36 run, 1 frame(s), 12.5 ft (1 with the larger side vertical): rotated 90 deg about the centreline

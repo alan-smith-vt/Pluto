@@ -81,5 +81,6 @@ public class CEdge
     public string Source = "revit"; public string NavisId = ""; public bool Dead;
     public double Thk = double.NaN;   // wall thickness (in) from Navisworks; NaN = not stated (frames.csv: 0.06 default)
     public string Span = "";        // unsupported span id US<n> (SupportPlacer.cs), frames.csv Span
+    public string SysName = "";     // system of a frame without Revit source parts (a gap bridge: its neighbour's); see DuctGeom.SystemOf
     public int Sys { get { return Src.Count > 0 ? Src[0].Sys : -1; } }
 }

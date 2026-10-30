@@ -581,8 +581,8 @@ public partial class DuctsToPluto
         List<DuctSystems.DuctSystem> systems = sysAn.AnalyzeSystems(scope, conns, inScope, touch, nearPairs, sidePairs, beams, beamDim, nodes, off, scale, rows, rowsOf, freeEnds);
         // clean centreline model (DuctsClean.cs): <out>_clean.bin + <out>.frames.csv (the SAP input)
         foreach (Tuple<RvConn, double[]> c in sysAn.EndContacts) sideNodes.Add(new[] { node(c.Item1), DuctGeom.MakeNode(nodes, ref nextNode, c.Item2, off, scale) });   // end contacts: rigid links
-        SupportRun sr; string orientNew;   // supports / orientation results for the NEW block and flags.csv
-        string cleanNote = BuildClean(outBase, modelId, lengthUnit, scope, beams, beamDim, nodes, off, scale, nearPairs, sideNodes, navBeamRow, rows, k => node(k), attach, inRoom, out sr, out orientNew);
+        SupportRun sr; string orientNew, bridgeNew;   // supports / orientation results for the NEW block and flags.csv
+        string cleanNote = BuildClean(outBase, modelId, lengthUnit, scope, beams, beamDim, nodes, off, scale, nearPairs, sideNodes, navBeamRow, rows, k => node(k), attach, inRoom, out sr, out orientNew, out bridgeNew);
         DuctRunGraph.WriteRunsCsv(outBase + ".runs.csv", runSegs);
         foreach (RvEl e in scope)
         {
@@ -698,7 +698,8 @@ public partial class DuctsToPluto
             inRoom.Count, navFab, scope.Count, rvFab, navMissing.Count, navFabMissing, rvOnly, rvOnlyFab, catDiff.Count,
             nConnected, nTouch, nNear, nSide, nOutside, nOpen, located.Count, usedRow.Count)
             + (sr != null && sr.NewLine != "" ? "\n" + sr.NewLine : "")
-            + (orientNew != "" ? "\n" + orientNew : "");
+            + (orientNew != "" ? "\n" + orientNew : "")
+            + (bridgeNew != "" ? "\n" + bridgeNew : "");
         if (!string.IsNullOrEmpty(part) && part.Contains(","))
         {
             // -Part <id>,<id> (2026-10-17): the gap between two parts' systems, as the NEW block

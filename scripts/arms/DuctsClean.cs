@@ -23,7 +23,7 @@ public partial class DuctsToPluto
     static string BuildClean(string outBase, string modelId, string lengthUnit, List<RvEl> scope, Dictionary<int, RawViewerWriter.BeamMember> beams,
         Dictionary<int, double[]> beamDim, Dictionary<int, Node> nodes, double[] off, double scale, List<RvConn[]> nearPairs, List<int[]> sideNodes,
         Dictionary<int, int> navBeamRow, List<DuctRow> rows, Func<RvConn, int> nodeOf, Dictionary<RvConn, RvConn> attach,
-        List<int> hangerScope, out SupportRun sr, out string orientNewLine)
+        List<int> hangerScope, out SupportRun sr, out string orientNewLine, out string bridgeNewLine)
     {
         Func<int, double[]> pos0 = id => DuctGeom.NodeFt(nodes[id], off, scale);
         var cm = CleanModel.FromPieces(scope, beams, beamDim, pos0, navBeamRow, rows, sideNodes, nodeOf);
@@ -34,6 +34,7 @@ public partial class DuctsToPluto
         cm.CollapseChains();
         var P = cm.P;
         var clean = cm.Clean();
+        string bridgeNote = NavBridge.Apply(clean, P, out bridgeNewLine);   // Navisworks-only parts in Revit gaps join the duct
         string cutNote = CleanModel.ApplyCuts(clean, P, Cfg);
         string dropNote = CleanModel.ApplyManualDrop(clean, P, Cfg);   // add-on, the viewer's Cut picker
         if (dropNote != "") cutNote += (cutNote != "" ? "\n" : "") + dropNote;
@@ -70,6 +71,7 @@ public partial class DuctsToPluto
             dev.Count > 0 ? " (worst: " + string.Join(", ", dev.Take(5).Select(x => x.Value + " " + x.Key.ToString("0.#", Inv) + " in").ToArray()) + ")" : "", cm.GapsClosed)
             + (cutNote != "" ? "\n" + cutNote : "")
             + (sm != null ? "\n" + sm.Summary() + " (<out>.steel_joints.csv, <out>.steel_frames.csv)" : "")
+            + "\n" + bridgeNote
             + "\n" + orientNote
             + (sr != null ? "\n" + sr.Note : "");
     }
@@ -110,7 +112,7 @@ public partial class DuctsToPluto
             var m = DuctGeom.Beam(nb, a, b, s, nodes);
             m.LocalY = DuctGeom.WidthDir(ce, P);
             beams[nb] = m;
-            string sys = ce.Src.Count > 0 ? ce.Src[0].SysName : (ce.Source == "navisworks-only" ? "navisworks-only" : "?");
+            string sys = ce.Src.Count > 0 || ce.SysName != "" ? DuctGeom.SystemOf(ce) : (ce.Source == "navisworks-only" ? "navisworks-only" : "?");
             labels[nb] = string.Format(Inv, "clean | system {0} | {1}{2} | {3:0.##} ft | parts {4}{5}",
                 sys, ce.Rigid ? "rigid link" : CleanModel.DimText(ce.Dim), ce.DimB != null ? " -> " + CleanModel.DimText(ce.DimB) : "", DuctMath.Len(P[ce.A], P[ce.B]),
                 ce.Src.Count > 0 ? string.Join(" ", ce.Src.Select(x => x.Id).ToArray()) : (ce.NavisId != "" ? "Navisworks #" + ce.NavisId : "-"),
@@ -170,10 +172,10 @@ public partial class DuctsToPluto
                 ce.Rigid ? "rigid" : d2 != null ? "transition" : "revit", ce.Source,
                 string.Join(";", ce.Src.Select(x => x.Id).ToArray()), ce.NavisId,
                 string.Join(" ", ce.Flags.OrderBy(x => x, StringComparer.Ordinal).ToArray()),
-                ce.Src.Count > 0 ? ce.Src[0].SysName : ce.Source,
+                DuctGeom.SystemOf(ce),
                 wd != null ? wd[0].ToString("0.######", Inv) : "", wd != null ? wd[1].ToString("0.######", Inv) : "", wd != null ? wd[2].ToString("0.######", Inv) : "",
-                new DuctSystems(Cfg).SystemColor(ce.Src.Count > 0 ? ce.Src[0].SysName : ""),
-                ce.Src.Count > 0 ? new DuctSystems(Cfg).SystemRole(ce.Src[0].SysName) : ce.Source == "navisworks-only" ? "navisworks-only" : "", ce.Span }.Select(DuctGeom.CsvCell).ToArray()));
+                new DuctSystems(Cfg).SystemColor(ce.Src.Count > 0 || ce.SysName != "" ? DuctGeom.SystemOf(ce) : ""),
+                ce.Src.Count > 0 || ce.SysName != "" ? new DuctSystems(Cfg).SystemRole(DuctGeom.SystemOf(ce)) : ce.Source == "navisworks-only" ? "navisworks-only" : "", ce.Span }.Select(DuctGeom.CsvCell).ToArray()));
         }
         File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));
     }
