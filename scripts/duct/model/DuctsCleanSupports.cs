@@ -28,6 +28,8 @@ public partial class DuctsToPluto
         public string Note = "";
         public HangerRun Hangers;   // DuctsCleanHangers.cs
         public HashSet<int> Rigid = new HashSet<int>();   // clean indices of rigid links (span frame counts leave them out)
+        public List<List<int>> Floating = new List<List<int>>();   // pieces with no support (clean indices), longest first
+        public string FloatNewLine = "";
     }
 
     static SupportRun ApplySupports(List<CEdge> clean, Dictionary<int, double[]> P, SteelModel sm, string outBase, List<DuctRow> rows)
@@ -113,9 +115,10 @@ public partial class DuctsToPluto
                     if (!e.Detail.Contains(det)) e.Detail.Add(det);
                 }
             }
+        run.Floating = FloatingPieces(clean, P, sj);   // stability rule 1: FLOATING, left out of SAP by SapDucts
         run.Hangers = CheckHangers(clean, P, rows, run);   // flags only (SUPPORT_NO_HANGER into supports.csv)
         WriteSupportsCsv(outBase + ".supports.csv", run, P);
-        run.Note = SupportsNote(run) + "\n" + run.Hangers.Note;
+        run.Note = SupportsNote(run) + "\n" + FloatingNote(run, clean, P) + "\n" + run.Hangers.Note;
         return run;
     }
 
@@ -168,6 +171,79 @@ public partial class DuctsToPluto
             + string.Join("", run.Spans.Select(x => string.Format(Inv, "  {0} {1} {2:0.#} ft, {3} support(s) at its ends, {4} frame(s): {5}\n", x.Id, x.System, x.LengthIn / 12, x.Supports,
                 SpanFrames(run, x).Count, string.Join(" ", SpanFrames(run, x).Select(i => "F" + (i + 1)).ToArray()))).ToArray())   // frames.csv names (F = clean index + 1)
             + ds.Histogram().TrimEnd();
+    }
+
+    // stability rule 1 (2026-10-30, user): a connected duct piece (clean frames joined at shared joints, rigid links
+    // included) with no support joint at all is FLOATING on every frame and part. It has rigid-body modes in SAP
+    // (the MODAL hang), so SapDucts leaves it out; frames.csv keeps it, flagged
+    static List<List<int>> FloatingPieces(List<CEdge> clean, Dictionary<int, double[]> P, HashSet<int> supportJoints)
+    {
+        var parent = new int[clean.Count]; for (int i = 0; i < parent.Length; i++) parent[i] = i;
+        Func<int, int> root = null; root = i => parent[i] == i ? i : (parent[i] = root(parent[i]));
+        var byJoint = new Dictionary<int, int>();
+        for (int i = 0; i < clean.Count; i++)
+            foreach (int j in new[] { clean[i].A, clean[i].B })
+            {
+                int o; if (byJoint.TryGetValue(j, out o)) parent[root(i)] = root(o); else byJoint[j] = i;
+            }
+        var pieces = new Dictionary<int, List<int>>();
+        for (int i = 0; i < clean.Count; i++) { List<int> l; int r = root(i); if (!pieces.TryGetValue(r, out l)) { l = new List<int>(); pieces[r] = l; } l.Add(i); }
+        var res = pieces.Values.Where(l => !l.Any(i => supportJoints.Contains(clean[i].A) || supportJoints.Contains(clean[i].B)))
+            .OrderByDescending(l => l.Sum(i => clean[i].Rigid ? 0 : DuctMath.Len(P[clean[i].A], P[clean[i].B]))).ToList();
+        foreach (List<int> l in res)
+        {
+            double ft = l.Sum(i => clean[i].Rigid ? 0 : DuctMath.Len(P[clean[i].A], P[clean[i].B]));
+            foreach (int i in l)
+            {
+                CEdge ce = clean[i]; ce.Flags.Add("FLOATING");
+                foreach (RvEl e in ce.Src)
+                {
+                    if (!e.Flags.Contains("FLOATING")) e.Flags.Add("FLOATING");
+                    string det = string.Format(Inv, "floating piece: {0:0.#} ft, {1} frame(s), no support; left out of SAP", ft, l.Count);
+                    if (!e.Detail.Contains(det)) e.Detail.Add(det);
+                }
+            }
+        }
+        return res;
+    }
+
+    static string PieceText(List<int> l, List<CEdge> clean, Dictionary<int, double[]> P)
+    {
+        CEdge first = l.Select(i => clean[i]).FirstOrDefault(c => c.Src.Count > 0) ?? clean[l[0]];
+        string sys = first.Src.Count > 0 ? first.Src[0].SysName : first.Source;
+        return string.Format(Inv, "{0} {1:0.#} ft ({2})", sys, l.Sum(i => clean[i].Rigid ? 0 : DuctMath.Len(P[clean[i].A], P[clean[i].B])),
+            string.Join(" ", l.Select(i => "F" + (i + 1)).ToArray()));   // frames.csv names
+    }
+
+    static string FloatingNote(SupportRun run, List<CEdge> clean, Dictionary<int, double[]> P)
+    {
+        int n = run.Floating.Count, f = run.Floating.Sum(l => l.Count);
+        run.FloatNewLine = n == 0 ? "" : string.Format(Inv, "NEW floating: {0} piece{1} ({2} frame{3}) with no support, left out of SAP (FLOATING): {4}",
+            n, n == 1 ? "" : "s", f, f == 1 ? "" : "s", string.Join(", ", run.Floating.Select(l => PieceText(l, clean, P)).ToArray()));
+        return string.Format(Inv, "floating pieces (FLOATING, no support, left out of SAP): {0}{1}", n,
+            n > 0 ? "\n" + string.Join("\n", run.Floating.Select(l => "  " + PieceText(l, clean, P)).ToArray()) : "");
+    }
+
+    // a warn glyph per floating piece, on its longest frame; members = the piece's frames
+    static void AddFloatingGroup(FeaturesSidecar sc, SupportRun run, List<CEdge> clean, Dictionary<int, double[]> P, Dictionary<CEdge, int> beamOf)
+    {
+        if (run == null || run.Floating.Count == 0) return;
+        var anchors = new List<FeaturesSidecar.Anchor>(); var members = new List<uint>();
+        foreach (List<int> l in run.Floating)
+        {
+            int best = -1; double bl = -1;
+            foreach (int i in l)
+            {
+                int id; if (!beamOf.TryGetValue(clean[i], out id)) continue;
+                members.Add((uint)id);
+                double L = clean[i].Rigid ? 0 : DuctMath.Len(P[clean[i].A], P[clean[i].B]);
+                if (L > bl) { bl = L; best = id; }
+            }
+            if (best >= 0) anchors.Add(new FeaturesSidecar.Anchor { Domain = "beams", Id = (uint)best, T = 0.5, Label = PieceText(l, clean, P) });
+        }
+        if (members.Count == 0) return;
+        sc.AddLookGroup("Flag: FLOATING", null, new FeaturesSidecar.Look { Glyph = "warn", Tier = "exception", Label = "Floating duct (no support, not in SAP)", Section = "Checks" },
+            anchors, new[] { "duct", "clean", "flag" }, "beams", members).StaadName = "FLAG_FLOATING";
     }
 
     // match.txt NEW block line, set by BuildClean ("" = no steel)
