@@ -17,7 +17,7 @@ public partial class DuctsToPluto
     // end group (SteelModel.EndGroup) -> glyph, tier, legend label
     static readonly string[][] SteelEndLooks = {
         new[] { "open-pinned", "support-pinned", "exception", "Pinned (open end)" },
-        new[] { "open-fixed", "support-fixed", "exception", "Fixed (open end)" },
+        new[] { "open-fixed", "support-fixed", "exception", "Fixed support" },
         new[] { "hinged", "half", "detail", "Hinged (M2+M3 released)" },
         new[] { "collinear-hinged", "diamond", "detail", "Collinear splice, hinged" } };
 
@@ -65,7 +65,7 @@ public partial class DuctsToPluto
             // one end glyph per frame end with a condition: t = 0 at I, 1 at J
             for (int k = 0; k < 2; k++)
             {
-                string g = SteelModel.EndGroup(k == 0 ? f.EndI : f.EndJ, k == 0 ? f.ReleaseI : f.ReleaseJ);
+                string g = SteelModel.EndGroup(k == 0 ? f.EndI : f.EndJ, k == 0 ? f.ReleaseI : f.ReleaseJ, k == 0 ? f.KeptI : f.KeptJ);
                 if (g == null) continue;
                 List<FeaturesSidecar.Anchor> a;
                 if (!v.ByEnd.TryGetValue(g, out a)) { a = new List<FeaturesSidecar.Anchor>(); v.ByEnd[g] = a; v.ByEndBeams[g] = new List<uint>(); }

@@ -33,7 +33,8 @@ function Ends($sm, $oid) {
 # 1 open horizontal: pinned both ends, far from steel
 $sm = Model @((M "B" 0 0 120 240 0 120))
 $e = Ends $sm "B"
-Check "1 horizontal open = pinned" ($e.I -eq "open-pinned" -and $e.J -eq "open-pinned" -and $e.JI.Restraint -eq "PINNED" -and $e.RI -eq "")
+Check "1 horizontal open = pinned" ($e.I -eq "open-pinned" -and $e.J -eq "open-pinned" -and $e.JJ.Restraint -eq "PINNED" -and $e.RI -eq "")
+Check "1 lone pinned-pinned member: I end also holds torsion (PINNED+T, axis along the member)" ($e.JI.Restraint -eq "PINNED+T" -and [math]::Abs($e.JI.TAxis[0] - 1) -lt 1e-9)
 Check "1 lone member: no OPEN_NEAR" (-not ($e.JI.Flags -contains "OPEN_NEAR"))
 
 # 2 open vertical: fixed
@@ -64,14 +65,17 @@ Check "5c open end 7 in from steel: OPEN_NEAR" ($e.JI.Flags -contains "OPEN_NEAR
 # 6 corner: two beams ending at one point (2 in apart)
 $sm = Model @((M "A" 0 0 120 120 0 120), (M "B" 120 2 120 120 120 120))
 $a = Ends $sm "A"; $b = Ends $sm "B"
-Check "6 corner both hinged" ($a.J -eq "corner" -and $a.RJ -eq "M2M3" -and $b.I -eq "corner" -and $b.RI -eq "M2M3")
+$fa = @($sm.Frames | Where-Object { $sm.Members[$_.Source].MemberOid -eq "A" })[0]; $fb = @($sm.Frames | Where-Object { $sm.Members[$_.Source].MemberOid -eq "B" })[0]
+Check "6 corner: one end released, the other keeps its moments for stability" ($a.J -eq "corner" -and $b.I -eq "corner" -and (@($a.RJ, $b.RI) -contains "M2M3") -and (@($a.RJ, $b.RI) -contains "") -and ($fa.KeptJ -or $fb.KeptI))
+Check "6 corner: both ends drawn as hinges" ([SteelModel]::EndGroup($a.J, $a.RJ, $fa.KeptJ) -eq "hinged" -and [SteelModel]::EndGroup($b.I, $b.RI, $fb.KeptI) -eq "hinged")
 Check "6 corner one joint" ($a.JJ.Id -eq $b.JI.Id -and $a.JJ.Condition -eq "corner")
 
 # 7 collinear splice (1 in gap)
 $sm = Model @((M "A" 0 0 120 120 0 120), (M "B" 121 0 120 240 0 120))
 $a = Ends $sm "A"; $b = Ends $sm "B"
-Check "7 collinear hinged" ($a.J -eq "collinear" -and $a.RJ -eq "M2M3" -and $b.I -eq "collinear" -and $b.RI -eq "M2M3")
-Check "7 collinear end group" ([SteelModel]::EndGroup($a.J, $a.RJ) -eq "collinear-hinged")
+$fa = @($sm.Frames | Where-Object { $sm.Members[$_.Source].MemberOid -eq "A" })[0]; $fb = @($sm.Frames | Where-Object { $sm.Members[$_.Source].MemberOid -eq "B" })[0]
+Check "7 collinear: one side released, one kept" ($a.J -eq "collinear" -and $b.I -eq "collinear" -and (@($a.RJ, $b.RI) -contains "M2M3") -and ($fa.KeptJ -or $fb.KeptI))
+Check "7 collinear end groups" ([SteelModel]::EndGroup($a.J, $a.RJ, $fa.KeptJ) -eq "collinear-hinged" -and [SteelModel]::EndGroup($b.I, $b.RI, $fb.KeptI) -eq "collinear-hinged")
 
 # 8 four horizontals into a continuous vertical (each 3 in off the centreline on its side)
 $sm = Model @((M "COL" 0 0 0 0 0 240), (M "E" 3 0 120 120 0 120), (M "W" (-3) 0 120 (-120) 0 120), (M "N" 0 3 120 0 120 120), (M "S" 0 (-3) 120 0 (-120) 120))
@@ -86,6 +90,8 @@ $ok = $true
 foreach ($o in "E", "W", "N", "S") { $x = Ends $sm $o; if ($x.RI -ne "M2M3") { $ok = $false } }
 Check "9 horizontals hinged at the column top" $ok
 Check "9 column top kept" ((Ends $sm "COL").RJ -eq "")
+$fc = @($sm.Frames | Where-Object { $sm.Members[$_.Source].MemberOid -eq "COL" })[-1]
+Check "9 column kept as continuous, not for stability (no hinge glyph)" (-not $fc.KeptJ -and $null -eq [SteelModel]::EndGroup($fc.EndJ, $fc.ReleaseJ, $fc.KeptJ))
 
 # 10 OPEN_NEAR threshold: open end 12 in from other steel flagged, 30 in not
 $sm = Model @((M "A" 0 0 0 240 0 0), (M "B" 100 30 0 100 300 0), (M "C" 200 12 0 200 300 0))
@@ -100,6 +106,35 @@ $fr = @(Import-Csv "$tmp.steel_frames.csv"); $jt = @(Import-Csv "$tmp.steel_join
 Check "11 frames csv" ($fr.Count -eq 3 -and $fr[0].Frame -eq "SF1" -and $fr[0].JointI -like "S*" -and $fr[0].Section -eq "W12X26" -and [double]$fr[0].D_in -eq 12.2)
 Check "11 joints csv" ($jt.Count -eq 4 -and @($jt | Where-Object { $_.Restraint -eq "FIXED" }).Count -eq 2 -and @($jt | Where-Object { $_.Restraint -eq "PINNED" }).Count -eq 1)
 Check "11 release column" (@($fr | Where-Object { $_.ReleaseI -eq "M2M3" -or $_.ReleaseJ -eq "M2M3" }).Count -eq 1)
+Remove-Item "$tmp.steel_frames.csv", "$tmp.steel_joints.csv"
+
+# 13 stability rules (2026-10-30)
+# 13a column base where a brace lands: FIXED, column continuous, brace hinged
+$sm = Model @((M "COL" 0 0 0 0 0 120), (M "BR" 0 0 0 100 0 120), (M "BM" 0 0 120 100 0 120))
+$c = Ends $sm "COL"; $br = Ends $sm "BR"
+Check "13a column base: FIXED, condition column-base" ($c.JI.Restraint -eq "FIXED" -and $c.JI.Condition -eq "column-base" -and $c.I -eq "column-base" -and $c.RI -eq "")
+Check "13a brace at the base hinged" ($br.I -eq "corner" -and $br.RI -eq "M2M3")
+Check "13a column-base drawn as a fixed support" ([SteelModel]::EndGroup($c.I, $c.RI, $false) -eq "open-fixed")
+Check "13a counted" ($sm.ColumnBases -eq 1)
+# 13b a joint where something goes on below is not a base (a brace hanging under it)
+$sm = Model @((M "COL" 0 0 60 0 0 120), (M "BR" 0 0 60 60 0 0))
+Check "13b member going below: not a base" ((Ends $sm "COL").JI.Condition -ne "column-base")
+# 13c hung frame knee (hanger fixed at the ceiling, beam between two hangers): one member keeps its moments per knee
+$sm = Model @((M "H1" 0 0 130 0 0 100), (M "H2" 0 96 130 0 96 100), (M "BM" 0 0 100 0 96 100))
+$kept = @($sm.Frames | Where-Object { $_.KeptI -or $_.KeptJ }).Count
+Check "13c two knees, one kept member end each" ($kept -eq 2 -and $sm.KeptMoments -eq 2)
+Check "13c the vertical hanger is the one kept" (@($sm.Frames | Where-Object { $sm.Members[$_.Source].MemberOid -like "H*" -and $_.KeptJ }).Count -eq 2)
+# 13d a framed joint has a continuous member: nothing kept
+$sm = Model @((M "COL" 0 0 0 0 0 240), (M "BM" 3 0 120 120 0 120))
+Check "13d framed: nothing kept" ($sm.KeptMoments -eq 0)
+# 13e a member pinned at both ends but touching other steel is not lone: no torsion restraint
+$sm = Model @((M "A" 0 0 120 120 0 120), (M "B" 120 0 120 240 0 120))
+Check "13e collinear pair: no PINNED+T" (@($sm.Joints | Where-Object { $_.Restraint -eq "PINNED+T" }).Count -eq 0)
+# 13f joints csv carries the torsion axis
+$tmp = Join-Path $env:TEMP ("steelmodel_test_" + [guid]::NewGuid().ToString("N"))
+$sm = Model @((M "S" 0 0 0 0 120 0)); $sm.WriteCsv($tmp)
+$jt = @(Import-Csv "$tmp.steel_joints.csv")
+Check "13f csv: PINNED+T with TAxis, the other end PINNED" ($jt[0].Restraint -eq "PINNED+T" -and [double]$jt[0].TAxisY -eq 1 -and $jt[1].Restraint -eq "PINNED" -and $jt[1].TAxisX -eq "")
 Remove-Item "$tmp.steel_frames.csv", "$tmp.steel_joints.csv"
 
 # 12 SplitAt / TopAt (the duct-supports hook): split keeps the open end; top of a CP 8 beam = its routed line
