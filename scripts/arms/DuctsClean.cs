@@ -175,7 +175,7 @@ public partial class DuctsToPluto
                 DuctGeom.SystemOf(ce),
                 wd != null ? wd[0].ToString("0.######", Inv) : "", wd != null ? wd[1].ToString("0.######", Inv) : "", wd != null ? wd[2].ToString("0.######", Inv) : "",
                 new DuctSystems(Cfg).SystemColor(ce.Src.Count > 0 || ce.SysName != "" ? DuctGeom.SystemOf(ce) : ""),
-                ce.Src.Count > 0 || ce.SysName != "" ? new DuctSystems(Cfg).SystemRole(DuctGeom.SystemOf(ce)) : ce.Source == "navisworks-only" ? "navisworks-only" : "", ce.Span }.Select(DuctGeom.CsvCell).ToArray()));
+                ce.Src.Count > 0 || ce.SysName != "" ? new DuctSystems(Cfg).SystemRole(DuctGeom.SystemOf(ce)) : ce.Source == "navisworks-only" ? (ce.Hanger ? "hanger" : "navisworks-only") : "", ce.Span }.Select(DuctGeom.CsvCell).ToArray()));
         }
         File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));
     }

@@ -34,7 +34,7 @@ public static class NavBridge
         var used = new HashSet<int>(); var list = new List<string>(); int two = 0, one = 0, resized = 0;
         foreach (CEdge ne in clean)
         {
-            if (ne.Source != "navisworks-only" || ne.Rigid || deg[ne.A] != 1 || deg[ne.B] != 1) continue;
+            if (ne.Source != "navisworks-only" || ne.Hanger || ne.Rigid || deg[ne.A] != 1 || deg[ne.B] != 1) continue;
             double[] ax = DuctMath.Unit(DuctMath.Sub3(P[ne.B], P[ne.A]));
             if (DuctMath.Dot3(ax, ax) < 0.5) continue;
             double[] mid = DuctMath.Lerp(P[ne.A], P[ne.B], 0.5);

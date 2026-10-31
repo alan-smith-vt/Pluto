@@ -69,6 +69,7 @@ public class CleanModel
             var ce = new CEdge { A = m.NodeA, B = m.NodeB, Source = "navisworks-only", NavisId = r.NavisId, Y = m.LocalY, Thk = !double.IsNaN(r.T) && r.T > 0 ? r.T : double.NaN };
             ce.Dim = DuctGeom.NavSize(r, out shape, out w, out h, out d) ? new[] { shape == "round" ? 1.0 : 0.0, w, h, d } : new[] { 0.0, double.NaN, double.NaN, double.NaN };
             ce.Flags.Add("NAVIS_ONLY");
+            ce.Hanger = r.Cat != null && r.Cat.IndexOf("Hanger", StringComparison.OrdinalIgnoreCase) >= 0;   // as the hanger check: hardware, not duct
             Edges.Add(ce);
         }
         foreach (int[] p in sideNodes) Edges.Add(new CEdge { A = p[0], B = p[1], Rigid = true, Source = "side-link" });
