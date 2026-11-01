@@ -354,7 +354,7 @@ public static class PipeWorkbook
             // close, a bend outside 5-95 deg, corrosion as thick as the wall, an incomplete expansion joint (red); a bend
             // node near the near end, a corner with no bend, an expansion joint without torsion or with both transverse and
             // bending, a rigid with no weight, a temperature CAESAR would read as an expansion (amber)
-            Func<string, string> pc = key => PipeWorkbookGui.CalcRef(key, 2);
+            Func<string, string> pc = PipeWorkbookGui.CalcAt;
             PipeWorkbookGui.Rule(el, "K2:K" + L, "AND(K2<>\"\",OR(" + pc("fB") + "," + pc("fN") + "))", t.Red);
             PipeWorkbookGui.Rule(el, "K2:K" + L, "AND(K2<>\"\"," + pc("fH") + ")", t.Amber);
             PipeWorkbookGui.Rule(el, "J2:J" + L, pc("fA"), t.Red);

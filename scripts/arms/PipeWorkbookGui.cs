@@ -593,6 +593,9 @@ static class PipeWorkbookGui
         s.Merge("B" + (r + 1) + ":E" + (r + 1)); s.Height(r, 26); r++;
         s.Set(r, 1, "Preview command", t.Label); s.SetFormula(r, 2, run.CommandFormula(true), t.Small); s.Merge("C" + (r + 1) + ":E" + (r + 1)); s.Height(r, 40); r++;
         s.Set(r, 1, ".cii command", t.Label); s.SetFormula(r, 2, run.CommandFormula(false), t.Small); s.Merge("C" + (r + 1) + ":E" + (r + 1)); s.Height(r, 40); r++;
+        s.Set(r, 1, "Refresh command", t.Label); s.SetFormula(r, 2, run.RefreshFormula(), t.Small); s.Merge("C" + (r + 1) + ":E" + (r + 1)); s.Height(r, 40);
+        s.Note(r, 1, "Brings this workbook to the newest Pluto's layout, over itself, edits kept; the previous file stays beside it as .xlsx.bak. Close the workbook first: Excel holds it while it is open.");
+        r++;
         return r + 1;
     }
 
@@ -619,7 +622,13 @@ static class PipeWorkbookGui
 
     // PlotCalc's last row for a model of n elements, and a reference to one of its columns
     internal static int CalcLast(int elements) { return Math.Max(300, elements + 300) + 1; }
-    internal static string CalcRef(string key, int row) { return Calc + "!$" + XlsxBook.Column(Array.IndexOf(CalcCols, key)) + row.ToString(CultureInfo.InvariantCulture); }
+    // the PlotCalc cell of the row being formatted, found by ROW(): a highlight rule on Elements that named PlotCalc's cell
+    // (PlotCalc!$I2) kept that cell when a row was inserted above its first row and read the row above's flags from then on
+    internal static string CalcAt(string key)
+    {
+        string c = XlsxBook.Column(Array.IndexOf(CalcCols, key));
+        return "INDEX(" + Calc + "!$" + c + ":$" + c + ",ROW())";
+    }
     internal static string CalcRange(string key, int elements)
     {
         string c = XlsxBook.Column(Array.IndexOf(CalcCols, key));

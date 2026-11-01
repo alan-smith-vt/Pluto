@@ -124,6 +124,11 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > [!info]- Runner switches (Build-Pipe.ps1)
 > - **`-In x.xlsx`:** the workbook. The report lists its edits.
 > - **`-Xlsx`:** writes `<base>.xlsx` from any input. It never writes over the input.
+> - **`-In x.xlsx -Refresh`** (2026-11-01): brings a workbook to the layout of the Pluto that runs it, over itself, so an older workbook needs no migrating by hand.
+>   - It is read first, edits and all; one that does not read (a refused value, a SIF type CAESAR 15.01 does not have) is left as it was and the problems are listed.
+>   - The new file replaces the old in one step, and the old stays beside it as `x.xlsx.bak` (the next refresh overwrites it). Anything Pluto does not read (your own columns, notes, sheets, formatting) is only in the `.bak`.
+>   - The edits become the workbook's base, as after `-Xlsx`: the next read lists only what changed since the refresh. Settings keeps the original source; the launchers are written again.
+>   - Excel holds an open workbook: close it first. The Start sheet's run block carries the command.
 > - **`-NewWorkbook -Out <base>`:** writes the template (two legs, a bend, two anchors and a rest).
 >   - With `-Seed <job.cii>`, it takes the job's settings (English units only).
 >   - An existing file needs `-Force`.
@@ -173,6 +178,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >     - a duplicate section or process name, a cosine above 1.
 >   - **Amber** = worth a look: a node no element has (bend nodes count), a copied Id, a zero-length element; and what CAESAR warns about: a corner with no bend, a tee where other than three pipes meet, D/t over 100, an expansion joint without torsion stiffness or with both transverse and bending, a rigid with no weight, a temperature under 0.05 (read as an expansion), g's and force per length both used, a designed hanger at a restrained or displaced node, a nozzle node a restraint, displacement or hanger also uses, an API 650 tank under 120 ft or its growth in a vector displacements use; and a bend node within 5° of the near end, a WRC 297 or PD 5500 nozzle without its vessel material.
 >   - **Long rules** are worked out per row on the hidden PlotCalc sheet, so every conditional-format formula stays short; the Start checks that look a node up do so per row on the hidden CheckCalc sheet.
+>   - **A rule finds its PlotCalc row by `ROW()`** (`INDEX(PlotCalc!$I:$I,ROW())`), never by naming the cell (2026-11-01): Excel keeps a named cell when a row is inserted above the rule's first row, and every highlight then fell one row low (a rigid's missing weight shown on the row below it).
 > - **Build it from here** (Start sheet, under the steps): links to the two launchers (relative, so they follow the folder), to Pluto's viewer page and to the folder, and the PowerShell command each launcher runs, built from `CELL("filename")` so it names the workbook where it is now (the path at write time where `CELL` gives none, e.g. in LibreOffice). Excel asks before it follows a link to a `.cmd` file; where policy stops it, double-click the file in the folder.
 > - **Start's checks** count those cells live: error values; text where a number belongs (per sheet); rows without From / To; unknown names and types; unknown element Ids; vectors outside 1–9; nodes on no element; bend node numbers used twice; Ids used twice; and each CAESAR rule above. Each shows OK, check (amber) or fix (red).
 > - **Kept as before:** the input sheets keep their columns, values and order (node numbers are formulas carrying their values, see Node numbers), so the reader is unchanged. Start, 3D View, Nodes, Carried and the hidden sheets are never read. Only the input sheets' cells are read, so the plot's formulas never trip the "formula with no saved value" check. The workbook asks Excel to calculate everything when it opens.

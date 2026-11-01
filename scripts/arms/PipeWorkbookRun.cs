@@ -131,4 +131,11 @@ public sealed class PipeWorkbookRun
         return "\"powershell.exe -NoProfile -ExecutionPolicy Bypass -File " + q + Script.Replace("\"", "") + q + " -In " + q + "\"&" + BookFormula() + "&\"" + q +
                " -Out " + q + "\"&" + FolderFormula() + "&\"" + Out.Replace("\"", "") + q + " " + (live ? "-Preview -Watch" : "-Cii -Preview") + "\"";
     }
+
+    // the command that brings this workbook to the layout of the Pluto that runs it, over itself (Build-Pipe.ps1 -Refresh)
+    public string RefreshFormula()
+    {
+        const string q = "\"\"";
+        return "\"powershell.exe -NoProfile -ExecutionPolicy Bypass -File " + q + Script.Replace("\"", "") + q + " -In " + q + "\"&" + BookFormula() + "&\"" + q + " -Refresh\"";
+    }
 }

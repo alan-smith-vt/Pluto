@@ -31,6 +31,10 @@
 #                   input that does not build is reported and the last good outputs stay. Ctrl+C stops.
 #   -NewWorkbook    start a model: -Out <base> gets <base>.xlsx, a small template (two legs, a bend, two anchors and a
 #                   rest) to edit; with -Seed, the CAESAR job's settings (English units only)
+#   -Refresh        -In <workbook>.xlsx only: the workbook in this version's layout, written over itself. It is read
+#                   first (edits included; a workbook that does not read is left as it was) and then replaced in one
+#                   step, the previous file kept beside it as <workbook>.xlsx.bak (anything Pluto does not read -- your
+#                   own columns, notes, sheets -- is only there). Its launchers are written again too.
 #   -Seed <.cii>    a .toml model (or -NewWorkbook) takes that CAESAR job's settings: VERSION lines, UNITS (English
 #                   only), execution options, first allowables block
 #   -Set "a=1;b=2"  overrides [parameters] of a .toml
@@ -49,6 +53,7 @@
 #   powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xlsx" -Out "<project dir>\job_v2" -Preview -Watch
 #   powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xlsx" -Out "<project dir>\job_v2" -Cii
 #   powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -NewWorkbook -Out "<project dir>\new_line"
+#   powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xlsx" -Refresh            (the latest layout, in place)
 param(
     [Alias('Config')][string]$In,
     [string]$Out,
@@ -60,6 +65,7 @@ param(
     [string]$Compare,
     [switch]$Watch,
     [switch]$NewWorkbook,
+    [switch]$Refresh,
     [string]$Seed,
     [switch]$Force,
     [string]$ModelId
@@ -93,6 +99,10 @@ if ($NewWorkbook) {
     if ($Seed -and $kind -ne "toml") { Fail "Build-Pipe: -Seed gives a new (.toml or -NewWorkbook) model a CAESAR job's settings; a .cii, .xlsx or .pipe.json has its own" }
     $jobName = ([IO.Path]::GetFileName($inPath) -replace '\.pipe\.json$', '' -replace '\.[^.]+$', '') -replace ' ', '_'
 }
+if ($Refresh) {
+    if ($kind -ne "xlsx") { Fail "Build-Pipe: -Refresh rewrites a workbook in this version's layout: give -In <workbook>.xlsx" }
+    if ($Out -or $Cii -or $Json -or $Preview -or $Xlsx -or $Compare -or $Watch -or $Seed) { Fail "Build-Pipe: -Refresh writes the workbook over itself and nothing else; run the other outputs from the refreshed workbook" }
+}
 if ($Seed -and -not (Test-Path -LiteralPath $Seed -PathType Leaf)) { Fail "Build-Pipe: seed not found: $Seed" }
 if ($Compare -and -not (Test-Path -LiteralPath $Compare -PathType Leaf)) { Fail "Build-Pipe: -Compare file not found: $Compare" }
 if (-not ($Cii -or $Json -or $Preview -or $Compare -or $Xlsx) -and $kind -eq "toml") { $Cii = $true }   # a config builds a .cii unless told otherwise
@@ -107,7 +117,8 @@ if ($Out) {
 }
 $outBase = [IO.Path]::GetFullPath($outBase)
 $ciiFile = $outBase + ".cii"; $csvFile = $outBase + ".nodes.csv"; $jsonFile = $outBase + ".pipe.json"; $xlsxFile = $outBase + ".xlsx"; $stampFile = $outBase + ".build.json"
-if ($Cii -or $Json -or $Preview -or $Xlsx -or $NewWorkbook) {
+if ($Refresh) { $outBase = $inPath.Substring(0, $inPath.Length - 5); $xlsxFile = $inPath }   # in place
+if ($Cii -or $Json -or $Preview -or $Xlsx -or $NewWorkbook -or $Refresh) {
     $repoRoot = (Resolve-Path -LiteralPath (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))).ProviderPath.TrimEnd('\', '/')
     $inRepo = $outBase.Equals($repoRoot, [StringComparison]::OrdinalIgnoreCase) -or $outBase.StartsWith($repoRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)
     if ($inRepo) { Fail ("Build-Pipe: refusing to write {0}.* inside the Pluto repo ({1}): project outputs never land in Pluto. Pass -Out <project dir>\<name>." -f $outBase, $repoRoot) }
@@ -120,6 +131,7 @@ if ($Cii -or $Json -or $Preview -or $Xlsx -or $NewWorkbook) {
 if (-not $ModelId) { $ModelId = "pipe/" + $jobName }
 $outs = @()
 if ($NewWorkbook) { $outs += $xlsxFile }
+if ($Refresh) { $outs += ($xlsxFile + " (over itself; the previous file kept as .bak)") }
 if ($Cii) { $outs += $ciiFile }
 if ($Xlsx) { $outs += $xlsxFile }
 if ($Json) { $outs += $jsonFile }
@@ -144,6 +156,29 @@ if ($NewWorkbook) {
         Say "write" ("{0}: a {1}-element template to edit in Excel; then Build-Pipe.ps1 -In ""{0}"" -Preview" -f $xlsxFile, $model.Elements.Count)
         foreach ($l in $run.WriteLaunchers()) { Say "write" ("{0}: double-click it, or use the Start sheet's link" -f $l) }
         Write-Output ("RESULT {""kind"":""new"",""xlsx"":" + (Q $xlsxFile) + ",""seed"":" + (Q $seedText) + "}")
+        exit 0
+    } catch {
+        $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }
+        Fail $e.Message
+    }
+}
+
+# ---- -Refresh: the workbook read (edits and all), then written over itself in this version's layout ----
+if ($Refresh) {
+    try {
+        $wb = [PipeWorkbook]::Read($inPath)
+        Lines "read" $wb.Summary()
+        foreach ($w in $wb.Warnings) { Say "warn" $w }
+        $source = $wb.SourceName; if (-not $source) { $source = [IO.Path]::GetFileName($inPath) }
+        $run = [PipeWorkbookRun]::For($xlsxFile, $repoRoot, $null)
+        $tmp = $xlsxFile + ".refresh.tmp"
+        [PipeWorkbook]::Write($wb.Model, $tmp, $source, $run)
+        $bak = $xlsxFile + ".bak"
+        try { [IO.File]::Replace($tmp, $xlsxFile, $bak) }
+        catch { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue; throw ("cannot replace {0} ({1}). Close it in Excel and run again." -f $xlsxFile, $_.Exception.Message) }
+        Say "write" ("{0}: refreshed to this version's layout ({1} elements); the previous file is {2}" -f $xlsxFile, $wb.Model.Elements.Count, $bak)
+        foreach ($l in $run.WriteLaunchers()) { Say "write" ("{0}: double-click it, or use the Start sheet's link" -f $l) }
+        Write-Output ("RESULT {""kind"":""refresh"",""xlsx"":" + (Q $xlsxFile) + ",""backup"":" + (Q $bak) + ",""elements"":" + $wb.Model.Elements.Count + "}")
         exit 0
     } catch {
         $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }
