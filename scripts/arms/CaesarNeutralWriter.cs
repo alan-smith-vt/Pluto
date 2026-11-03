@@ -284,14 +284,95 @@ public static class CaesarNeutralWriter
 
     public static List<string> ToLines(PipeModel m)
     {
-        // written in CAESAR's input order (InputOrder); the model keeps its own
+        // written in CAESAR's input order (InputOrder), with COORDS for the runs CAESAR would place apart (PlacingCoords);
+        // the model keeps its own order and COORDS
         var order = InputOrder(m, null);
-        if (order.SequenceEqual(m.Elements)) return Lines(m);
+        var extra = PlacingCoords(m, order);
+        if (order.SequenceEqual(m.Elements) && extra.Count == 0) return Lines(m);
         var own = m.Elements.ToList();
+        int nc = m.Coords.Count;
         m.Elements.Clear();
         m.Elements.AddRange(order);
+        m.Coords.AddRange(extra);
         try { return Lines(m); }
-        finally { m.Elements.Clear(); m.Elements.AddRange(own); }
+        finally { m.Elements.Clear(); m.Elements.AddRange(own); m.Coords.RemoveRange(nc, m.Coords.Count - nc); }
+    }
+
+    // CAESAR starts an element whose FROM node no element before it in the file reaches, and that no COORDS entry or CNODE
+    // tie to a placed node places, where the element before it ended -- not where its run joins the pipe further on, as
+    // the workbook's 3D View and Pluto's viewer draw it (a run entered from its far end, a branch whose rows come before
+    // the header's). The file gets a COORDS entry for each such node that Pluto places (PipeReview.Placement), at that
+    // place, so CAESAR draws the run where the workbook does, and a loop that misses shows as a miss, not as a run moved
+    // away. A run Pluto does not place either (joined to nothing) is left to CAESAR's rule. A bend node (a branch off a
+    // bend that comes later in the file) gets its point on the arc; a bend's TO node none (InputOrder puts the element
+    // leaving it after it). `order`: the elements in the order written.
+    public static List<PipeModelCoord> PlacingCoords(PipeModel m, List<PipeModelElement> order)
+    {
+        var extra = new List<PipeModelCoord>();
+        if (m.Elements.Count == 0) return extra;
+        var pl = PipeReview.Placement(m);
+        var idx = new Dictionary<PipeModelElement, int>();
+        for (int i = 0; i < m.Elements.Count; i++) idx[m.Elements[i]] = i;
+        var bendTo = new HashSet<int>();
+        var bendOf = new Dictionary<int, int>();   // a bend node -> the bend element (model index) that holds it
+        for (int i = 0; i < m.Elements.Count; i++)
+        {
+            var e = m.Elements[i];
+            if (e.Bend == null) continue;
+            bendTo.Add(e.To);
+            foreach (var an in e.Bend.AngleNodes) { int bn = (int)Math.Round(an[1]); if (bn > 0 && !bendOf.ContainsKey(bn)) bendOf[bn] = i; }
+        }
+        var ties = new Dictionary<int, List<int>>();
+        Action<int, int> tie = (a, b) => { if (a <= 0 || b <= 0 || a == b) return; List<int> l; if (!ties.TryGetValue(a, out l)) ties[a] = l = new List<int>(); l.Add(b); if (!ties.TryGetValue(b, out l)) ties[b] = l = new List<int>(); l.Add(a); };
+        foreach (var r in m.Restraints) tie(r.Node, r.CNode);
+        foreach (var j in m.Joints) tie(j.Node, j.CNode);
+        foreach (var h in m.Hangers) tie(h.Node, h.CNode);
+        foreach (var z in m.Nozzles) tie(z.Node, z.VesselNode);
+        // CAESAR's walk of the file (PipeReview.CaesarWalk's rules), adding an entry only where its rule would start the run
+        // somewhere else than Pluto places it (an unedited CAESAR job, placed by that rule already, is written as it was)
+        var leave = PipeReview.Leaving(m);
+        var cmap = new Dictionary<int, double[]>();
+        foreach (var c in m.Coords) if (!cmap.ContainsKey(c.Node)) cmap[c.Node] = new[] { c.X, c.Y, c.Z };
+        double tol = PipeReview.GapIn * Math.Max(1e-12, m.Factor(0));
+        var pos = new Dictionary<int, double[]>();
+        double[] prevEnd = null;
+        for (int q = 0; q < order.Count; q++)
+        {
+            var e = order[q];
+            int i = idx[e];
+            double[] p;
+            if (!pos.TryGetValue(e.From, out p) && !cmap.TryGetValue(e.From, out p))
+            {
+                List<int> tl;
+                if (ties.TryGetValue(e.From, out tl)) foreach (int t in tl) if (pos.TryGetValue(t, out p)) break;
+                if (p == null)
+                {
+                    p = prevEnd ?? new double[3];
+                    // where Pluto places the node: a bend node at its point on that bend's arc, else the run's start
+                    int bj;
+                    var x = bendOf.TryGetValue(e.From, out bj) ? (pl.IsPlaced[bj] ? PipeReview.ArcPoint(m, m.Elements[bj], e.From, pl.X2[bj], leave) : null) : pl.IsPlaced[i] ? pl.X1[i] : null;
+                    if (q > 0 && x != null && !bendTo.Contains(e.From) &&
+                        Math.Sqrt((x[0] - p[0]) * (x[0] - p[0]) + (x[1] - p[1]) * (x[1] - p[1]) + (x[2] - p[2]) * (x[2] - p[2])) > tol)
+                    {
+                        extra.Add(new PipeModelCoord { Node = e.From, X = x[0], Y = x[1], Z = x[2] });
+                        cmap[e.From] = x;
+                        p = x;
+                    }
+                }
+            }
+            if (!pos.ContainsKey(e.From)) pos[e.From] = p;
+            var end = new[] { p[0] + e.Dx, p[1] + e.Dy, p[2] + e.Dz };
+            if (!pos.ContainsKey(e.To)) pos[e.To] = end;
+            if (e.Bend != null)
+                foreach (var an in e.Bend.AngleNodes)
+                {
+                    int bn = (int)Math.Round(an[1]);
+                    var ap = bn > 0 && !pos.ContainsKey(bn) ? PipeReview.ArcPoint(m, e, bn, end, leave) : null;
+                    if (ap != null) pos[bn] = ap;
+                }
+            prevEnd = pos[e.To];
+        }
+        return extra;
     }
 
     static List<string> Lines(PipeModel m)
@@ -1009,6 +1090,13 @@ public static class CaesarNeutralWriter
                 .WithNodes(unseen.Select(r => r.Node)));
         var moved = new List<string>();
         var order = InputOrder(m, moved);
+        var placing = PlacingCoords(m, order);
+        if (placing.Count > 0)
+            n.Add(new PipeReviewItem("notice", "coords-placing", "the .cii gets a COORDS entry for node" + (placing.Count == 1 ? " " : "s ") +
+                string.Join(", ", placing.Take(12).Select(c => c.Node.ToString(CultureInfo.InvariantCulture)).ToArray()) + (placing.Count > 12 ? ", ..." : "") +
+                ": no element before " + (placing.Count == 1 ? "it" : "them") + " in the file reaches " + (placing.Count == 1 ? "it" : "them") + ", so CAESAR would start " + (placing.Count == 1 ? "its run" : "their runs") +
+                " where the element before ended; written at the place the pipe joins, as the workbook draws it. The model keeps its own COORDS")
+                .WithNodes(placing.Select(c => c.Node)));
         if (moved.Count > 0)
         {
             var bends = m.Elements.Where((e, i) => e.Bend != null && (i + 1 >= m.Elements.Count || m.Elements[i + 1].From != e.To))

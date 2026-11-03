@@ -432,71 +432,47 @@ public static class PipeReview
                 .WithNodes(new[] { d.Node }));
         }
 
-        // loop closure and gaps, row by row as the workbook's 3D View places the pipe (Placement): an element that ends away
-        // from where an earlier element put its TO node, and a COORDS entry away from where the pipe reaches its node. One
-        // item each, with the deltas that would close it on that element. Over 1 in CAESAR stops (44E, its loop closure
-        // tolerance); under it, CAESAR takes the model and may draw the miss as a gap
+        // loop closure and gaps, as CAESAR walks the file as written (CaesarWalk: the written order, the model's COORDS and
+        // the ones the writer adds): an element that ends away from where an element before it put its TO node, a bend
+        // node off its arc, a COORDS entry off the pipe. One item each, with the deltas (or COORDS) that close it there.
+        // Over 1 in CAESAR stops (44E, its loop closure tolerance); under it, CAESAR takes the model and may draw a gap
         {
-            var pl = Placement(m);
+            var order = CaesarNeutralWriter.InputOrder(m, null);
+            var walk = CaesarWalk(m, order, m.Coords.Concat(CaesarNeutralWriter.PlacingCoords(m, order)));
             string lu = Math.Abs(lenIn - 1) < 1e-9 ? "in" : "length units";
             Func<double, string> fl = v => (Math.Abs(v) < 5e-7 ? 0 : v).ToString("0.####", ci);
             string[] ax = { "X", "Y", "Z" };
             int listed = 0;
-            for (int i = 0; i < ne && listed < 200; i++)
+            foreach (var w in walk)
             {
-                var e = m.Elements[i];
-                double[] v = pl.Miss[i];
-                if (v == null) continue;
-                double d = Math.Sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-                if (d <= GapIn * lenIn) continue;
+                double d = Math.Sqrt(w.V[0] * w.V[0] + w.V[1] * w.V[1] + w.V[2] * w.V[2]);
+                if (d <= GapIn * lenIn || listed >= 200) continue;
                 listed++;
+                var e = m.Elements[w.Element];
+                bool stop = d > LoopClosureIn * lenIn && w.Kind != "coords";
+                string tail = stop ? ": CAESAR stops on a loop that misses by more than 1 in (44E)" : w.Kind == "coords" ? "" : ": CAESAR takes it (under its 1 in loop tolerance), and may draw the miss as a gap";
+                string run = w.RunStart > 0 ? string.Format(ci, ". Its run starts at node {0}, which no element before it in the file reaches and no COORDS entry places, so CAESAR starts it where element {1} ended: " +
+                    "join node {0} to the pipe it belongs to (the same node number, or a CNODE tie), or give it a COORDS entry", w.RunStart, en(w.RunAfter + 1)) : "";
+                var fix = new List<string>();
+                if (w.Kind == "coords")
+                {
+                    var c = m.Coords.First(q => q.Node == w.Node);
+                    double[] cv = { c.X, c.Y, c.Z };
+                    for (int k = 0; k < 3; k++) if (Math.Abs(w.V[k]) > 5e-4 * lenIn) fix.Add(ax[k] + " " + fl(cv[k]) + " -> " + fl(cv[k] - w.V[k]));
+                    items.Add(new PipeReviewItem("warning", "gap", string.Format(ci,
+                        "the Coords entry of node {0} is {1} in from where the pipe reaches it (element {2}). To match the pipe: {3} ({4}); or delete the entry, which the pipe places anyway",
+                        w.Node, fl(d / lenIn), en(w.By + 1), string.Join(", ", fix.ToArray()), lu)).WithNodes(new[] { w.Node }).WithElements(new[] { w.By + 1 }));
+                    continue;
+                }
                 double[] del = { e.Dx, e.Dy, e.Dz };
-                var fix = new List<string>();
-                for (int k = 0; k < 3; k++) if (Math.Abs(v[k]) > 5e-4 * lenIn) fix.Add("D" + ax[k] + " " + fl(del[k]) + " -> " + fl(del[k] + v[k]));
-                var by = m.Elements[pl.By[i]];
-                bool stop = d > LoopClosureIn * lenIn;
-                items.Add(new PipeReviewItem(stop ? "error" : "warning", stop ? "loop-closure" : "gap", string.Format(ci,
-                    "element {0} ends {1} in from node {2}, where element {3} put it{4}. To close it on this element: {5} ({6}); or a length is off elsewhere around the loop",
-                    en(i + 1), fl(d / lenIn), e.To, en(pl.By[i] + 1),
-                    stop ? ": CAESAR stops on a loop that misses by more than 1 in (44E)" : ": CAESAR takes it (under its 1 in loop tolerance), and may draw the miss as a gap",
-                    string.Join(", ", fix.ToArray()), lu))
-                    .WithNodes(new[] { e.From, e.To }).WithElements(new[] { i + 1, pl.By[i] + 1 }));
-            }
-            for (int i = 0; i < ne && listed < 200; i++)
-            {
-                var e = m.Elements[i];
-                double[] v = pl.StartMiss[i];
-                if (v == null) continue;
-                double d = Math.Sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-                if (d <= GapIn * lenIn) continue;
-                listed++;
-                double[] del = { e.Dx, e.Dy, e.Dz };
-                var fix = new List<string>();
-                for (int k = 0; k < 3; k++) if (Math.Abs(v[k]) > 5e-4 * lenIn) fix.Add("D" + ax[k] + " " + fl(del[k]) + " -> " + fl(del[k] - v[k]));
-                bool stop = d > LoopClosureIn * lenIn;
-                items.Add(new PipeReviewItem(stop ? "error" : "warning", stop ? "loop-closure" : "gap", string.Format(ci,
-                    "element {0} starts {1} in from bend node {2} on the bend {3}, measured back from where it ends{4}. To close it on this element: {5} ({6}); or a length is off elsewhere around the loop",
-                    en(i + 1), fl(d / lenIn), e.From, en(pl.StartBy[i] + 1),
-                    stop ? ": CAESAR stops on a loop that misses by more than 1 in (44E)" : ": CAESAR takes it (under its 1 in loop tolerance), and may draw the miss as a gap",
-                    string.Join(", ", fix.ToArray()), lu))
-                    .WithNodes(new[] { e.From, e.To }).WithElements(new[] { i + 1, pl.StartBy[i] + 1 }));
-            }
-            var seen = new HashSet<int>();
-            for (int i = 0; i < ne; i++)
-            {
-                double[] v = pl.CoordMiss[i];
-                var e = m.Elements[i];
-                if (v == null || !seen.Add(e.From)) continue;
-                double d = Math.Sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
-                if (d <= GapIn * lenIn) continue;
-                var c = m.Coords.First(q => q.Node == e.From);
-                double[] cv = { c.X, c.Y, c.Z };
-                var fix = new List<string>();
-                for (int k = 0; k < 3; k++) if (Math.Abs(v[k]) > 5e-4 * lenIn) fix.Add(ax[k] + " " + fl(cv[k]) + " -> " + fl(cv[k] - v[k]));
-                items.Add(new PipeReviewItem("warning", "gap", string.Format(ci,
-                    "the Coords entry of node {0} is {1} in from where the pipe reaches it (element {2}). To match the pipe: {3} ({4}); or delete the entry, which the pipe places anyway",
-                    e.From, fl(d / lenIn), en(i + 1), string.Join(", ", fix.ToArray()), lu))
-                    .WithNodes(new[] { e.From }).WithElements(new[] { i + 1 }));
+                for (int k = 0; k < 3; k++) if (Math.Abs(w.V[k]) > 5e-4 * lenIn) fix.Add("D" + ax[k] + " " + fl(del[k]) + " -> " + fl(del[k] + w.V[k]));
+                string what = w.Kind == "bend"
+                    ? string.Format(ci, "the bend {0} puts its node {1} {2} in from where element {3} put it{4}. To close it on this element: {5} ({6}); or a length is off elsewhere around the loop",
+                        en(w.Element + 1), w.Node, fl(d / lenIn), en(w.By + 1), tail, string.Join(", ", fix.ToArray()), lu)
+                    : string.Format(ci, "element {0} ends {1} in from node {2}, where element {3} put it{4}. To close it on this element: {5} ({6}); or a length is off elsewhere around the loop{7}",
+                        en(w.Element + 1), fl(d / lenIn), w.Node, en(w.By + 1), tail, string.Join(", ", fix.ToArray()), lu, run);
+                items.Add(new PipeReviewItem(stop ? "error" : "warning", stop ? "loop-closure" : "gap", what)
+                    .WithNodes(new[] { e.From, w.Node }.Concat(w.RunStart > 0 ? new[] { w.RunStart } : new int[0])).WithElements(new[] { w.Element + 1, w.By + 1 }));
             }
         }
 
@@ -890,6 +866,129 @@ public static class PipeReview
         public double[][] CoordMiss;   // this element's FROM node's COORDS entry, less where the pipe reaches it; null = none
         public double[][] StartMiss;   // FROM a bend node: its point on that bend's arc, less where this element starts; null = none
         public int[] StartBy;          // that bend element (index)
+        public bool[] IsPlaced;        // the element's piece was placed (from COORDS, the first element, or by meeting a placed piece)
+    }
+
+    // the direction (unit) of the first element leaving each node, from the deltas alone
+    internal static Dictionary<int, double[]> Leaving(PipeModel m)
+    {
+        var leave = new Dictionary<int, double[]>();
+        foreach (var e in m.Elements)
+        {
+            double l = Math.Sqrt(e.Dx * e.Dx + e.Dy * e.Dy + e.Dz * e.Dz);
+            if (l > 0 && !leave.ContainsKey(e.From)) leave[e.From] = new[] { e.Dx / l, e.Dy / l, e.Dz / l };
+        }
+        return leave;
+    }
+
+    // a bend node's point on the arc of bend element e, its TIP at `tip` (CAESAR's delta frame); null when the bend has no
+    // shape (no leaving element, no turn, no radius) or does not hold the node
+    internal static double[] ArcPoint(PipeModel m, PipeModelElement e, int node, double[] tip, Dictionary<int, double[]> leave)
+    {
+        if (e.Bend == null || tip == null) return null;
+        double lenIn = m.Factor(0), diaIn = m.Factor(20);
+        if (lenIn <= 0) lenIn = 1; if (diaIn <= 0) diaIn = 1;
+        double l = Math.Sqrt(e.Dx * e.Dx + e.Dy * e.Dy + e.Dz * e.Dz);
+        double[] uo;
+        if (l <= 0 || !leave.TryGetValue(e.To, out uo)) return null;
+        var u = new[] { e.Dx / l, e.Dy / l, e.Dz / l };
+        double cs = Math.Max(-1, Math.Min(1, u[0] * uo[0] + u[1] * uo[1] + u[2] * uo[2])), th = Math.Acos(cs);
+        int code = PipeModelBend.RadiusCode(e.Bend.Radius);
+        double rad = code == 0 ? e.Bend.Radius : PipeModelBend.ResolveCode(code, e.Od / diaIn) * lenIn;
+        if (!(rad > 0) || th < 1e-6 || th > Math.PI - 1e-6) return null;
+        var nv = new[] { uo[0] - u[0] * cs, uo[1] - u[1] * cs, uo[2] - u[2] * cs };
+        double nl = Math.Sqrt(nv[0] * nv[0] + nv[1] * nv[1] + nv[2] * nv[2]);
+        nv = new[] { nv[0] / nl, nv[1] / nl, nv[2] / nl };
+        double ang = -1;
+        foreach (var an in e.Bend.AngleNodes) if ((int)Math.Round(an[1]) == node) ang = Math.Abs(an[0] - PipeModelBend.MidPoint) < 1e-3 ? th * 90 / Math.PI : an[0];
+        if (ang < 0) return null;
+        double phi = ang * Math.PI / 180, t = rad * Math.Tan(th / 2);
+        var res = new double[3];
+        for (int k = 0; k < 3; k++) res[k] = tip[k] - u[k] * t + nv[k] * rad - nv[k] * rad * Math.Cos(phi) + u[k] * rad * Math.Sin(phi);
+        return res;
+    }
+
+    // ---- CAESAR's own walk of the file as written ----
+
+    public sealed class CaesarMiss
+    {
+        public int Element = -1;       // model index of the element (or the bend) that misses
+        public int Node;               // the node it misses
+        public double[] V;             // where the node already is, less where this element puts it
+        public int By = -1;            // model index of the element that placed the node first
+        public string Kind = "to";     // to | bend (a bend node on the arc) | coords (a COORDS entry off the pipe)
+        public int RunStart;           // the node the run started at, when CAESAR started it where the element before ended; 0 = none
+        public int RunAfter = -1;      // model index of that element before it
+    }
+
+    // The elements in the order written (CaesarNeutralWriter.InputOrder), placed as CAESAR places them: an element starts
+    // at its FROM node where an element before it put it; else, a bend node of a bend before it, at its point on the arc;
+    // else at the node's COORDS entry (coords: the model's and the ones the writer adds); else at a node it is tied to
+    // (a CNODE, "connect geometry through CNodes"), placed already; else where the element before it ended. Its TO node,
+    // already placed, is checked: the miss (CAESAR stops over its 1 in tolerance, 44E). A bend's nodes are put on its
+    // arc; one placed already is checked too. A COORDS entry for a node placed already is checked against it.
+    public static List<CaesarMiss> CaesarWalk(PipeModel m, List<PipeModelElement> order, IEnumerable<PipeModelCoord> coords)
+    {
+        var misses = new List<CaesarMiss>();
+        var idx = new Dictionary<PipeModelElement, int>();
+        for (int i = 0; i < m.Elements.Count; i++) idx[m.Elements[i]] = i;
+        var cmap = new Dictionary<int, double[]>();
+        foreach (var c in coords) if (!cmap.ContainsKey(c.Node)) cmap[c.Node] = new[] { c.X, c.Y, c.Z };
+        var ties = new Dictionary<int, List<int>>();
+        Action<int, int> tie = (a, b) => { if (a <= 0 || b <= 0 || a == b) return; List<int> l; if (!ties.TryGetValue(a, out l)) ties[a] = l = new List<int>(); l.Add(b); if (!ties.TryGetValue(b, out l)) ties[b] = l = new List<int>(); l.Add(a); };
+        foreach (var r in m.Restraints) tie(r.Node, r.CNode);
+        foreach (var j in m.Joints) tie(j.Node, j.CNode);
+        foreach (var h in m.Hangers) tie(h.Node, h.CNode);
+        foreach (var z in m.Nozzles) tie(z.Node, z.VesselNode);
+        var leave = Leaving(m);
+        var pos = new Dictionary<int, double[]>();
+        var by = new Dictionary<int, int>();
+        var runOf = new Dictionary<int, int[]>();      // node -> {run start node, element before (model index)} when that run started at the end of the element before
+        var coordChecked = new HashSet<int>();
+        double[] prevEnd = null;
+        int prevEl = -1;
+        foreach (var e in order)
+        {
+            int i = idx[e];
+            double[] p, cp;
+            int[] run = null;
+            if (pos.TryGetValue(e.From, out p))
+            {
+                runOf.TryGetValue(e.From, out run);
+                if (cmap.TryGetValue(e.From, out cp) && coordChecked.Add(e.From))
+                    misses.Add(new CaesarMiss { Element = i, Node = e.From, V = new[] { cp[0] - p[0], cp[1] - p[1], cp[2] - p[2] }, By = by[e.From], Kind = "coords" });
+            }
+            else
+            {
+                if (cmap.TryGetValue(e.From, out cp)) p = cp;
+                else
+                {
+                    List<int> tl; double[] tp = null;
+                    if (ties.TryGetValue(e.From, out tl)) foreach (int t in tl) if (pos.TryGetValue(t, out tp)) break;
+                    if (tp != null) p = tp;
+                    else { p = prevEnd ?? new double[3]; if (prevEnd != null) run = new[] { e.From, prevEl }; }
+                }
+                coordChecked.Add(e.From);
+                pos[e.From] = p; by[e.From] = i;
+                if (run != null) runOf[e.From] = run;
+            }
+            var q = new[] { p[0] + e.Dx, p[1] + e.Dy, p[2] + e.Dz };
+            double[] at;
+            if (pos.TryGetValue(e.To, out at))
+                misses.Add(new CaesarMiss { Element = i, Node = e.To, V = new[] { at[0] - q[0], at[1] - q[1], at[2] - q[2] }, By = by[e.To], RunStart = run != null ? run[0] : 0, RunAfter = run != null ? run[1] : -1 });
+            else { pos[e.To] = q; by[e.To] = i; if (run != null) runOf[e.To] = run; }
+            if (e.Bend != null)
+                foreach (var an in e.Bend.AngleNodes)
+                {
+                    int bn = (int)Math.Round(an[1]);
+                    var ap = bn > 0 ? ArcPoint(m, e, bn, q, leave) : null;
+                    if (ap == null) continue;
+                    if (pos.TryGetValue(bn, out at)) misses.Add(new CaesarMiss { Element = i, Node = bn, V = new[] { at[0] - ap[0], at[1] - ap[1], at[2] - ap[2] }, By = by[bn], Kind = "bend" });
+                    else { pos[bn] = ap; by[bn] = i; }
+                }
+            prevEnd = pos[e.To]; prevEl = i;
+        }
+        return misses;
     }
 
     // Elements in order. An element starts where the first element before it that ends (else starts) at its FROM node put
@@ -913,32 +1012,8 @@ public static class PipeReview
         var byTo = new Dictionary<int, List<int>>(); var byFr = new Dictionary<int, List<int>>(); var byBend = new Dictionary<int, List<int>>();
         Func<double[], double[], double[]> add = (a, b) => new[] { a[0] + b[0], a[1] + b[1], a[2] + b[2] };
         Func<double[], double[], double[]> sub = (a, b) => new[] { a[0] - b[0], a[1] - b[1], a[2] - b[2] };
-        Func<double[], double, double[]> mul = (a, k) => new[] { a[0] * k, a[1] * k, a[2] * k };
-        Func<double[], double> len = a => Math.Sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
-        // the element leaving each bend's TO node: its direction (unit), from the deltas alone
-        var leave = new Dictionary<int, double[]>();
-        foreach (var e in E) if (!leave.ContainsKey(e.From)) { double l = len(new[] { e.Dx, e.Dy, e.Dz }); if (l > 0) leave[e.From] = new[] { e.Dx / l, e.Dy / l, e.Dz / l }; }
-        // a bend node's point on the arc of bend element j, its TIP at `tip`; null when the bend has no shape (no leaving
-        // element, no turn, no radius)
-        Func<int, int, double[], double[]> arc = (j, node, tip) =>
-        {
-            var e = E[j];
-            double l = len(new[] { e.Dx, e.Dy, e.Dz });
-            double[] uo;
-            if (l <= 0 || !leave.TryGetValue(e.To, out uo)) return null;
-            var u = new[] { e.Dx / l, e.Dy / l, e.Dz / l };
-            double cs = Math.Max(-1, Math.Min(1, u[0] * uo[0] + u[1] * uo[1] + u[2] * uo[2])), th = Math.Acos(cs);
-            int code = PipeModelBend.RadiusCode(e.Bend.Radius);
-            double rad = code == 0 ? e.Bend.Radius : PipeModelBend.ResolveCode(code, e.Od / diaIn) * lenIn;
-            if (!(rad > 0) || th < 1e-6 || th > Math.PI - 1e-6) return null;
-            var nv = sub(uo, mul(u, cs)); double nl = len(nv); nv = mul(nv, 1 / nl);
-            double ang = -1;
-            foreach (var an in e.Bend.AngleNodes) if ((int)Math.Round(an[1]) == node) ang = Math.Abs(an[0] - PipeModelBend.MidPoint) < 1e-3 ? th * 90 / Math.PI : an[0];
-            if (ang < 0) return null;
-            double phi = ang * Math.PI / 180;
-            var centre = add(sub(tip, mul(u, rad * Math.Tan(th / 2))), mul(nv, rad));
-            return add(centre, add(mul(nv, -rad * Math.Cos(phi)), mul(u, rad * Math.Sin(phi))));
-        };
+        var leave = Leaving(m);
+        Func<int, int, double[], double[]> arc = (j, node, tip) => ArcPoint(m, E[j], node, tip, leave);
         for (int i = 0; i < n; i++)
         {
             var e = E[i];
@@ -1001,7 +1076,7 @@ public static class PipeReview
             }
         }
         var r = new Placed { X1 = new double[n][], X2 = new double[n][], Miss = new double[n][], By = new int[n], CoordMiss = new double[n][],
-                             StartMiss = new double[n][], StartBy = new int[n] };
+                             StartMiss = new double[n][], StartBy = new int[n], IsPlaced = placed };
         for (int i = 0; i < n; i++) { r.X1[i] = add(x1[i], off[i]); r.X2[i] = add(x2[i], off[i]); r.By[i] = -1; r.StartBy[i] = -1; }
         for (int i = 0; i < n; i++)
         {
