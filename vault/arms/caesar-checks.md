@@ -31,6 +31,7 @@ Every rule is summarised in our own words.
 > |---|---|---|
 > | A node on the curvature of two bends, or a bend node that is also an element end (48E) | `node-twice` | Elements, Bend nodes red; Start |
 > | Bends from 5 to 95 deg (5E; Minimum / Maximum Allowed Bend Angle) | `bend-angle` | Bend radius red; Start |
+> | A bend whose next element in the input does not start at its TO node: "the following element should define the downstream side of the bend" (8E; confirmed on the input-order probe, 2026-11-03). Pluto's own geometry finds the leaving element anywhere, so only this check sees it | `bend-next` | Bend radius red; Start |
 > | A node on a bend within 5 deg of the far end (12E), or of another node on it (Minimum Angle to Adjacent Bend Point). The near point itself (angle 0) and M are fine | `bend-node-angle` | Bend nodes red; Start |
 > | Corrosion allowance as thick as the wall (3E) | `corrosion-wall` | Sections' Corrosion and Elements' Section / Wall / Corrosion red; Start |
 > | A restraint to ground and an imposed displacement at one node: overspecified (57E), whatever their directions (a +Y support with a DX displacement stops it too). CAESAR's advice: give the displacement alone (a direction given holds the node), or give the restraint a connecting node and impose the displacement there | `displacement-restrained` (a restraint with a connecting node does not count) | Displacements, the row red; Start |

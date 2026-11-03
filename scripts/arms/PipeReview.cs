@@ -22,6 +22,7 @@ using System.Text;
 //   cnode-off-model a restraint whose CNODE is on no element (the connection goes nowhere)
 //   bend-corner     a bend drawn as a corner (CAESAR's geometry rules leave no room, or no radius)
 //   bend-room       a bend's tangent reaches past the start of its element (it overlaps the run before it)
+//   bend-next       a bend not followed in the input by the element leaving it (CAESAR's 8E)
 //   piece-backward  a straight shorter than the bend before it needs after it: it runs back past the bend's far point
 //   bend-code       a bend radius code CAESAR reads as no radius
 //   node-twice      a node on a bend's curve that is also on another bend's, or an element end: two points, one number
@@ -538,6 +539,22 @@ public static class PipeReview
             items.Add(new PipeReviewItem("warning", "corner-unseen", unseen.Count + " change" + (unseen.Count == 1 ? "" : "s") + " of direction with no bend or tee between elements apart in the input: at " + cornerList(unseen) +
                 ". CAESAR does not warn about these (it compares an element with the one before it), so check them here: a bend radius, unless a mitre or a rigid at equipment is meant")
                 .WithNodes(unseen.Take(ListMax).Select(kv => kv.Key)).WithElements(unseen.Take(ListMax).SelectMany(kv => elementsAt[kv.Key])));
+
+        // a bend whose next element in the input does not start at its TO node: CAESAR takes the bend's downstream side
+        // from that next element and stops (8E; CAESAR 15.01 on the input-order probe, 2026-11-03). Pluto's own geometry
+        // finds the element leaving the TO node wherever it is, so only this check sees it
+        var bendNext = new List<int>();
+        for (int i = 0; i < ne; i++)
+        {
+            var e = m.Elements[i];
+            if (e.Bend == null) continue;
+            if (i + 1 >= ne || m.Elements[i + 1].From != e.To) bendNext.Add(i);
+        }
+        if (bendNext.Count > 0)
+            items.Add(new PipeReviewItem("error", "bend-next", bendNext.Count + " bend" + (bendNext.Count == 1 ? "" : "s") + " not followed in the input by the element leaving it: " +
+                string.Join(", ", bendNext.Take(12).Select(i => "the bend at node " + m.Elements[i].To.ToString(ci) + " (element " + m.Elements[i].From.ToString(ci) + "-" + m.Elements[i].To.ToString(ci) + ")").ToArray()) +
+                (bendNext.Count > 12 ? ", ..." : "") + ". CAESAR stops on each (8E): the element after a bend in the input must start at the bend's TO node. Move that element's row right below the bend's")
+                .WithNodes(bendNext.Take(ListMax).Select(i => m.Elements[i].To)).WithElements(bendNext.Take(ListMax).Select(i => i + 1)));
 
         // intersections (a SIF / tee entry of a tee type): three pipes, two in line
         foreach (var s in sifs.Where(x => IsTeeType(x.Type)).GroupBy(x => x.Node).Select(gr => gr.First()))
