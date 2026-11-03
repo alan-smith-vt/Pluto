@@ -22,7 +22,7 @@ using System.Text;
 //   cnode-off-model a restraint whose CNODE is on no element (the connection goes nowhere)
 //   bend-corner     a bend drawn as a corner (CAESAR's geometry rules leave no room, or no radius)
 //   bend-room       a bend's tangent reaches past the start of its element (it overlaps the run before it)
-//   bend-next       a bend not followed in the input by the element leaving it (CAESAR's 8E)
+//   bend-next       a bend not followed in the input by the element leaving it, which the writer cannot move up (CAESAR's 8E)
 //   piece-backward  a straight shorter than the bend before it needs after it: it runs back past the bend's far point
 //   bend-code       a bend radius code CAESAR reads as no radius
 //   node-twice      a node on a bend's curve that is also on another bend's, or an element end: two points, one number
@@ -542,18 +542,21 @@ public static class PipeReview
 
         // a bend whose next element in the input does not start at its TO node: CAESAR takes the bend's downstream side
         // from that next element and stops (8E; CAESAR 15.01 on the input-order probe, 2026-11-03). Pluto's own geometry
-        // finds the element leaving the TO node wherever it is, so only this check sees it
+        // finds the element leaving the TO node wherever it is, so only this check sees it. The writer moves the leaving run
+        // up where it can (CaesarNeutralWriter.InputOrder, the order-bend notice); these are the bends it leaves
         var bendNext = new List<int>();
+        var written = CaesarNeutralWriter.InputOrder(m, null);
         for (int i = 0; i < ne; i++)
         {
-            var e = m.Elements[i];
+            var e = written[i];
             if (e.Bend == null) continue;
-            if (i + 1 >= ne || m.Elements[i + 1].From != e.To) bendNext.Add(i);
+            if (i + 1 >= ne || written[i + 1].From != e.To) bendNext.Add(m.Elements.IndexOf(e));
         }
         if (bendNext.Count > 0)
             items.Add(new PipeReviewItem("error", "bend-next", bendNext.Count + " bend" + (bendNext.Count == 1 ? "" : "s") + " not followed in the input by the element leaving it: " +
                 string.Join(", ", bendNext.Take(12).Select(i => "the bend at node " + m.Elements[i].To.ToString(ci) + " (element " + m.Elements[i].From.ToString(ci) + "-" + m.Elements[i].To.ToString(ci) + ")").ToArray()) +
-                (bendNext.Count > 12 ? ", ..." : "") + ". CAESAR stops on each (8E): the element after a bend in the input must start at the bend's TO node. Move that element's row right below the bend's")
+                (bendNext.Count > 12 ? ", ..." : "") + ". CAESAR stops on each (8E): the element after a bend in the input must start at the bend's TO node. Pluto moves the leaving rows up in the .cii where nothing depends on the order, " +
+                "and cannot here (no element leaves the bend, the first one is above it, or an element after it starts at a node no earlier element reached): move that element's row right below the bend's")
                 .WithNodes(bendNext.Take(ListMax).Select(i => m.Elements[i].To)).WithElements(bendNext.Take(ListMax).Select(i => i + 1)));
 
         // intersections (a SIF / tee entry of a tee type): three pipes, two in line

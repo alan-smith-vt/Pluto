@@ -358,8 +358,9 @@ public static class PipeWorkbook
             PipeWorkbookGui.Rule(el, "K2:K" + L, "AND(K2<>\"\",OR(" + pc("fB") + "," + pc("fN") + "))", t.Red);
             PipeWorkbookGui.Rule(el, "K2:K" + L, "AND(K2<>\"\"," + pc("fH") + ")", t.Amber);
             PipeWorkbookGui.Rule(el, "J2:J" + L, pc("fA"), t.Red);
-            // a bend whose next row does not start at its To: CAESAR stops (8E); the next row found by ROW(), so inserted rows keep it right
-            PipeWorkbookGui.Rule(el, "J2:J" + L, "AND($J2<>\"\",INDEX($B:$B,ROW()+1)<>$C2)", t.Red);
+            // a bend whose next row does not start at its To: CAESAR stops on it (8E), so the .cii is written with the leaving
+            // row moved up (CaesarNeutralWriter.InputOrder); the next row found by ROW(), so inserted rows keep it right
+            PipeWorkbookGui.Rule(el, "J2:J" + L, "AND($J2<>\"\",INDEX($B:$B,ROW()+1)<>$C2)", t.Amber);
             PipeWorkbookGui.Rule(el, "H2:H" + L, pc("fC"), t.Red);
             PipeWorkbookGui.Rule(el, "X2:X" + L, "AND(X2<>\"\"," + pc("fC") + ")", t.Red);
             PipeWorkbookGui.Rule(el, "Z2:Z" + L, "AND(Z2<>\"\"," + pc("fC") + ")", t.Red);
@@ -800,8 +801,9 @@ public static class PipeWorkbook
             new PipeWorkbookGui.Check("Hangers: text where a number belongs, a rate without its cold load or with a constant load, a node to free without its code",
                 textIn("Hangers", "B:F,H:I,K:Q,S:S") + "+SUMPRODUCT(ISNUMBER(Hangers!$D$2:$D$" + L2 + ")*(Hangers!$D$2:$D$" + L2 + ">0)*(NOT(ISNUMBER(Hangers!$E$2:$E$" + L2 + "))+ISNUMBER(Hangers!$F$2:$F$" + L2 +
                 ")*(Hangers!$F$2:$F$" + L2 + ">0)>0))+SUMPRODUCT((ISNUMBER(Hangers!$Q$2:$Q$" + L2 + ")<>(Hangers!$R$2:$R$" + L2 + "<>\"\"))+(ISNUMBER(Hangers!$S$2:$S$" + L2 + ")<>(Hangers!$T$2:$T$" + L2 + "<>\"\")))", false),
-            new PipeWorkbookGui.Check("Elements: a bend whose next row does not start at its To node: CAESAR stops on it (8E); move the row leaving the bend right below it",
-                "SUMPRODUCT((Elements!$J$2:$J$" + L2 + "<>\"\")*(Elements!$B$3:$B$" + (lim + 1).ToString(CultureInfo.InvariantCulture) + "<>Elements!$C$2:$C$" + L2 + "))", false),
+            new PipeWorkbookGui.Check("Elements: a bend whose next row does not start at its To node. CAESAR needs it to (8E), so the .cii is written with the row leaving the bend " +
+                "moved below it; the review lists any it cannot move",
+                "SUMPRODUCT((Elements!$J$2:$J$" + L2 + "<>\"\")*(Elements!$B$3:$B$" + (lim + 1).ToString(CultureInfo.InvariantCulture) + "<>Elements!$C$2:$C$" + L2 + "))", true),
             new PipeWorkbookGui.Check("Elements: a bend node number used twice (on two bends, or also a From / To): CAESAR stops on it",
                 PipeWorkbookGui.CalcCount("fB", n), false),
             // CAESAR's error checker (vault/arms/caesar-checks.md): red = it stops, amber = it warns

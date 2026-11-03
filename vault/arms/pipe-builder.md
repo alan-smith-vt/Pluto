@@ -216,6 +216,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 ## Geometry rules (CAESAR's own)
 
 - **Bends follow CAESAR's convention.** A corner between two legs gets a bend. The element carrying the bend runs to the corner (the tangent intersection point), and its TO node is the bend's **far point**. The next element is measured from the corner too.
+- **The element after a bend in the input leaves its TO node** (CAESAR stops otherwise, 8E). A model whose leaving element sits further down (a workbook row inserted elsewhere) is written with that element, and the run continuing from it, moved up to follow the bend; the model keeps its order and node numbers, and the review lists the move as a notice (`order-bend`). The rules: [[vault/arms/caesar-checks|caesar-checks]].
 - **Positions along a run are measured along the leg lines through the corners.** So a position *at* a corner is the bend's far point. The arc occupies `corner ± T`, with T = R tan(θ/2), and **nothing else may go there**: the error message gives the arc's extent.
 - **A component placed at a corner** starts at the far point and keeps its own length. For example, a flange welded to an elbow: `at` = the corner, `length` = the flange's.
 - **A component cannot end at a bend's corner.** End it at the near point, `corner − T`.

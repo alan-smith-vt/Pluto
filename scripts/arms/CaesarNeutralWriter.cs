@@ -284,6 +284,18 @@ public static class CaesarNeutralWriter
 
     public static List<string> ToLines(PipeModel m)
     {
+        // written in CAESAR's input order (InputOrder); the model keeps its own
+        var order = InputOrder(m, null);
+        if (order.SequenceEqual(m.Elements)) return Lines(m);
+        var own = m.Elements.ToList();
+        m.Elements.Clear();
+        m.Elements.AddRange(order);
+        try { return Lines(m); }
+        finally { m.Elements.Clear(); m.Elements.AddRange(own); }
+    }
+
+    static List<string> Lines(PipeModel m)
+    {
         var err = Validate(m);
         if (err.Count > 0) throw new InvalidOperationException("CaesarNeutralWriter: " + string.Join("; ", err.ToArray()));
         var p = new Plan();
@@ -995,7 +1007,74 @@ public static class CaesarNeutralWriter
             n.Add(new PipeReviewItem("notice", "restraint-code", "restraint type(s) " + string.Join(", ", unseen.Select(r => r.Type + " (" + r.Code + ")").Distinct().ToArray()) +
                 " written with the codes of CAESAR's documentation, which no CAESAR-written file here has shown yet: check them in CAESAR after the import")
                 .WithNodes(unseen.Select(r => r.Node)));
+        var moved = new List<string>();
+        var order = InputOrder(m, moved);
+        if (moved.Count > 0)
+        {
+            var bends = m.Elements.Where((e, i) => e.Bend != null && (i + 1 >= m.Elements.Count || m.Elements[i + 1].From != e.To))
+                .Where(e => { int j = order.IndexOf(e); return j + 1 < order.Count && order[j + 1].From == e.To; }).ToList();
+            n.Add(new PipeReviewItem("notice", "order-bend", "the .cii is written with " + string.Join("; ", moved.Take(12).ToArray()) + (moved.Count > 12 ? "; ..." : "") +
+                ": CAESAR needs the element after a bend in the input to leave its TO node (8E). The model keeps its own order and node numbers")
+                .WithNodes(bends.Select(e => e.To)).WithElements(bends.Select(e => m.Elements.IndexOf(e) + 1)));
+        }
         return n;
+    }
+
+    // ---------------- input order
+
+    // CAESAR takes a bend's downstream side from the element after it in the input, and stops when that element does
+    // not start at the bend's TO node (8E; CAESAR 15.01 on the input-order probe, 2026-11-03). Pluto's geometry finds
+    // the leaving element wherever it is, so a workbook may hold it further down. The file is written with that element,
+    // and the run continuing from it (each next element starting where the one before ended), moved up to directly after
+    // the bend; the model -- the workbook's rows and node numbers -- keeps its own order. A run is moved only when it
+    // lies after the bend and no element's place depends on the element before it: a node that no earlier element
+    // reached and COORDS do not give starts where the element before ended, so the two elements whose predecessor
+    // changes (the one after the bend, the one after the run) must start at a node placed already. A bend left as it
+    // is stays PipeReview's bend-next error. moved (may be null): one line per run moved.
+    public static List<PipeModelElement> InputOrder(PipeModel m, List<string> moved)
+    {
+        var el = new List<PipeModelElement>(m.Elements);
+        var coords = new HashSet<int>(m.Coords.Select(c => c.Node));
+        for (int pass = 0; pass <= el.Count && MoveRuns(el, coords, moved); pass++) { }
+        return el;
+    }
+
+    static bool MoveRuns(List<PipeModelElement> el, HashSet<int> coords, List<string> moved)
+    {
+        bool any = false;
+        for (int i = 0; i < el.Count; i++)
+        {
+            var b = el[i];
+            if (b.Bend == null || i + 1 >= el.Count || el[i + 1].From == b.To) continue;
+            int k = el.FindIndex(x => x != b && x.From == b.To);
+            if (k <= i) continue;                                   // none leaves it, or the first one is above it
+            int end = k;
+            while (end + 1 < el.Count && el[end + 1].From == el[end].To) end++;
+            if (!Placed(el, i + 1, coords) || end + 1 < el.Count && !Placed(el, end + 1, coords)) continue;
+            var run = el.GetRange(k, end - k + 1);
+            el.RemoveRange(k, run.Count);
+            el.InsertRange(i + 1, run);
+            if (moved != null)
+                moved.Add((run.Count == 1 ? "element " + Name(run[0]) : run.Count + " elements " + Name(run[0]) + " to " + Name(run[run.Count - 1])) + " after the bend " + Name(b));
+            any = true;
+        }
+        return any;
+    }
+
+    static string Name(PipeModelElement e) { return e.From.ToString(CultureInfo.InvariantCulture) + "-" + e.To.ToString(CultureInfo.InvariantCulture); }
+
+    // element j starts at a node an earlier element (or a bend node on one) reached, or one COORDS give
+    static bool Placed(List<PipeModelElement> el, int j, HashSet<int> coords)
+    {
+        int n = el[j].From;
+        if (coords.Contains(n)) return true;
+        for (int q = 0; q < j; q++)
+        {
+            var e = el[q];
+            if (e.From == n || e.To == n) return true;
+            if (e.Bend != null && e.Bend.AngleNodes.Any(a => (int)a[1] == n)) return true;
+        }
+        return false;
     }
 
     // ---------------- MISCEL_1, UNITS, COORDS
