@@ -51,7 +51,7 @@ Every rule is summarised in our own words.
 > | CAESAR's rule | Pluto | Workbook |
 > |---|---|---|
 > | A change of direction that is neither a bend nor an intersection (21E). CAESAR compares each element with the one before it in the input, so it sees a corner only where the second element starts at the first one's end | `corner-no-bend` (above 1 deg); `corner-unseen`: the same between elements apart in the input, which CAESAR does not report | Bend radius amber; Start |
-> | A geometric intersection with no intersection type: pipe flexibilities and SIFs of 1.0 there (33E). The probe's branches typed 14-17 drew it: CAESAR 15.01 has no such types | `tee-no-sif` (no entry, or a joint type; a user SIF entry gives the SIFs) | — |
+> | A geometric intersection with no intersection type: pipe flexibilities and SIFs of 1.0 there (33E). The probe's branches typed 14-17 drew it: CAESAR 15.01 has no such types. A user SIF entry (type 0) draws it too (tee probe, 2026-11-03): CAESAR uses its SIFs, not as an intersection type | `tee-no-sif` (no entry, user SIFs only, or a joint type) | — |
 > | An intersection type where no geometric intersection is found: the SIFs come from the smallest wall and largest diameter there (39E). With four or more pipes CAESAR computes no SIF (1.0) | `intersection` (tee types 1-6; 7-13 are joints) | SIFs, Node amber; Start |
 > | D/t over 100 at a bend or intersection: the code's flexibilities and SIFs are not valid for it, and CAESAR computes them anyway (160E) | `thin-wall` (and reducers) | Sections amber; Start |
 > | A reducer outside B31J's limits (282E); its cone angle over 60 deg is the reducer SIF's limit (CAESAR computes it from the length when not given) | `reducer-angle` | — |
@@ -73,10 +73,10 @@ Every rule is summarised in our own words.
 
 > [!info]- B31J: warnings CAESAR 15.01 gives where it takes a default
 > CAESAR 15.01 computes B31J flexibilities and SIFs at intersections and reducers. Where an input it uses is not given, it warns and takes a default. Pluto lists them as one `b31j` info item, since they are usually fine:
-> - **293E:** no surface node at an intersection; CAESAR generates one. It came at every intersection of the probe, until the message's display limit (5).
-> - **283E:** a tee's geometric parameters not given or outside the tee's requirements, so the SIFs and flexibilities are not reduced. Seen at welding tees and a sweepolet; not at the extruded tee given its crotch radius, the fabricated tees or the weldolet.
+> - **293E:** no surface node at an intersection; CAESAR generates one. It came at every intersection of the probe, until the message's display limit (5). A surface node (a node on the branch at the header's surface, the SIFs sheet's Surface node) clears it (tee probe, 2026-11-03).
+> - **283E:** a tee's geometric parameters not given or outside the tee's requirements, so the SIFs and flexibilities are not reduced. Seen at welding tees and a sweepolet; not at the extruded tee given its crotch radius, the fabricated tees (reinforced, unreinforced) or the weldolet. A welding tee with a surface node and a 1.0 in crotch radius still drew it (tee probe, 2026-11-03): which fields clear it is not known yet.
 > - **285E:** a weldolet without the fitting's outside radius (rp).
-> - **286E, 287E:** a reducer without its radius r2 or its length L2.
+> - **286E, 287E, 288E:** a reducer without its radius r2, its length L2, or its cone angle alpha. On the tee probe (2026-11-03) alpha (REDUCERS line 1, field 3) cleared 288E and R2 (field 5) cleared 286E; where the file keeps L2 is not known yet. CAESAR's default angle was 18.1 deg for an 8 in long 8 in x 6 in reducer, against 7.1 deg for a straight cone over its length. A reducer right after a bend drew the same warnings as one on a straight.
 
 > [!info]- Notes: information
 > | CAESAR's note | Pluto |

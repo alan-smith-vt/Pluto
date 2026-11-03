@@ -162,7 +162,8 @@ public static class PipeReview
         }
 
         // tees without an intersection type: CAESAR warns (33E) and uses pipe flexibilities and SIFs of 1.0 there. A user
-        // SIF entry (type 0) gives the SIFs; a joint (7-13) is not an intersection; a number past 13 is no type at all
+        // SIF entry (type 0) is no intersection type either (33E on the tee probe, CAESAR 15.01, 2026-11-03), though its
+        // SIFs are used; a joint (7-13) is not an intersection; a number past 13 is no type at all
         List<PipeModelSif> sifs;
         try { sifs = CaesarNeutralWriter.Sifs(m); }
         catch (Exception) { sifs = new List<PipeModelSif>(m.Sifs); }
@@ -171,12 +172,15 @@ public static class PipeReview
         {
             List<PipeModelSif> at;
             sifsAt.TryGetValue(kv.Key, out at);
-            if (at != null && at.Any(s => s.Type >= 0 && s.Type <= 6)) continue;
+            if (at != null && at.Any(s => s.Type >= 1 && s.Type <= 6)) continue;
+            bool userOnly = at != null && at.All(s => s.Type == 0);
             string what = at == null ? "no SIF / tee entry there"
+                        : userOnly ? "only user SIFs (type 0), which CAESAR does not count as an intersection type"
                         : "a SIF entry of type " + string.Join(", ", at.Select(s => s.Type + " (" + PipeModelSifTypes.Name(s.Type) + ")").Distinct().ToArray()) +
                           (at.Any(s => s.Type > PipeModelSifTypes.Max) ? ", which is no type of CAESAR 15.01's (it reads none there)" : ", a joint, not an intersection");
             items.Add(new PipeReviewItem("warning", "tee-no-sif",
-                kv.Value + " elements meet at node " + kv.Key + " with " + what + ": CAESAR warns (33E) and uses pipe flexibilities and SIFs of 1.0 at this branch (a welding tee is type 3)")
+                kv.Value + " elements meet at node " + kv.Key + " with " + what + ": CAESAR warns (33E) and uses pipe flexibilities" +
+                (userOnly ? " (and the SIFs given)" : " and SIFs of 1.0") + " at this branch (a welding tee is type 3)")
                 .WithNodes(new[] { kv.Key }).WithElements(elementsAt[kv.Key]));
         }
 
@@ -627,20 +631,29 @@ public static class PipeReview
         }
 
         // B31J (CAESAR 15.01 computes its flexibilities and SIFs at intersections and reducers): the inputs it uses and
-        // does not get, it takes from defaults, warning at each: no surface node (293E: it makes one), no crotch radius at
-        // a welding tee, a sweepolet or an extruded tee (283E: the SIFs are not reduced), no fitting outside radius at a
-        // weldolet (285E), a reducer's r2 and L2 (286E, 287E: Pluto writes R2 only when given, L2 never)
+        // does not get, it takes from defaults, warning at each: no surface node (293E: it makes one; a surface node on the
+        // branch clears it), the B31J geometry of a welding tee or a sweepolet, or an extruded tee's crotch radius (283E: the
+        // SIFs are not reduced; a crotch radius alone does not clear it at a welding tee), no fitting outside radius at a
+        // weldolet (285E), a reducer's cone angle, r2 and L2 (288E, 286E, 287E: Pluto writes alpha and R2 only when given,
+        // L2 never). Tee probe, CAESAR 15.01, 2026-11-03: alpha clears 288E, R2 clears 286E
         {
             var noSurface = sifs.Where(x => IsTeeType(x.Type) && x.SurfaceNode <= 0).Select(x => x.Node).Distinct().OrderBy(n => n).ToList();
-            var noCrotch = sifs.Where(x => (x.Type == 3 || x.Type == 4 || x.Type == 6) && !(x.CrotchRadius > 0)).Select(x => x.Node).Distinct().OrderBy(n => n).ToList();
+            var noCrotch = sifs.Where(x => x.Type == 3 || x.Type == 4 || x.Type == 6 && !(x.CrotchRadius > 0)).Select(x => x.Node).Distinct().OrderBy(n => n).ToList();
             var noRo = sifs.Where(x => x.Type == 5 && !(x.FittingRo > 0)).Select(x => x.Node).Distinct().OrderBy(n => n).ToList();
             var reducers = Enumerable.Range(0, ne).Where(i => m.Elements[i].Reducer != null && m.Elements[i].Reducer.Od2 > 0).ToList();
             var parts = new List<string>();
             if (noSurface.Count > 0) parts.Add(noSurface.Count + " intersection" + (noSurface.Count == 1 ? "" : "s") + " without a surface node (293E: CAESAR makes one)");
             if (noCrotch.Count > 0) parts.Add(noCrotch.Count + " welding tee" + (noCrotch.Count == 1 ? "" : "s") + ", sweepolet" + (noCrotch.Count == 1 ? "" : "s") + " or extruded tee" + (noCrotch.Count == 1 ? "" : "s") +
-                " without the B31J geometry CAESAR looks for, such as a crotch radius (283E: their SIFs and flexibilities are not reduced)");
+                " without the B31J geometry CAESAR looks for (283E: their SIFs and flexibilities are not reduced; a welding tee's crotch radius alone does not clear it)");
             if (noRo.Count > 0) parts.Add(noRo.Count + " weldolet" + (noRo.Count == 1 ? "" : "s") + " without the fitting's outside radius (285E)");
-            if (reducers.Count > 0) parts.Add(reducers.Count + " reducer" + (reducers.Count == 1 ? "" : "s") + " (286E" + (reducers.All(i => m.Elements[i].Reducer.R2 > 0) ? "" : " r2,") + " 287E L2)");
+            if (reducers.Count > 0)
+            {
+                var miss = new List<string>();
+                if (!reducers.All(i => m.Elements[i].Reducer.Alpha > 0)) miss.Add("288E cone angle");
+                if (!reducers.All(i => m.Elements[i].Reducer.R2 > 0)) miss.Add("286E r2");
+                miss.Add("287E L2");
+                parts.Add(reducers.Count + " reducer" + (reducers.Count == 1 ? "" : "s") + " (" + string.Join(", ", miss.ToArray()) + ")");
+            }
             if (parts.Count > 0)
                 items.Add(new PipeReviewItem("info", "b31j", "CAESAR 15.01 computes B31J flexibilities and SIFs and warns where it takes an input from its defaults: " + string.Join("; ", parts.ToArray()) +
                     ". Usually fine; give them in CAESAR where a closer answer matters")
