@@ -15,7 +15,7 @@ using System.Text;
 //                   displacement or nozzle to ground: unstable
 //   tee-no-sif      three or more elements meet at a node with no intersection type there (CAESAR warns, 33E)
 //   free-end        a node on one element end only, held by nothing (a vent, a drain, or a missing support)
-//   gap             a loop that misses by 0.001-1 in, or a Coords entry off the pipe that reaches its node (CAESAR draws it, no warning)
+//   gap             an element that misses its TO node by 0.001-1 in, or a Coords entry off the pipe (one item each, with the deltas that close it)
 //   element-self    an element from a node to itself
 //   element-zero    an element with no length
 //   element-twice   two elements between the same two nodes
@@ -432,78 +432,53 @@ public static class PipeReview
                 .WithNodes(new[] { d.Node }));
         }
 
-        // loop closure: a node two paths of element deltas place more than 1 in apart is a fatal error
-        var pos = new Dictionary<int, double[]>();
-        var adj = new Dictionary<int, List<int>>();
-        for (int i = 0; i < ne; i++)
-            foreach (int n in new[] { m.Elements[i].From, m.Elements[i].To })
+        // loop closure and gaps, row by row as the workbook's 3D View places the pipe (Placement): an element that ends away
+        // from where an earlier element put its TO node, and a COORDS entry away from where the pipe reaches its node. One
+        // item each, with the deltas that would close it on that element. Over 1 in CAESAR stops (44E, its loop closure
+        // tolerance); under it, CAESAR takes the model and may draw the miss as a gap
+        {
+            var pl = Placement(m);
+            string lu = Math.Abs(lenIn - 1) < 1e-9 ? "in" : "length units";
+            Func<double, string> fl = v => (Math.Abs(v) < 5e-7 ? 0 : v).ToString("0.####", ci);
+            string[] ax = { "X", "Y", "Z" };
+            int listed = 0;
+            for (int i = 0; i < ne && listed < 200; i++)
             {
-                List<int> l;
-                if (!adj.TryGetValue(n, out l)) adj[n] = l = new List<int>();
-                l.Add(i);
+                var e = m.Elements[i];
+                double[] v = pl.Miss[i];
+                if (v == null) continue;
+                double d = Math.Sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+                if (d <= GapIn * lenIn) continue;
+                listed++;
+                double[] del = { e.Dx, e.Dy, e.Dz };
+                var fix = new List<string>();
+                for (int k = 0; k < 3; k++) if (Math.Abs(v[k]) > 5e-7) fix.Add("D" + ax[k] + " " + fl(del[k]) + " -> " + fl(del[k] + v[k]));
+                var by = m.Elements[pl.By[i]];
+                bool stop = d > LoopClosureIn * lenIn;
+                items.Add(new PipeReviewItem(stop ? "error" : "warning", stop ? "loop-closure" : "gap", string.Format(ci,
+                    "element {0} ends {1} in from node {2}, where element {3} put it{4}. To close it on this element: {5} ({6}); or a length is off elsewhere around the loop",
+                    en(i + 1), fl(d / lenIn), e.To, en(pl.By[i] + 1),
+                    stop ? ": CAESAR stops on a loop that misses by more than 1 in (44E)" : ": CAESAR takes it (under its 1 in loop tolerance), and may draw the miss as a gap",
+                    string.Join(", ", fix.ToArray()), lu))
+                    .WithNodes(new[] { e.From, e.To }).WithElements(new[] { i + 1, pl.By[i] + 1 }));
             }
-        var used = new bool[ne];
-        var misses = new List<KeyValuePair<int, double>>();
-        var gaps = new List<KeyValuePair<int, double>>();
-        var comp = new Dictionary<int, int>();         // node -> the element its walk started from
-        double tol = LoopClosureIn * lenIn, gapTol = GapIn * lenIn;
-        for (int s0 = 0; s0 < ne; s0++)
-        {
-            if (used[s0] || pos.ContainsKey(m.Elements[s0].From) && pos.ContainsKey(m.Elements[s0].To)) continue;
-            if (!pos.ContainsKey(m.Elements[s0].From)) { pos[m.Elements[s0].From] = new double[3]; comp[m.Elements[s0].From] = s0; }
-            var queue = new Queue<int>();
-            queue.Enqueue(m.Elements[s0].From);
-            while (queue.Count > 0)
+            var seen = new HashSet<int>();
+            for (int i = 0; i < ne; i++)
             {
-                int n = queue.Dequeue();
-                foreach (int i in adj[n])
-                {
-                    if (used[i]) continue;
-                    used[i] = true;
-                    var e = m.Elements[i];
-                    double sg = e.From == n ? 1 : -1;
-                    int other = e.From == n ? e.To : e.From;
-                    var p = pos[n];
-                    var q = new[] { p[0] + sg * e.Dx, p[1] + sg * e.Dy, p[2] + sg * e.Dz };
-                    double[] at;
-                    if (pos.TryGetValue(other, out at))
-                    {
-                        double miss = Math.Sqrt((at[0] - q[0]) * (at[0] - q[0]) + (at[1] - q[1]) * (at[1] - q[1]) + (at[2] - q[2]) * (at[2] - q[2]));
-                        if (miss > tol) misses.Add(new KeyValuePair<int, double>(i + 1, miss));
-                        else if (miss > gapTol) gaps.Add(new KeyValuePair<int, double>(i + 1, miss));
-                    }
-                    else { pos[other] = q; comp[other] = comp[n]; queue.Enqueue(other); }
-                }
+                double[] v = pl.CoordMiss[i];
+                var e = m.Elements[i];
+                if (v == null || !seen.Add(e.From)) continue;
+                double d = Math.Sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+                if (d <= GapIn * lenIn) continue;
+                var c = m.Coords.First(q => q.Node == e.From);
+                double[] cv = { c.X, c.Y, c.Z };
+                var fix = new List<string>();
+                for (int k = 0; k < 3; k++) if (Math.Abs(v[k]) > 5e-7) fix.Add(ax[k] + " " + fl(cv[k]) + " -> " + fl(cv[k] - v[k]));
+                items.Add(new PipeReviewItem("warning", "gap", string.Format(ci,
+                    "the Coords entry of node {0} is {1} in from where the pipe reaches it (element {2}). To match the pipe: {3} ({4}); or delete the entry, which the pipe places anyway",
+                    e.From, fl(d / lenIn), en(i + 1), string.Join(", ", fix.ToArray()), lu))
+                    .WithNodes(new[] { e.From }).WithElements(new[] { i + 1 }));
             }
-        }
-        foreach (var kv in misses.Take(20))
-            items.Add(new PipeReviewItem("error", "loop-closure", string.Format(ci,
-                "element {0} closes a loop {1:0.###} in away from where the other path puts node {2}: CAESAR stops on a loop that misses by more than 1 in (44E, its loop closure tolerance); check the lengths around the loop",
-                en(kv.Key), kv.Value / lenIn, m.Elements[kv.Key - 1].To)).WithNodes(new[] { m.Elements[kv.Key - 1].From, m.Elements[kv.Key - 1].To }).WithElements(new[] { kv.Key }));
-
-        // gaps: a loop that misses by less than CAESAR's 1 in passes its checker, and CAESAR draws the miss as a gap; so does a
-        // Coords entry away from where the pipe reaches its node (the first entry of a connected piece places the piece)
-        var offAt = new List<KeyValuePair<int, double>>();
-        var anchor = new Dictionary<int, double[]>();
-        foreach (var c in m.Coords)
-        {
-            double[] p; int k;
-            if (!pos.TryGetValue(c.Node, out p) || !comp.TryGetValue(c.Node, out k)) continue;
-            var off = new[] { c.X - p[0], c.Y - p[1], c.Z - p[2] };
-            double[] a0;
-            if (!anchor.TryGetValue(k, out a0)) { anchor[k] = off; continue; }
-            double d = Math.Sqrt((off[0] - a0[0]) * (off[0] - a0[0]) + (off[1] - a0[1]) * (off[1] - a0[1]) + (off[2] - a0[2]) * (off[2] - a0[2]));
-            if (d > gapTol) offAt.Add(new KeyValuePair<int, double>(c.Node, d));
-        }
-        if (gaps.Count + offAt.Count > 0)
-        {
-            var what = gaps.Take(12).Select(kv => string.Format(ci, "element {0} ends {1:0.###} in from node {2}", en(kv.Key), kv.Value / lenIn, m.Elements[kv.Key - 1].To))
-                .Concat(offAt.Take(12).Select(kv => string.Format(ci, "the Coords entry of node {0} is {1:0.###} in off the pipe", kv.Key, kv.Value / lenIn))).ToList();
-            items.Add(new PipeReviewItem("warning", "gap", (gaps.Count + offAt.Count) + " place" + (gaps.Count + offAt.Count == 1 ? "" : "s") + " where the pipe does not meet itself: " +
-                string.Join("; ", what.ToArray()) + (gaps.Count > 12 || offAt.Count > 12 ? "; ..." : "") +
-                ". The deltas around a loop, or a Coords entry and the deltas that reach the same node, disagree; CAESAR draws the gap and does not warn under 1 in. Check the lengths and Coords there")
-                .WithNodes(gaps.Take(ListMax).Select(kv => m.Elements[kv.Key - 1].To).Concat(offAt.Take(ListMax).Select(kv => kv.Key)))
-                .WithElements(gaps.Take(ListMax).Select(kv => kv.Key)));
         }
 
         // bends: CAESAR's angle limits, and the nodes on the curve kept 5 deg apart and off the ends
@@ -589,8 +564,8 @@ public static class PipeReview
         if (bendNext.Count > 0)
             items.Add(new PipeReviewItem("error", "bend-next", bendNext.Count + " bend" + (bendNext.Count == 1 ? "" : "s") + " not followed in the input by the element leaving it: " +
                 string.Join(", ", bendNext.Take(12).Select(i => "the bend at node " + m.Elements[i].To.ToString(ci) + " (element " + m.Elements[i].From.ToString(ci) + "-" + m.Elements[i].To.ToString(ci) + ")").ToArray()) +
-                (bendNext.Count > 12 ? ", ..." : "") + ". CAESAR stops on each (8E): the element after a bend in the input must start at the bend's TO node. Pluto moves the leaving rows up in the .cii where nothing depends on the order, " +
-                "and cannot here (no element leaves the bend, the first one is above it, or an element after it starts at a node no earlier element reached): move that element's row right below the bend's")
+                (bendNext.Count > 12 ? ", ..." : "") + ". CAESAR stops on each (8E): the element after a bend in the input must start at the bend's TO node. Pluto moves the leaving rows (or the bend) in the .cii where nothing depends on the order, " +
+                "and cannot here: no element leaves the bend, or moving one would change where an element starts (one at a node no earlier row reached starts where the row above it ended). Move that element's row right below the bend's")
                 .WithNodes(bendNext.Take(ListMax).Select(i => m.Elements[i].To)).WithElements(bendNext.Take(ListMax).Select(i => i + 1)));
 
         // intersections (a SIF / tee entry of a tee type): three pipes, two in line
@@ -872,6 +847,100 @@ public static class PipeReview
             case "notice": return 2;
             default: return 3;
         }
+    }
+
+    // ---- placement, as the workbook's 3D View works it out (PipeWorkbookGui's PlotCalc, the same rules) ----
+
+    public sealed class Placed
+    {
+        public double[][] X1, X2;      // each element's ends, final (job length units, the TIP frame of CAESAR's deltas)
+        public double[][] Miss;        // where an earlier element put this element's TO node, less where it ends; null = none
+        public int[] By;               // that earlier element (index)
+        public double[][] CoordMiss;   // this element's FROM node's COORDS entry, less where the pipe reaches it; null = none
+    }
+
+    // Elements in order. An element starts where the first element before it that ends (else starts) at its FROM node put
+    // that node; else at the node's COORDS entry; else where the element before it ended (CAESAR's rule). Elements joined
+    // that way form a piece; a piece not started from COORDS (or as the first) that meets a placed piece at a node is moved
+    // onto it at its first such element, in two passes. Then each element is checked against the first element before
+    // it at its TO node, and each FROM node with a COORDS entry against where the pipe reaches it.
+    public static Placed Placement(PipeModel m)
+    {
+        int n = m.Elements.Count;
+        var E = m.Elements;
+        var coords = new Dictionary<int, double[]>();
+        foreach (var c in m.Coords) if (!coords.ContainsKey(c.Node)) coords[c.Node] = new[] { c.X, c.Y, c.Z };
+        var x1 = new double[n][]; var x2 = new double[n][];
+        var pc = new int[n]; var rt = new bool[n];
+        var firstTo = new Dictionary<int, int>(); var firstFr = new Dictionary<int, int>();
+        var byTo = new Dictionary<int, List<int>>(); var byFr = new Dictionary<int, List<int>>();
+        Func<double[], double[], double[]> add = (a, b) => new[] { a[0] + b[0], a[1] + b[1], a[2] + b[2] };
+        Func<double[], double[], double[]> sub = (a, b) => new[] { a[0] - b[0], a[1] - b[1], a[2] - b[2] };
+        for (int i = 0; i < n; i++)
+        {
+            var e = E[i];
+            int mt, mf = -1;
+            if (!firstTo.TryGetValue(e.From, out mt)) { mt = -1; if (!firstFr.TryGetValue(e.From, out mf)) mf = -1; }
+            double[] cp;
+            x1[i] = mt >= 0 ? x2[mt] : mf >= 0 ? x1[mf] : coords.TryGetValue(e.From, out cp) ? cp : i == 0 ? new double[3] : x2[i - 1];
+            x2[i] = add(x1[i], new[] { e.Dx, e.Dy, e.Dz });
+            pc[i] = mt >= 0 ? pc[mt] : mf >= 0 ? pc[mf] : i;
+            rt[i] = pc[i] == i ? i == 0 || coords.ContainsKey(e.From) : rt[pc[i]];
+            if (!firstTo.ContainsKey(e.To)) firstTo[e.To] = i;
+            if (!firstFr.ContainsKey(e.From)) firstFr[e.From] = i;
+            List<int> l;
+            if (!byTo.TryGetValue(e.To, out l)) byTo[e.To] = l = new List<int>(); l.Add(i);
+            if (!byFr.TryGetValue(e.From, out l)) byFr[e.From] = l = new List<int>(); l.Add(i);
+        }
+        var off = new double[n][];
+        for (int i = 0; i < n; i++) off[i] = new double[3];
+        var placed = (bool[])rt.Clone();
+        for (int pass = 0; pass < 2; pass++)
+        {
+            var was = (bool[])placed.Clone();
+            var cur1 = new double[n][]; var cur2 = new double[n][];
+            for (int i = 0; i < n; i++) { cur1[i] = add(x1[i], off[i]); cur2[i] = add(x2[i], off[i]); }
+            // a node's place in the other placed pieces: the mean of the ends there (TO ends first)
+            Func<int, int, double[]> at = (node, piece) =>
+            {
+                List<int> l; var sum = new double[3]; int k = 0;
+                if (byTo.TryGetValue(node, out l)) foreach (int j in l) if (pc[j] != piece && was[j]) { sum = add(sum, cur2[j]); k++; }
+                if (k == 0 && byFr.TryGetValue(node, out l)) foreach (int j in l) if (pc[j] != piece && was[j]) { sum = add(sum, cur1[j]); k++; }
+                return k == 0 ? null : new[] { sum[0] / k, sum[1] / k, sum[2] / k };
+            };
+            var shift = new Dictionary<int, double[]>();   // piece -> its move, at its first element that meets a placed piece
+            for (int i = 0; i < n; i++)
+            {
+                if (was[i] || shift.ContainsKey(pc[i])) continue;
+                var e = E[i];
+                double[] p = at(e.To, pc[i]);
+                if (p != null) { shift[pc[i]] = sub(p, cur2[i]); continue; }
+                p = at(e.From, pc[i]);
+                if (p != null) shift[pc[i]] = sub(p, cur1[i]);
+            }
+            for (int i = 0; i < n; i++)
+            {
+                double[] d;
+                if (was[i] || !shift.TryGetValue(pc[i], out d)) continue;
+                off[i] = add(off[i], d);
+                placed[i] = true;
+            }
+        }
+        var r = new Placed { X1 = new double[n][], X2 = new double[n][], Miss = new double[n][], By = new int[n], CoordMiss = new double[n][] };
+        for (int i = 0; i < n; i++) { r.X1[i] = add(x1[i], off[i]); r.X2[i] = add(x2[i], off[i]); r.By[i] = -1; }
+        var seenTo = new Dictionary<int, int>(); var seenFr = new Dictionary<int, int>();
+        for (int i = 0; i < n; i++)
+        {
+            var e = E[i];
+            int j;
+            if (seenTo.TryGetValue(e.To, out j)) { r.Miss[i] = sub(r.X2[j], r.X2[i]); r.By[i] = j; }
+            else if (seenFr.TryGetValue(e.To, out j)) { r.Miss[i] = sub(r.X1[j], r.X2[i]); r.By[i] = j; }
+            double[] cp;
+            if ((firstTo.ContainsKey(e.From) && firstTo[e.From] < i || firstFr[e.From] < i) && coords.TryGetValue(e.From, out cp)) r.CoordMiss[i] = sub(cp, r.X1[i]);
+            if (!seenTo.ContainsKey(e.To)) seenTo[e.To] = i;
+            if (!seenFr.ContainsKey(e.From)) seenFr[e.From] = i;
+        }
+        return r;
     }
 
     public static string Summary(IEnumerable<PipeReviewItem> items)

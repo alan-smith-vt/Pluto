@@ -774,7 +774,12 @@ public static class CaesarToPluto
         {
             var review = PipeReview.Check(pm, g, m);
             if (preview != null) review.AddRange(preview.Messages);
-            foreach (string w0 in res.Warnings) review.Add(new PipeReviewItem(DrawingNote(w0) ? "info" : "warning", "export", w0));
+            foreach (string w0 in res.Warnings)
+            {
+                // a loop that misses: PipeReview lists each one, with its nodes and the deltas that close it
+                if (w0.StartsWith("geometry: loop closure", StringComparison.Ordinal)) continue;
+                review.Add(new PipeReviewItem(DrawingNote(w0) ? "info" : "warning", "export", w0));
+            }
             var counts = PipeSidecar.AddSections(sc, pm, m, elementBeams, review);
             res.PropertyItems = counts.Properties; res.LoadItems = counts.Loads;
             res.ReviewItems = counts.Review; res.ReviewErrors = counts.Errors; res.ReviewWarnings = counts.Warnings;

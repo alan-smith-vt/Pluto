@@ -1024,13 +1024,13 @@ public static class CaesarNeutralWriter
 
     // CAESAR takes a bend's downstream side from the element after it in the input, and stops when that element does
     // not start at the bend's TO node (8E; CAESAR 15.01 on the input-order probe, 2026-11-03). Pluto's geometry finds
-    // the leaving element wherever it is, so a workbook may hold it further down. The file is written with that element,
-    // and the run continuing from it (each next element starting where the one before ended), moved up to directly after
-    // the bend; the model -- the workbook's rows and node numbers -- keeps its own order. A run is moved only when it
-    // lies after the bend and no element's place depends on the element before it: a node that no earlier element
-    // reached and COORDS do not give starts where the element before ended, so the two elements whose predecessor
-    // changes (the one after the bend, the one after the run) must start at a node placed already. A bend left as it
-    // is stays PipeReview's bend-next error. moved (may be null): one line per run moved.
+    // the leaving element wherever it is, so a workbook may hold it anywhere. The file is written with the leaving
+    // element, and the run continuing from it (each next element starting where the one before ended), moved to directly
+    // after the bend -- up or down; failing that, with the bend, and the run leading into it, moved to directly before
+    // the leaving element. The model -- the workbook's rows and node numbers -- keeps its own order. A move is made only
+    // when no element is placed differently for it (SamePlacement): a node that no earlier element reached and COORDS do
+    // not give starts where the element before ended, so such an element must keep the element before it. A bend left as
+    // it is stays PipeReview's bend-next error. moved (may be null): one line per move.
     public static List<PipeModelElement> InputOrder(PipeModel m, List<string> moved)
     {
         var el = new List<PipeModelElement>(m.Elements);
@@ -1045,17 +1045,33 @@ public static class CaesarNeutralWriter
         for (int i = 0; i < el.Count; i++)
         {
             var b = el[i];
-            if (b.Bend == null || i + 1 >= el.Count || el[i + 1].From == b.To) continue;
+            if (b.Bend == null || i + 1 < el.Count && el[i + 1].From == b.To) continue;
             int k = el.FindIndex(x => x != b && x.From == b.To);
-            if (k <= i) continue;                                   // none leaves it, or the first one is above it
+            if (k < 0) continue;                                    // nothing leaves it
             int end = k;
-            while (end + 1 < el.Count && el[end + 1].From == el[end].To) end++;
-            if (!Placed(el, i + 1, coords) || end + 1 < el.Count && !Placed(el, end + 1, coords)) continue;
+            while (end + 1 < el.Count && end + 1 != i && el[end + 1].From == el[end].To) end++;
             var run = el.GetRange(k, end - k + 1);
-            el.RemoveRange(k, run.Count);
-            el.InsertRange(i + 1, run);
-            if (moved != null)
-                moved.Add((run.Count == 1 ? "element " + Name(run[0]) : run.Count + " elements " + Name(run[0]) + " to " + Name(run[run.Count - 1])) + " after the bend " + Name(b));
+            // the run right after the bend
+            var cand = new List<PipeModelElement>(el);
+            cand.RemoveRange(k, run.Count);
+            cand.InsertRange(cand.IndexOf(b) + 1, run);
+            string what = (run.Count == 1 ? "element " + Name(run[0]) : run.Count + " elements " + Name(run[0]) + " to " + Name(run[run.Count - 1])) + " after the bend " + Name(b);
+            if (!SamePlacement(el, cand, coords) && k < i)
+            {
+                // the bend, with the run leading into it, right before the run (above it)
+                int j = i;
+                while (j - 1 > end && el[j - 1].To == el[j].From) j--;
+                var lead = el.GetRange(j, i - j + 1);
+                cand = new List<PipeModelElement>(el);
+                cand.RemoveRange(j, lead.Count);
+                cand.InsertRange(cand.IndexOf(run[0]), lead);
+                what = (lead.Count == 1 ? "the bend " + Name(b) : lead.Count + " elements " + Name(lead[0]) + " to the bend " + Name(b)) + " before element " + Name(run[0]);
+                if (!SamePlacement(el, cand, coords)) continue;
+            }
+            else if (!SamePlacement(el, cand, coords)) continue;
+            el.Clear();
+            el.AddRange(cand);
+            if (moved != null) moved.Add(what);
             any = true;
         }
         return any;
@@ -1063,18 +1079,43 @@ public static class CaesarNeutralWriter
 
     static string Name(PipeModelElement e) { return e.From.ToString(CultureInfo.InvariantCulture) + "-" + e.To.ToString(CultureInfo.InvariantCulture); }
 
-    // element j starts at a node an earlier element (or a bend node on one) reached, or one COORDS give
-    static bool Placed(List<PipeModelElement> el, int j, HashSet<int> coords)
+    // whether every element of `b` is placed as in `a`. Elements joined end to end (bend nodes too) form a connected
+    // part; one that holds a COORDS node, or the first element, is placed by those whatever the order (a part reached
+    // later is moved onto the node it meets, as CAESAR and the workbook's 3D View place it). Any other part starts where
+    // the element before its first element ended: it must keep that first element and the element before it. The first
+    // element stays first.
+    static bool SamePlacement(List<PipeModelElement> a, List<PipeModelElement> b, HashSet<int> coords)
     {
-        int n = el[j].From;
-        if (coords.Contains(n)) return true;
-        for (int q = 0; q < j; q++)
+        if (a.Count == 0 || a[0] != b[0]) return false;
+        var root = new Dictionary<int, int>();
+        Func<int, int> find = null;
+        find = x => { int q; if (!root.TryGetValue(x, out q)) { root[x] = x; return x; } if (q == x) return x; int r = find(q); root[x] = r; return r; };
+        Action<int, int> join = (x, y) => { int rx = find(x), ry = find(y); if (rx != ry) root[rx] = ry; };
+        foreach (var e in a)
         {
-            var e = el[q];
-            if (e.From == n || e.To == n) return true;
-            if (e.Bend != null && e.Bend.AngleNodes.Any(a => (int)a[1] == n)) return true;
+            join(e.From, e.To);
+            if (e.Bend != null) foreach (var an in e.Bend.AngleNodes) { int n = (int)Math.Round(an[1]); if (n > 0) join(e.From, n); }
         }
-        return false;
+        var anchored = new HashSet<int>();
+        anchored.Add(find(a[0].From));
+        foreach (var e in a) { if (coords.Contains(e.From)) anchored.Add(find(e.From)); if (coords.Contains(e.To)) anchored.Add(find(e.To)); }
+        Func<List<PipeModelElement>, Dictionary<int, KeyValuePair<PipeModelElement, PipeModelElement>>> starts = l =>
+        {
+            var d = new Dictionary<int, KeyValuePair<PipeModelElement, PipeModelElement>>();
+            for (int q = 0; q < l.Count; q++)
+            {
+                int part = find(l[q].From);
+                if (!anchored.Contains(part) && !d.ContainsKey(part)) d[part] = new KeyValuePair<PipeModelElement, PipeModelElement>(l[q], q > 0 ? l[q - 1] : null);
+            }
+            return d;
+        };
+        var sa = starts(a); var sb = starts(b);
+        foreach (var kv in sa)
+        {
+            KeyValuePair<PipeModelElement, PipeModelElement> o;
+            if (!sb.TryGetValue(kv.Key, out o) || o.Key != kv.Value.Key || o.Value != kv.Value.Value) return false;
+        }
+        return true;
     }
 
     // ---------------- MISCEL_1, UNITS, COORDS
