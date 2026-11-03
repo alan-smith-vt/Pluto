@@ -711,8 +711,20 @@ public static class PipeReview
             if (what != null)
                 items.Add(new PipeReviewItem("warning", "expansion-joint-stiffness", "the expansion joint " + en(i + 1) + ": " + what).WithNodes(new[] { e.From, e.To }).WithElements(new[] { i + 1 }));
             if (x.EffectiveId <= 0 && e.P.Any(v => v > 0))
-                items.Add(new PipeReviewItem("info", "expansion-joint-thrust", "the expansion joint " + en(i + 1) + " has no effective ID: CAESAR applies no pressure thrust (right for a tied joint)")
-                    .WithElements(new[] { i + 1 }));
+            {
+                // tie rods modelled across the joint (a joint, or a CNODE restraint, between its two nodes) carry the thrust,
+                // so it has to be there for them to carry
+                Func<int, int, bool> across = (p, q) => p == e.From && q == e.To || p == e.To && q == e.From;
+                bool tied = m.Joints.Any(j => across(j.Node, j.CNode)) || m.Restraints.Any(r => across(r.Node, r.CNode));
+                if (tied)
+                    items.Add(new PipeReviewItem("warning", "expansion-joint-thrust", "the expansion joint " + en(i + 1) + " is tied across (a joint or CNODE restraint between its nodes) but has no effective ID: " +
+                        "CAESAR applies no pressure thrust, so the ties carry none. Give the bellows' effective ID (the maker's data)")
+                        .WithNodes(new[] { e.From, e.To }).WithElements(new[] { i + 1 }));
+                else
+                    items.Add(new PipeReviewItem("info", "expansion-joint-thrust", "the expansion joint " + en(i + 1) + " has no effective ID: CAESAR applies no pressure thrust " +
+                        "(right for a tied joint whose ties are not modelled; an untied joint's anchors take the thrust, and tie rods modelled across it carry it, so both need the ID)")
+                        .WithElements(new[] { i + 1 }));
+            }
         }
 
         // wave data: an added-mass coefficient over 1.0 is unusual (CAESAR warns, 151E)

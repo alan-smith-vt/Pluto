@@ -85,7 +85,7 @@ Every rule is summarised in our own words.
 > | Four or more consecutive elements define the same uniform load: a load carries on (166E) | `uniform-repeated`, on an imported job's own blocks. Pluto writes a block only where a load changes |
 > | The job's hangers: how many, how many to design and how many pre-designed (69E); the load cases to define for the hanger design (70E) | `hangers` (the ones it designs); `hangers-given` (springs and constant supports as given). The probe's counts matched: 7, 5 and 2 |
 > | WRC 297 and API 650 nozzles: their inputs and the stiffnesses CAESAR computed | `nozzles` |
-> | An expansion joint with no effective ID gets no pressure thrust | `expansion-joint-thrust` |
+> | An expansion joint with no effective ID gets no pressure thrust: right for a tied joint whose ties are not modelled; a warning when tie rods are modelled across it (a joint or CNODE restraint between its two nodes), which then carry nothing | `expansion-joint-thrust` (info; warning when tied across) |
 
 > [!info]- What Pluto does not check, and why
 > - **Material limits:** a temperature outside the material's table, the minimum wall for the pressure (104E for pipe, 210E for a bent pipe's bend), allowables (121E, 134E). They need CAESAR's material database, which Pluto only names by number.
