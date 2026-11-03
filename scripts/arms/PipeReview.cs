@@ -15,6 +15,7 @@ using System.Text;
 //                   displacement or nozzle to ground: unstable
 //   tee-no-sif      three or more elements meet at a node with no intersection type there (CAESAR warns, 33E)
 //   free-end        a node on one element end only, held by nothing (a vent, a drain, or a missing support)
+//   unjoined        two element ends whose pipes touch (closer than half the larger OD) with no element or tie between them
 //   element-self    an element from a node to itself
 //   element-zero    an element with no length
 //   element-twice   two elements between the same two nodes
@@ -194,6 +195,148 @@ public static class PipeReview
                 string.Join(", ", free.Take(20).Select(n => n.ToString(ci)).ToArray()) + (free.Count > 20 ? ", ..." : "") +
                 ". An open end, a vent or a drain is fine; a missing support or a connection to equipment is not")
                 .WithNodes(free.Take(ListMax)).WithElements(free.Take(ListMax).Select(n => elementsAt[n][0])));
+
+        // unjoined: two element ends whose pipes touch or overlap (closer than half the larger OD there) with no element or
+        // tie between them. CAESAR joins elements only at a shared node number, so the pipe there is drawn whole and
+        // analysed as two (a branch, a loop's return or a run restarted at a new number where it meant an existing one).
+        // Ends joined within an OD through elements and ties are not this (short pieces, couplings, CNODE ties), and neither
+        // are two pieces tied together elsewhere: CAESAR places a tied piece at its tie ("connect geometry through CNodes"),
+        // so lines tied by a strut can be drawn one on the other
+        if (g != null)
+        {
+            var piece = new Dictionary<int, int>();
+            Func<int, int> top = null;
+            top = x => { int q; if (!piece.TryGetValue(x, out q)) { piece[x] = x; return x; } if (q == x) return x; int r = top(q); piece[x] = r; return r; };
+            foreach (var e in m.Elements) if (e.From > 0 && e.To > 0) { int ra = top(e.From), rb = top(e.To); if (ra != rb) piece[ra] = rb; }
+            double lu = m.Factor(0), du = m.Factor(20);
+            if (lu <= 0) lu = 1; if (du <= 0) du = 1;
+            var od = new Dictionary<int, double>();
+            var adj = new Dictionary<int, List<KeyValuePair<int, double>>>();
+            Action<int, int, double> link = (a, b, l) =>
+            {
+                if (a <= 0 || b <= 0 || a == b) return;
+                List<KeyValuePair<int, double>> x;
+                if (!adj.TryGetValue(a, out x)) adj[a] = x = new List<KeyValuePair<int, double>>(); x.Add(new KeyValuePair<int, double>(b, l));
+                if (!adj.TryGetValue(b, out x)) adj[b] = x = new List<KeyValuePair<int, double>>(); x.Add(new KeyValuePair<int, double>(a, l));
+            };
+            Action<int, double> size = (n, o) => { double was; od.TryGetValue(n, out was); od[n] = Math.Max(was, o / du * lu); };
+            foreach (var e in m.Elements)
+            {
+                if (e.From <= 0 || e.To <= 0) continue;
+                link(e.From, e.To, Math.Sqrt(e.Dx * e.Dx + e.Dy * e.Dy + e.Dz * e.Dz));
+                size(e.From, e.Od);
+                size(e.To, e.Reducer != null && e.Reducer.Od2 > 0 ? e.Reducer.Od2 : e.Od);
+            }
+            foreach (var r in restraints) link(r.Node, r.CNode, 0);
+            foreach (var j in m.Joints) link(j.Node, j.CNode, 0);
+            foreach (var h in m.Hangers) link(h.Node, h.CNode, 0);
+            foreach (var z in m.Nozzles) link(z.Node, z.VesselNode, 0);
+            if (cm != null) { foreach (var h in cm.Hangers) link(h.Node, h.CNode, 0); foreach (var z in cm.Nozzles) link(z.Node, z.VesselNode, 0); }
+            // b within `limit` of a along elements and ties
+            Func<int, int, double, bool> near = (a, b, limit) =>
+            {
+                var dist = new Dictionary<int, double> { { a, 0 } };
+                var open = new List<int> { a };
+                while (open.Count > 0)
+                {
+                    int u = open.OrderBy(x => dist[x]).First();
+                    open.Remove(u);
+                    if (u == b) return true;
+                    List<KeyValuePair<int, double>> nb;
+                    if (!adj.TryGetValue(u, out nb)) continue;
+                    foreach (var kv in nb)
+                    {
+                        double d = dist[u] + kv.Value, was;
+                        if (d > limit || dist.TryGetValue(kv.Key, out was) && was <= d) continue;
+                        dist[kv.Key] = d;
+                        if (!open.Contains(kv.Key)) open.Add(kv.Key);
+                    }
+                }
+                return false;
+            };
+            double cell = od.Count == 0 ? 0 : od.Values.Max() * 0.5;
+            var apart = new List<Tuple<int, int, double>>();
+            var onSpan = new List<Tuple<int, int, double>>();   // node, element index, distance off its axis
+            if (cell > 0)
+            {
+                var grid = new Dictionary<Tuple<long, long, long>, List<int>>();
+                foreach (int n in od.Keys.OrderBy(x => x))
+                {
+                    double[] p;
+                    if (!g.Nodes.TryGetValue(n, out p) || p == null) continue;
+                    long ix = (long)Math.Floor(p[0] / cell), iy = (long)Math.Floor(p[1] / cell), iz = (long)Math.Floor(p[2] / cell);
+                    for (long a = ix - 1; a <= ix + 1; a++) for (long b = iy - 1; b <= iy + 1; b++) for (long c = iz - 1; c <= iz + 1; c++)
+                    {
+                        List<int> l;
+                        if (!grid.TryGetValue(Tuple.Create(a, b, c), out l)) continue;
+                        foreach (int q in l)
+                        {
+                            var pq = g.Nodes[q];
+                            double d = Math.Sqrt((p[0] - pq[0]) * (p[0] - pq[0]) + (p[1] - pq[1]) * (p[1] - pq[1]) + (p[2] - pq[2]) * (p[2] - pq[2]));
+                            double tol = 0.5 * Math.Max(od[n], od[q]);
+                            if (d >= tol || top(q) != top(n) && find(q) == find(n) || near(q, n, 2 * tol)) continue;
+                            apart.Add(Tuple.Create(q, n, d));
+                        }
+                    }
+                    var k = Tuple.Create(ix, iy, iz);
+                    List<int> here;
+                    if (!grid.TryGetValue(k, out here)) grid[k] = here = new List<int>();
+                    here.Add(n);
+                }
+
+                // an element end on another straight element's span, away from its ends (a branch ending on a header with
+                // no node there): the cells along the element, stepped a cell at a time
+                for (int i = 0; i < ne; i++)
+                {
+                    var e = m.Elements[i];
+                    double[] pa, pb;
+                    if (e.Bend != null || e.From <= 0 || e.To <= 0 || !g.Nodes.TryGetValue(e.From, out pa) || !g.Nodes.TryGetValue(e.To, out pb)) continue;
+                    double[] ab = { pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2] };
+                    double len = Math.Sqrt(ab[0] * ab[0] + ab[1] * ab[1] + ab[2] * ab[2]);
+                    if (!(len > 0)) continue;
+                    double eod = e.Od / du * lu;
+                    var seen = new HashSet<int>();
+                    int steps = (int)Math.Ceiling(len / cell);
+                    for (int st = 0; st <= steps; st++)
+                    {
+                        double f = (double)st / steps;
+                        long ix = (long)Math.Floor((pa[0] + f * ab[0]) / cell), iy = (long)Math.Floor((pa[1] + f * ab[1]) / cell), iz = (long)Math.Floor((pa[2] + f * ab[2]) / cell);
+                        for (long x = ix - 1; x <= ix + 1; x++) for (long y = iy - 1; y <= iy + 1; y++) for (long z = iz - 1; z <= iz + 1; z++)
+                        {
+                            List<int> l;
+                            if (!grid.TryGetValue(Tuple.Create(x, y, z), out l)) continue;
+                            foreach (int n in l)
+                            {
+                                if (n == e.From || n == e.To || !seen.Add(n)) continue;
+                                var p = g.Nodes[n];
+                                double t = ((p[0] - pa[0]) * ab[0] + (p[1] - pa[1]) * ab[1] + (p[2] - pa[2]) * ab[2]) / (len * len);
+                                if (t <= 0 || t >= 1) continue;
+                                double cx = pa[0] + t * ab[0] - p[0], cy = pa[1] + t * ab[1] - p[1], cz = pa[2] + t * ab[2] - p[2];
+                                double d = Math.Sqrt(cx * cx + cy * cy + cz * cz), tol = 0.5 * Math.Max(od[n], eod);
+                                double da = t * len, db = (1 - t) * len;
+                                if (d >= tol || Math.Min(da, db) < tol) continue;   // near an end: the node pairs above
+                                if (top(n) != top(e.From) && find(n) == find(e.From)) continue;
+                                if (near(n, e.From, da + 2 * tol) || near(n, e.To, db + 2 * tol)) continue;
+                                onSpan.Add(Tuple.Create(n, i, d));
+                            }
+                        }
+                    }
+                }
+            }
+            if (apart.Count + onSpan.Count > 0)
+            {
+                var what = apart.Select(t => "nodes " + t.Item1.ToString(ci) + " and " + t.Item2.ToString(ci) + " (" + (t.Item3 / lu).ToString("0.###", ci) + " in apart)")
+                    .Concat(onSpan.Select(t => "node " + t.Item1.ToString(ci) + " on element " + m.Elements[t.Item2].From.ToString(ci) + "-" + m.Elements[t.Item2].To.ToString(ci) +
+                                                " (" + (t.Item3 / lu).ToString("0.###", ci) + " in off its axis)")).ToList();
+                items.Add(new PipeReviewItem("warning", "unjoined", what.Count + " place" + (what.Count == 1 ? "" : "s") + " where two pipes touch with no common node: " +
+                    string.Join(", ", what.Take(12).ToArray()) + (what.Count > 12 ? ", ..." : "") +
+                    ". CAESAR joins elements only at a shared node number, so these are drawn together but analysed as separate pipes: " +
+                    "give the two ends one node number (on a span: a node there first), or tie them (a CNODE restraint, a joint) where a connection is meant")
+                    .WithNodes(apart.Take(ListMax).SelectMany(t => new[] { t.Item1, t.Item2 }).Concat(onSpan.Take(ListMax).Select(t => t.Item1)))
+                    .WithElements(apart.Take(ListMax).SelectMany(t => elementsAt[t.Item1].Concat(elementsAt[t.Item2]))
+                                  .Concat(onSpan.Take(ListMax).SelectMany(t => elementsAt[t.Item1].Concat(new[] { t.Item2 + 1 })))));
+            }
+        }
 
         // elements
         var pairs = new Dictionary<string, int>();

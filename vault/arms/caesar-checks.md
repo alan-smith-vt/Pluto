@@ -69,6 +69,7 @@ Every rule is summarised in our own words.
 > | Pluto's own: a CNODE tied to nothing, a bend with no room, a straight shorter than the bend before it needs | `cnode-off-model`, `bend-room`, `piece-backward`, `bend-corner`, `bend-code` | — |
 > | Pluto's own: a reinforced fabricated tee without its pad thickness | `sif-pad` | SIFs, Pad amber |
 > | Pluto's own, nozzles: a WRC 297 or PD 5500 nozzle without a vessel material | `nozzle-material` | Nozzles, Vessel material amber; Start |
+> | Pluto's own: two pipes that touch with no common node. Two element ends closer than half the larger OD, or an end on another straight element's span, with no element or tie between them within that distance. CAESAR joins elements only at a shared node number, so it draws them together and analyses them apart, with no message. Pieces tied together elsewhere are left out: CAESAR places a tied piece at its tie, so lines on a strut can be drawn one on the other | `unjoined` | — (the review) |
 > | Pluto's own, hangers: two entries at one node; a rate without its installed load; an anchor to free that nothing holds | `hanger-twice`, `hanger-rate-only`, `hanger-free` | Hangers, Node amber; Rate / Cold load and Free columns red; Start |
 
 > [!info]- B31J: warnings CAESAR 15.01 gives where it takes a default
