@@ -15,6 +15,7 @@ using System.Text;
 //                   displacement or nozzle to ground: unstable
 //   tee-no-sif      three or more elements meet at a node with no intersection type there (CAESAR warns, 33E)
 //   free-end        a node on one element end only, held by nothing (a vent, a drain, or a missing support)
+//   gap             a loop that misses by 0.001-1 in, or a Coords entry off the pipe that reaches its node (CAESAR draws it, no warning)
 //   element-self    an element from a node to itself
 //   element-zero    an element with no length
 //   element-twice   two elements between the same two nodes
@@ -351,6 +352,7 @@ public static class PipeReview
     // describe it (vault/arms/caesar-checks.md); limits are its configuration defaults (Geometry Directives)
     public const double MinBendAngle = 5, MaxBendAngle = 95, MinBendNodeAngle = 5;   // deg
     public const double LoopClosureIn = 1.0;      // in
+    public const double GapIn = 0.001;            // in: a loop miss or a Coords entry off the pipe by more is a gap (the workbook's too)
     public const double AlphaTolerance = 0.05;     // a temperature entry below it is read as an expansion (in/in)
     public const int MaxNode = 8000000;           // node numbers 1 .. 8,000,000 (CAESAR 11.00 on)
     public const double ThinWall = 100;           // D/t above it: the code's SIF equations do not cover it
@@ -442,11 +444,13 @@ public static class PipeReview
             }
         var used = new bool[ne];
         var misses = new List<KeyValuePair<int, double>>();
-        double tol = LoopClosureIn * lenIn;
+        var gaps = new List<KeyValuePair<int, double>>();
+        var comp = new Dictionary<int, int>();         // node -> the element its walk started from
+        double tol = LoopClosureIn * lenIn, gapTol = GapIn * lenIn;
         for (int s0 = 0; s0 < ne; s0++)
         {
             if (used[s0] || pos.ContainsKey(m.Elements[s0].From) && pos.ContainsKey(m.Elements[s0].To)) continue;
-            if (!pos.ContainsKey(m.Elements[s0].From)) pos[m.Elements[s0].From] = new double[3];
+            if (!pos.ContainsKey(m.Elements[s0].From)) { pos[m.Elements[s0].From] = new double[3]; comp[m.Elements[s0].From] = s0; }
             var queue = new Queue<int>();
             queue.Enqueue(m.Elements[s0].From);
             while (queue.Count > 0)
@@ -466,8 +470,9 @@ public static class PipeReview
                     {
                         double miss = Math.Sqrt((at[0] - q[0]) * (at[0] - q[0]) + (at[1] - q[1]) * (at[1] - q[1]) + (at[2] - q[2]) * (at[2] - q[2]));
                         if (miss > tol) misses.Add(new KeyValuePair<int, double>(i + 1, miss));
+                        else if (miss > gapTol) gaps.Add(new KeyValuePair<int, double>(i + 1, miss));
                     }
-                    else { pos[other] = q; queue.Enqueue(other); }
+                    else { pos[other] = q; comp[other] = comp[n]; queue.Enqueue(other); }
                 }
             }
         }
@@ -475,6 +480,31 @@ public static class PipeReview
             items.Add(new PipeReviewItem("error", "loop-closure", string.Format(ci,
                 "element {0} closes a loop {1:0.###} in away from where the other path puts node {2}: CAESAR stops on a loop that misses by more than 1 in (44E, its loop closure tolerance); check the lengths around the loop",
                 en(kv.Key), kv.Value / lenIn, m.Elements[kv.Key - 1].To)).WithNodes(new[] { m.Elements[kv.Key - 1].From, m.Elements[kv.Key - 1].To }).WithElements(new[] { kv.Key }));
+
+        // gaps: a loop that misses by less than CAESAR's 1 in passes its checker, and CAESAR draws the miss as a gap; so does a
+        // Coords entry away from where the pipe reaches its node (the first entry of a connected piece places the piece)
+        var offAt = new List<KeyValuePair<int, double>>();
+        var anchor = new Dictionary<int, double[]>();
+        foreach (var c in m.Coords)
+        {
+            double[] p; int k;
+            if (!pos.TryGetValue(c.Node, out p) || !comp.TryGetValue(c.Node, out k)) continue;
+            var off = new[] { c.X - p[0], c.Y - p[1], c.Z - p[2] };
+            double[] a0;
+            if (!anchor.TryGetValue(k, out a0)) { anchor[k] = off; continue; }
+            double d = Math.Sqrt((off[0] - a0[0]) * (off[0] - a0[0]) + (off[1] - a0[1]) * (off[1] - a0[1]) + (off[2] - a0[2]) * (off[2] - a0[2]));
+            if (d > gapTol) offAt.Add(new KeyValuePair<int, double>(c.Node, d));
+        }
+        if (gaps.Count + offAt.Count > 0)
+        {
+            var what = gaps.Take(12).Select(kv => string.Format(ci, "element {0} ends {1:0.###} in from node {2}", en(kv.Key), kv.Value / lenIn, m.Elements[kv.Key - 1].To))
+                .Concat(offAt.Take(12).Select(kv => string.Format(ci, "the Coords entry of node {0} is {1:0.###} in off the pipe", kv.Key, kv.Value / lenIn))).ToList();
+            items.Add(new PipeReviewItem("warning", "gap", (gaps.Count + offAt.Count) + " place" + (gaps.Count + offAt.Count == 1 ? "" : "s") + " where the pipe does not meet itself: " +
+                string.Join("; ", what.ToArray()) + (gaps.Count > 12 || offAt.Count > 12 ? "; ..." : "") +
+                ". The deltas around a loop, or a Coords entry and the deltas that reach the same node, disagree; CAESAR draws the gap and does not warn under 1 in. Check the lengths and Coords there")
+                .WithNodes(gaps.Take(ListMax).Select(kv => m.Elements[kv.Key - 1].To).Concat(offAt.Take(ListMax).Select(kv => kv.Key)))
+                .WithElements(gaps.Take(ListMax).Select(kv => kv.Key)));
+        }
 
         // bends: CAESAR's angle limits, and the nodes on the curve kept 5 deg apart and off the ends
         if (g != null)

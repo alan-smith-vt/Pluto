@@ -618,6 +618,10 @@ static class PipeWorkbookGui
         "Bn", "fB", "Wl", "Co", "fC", "Bd", "a1", "a2", "a3", "fA", "fN", "fK", "fE", "fH", "fF",
         // the first row above that ends (mT) or starts (mF) at this row's From node, 0 = none: one lookup each, shared
         "mT", "mF",
+        // gaps: the first row above that ends (gT) or starts (gF) at this row's To node; Gp how far this row's end lands
+        // from where that row put the node, Gc how far the From node's Coords entry is from where the pipe reaches it
+        // (cM: its Coords row; length units, final positions). CAESAR draws such a gap and says nothing under 1 in (44E above)
+        "gT", "gF", "Gp", "cM", "Gc",
     };
 
     // PlotCalc's last row for a model of n elements, and a reference to one of its columns
@@ -720,6 +724,12 @@ static class PipeWorkbookGui
             { "Tin", "IF([OK],IFERROR(IF(INDEX([Nx^],IF([mT]>0,[mT],MATCH([Fr],[To^],0)))=ROW(),INDEX([T^],IF([mT]>0,[mT],MATCH([Fr],[To^],0))),0),0),0)" },
             { "SL", "IF([OK],IF(AND([mT]=0,[mF]=0),1,0),0)" },
         };
+        f["gT"] = "IF([OK],IFERROR(MATCH([To],[To:],0),0),0)";
+        f["gF"] = "IF(AND([OK],[gT]=0),IFERROR(MATCH([To],[Fr:],0),0),0)";
+        f["Gp"] = "IF([gT]>0,SQRT((INDEX([X2f^],[gT])-[X2f])^2+(INDEX([Y2f^],[gT])-[Y2f])^2+(INDEX([Z2f^],[gT])-[Z2f])^2)," +
+                  "IF([gF]>0,SQRT((INDEX([X1f^],[gF])-[X2f])^2+(INDEX([Y1f^],[gF])-[Y2f])^2+(INDEX([Z1f^],[gF])-[Z2f])^2),0))";
+        f["cM"] = "IF(AND([OK],[mT]+[mF]>0),IFERROR(MATCH([Fr],Coords!$A:$A,0),0),0)";
+        f["Gc"] = "IF([cM]>0,IFERROR(SQRT((INDEX(Coords!$B:$B,[cM])-[X1f])^2+(INDEX(Coords!$C:$C,[cM])-[Y1f])^2+(INDEX(Coords!$D:$D,[cM])-[Z1f])^2),0),0)";
         // ---- CAESAR's rules per row (vault/arms/caesar-checks.md)
         f["Bn"] = "IFERROR(" + E("bn") + "&\"\",\"\")";
         f["fB"] = "IF([Bn]=\"\",FALSE," + BendNodeTwice("[Bn]", "[Bn*]", "[Fr*]", "[To*]") + ")";
@@ -802,7 +812,7 @@ static class PipeWorkbookGui
             { "Z1", "IF([OK],IFERROR(INDEX(Coords!$D:$D,MATCH([Fr],Coords!$A:$A,0))+0,0),\"\")" },
             { "SL", "IF([OK],1,0)" },
             { "Pc", "IF([OK],ROW(),\"\")" },
-            { "mT", "0" }, { "mF", "0" },
+            { "mT", "0" }, { "mF", "0" }, { "gT", "0" }, { "gF", "0" }, { "Gp", "0" }, { "cM", "0" }, { "Gc", "0" },
         };
         for (int row = 2; row <= last; row++)
             for (int k = 0; k < CalcCols.Length; k++)
