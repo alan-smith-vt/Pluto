@@ -126,7 +126,11 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > - **`-Xlsx`:** writes `<base>.xlsx` from any input. It never writes over the input.
 > - **`-In x.xlsx -Refresh`** (2026-11-01): brings a workbook to the layout of the Pluto that runs it, over itself, so an older workbook needs no migrating by hand.
 >   - It is read first, edits and all; one that does not read (a refused value, a SIF type CAESAR 15.01 does not have) is left as it was and the problems are listed.
->   - The new file replaces the old in one step, and the old stays beside it as `x.xlsx.bak` (the next refresh overwrites it). Anything Pluto does not read (your own columns, notes, sheets, formatting) is only in the `.bak`.
+>   - The new file replaces the old in one step, and the old stays beside it as `x.xlsx.bak` (the next refresh overwrites it).
+>   - **What was typed stays as typed** (2026-11-03): every input cell goes back as it was, a formula as its formula (live node numbers, a delta worked out from other cells or another sheet; Excel's filled-down shared formulas expanded per cell) and an entry as entered (`LR` stays `LR`, a blank stays blank). Only the sheets, checks, highlights, hidden sheets and the base model around them are rebuilt (`PipeWorkbook.RefreshBytes`).
+>     - Columns are matched by header, the unit in brackets aside. A column this version moved takes its cells along, and every reference to it (other sheets', whole-column ones too) is rewritten (`XlsxFormulaRefs`). A column this version adds is filled from the model on the rows the model came from, or left blank if those rows cannot be matched.
+>     - Your own columns go after Pluto's, your own sheets are copied as values and formulas, and Settings keep their typed values by name. Your own formatting is only in the `.bak`.
+>     - Checked on Linux: a refreshed workbook with `LR` radii, a delta formula, a delta from a sheet of its own, an extra column, a moved column and a shared formula reads to the same model, and every cell matches the original except the fingerprint.
 >   - The edits become the workbook's base, as after `-Xlsx`: the next read lists only what changed since the refresh. Settings keeps the original source; the launchers are written again.
 >   - Excel holds an open workbook: close it first. The Start sheet's run block carries the command.
 > - **`-NewWorkbook -Out <base>`:** writes the template (two legs, a bend, two anchors and a rest).

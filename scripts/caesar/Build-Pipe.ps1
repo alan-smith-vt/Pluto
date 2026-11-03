@@ -33,8 +33,10 @@
 #                   rest) to edit; with -Seed, the CAESAR job's settings (English units only)
 #   -Refresh        -In <workbook>.xlsx only: the workbook in this version's layout, written over itself. It is read
 #                   first (edits included; a workbook that does not read is left as it was) and then replaced in one
-#                   step, the previous file kept beside it as <workbook>.xlsx.bak (anything Pluto does not read -- your
-#                   own columns, notes, sheets -- is only there). Its launchers are written again too.
+#                   step, the previous file kept beside it as <workbook>.xlsx.bak. What was typed stays as typed:
+#                   formulas (live node numbers, worked-out deltas), entries such as a bend radius "LR", blanks, your
+#                   own columns (after Pluto's) and sheets (values and formulas); formatting of your own is only in
+#                   the .bak. Its launchers are written again too.
 #   -Seed <.cii>    a .toml model (or -NewWorkbook) takes that CAESAR job's settings: VERSION lines, UNITS (English
 #                   only), execution options, first allowables block
 #   -Set "a=1;b=2"  overrides [parameters] of a .toml
@@ -172,7 +174,9 @@ if ($Refresh) {
         $source = $wb.SourceName; if (-not $source) { $source = [IO.Path]::GetFileName($inPath) }
         $run = [PipeWorkbookRun]::For($xlsxFile, $repoRoot, $null)
         $tmp = $xlsxFile + ".refresh.tmp"
-        [PipeWorkbook]::Write($wb.Model, $tmp, $source, $run)
+        $notes = New-Object 'System.Collections.Generic.List[string]'
+        [IO.File]::WriteAllBytes($tmp, [PipeWorkbook]::RefreshBytes($inPath, $wb, $source, $run, $notes))
+        foreach ($n in $notes) { Say "keep" $n }
         $bak = $xlsxFile + ".bak"
         try { [IO.File]::Replace($tmp, $xlsxFile, $bak) }
         catch { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue; throw ("cannot replace {0} ({1}). Close it in Excel and run again." -f $xlsxFile, $_.Exception.Message) }

@@ -49,6 +49,10 @@ public class CaesarSheet
     public readonly Dictionary<string, string> Problems = new Dictionary<string, string>();
     // the text of each formula never calculated (saved by a program that does not calculate), by address
     public readonly Dictionary<string, string> Formulas = new Dictionary<string, string>();
+    // every formula's text by address, a shared formula's (Excel's fill-down) worked out for each of its cells
+    public readonly Dictionary<string, string> AllFormulas = new Dictionary<string, string>();
+    // the cells whose value is text (a string, or a formula giving one), by address
+    public readonly HashSet<string> TextCells = new HashSet<string>();
 
     public string Cell(int row, int col)
     {
@@ -268,7 +272,8 @@ public static class CaesarWorkbook
     static void ReadSheet(ZipArchiveEntry e, List<string> shared, CaesarSheet sheet)
     {
         int row = -1, col = -1;
-        string type = null;
+        string type = null, fType = null, fSi = null;
+        var masters = new Dictionary<string, KeyValuePair<string, int[]>>();   // shared formula index -> its text and cell
         bool inCell = false, inV = false, inT = false, inF = false, inSheetData = false, formula = false;
         int phonetic = 0;
         var v = new StringBuilder();
@@ -297,10 +302,10 @@ public static class CaesarWorkbook
                                 if (ParseRef(cr, out cc, out crow)) { col = cc; if (crow >= 0) row = crow; } else col++;
                                 if (row < 0) row = 0;
                                 type = xr.GetAttribute("t");
-                                v.Length = 0; t.Length = 0; f.Length = 0; formula = false;
+                                v.Length = 0; t.Length = 0; f.Length = 0; formula = false; fType = null; fSi = null;
                                 inCell = !xr.IsEmptyElement;
                                 break;
-                            case "f": if (inCell) { formula = true; inF = !xr.IsEmptyElement; } break;
+                            case "f": if (inCell) { formula = true; fType = xr.GetAttribute("t"); fSi = xr.GetAttribute("si"); inF = !xr.IsEmptyElement; } break;
                             case "v": if (inCell && !xr.IsEmptyElement) inV = true; break;
                             case "t": if (inCell && !xr.IsEmptyElement) inT = true; break;
                             case "rPh": if (inCell && !xr.IsEmptyElement) phonetic++; break;
@@ -325,7 +330,15 @@ public static class CaesarWorkbook
                             case "c":
                                 if (inCell)
                                 {
-                                    string val = null;
+                                    string val = null, ftext = formula ? f.ToString() : null;
+                                    if (formula && fType == "shared" && fSi != null)
+                                    {
+                                        KeyValuePair<string, int[]> mf;
+                                        if (ftext.Length > 0) masters[fSi] = new KeyValuePair<string, int[]>(ftext, new[] { row, col });
+                                        else if (masters.TryGetValue(fSi, out mf)) ftext = XlsxFormulaRefs.Shift(mf.Key, row - mf.Value[0], col - mf.Value[1]);
+                                    }
+                                    if (!string.IsNullOrEmpty(ftext)) sheet.AllFormulas[XlsxBook.Ref(row, col)] = ftext;
+                                    if (type == "s" || type == "inlineStr" || type == "str") sheet.TextCells.Add(XlsxBook.Ref(row, col));
                                     if (type == "s")
                                     {
                                         int si;
@@ -339,7 +352,7 @@ public static class CaesarWorkbook
                                     if (val == null && formula && type != "e")
                                     {
                                         sheet.Problems[XlsxBook.Ref(row, col)] = "a formula with no saved value (open the workbook in Excel and save it)";
-                                        if (f.Length > 0) sheet.Formulas[XlsxBook.Ref(row, col)] = f.ToString();
+                                        if (!string.IsNullOrEmpty(ftext)) sheet.Formulas[XlsxBook.Ref(row, col)] = ftext;
                                     }
                                     if (val != null) sheet.Set(row, col, XlsxBook.Unescape(val));
                                 }
@@ -884,5 +897,79 @@ public class CaesarResults
         foreach (string t in TablesSkipped) sb.AppendLine("  skipped " + t);
         foreach (string w in Warnings) sb.AppendLine("  WARN " + w);
         return sb.ToString();
+    }
+}
+
+// Cell references in a formula, rewritten: Shift moves the relative ones as copying the formula would (Excel's shared
+// formulas: one text for a filled-down block); Map gives each reference's column a new place by its sheet (a workbook
+// whose columns moved). Text in quotes, function names (followed by "("), defined names and row-only ranges are left
+// alone. A reference with no sheet is to the formula's own sheet; the second half of a range takes the first's sheet.
+public static class XlsxFormulaRefs
+{
+    static readonly Regex Ref = new Regex(
+        @"(?<![\w.$'])(?:(?<sh>'(?:[^']|'')+'|[A-Za-z_][\w.]*)!)?(?:(?<a>\$?[A-Z]{1,3}\$?\d+)(?::(?<b>\$?[A-Z]{1,3}\$?\d+))?|(?<ca>\$?[A-Z]{1,3}):(?<cb>\$?[A-Z]{1,3}))(?![\w(!.])");
+
+    // mapCol(sheet or null, column 0-based, absolute) -> new column; mapRow(row 0-based, absolute) -> new row
+    public static string Rewrite(string formula, Func<string, int, bool, int> mapCol, Func<int, bool, int> mapRow)
+    {
+        if (string.IsNullOrEmpty(formula)) return formula;
+        var sb = new StringBuilder();
+        int i = 0;
+        while (i < formula.Length)
+        {
+            int q = formula.IndexOf('"', i);
+            string part = q < 0 ? formula.Substring(i) : formula.Substring(i, q - i);
+            sb.Append(Ref.Replace(part, m => One(m, mapCol, mapRow)));
+            if (q < 0) break;
+            int end = q + 1;
+            while (end < formula.Length) { if (formula[end] == '"') { if (end + 1 < formula.Length && formula[end + 1] == '"') { end += 2; continue; } break; } end++; }
+            sb.Append(formula.Substring(q, Math.Min(formula.Length, end + 1) - q));
+            i = end + 1;
+        }
+        return sb.ToString();
+    }
+
+    static string One(Match m, Func<string, int, bool, int> mapCol, Func<int, bool, int> mapRow)
+    {
+        string sh = m.Groups["sh"].Success ? m.Groups["sh"].Value : null;
+        string name = sh == null ? null : sh.StartsWith("'") ? sh.Substring(1, sh.Length - 2).Replace("''", "'") : sh;
+        string pre = sh == null ? "" : sh + "!";
+        if (m.Groups["a"].Success)
+        {
+            string a = Cell(m.Groups["a"].Value, name, mapCol, mapRow);
+            if (a == null) return m.Value;
+            if (!m.Groups["b"].Success) return pre + a;
+            string b = Cell(m.Groups["b"].Value, name, mapCol, mapRow);
+            return b == null ? m.Value : pre + a + ":" + b;
+        }
+        string ca = Col(m.Groups["ca"].Value, name, mapCol), cb = Col(m.Groups["cb"].Value, name, mapCol);
+        return ca == null || cb == null ? m.Value : pre + ca + ":" + cb;
+    }
+
+    static string Cell(string r, string sheet, Func<string, int, bool, int> mapCol, Func<int, bool, int> mapRow)
+    {
+        var m = Regex.Match(r, @"^(\$?)([A-Z]{1,3})(\$?)(\d+)$");
+        if (!m.Success) return null;
+        bool ca = m.Groups[1].Value == "$", ra = m.Groups[3].Value == "$";
+        int col = Index(m.Groups[2].Value), row = int.Parse(m.Groups[4].Value, CultureInfo.InvariantCulture) - 1;
+        int nc = mapCol(sheet, col, ca), nr = mapRow(row, ra);
+        if (nc < 0 || nc > 16383 || nr < 0 || nr > 1048575) return null;
+        return (ca ? "$" : "") + Letters(nc) + (ra ? "$" : "") + (nr + 1).ToString(CultureInfo.InvariantCulture);
+    }
+
+    static string Col(string c, string sheet, Func<string, int, bool, int> mapCol)
+    {
+        bool abs = c.StartsWith("$");
+        int nc = mapCol(sheet, Index(abs ? c.Substring(1) : c), abs);
+        return nc < 0 || nc > 16383 ? null : (abs ? "$" : "") + Letters(nc);
+    }
+
+    static int Index(string letters) { int n = 0; foreach (char ch in letters) n = n * 26 + (ch - 'A' + 1); return n - 1; }
+    static string Letters(int col) { var sb = new StringBuilder(); col++; while (col > 0) { int r = (col - 1) % 26; sb.Insert(0, (char)('A' + r)); col = (col - 1) / 26; } return sb.ToString(); }
+
+    // the formula as it reads moved by dRow rows and dCol columns (relative references only)
+    public static string Shift(string formula, int dRow, int dCol)
+    {
+        return Rewrite(formula, (sh, c, abs) => abs ? c : c + dCol, (r, abs) => abs ? r : r + dRow);
     }
 }

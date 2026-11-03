@@ -252,7 +252,9 @@ public static class PipeWorkbook
 
     public static byte[] ToBytes(PipeModel m, string sourceName) { return ToBytes(m, sourceName, null); }
 
-    public static byte[] ToBytes(PipeModel m, string sourceName, PipeWorkbookRun run)
+    public static byte[] ToBytes(PipeModel m, string sourceName, PipeWorkbookRun run) { return Book(m, sourceName, run).ToBytes(); }
+
+    static XlsxBook Book(PipeModel m, string sourceName, PipeWorkbookRun run)
     {
         string json = PipeModelJson.Write(m);
         string hash = Sha(json);
@@ -883,7 +885,164 @@ public static class PipeWorkbook
             "Read back: only the input sheets. Start, 3D View, Nodes and Carried are rebuilt on every export. The hidden _pluto sheet holds the model this workbook was written from: what you did not change is given back exactly.",
         };
         PipeWorkbookGui.StartSheet(start, t, m.Title ?? "", sourceName ?? "", u.Len + ", " + u.Force + ", " + u.Temp + ", " + u.Press, sheets, checks, reference, run);
+        return b;
+    }
+
+    // ======================================================================== refresh
+
+    // The workbook at path, in this version's layout, with what was typed in it kept as typed: every input cell's formula
+    // (live node numbers, a delta worked out from other cells) or entry (a bend radius "LR", a blank left blank) goes
+    // back where it was, the sheets, checks, highlights and hidden model around it rebuilt from `read` (its model, read
+    // from the same file). Columns are matched by header (the unit in brackets aside), so a column this version moved
+    // takes its cells along and the references to it are rewritten; a column of the user's own goes after Pluto's. A
+    // column this version adds is filled from the model, on the rows the model's rows came from. A sheet of the user's
+    // own is copied as values and formulas. Settings keep their values by name. notes: what the caller should say.
+    static readonly string[] InputSheets =
+    { "Settings", "Elements", "Sections", "Processes", "Restraints", "SIFs", "Forces", "Displacements", "Uniform", "Wind", "Joints", "Hangers", "Nozzles", "Coords" };
+
+    public static byte[] RefreshBytes(string path, PipeWorkbookResult read, string sourceName, PipeWorkbookRun run, List<string> notes)
+    {
+        notes = notes ?? new List<string>();
+        var b = Book(read.Model, sourceName, run);
+        var old = CaesarWorkbook.Read(path);
+        Func<string, XlsxBookSheet> mine = n => b.Sheets.FirstOrDefault(q => string.Equals(q.Name, n, StringComparison.OrdinalIgnoreCase));
+        var inputs = InputSheets.Where(n => n != "Settings").ToList();
+
+        // columns: old -> new, per input sheet
+        var maps = new Dictionary<string, Dictionary<int, int>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var os in old)
+        {
+            var ns = mine(os.Name);
+            if (ns == null || !inputs.Contains(ns.Name, StringComparer.OrdinalIgnoreCase)) continue;
+            var map = new Dictionary<int, int>();
+            int newLast = ns.LastCol(0), extra = newLast + 1, oldLast = os.Rows.Count > 0 && os.Rows[0] != null ? os.Rows[0].Length - 1 : -1;
+            var used = new HashSet<int>();
+            Func<string, string> stem = h => { int k = h.IndexOf(" ("); return (k > 0 ? h.Substring(0, k) : h).Trim().ToLowerInvariant(); };
+            for (int c = 0; c <= oldLast; c++)
+            {
+                string h = os.Text(0, c);
+                if (h.Length == 0) continue;
+                int to = -1;
+                for (int k = 0; k <= newLast && to < 0; k++) if (!used.Contains(k) && ns.TextAt(0, k) == h) to = k;
+                for (int k = 0; k <= newLast && to < 0; k++) if (!used.Contains(k) && stem(ns.TextAt(0, k) ?? "") == stem(h)) to = k;
+                if (to < 0) { to = extra++; ns.Set(0, to, h, ns.StyleAt(0, newLast)); ns.Width(to, Math.Max(8, Math.Min(30, h.Length + 2))); notes.Add(os.Name + ": the column \"" + h + "\" is not Pluto's: kept, after Pluto's columns"); }
+                used.Add(to);
+                map[c] = to;
+            }
+            maps[os.Name] = map;
+        }
+        Func<string, Func<string, int, bool, int>> colMap = here => (sh, c, abs) =>
+        {
+            Dictionary<int, int> mp; int to;
+            return maps.TryGetValue(sh ?? here, out mp) && mp.TryGetValue(c, out to) ? to : c;
+        };
+
+        foreach (var os in old)
+        {
+            var ns = mine(os.Name);
+            if (ns == null)
+            {
+                if (!os.Name.StartsWith("_")) { ns = b.Add(os.Name); Copy(os, ns, null, colMap(os.Name), 0); notes.Add(os.Name + ": a sheet of the workbook's own, copied as values and formulas (its formatting is in the .bak)"); }
+                continue;
+            }
+            if (string.Equals(os.Name, "Settings", StringComparison.OrdinalIgnoreCase)) { KeepSettings(os, ns, colMap(os.Name)); continue; }
+            Dictionary<int, int> map;
+            if (!maps.TryGetValue(os.Name, out map)) continue;   // Start, 3D View, the hidden sheets: this version's
+            // the rows the model's rows came from: Pluto's columns' cells per old row; this version's new columns (if any)
+            // move from the rows they were written on to those
+            var newOnly = Enumerable.Range(0, ns.LastCol(0) + 1).Where(k => !map.ContainsValue(k)).ToList();
+            var oldRows = Enumerable.Range(1, Math.Max(0, os.Rows.Count - 1)).Where(r => map.Keys.Any(c => map[c] <= ns.LastCol(0) && Has(os, r, c))).ToList();
+            var newRows = ns.RowsUsed().Where(r => r > 0 && map.Values.Any(k => ns.HasContent(r, k))).OrderBy(r => r).ToList();
+            if (newOnly.Count > 0 && newOnly.Any(k => newRows.Any(r => ns.HasContent(r, k))) && !oldRows.SequenceEqual(newRows))
+            {
+                if (oldRows.Count == newRows.Count) Move(ns, newOnly, newRows, oldRows);
+                else
+                {
+                    foreach (int k in newOnly) foreach (int r in newRows) ns.ClearContent(r, k);
+                    notes.Add(os.Name + ": the new column(s) " + string.Join(", ", newOnly.Select(k => "\"" + ns.TextAt(0, k) + "\"").ToArray()) + " left blank: the rows could not be matched to the model's");
+                }
+            }
+            Copy(os, ns, map, colMap(os.Name), 1);
+        }
         return b.ToBytes();
+    }
+
+    static bool Has(CaesarSheet s, int r, int c)
+    {
+        string a = XlsxBook.Ref(r, c);
+        return s.AllFormulas.ContainsKey(a) || s.Problems.ContainsKey(a) || !string.IsNullOrEmpty(s.Cell(r, c));
+    }
+
+    // this version's cells in columns cols moved from rows `from` to rows `to` (pairwise), styles staying with their rows
+    static void Move(XlsxBookSheet ns, List<int> cols, List<int> from, List<int> to)
+    {
+        var keep = new List<object[]>();
+        foreach (int k in cols)
+            for (int i = 0; i < from.Count; i++)
+            {
+                if (!ns.HasContent(from[i], k)) continue;
+                string tx = ns.TextAt(from[i], k);
+                keep.Add(new object[] { to[i], k, tx });
+            }
+        foreach (int k in cols) foreach (int r in from) ns.ClearContent(r, k);
+        foreach (var x in keep)
+        {
+            int r = (int)x[0], k = (int)x[1]; string tx = (string)x[2];
+            if (tx != null) ns.Set(r, k, tx, ns.StyleAt(r, k));
+        }
+    }
+
+    // the old sheet's cells from row `first` on, column c going to map[c] (map null: the same column), as typed: a formula
+    // with its references rewritten and the value it last gave, else the value (text stays text); the new cell's style kept
+    static void Copy(CaesarSheet os, XlsxBookSheet ns, Dictionary<int, int> map, Func<string, int, bool, int> colMap, int first)
+    {
+        int lastRow = Math.Max(os.Rows.Count - 1, ns.RowsUsed().DefaultIfEmpty(0).Max());
+        var cols = map != null ? map.Keys.ToList() : Enumerable.Range(0, os.Rows.Where(q => q != null).Select(q => q.Length).DefaultIfEmpty(0).Max()).ToList();
+        foreach (int c in cols)
+        {
+            int k = map != null ? map[c] : c;
+            for (int r = first; r <= lastRow; r++)
+            {
+                ns.ClearContent(r, k);
+                Put(os, r, c, ns, r, k, colMap);
+            }
+        }
+    }
+
+    static void Put(CaesarSheet os, int r, int c, XlsxBookSheet ns, int nr, int k, Func<string, int, bool, int> colMap)
+    {
+        string a = XlsxBook.Ref(r, c), f, v = os.Cell(r, c);
+        int st = ns.StyleAt(nr, k);
+        bool text = os.TextCells.Contains(a);
+        double d;
+        bool num = !text && v != null && double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out d);
+        if (os.AllFormulas.TryGetValue(a, out f))
+        {
+            f = XlsxFormulaRefs.Rewrite(f, colMap, (row, abs) => row);
+            if (num) ns.SetFormula(nr, k, f, double.Parse(v, NumberStyles.Float, CultureInfo.InvariantCulture), st);
+            else if (v != null) ns.SetFormulaText(nr, k, f, v, st);
+            else ns.SetFormula(nr, k, f, st);
+            return;
+        }
+        if (v == null) return;
+        if (num) ns.Set(nr, k, double.Parse(v, NumberStyles.Float, CultureInfo.InvariantCulture), st);
+        else ns.Set(nr, k, v, st);
+    }
+
+    // Settings: the values typed for the settings this version still has, by name (Ambient's unit aside)
+    static void KeepSettings(CaesarSheet os, XlsxBookSheet ns, Func<string, int, bool, int> colMap)
+    {
+        Func<string, string> key = s => s.StartsWith("Ambient", StringComparison.Ordinal) ? "Ambient" : s;
+        var editable = new HashSet<string> { "Title", "Notes", "Vertical axis", "Ambient" };
+        var at = new Dictionary<string, int>();
+        foreach (int r in ns.RowsUsed()) { string k = ns.TextAt(r, 0); if (r > 0 && !string.IsNullOrEmpty(k) && !at.ContainsKey(key(k))) at[key(k)] = r; }
+        for (int r = 1; r < os.Rows.Count; r++)
+        {
+            int nr; string k = key(os.Text(r, 0));
+            if (!editable.Contains(k) || !at.TryGetValue(k, out nr)) continue;
+            ns.ClearContent(nr, 1);
+            Put(os, r, 1, ns, nr, 1, colMap);
+        }
     }
 
     static void Head(XlsxBookSheet s, params string[] h) { for (int c = 0; c < h.Length; c++) { s.Set(0, c, h[c], XlsxBook.Header); s.Width(c, Math.Max(8, Math.Min(30, h[c].Length + 2))); } }

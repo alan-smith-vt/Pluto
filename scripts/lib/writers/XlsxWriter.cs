@@ -282,6 +282,39 @@ public sealed class XlsxBookSheet
     // a style on a cell, keeping its value (an empty cell gets one)
     public void Style(int row, int col, int style) { Cell(row, col).Style = style; }
 
+    // what a sheet holds, for a caller that rewrites cells (PipeWorkbook's refresh): the rows that have cells, a cell's
+    // text (null for a number or a formula; "" for none), its style, whether it holds anything, the last column used in a
+    // row; and emptying a cell's content, keeping its style
+    public IEnumerable<int> RowsUsed() { return rows.Keys.ToList(); }
+    public string TextAt(int row, int col)
+    {
+        SortedDictionary<int, XlsxBookCell> r; XlsxBookCell c;
+        if (!rows.TryGetValue(row, out r) || !r.TryGetValue(col, out c)) return "";
+        return c.Formula != null ? null : c.Text;
+    }
+    public int StyleAt(int row, int col)
+    {
+        SortedDictionary<int, XlsxBookCell> r; XlsxBookCell c;
+        return rows.TryGetValue(row, out r) && r.TryGetValue(col, out c) ? c.Style : 0;
+    }
+    public bool HasContent(int row, int col)
+    {
+        SortedDictionary<int, XlsxBookCell> r; XlsxBookCell c;
+        return rows.TryGetValue(row, out r) && r.TryGetValue(col, out c) && (c.Formula != null || c.Text == null || c.Text.Length > 0);
+    }
+    public int LastCol(int row)
+    {
+        SortedDictionary<int, XlsxBookCell> r;
+        return rows.TryGetValue(row, out r) && r.Count > 0 ? r.Keys.Max() : -1;
+    }
+    public void ClearContent(int row, int col)
+    {
+        SortedDictionary<int, XlsxBookCell> r; XlsxBookCell c;
+        if (!rows.TryGetValue(row, out r) || !r.TryGetValue(col, out c)) return;
+        if (c.Style == 0) { r.Remove(col); return; }
+        c.Text = ""; c.Formula = null; c.Saved = false; c.Number = 0;
+    }
+
     public void Width(int col, double chars) { widths[col] = chars; }
     public void Height(int row, double points) { heights[row] = points; }
     public void Group(int firstCol, int lastCol) { groups.Add(new[] { firstCol, lastCol }); }
