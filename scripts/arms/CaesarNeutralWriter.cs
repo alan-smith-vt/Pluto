@@ -1035,11 +1035,18 @@ public static class CaesarNeutralWriter
     {
         var el = new List<PipeModelElement>(m.Elements);
         var coords = new HashSet<int>(m.Coords.Select(c => c.Node));
-        for (int pass = 0; pass <= el.Count && MoveRuns(el, coords, moved); pass++) { }
+        // ties: CAESAR places a piece tied by a CNODE (a restraint's, a joint's, a hanger's) or a nozzle's vessel node at
+        // the tie ("connect geometry through CNodes"), so a coupling's second half is placed by it in any order
+        var ties = new List<int[]>();
+        foreach (var r in m.Restraints) if (r.CNode > 0 && r.Node > 0) ties.Add(new[] { r.Node, r.CNode });
+        foreach (var j in m.Joints) if (j.CNode > 0 && j.Node > 0) ties.Add(new[] { j.Node, j.CNode });
+        foreach (var h in m.Hangers) if (h.CNode > 0 && h.Node > 0) ties.Add(new[] { h.Node, h.CNode });
+        foreach (var z in m.Nozzles) if (z.VesselNode > 0 && z.Node > 0) ties.Add(new[] { z.Node, z.VesselNode });
+        for (int pass = 0; pass <= el.Count && MoveRuns(el, coords, ties, moved); pass++) { }
         return el;
     }
 
-    static bool MoveRuns(List<PipeModelElement> el, HashSet<int> coords, List<string> moved)
+    static bool MoveRuns(List<PipeModelElement> el, HashSet<int> coords, List<int[]> ties, List<string> moved)
     {
         bool any = false;
         for (int i = 0; i < el.Count; i++)
@@ -1056,7 +1063,7 @@ public static class CaesarNeutralWriter
             cand.RemoveRange(k, run.Count);
             cand.InsertRange(cand.IndexOf(b) + 1, run);
             string what = (run.Count == 1 ? "element " + Name(run[0]) : run.Count + " elements " + Name(run[0]) + " to " + Name(run[run.Count - 1])) + " after the bend " + Name(b);
-            if (!SamePlacement(el, cand, coords) && k < i)
+            if (!SamePlacement(el, cand, coords, ties) && k < i)
             {
                 // the bend, with the run leading into it, right before the run (above it)
                 int j = i;
@@ -1066,9 +1073,9 @@ public static class CaesarNeutralWriter
                 cand.RemoveRange(j, lead.Count);
                 cand.InsertRange(cand.IndexOf(run[0]), lead);
                 what = (lead.Count == 1 ? "the bend " + Name(b) : lead.Count + " elements " + Name(lead[0]) + " to the bend " + Name(b)) + " before element " + Name(run[0]);
-                if (!SamePlacement(el, cand, coords)) continue;
+                if (!SamePlacement(el, cand, coords, ties)) continue;
             }
-            else if (!SamePlacement(el, cand, coords)) continue;
+            else if (!SamePlacement(el, cand, coords, ties)) continue;
             el.Clear();
             el.AddRange(cand);
             if (moved != null) moved.Add(what);
@@ -1079,12 +1086,12 @@ public static class CaesarNeutralWriter
 
     static string Name(PipeModelElement e) { return e.From.ToString(CultureInfo.InvariantCulture) + "-" + e.To.ToString(CultureInfo.InvariantCulture); }
 
-    // whether every element of `b` is placed as in `a`. Elements joined end to end (bend nodes too) form a connected
-    // part; one that holds a COORDS node, or the first element, is placed by those whatever the order (a part reached
+    // whether every element of `b` is placed as in `a`. Elements joined end to end (bend nodes too, and ties) form a
+    // connected part; one that holds a COORDS node, or the first element, is placed by those whatever the order (a part reached
     // later is moved onto the node it meets, as CAESAR and the workbook's 3D View place it). Any other part starts where
     // the element before its first element ended: it must keep that first element and the element before it. The first
     // element stays first.
-    static bool SamePlacement(List<PipeModelElement> a, List<PipeModelElement> b, HashSet<int> coords)
+    static bool SamePlacement(List<PipeModelElement> a, List<PipeModelElement> b, HashSet<int> coords, List<int[]> ties)
     {
         if (a.Count == 0 || a[0] != b[0]) return false;
         var root = new Dictionary<int, int>();
@@ -1096,6 +1103,7 @@ public static class CaesarNeutralWriter
             join(e.From, e.To);
             if (e.Bend != null) foreach (var an in e.Bend.AngleNodes) { int n = (int)Math.Round(an[1]); if (n > 0) join(e.From, n); }
         }
+        foreach (var t in ties) join(t[0], t[1]);
         var anchored = new HashSet<int>();
         anchored.Add(find(a[0].From));
         foreach (var e in a) { if (coords.Contains(e.From)) anchored.Add(find(e.From)); if (coords.Contains(e.To)) anchored.Add(find(e.To)); }
