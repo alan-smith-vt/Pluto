@@ -452,7 +452,7 @@ public static class PipeReview
                 listed++;
                 double[] del = { e.Dx, e.Dy, e.Dz };
                 var fix = new List<string>();
-                for (int k = 0; k < 3; k++) if (Math.Abs(v[k]) > 5e-7) fix.Add("D" + ax[k] + " " + fl(del[k]) + " -> " + fl(del[k] + v[k]));
+                for (int k = 0; k < 3; k++) if (Math.Abs(v[k]) > 5e-4 * lenIn) fix.Add("D" + ax[k] + " " + fl(del[k]) + " -> " + fl(del[k] + v[k]));
                 var by = m.Elements[pl.By[i]];
                 bool stop = d > LoopClosureIn * lenIn;
                 items.Add(new PipeReviewItem(stop ? "error" : "warning", stop ? "loop-closure" : "gap", string.Format(ci,
@@ -461,6 +461,25 @@ public static class PipeReview
                     stop ? ": CAESAR stops on a loop that misses by more than 1 in (44E)" : ": CAESAR takes it (under its 1 in loop tolerance), and may draw the miss as a gap",
                     string.Join(", ", fix.ToArray()), lu))
                     .WithNodes(new[] { e.From, e.To }).WithElements(new[] { i + 1, pl.By[i] + 1 }));
+            }
+            for (int i = 0; i < ne && listed < 200; i++)
+            {
+                var e = m.Elements[i];
+                double[] v = pl.StartMiss[i];
+                if (v == null) continue;
+                double d = Math.Sqrt(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+                if (d <= GapIn * lenIn) continue;
+                listed++;
+                double[] del = { e.Dx, e.Dy, e.Dz };
+                var fix = new List<string>();
+                for (int k = 0; k < 3; k++) if (Math.Abs(v[k]) > 5e-4 * lenIn) fix.Add("D" + ax[k] + " " + fl(del[k]) + " -> " + fl(del[k] - v[k]));
+                bool stop = d > LoopClosureIn * lenIn;
+                items.Add(new PipeReviewItem(stop ? "error" : "warning", stop ? "loop-closure" : "gap", string.Format(ci,
+                    "element {0} starts {1} in from bend node {2} on the bend {3}, measured back from where it ends{4}. To close it on this element: {5} ({6}); or a length is off elsewhere around the loop",
+                    en(i + 1), fl(d / lenIn), e.From, en(pl.StartBy[i] + 1),
+                    stop ? ": CAESAR stops on a loop that misses by more than 1 in (44E)" : ": CAESAR takes it (under its 1 in loop tolerance), and may draw the miss as a gap",
+                    string.Join(", ", fix.ToArray()), lu))
+                    .WithNodes(new[] { e.From, e.To }).WithElements(new[] { i + 1, pl.StartBy[i] + 1 }));
             }
             var seen = new HashSet<int>();
             for (int i = 0; i < ne; i++)
@@ -473,7 +492,7 @@ public static class PipeReview
                 var c = m.Coords.First(q => q.Node == e.From);
                 double[] cv = { c.X, c.Y, c.Z };
                 var fix = new List<string>();
-                for (int k = 0; k < 3; k++) if (Math.Abs(v[k]) > 5e-7) fix.Add(ax[k] + " " + fl(cv[k]) + " -> " + fl(cv[k] - v[k]));
+                for (int k = 0; k < 3; k++) if (Math.Abs(v[k]) > 5e-4 * lenIn) fix.Add(ax[k] + " " + fl(cv[k]) + " -> " + fl(cv[k] - v[k]));
                 items.Add(new PipeReviewItem("warning", "gap", string.Format(ci,
                     "the Coords entry of node {0} is {1} in from where the pipe reaches it (element {2}). To match the pipe: {3} ({4}); or delete the entry, which the pipe places anyway",
                     e.From, fl(d / lenIn), en(i + 1), string.Join(", ", fix.ToArray()), lu))
@@ -857,55 +876,97 @@ public static class PipeReview
         public double[][] Miss;        // where an earlier element put this element's TO node, less where it ends; null = none
         public int[] By;               // that earlier element (index)
         public double[][] CoordMiss;   // this element's FROM node's COORDS entry, less where the pipe reaches it; null = none
+        public double[][] StartMiss;   // FROM a bend node: its point on that bend's arc, less where this element starts; null = none
+        public int[] StartBy;          // that bend element (index)
     }
 
     // Elements in order. An element starts where the first element before it that ends (else starts) at its FROM node put
-    // that node; else at the node's COORDS entry; else where the element before it ended (CAESAR's rule). Elements joined
-    // that way form a piece; a piece not started from COORDS (or as the first) that meets a placed piece at a node is moved
-    // onto it at its first such element, in two passes. Then each element is checked against the first element before
-    // it at its TO node, and each FROM node with a COORDS entry against where the pipe reaches it.
+    // that node; else, a bend node of an element before it (a branch off a bend), at that node's point on the arc; else at
+    // the node's COORDS entry; else where the element before it ended (CAESAR's rule). Elements joined that way form a
+    // piece; a piece not started from COORDS (or as the first) that meets a placed piece is moved onto it at its first
+    // such element -- at a TO node, else a FROM node or a bend node -- pass after pass until no piece moves (the
+    // workbook's 3D View does two passes). Then each element is checked against the first element before it at its TO
+    // node, and each FROM node with a COORDS entry against where the pipe reaches it. Unplaced pieces are not checked.
     public static Placed Placement(PipeModel m)
     {
         int n = m.Elements.Count;
         var E = m.Elements;
+        double lenIn = m.Factor(0), diaIn = m.Factor(20);
+        if (lenIn <= 0) lenIn = 1; if (diaIn <= 0) diaIn = 1;
         var coords = new Dictionary<int, double[]>();
         foreach (var c in m.Coords) if (!coords.ContainsKey(c.Node)) coords[c.Node] = new[] { c.X, c.Y, c.Z };
         var x1 = new double[n][]; var x2 = new double[n][];
         var pc = new int[n]; var rt = new bool[n];
-        var firstTo = new Dictionary<int, int>(); var firstFr = new Dictionary<int, int>();
-        var byTo = new Dictionary<int, List<int>>(); var byFr = new Dictionary<int, List<int>>();
+        var firstTo = new Dictionary<int, int>(); var firstFr = new Dictionary<int, int>(); var firstBend = new Dictionary<int, int>();
+        var byTo = new Dictionary<int, List<int>>(); var byFr = new Dictionary<int, List<int>>(); var byBend = new Dictionary<int, List<int>>();
         Func<double[], double[], double[]> add = (a, b) => new[] { a[0] + b[0], a[1] + b[1], a[2] + b[2] };
         Func<double[], double[], double[]> sub = (a, b) => new[] { a[0] - b[0], a[1] - b[1], a[2] - b[2] };
+        Func<double[], double, double[]> mul = (a, k) => new[] { a[0] * k, a[1] * k, a[2] * k };
+        Func<double[], double> len = a => Math.Sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+        // the element leaving each bend's TO node: its direction (unit), from the deltas alone
+        var leave = new Dictionary<int, double[]>();
+        foreach (var e in E) if (!leave.ContainsKey(e.From)) { double l = len(new[] { e.Dx, e.Dy, e.Dz }); if (l > 0) leave[e.From] = new[] { e.Dx / l, e.Dy / l, e.Dz / l }; }
+        // a bend node's point on the arc of bend element j, its TIP at `tip`; null when the bend has no shape (no leaving
+        // element, no turn, no radius)
+        Func<int, int, double[], double[]> arc = (j, node, tip) =>
+        {
+            var e = E[j];
+            double l = len(new[] { e.Dx, e.Dy, e.Dz });
+            double[] uo;
+            if (l <= 0 || !leave.TryGetValue(e.To, out uo)) return null;
+            var u = new[] { e.Dx / l, e.Dy / l, e.Dz / l };
+            double cs = Math.Max(-1, Math.Min(1, u[0] * uo[0] + u[1] * uo[1] + u[2] * uo[2])), th = Math.Acos(cs);
+            int code = PipeModelBend.RadiusCode(e.Bend.Radius);
+            double rad = code == 0 ? e.Bend.Radius : PipeModelBend.ResolveCode(code, e.Od / diaIn) * lenIn;
+            if (!(rad > 0) || th < 1e-6 || th > Math.PI - 1e-6) return null;
+            var nv = sub(uo, mul(u, cs)); double nl = len(nv); nv = mul(nv, 1 / nl);
+            double ang = -1;
+            foreach (var an in e.Bend.AngleNodes) if ((int)Math.Round(an[1]) == node) ang = Math.Abs(an[0] - PipeModelBend.MidPoint) < 1e-3 ? th * 90 / Math.PI : an[0];
+            if (ang < 0) return null;
+            double phi = ang * Math.PI / 180;
+            var centre = add(sub(tip, mul(u, rad * Math.Tan(th / 2))), mul(nv, rad));
+            return add(centre, add(mul(nv, -rad * Math.Cos(phi)), mul(u, rad * Math.Sin(phi))));
+        };
         for (int i = 0; i < n; i++)
         {
             var e = E[i];
-            int mt, mf = -1;
-            if (!firstTo.TryGetValue(e.From, out mt)) { mt = -1; if (!firstFr.TryGetValue(e.From, out mf)) mf = -1; }
-            double[] cp;
-            x1[i] = mt >= 0 ? x2[mt] : mf >= 0 ? x1[mf] : coords.TryGetValue(e.From, out cp) ? cp : i == 0 ? new double[3] : x2[i - 1];
+            int mt, mf = -1, mb = -1;
+            if (!firstTo.TryGetValue(e.From, out mt)) { mt = -1; if (!firstFr.TryGetValue(e.From, out mf)) { mf = -1; if (!firstBend.TryGetValue(e.From, out mb)) mb = -1; } }
+            double[] cp, onArc = mb >= 0 ? arc(mb, e.From, x2[mb]) : null;
+            if (onArc == null) mb = -1;
+            x1[i] = mt >= 0 ? x2[mt] : mf >= 0 ? x1[mf] : mb >= 0 ? onArc : coords.TryGetValue(e.From, out cp) ? cp : i == 0 ? new double[3] : x2[i - 1];
             x2[i] = add(x1[i], new[] { e.Dx, e.Dy, e.Dz });
-            pc[i] = mt >= 0 ? pc[mt] : mf >= 0 ? pc[mf] : i;
+            pc[i] = mt >= 0 ? pc[mt] : mf >= 0 ? pc[mf] : mb >= 0 ? pc[mb] : i;
             rt[i] = pc[i] == i ? i == 0 || coords.ContainsKey(e.From) : rt[pc[i]];
             if (!firstTo.ContainsKey(e.To)) firstTo[e.To] = i;
             if (!firstFr.ContainsKey(e.From)) firstFr[e.From] = i;
             List<int> l;
             if (!byTo.TryGetValue(e.To, out l)) byTo[e.To] = l = new List<int>(); l.Add(i);
             if (!byFr.TryGetValue(e.From, out l)) byFr[e.From] = l = new List<int>(); l.Add(i);
+            if (e.Bend != null)
+                foreach (var an in e.Bend.AngleNodes)
+                {
+                    int bn = (int)Math.Round(an[1]);
+                    if (bn <= 0) continue;
+                    if (!firstBend.ContainsKey(bn)) firstBend[bn] = i;
+                    if (!byBend.TryGetValue(bn, out l)) byBend[bn] = l = new List<int>(); l.Add(i);
+                }
         }
         var off = new double[n][];
         for (int i = 0; i < n; i++) off[i] = new double[3];
         var placed = (bool[])rt.Clone();
-        for (int pass = 0; pass < 2; pass++)
+        for (int pass = 0; pass < n; pass++)
         {
             var was = (bool[])placed.Clone();
             var cur1 = new double[n][]; var cur2 = new double[n][];
             for (int i = 0; i < n; i++) { cur1[i] = add(x1[i], off[i]); cur2[i] = add(x2[i], off[i]); }
-            // a node's place in the other placed pieces: the mean of the ends there (TO ends first)
+            // a node's place in the other placed pieces: the mean of the ends there (TO ends first), else on a bend's arc
             Func<int, int, double[]> at = (node, piece) =>
             {
                 List<int> l; var sum = new double[3]; int k = 0;
                 if (byTo.TryGetValue(node, out l)) foreach (int j in l) if (pc[j] != piece && was[j]) { sum = add(sum, cur2[j]); k++; }
                 if (k == 0 && byFr.TryGetValue(node, out l)) foreach (int j in l) if (pc[j] != piece && was[j]) { sum = add(sum, cur1[j]); k++; }
+                if (k == 0 && byBend.TryGetValue(node, out l)) foreach (int j in l) if (pc[j] != piece && was[j]) { var p = arc(j, node, cur2[j]); if (p != null) return p; }
                 return k == 0 ? null : new[] { sum[0] / k, sum[1] / k, sum[2] / k };
             };
             var shift = new Dictionary<int, double[]>();   // piece -> its move, at its first element that meets a placed piece
@@ -918,6 +979,7 @@ public static class PipeReview
                 p = at(e.From, pc[i]);
                 if (p != null) shift[pc[i]] = sub(p, cur1[i]);
             }
+            if (shift.Count == 0) break;
             for (int i = 0; i < n; i++)
             {
                 double[] d;
@@ -926,17 +988,34 @@ public static class PipeReview
                 placed[i] = true;
             }
         }
-        var r = new Placed { X1 = new double[n][], X2 = new double[n][], Miss = new double[n][], By = new int[n], CoordMiss = new double[n][] };
-        for (int i = 0; i < n; i++) { r.X1[i] = add(x1[i], off[i]); r.X2[i] = add(x2[i], off[i]); r.By[i] = -1; }
+        var r = new Placed { X1 = new double[n][], X2 = new double[n][], Miss = new double[n][], By = new int[n], CoordMiss = new double[n][],
+                             StartMiss = new double[n][], StartBy = new int[n] };
+        for (int i = 0; i < n; i++) { r.X1[i] = add(x1[i], off[i]); r.X2[i] = add(x2[i], off[i]); r.By[i] = -1; r.StartBy[i] = -1; }
+        for (int i = 0; i < n; i++)
+        {
+            List<int> l;
+            if (!placed[i] || !byBend.TryGetValue(E[i].From, out l)) continue;
+            foreach (int j in l)
+            {
+                if (j == i || !placed[j]) continue;
+                var p = arc(j, E[i].From, r.X2[j]);
+                if (p == null) continue;
+                r.StartMiss[i] = sub(p, r.X1[i]); r.StartBy[i] = j;
+                break;
+            }
+        }
         var seenTo = new Dictionary<int, int>(); var seenFr = new Dictionary<int, int>();
         for (int i = 0; i < n; i++)
         {
             var e = E[i];
             int j;
-            if (seenTo.TryGetValue(e.To, out j)) { r.Miss[i] = sub(r.X2[j], r.X2[i]); r.By[i] = j; }
-            else if (seenFr.TryGetValue(e.To, out j)) { r.Miss[i] = sub(r.X1[j], r.X2[i]); r.By[i] = j; }
-            double[] cp;
-            if ((firstTo.ContainsKey(e.From) && firstTo[e.From] < i || firstFr[e.From] < i) && coords.TryGetValue(e.From, out cp)) r.CoordMiss[i] = sub(cp, r.X1[i]);
+            if (placed[i])
+            {
+                if (seenTo.TryGetValue(e.To, out j) && placed[j]) { r.Miss[i] = sub(r.X2[j], r.X2[i]); r.By[i] = j; }
+                else if (!seenTo.ContainsKey(e.To) && seenFr.TryGetValue(e.To, out j) && placed[j]) { r.Miss[i] = sub(r.X1[j], r.X2[i]); r.By[i] = j; }
+                double[] cp;
+                if ((firstTo.ContainsKey(e.From) && firstTo[e.From] < i || firstFr[e.From] < i) && coords.TryGetValue(e.From, out cp)) r.CoordMiss[i] = sub(cp, r.X1[i]);
+            }
             if (!seenTo.ContainsKey(e.To)) seenTo[e.To] = i;
             if (!seenFr.ContainsKey(e.From)) seenFr[e.From] = i;
         }

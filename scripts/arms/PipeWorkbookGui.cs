@@ -726,9 +726,11 @@ static class PipeWorkbookGui
         };
         f["gT"] = "IF([OK],IFERROR(MATCH([To],[To:],0),0),0)";
         f["gF"] = "IF(AND([OK],[gT]=0),IFERROR(MATCH([To],[Fr:],0),0),0)";
-        f["Gp"] = "IF([gT]>0,SQRT((INDEX([X2f^],[gT])-[X2f])^2+(INDEX([Y2f^],[gT])-[Y2f])^2+(INDEX([Z2f^],[gT])-[Z2f])^2)," +
-                  "IF([gF]>0,SQRT((INDEX([X1f^],[gF])-[X2f])^2+(INDEX([Y1f^],[gF])-[Y2f])^2+(INDEX([Z1f^],[gF])-[Z2f])^2),0))";
-        f["cM"] = "IF(AND([OK],[mT]+[mF]>0),IFERROR(MATCH([Fr],Coords!$A:$A,0),0),0)";
+        // only where this row and the one it is checked against are placed (R2): a piece the two passes did not place
+        // (a run off a bend node, or off a run itself placed late) sits where the row above ended, nowhere near true
+        f["Gp"] = "IF(NOT([R2]),0,IF([gT]>0,IF(INDEX([R2^],[gT]),SQRT((INDEX([X2f^],[gT])-[X2f])^2+(INDEX([Y2f^],[gT])-[Y2f])^2+(INDEX([Z2f^],[gT])-[Z2f])^2),0)," +
+                  "IF([gF]>0,IF(INDEX([R2^],[gF]),SQRT((INDEX([X1f^],[gF])-[X2f])^2+(INDEX([Y1f^],[gF])-[Y2f])^2+(INDEX([Z1f^],[gF])-[Z2f])^2),0),0)))";
+        f["cM"] = "IF(AND([OK],[mT]+[mF]>0,[R2]),IFERROR(MATCH([Fr],Coords!$A:$A,0),0),0)";
         f["Gc"] = "IF([cM]>0,IFERROR(SQRT((INDEX(Coords!$B:$B,[cM])-[X1f])^2+(INDEX(Coords!$C:$C,[cM])-[Y1f])^2+(INDEX(Coords!$D:$D,[cM])-[Z1f])^2),0),0)";
         // ---- CAESAR's rules per row (vault/arms/caesar-checks.md)
         f["Bn"] = "IFERROR(" + E("bn") + "&\"\",\"\")";
