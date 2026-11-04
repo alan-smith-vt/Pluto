@@ -60,6 +60,9 @@ public class SteelToPluto
     public int RowsRead, RowsKept, MembersBuilt, Unsized, OrientMissing, OrientBad, DimConflicts, ZeroLength;
     public int CpOffCentroid, CpUnmapped;
     public string RoomFilter;
+    // true: the room filter uses the duct rule (PipeCsvReader.RoomPrefixMatch: a code keeps its variants), as the
+    // clean duct model's steel does (2026-11-04); false (default): RoomMatch, equality and '/' tokens, as before
+    public bool RoomPrefix;
 
     public bool Progress = true;
     public int ProgressEveryRows = 5000;
@@ -98,7 +101,8 @@ public class SteelToPluto
             RowsRead++;
             ProgressTick(RowsRead, false);
             string rowRoom = Get(r, "Room");
-            if (filter && !PipeCsvReader.RoomMatch(rowRoom, RoomFilter)) continue;   // multi-room "R1/R2" tokens too
+            if (filter && !(RoomPrefix ? PipeCsvReader.RoomPrefixMatch(rowRoom, RoomFilter)
+                                       : PipeCsvReader.RoomMatch(rowRoom, RoomFilter))) continue;   // RoomMatch: "R1/R2" tokens too
             RowsKept++;
 
             var m = new SteelMember();

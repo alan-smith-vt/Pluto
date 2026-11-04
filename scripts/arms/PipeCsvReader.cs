@@ -302,6 +302,26 @@ public class PipeCsvReader
     // and tail replacement (first token with its last N chars swapped).
     // filter: one room, or several separated by ',' or ';' ("R1, R2; R3"): a row is kept when it
     // matches any of them (2026-10-02). '/' is not a separator here: it joins rooms in the ROW value.
+    // The duct room rule (Export-DuctsViewer -Room / DuctRooms; 2026-10-08, variants 2026-10-15): rooms is one room code
+    // or a list (commas, semicolons or spaces); null / "" = every room. Case and surrounding spaces ignored. Each code
+    // also takes its variants: a value that STARTS with a listed code ("R101" keeps "R101A"). Unlike RoomMatch, a
+    // '/'-joined row value matches only through its start ("R101/R102" is kept for R101, not for R102).
+    static readonly Dictionary<string, HashSet<string>> roomSets = new Dictionary<string, HashSet<string>>();
+    public static bool RoomPrefixMatch(string value, string rooms)
+    {
+        if (string.IsNullOrEmpty(rooms) || rooms.Trim() == "") return true;
+        HashSet<string> set;
+        if (!roomSets.TryGetValue(rooms, out set))
+        {
+            set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string r in rooms.Split(new[] { ',', ';', ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)) set.Add(r.Trim());
+            roomSets[rooms] = set;
+        }
+        string v = (value ?? "").Trim();
+        foreach (string r in set) if (v.StartsWith(r, StringComparison.OrdinalIgnoreCase)) return true;
+        return false;
+    }
+
     internal static bool RoomMatch(string rowRoom, string filter)
     {
         if (rowRoom == null) return false;

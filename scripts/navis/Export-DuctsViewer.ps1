@@ -103,7 +103,7 @@ if (-not $ModelId) {
 # every setting the converter takes, in one object (scripts\duct\model\DuctSettings.cs), handed to the Export* call
 $notes = New-Object 'System.Collections.Generic.List[string]'
 $ds = Get-DuctSettings -Data $dcfg -Mode $(if ($Revit) { "Revit" } elseif ($RvMesh) { "RevitMesh" } else { "" }) `
-    -Systems $Systems -Cuts $Cuts -Drop $Drop -Steel $Steel -Notes $notes
+    -Systems $Systems -Cuts $Cuts -Drop $Drop -Steel $Steel -Rooms $Room -Notes $notes
 $addinDir = $ds.AddinDir
 $t0 = Get-Date
 if ($Box) {

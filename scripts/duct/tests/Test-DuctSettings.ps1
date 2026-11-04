@@ -36,6 +36,25 @@ Check 'Revit mode does not read RevitMeshNoRunExclude' ($d.NoRunExclude.Count -e
 $m = Get-DuctSettings -Data $cfg -Mode RevitMesh -Notes $notes
 Check 'RevitMesh mode: exclusions only' ($m.NoRunExclude.Contains('duct linings') -and $m.CutPoints.Count -eq 0 -and $m.PrimarySystems.Count -eq 0)
 
+# whole-plant steel (2026-11-04): the steel takes the ducts' room scope, with the duct rule (a code keeps its variants)
+$steel = Join-Path $tmp "steel.csv"
+$hdr = "MemberOid,X0,Y0,Z0,X1,Y1,Z1,SectionName,D,Bf,Tf,Tw,YDirX,YDirY,YDirZ,Room,RunName,CP"
+$rowsCsv = @($hdr)
+$k = 0
+foreach ($room in @("R101", "R101A", "R102/R103", "R200", "")) { $k++; $rowsCsv += "M$k,0,$k,0,1,$k,0,W12X26,0.31,0.165,0.01,0.006,0,0,1,$room,RACK," }
+$rowsCsv | Set-Content $steel
+$notes.Clear()
+$d = Get-DuctSettings -Data @{ DuctSteel = $steel } -Mode Revit -Rooms "R101,R103" -Notes $notes
+$kept = @($d.Steel | ForEach-Object { $_.MemberOid }) -join " "
+Check 'steel rooms R101,R103: R101 and its variant R101A kept; R102/R103, R200, no room dropped (duct rule)' ($kept -eq "M1 M2")
+Check 'steel note names the room scope' ($notes[0] -like 'steel: 2 members from *(rooms R101,R103)*')
+$notes.Clear()
+$d = Get-DuctSettings -Data @{ DuctSteel = $steel } -Mode Revit -Rooms "R102" -Notes $notes
+Check "steel rooms R102: 'R102/R103' kept through its start" ((@($d.Steel | ForEach-Object { $_.MemberOid }) -join " ") -eq "M3")
+$notes.Clear()
+$d = Get-DuctSettings -Data @{ DuctSteel = $steel } -Mode Revit -Notes $notes
+Check 'no rooms (whole building): every steel row' ($d.Steel.Count -eq 5 -and $notes[0] -like '*(rooms: whole building)*')
+
 # overrides and none
 $d = Get-DuctSettings -Data $cfg -Mode Revit -Systems 'X=#000000' -Cuts none -Drop none -Notes $notes
 Check '-Systems overrides DuctSystems' ($d.PrimarySystems.Count -eq 1 -and $d.PrimarySystems[0] -eq 'X')
