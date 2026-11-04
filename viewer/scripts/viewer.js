@@ -253,6 +253,9 @@ function makeControls(cam, keepTarget) {
     c.dampingFactor = 0.12;
     if (keepTarget) c.target.copy(keepTarget);
     var orbitTimer = 0;
+    // every camera change redraws: an orthographic zoom changes camera.zoom only (no position, no near/far change), and
+    // the wheel handler runs update() itself, so the main loop's update() saw nothing and the view froze until a pan
+    c.addEventListener('change', function () { needsRender = true; });
     c.addEventListener('start', function () { orbitTimer = setTimeout(function () { orbiting = true; }, 100); });
     c.addEventListener('end',   function () { clearTimeout(orbitTimer); orbiting = false; });
     return c;
@@ -367,12 +370,38 @@ function animate() {
 // Keep near/far tight to the camera-to-target distance so the depth
 // buffer has precision to spare for the edge overlay. Only update when
 // the change is meaningful, to avoid every-frame matrix churn.
+// An orthographic view is the same from any distance, so its camera is kept outside the model (zooming changes
+// camera.zoom, not the distance, and a distance carried over from a close perspective view or a focus moved to the
+// model's edge left part of the model nearer than the near plane, or behind the camera: cut off as it turned) and
+// near / far span the whole model.
+var orthoSphereKey = '', orthoSphere = null;
+function modelReach() {
+    var key = (mesh ? mesh.uuid + (mesh.geometry ? mesh.geometry.uuid : '') : '') +
+              (window.FEABeams && FEABeams.mesh() ? FEABeams.mesh().uuid + (FEABeams.mesh().geometry ? FEABeams.mesh().geometry.uuid : '') : '');
+    if (key !== orthoSphereKey) { orthoSphereKey = key; orthoSphere = modelSphere(); }
+    if (!orthoSphere) return 0;
+    var r = orthoSphere.radius || 1;
+    if (deform.enabled) r += deform.scale * deformMaxDisp;
+    return r + orthoSphere.center.distanceTo(controls.target);
+}
 function updateCameraNearFar() {
     if (!mesh) return;
     var d = camera.position.distanceTo(controls.target);
     if (d < 1e-6) return;
     var newNear = Math.max(0.01, d * 0.01);
     var newFar  = d * 100;
+    if (camera.isOrthographicCamera) {
+        var reach = modelReach() * 1.05;
+        if (reach > 0) {
+            if (d < 2 * reach) {
+                camera.position.sub(controls.target).multiplyScalar(2 * reach / d).add(controls.target);
+                d = 2 * reach;
+                needsRender = true;
+            }
+            newNear = Math.max(d * 1e-4, d - reach);
+            newFar = d + reach;
+        }
+    }
     if (Math.abs(camera.near - newNear) / newNear > 0.05 ||
         Math.abs(camera.far  - newFar)  / newFar  > 0.05) {
         camera.near = newNear;

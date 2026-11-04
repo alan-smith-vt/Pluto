@@ -544,6 +544,21 @@ public static class CaesarToPluto
             catch (Exception ex) { res.Warnings.Add("the model's properties, loads and checks are not in the sidecar: the import stopped (" + ex.Message + ")"); pm = null; }
         }
         res.ModelRead = pm != null;
+        // the caller's model numbers its elements in its own order (the workbook's rows); the .cii holds them in the order
+        // written (CaesarNeutralWriter.InputOrder: a bend's leaving run moved after it), so the beams are taken per model
+        // element: the checks, properties and groups name the elements they are about
+        if (pm != null && preview != null && ReferenceEquals(pm, preview.Model))
+        {
+            var order = CaesarNeutralWriter.InputOrder(pm, null);
+            if (!order.SequenceEqual(pm.Elements))
+            {
+                var at = new Dictionary<PipeModelElement, int>();
+                for (int i = 0; i < pm.Elements.Count; i++) at[pm.Elements[i]] = i;
+                var byModel = new List<uint>[elementBeams.Length];
+                for (int k = 0; k < order.Count && k < elementBeams.Length; k++) byModel[at[order[k]]] = elementBeams[k];
+                elementBeams = byModel;
+            }
+        }
 
         // ---- nodes (after the valve mid points joined the graph) ----
         var nodes = new Dictionary<int, Node>();
