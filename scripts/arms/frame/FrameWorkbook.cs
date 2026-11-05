@@ -210,13 +210,14 @@ public static class FrameWorkbook
     static string[][] ListCols()
     {
         return new[] { Shapes, FrameMember.CardinalNames.Skip(1).Select((n, k) => FrameMember.CardinalText(k + 1)).ToArray(), new[] { "yes", "no" }, DofNames, LinkTypes,
-                       PatternTypes, CaseTypes, ComboTypes, LoadTypes, Dirs, DistTypes, CoordSyss, TempTypes, RestraintPresets, ObjectTypes, CaseLoadTypes, MaterialTypes, WbPlot.Views, GeoNonLins };
+                       PatternTypes, CaseTypes, ComboTypes, LoadTypes, Dirs, DistTypes, CoordSyss, TempTypes, RestraintPresets, ObjectTypes, CaseLoadTypes, MaterialTypes, WbPlot.Views, GeoNonLins, Kinds };
     }
     static readonly string[] ListNames = { "Shapes", "Insertion points", "Yes / no", "DOFs", "Link types", "Pattern types", "Case types", "Combination types", "Load types",
                                            "Directions", "Rel / Abs", "Coordinate systems", "Temperature types", "Restraints", "Object types", "Case load types", "Material types", "Views",
-                                           "Geometric nonlinearity" };
-    const int ViewList = 17, GeoList = 18;   // the Views list's column (its azimuths and elevations follow the last list)
+                                           "Geometric nonlinearity", "Kinds" };
+    const int ViewList = 17, GeoList = 18, KindList = 19;   // the Views list's column (its azimuths and elevations follow the last list)
     static readonly string[] GeoNonLins = { "None", "P-Delta", "P-Delta plus Large Displacements" };
+    static readonly string[] Kinds = { "PIPE", "DUCT", "STEEL" };
     static string ListRange(int col)
     {
         string c = XlsxBook.Column(col);
@@ -342,10 +343,10 @@ public static class FrameWorkbook
         t.Form.Table(fs, t, fh, new[] {
             C("Id", "key", "id", "F and the frame's number in the model: keep it. Blank on a new frame."),
             C("Frame", "key", "text", "SAP's label. A new label renames the frame; loads and groups naming it follow."),
-            C("Joint I", "geom", "text", "The joint at end I: a label on Joints."),
-            C("Joint J", "geom", "text", "The joint at end J: a label on Joints. A frame meeting another names the same joint."),
+            L("Joint I", "geom", "list?", jointIds, "The joint at end I: a label on Joints."),
+            L("Joint J", "geom", "list?", jointIds, "The joint at end J: a label on Joints. A frame meeting another names the same joint."),
             L("Section", "prop", "list!", secNames, "A section on the Sections sheet."),
-            C("Kind", "text", "text", "What the frame is (PIPE, DUCT, STEEL ...): SAP group PL_KIND_<kind>. Selectors use it (kind:PIPE)."),
+            L("Kind", "text", "list?", ListRange(KindList), "What the frame is (PIPE, DUCT, STEEL, or your own): SAP group PL_KIND_<kind>. Selectors use it (kind:PIPE). Pipe and duct draw as pipe."),
             C("Line", "text", "text", "The line it belongs to: SAP group PL_LINE_<line>. Selectors use it (line:L-101)."),
             L("Release", "prop", "list!", relNames, "End releases: a preset on the Releases sheet (FIXED, PIN-PIN, PIN-I, PIN-J, SLIP-J, or your own)."),
             C("Angle", "geom", "num", "Local axis angle (degrees): local 2 and 3 turned about local 1 from SAP's default."),
@@ -451,8 +452,8 @@ public static class FrameWorkbook
             r0++;
         }
         t.Form.Table(ls, t, lh, new[] {
-            C("Id", "key", "id", "K and the link's number: keep it."), C("Link", "key", "text", "SAP's label."), C("Joint I", "bc", "text", "Its first joint."),
-            C("Joint J", "bc", "text", "Its second joint; blank = a one-joint (grounded) link."), L("Property", "bc", "list!", lpNames, "A property on Link props."),
+            C("Id", "key", "id", "K and the link's number: keep it."), C("Link", "key", "text", "SAP's label."), L("Joint I", "bc", "list?", jointIds, "Its first joint."),
+            L("Joint J", "bc", "list?", jointIds, "Its second joint; blank = a one-joint (grounded) link."), L("Property", "bc", "list!", lpNames, "A property on Link props."),
             C("Angle", "geom", "num", "Local axis angle (degrees), about local 1. SAP's default axes: local 1 from I to J (+Z for a one-joint or zero-length link); local 2 in the vertical plane through 1 (+X when 1 is vertical); local 3 = 1 x 2. A gap's U1 acts along local 1."),
         }, m.Links.Count, lim);
         ls.Conditional("C2:D" + lim, noJoint("C2") + ">0", t.Red);
@@ -506,7 +507,7 @@ public static class FrameWorkbook
             for (int i = 0; i < 6; i++) Num(sp, r0, 2 + i, sr.Get(FrameJoint.Dofs[i]));
             r0++;
         }
-        t.Form.Table(sp, t, sph, new[] { C("Joint", "key", "text", "The joint, once."), L("CoordSys", "bc", "list?", ListRange(11), "GLOBAL or Local (the joint's local axes).") }
+        t.Form.Table(sp, t, sph, new[] { L("Joint", "key", "list?", jointIds, "The joint, once."), L("CoordSys", "bc", "list?", ListRange(11), "GLOBAL or Local (the joint's local axes).") }
             .Concat(FrameJoint.Dofs.Select(d => C(d, "bc", "nonneg", "Spring stiffness in " + d + "."))).ToArray(), r0 - 1, lim);
         sp.Conditional("A2:A" + lim, noJoint("A2") + ">0", t.Red);
 
@@ -538,7 +539,7 @@ public static class FrameWorkbook
                 r0++;
             }
             t.Form.Table(ws, t, new[] { "Id", "Joint", "Pattern", "CoordSys" }.Concat(keys.Select((k, i) => H(k, dims[i], units))).ToArray(),
-                new[] { C("Id", "key", "id", (disp ? "GD" : "JL") + " and the load's number: keep it."), C("Joint", "key", "text", "The joint."),
+                new[] { C("Id", "key", "id", (disp ? "GD" : "JL") + " and the load's number: keep it."), L("Joint", "key", "list?", jointIds, "The joint."),
                         L("Pattern", "load", "list!", patNames, "Its load pattern."), L("CoordSys", "load", "list?", ListRange(11), "GLOBAL or Local.") }
                 .Concat(keys.Select(k => C(k, "load", "num", (disp ? "Imposed " : "") + k + "."))).ToArray(), list.Count, lim);
             ws.Conditional("B2:B" + lim, noJoint("B2") + ">0", t.Red);
@@ -557,7 +558,7 @@ public static class FrameWorkbook
                 Num(ws, r0, 8, row.Get(row.Has("Force") ? "Force" : "Moment"));
                 r0++;
             }
-            t.Form.Table(ws, t, new[] { "Id", "Frames", "Pattern", "CoordSys", "Type", "Dir", "Rel / Abs", H("Distance", "L", units), "Value (" + FrameUnits.Label("F", units) + " | " + FrameUnits.Label("F-L", units) + ")" }, LoadCols("PL", patNames).Concat(new[] {
+            t.Form.Table(ws, t, new[] { "Id", "Frames", "Pattern", "CoordSys", "Type", "Dir", "Rel / Abs", H("Distance", "L", units), "Value (" + FrameUnits.Label("F", units) + " | " + FrameUnits.Label("F-L", units) + ")" }, LoadCols("PL", patNames, frameIds).Concat(new[] {
                 L("Rel / Abs", "load", "list!", ListRange(10), "Rel: Distance is a fraction of the length (0 to 1); Abs: a length from end I."),
                 C("Distance", "load", "nonneg", "Where along the frame, from end I: a fraction on a Rel row, a length (the header's unit) on an Abs row."),
                 C("Value", "load", "num", "The force (first unit) or, on a Moment row, the moment (second unit); a positive Gravity load points down."),
@@ -582,7 +583,7 @@ public static class FrameWorkbook
                 r0++;
             }
             string perL = "(" + FrameUnits.Label("F/L", units) + " | " + FrameUnits.Label("F-L/L", units) + ")";
-            t.Form.Table(ws, t, new[] { "Id", "Frames", "Pattern", "CoordSys", "Type", "Dir", "Rel / Abs", H("Start", "L", units), H("End", "L", units), "Value A " + perL, "Value B " + perL }, LoadCols("DL", patNames).Concat(new[] {
+            t.Form.Table(ws, t, new[] { "Id", "Frames", "Pattern", "CoordSys", "Type", "Dir", "Rel / Abs", H("Start", "L", units), H("End", "L", units), "Value A " + perL, "Value B " + perL }, LoadCols("DL", patNames, frameIds).Concat(new[] {
                 L("Rel / Abs", "load", "list!", ListRange(10), "Rel: Start / End are fractions of the length; Abs: lengths from end I."),
                 C("Start", "load", "nonneg", "Where it starts (blank = 0): a fraction on a Rel row, a length (the header's unit) on an Abs row."),
                 C("End", "load", "nonneg", "Where it ends (blank = the whole length)."),
@@ -604,7 +605,7 @@ public static class FrameWorkbook
                 r0++;
             }
             t.Form.Table(ws, t, new[] { "Id", "Frames", "Pattern", "Type", H("Value", "T", units) }, new[] {
-                C("Id", "key", "id", "TL and the load's number: keep it."), C("Frames", "key", "text", FramesHint), L("Pattern", "load", "list!", patNames, "Its load pattern."),
+                C("Id", "key", "id", "TL and the load's number: keep it."), L("Frames", "key", "list?", frameIds, FramesHint), L("Pattern", "load", "list!", patNames, "Its load pattern."),
                 L("Type", "load", "list?", ListRange(12), "Temperature (a uniform change), or a gradient."), C("Value", "load", "num", "The temperature change."),
             }, list.Count, lim);
             ws.Conditional("B2:B" + lim, noFrame("B2") + ">0", t.Red);
@@ -624,7 +625,7 @@ public static class FrameWorkbook
         t.Form.Table(cs, t, new[] { "Id", "Case", "Type", "Initial", "Load type", "Load name", "SF", "Geometric nonlinearity" }, new[] {
             C("Id", "key", "id", "CASE and the case's number, on its first row: keep it."), C("Case", "key", "text", "The case's name on its first row; a blank Case continues the case above."),
             L("Type", "load", "list?", ListRange(6), "LinStatic, NonStatic (gaps, hooks, friction need it) ..."),
-            C("Initial", "load", "text", "Zero, or the nonlinear case it continues from (OPE from SUS)."),
+            L("Initial", "load", "list?", col(SCases, "B"), "Blank or Zero, or the nonlinear case it continues from (OPE from SUS)."),
             L("Load type", "load", "list?", ListRange(15), "Load pattern (usually)."), L("Load name", "load", "list?", patNames, "The load pattern (a dropdown of Load patterns; an Accel load takes U1, U2 or U3)."), C("SF", "load", "num", "Scale factor."),
             L("Geometric nonlinearity", "load", "list!", ListRange(GeoList), "A nonlinear case's, on its first row: None, P-Delta, or P-Delta plus Large Displacements. Blank = None."),
         }, r0 - 1, lim);
@@ -643,7 +644,7 @@ public static class FrameWorkbook
         t.Form.Table(cb, t, new[] { "Id", "Combination", "Type", "Item", "SF" }, new[] {
             C("Id", "key", "id", "CMB and the combination's number, on its first row: keep it."),
             C("Combination", "key", "text", "Its name on its first row; a blank name continues the combination above."),
-            L("Type", "load", "list?", ListRange(7), "Linear Add, Envelope, Abs Add, SRSS, Range Add."), C("Item", "load", "text", "A load case or another combination."), C("SF", "load", "num", "Scale factor."),
+            L("Type", "load", "list?", ListRange(7), "Linear Add, Envelope, Abs Add, SRSS, Range Add."), L("Item", "load", "list?", col(SCases, "B"), "A load case (the dropdown), or another combination's name."), C("SF", "load", "num", "Scale factor."),
         }, r0 - 1, lim);
         cb.Conditional("D2:D" + lim, "AND(D2<>\"\",COUNTIF(" + col(SCases, "B") + ",D2)=0,COUNTIF($B$2:$B$" + lim + ",D2)=0)", t.Red);
 
@@ -809,10 +810,10 @@ public static class FrameWorkbook
 
     const string FramesHint = "The frames it loads: a label, a range in Frames' order (C1:C9), group:NAME, line:NAME, kind:NAME, section:NAME or all; several, separated by commas.";
 
-    static WbCol[] LoadCols(string prefix, string patNames)
+    static WbCol[] LoadCols(string prefix, string patNames, string frameIds)
     {
         return new[] {
-            C("Id", "key", "id", prefix + " and the load's number: keep it. A row naming several frames gives one load per frame."), C("Frames", "key", "text", FramesHint),
+            C("Id", "key", "id", prefix + " and the load's number: keep it. A row naming several frames gives one load per frame."), L("Frames", "key", "list?", frameIds, FramesHint),
             L("Pattern", "load", "list!", patNames, "Its load pattern."), L("CoordSys", "load", "list?", ListRange(11), "GLOBAL, or Local for directions 1 2 3."),
             L("Type", "load", "list?", ListRange(8), "Force or Moment."), L("Dir", "load", "list?", ListRange(9), "Gravity, X, Y, Z, 1, 2, 3, X Proj ..."),
         };

@@ -84,6 +84,25 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 > **Refresh** writes the workbook in this version's layout from its own base, every typed cell back where it was, so
 > the next read gives the same model.
 
+> [!info]- Dropdowns and tab colours (2026-11-05)
+> - **Dropdowns that take only a listed value:** section, release and modifier presets, material, link property,
+>   pattern, Rel / Abs, geometric nonlinearity, DOF.
+> - **Dropdowns that also take typed text:**
+>   - joints (on Frames, Links, Springs, Joint loads, Ground displacements);
+>   - frames (on the frame-load sheets, which also take selectors);
+>   - Kind (PIPE, DUCT, STEEL or your own);
+>   - Load name (the patterns; an Accel load takes U1 U2 U3);
+>   - Initial and a combination's Item (the load cases; another combination's name is typed);
+>   - every type list.
+> - **Tabs are coloured like the column headers:**
+>   - geometry blue;
+>   - properties teal;
+>   - supports and links orange;
+>   - loads, cases and combinations rust;
+>   - Settings and Groups slate;
+>   - the 3D View purple;
+>   - Carried grey.
+
 > [!info]- What an import fills (2026-11-05)
 > An `.s2k` fills every sheet whose objects it holds:
 > - joints, frames, sections, materials, release and modifier presets, links and their properties (with multilinear
