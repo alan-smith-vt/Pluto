@@ -8,9 +8,11 @@ using System.Text;
 // FrameWorkbook  --  a SAP2000 frame model as an Excel workbook you edit (2026-11-05), the frame counterpart of the
 // CAESAR pipe workbook, built on the shared kit (vault/arms/workbook-kit.md). Written from a model (an .s2k export, a
 // .frame.json, a new one) and read back into it by Build-Frame.ps1 -In x.xlsx:
-//   Joints        X Y Z (global), restraints ("fixed", "pin", or DOFs "U1 U2 U3 R3"), joint local axes
-//   Frames        joints, an optional DX DY DZ that makes a new J joint, the length (live), section, Kind and Line (the
-//                 PL_KIND_ / PL_LINE_ groups), a release preset, local axis angle, insertion point, a modifiers preset
+//   Joints        X Y Z (global; formulas welcome: a pipe run is =C12+24), restraints ("fixed", "pin", or DOFs
+//                 "U1 U2 U3 R3"), joint local axes
+//   Frames        between two joints on Joints (every element, steel or pipe: SAP is joint-based), the length (live),
+//                 section, Kind and Line (the PL_KIND_ / PL_LINE_ groups), a release preset, local axis angle,
+//                 insertion point, a modifiers preset
 //   Sections, Materials, Releases (named presets of the 12 end DOFs: yes or a partial-fixity stiffness), Modifiers
 //   Links, Link props (one row per DOF), Springs (per joint)
 //   Load patterns, Joint loads, Ground displacements, Point loads, Distributed loads, Temperature (a load row names
@@ -29,7 +31,6 @@ public sealed class FrameWorkbookResult
     public string Path = "", SourceName = "", BaseHash = "", ModelHash = "";
     public FrameModel Model, Base;
     public readonly List<string> Warnings = new List<string>();
-    public readonly List<string> Notes = new List<string>();     // what the read did that is worth saying (joints made by a delta)
     public string Summary()
     {
         var m = Model;
@@ -85,7 +86,7 @@ public static class FrameWorkbook
     static readonly string[][] Groups =
     {
         new[] { "key", "37474F", "Ids and labels: what ties a row to the model" },
-        new[] { "geom", "1565C0", "Geometry: coordinates, joints, deltas, local axes" },
+        new[] { "geom", "1565C0", "Geometry: coordinates, joints, local axes" },
         new[] { "prop", "00796B", "Properties: section, material, releases, modifiers" },
         new[] { "bc", "B45309", "Supports and links: restraints, springs, link properties" },
         new[] { "load", "9A3412", "Loads, cases and combinations" },
@@ -233,9 +234,8 @@ public static class FrameWorkbook
         string jointIds = col(SJoints, "B"), secNames = col(SSections, "B"), matNames = col(SMaterials, "B"), relNames = col(SReleases, "A"), modNames = col(SModifiers, "A"),
                lpNames = col(SLinkProps, "B"), patNames = col(SPatterns, "B");
         bool light = m.Frames.Count > 5000;
-        // a joint no sheet has: not on Joints, and no Frames row's delta makes it (red); at = a cell, or a whole column in SUMPRODUCT
-        Func<string, string> noJoint = at => "(" + at + "<>\"\")*(COUNTIF(" + jointIds + "," + at + ")=0)*(COUNTIFS(" + col(SFrames, "D") + "," + at + "," + col(SFrames, "E") + ",\"<>\")+COUNTIFS(" +
-                                             col(SFrames, "D") + "," + at + "," + col(SFrames, "F") + ",\"<>\")+COUNTIFS(" + col(SFrames, "D") + "," + at + "," + col(SFrames, "G") + ",\"<>\")=0)";
+        // a joint not on Joints (red); at = a cell, or a whole column in SUMPRODUCT
+        Func<string, string> noJoint = at => "(" + at + "<>\"\")*(COUNTIF(" + jointIds + "," + at + ")=0)";
         string frameIds = col(SFrames, "B");
         // a load's Frames cell naming one frame no sheet has (selectors, lists and ranges are checked by the build)
         Func<string, string> noFrame = at => "(" + at + "<>\"\")*ISERROR(FIND(\":\"," + at + "))*ISERROR(FIND(\",\"," + at + "))*(LOWER(" + at + ")<>\"all\")*(COUNTIF(" + frameIds + "," + at + ")=0)";
@@ -288,7 +288,8 @@ public static class FrameWorkbook
         t.Form.Table(js, t, jh, new[] {
             C("Id", "key", "id", "J and the joint's number in the model: keep it. Blank on a new joint."),
             C("Joint", "key", "text", "SAP's label: a number or text (A1). A new label renames the joint; Frames, Links and loads naming the old label follow."),
-            C("X", "geom", "num", "Global X."), C("Y", "geom", "num", "Global Y."), C("Z", "geom", "num", "Global Z (up)."),
+            C("X", "geom", "num", "Global X. A formula is fine: a pipe run's next joint is =C12+24 (the joint in row 12, 24 along X)."),
+            C("Y", "geom", "num", "Global Y (a formula is fine)."), C("Z", "geom", "num", "Global Z (up; a formula is fine)."),
             L("Restraint", "bc", "list?", ListRange(13), "fixed (all six), pin (U1 U2 U3), or the DOFs held: U1 U2 U3 R1 R2 R3 (global, or the joint's local axes when it has them). Blank = free."),
             C("Local A", "geom", "num", "Joint local axes: angle A about Z, then B about the new Y, then C about the new X (degrees)."), C("Local B", "geom", "num", "Joint local axes, angle B."), C("Local C", "geom", "num", "Joint local axes, angle C."),
         }, m.Joints.Count, lim);
@@ -298,8 +299,7 @@ public static class FrameWorkbook
 
         // ---- Frames
         var fs = b.Add(SFrames);
-        var fh = new[] { "Id", "Frame", "Joint I", "Joint J", H("DX", "L", units), H("DY", "L", units), H("DZ", "L", units), H("Length", "L", units), "Section", "Kind", "Line",
-                         "Release", H("Angle", "deg", ""), "Insertion", "Modifiers" };
+        var fh = new[] { "Id", "Frame", "Joint I", "Joint J", H("Length", "L", units), "Section", "Kind", "Line", "Release", H("Angle", "deg", ""), "Insertion", "Modifiers" };
         fs.FreezeCols = 2;
         var pos = new Dictionary<string, double[]>(StringComparer.Ordinal);
         foreach (var j in m.Joints) pos[j.Label] = j.Xyz;
@@ -307,36 +307,34 @@ public static class FrameWorkbook
         foreach (var f in m.Frames)
         {
             fs.Set(r0, 0, Id(f)); Label(fs, r0, 1, f.Label, 0); Label(fs, r0, 2, f.JointI, 0); Label(fs, r0, 3, f.JointJ, 0);
-            if (f.Section.Length > 0) fs.Set(r0, 8, f.Section);
-            string kd, ln; if (kindOf.TryGetValue(f.Label, out kd)) fs.Set(r0, 9, kd); if (lineOf.TryGetValue(f.Label, out ln)) fs.Set(r0, 10, ln);
-            fs.Set(r0, 11, relOf[f]);
-            if (f.Angle != 0) fs.Set(r0, 12, f.Angle);
-            if (f.CardinalPoint != 10) fs.Set(r0, 13, FrameMember.CardinalText(f.CardinalPoint));
-            if (modOf[f].Length > 0) fs.Set(r0, 14, modOf[f]);
+            if (f.Section.Length > 0) fs.Set(r0, 5, f.Section);
+            string kd, ln; if (kindOf.TryGetValue(f.Label, out kd)) fs.Set(r0, 6, kd); if (lineOf.TryGetValue(f.Label, out ln)) fs.Set(r0, 7, ln);
+            fs.Set(r0, 8, relOf[f]);
+            if (f.Angle != 0) fs.Set(r0, 9, f.Angle);
+            if (f.CardinalPoint != 10) fs.Set(r0, 10, FrameMember.CardinalText(f.CardinalPoint));
+            if (modOf[f].Length > 0) fs.Set(r0, 11, modOf[f]);
             r0++;
         }
         for (int r = 1; r < m.Frames.Count + 201; r++)
         {
             string R = (r + 1).ToString(Inv);
             Func<string, string, string> at = (c, jc) => "INDEX(" + XlsxBook.SheetRef(SJoints) + "!$" + c + ":$" + c + ",MATCH(" + jc + R + "," + XlsxBook.SheetRef(SJoints) + "!$B:$B,0))";
-            string len = "IFERROR(IF(COUNT(E" + R + ":G" + R + ")>0,SQRT(SUMSQ(E" + R + ":G" + R + ")),SQRT((" + at("C", "D") + "-" + at("C", "C") + ")^2+(" + at("D", "D") + "-" + at("D", "C") + ")^2+(" +
-                         at("E", "D") + "-" + at("E", "C") + ")^2)),\"\")";
+            string len = "IFERROR(SQRT((" + at("C", "D") + "-" + at("C", "C") + ")^2+(" + at("D", "D") + "-" + at("D", "C") + ")^2+(" + at("E", "D") + "-" + at("E", "C") + ")^2),\"\")";
             if (r <= m.Frames.Count)
             {
                 var f = m.Frames[r - 1];
                 double[] a, c2;
                 if (pos.TryGetValue(f.JointI, out a) && pos.TryGetValue(f.JointJ, out c2))
-                    fs.SetFormula(r, 7, len, Math.Sqrt((c2[0] - a[0]) * (c2[0] - a[0]) + (c2[1] - a[1]) * (c2[1] - a[1]) + (c2[2] - a[2]) * (c2[2] - a[2])), XlsxBook.ReadOnly);
-                else fs.SetFormula(r, 7, len, XlsxBook.ReadOnly);
+                    fs.SetFormula(r, 4, len, Math.Sqrt((c2[0] - a[0]) * (c2[0] - a[0]) + (c2[1] - a[1]) * (c2[1] - a[1]) + (c2[2] - a[2]) * (c2[2] - a[2])), XlsxBook.ReadOnly);
+                else fs.SetFormula(r, 4, len, XlsxBook.ReadOnly);
             }
-            else fs.SetFormula(r, 7, len, XlsxBook.ReadOnly);
+            else fs.SetFormula(r, 4, len, XlsxBook.ReadOnly);
         }
         t.Form.Table(fs, t, fh, new[] {
             C("Id", "key", "id", "F and the frame's number in the model: keep it. Blank on a new frame."),
             C("Frame", "key", "text", "SAP's label. A new label renames the frame; loads and groups naming it follow."),
-            C("Joint I", "geom", "text", "The joint at end I (a label on Joints, or a J made by a row above)."),
-            C("Joint J", "geom", "text", "The joint at end J. With DX DY DZ: a joint not on Joints is made at I + the delta (blank: the next free number)."),
-            C("DX", "geom", "num", "Optional: J = I + (DX, DY, DZ), pipe-style. Leave blank to use the joints' coordinates."), C("DY", "geom", "num", "Optional delta Y."), C("DZ", "geom", "num", "Optional delta Z."),
+            C("Joint I", "geom", "text", "The joint at end I: a label on Joints."),
+            C("Joint J", "geom", "text", "The joint at end J: a label on Joints. A frame meeting another names the same joint."),
             L("Section", "prop", "list!", secNames, "A section on the Sections sheet."),
             C("Kind", "text", "text", "What the frame is (PIPE, DUCT, STEEL ...): SAP group PL_KIND_<kind>. Selectors use it (kind:PIPE)."),
             C("Line", "text", "text", "The line it belongs to: SAP group PL_LINE_<line>. Selectors use it (line:L-101)."),
@@ -345,13 +343,12 @@ public static class FrameWorkbook
             L("Insertion", "prop", "list!", ListRange(1), "Cardinal point: where the joint sits on the section (10 = centroid, 8 = top center ...)."),
             L("Modifiers", "prop", "list!", modNames, "Property modifiers: a preset on the Modifiers sheet. Blank = none."),
         }, m.Frames.Count, lim);
-        fs.Conditional("C2:C" + lim, "AND(C2<>\"\",COUNTIF(" + jointIds + ",C2)=0,COUNTIFS($D$2:$D$" + lim + ",C2,$E$2:$E$" + lim + ",\"<>\")+COUNTIFS($D$2:$D$" + lim + ",C2,$F$2:$F$" + lim + ",\"<>\")+COUNTIFS($D$2:$D$" + lim + ",C2,$G$2:$G$" + lim + ",\"<>\")=0)", t.Red);
-        fs.Conditional("D2:D" + lim, "AND(D2<>\"\",COUNTIF(" + jointIds + ",D2)=0,COUNT(E2:G2)=0)", t.Red);
+        fs.Conditional("C2:D" + lim, "AND(C2<>\"\",COUNTIF(" + jointIds + ",C2)=0)", t.Red);
         fs.Conditional("C2:D" + lim, "AND($C2<>\"\",$C2=$D2)", t.Red);
         fs.Conditional("B2:B" + lim, "AND(B2<>\"\",COUNTIF($B$2:$B$" + lim + ",B2)>1)", t.Red);
-        fs.Conditional("H2:H" + lim, "AND(ISNUMBER(H2),H2=0)", t.Amber);
-        fs.Width(0, 8); fs.Width(1, 10); fs.Width(2, 9); fs.Width(3, 9); for (int k = 4; k < 8; k++) fs.Width(k, 11); fs.Width(8, 16); fs.Width(9, 10); fs.Width(10, 10);
-        fs.Width(11, 10); fs.Width(12, 10); fs.Width(13, 16); fs.Width(14, 11);
+        fs.Conditional("E2:E" + lim, "AND(ISNUMBER(E2),E2=0)", t.Amber);
+        fs.Width(0, 8); fs.Width(1, 10); fs.Width(2, 9); fs.Width(3, 9); fs.Width(4, 11); fs.Width(5, 16); fs.Width(6, 10); fs.Width(7, 10);
+        fs.Width(8, 10); fs.Width(9, 10); fs.Width(10, 16); fs.Width(11, 11);
 
         // ---- Sections
         var ss = b.Add(SSections);
@@ -702,7 +699,7 @@ public static class FrameWorkbook
         {
             new WbSheetInfo("Settings", "SAP version stamp, units, where the model came from", null),
             new WbSheetInfo(SJoints, "Joints: X Y Z, restraints, local axes", rowsOf(SJoints, "B")),
-            new WbSheetInfo(SFrames, "Frames: joints (or a delta), section, kind, line, release preset, angle, insertion, modifiers", rowsOf(SFrames, "B")),
+            new WbSheetInfo(SFrames, "Frames: two joints, section, kind, line, release preset, angle, insertion, modifiers", rowsOf(SFrames, "B")),
             new WbSheetInfo(SSections, "Sections: shape, material, dimensions", rowsOf(SSections, "B")),
             new WbSheetInfo(SMaterials, "Materials: E, Poisson, unit weight, alpha, Fy, Fu", rowsOf(SMaterials, "B")),
             new WbSheetInfo(SReleases, "End release presets", rowsOf(SReleases, "A")),
@@ -724,13 +721,10 @@ public static class FrameWorkbook
         string fr = col(SFrames, "C"), frJ = col(SFrames, "D");
         var checks = new List<WbCheck>
         {
-            // J: not on Joints and no delta to make it; I: not on Joints and no row's J made by a delta
-            new WbCheck("Frames with a joint no sheet has", light ? "0" : "SUMPRODUCT((" + frJ + "<>\"\")*(COUNTIF(" + jointIds + "," + frJ + ")=0)*(" + col(SFrames, "E") + "&" + col(SFrames, "F") + "&" + col(SFrames, "G") + "=\"\"))+SUMPRODUCT((" +
-                        fr + "<>\"\")*(COUNTIF(" + jointIds + "," + fr + ")=0)*(COUNTIFS(" + frJ + "," + fr + "," + col(SFrames, "E") + ",\"<>\")+COUNTIFS(" + frJ + "," + fr + "," +
-                        col(SFrames, "F") + ",\"<>\")+COUNTIFS(" + frJ + "," + fr + "," + col(SFrames, "G") + ",\"<>\")=0))", false),
+            new WbCheck("Frames with a joint no sheet has", light ? "0" : "SUMPRODUCT(" + noJoint(fr) + ")+SUMPRODUCT(" + noJoint(frJ) + ")", false),
             new WbCheck("Frames from a joint to itself", "SUMPRODUCT((" + fr + "<>\"\")*(" + fr + "=" + frJ + "))", false),
-            new WbCheck("Frames with a section, release or modifiers preset no sheet has", light ? "0" : "SUMPRODUCT((" + col(SFrames, "I") + "<>\"\")*(COUNTIF(" + secNames + "," + col(SFrames, "I") + ")=0))+SUMPRODUCT((" +
-                        col(SFrames, "L") + "<>\"\")*(COUNTIF(" + relNames + "," + col(SFrames, "L") + ")=0))+SUMPRODUCT((" + col(SFrames, "O") + "<>\"\")*(COUNTIF(" + modNames + "," + col(SFrames, "O") + ")=0))", false),
+            new WbCheck("Frames with a section, release or modifiers preset no sheet has", light ? "0" : "SUMPRODUCT((" + col(SFrames, "F") + "<>\"\")*(COUNTIF(" + secNames + "," + col(SFrames, "F") + ")=0))+SUMPRODUCT((" +
+                        col(SFrames, "I") + "<>\"\")*(COUNTIF(" + relNames + "," + col(SFrames, "I") + ")=0))+SUMPRODUCT((" + col(SFrames, "L") + "<>\"\")*(COUNTIF(" + modNames + "," + col(SFrames, "L") + ")=0))", false),
             new WbCheck("Joint or frame labels used twice", light ? "0" : "SUMPRODUCT((" + jointIds + "<>\"\")*(COUNTIF(" + jointIds + "," + jointIds + ")>1))+SUMPRODUCT((" + col(SFrames, "B") + "<>\"\")*(COUNTIF(" + col(SFrames, "B") + "," + col(SFrames, "B") + ")>1))", false),
             new WbCheck("Links with a joint or property no sheet has", "SUMPRODUCT(" + noJoint(col(SLinks, "C")) + ")+SUMPRODUCT(" + noJoint(col(SLinks, "D")) + ")+SUMPRODUCT((" +
                         col(SLinks, "E") + "<>\"\")*(COUNTIF(" + lpNames + "," + col(SLinks, "E") + ")=0))", false),
@@ -838,7 +832,6 @@ public static class FrameWorkbook
 
     sealed class Ctx : WbReadCtx
     {
-        public readonly List<string> Notes = new List<string>();
         public FrameModel M, Base;
         public string Units;
         public readonly Dictionary<string, FrameObj> ById = new Dictionary<string, FrameObj>(StringComparer.OrdinalIgnoreCase);
@@ -916,7 +909,6 @@ public static class FrameWorkbook
         if (x.Errors.Count > 0)
             throw new InvalidOperationException("FrameWorkbook: " + Path.GetFileName(path) + ": " + x.Errors.Count + " problem(s): " + string.Join("; ", x.Errors.Take(40).ToArray()));
         res.Warnings.AddRange(x.Warnings);
-        res.Notes.AddRange(x.Notes);
         res.Model = m;
         res.ModelHash = FrameModelJson.Hash(m);
         return res;
@@ -1204,7 +1196,15 @@ public static class FrameWorkbook
         if (s == null) return order;
         var c = WbRead.ColsOf(s, x, null);
         var m = x.M;
-        int nextJ = m.Joints.Select(j => { int v; return int.TryParse(j.Label, NumberStyles.Integer, Inv, out v) ? v : 0; }).DefaultIfEmpty(0).Max() + 1;
+        // DX DY DZ were a delta entry (until 2026-11-05): a workbook still holding deltas would have them ignored
+        foreach (string h in new[] { "DX", "DY", "DZ" })
+        {
+            int k;
+            if (!c.At.TryGetValue(h, out k)) continue;
+            var used = Rows(c).Where(r => s.Text(r, k).Trim().Length > 0).ToList();
+            if (used.Count > 0)
+                x.Err(s.Name + "!" + XlsxBook.Ref(used[0], k) + ": " + h + " is no longer read (" + used.Count + " row(s)): frames go between joints on Joints; give joint J its own row there (X = joint I's X + DX, as a formula if you like)");
+        }
         foreach (int r in Rows(c))
         {
             string label = Text(c, r, "Frame", x);
@@ -1212,32 +1212,10 @@ public static class FrameWorkbook
             var f = Take<FrameMember>(c, r, x, "frame", label, "Frame", () => new FrameMember());
             order.Add(label);
             string ji = x.Ref("joint", Text(c, r, "Joint I", x)), jj = x.Ref("joint", Text(c, r, "Joint J", x));
-            double dx = Num(c, r, "DX", x, "L"), dy = Num(c, r, "DY", x, "L"), dz = Num(c, r, "DZ", x, "L");
-            bool delta = !double.IsNaN(dx) || !double.IsNaN(dy) || !double.IsNaN(dz);
-            var ja = m.JointNamed(ji);
-            if (ja == null || !x.Labels("joint").Contains(ji)) { x.Err(At(c, r, "Joint I") + ": no joint " + (ji.Length > 0 ? ji : "(blank)")); continue; }
-            if (delta)
-            {
-                var p = ja.Xyz;
-                double[] want = { p[0] + (double.IsNaN(dx) ? 0 : dx), p[1] + (double.IsNaN(dy) ? 0 : dy), p[2] + (double.IsNaN(dz) ? 0 : dz) };
-                if (jj.Length == 0) { while (m.JointNamed(nextJ.ToString(Inv)) != null) nextJ++; jj = nextJ.ToString(Inv); }
-                var jb = m.JointNamed(jj);
-                if (jb != null && x.Labels("joint").Contains(jj))
-                {
-                    var q = jb.Xyz;
-                    double miss = Math.Sqrt((q[0] - want[0]) * (q[0] - want[0]) + (q[1] - want[1]) * (q[1] - want[1]) + (q[2] - want[2]) * (q[2] - want[2]));
-                    if (miss > 0.001) x.Err(At(c, r, "DX") + ": the delta puts joint " + jj + " " + FrameModel.Fmt(Math.Round(miss, 6)) + " away from where Joints has it");
-                }
-                else
-                {
-                    if (jb == null) { jb = new FrameJoint(); m.Add(jb, jj); }
-                    jb.SetXyz(want[0], want[1], want[2]);
-                    x.Notes.Add(At(c, r, "Joint J") + ": joint " + jj + " made at " + FrameModel.Fmt(Math.Round(want[0], 9)) + ", " + FrameModel.Fmt(Math.Round(want[1], 9)) + ", " +
-                                FrameModel.Fmt(Math.Round(want[2], 9)) + " (frame " + label + "'s delta)");
-                    x.Labels("joint").Add(jj); x.Seen.Add(jb);
-                }
-            }
-            else if (m.JointNamed(jj) == null || !x.Labels("joint").Contains(jj)) { x.Err(At(c, r, "Joint J") + ": no joint " + (jj.Length > 0 ? jj : "(blank)")); continue; }
+            bool bad = false;
+            foreach (var e in new[] { new[] { "Joint I", ji }, new[] { "Joint J", jj } })
+                if (m.JointNamed(e[1]) == null || !x.Labels("joint").Contains(e[1])) { x.Err(At(c, r, e[0]) + ": no joint " + (e[1].Length > 0 ? e[1] : "(blank)") + " on Joints" + Hint(e[1], x.Labels("joint"))); bad = true; }
+            if (bad) continue;
             if (ji == jj) { x.Err(At(c, r, "Joint J") + ": a frame from joint " + ji + " to itself"); continue; }
             if (f.JointI != ji) f.JointI = ji;
             if (f.JointJ != jj) f.JointJ = jj;

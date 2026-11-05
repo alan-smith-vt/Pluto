@@ -240,7 +240,7 @@ function Build-Once {
     $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
     $inSha = FileSha $inPath
     $identical = $null
-    $warnings = @(); $readNotes = @()
+    $warnings = @()
     if ($kind -eq "s2k") {
         $bytes = [IO.File]::ReadAllBytes($inPath)
         $doc = [S2kDoc]::Parse($bytes)
@@ -253,7 +253,6 @@ function Build-Once {
         $model = $wb.Model
         Say "read" ("{0}: {1}" -f $inPath, $wb.Summary())
         foreach ($w in $wb.Warnings) { Say "warn" $w; $warnings += $w }
-        foreach ($n in $wb.Notes) { Say "notice" $n; $readNotes += $n }
     } else {
         $model = [FrameModelJson]::Read([IO.File]::ReadAllText($inPath))
         Say "read" ("{0}: the frame model" -f $inPath)
@@ -310,7 +309,6 @@ function Build-Once {
         if ($identical -eq $false) { $null = $pv.AddMessage("warning", "s2k-not-identical", "Written back, the .s2k is not the source byte for byte: check the outputs before use") }
         foreach ($w in $warnings) { $null = $pv.AddMessage("warning", "workbook", $w) }
         foreach ($n in $notes) { $null = $pv.AddMessage("notice", "s2k-write", $n) }
-        foreach ($n in $readNotes) { $null = $pv.AddMessage("notice", "workbook", $n) }
         $mid = $(if ($ModelId) { $ModelId } else { "sap/" + [IO.Path]::GetFileName($outBase) })
         $outlines = [IO.Path]::ChangeExtension($inPath, ".outlines.txt")
         try {

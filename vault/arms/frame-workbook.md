@@ -39,8 +39,8 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 >
 > | Sheet | Rows |
 > |---|---|
-> | Joints | Id, Joint, X Y Z (global), Restraint (`fixed`, `pin`, or the DOFs held: `U1 U2 U3 R3`), Local A B C |
-> | Frames | Id, Frame, Joint I, Joint J, optional DX DY DZ (a J not on Joints is made at I + the delta; blank J = the next free number), Length (live, read-only), Section, Kind, Line, Release (a preset), Angle, Insertion (cardinal point), Modifiers (a preset) |
+> | Joints | Id, Joint, X Y Z (global; formulas welcome), Restraint (`fixed`, `pin`, or the DOFs held: `U1 U2 U3 R3`), Local A B C |
+> | Frames | Id, Frame, Joint I, Joint J (both on Joints), Length (live, read-only), Section, Kind, Line, Release (a preset), Angle, Insertion (cardinal point), Modifiers (a preset) |
 > | Sections | Id, Name, Shape, Material, t3 t2 tf tw t2b tfb dis, Area I33 I22 J (General sections), Catalog and section modifiers (read-only). Each shape's dimensions are required (a new I's blank t2b / tfb are t2 / tf); a new section from a catalog is refused (give its dimensions) |
 > | Materials | Id, Name, Type, E, Poisson, G, Unit weight, Unit mass, Alpha, Fy, Fu. A new material's blank G is E/(2(1+ν)), its blank mass the weight / g |
 > | Releases | Named presets of the 12 end DOFs (P V2 V3 T M2 M3 at I and J): `yes`, a partial-fixity stiffness, or blank. Built in: FIXED, PIN-PIN, PIN-I, PIN-J, SLIP-J; an imported pattern with no match becomes R1, R2 … |
@@ -68,10 +68,8 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 >   several separated by commas.
 > - A header in another unit (`X (ft)`, `E (ksi)`) converts its column (`FrameUnits`: lb kip N kN kgf tonf, in ft mm
 >   cm m, F C, ksi psi ksf psf pcf MPa …). Refresh keeps the header's unit with its cells.
-> - Errors name their cell and suggest the closest name (`Frames!I12: no section W10X3 on Sections (W10X33?)`). The
+> - Errors name their cell and suggest the closest name (`Frames!F12: no section W10X3 on Sections (W10X33?)`). The
 >   build refuses while there are any. A unit on a column that takes none is an error, never ignored.
-> - A joint made by a frame's delta is said (`Frames!D14: joint 21 made at 288, 60, 186`), in the runner's output
->   and the viewer's Checks.
 > - Where a frame's or link's joints moved, the `Length` and centroid SAP's export gives it are worked out again.
 > - A table SAP has not confirmed yet (`FrameS2kSchema`) gets new rows anyway, with an `s2k-unconfirmed` notice in the
 >   runner's output and the viewer's Checks. The probe's results move tables into the confirmed list.
@@ -79,12 +77,28 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 > **Live checks** (Start sheet, red / amber cells, as in the CAESAR workbook): frames with a joint, section, release or
 > modifiers preset no sheet has; frames from a joint to itself; labels used twice; links with an unknown joint or
 > property; loads naming an unknown pattern; loads on a frame no sheet has; joints nothing uses (amber); copied Ids
-> (amber). A joint a frame's delta makes counts as a joint everywhere. Above 5,000 frames the quadratic counts are off
+> (amber). Above 5,000 frames the quadratic counts are off
 > ("light"). The run block's **Name check** says when the workbook was saved under another name (its launchers still
 > build the old one: run Refresh on it).
 >
 > **Refresh** writes the workbook in this version's layout from its own base, every typed cell back where it was, so
 > the next read gives the same model.
+
+> [!info]- Frames go between joints (2026-11-05)
+> Every element, steel or pipe, is a Frames row between two joints on Joints. That is SAP's own form: its exports are
+> joint-based, steel needs named shared joints, and a frame meeting another simply names the same joint. A delta entry
+> (DX DY DZ on Frames, making joint J) was tried and dropped the same day: two forms in one sheet doubled every check.
+> The CAESAR workbook keeps its delta entry: it models CAESAR's own form, From to To by DX DY DZ.
+>
+> - **A pipe run** is entered on Joints with formulas: the next joint's X is `=C12+24` (row 12's X plus 24), its Y
+>   `=D12`. Refresh keeps the formulas; Excel and LibreOffice save their values; a file saved by a script library
+>   with no values is still read (`WbFormula`: references and arithmetic).
+> - **A workbook from before** still holding a DX, DY or DZ column with values is refused, naming the first cell, so
+>   its deltas are never silently ignored.
+> - **Checked:** a three-joint run from joint 1 typed as chained formulas reads to the right coordinates from the
+>   openpyxl file (no saved values) and after LibreOffice recalculation (the same model hash); Length reads 24, 36,
+>   12; a frame naming `P33` is refused (`P3?`); Refresh keeps every formula; the rack, the probe, the round-2 export
+>   and the tank go to a workbook and back byte for byte.
 
 > [!info]- The dry run (Phase 3c, 2026-11-05)
 > An agent used the workbook and runner only, through five scenarios:
@@ -102,9 +116,9 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 >   new catalog section is refused.
 > - **Wrong result:** a case continuing from a linear case, and loops, were written; now refused.
 > - **Crash:** a duplicate joint label crashed the read with no cell named; now an error naming it.
-> - **Wrong check:** links to joints a delta makes counted red; now accepted.
+> - **Wrong check:** links to joints a delta makes counted red; now accepted (the delta entry has since gone).
 > - **Gap:** no live check for a load on a missing frame; added.
-> - **Silent:** joints a delta made were never reported; now a notice per joint.
+> - **Silent:** joints a delta made were never reported; now a notice per joint (the delta entry has since gone).
 > - **Hidden data:** kept-but-hidden data was invisible; now listed on Carried, with Double Angle `dis` and section
 >   modifiers on Sections.
 > - **Messages:** errors pointed at the Id cell; now they name the label cell and suggest a name.
@@ -154,11 +168,11 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 > - `rack.s2k`, the probe and the tank golden (1,371 joints) each go to a workbook and back with the same model hash,
 >   and `-S2k` from the workbook is the source byte for byte. The tank reads in 0.8 s.
 > - An openpyxl edit table on the rack: a joint moved, the X header switched to ft (every value converted), a formula
->   with no saved value, a section dimension, a release preset swapped, a frame deleted, a frame added by DX, a point
+>   with no saved value, a section dimension, a release preset swapped, a frame deleted, a frame added by DX (then; now by joints), a point
 >   load on `group:PIPE`. Each changed only its own `.s2k` lines; the deleted frame's group row went with it.
 > - Refused, naming the cell: a joint still used by three frames, an unknown section, a load on a frame that never
 >   existed, a formula with no value. A copied row reads as new with a warning.
-> - A model built in an empty workbook (`-NewWorkbook`): materials, sections, joints, frames by delta, a gap link,
+> - A model built in an empty workbook (`-NewWorkbook`): materials, sections, joints, frames by delta (then; now by joints), a gap link,
 >   patterns, loads by `line:` and `kind:`, staged cases, a Linear Add combination, groups, the PL_ groups.
 > - LibreOffice recalculation: the Start checks read 0 on clean workbooks and count a broken one's rows; Length works.
 > - Refresh: the same model after, for the rack, the tank and an edited, unbuilt workbook.
