@@ -1,0 +1,194 @@
+File <project dir>\rack.s2k was saved on 11/5/26 at 10:00:00 AM
+
+TABLE:  "PROGRAM CONTROL"
+   ProgramName=SAP2000   Version=22.0.0   ProgLevel=Ultimate   LicenseNum=0   LicenseOS=Yes   LicenseSC=Yes   LicenseHT=No   CurrUnits="Kip, in, F"   SteelCode=AISC360-16   ConcCode="ACI 318-19"   AlumCode="AA 2015"   ColdCode=AISI-16   RegenHinge=Yes
+
+TABLE:  "ACTIVE DEGREES OF FREEDOM"
+   UX=Yes   UY=Yes   UZ=Yes   RX=Yes   RY=Yes   RZ=Yes
+
+TABLE:  "ANALYSIS OPTIONS"
+   Solver=Advanced   SolverProc=Auto   Force32Bit=No   StiffCase=None   GeomMod=None   HingeOpt="In Elements"   NumAThreads=0   MaxFileSize=0   NumDThreads=0   NumRThreads=0   UseMemMap=Default   AllowDiff=No   StiffCaseNL=None
+
+TABLE:  "AREA SECTION ASSIGNMENTS"
+   Area=W1   Section=WALL6   MatProp=Default
+
+TABLE:  "CASE - STATIC 1 - LOAD ASSIGNMENTS"
+   Case=DEAD   LoadType="Load pattern"   LoadName=DEAD   LoadSF=1
+   Case=SUS   LoadType="Load pattern"   LoadName=DEAD   LoadSF=1
+   Case=SUS   LoadType="Load pattern"   LoadName=CONTENTS   LoadSF=1
+   Case=OPE   LoadType="Load pattern"   LoadName=T1   LoadSF=1
+
+TABLE:  "CASE - STATIC 2 - NONLINEAR LOAD APPLICATION"
+   Case=SUS   LoadApp="Full Load"   MonitorDOF=U3   MonitorJt=12
+   Case=OPE   LoadApp="Full Load"   MonitorDOF=U1   MonitorJt=13
+
+TABLE:  "COMBINATION DEFINITIONS"
+   ComboName=EXP   ComboType="Linear Add"   AutoDesign=No   CaseType="Nonlinear Static"   CaseName=OPE   ScaleFactor=1   SteelDesign=None   ConcDesign=None   AlumDesign=None   ColdDesign=None   GUID=
+   ComboName=EXP   CaseType="Nonlinear Static"   CaseName=SUS   ScaleFactor=-1
+
+TABLE:  "CONNECTIVITY - AREA"
+   Area=W1   NumJoints=4   Joint1=1   Joint2=5   Joint3=6   Joint4=2
+
+TABLE:  "CONNECTIVITY - FRAME"
+   Frame=C1   JointI=1   JointJ=2   IsCurved=No   Length=180   CentroidX=0   CentroidY=0   CentroidZ=90
+   Frame=C2   JointI=3   JointJ=4   IsCurved=No   Length=180   CentroidX=0   CentroidY=120   CentroidZ=90
+   Frame=B1a   JointI=2   JointJ=9   IsCurved=No   Length=60   CentroidX=0   CentroidY=30   CentroidZ=180
+   Frame=B1b   JointI=9   JointJ=4   IsCurved=No   Length=60   CentroidX=0   CentroidY=90   CentroidZ=180
+   Frame=C3   JointI=5   JointJ=6   IsCurved=No   Length=180   CentroidX=240   CentroidY=0   CentroidZ=90
+   Frame=C4   JointI=7   JointJ=8   IsCurved=No   Length=180   CentroidX=240   CentroidY=120   CentroidZ=90
+   Frame=B2a   JointI=6   JointJ=10   IsCurved=No   Length=60   CentroidX=240   CentroidY=30   CentroidZ=180
+   Frame=B2b   JointI=10   JointJ=8   IsCurved=No   Length=60   CentroidX=240   CentroidY=90   CentroidZ=180
+   Frame=S1   JointI=2   JointJ=6   IsCurved=No   Length=240   CentroidX=120   CentroidY=0   CentroidZ=180
+   Frame=S2   JointI=4   JointJ=8   IsCurved=No   Length=240   CentroidX=120   CentroidY=120   CentroidZ=180
+   Frame=P1   JointI=11   JointJ=12   IsCurved=No   Length=24   CentroidX=-12   CentroidY=60   CentroidZ=186
+   Frame=P2   JointI=12   JointJ=13   IsCurved=No   Length=240   CentroidX=120   CentroidY=60   CentroidZ=186
+   Frame=P3   JointI=13   JointJ=14   IsCurved=No   Length=24   CentroidX=252   CentroidY=60   CentroidZ=186
+
+TABLE:  "CONNECTIVITY - LINK"
+   Link=K1   JointI=9   JointJ=12   Length=6
+   Link=K2   JointI=10   JointJ=13   Length=6
+   Link=G1   JointI=14   JointJ=14   Length=0
+
+TABLE:  "COORDINATE SYSTEMS"
+   Name=GLOBAL   Type=Cartesian   X=0   Y=0   Z=0   AboutZ=0   AboutY=0   AboutX=0
+   Name=CYL1   Type=Cartesian   X=500   Y=0   Z=0   AboutZ=90   AboutY=0   AboutX=0
+
+TABLE:  "FRAME AUTO MESH ASSIGNMENTS"
+   Frame=P2   AutoMesh=Yes   AtJoints=Yes   AtFrames=No   NumSegments=0   MaxLength=24   MaxDegrees=0
+
+TABLE:  "FRAME DESIGN PROCEDURES"
+   Frame=C1   DesignProc="Steel Frame Design"
+   Frame=S1   DesignProc="Steel Frame Design"
+
+TABLE:  "FRAME LOADS - DISTRIBUTED"
+   Frame=P1   LoadPat=CONTENTS   CoordSys=GLOBAL   Type=Force   Dir=Gravity   DistType=RelDist   RelDistA=0   RelDistB=1   AbsDistA=0   AbsDistB=24   FOverLA=0.0021   FOverLB=0.0021
+   Frame=P2   LoadPat=CONTENTS   CoordSys=GLOBAL   Type=Force   Dir=Gravity   DistType=RelDist   RelDistA=0   RelDistB=1   AbsDistA=0   AbsDistB=240   FOverLA=0.0021   FOverLB=0.0021
+   Frame=P3   LoadPat=CONTENTS   CoordSys=GLOBAL   Type=Force   Dir=Gravity   DistType=RelDist   RelDistA=0   RelDistB=1   AbsDistA=0   AbsDistB=24   FOverLA=0.0021   FOverLB=0.0021
+
+TABLE:  "FRAME LOADS - POINT"
+   Frame=P2   LoadPat=CONTENTS   CoordSys=GLOBAL   Type=Force   Dir=Gravity   DistType=AbsDist   RelDist=0.4   AbsDist=96   Force=0.85
+
+TABLE:  "FRAME LOADS - TEMPERATURE"
+   Frame=P1   LoadPat=T1   Type=Temperature   Temp=230
+   Frame=P2   LoadPat=T1   Type=Temperature   Temp=230
+   Frame=P3   LoadPat=T1   Type=Temperature   Temp=230
+
+TABLE:  "FRAME LOCAL AXES ASSIGNMENTS 1 - TYPICAL"
+   Frame=C2   Angle=90   AdvanceAxes=No
+
+TABLE:  "FRAME RELEASE ASSIGNMENTS 1 - GENERAL"
+   Frame=S1   PI=No   V2I=No   V3I=No   TI=No   M2I=Yes   M3I=Yes   PJ=No   V2J=No   V3J=No   TJ=No   M2J=Yes   M3J=Yes   PartialFix=No
+   Frame=S2   PI=No   V2I=No   V3I=No   TI=No   M2I=Yes   M3I=Yes   PJ=No   V2J=No   V3J=No   TJ=No   M2J=Yes   M3J=Yes   PartialFix=No
+
+TABLE:  "FRAME SECTION ASSIGNMENTS"
+   Frame=C1   SectionType="I/Wide Flange"   AutoSelect=N.A.   AnalSect=W10X33   DesignSect=W10X33   MatProp=Default
+   Frame=C2   SectionType="I/Wide Flange"   AutoSelect=N.A.   AnalSect=W10X33   DesignSect=W10X33   MatProp=Default
+   Frame=B1a   SectionType="I/Wide Flange"   AutoSelect=N.A.   AnalSect=W10X33   DesignSect=W10X33   MatProp=Default
+   Frame=B1b   SectionType="I/Wide Flange"   AutoSelect=N.A.   AnalSect=W10X33   DesignSect=W10X33   MatProp=Default
+   Frame=C3   SectionType="I/Wide Flange"   AutoSelect=N.A.   AnalSect=W10X33   DesignSect=W10X33   MatProp=Default
+   Frame=C4   SectionType="I/Wide Flange"   AutoSelect=N.A.   AnalSect=W10X33   DesignSect=W10X33   MatProp=Default
+   Frame=B2a   SectionType="I/Wide Flange"   AutoSelect=N.A.   AnalSect=W10X33   DesignSect=W10X33   MatProp=Default
+   Frame=B2b   SectionType="I/Wide Flange"   AutoSelect=N.A.   AnalSect=W10X33   DesignSect=W10X33   MatProp=Default
+   Frame=S1   SectionType=Box/Tube   AutoSelect=N.A.   AnalSect=HSS4X4   DesignSect=HSS4X4   MatProp=Default
+   Frame=S2   SectionType=Box/Tube   AutoSelect=N.A.   AnalSect=HSS4X4   DesignSect=HSS4X4   MatProp=Default
+   Frame=P1   SectionType=Pipe   AutoSelect=N.A.   AnalSect=PIPE8   DesignSect=PIPE8   MatProp=Default
+   Frame=P2   SectionType=Pipe   AutoSelect=N.A.   AnalSect=PIPE8   DesignSect=PIPE8   MatProp=Default
+   Frame=P3   SectionType=Pipe   AutoSelect=N.A.   AnalSect=PIPE8   DesignSect=PIPE8   MatProp=Default
+
+TABLE:  "FRAME SECTION PROPERTIES 01 - GENERAL"
+   SectionName=W10X33   Material=A992   Shape="I/Wide Flange"   t3=9.73   t2=7.96   tf=0.435   tw=0.29   t2b=7.96   tfb=0.435   Area=9.71   TorsConst=0.583   I33=171   I22=36.6   AS2=2.8217   AS3=5.7710   S33=35   S22=9.2   Z33=38.8   Z22=14   R33=4.19   R22=1.94   Color=Blue   TotalWt=0   TotalMass=0   FromFile=No   AMod=1   A2Mod=1   A3Mod=1   JMod=1   I2Mod=1   I3Mod=1   MMod=1   WMod=1
+   SectionName=HSS4X4   Material=A992   Shape=Box/Tube   t3=4   t2=4   tf=0.233   tw=0.233   Color=Green   FromFile=No   AMod=1   A2Mod=1   A3Mod=1   JMod=1   I2Mod=1   I3Mod=1   MMod=1   WMod=1
+   SectionName=PIPE8   Material=A106B   Shape=Pipe   t3=8.625   tw=0.322   Color=Cyan   FromFile=No   AMod=1   A2Mod=1   A3Mod=1   JMod=1   I2Mod=1   I3Mod=1   MMod=1   WMod=1
+
+TABLE:  "GRID LINES"
+   CoordSys=GLOBAL   AxisDir=X   GridID=A   XRYZCoord=0   LineType=Primary   LineColor=Gray8Dark   Visible=Yes   BubbleLoc=End
+   CoordSys=GLOBAL   AxisDir=X   GridID=B   XRYZCoord=240   LineType=Primary   LineColor=Gray8Dark   Visible=Yes   BubbleLoc=End
+
+TABLE:  "GROUPS 1 - DEFINITIONS"
+   GroupName=All   Selection=Yes   SectionCut=Yes   Steel=Yes   Concrete=Yes   Aluminum=Yes   ColdFormed=Yes   Stage=Yes   Bridge=Yes   AutoSeismic=No   AutoWind=No   SelDesSteel=No   SelDesAlum=No   SelDesCold=No   MassWeight=Yes   Color=Yellow
+   GroupName=PIPE   Selection=Yes   SectionCut=Yes   Steel=Yes   Concrete=Yes   Aluminum=Yes   ColdFormed=Yes   Stage=Yes   Bridge=Yes   AutoSeismic=No   AutoWind=No   SelDesSteel=No   SelDesAlum=No   SelDesCold=No   MassWeight=Yes   Color=Yellow
+   GroupName=STEEL   Selection=Yes   SectionCut=Yes   Steel=Yes   Concrete=Yes   Aluminum=Yes   ColdFormed=Yes   Stage=Yes   Bridge=Yes   AutoSeismic=No   AutoWind=No   SelDesSteel=No   SelDesAlum=No   SelDesCold=No   MassWeight=Yes   Color=Yellow
+
+TABLE:  "GROUPS 2 - ASSIGNMENTS"
+   GroupName=PIPE   ObjectType=Frame   ObjectLabel=P1
+   GroupName=PIPE   ObjectType=Frame   ObjectLabel=P2
+   GroupName=PIPE   ObjectType=Frame   ObjectLabel=P3
+   GroupName=STEEL   ObjectType=Frame   ObjectLabel=C1
+   GroupName=STEEL   ObjectType=Frame   ObjectLabel=C2
+   GroupName=STEEL   ObjectType=Frame   ObjectLabel=B1a
+   GroupName=STEEL   ObjectType=Frame   ObjectLabel=B1b
+   GroupName=STEEL   ObjectType=Frame   ObjectLabel=C3
+   GroupName=STEEL   ObjectType=Frame   ObjectLabel=C4
+   GroupName=STEEL   ObjectType=Frame   ObjectLabel=B2a
+   GroupName=STEEL   ObjectType=Frame   ObjectLabel=B2b
+   GroupName=STEEL   ObjectType=Frame   ObjectLabel=S1
+   GroupName=STEEL   ObjectType=Frame   ObjectLabel=S2
+   GroupName=STEEL   ObjectType=Joint   ObjectLabel=9
+
+TABLE:  "JOINT COORDINATES"
+   Joint=1   CoordSys=GLOBAL   CoordType=Cartesian   XorR=0   Y=0   Z=0   SpecialJt=No   GlobalX=0   GlobalY=0   GlobalZ=0
+   Joint=2   CoordSys=GLOBAL   CoordType=Cartesian   XorR=0   Y=0   Z=180   SpecialJt=No   GlobalX=0   GlobalY=0   GlobalZ=180
+   Joint=3   CoordSys=GLOBAL   CoordType=Cartesian   XorR=0   Y=120   Z=0   SpecialJt=No   GlobalX=0   GlobalY=120   GlobalZ=0
+   Joint=4   CoordSys=GLOBAL   CoordType=Cartesian   XorR=0   Y=120   Z=180   SpecialJt=No   GlobalX=0   GlobalY=120   GlobalZ=180
+   Joint=5   CoordSys=GLOBAL   CoordType=Cartesian   XorR=240   Y=0   Z=0   SpecialJt=No   GlobalX=240   GlobalY=0   GlobalZ=0
+   Joint=6   CoordSys=GLOBAL   CoordType=Cartesian   XorR=240   Y=0   Z=180   SpecialJt=No   GlobalX=240   GlobalY=0   GlobalZ=180
+   Joint=7   CoordSys=GLOBAL   CoordType=Cartesian   XorR=240   Y=120   Z=0   SpecialJt=No   GlobalX=240   GlobalY=120   GlobalZ=0
+   Joint=8   CoordSys=GLOBAL   CoordType=Cartesian   XorR=240   Y=120   Z=180   SpecialJt=No   GlobalX=240   GlobalY=120   GlobalZ=180
+   Joint=9   CoordSys=GLOBAL   CoordType=Cartesian   XorR=0   Y=60   Z=180   SpecialJt=No   GlobalX=0   GlobalY=60   GlobalZ=180
+   Joint=10   CoordSys=GLOBAL   CoordType=Cartesian   XorR=240   Y=60   Z=180   SpecialJt=No   GlobalX=240   GlobalY=60   GlobalZ=180
+   Joint=11   CoordSys=GLOBAL   CoordType=Cartesian   XorR=-24   Y=60   Z=186   SpecialJt=No   GlobalX=-24   GlobalY=60   GlobalZ=186
+   Joint=12   CoordSys=GLOBAL   CoordType=Cartesian   XorR=0   Y=60   Z=186   SpecialJt=No   GlobalX=0   GlobalY=60   GlobalZ=186
+   Joint=13   CoordSys=GLOBAL   CoordType=Cartesian   XorR=240   Y=60   Z=186   SpecialJt=No   GlobalX=240   GlobalY=60   GlobalZ=186
+   Joint=14   CoordSys=GLOBAL   CoordType=Cartesian   XorR=264   Y=60   Z=186   SpecialJt=No   GlobalX=264   GlobalY=60   GlobalZ=186
+   Joint=20   CoordSys=CYL1   CoordType=Cylindrical   XorR=10   Y=0   Z=0   SpecialJt=Yes   GlobalX=500   GlobalY=10   GlobalZ=0
+
+TABLE:  "JOINT LOADS - FORCE"
+   Joint=14   LoadPat=CONTENTS   CoordSys=GLOBAL   F1=0   F2=0   F3=-0.5   M1=0   M2=0   M3=0
+
+TABLE:  "JOINT RESTRAINT ASSIGNMENTS"
+   Joint=1   U1=Yes   U2=Yes   U3=Yes   R1=No   R2=No   R3=No
+   Joint=3   U1=Yes   U2=Yes   U3=Yes   R1=No   R2=No   R3=No
+   Joint=5   U1=Yes   U2=Yes   U3=Yes   R1=No   R2=No   R3=No
+   Joint=7   U1=Yes   U2=Yes   U3=Yes   R1=No   R2=No   R3=No
+   Joint=11   U1=Yes   U2=Yes   U3=Yes   R1=Yes   R2=Yes   R3=Yes
+
+TABLE:  "LINK PROPERTY ASSIGNMENTS"
+   Link=K1   LinkProp=REST   LinkFDProp=None
+   Link=K2   LinkProp=FRIC   LinkFDProp=None
+   Link=G1   LinkProp=SPR   LinkFDProp=None
+
+TABLE:  "LINK PROPERTY DEFINITIONS 01 - GENERAL"
+   Link=REST   LinkType=Gap   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   Color=Magenta
+   Link=FRIC   LinkType="Friction Isolator"   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   Color=Magenta
+   Link=SPR   LinkType=Linear   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   Color=Magenta
+
+TABLE:  "LINK PROPERTY DEFINITIONS 02 - LINEAR"
+   Link=SPR   DOF=U1   Fixed=No   TransKE=50   TransCE=0
+
+TABLE:  "LINK PROPERTY DEFINITIONS 05 - GAP"
+   Link=REST   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=1000   TransCE=0   TransK=1000   Open=0
+
+TABLE:  "LOAD CASE DEFINITIONS"
+   Case=DEAD   Type=LinStatic   InitialCond=Zero   DesTypeOpt="Prog Det"   DesignType=Dead   DesActOpt="Prog Det"   DesignAct=Non-Composite   AutoType=None   RunCase=Yes   CaseStatus="Not Run"   GUID=
+   Case=SUS   Type=NonStatic   InitialCond=Zero   DesTypeOpt="Prog Det"   DesignType=Dead   RunCase=Yes   CaseStatus="Not Run"   GUID=
+   Case=OPE   Type=NonStatic   InitialCond=SUS   DesTypeOpt="Prog Det"   DesignType=Temperature   RunCase=Yes   CaseStatus="Not Run"   GUID=
+
+TABLE:  "LOAD PATTERN DEFINITIONS"
+   LoadPat=DEAD   DesignType=Dead   SelfWtMult=1   GUID=
+   LoadPat=CONTENTS   DesignType=Other   SelfWtMult=0   GUID=
+   LoadPat=T1   DesignType=Temperature   SelfWtMult=0   GUID=
+
+TABLE:  "MATERIAL PROPERTIES 01 - GENERAL"
+   Material=A992   Type=Steel   Grade="Grade 50"   SymType=Isotropic   TempDepend=No   Color=Blue   GUID=   Notes=
+   Material=A106B   Type=Steel   Grade="Grade B"   SymType=Isotropic   TempDepend=No   Color=Cyan   GUID=   Notes=
+
+TABLE:  "MATERIAL PROPERTIES 02 - BASIC MECHANICAL PROPERTIES"
+   Material=A992   UnitWeight=2.83564814814815E-04   UnitMass=7.34446554001670E-07   E1=29000   G12=11153.8461538462   U12=0.3   A1=6.50000000000000E-06
+   Material=A106B   UnitWeight=2.83564814814815E-04   UnitMass=7.34446554001670E-07   E1=27900   G12=10730.7692307692   U12=0.3   A1=6.80000000000000E-06
+
+TABLE:  "MATERIAL PROPERTIES 03A - STEEL DATA"
+   Material=A992   Fy=50   Fu=65   EffFy=55   EffFu=71.5   SSCurveOpt=Simple   SSHysType=Kinematic   SHard=0.015   SMax=0.11   SRup=0.17 _
+      FinalSlope=-0.1
+   Material=A106B   Fy=35   Fu=60   EffFy=38.5   EffFu=66   SSCurveOpt=Simple   SSHysType=Kinematic   SHard=0.015   SMax=0.11   SRup=0.17   FinalSlope=-0.1
+
+END TABLE DATA

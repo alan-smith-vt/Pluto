@@ -11,7 +11,7 @@ using System.Numerics;
 // 	Parses SAP2000 .$2k / .s2k text export files into a table-row dict
 // -------------------------------------------------------------------
 
-public class Sap2kParser
+public class Sap2kParser : IS2kTables
 {
 	// Raw parsed tables: table name -> list of rows; each row
 	// is a key-value dict from the "Key=Value" tokens on that line.
@@ -276,8 +276,8 @@ public static class Sap2kReader {
 		return ExtractGeometry(parser, toStaadAxes);
 	}
 	
-	// Reuse an already-parsed file (results tables may live in the same .s2k).
-	public static GeometryResult ExtractGeometry(Sap2kParser parser, bool toStaadAxes)
+	// Reuse an already-parsed file (results tables may live in the same .s2k); a lossless S2kDoc reads the same.
+	public static GeometryResult ExtractGeometry(IS2kTables parser, bool toStaadAxes)
 	{
 		List<Node> nodeList = GetJoints(parser, toStaadAxes);
 		Dictionary<int, Node> nodeDict = nodeList.ToDictionary(n => n.id);
@@ -292,7 +292,7 @@ public static class Sap2kReader {
 	}
 	
 	// Extract joints with global-coord transformation applied where needed
-	private static List<Node> GetJoints(Sap2kParser parser, bool toStaadAxes)
+	private static List<Node> GetJoints(IS2kTables parser, bool toStaadAxes)
 	{
 		Dictionary<string, Sap2kCoordSystem> systems = BuildSystems(parser);
 		List<Node> joints = new List<Node>();
@@ -352,7 +352,7 @@ public static class Sap2kReader {
 	}
 	
 	// Populates a list of elements with eid -> nids & xyz
-	private static List<Element> GetElements(Sap2kParser parser, Dictionary<int, Node> nodeDict)
+	private static List<Element> GetElements(IS2kTables parser, Dictionary<int, Node> nodeDict)
 	{
 		List<Element> elements = new List<Element>();
 		List<Dictionary<string, string>> rows = parser.GetTable("CONNECTIVITY - AREA");
@@ -383,7 +383,7 @@ public static class Sap2kReader {
 	}
 
 	// Build systems dict from the parser's coordinate systems table
-	private static Dictionary<string, Sap2kCoordSystem> BuildSystems(Sap2kParser parser)
+	private static Dictionary<string, Sap2kCoordSystem> BuildSystems(IS2kTables parser)
 	{
 		Dictionary<string, Sap2kCoordSystem> map = 
 			new Dictionary<string, Sap2kCoordSystem>(StringComparer.OrdinalIgnoreCase);
