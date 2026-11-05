@@ -435,6 +435,7 @@ public static class PipeWorkbook
         for (int i = 0; i < m.Restraints.Count; i++)
         {
             var x = m.Restraints[i];
+            if (x.Joint > 0) continue;                                    // one DOF of a joint: on Joints
             rs.Set(r, 0, "R" + (i + 1)); live.Cell(rs, r, 1, x.Node, 0); rs.Set(r, 2, x.Type); if (x.CNode != 0) live.Cell(rs, r, 3, x.CNode, 0);
             if (!IsRigid(m, x)) rs.Set(r, 4, x.Stiffness);
             if (x.Gap != 0) rs.Set(r, 5, x.Gap);
@@ -446,7 +447,7 @@ public static class PipeWorkbook
         var types = PipeModelCodes.BuildTypes.Concat(m.Restraints.Select(x => x.Type)).Distinct().ToList();
         int limR = Math.Max(1000, m.Restraints.Count + 500);
         string typeList = "Lists!$B$2:$B$" + (1 + types.Count);
-        PipeWorkbookGui.Table(rs, t, rh, PipeWorkbookGui.RestraintCols(typeList), m.Restraints.Count, limR);
+        PipeWorkbookGui.Table(rs, t, rh, PipeWorkbookGui.RestraintCols(typeList), r - 1, limR);
         PipeWorkbookGui.Rule(rs, "B2:B" + limR, "AND(B2=\"\",COUNTA($A2,$C2:$J2)>0)", t.Red);
         PipeWorkbookGui.Rule(rs, "B2:B" + limR, PipeWorkbookGui.NodeMissing("B2", nFrom, nTo, nBend), t.Amber);
         PipeWorkbookGui.Rule(rs, "D2:D" + limR, PipeWorkbookGui.NodeMissing("D2", nFrom, nTo, nBend), t.Amber);
@@ -464,6 +465,7 @@ public static class PipeWorkbook
         for (int i = 0; i < m.Sifs.Count; i++)
         {
             var x = m.Sifs[i];
+            if (x.Joint > 0) continue;                                    // a joint's SIF: on Joints
             sf.Set(r, 0, "S" + (i + 1)); live.Cell(sf, r, 1, x.Node, 0); sf.Set(r, 2, PipeWorkbookGui.SifLabel(x.Type));
             if (x.SifIn != 0) sf.Set(r, 3, x.SifIn);
             if (x.SifOut != 0) sf.Set(r, 4, x.SifOut);
@@ -477,7 +479,7 @@ public static class PipeWorkbook
         var sifTypes = Enumerable.Range(0, PipeModelSifTypes.Names.Length).Concat(m.Sifs.Where(x => x.Raw != null && x.Type > PipeModelSifTypes.Max).Select(x => x.Type)).Distinct().OrderBy(v => v).ToList();
         string lSif = "Lists!$J$2:$J$" + (1 + sifTypes.Count);
         int limF = Math.Max(1000, m.Sifs.Count + 500);
-        PipeWorkbookGui.Table(sf, t, sfh, PipeWorkbookGui.SifCols(lSif), m.Sifs.Count, limF);
+        PipeWorkbookGui.Table(sf, t, sfh, PipeWorkbookGui.SifCols(lSif), r - 1, limF);
         PipeWorkbookGui.Rule(sf, "B2:B" + limF, PipeWorkbookGui.NodeMissing("B2", nFrom, nTo, nBend), t.Amber);
         PipeWorkbookGui.Rule(sf, "D2:E" + limF, "AND(ISNUMBER(D2),D2>0,D2<1)", t.Red);                                           // a user SIF under 1
         PipeWorkbookGui.Rule(sf, "G2:G" + limF, "AND(" + PipeWorkbookGui.SifIs("$C2", 1) + ",N(G2)<=0)", t.Amber);                 // a reinforced tee without its pad
@@ -1568,7 +1570,27 @@ public static class PipeWorkbook
             list.Add(q);
         }
         m.Restraints.Clear();
-        m.Restraints.AddRange(list);
+        m.Restraints.AddRange(Merge(old, list, q => q.Joint > 0));
+    }
+
+    // the sheet's rows with the rows a joint holds (not on the sheet) back where they were: each before the first row
+    // after it in the old order that the sheet still has, the rest at the end; an unedited sheet gives the old order
+    static List<T> Merge<T>(List<T> old, List<T> sheet, Func<T, bool> held) where T : class
+    {
+        var onSheet = new HashSet<T>(sheet);
+        var before = new Dictionary<T, List<T>>();
+        var tail = new List<T>();
+        var pending = new List<T>();
+        foreach (var q in old)
+        {
+            if (held(q)) { pending.Add(q); continue; }
+            if (pending.Count > 0 && onSheet.Contains(q)) { before[q] = pending; pending = new List<T>(); }
+        }
+        tail.AddRange(pending);
+        var o = new List<T>();
+        foreach (var q in sheet) { List<T> b; if (before.TryGetValue(q, out b)) o.AddRange(b); o.Add(q); }
+        o.AddRange(tail);
+        return o;
     }
 
     static void ReadSifs(CaesarSheet s, Ctx x)
@@ -1604,13 +1626,20 @@ public static class PipeWorkbook
             list.Add(t);
         }
         m.Sifs.Clear();
-        m.Sifs.AddRange(list);
+        m.Sifs.AddRange(Merge(old, list, q => q.Joint > 0));
     }
 
     static void ReadJoints(CaesarSheet s, Ctx x)
     {
         var m = x.M;
-        if (s == null) { m.Joints.Clear(); return; }
+        if (s == null)
+        {
+            // no Joints sheet: its joints' restraints and SIFs stay, as plain ones
+            m.Joints.Clear();
+            foreach (var r in m.Restraints) { r.Joint = 0; r.JointDof = ""; }
+            foreach (var t in m.Sifs) t.Joint = 0;
+            return;
+        }
         var c = ColsOf(s, x, new[] { "Id", "Node", "CNode", "Kind", "Frame", "DOFs", "SIF", "Tag" });
         var old = m.Joints.ToDictionary(j => j.Uid);
         var list = new List<PipeModelJoint>();
@@ -1620,7 +1649,7 @@ public static class PipeWorkbook
             string id = Text(c, r, "Id", x), w = "Joints row " + (r + 1);
             PipeModelJoint j;
             int n = IdNum(id, 'J');
-            if (n <= 0 || !old.TryGetValue(n, out j)) j = new PipeModelJoint();
+            if (n <= 0 || !old.TryGetValue(n, out j)) j = new PipeModelJoint { Backed = true };   // a new joint's restraints go in the model (PipeJoints.Sync)
             else old.Remove(n);
             j.Node = Int(c, r, "Node", x, 0); j.CNode = Int(c, r, "CNode", x, 0);
             string kind = Text(c, r, "Kind", x); j.Kind = kind.Length > 0 ? kind : "custom";
@@ -1652,6 +1681,14 @@ public static class PipeWorkbook
         m.Joints.AddRange(list);
         int next = m.Joints.Count == 0 ? 1 : m.Joints.Max(j => j.Uid) + 1;
         foreach (var j in m.Joints) if (j.Uid <= 0) j.Uid = next++;
+        // a joint deleted takes its restraints and SIF with it; the others' edits go onto theirs
+        PipeJoints.Prune(m);
+        foreach (var j in m.Joints.Where(q => q.Backed))
+        {
+            if (j.Node <= 0 || j.CNode <= 0 || j.Node == j.CNode) { x.Err("Joints: the joint " + j.Node + "-" + j.CNode + ": two different nodes are needed"); continue; }
+            try { PipeJoints.Sync(m, j); }
+            catch (InvalidOperationException ex) { x.Err("Joints: " + ex.Message.Replace("CaesarNeutralWriter: ", "")); }
+        }
     }
 
     // ---- Nozzles

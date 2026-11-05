@@ -403,6 +403,8 @@ public static class PipeBuilder
             NodeLoads("displacements", "displacement", new[] { "dx", "dy", "dz", "rx", "ry", "rz" });
             UniformAndWind();
             Finish();
+            // couplings (and ties shaped like joints): their CNODE restraints, left in place, shown as joints
+            PipeJoints.Recognize(m);
             return res;
         }
 

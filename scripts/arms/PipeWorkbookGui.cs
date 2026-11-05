@@ -235,7 +235,7 @@ static class PipeWorkbookGui
     {
         return new[]
         {
-            C("Id", "key", "id", "Keep it on rows from the model; leave it blank on a new row."),
+            C("Id", "key", "id", "Keep it on rows from the model; leave it blank on a new row. Couplings in a .cii or a TOML build (CNODE restraints between two nodes at one point) come here, their restraints off the Restraints sheet."),
             C("Node", "key", "node", "One end of the joint."),
             C("CNode", "key", "node", "The other end (written as CNODE restraints Node -> CNode)."),
             L("Kind", "prop", "list?", LKind, "A label: coupling, hinge, slip, ball, link (or your own).", null),

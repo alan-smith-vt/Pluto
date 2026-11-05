@@ -71,6 +71,12 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 > - `sif` (> 0: a user SIF at the node) and `tag`.
 >
 > Pipe-frame DOFs need an element at the node to give the axis; the writer reports a joint without one.
+>
+> **Backed joints** (2026-11-05): a joint recognized in a `.cii` or a TOML build (`PipeJoints.Recognize`), or made on the
+> workbook's Joints sheet, keeps its CNODE restraints in `Restraints` and its user SIF in `Sifs`, each marked with its
+> uid (`Joint`, and the restraint's `JointDof`). `Backed = true`; the writer does not expand it again; `PipeJoints.Sync`
+> carries its edits onto them. JSON: `joint` / `jointDof` on a restraint, `joint` on a SIF, `backed` on the joint, each
+> written only when set.
 
 > [!info]- Hangers
 > `PipeModelHanger`, one per hanger node, in CAESAR's order (MISCEL_1):

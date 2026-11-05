@@ -65,7 +65,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > | SIFs | SIF / tee | Id, node, type (a dropdown of CAESAR's list, "3 - welding tee"; a bare number from an older workbook reads the same), SIF in / out, surface node, pad (a reinforced tee; amber without), crotch radius, weld mismatch |
 > | Forces / Displacements | node and load vector | Id, node, vector (1–9), FX…MZ / DX…RZ. A blank displacement DOF is free; 0 holds it |
 > | Uniform / Wind | element, or a range of elements with the same values | Element (`E4`, a range `E3:E9`, or blank with From and To), vector, UX UY UZ, in g's / type, shape factor, wave data |
-> | Joints | joint | Id, node, CNODE, kind, frame (pipe / global), DOFs (`axial gap=0.125 k=5000; shear; torsion; bending gap=2`), SIF, tag |
+> | Joints | joint | Id, node, CNODE, kind, frame (pipe / global), DOFs (`axial gap=0.125 k=5000; shear; torsion; bending gap=2`), SIF, tag. Couplings in a `.cii` or a TOML build come here (below); their CNODE restraints and SIF are off Restraints and SIFs |
 > | Hangers | spring hanger (one per node) | Id, node, CNODE; Rate with Cold load (a spring as given) or Constant (a constant-effort support), both blank = CAESAR designs it; table, count, load variation, short range, max travel, space, rigid criteria, operating load, hardware weight, multi-load; anchors freed while it is designed (node + Y / XY / ZY / XYZ / all, two); tag. A workbook made before this sheet keeps its base's hangers |
 > | Nozzles | flexible nozzle | Id, node, vessel node (blank = a rigid vessel), type (WRC 297, API 650, PD 5500, Custom), then the values: nozzle OD / wall, vessel type, vessel OD / wall, pad, reinforcing, distances to stiffeners, nozzle and fluid heights, vessel centreline X Y Z, vessel temperature and material, displacement vector, fluid SG, tank alpha / ΔT / E, the four custom stiffnesses. A column the row's type does not use is red |
 > | Coords | COORDS entry | node, X Y Z |
@@ -76,6 +76,37 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >
 > - **Units are the job's.** Each header says which (`DX (in)`).
 > - **Sections and Processes** are named from what they hold (`8in STD ins2`, `T300 P150`).
+
+> [!info]- Couplings on the Joints sheet (2026-11-05)
+> CAESAR keeps a coupling as CNODE restraints between two nodes at one point, one per DOF, and so does the TOML
+> builder. Until 2026-11-05 a workbook made from a `.cii` or a TOML showed them as plain rows on Restraints and left
+> Joints empty. `PipeJoints.Recognize` now runs after every `.cii` import and TOML build. It turns each such group into
+> a joint: kind (coupling, ball, slip, hinge, custom), frame, DOFs with their gaps and stiffnesses, the node's user SIF,
+> and the tag.
+> - **A group is a joint when:**
+>   - its two nodes are on elements and at one point;
+>   - it has three or more single-DOF restraints (X Y Z RX RY RZ, skewed or not), no friction, no two along one
+>     direction, and one tag;
+>   - they fit the pipe frame (axial, shear pair, torsion, bending pair) or the global one.
+>
+>   A strut or a one- or two-DOF tie stays on Restraints.
+> - **The restraints stay in the model where they were**, marked with the joint (`PipeModelRestraint.Joint`), so the
+>   `.cii` is written exactly as before, and the viewer and the review see the same restraints.
+> - **Editing a joint edits them** (`PipeJoints.Sync`):
+>   - a value changes in place;
+>   - a DOF added becomes new restraints after the joint's others;
+>   - a DOF removed takes its own away;
+>   - another frame replaces them all;
+>   - a row deleted removes them and the SIF;
+>   - a new row adds its restraints to the model.
+> - **Checked:**
+>   - every test model and example writes the same `.cii` before and after (16 models; couplings found in 6: e4's 4,
+>     the sample CAESAR model's 9, one each in e11, the probe, the example and the patterns);
+>   - workbook to `.cii` is the same bytes;
+>   - the viewer's data is unchanged;
+>   - edits to a gap, a stiffness, a SIF, a frame, a deleted and an added joint each change only their own lines.
+> - **A workbook made before this** keeps its couplings on Restraints (Refresh does not move them). Make it again
+>   from the `.cii` to get them on Joints.
 
 > [!info]- Node numbers (live)
 > - **From and To are formulas** (2026-10-29), so inserting a node renumbers the nodes after it. Settings says `live, step 10` (the commonest increment) or `fixed` and why.

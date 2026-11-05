@@ -391,6 +391,8 @@ public static class CaesarPipeImport
                           "): kept as written, so CAESAR resolves it as before, and drawn with the radius it names" +
                           (none.Count > 0 ? "; " + none.Count + " carry a code CAESAR reads as no radius (0), e.g. at element " + none[0].From + "-" + none[0].To + ": check them in CAESAR" : ""));
         }
+        // couplings and other joints: their CNODE restraints, left in place, shown as joints (PipeJoints)
+        PipeJoints.Recognize(m);
         SelfCheck(res);
         return res;
     }

@@ -113,6 +113,7 @@ public static class PipeModelJson
             w.Num("node", r.Node); w.Str("type", r.Type); w.Num("code", r.Code); w.Num("k", r.Stiffness); w.Num("gap", r.Gap); w.Num("mu", r.Mu);
             w.Num("cnode", r.CNode); w.Nums("cos", r.Cosines); w.Str("tag", r.Tag); w.Str("guid", r.Guid); w.Str("source", r.Source);
             w.Num("owner", r.OwnerUid); w.Num("slot", r.Slot); w.Lines("raw", r.Raw);
+            if (r.Joint > 0) { w.Num("joint", r.Joint); w.Str("jointDof", r.JointDof); }
             w.Close();
         }
         w.CloseArr();
@@ -125,6 +126,7 @@ public static class PipeModelJson
             foreach (var d in j.Dofs) { w.Open(); w.Str("dof", d.Dof); w.Num("gap", d.Gap); w.Num("k", d.Stiffness); w.Close(); }
             w.CloseArr();
             w.Num("sif", j.Sif); w.Str("tag", j.Tag);
+            if (j.Backed) w.Bool("backed", true);
             w.Close();
         }
         w.CloseArr();
@@ -138,6 +140,7 @@ public static class PipeModelJson
             var det = new[] { t.WeldMismatch, t.Item6, t.Pad, t.FittingRo, t.CrotchRadius };
             if (!det.SequenceEqual(new[] { slot.WeldMismatch, slot.Item6, slot.Pad, slot.FittingRo, slot.CrotchRadius })) w.Nums("details", det);   // only what the slot does not hold
             w.Num("owner", t.OwnerUid); w.Num("slot", t.Slot); w.Lines("raw", t.Raw);
+            if (t.Joint > 0) w.Num("joint", t.Joint);
             w.Close();
         }
         w.CloseArr();
@@ -355,20 +358,21 @@ public static class PipeModelJson
             m.Restraints.Add(new PipeModelRestraint
             {
                 Node = I(o, "node"), Type = S(o, "type") ?? "", Code = I(o, "code"), Stiffness = D(o, "k"), Gap = D(o, "gap"), Mu = D(o, "mu"), CNode = I(o, "cnode"),
-                Cosines = Ds(o, "cos"), Tag = S(o, "tag") ?? "", Guid = S(o, "guid") ?? "", Source = S(o, "source") ?? "", OwnerUid = I(o, "owner"), Slot = I(o, "slot"), Raw = L(o, "raw")
+                Cosines = Ds(o, "cos"), Tag = S(o, "tag") ?? "", Guid = S(o, "guid") ?? "", Source = S(o, "source") ?? "", OwnerUid = I(o, "owner"), Slot = I(o, "slot"), Raw = L(o, "raw"),
+                Joint = I(o, "joint"), JointDof = S(o, "jointDof") ?? ""
             });
         }
         foreach (var jo in Arr(root, "joints"))
         {
             var o = (Dictionary<string, object>)jo;
-            var j = new PipeModelJoint { Uid = I(o, "uid"), Kind = S(o, "kind") ?? "", Node = I(o, "node"), CNode = I(o, "cnode"), Frame = S(o, "frame") ?? "pipe", Sif = D(o, "sif"), Tag = S(o, "tag") ?? "" };
+            var j = new PipeModelJoint { Uid = I(o, "uid"), Kind = S(o, "kind") ?? "", Node = I(o, "node"), CNode = I(o, "cnode"), Frame = S(o, "frame") ?? "pipe", Sif = D(o, "sif"), Tag = S(o, "tag") ?? "", Backed = B(o, "backed") };
             foreach (var dofo in Arr(o, "dofs")) { var x = (Dictionary<string, object>)dofo; j.Dofs.Add(new PipeModelJointDof { Dof = S(x, "dof") ?? "", Gap = D(x, "gap"), Stiffness = D(x, "k") }); }
             m.Joints.Add(j);
         }
         foreach (var to in Arr(root, "sifs"))
         {
             var o = (Dictionary<string, object>)to;
-            var sf = new PipeModelSif { Node = I(o, "node"), Type = I(o, "type"), SifIn = D(o, "sifIn"), SifOut = D(o, "sifOut"), SurfaceNode = I(o, "surfaceNode"), OwnerUid = I(o, "owner"), Slot = I(o, "slot"), Raw = L(o, "raw") };
+            var sf = new PipeModelSif { Node = I(o, "node"), Type = I(o, "type"), SifIn = D(o, "sifIn"), SifOut = D(o, "sifOut"), SurfaceNode = I(o, "surfaceNode"), OwnerUid = I(o, "owner"), Slot = I(o, "slot"), Raw = L(o, "raw"), Joint = I(o, "joint") };
             var det = Ds(o, "details");
             if (det != null && det.Length >= 5) { sf.WeldMismatch = det[0]; sf.Item6 = det[1]; sf.Pad = det[2]; sf.FittingRo = det[3]; sf.CrotchRadius = det[4]; }
             else CaesarNeutralWriter.SifDetailsFromSlot(sf);   // a model saved before it held them: from its slot

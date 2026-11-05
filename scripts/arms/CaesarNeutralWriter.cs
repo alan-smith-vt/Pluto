@@ -398,7 +398,7 @@ public static class CaesarNeutralWriter
         // restraints (joints expanded) and SIFs, assigned to element blocks
         p.Restraints = new List<PipeModelRestraint>(m.Restraints);
         p.Sifs = new List<PipeModelSif>(m.Sifs);
-        foreach (var j in m.Joints) ExpandJoint(m, j, p.Restraints, p.Sifs);
+        foreach (var j in m.Joints) if (!j.Backed) ExpandJoint(m, j, p.Restraints, p.Sifs);
         var touching = Touching(m);
         p.ResSlots = AssignSlots(m, p.Restraints.Select(r => new SlotItem { Item = r, Node = r.Node, OwnerUid = r.OwnerUid, Slot = r.Slot }).ToList(), p.ResPer, touching, "restraints");
         p.SifSlots = AssignSlots(m, p.Sifs.Select(s => new SlotItem { Item = s, Node = s.Node, OwnerUid = s.OwnerUid, Slot = s.Slot }).ToList(), p.SifPer, touching, "SIF / tee entries");
@@ -1484,7 +1484,7 @@ public static class CaesarNeutralWriter
     {
         var r = new List<PipeModelRestraint>(m.Restraints);
         var s = new List<PipeModelSif>();
-        foreach (var j in m.Joints) ExpandJoint(m, j, r, s);
+        foreach (var j in m.Joints) if (!j.Backed) ExpandJoint(m, j, r, s);
         return r;
     }
 
@@ -1492,62 +1492,76 @@ public static class CaesarNeutralWriter
     {
         var r = new List<PipeModelRestraint>();
         var s = new List<PipeModelSif>(m.Sifs);
-        foreach (var j in m.Joints) ExpandJoint(m, j, r, s);
+        foreach (var j in m.Joints) if (!j.Backed) ExpandJoint(m, j, r, s);
         return s;
     }
 
     static void ExpandJoint(PipeModel m, PipeModelJoint j, List<PipeModelRestraint> restraints, List<PipeModelSif> sifs)
+    {
+        // a pipe-frame joint needs its axis even with no DOF listed (reported as before)
+        if (!string.Equals(j.Frame, "global", StringComparison.OrdinalIgnoreCase)) JointAxis(m, j, "joint " + j.Node + "-" + j.CNode + " (" + j.Kind + ")");
+        foreach (var d in j.Dofs) restraints.AddRange(JointDofRestraints(m, j, d));
+        if (j.Sif > 0) sifs.Add(new PipeModelSif { Node = j.Node, Type = 0, SifIn = j.Sif, SifOut = j.Sif });
+    }
+
+    // the pipe's axis at a joint (pipe frame): the element that ends at its node, else starts at its CNODE, else either
+    internal static double[] JointAxis(PipeModel m, PipeModelJoint j, string w)
+    {
+        var e = m.Elements.FirstOrDefault(x => x.To == j.Node) ?? m.Elements.FirstOrDefault(x => x.From == j.CNode) ?? m.Elements.FirstOrDefault(x => x.From == j.Node || x.To == j.CNode);
+        if (e == null) throw new InvalidOperationException("CaesarNeutralWriter: " + w + ": no element gives the pipe axis");
+        double l = Math.Sqrt(e.Dx * e.Dx + e.Dy * e.Dy + e.Dz * e.Dz);
+        if (!(l > 0)) throw new InvalidOperationException("CaesarNeutralWriter: " + w + ": the element at the joint has no length (no pipe axis)");
+        return new[] { e.Dx / l, e.Dy / l, e.Dz / l };
+    }
+
+    // one joint DOF as CNODE restraints: pipe frame axial / torsion along the pipe, shear / bending as two square to it;
+    // global frame X Y Z RX RY RZ
+    internal static List<PipeModelRestraint> JointDofRestraints(PipeModel m, PipeModelJoint j, PipeModelJointDof d)
     {
         string w = "joint " + j.Node + "-" + j.CNode + " (" + j.Kind + ")";
         bool pipe = !string.Equals(j.Frame, "global", StringComparison.OrdinalIgnoreCase);
         double[] a = null, p1 = null, p2 = null;
         if (pipe)
         {
-            var e = m.Elements.FirstOrDefault(x => x.To == j.Node) ?? m.Elements.FirstOrDefault(x => x.From == j.CNode) ?? m.Elements.FirstOrDefault(x => x.From == j.Node || x.To == j.CNode);
-            if (e == null) throw new InvalidOperationException("CaesarNeutralWriter: " + w + ": no element gives the pipe axis");
-            double l = Math.Sqrt(e.Dx * e.Dx + e.Dy * e.Dy + e.Dz * e.Dz);
-            if (!(l > 0)) throw new InvalidOperationException("CaesarNeutralWriter: " + w + ": the element at the joint has no length (no pipe axis)");
-            a = new[] { e.Dx / l, e.Dy / l, e.Dz / l };
+            a = JointAxis(m, j, w);
             Perps(a, out p1, out p2);
         }
-        foreach (var d in j.Dofs)
+        string dof = (d.Dof ?? "").Trim().ToLowerInvariant();
+        var dirs = new List<KeyValuePair<double[], bool>>();   // direction, rotation
+        if (pipe)
         {
-            string dof = (d.Dof ?? "").Trim().ToLowerInvariant();
-            var dirs = new List<KeyValuePair<double[], bool>>();   // direction, rotation
-            if (pipe)
-            {
-                if (dof == "axial") dirs.Add(new KeyValuePair<double[], bool>(a, false));
-                else if (dof == "shear") { dirs.Add(new KeyValuePair<double[], bool>(p1, false)); dirs.Add(new KeyValuePair<double[], bool>(p2, false)); }
-                else if (dof == "torsion") dirs.Add(new KeyValuePair<double[], bool>(a, true));
-                else if (dof == "bending") { dirs.Add(new KeyValuePair<double[], bool>(p1, true)); dirs.Add(new KeyValuePair<double[], bool>(p2, true)); }
-                else throw new InvalidOperationException("CaesarNeutralWriter: " + w + ": DOF \"" + d.Dof + "\" (pipe frame: axial, shear, torsion, bending)");
-            }
-            else
-            {
-                string u = dof.ToUpperInvariant();
-                bool rot = u.StartsWith("R", StringComparison.Ordinal);
-                string ax = rot ? u.Substring(1) : u;
-                int k = ax == "X" ? 0 : ax == "Y" ? 1 : ax == "Z" ? 2 : -1;
-                if (k < 0 || u.Length > 2) throw new InvalidOperationException("CaesarNeutralWriter: " + w + ": DOF \"" + d.Dof + "\" (global frame: X Y Z RX RY RZ)");
-                var v = new double[3]; v[k] = 1;
-                dirs.Add(new KeyValuePair<double[], bool>(v, rot));
-            }
-            foreach (var kv in dirs)
-            {
-                var dir = kv.Key;
-                int axis = -1;
-                for (int q = 0; q < 3; q++) if (Math.Abs(Math.Abs(dir[q]) - 1) < 1e-9) axis = q;
-                string type = (kv.Value ? "R" : "") + (axis == 1 ? "Y" : axis == 2 ? "Z" : "X");
-                var r = new PipeModelRestraint { Node = j.Node, CNode = j.CNode, Type = type, Code = PipeModelCodes.Restraint[type], Gap = d.Gap, Stiffness = d.Stiffness, Tag = j.Tag ?? "", Source = w };
-                if (axis < 0) r.Cosines = new[] { dir[0], dir[1], dir[2] };
-                restraints.Add(r);
-            }
+            if (dof == "axial") dirs.Add(new KeyValuePair<double[], bool>(a, false));
+            else if (dof == "shear") { dirs.Add(new KeyValuePair<double[], bool>(p1, false)); dirs.Add(new KeyValuePair<double[], bool>(p2, false)); }
+            else if (dof == "torsion") dirs.Add(new KeyValuePair<double[], bool>(a, true));
+            else if (dof == "bending") { dirs.Add(new KeyValuePair<double[], bool>(p1, true)); dirs.Add(new KeyValuePair<double[], bool>(p2, true)); }
+            else throw new InvalidOperationException("CaesarNeutralWriter: " + w + ": DOF \"" + d.Dof + "\" (pipe frame: axial, shear, torsion, bending)");
         }
-        if (j.Sif > 0) sifs.Add(new PipeModelSif { Node = j.Node, Type = 0, SifIn = j.Sif, SifOut = j.Sif });
+        else
+        {
+            string u = dof.ToUpperInvariant();
+            bool rot = u.StartsWith("R", StringComparison.Ordinal);
+            string ax = rot ? u.Substring(1) : u;
+            int k = ax == "X" ? 0 : ax == "Y" ? 1 : ax == "Z" ? 2 : -1;
+            if (k < 0 || u.Length > 2) throw new InvalidOperationException("CaesarNeutralWriter: " + w + ": DOF \"" + d.Dof + "\" (global frame: X Y Z RX RY RZ)");
+            var v = new double[3]; v[k] = 1;
+            dirs.Add(new KeyValuePair<double[], bool>(v, rot));
+        }
+        var o = new List<PipeModelRestraint>();
+        foreach (var kv in dirs)
+        {
+            var dir = kv.Key;
+            int axis = -1;
+            for (int q = 0; q < 3; q++) if (Math.Abs(Math.Abs(dir[q]) - 1) < 1e-9) axis = q;
+            string type = (kv.Value ? "R" : "") + (axis == 1 ? "Y" : axis == 2 ? "Z" : "X");
+            var r = new PipeModelRestraint { Node = j.Node, CNode = j.CNode, Type = type, Code = PipeModelCodes.Restraint[type], Gap = d.Gap, Stiffness = d.Stiffness, Tag = j.Tag ?? "", Source = w };
+            if (axis < 0) r.Cosines = new[] { dir[0], dir[1], dir[2] };
+            o.Add(r);
+        }
+        return o;
     }
 
     // two unit vectors square to a (the other two global axes when a is one)
-    static void Perps(double[] a, out double[] p1, out double[] p2)
+    internal static void Perps(double[] a, out double[] p1, out double[] p2)
     {
         int ax = -1;
         for (int k = 0; k < 3; k++) if (Math.Abs(Math.Abs(a[k]) - 1) < 1e-9) ax = k;

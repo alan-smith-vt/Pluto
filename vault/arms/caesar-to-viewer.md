@@ -245,6 +245,6 @@ The generic job in `scripts/caesar/testdata/` (README there, with the scrub chec
 
 - mitred ring joins at bends (removes the chord seams);
 - nozzles;
-- coupling recognition by name;
+- coupling recognition by name (the pipe model recognizes couplings by their CNODE pattern since 2026-11-05, `PipeJoints`; the viewer still draws them as their restraints);
 - beam envelopes (max over load cases) for the code ratio and the restraint loads;
 - per-restraint loads (the Restraints report) when a node has several restraints.

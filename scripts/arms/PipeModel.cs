@@ -258,6 +258,8 @@ public class PipeModelRestraint
     public int OwnerUid;                      // element whose block held it in the source (0 = none): kept there when it still can be
     public int Slot = -1;                     // its slot in that block
     public List<string> Raw;                  // the slot as written; null = new
+    public int Joint;                         // > 0: the uid of the joint (a coupling ...) this restraint is one DOF of
+    public string JointDof = "";              // that joint's DOF it carries (axial shear torsion bending, or X ... RZ)
 }
 
 public class PipeModelSif
@@ -272,6 +274,7 @@ public class PipeModelSif
     public int OwnerUid;
     public int Slot = -1;
     public List<string> Raw;
+    public int Joint;                         // > 0: the joint whose SIF this is (PipeModelJoint.Sif)
 }
 
 // Forces / moments (FORCMNT: FX FY FZ MX MY MZ) or imposed displacements (DISPLMNT: DX DY DZ RX RY RZ) at a
@@ -411,6 +414,10 @@ public class PipeModelJoint
     public readonly List<PipeModelJointDof> Dofs = new List<PipeModelJointDof>();   // a DOF not listed is FREE
     public double Sif;                        // > 0: a user SIF at the node
     public string Tag = "";
+    // true: its CNODE restraints (and its SIF) are in the model's Restraints / Sifs already, each marked with this
+    // joint's uid (a coupling recognized in a .cii or a TOML build, or a joint the workbook made), so the writer does
+    // not expand it again; editing the joint edits them (PipeJoints.Sync). false: expanded when the .cii is written.
+    public bool Backed;
 }
 
 public class PipeModelJointDof
