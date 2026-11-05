@@ -279,7 +279,7 @@ public static class FrameS2k
                 else if (i < c.Count)
                 {
                     var row = new S2kRow { Eol = doc.Eol, Dirty = true };
-                    foreach (var f in c[i].F) { row.Keys.Add(f[0]); row.Values.Add(f[1]); row.Quoted.Add(false); }
+                    foreach (var f in c[i].F) { row.Keys.Add(f[0]); row.Values.Add(f[1]); row.Quoted.Add(false); row.Bare.Add(false); }
                     var table = doc.Table(t) ?? InsertTable(doc, t);
                     if (last != null) table.InsertRowAfter(last, row); else table.AddRow(row);
                     last = row;

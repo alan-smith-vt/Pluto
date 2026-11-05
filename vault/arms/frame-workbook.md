@@ -41,7 +41,7 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 > |---|---|
 > | Joints | Id, Joint, X Y Z (global), Restraint (`fixed`, `pin`, or the DOFs held: `U1 U2 U3 R3`), Local A B C |
 > | Frames | Id, Frame, Joint I, Joint J, optional DX DY DZ (a J not on Joints is made at I + the delta; blank J = the next free number), Length (live, read-only), Section, Kind, Line, Release (a preset), Angle, Insertion (cardinal point), Modifiers (a preset) |
-> | Sections | Id, Name, Shape, Material, t3 t2 tf tw t2b tfb, Area I33 I22 J (General sections), Catalog (read-only) |
+> | Sections | Id, Name, Shape, Material, t3 t2 tf tw t2b tfb dis, Area I33 I22 J (General sections), Catalog and section modifiers (read-only). Each shape's dimensions are required (a new I's blank t2b / tfb are t2 / tf); a new section from a catalog is refused (give its dimensions) |
 > | Materials | Id, Name, Type, E, Poisson, G, Unit weight, Unit mass, Alpha, Fy, Fu. A new material's blank G is E/(2(1+ν)), its blank mass the weight / g |
 > | Releases | Named presets of the 12 end DOFs (P V2 V3 T M2 M3 at I and J): `yes`, a partial-fixity stiffness, or blank. Built in: FIXED, PIN-PIN, PIN-I, PIN-J, SLIP-J; an imported pattern with no match becomes R1, R2 … |
 > | Modifiers | Named presets of the 8 property modifiers; imported sets become M1, M2 … |
@@ -49,11 +49,11 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 > | Springs | Joint, CoordSys, U1–R3 |
 > | Load patterns | Name, Type, Self weight |
 > | Joint loads, Ground displacements | Joint, Pattern, CoordSys, six values |
-> | Point loads, Distributed loads, Temperature | Frames (a selector), Pattern, CoordSys, Type, Dir, Rel / Abs, where, values. A row naming several frames gives one load per frame |
-> | Load cases | Case, Type, Initial, then one row per load (Load type, Load name, SF) |
+> | Point loads, Distributed loads, Temperature | Frames (a selector), Pattern, CoordSys, Type, Dir, Rel / Abs, where, values. A row naming several frames gives one load per frame. Headers carry two units where the row decides: `Value (kip \| kip-in)` (a force row, a moment row), `Value A (kip/in \| kip-in/in)`; `Distance (in)`, `Start`, `End` convert on Abs rows (a Rel row is a fraction) |
+> | Load cases | Case, Type, Initial (Zero, or a NonStatic case: SAP continues only from one; a loop is refused), then one row per load (Load type, Load name, SF) |
 > | Combinations | Combination, Type, then one row per item (a case or a combination, SF; SAP's case type is worked out) |
 > | Groups | SAP's groups, one row per member; the `PL_KIND_` / `PL_LINE_` groups are Frames' Kind and Line |
-> | Carried | Read-only: each table the sheets do not show, with its row count: it rides along unchanged |
+> | Carried | Read-only: each table no object owns, with its row count, and each table objects keep that no sheet shows (offsets along the length, nonlinear case parameters, auto mesh, design data …): they ride along unchanged and follow renames and deletions |
 >
 > **Reading rules:**
 > - Rows tie to the model by their Id (J12, F7, S3, PL21 …: the object's uid). The model the workbook was written from is
@@ -68,17 +68,56 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 >   several separated by commas.
 > - A header in another unit (`X (ft)`, `E (ksi)`) converts its column (`FrameUnits`: lb kip N kN kgf tonf, in ft mm
 >   cm m, F C, ksi psi ksf psf pcf MPa …). Refresh keeps the header's unit with its cells.
-> - Errors name their cell (`Frames!I12: no section W99X1 on Sections`). The build refuses while there are any.
+> - Errors name their cell and suggest the closest name (`Frames!I12: no section W10X3 on Sections (W10X33?)`). The
+>   build refuses while there are any. A unit on a column that takes none is an error, never ignored.
+> - A joint made by a frame's delta is said (`Frames!D14: joint 21 made at 288, 60, 186`), in the runner's output
+>   and the viewer's Checks.
+> - Where a frame's or link's joints moved, the `Length` and centroid SAP's export gives it are worked out again.
 > - A table SAP has not confirmed yet (`FrameS2kSchema`) gets new rows anyway, with an `s2k-unconfirmed` notice in the
 >   runner's output and the viewer's Checks. The probe's results move tables into the confirmed list.
 >
 > **Live checks** (Start sheet, red / amber cells, as in the CAESAR workbook): frames with a joint, section, release or
 > modifiers preset no sheet has; frames from a joint to itself; labels used twice; links with an unknown joint or
-> property; loads naming an unknown pattern; joints nothing uses (amber); copied Ids (amber). Above 5,000 frames the
-> quadratic counts are off ("light").
+> property; loads naming an unknown pattern; loads on a frame no sheet has; joints nothing uses (amber); copied Ids
+> (amber). A joint a frame's delta makes counts as a joint everywhere. Above 5,000 frames the quadratic counts are off
+> ("light"). The run block's **Name check** says when the workbook was saved under another name (its launchers still
+> build the old one: run Refresh on it).
 >
 > **Refresh** writes the workbook in this version's layout from its own base, every typed cell back where it was, so
 > the next read gives the same model.
+
+> [!info]- The dry run (Phase 3c, 2026-11-05)
+> An agent used the workbook and runner only, through five scenarios:
+> 1. a new pipe rack from scratch;
+> 2. the rack export round-tripped with typical edits;
+> 3. deliberate mistakes;
+> 4. Refresh of an edited workbook;
+> 5. the probe file.
+>
+> Scenario 1 built on the first try. Scenario 2's edits each changed only their own lines. Refresh gave the same
+> model. It found 13 issues; fixed the same day:
+> - **Wrong result:** a unit typed on a load column was ignored; now it converts, and a unit on a column that takes
+>   none is an error.
+> - **Wrong result:** a section with missing dimensions was accepted; now each shape's dimensions are required, and a
+>   new catalog section is refused.
+> - **Wrong result:** a case continuing from a linear case, and loops, were written; now refused.
+> - **Crash:** a duplicate joint label crashed the read with no cell named; now an error naming it.
+> - **Wrong check:** links to joints a delta makes counted red; now accepted.
+> - **Gap:** no live check for a load on a missing frame; added.
+> - **Silent:** joints a delta made were never reported; now a notice per joint.
+> - **Hidden data:** kept-but-hidden data was invisible; now listed on Carried, with Double Angle `dis` and section
+>   modifiers on Sections.
+> - **Messages:** errors pointed at the Id cell; now they name the label cell and suggest a name.
+> - **Save As:** a renamed workbook built the old file; the Name check now says so.
+> - **Stale values:** lengths and centroids went stale; now recomputed.
+> - **Small items:** an empty `GUID=` was written as `GUID=""`; the Link props row count; imported release presets
+>   now named by what they release (`R1 I M3~ J M3~`); a hint on link local axes.
+>
+> Still open:
+> - entering a multilinear link's force–deformation curve (round 2 of the probe shows where SAP keeps it);
+> - catalog sections for new rows;
+> - the deleted-frame warning repeating until its Groups row is removed;
+> - the `.bak` name.
 
 > [!info]- The runner: `scripts/frame/Build-Frame.ps1`
 > - `-In <x.s2k | x.$2k | x.xlsx | x.frame.json>`
@@ -108,7 +147,8 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 > - `-Probe <folder>` and `-ProbeCheck <export>`: see the SAP probe below.
 > - The last line is `RESULT {json}`.
 > - **Development only:** `PLUTO_DLL=<a prebuilt pluto.dll>` loads that assembly instead of compiling. This is how the
->   runner is exercised under pwsh 7 on Linux.
+>   runner is exercised under pwsh 7 on Linux. `-Preview` there needs mono's `System.Web.Extensions` loaded first (the
+>   sidecar merge uses .NET Framework's serializer); a failed preview leaves no temporary files.
 >
 > **Checked (2026-11-05, mono and pwsh 7 with the mono-built assembly):**
 > - `rack.s2k`, the probe and the tank golden (1,371 joints) each go to a workbook and back with the same model hash,

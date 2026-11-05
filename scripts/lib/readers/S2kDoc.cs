@@ -42,6 +42,7 @@ public sealed class S2kRow
     public readonly List<string> Keys = new List<string>();
     public readonly List<string> Values = new List<string>();
     public readonly List<bool> Quoted = new List<bool>();
+    public readonly List<bool> Bare = new List<bool>();      // read as an empty value with no quotes (GUID=): rendered so while unchanged
     public bool Dirty;
     public string Eol = "\r\n";
 
@@ -58,16 +59,17 @@ public sealed class S2kRow
     {
         value = value ?? "";
         int i = IndexOf(key);
-        if (i < 0) { Keys.Add(key); Values.Add(value); Quoted.Add(false); Dirty = true; return; }
+        if (i < 0) { Keys.Add(key); Values.Add(value); Quoted.Add(false); Bare.Add(false); Dirty = true; return; }
         if (Values[i] == value) return;
         Values[i] = value;
+        Bare[i] = false;
         Dirty = true;
     }
     public void Remove(string key)
     {
         int i = IndexOf(key);
         if (i < 0) return;
-        Keys.RemoveAt(i); Values.RemoveAt(i); Quoted.RemoveAt(i);
+        Keys.RemoveAt(i); Values.RemoveAt(i); Quoted.RemoveAt(i); Bare.RemoveAt(i);
         Dirty = true;
     }
 
@@ -82,7 +84,7 @@ public sealed class S2kRow
     {
         var r = new S2kRow { Dirty = Dirty, Eol = Eol };
         foreach (var l in Lines) r.Lines.Add(l.Clone());
-        r.Keys.AddRange(Keys); r.Values.AddRange(Values); r.Quoted.AddRange(Quoted);
+        r.Keys.AddRange(Keys); r.Values.AddRange(Values); r.Quoted.AddRange(Quoted); r.Bare.AddRange(Bare);
         return r;
     }
 
@@ -93,7 +95,7 @@ public sealed class S2kRow
         for (int i = 0; i < Keys.Count; i++)
         {
             string v = Values[i] ?? "";
-            bool q = Quoted[i] || v.Length == 0 || v.IndexOf(' ') >= 0 || v.IndexOf(',') >= 0;
+            bool q = Quoted[i] || (v.Length == 0 && !Bare[i]) || v.IndexOf(' ') >= 0 || v.IndexOf(',') >= 0;
             sb.Append("   ").Append(Keys[i]).Append('=');
             if (q) sb.Append('"').Append(v).Append('"'); else sb.Append(v);
         }
@@ -135,7 +137,7 @@ public sealed class S2kRow
                 while (i < n && !char.IsWhiteSpace(text[i])) i++;
                 value = text.Substring(vs, i - vs);
             }
-            row.Keys.Add(key); row.Values.Add(value); row.Quoted.Add(quoted);
+            row.Keys.Add(key); row.Values.Add(value); row.Quoted.Add(quoted); row.Bare.Add(!quoted && value.Length == 0);
         }
     }
 }

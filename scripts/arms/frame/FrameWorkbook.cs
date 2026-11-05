@@ -29,6 +29,7 @@ public sealed class FrameWorkbookResult
     public string Path = "", SourceName = "", BaseHash = "", ModelHash = "";
     public FrameModel Model, Base;
     public readonly List<string> Warnings = new List<string>();
+    public readonly List<string> Notes = new List<string>();     // what the read did that is worth saying (joints made by a delta)
     public string Summary()
     {
         var m = Model;
@@ -140,6 +141,15 @@ public static class FrameWorkbook
 
     sealed class Preset { public string Name; public bool[] Rel = new bool[12]; public double[] Val = new double[12]; }
 
+    // "I M3~ J M3~": what a preset releases at each end (~ partly fixed)
+    static string PresetText(bool[] r, double[] p)
+    {
+        string[] n = { "P", "V2", "V3", "T", "M2", "M3" };
+        Func<int, string> end = o => string.Join(" ", Enumerable.Range(0, 6).Where(i => r[o + i]).Select(i => n[i] + (p[o + i] != 0 ? "~" : "")).ToArray());
+        string a = end(0), b = end(6);
+        return (a.Length > 0 ? "I " + a : "") + (a.Length > 0 && b.Length > 0 ? " " : "") + (b.Length > 0 ? "J " + b : "");
+    }
+
     static string RestraintText(bool[] r)
     {
         if (!r.Any(b => b)) return "";
@@ -223,6 +233,12 @@ public static class FrameWorkbook
         string jointIds = col(SJoints, "B"), secNames = col(SSections, "B"), matNames = col(SMaterials, "B"), relNames = col(SReleases, "A"), modNames = col(SModifiers, "A"),
                lpNames = col(SLinkProps, "B"), patNames = col(SPatterns, "B");
         bool light = m.Frames.Count > 5000;
+        // a joint no sheet has: not on Joints, and no Frames row's delta makes it (red); at = a cell, or a whole column in SUMPRODUCT
+        Func<string, string> noJoint = at => "(" + at + "<>\"\")*(COUNTIF(" + jointIds + "," + at + ")=0)*(COUNTIFS(" + col(SFrames, "D") + "," + at + "," + col(SFrames, "E") + ",\"<>\")+COUNTIFS(" +
+                                             col(SFrames, "D") + "," + at + "," + col(SFrames, "F") + ",\"<>\")+COUNTIFS(" + col(SFrames, "D") + "," + at + "," + col(SFrames, "G") + ",\"<>\")=0)";
+        string frameIds = col(SFrames, "B");
+        // a load's Frames cell naming one frame no sheet has (selectors, lists and ranges are checked by the build)
+        Func<string, string> noFrame = at => "(" + at + "<>\"\")*ISERROR(FIND(\":\"," + at + "))*ISERROR(FIND(\",\"," + at + "))*(LOWER(" + at + ")<>\"all\")*(COUNTIF(" + frameIds + "," + at + ")=0)";
 
         var start = b.Add("Start");
         var st = b.Add("Settings");
@@ -236,7 +252,7 @@ public static class FrameWorkbook
             bool[] r = f.Releases; double[] pv = f.PartialFixity;
             string k = RelKey(r, pv);
             var hit = rel.FirstOrDefault(p => RelKey(p.Rel, p.Val) == k);
-            if (hit == null) { hit = new Preset { Name = "R" + (rel.Count - RelBuiltIn.Length + 1).ToString(Inv), Rel = r, Val = pv }; rel.Add(hit); }
+            if (hit == null) { hit = new Preset { Name = "R" + (rel.Count - RelBuiltIn.Length + 1).ToString(Inv) + " " + PresetText(r, pv), Rel = r, Val = pv }; rel.Add(hit); }
             relOf[f] = hit.Name;
         }
         var mods = new List<double[]>(); var modOf = new Dictionary<FrameMember, string>();
@@ -285,7 +301,8 @@ public static class FrameWorkbook
         var fh = new[] { "Id", "Frame", "Joint I", "Joint J", H("DX", "L", units), H("DY", "L", units), H("DZ", "L", units), H("Length", "L", units), "Section", "Kind", "Line",
                          "Release", H("Angle", "deg", ""), "Insertion", "Modifiers" };
         fs.FreezeCols = 2;
-        var pos = m.Joints.ToDictionary(j => j.Label, j => j.Xyz, StringComparer.Ordinal);
+        var pos = new Dictionary<string, double[]>(StringComparer.Ordinal);
+        foreach (var j in m.Joints) pos[j.Label] = j.Xyz;
         r0 = 1;
         foreach (var f in m.Frames)
         {
@@ -339,15 +356,18 @@ public static class FrameWorkbook
         // ---- Sections
         var ss = b.Add(SSections);
         var sh = new[] { "Id", "Name", "Shape", "Material", H("t3", "L", units), H("t2", "L", units), H("tf", "L", units), H("tw", "L", units), H("t2b", "L", units), H("tfb", "L", units),
-                         H("Area", "L2", units), H("I33", "L4", units), H("I22", "L4", units), H("J", "L4", units), "Catalog" };
-        string[] dimKeys = { "t3", "t2", "tf", "tw", "t2b", "tfb", "Area", "I33", "I22", "TorsConst" };
+                         H("dis", "L", units), H("Area", "L2", units), H("I33", "L4", units), H("I22", "L4", units), H("J", "L4", units), "Catalog", "Section modifiers" };
+        string[] dimKeys = { "t3", "t2", "tf", "tw", "t2b", "tfb", "dis", "Area", "I33", "I22", "TorsConst" };
+        string[] secMods = { "AMod", "A2Mod", "A3Mod", "JMod", "I2Mod", "I3Mod", "MMod", "WMod" }, secModNames = { "A", "A2", "A3", "J", "I2", "I3", "mass", "weight" };
         r0 = 1;
         foreach (var s in m.Sections)
         {
             var g = s.Rec(FrameSection.General);
             ss.Set(r0, 0, Id(s)); ss.Set(r0, 1, s.Label); ss.Set(r0, 2, s.Shape); ss.Set(r0, 3, s.Material);
             for (int k = 0; k < dimKeys.Length; k++) if (g != null && g.Has(dimKeys[k])) Num(ss, r0, 4 + k, g.Get(dimKeys[k]));
-            if (g != null && g.Yes("FromFile")) ss.Set(r0, 14, (g.Get("FileName") ?? "") + ": " + (g.Get("SectInFile") ?? ""), XlsxBook.ReadOnly);
+            if (g != null && g.Yes("FromFile")) ss.Set(r0, 15, (g.Get("FileName") ?? "") + ": " + (g.Get("SectInFile") ?? ""), XlsxBook.ReadOnly);
+            string sm = g == null ? "" : string.Join(", ", Enumerable.Range(0, 8).Where(k => g.Has(secMods[k]) && g.Num(secMods[k], 1) != 1).Select(k => secModNames[k] + " x" + g.Get(secMods[k])).ToArray());
+            if (sm.Length > 0) ss.Set(r0, 16, sm, XlsxBook.ReadOnly);
             r0++;
         }
         t.Form.Table(ss, t, sh, new[] {
@@ -355,12 +375,13 @@ public static class FrameWorkbook
             L("Shape", "prop", "list?", ListRange(0), "SAP's shape: Pipe (t3 = OD, tw = wall), Box/Tube, I/Wide Flange, Channel, Angle, Tee, Double Angle, Rectangular, General ..."),
             L("Material", "prop", "list!", matNames, "A material on the Materials sheet."),
             C("t3", "prop", "pos", "Depth (OD for a pipe)."), C("t2", "prop", "pos", "Width."), C("tf", "prop", "pos", "Flange thickness."), C("tw", "prop", "pos", "Web (wall) thickness."),
-            C("t2b", "prop", "pos", "Bottom flange width."), C("tfb", "prop", "pos", "Bottom flange thickness."),
+            C("t2b", "prop", "pos", "Bottom flange width (blank on a new I section: t2)."), C("tfb", "prop", "pos", "Bottom flange thickness (blank on a new I section: tf)."),
+            C("dis", "prop", "nonneg", "Double Angle: the back-to-back spacing."),
             C("Area", "prop", "pos", "Area: a General section's (SAP works it out for the others)."), C("I33", "prop", "pos", "Moment of inertia about 3 (General)."),
             C("I22", "prop", "pos", "Moment of inertia about 2 (General)."), C("J", "prop", "pos", "Torsion constant (General)."),
         }, m.Sections.Count, lim);
         ss.Conditional("B2:B" + lim, "AND(B2<>\"\",COUNTIF($B$2:$B$" + lim + ",B2)>1)", t.Red);
-        ss.Width(1, 16); ss.Width(2, 15); ss.Width(3, 12); ss.Width(14, 24);
+        ss.Width(1, 16); ss.Width(2, 15); ss.Width(3, 12); ss.Width(15, 24); ss.Width(16, 22);
 
         // ---- Materials
         var ms = b.Add(SMaterials);
@@ -417,10 +438,11 @@ public static class FrameWorkbook
             r0++;
         }
         t.Form.Table(ls, t, lh, new[] {
-            C("Id", "key", "id", "K and the link's number: keep it."), C("Link", "key", "text", "SAP's label."), L("Joint I", "bc", "ref", jointIds, "Its first joint."),
-            L("Joint J", "bc", "ref", jointIds, "Its second joint; blank = a one-joint (grounded) link."), L("Property", "bc", "list!", lpNames, "A property on Link props."),
-            C("Angle", "geom", "num", "Local axis angle (degrees)."),
+            C("Id", "key", "id", "K and the link's number: keep it."), C("Link", "key", "text", "SAP's label."), C("Joint I", "bc", "text", "Its first joint."),
+            C("Joint J", "bc", "text", "Its second joint; blank = a one-joint (grounded) link."), L("Property", "bc", "list!", lpNames, "A property on Link props."),
+            C("Angle", "geom", "num", "Local axis angle (degrees), about local 1. SAP's default axes: local 1 from I to J (+Z for a one-joint or zero-length link); local 2 in the vertical plane through 1 (+X when 1 is vertical); local 3 = 1 x 2. A gap's U1 acts along local 1."),
         }, m.Links.Count, lim);
+        ls.Conditional("C2:D" + lim, noJoint("C2") + ">0", t.Red);
 
         // ---- Link props (one row per DOF)
         var lp = b.Add(SLinkProps);
@@ -468,8 +490,9 @@ public static class FrameWorkbook
             for (int i = 0; i < 6; i++) Num(sp, r0, 2 + i, sr.Get(FrameJoint.Dofs[i]));
             r0++;
         }
-        t.Form.Table(sp, t, sph, new[] { L("Joint", "key", "ref", jointIds, "The joint, once."), L("CoordSys", "bc", "list?", ListRange(11), "GLOBAL or Local (the joint's local axes).") }
+        t.Form.Table(sp, t, sph, new[] { C("Joint", "key", "text", "The joint, once."), L("CoordSys", "bc", "list?", ListRange(11), "GLOBAL or Local (the joint's local axes).") }
             .Concat(FrameJoint.Dofs.Select(d => C(d, "bc", "nonneg", "Spring stiffness in " + d + "."))).ToArray(), r0 - 1, lim);
+        sp.Conditional("A2:A" + lim, noJoint("A2") + ">0", t.Red);
 
         // ---- Load patterns
         var ps = b.Add(SPatterns);
@@ -499,9 +522,10 @@ public static class FrameWorkbook
                 r0++;
             }
             t.Form.Table(ws, t, new[] { "Id", "Joint", "Pattern", "CoordSys" }.Concat(keys.Select((k, i) => H(k, dims[i], units))).ToArray(),
-                new[] { C("Id", "key", "id", (disp ? "GD" : "JL") + " and the load's number: keep it."), L("Joint", "key", "ref", jointIds, "The joint."),
+                new[] { C("Id", "key", "id", (disp ? "GD" : "JL") + " and the load's number: keep it."), C("Joint", "key", "text", "The joint."),
                         L("Pattern", "load", "list!", patNames, "Its load pattern."), L("CoordSys", "load", "list?", ListRange(11), "GLOBAL or Local.") }
                 .Concat(keys.Select(k => C(k, "load", "num", (disp ? "Imposed " : "") + k + "."))).ToArray(), list.Count, lim);
+            ws.Conditional("B2:B" + lim, noJoint("B2") + ">0", t.Red);
         }
         // frame point loads
         {
@@ -517,11 +541,13 @@ public static class FrameWorkbook
                 Num(ws, r0, 8, row.Get(row.Has("Force") ? "Force" : "Moment"));
                 r0++;
             }
-            t.Form.Table(ws, t, new[] { "Id", "Frames", "Pattern", "CoordSys", "Type", "Dir", "Rel / Abs", "Distance", "Value" }, LoadCols("PL", patNames).Concat(new[] {
+            t.Form.Table(ws, t, new[] { "Id", "Frames", "Pattern", "CoordSys", "Type", "Dir", "Rel / Abs", H("Distance", "L", units), "Value (" + FrameUnits.Label("F", units) + " | " + FrameUnits.Label("F-L", units) + ")" }, LoadCols("PL", patNames).Concat(new[] {
                 L("Rel / Abs", "load", "list!", ListRange(10), "Rel: Distance is a fraction of the length (0 to 1); Abs: a length from end I."),
-                C("Distance", "load", "nonneg", "Where along the frame, from end I."), C("Value", "load", "num", "The force (or moment), in the model's units; a positive Gravity load points down."),
+                C("Distance", "load", "nonneg", "Where along the frame, from end I: a fraction on a Rel row, a length (the header's unit) on an Abs row."),
+                C("Value", "load", "num", "The force (first unit) or, on a Moment row, the moment (second unit); a positive Gravity load points down."),
             }).ToArray(), list.Count, lim);
             ws.Conditional("H2:H" + lim, "AND(G2=\"Rel\",ISNUMBER(H2),OR(H2<0,H2>1))", t.Red);
+            ws.Conditional("B2:B" + lim, noFrame("B2") + ">0", t.Red);
         }
         // frame distributed loads
         {
@@ -539,12 +565,16 @@ public static class FrameWorkbook
                 Num(ws, r0, 9, row.Get(mom ? "MOverLA" : "FOverLA")); Num(ws, r0, 10, row.Get(mom ? "MOverLB" : "FOverLB"));
                 r0++;
             }
-            t.Form.Table(ws, t, new[] { "Id", "Frames", "Pattern", "CoordSys", "Type", "Dir", "Rel / Abs", "Start", "End", "Value A", "Value B" }, LoadCols("DL", patNames).Concat(new[] {
+            string perL = "(" + FrameUnits.Label("F/L", units) + " | " + FrameUnits.Label("F-L/L", units) + ")";
+            t.Form.Table(ws, t, new[] { "Id", "Frames", "Pattern", "CoordSys", "Type", "Dir", "Rel / Abs", H("Start", "L", units), H("End", "L", units), "Value A " + perL, "Value B " + perL }, LoadCols("DL", patNames).Concat(new[] {
                 L("Rel / Abs", "load", "list!", ListRange(10), "Rel: Start / End are fractions of the length; Abs: lengths from end I."),
-                C("Start", "load", "nonneg", "Where it starts (blank = 0)."), C("End", "load", "nonneg", "Where it ends (blank = the whole length)."),
-                C("Value A", "load", "num", "Load per length at Start."), C("Value B", "load", "num", "Load per length at End (blank = Value A, uniform)."),
+                C("Start", "load", "nonneg", "Where it starts (blank = 0): a fraction on a Rel row, a length (the header's unit) on an Abs row."),
+                C("End", "load", "nonneg", "Where it ends (blank = the whole length)."),
+                C("Value A", "load", "num", "Load per length at Start: a force per length, or on a Moment row a moment per length (the second unit)."),
+                C("Value B", "load", "num", "Load per length at End (blank = Value A, uniform)."),
             }).ToArray(), list.Count, lim);
             ws.Conditional("H2:I" + lim, "AND($G2=\"Rel\",ISNUMBER(H2),OR(H2<0,H2>1))", t.Red);
+            ws.Conditional("B2:B" + lim, noFrame("B2") + ">0", t.Red);
         }
         // frame temperature loads
         {
@@ -561,6 +591,7 @@ public static class FrameWorkbook
                 C("Id", "key", "id", "TL and the load's number: keep it."), C("Frames", "key", "text", FramesHint), L("Pattern", "load", "list!", patNames, "Its load pattern."),
                 L("Type", "load", "list?", ListRange(12), "Temperature (a uniform change), or a gradient."), C("Value", "load", "num", "The temperature change."),
             }, list.Count, lim);
+            ws.Conditional("B2:B" + lim, noFrame("B2") + ">0", t.Red);
         }
 
         // ---- Load cases (one row per load)
@@ -624,7 +655,26 @@ public static class FrameWorkbook
             if (n == 0) continue;
             ca.Set(r0, 0, tb.Name, XlsxBook.ReadOnly); ca.Set(r0, 1, n, XlsxBook.ReadOnly); r0++;
         }
-        if (r0 == 1) ca.Set(1, 0, "(nothing carried)", XlsxBook.Note);
+        if (r0 == 1) { ca.Set(1, 0, "(no table rides along on its own)", XlsxBook.Note); r0++; }
+        var shown = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            FrameJoint.Coords, FrameJoint.Restraints, FrameJoint.Springs, FrameJoint.LocalAxes, FrameMember.Conn, FrameMember.SectionAssign, FrameMember.LocalAxes,
+            FrameMember.Release, FrameMember.Partial, FrameMember.Insertion, FrameMember.Modifiers, FrameSection.General, FrameMaterial.General, FrameMaterial.Mechanical,
+            FrameMaterial.Steel, FrameLinkProp.General, FrameLink.Conn, FrameLink.PropAssign, FrameLink.LocalAxes, FrameGroup.Defs, FrameGroup.Assign, FramePattern.Defs,
+            FrameLoad.JointForce, FrameLoad.GroundDisp, FrameLoad.Point, FrameLoad.Distributed, FrameLoad.Temperature, FrameCase.Defs, FrameCase.StaticLoads, FrameCombo.Defs,
+        };
+        var kept = new SortedDictionary<string, int>(StringComparer.Ordinal);
+        foreach (var o in m.All())
+            foreach (var rr in o.Recs)
+            {
+                if (shown.Contains(rr.Table) || o is FrameLinkProp && rr.Has("DOF")) continue;
+                int n0; kept.TryGetValue(rr.Table, out n0); kept[rr.Table] = n0 + 1;
+            }
+        r0++;
+        ca.Set(r0, 0, "Kept with their objects, shown on no sheet", t.Head["ro"]); ca.Set(r0, 1, "Rows", t.Head["ro"]); r0++;
+        if (kept.Count == 0) { ca.Set(r0, 0, "(none)", XlsxBook.Note); r0++; }
+        foreach (var kv in kept) { ca.Set(r0, 0, kv.Key, XlsxBook.ReadOnly); ca.Set(r0, 1, kv.Value, XlsxBook.ReadOnly); r0++; }
+        ca.Set(r0 + 1, 0, "These follow their object: a renamed frame renames them, a deleted one takes them away. Edit them in SAP.", XlsxBook.Note);
 
         // ---- Lists (hidden), _pluto (veryHidden)
         var li = b.Add("Lists");
@@ -658,7 +708,7 @@ public static class FrameWorkbook
             new WbSheetInfo(SReleases, "End release presets", rowsOf(SReleases, "A")),
             new WbSheetInfo(SModifiers, "Property modifier presets", rowsOf(SModifiers, "A")),
             new WbSheetInfo(SLinks, "Links: joints, property, angle", rowsOf(SLinks, "B")),
-            new WbSheetInfo(SLinkProps, "Link properties: type, then one row per DOF", rowsOf(SLinkProps, "D")),
+            new WbSheetInfo(SLinkProps, "Link properties: type, then one row per DOF", rowsOf(SLinkProps, "B")),
             new WbSheetInfo(SSprings, "Joint springs", rowsOf(SSprings, "A")),
             new WbSheetInfo(SPatterns, "Load patterns", rowsOf(SPatterns, "B")),
             new WbSheetInfo(SJointLoads, "Joint forces", rowsOf(SJointLoads, "B")),
@@ -682,9 +732,10 @@ public static class FrameWorkbook
             new WbCheck("Frames with a section, release or modifiers preset no sheet has", light ? "0" : "SUMPRODUCT((" + col(SFrames, "I") + "<>\"\")*(COUNTIF(" + secNames + "," + col(SFrames, "I") + ")=0))+SUMPRODUCT((" +
                         col(SFrames, "L") + "<>\"\")*(COUNTIF(" + relNames + "," + col(SFrames, "L") + ")=0))+SUMPRODUCT((" + col(SFrames, "O") + "<>\"\")*(COUNTIF(" + modNames + "," + col(SFrames, "O") + ")=0))", false),
             new WbCheck("Joint or frame labels used twice", light ? "0" : "SUMPRODUCT((" + jointIds + "<>\"\")*(COUNTIF(" + jointIds + "," + jointIds + ")>1))+SUMPRODUCT((" + col(SFrames, "B") + "<>\"\")*(COUNTIF(" + col(SFrames, "B") + "," + col(SFrames, "B") + ")>1))", false),
-            new WbCheck("Links with a joint or property no sheet has", "SUMPRODUCT((" + col(SLinks, "C") + "<>\"\")*(COUNTIF(" + jointIds + "," + col(SLinks, "C") + ")=0))+SUMPRODUCT((" + col(SLinks, "D") + "<>\"\")*(COUNTIF(" + jointIds + "," + col(SLinks, "D") + ")=0))+SUMPRODUCT((" +
+            new WbCheck("Links with a joint or property no sheet has", "SUMPRODUCT(" + noJoint(col(SLinks, "C")) + ")+SUMPRODUCT(" + noJoint(col(SLinks, "D")) + ")+SUMPRODUCT((" +
                         col(SLinks, "E") + "<>\"\")*(COUNTIF(" + lpNames + "," + col(SLinks, "E") + ")=0))", false),
             new WbCheck("Loads naming a pattern no sheet has", string.Join("+", new[] { SJointLoads, SGround, SPoint, SDist, STemp }.Select(sn => "SUMPRODUCT((" + col(sn, "C") + "<>\"\")*(COUNTIF(" + patNames + "," + col(sn, "C") + ")=0))").ToArray()), false),
+            new WbCheck("Loads on a frame no sheet has", string.Join("+", new[] { SPoint, SDist, STemp }.Select(sn => "SUMPRODUCT(" + noFrame(col(sn, "B")) + ")").ToArray()), false),
             new WbCheck("Joints no frame or link uses", light ? "0" : "SUMPRODUCT((" + jointIds + "<>\"\")*(COUNTIF(" + fr + "," + jointIds + ")+COUNTIF(" + frJ + "," + jointIds + ")+COUNTIF(" + col(SLinks, "C") + "," + jointIds + ")+COUNTIF(" + col(SLinks, "D") + "," + jointIds + ")=0))", true),
             new WbCheck("Ids used twice (a copied row: read as new)", string.Join("+", new[] { SJoints, SFrames, SSections, SLinks, SPoint, SDist }.Select(sn => "SUMPRODUCT((" + col(sn, "A") + "<>\"\")*(COUNTIF(" + col(sn, "A") + "," + col(sn, "A") + ")>1))").ToArray()), true),
         };
@@ -735,6 +786,14 @@ public static class FrameWorkbook
     }
     static void SetRowRo(XlsxBookSheet s, int r, string k, string v, string note) { s.Set(r, 0, k, XlsxBook.Bold); s.Set(r, 1, v ?? "", XlsxBook.ReadOnly); s.Set(r, 2, note, XlsxBook.Note); }
 
+    // blank while the workbook keeps the name it was written under; a warning once it is saved as another
+    static string NameCheck(string file)
+    {
+        const string cf = "CELL(\"filename\",$A$1)";
+        return "IF(" + cf + "=\"\",\"\",IF(AND(ISERROR(FIND(" + WbRun.Lit("[" + file + "]") + "," + cf + ")),ISERROR(FIND(" + WbRun.Lit("/" + file + "'") + "," + cf + "))),\"Saved under another name: the links and commands above still build \"&" +
+               WbRun.Lit(file) + "&\". Run the Refresh command on this file.\",\"OK: this is the workbook they build\"))";
+    }
+
     static int RunBlock(XlsxBookSheet s, WbTheme t, int r, FrameWorkbookRun run)
     {
         var links = new List<WbLink>
@@ -757,6 +816,8 @@ public static class FrameWorkbook
             new WbCommand("Open in SAP command", run.CommandFormula("-S2k -Preview -Open"), null),
             new WbCommand("Refresh command", run.RefreshFormula(),
                           "Brings this workbook to the newest Pluto's layout, over itself, edits kept; the previous file stays beside it as .xlsx.bak. Close the workbook first: Excel holds it while it is open."),
+            new WbCommand("Name check", NameCheck(run.Name + ".xlsx"),
+                          "Saved under another name (Save As), the links and commands above still build the workbook they were written for. Run the Refresh command on this file to point them here."),
         };
         return WbStart.RunBlock(s, t, r, links,
             "Excel asks before it follows a link to a .cmd file; where it will not, double-click the file in the folder. Or paste a command into PowerShell:", commands);
@@ -777,6 +838,7 @@ public static class FrameWorkbook
 
     sealed class Ctx : WbReadCtx
     {
+        public readonly List<string> Notes = new List<string>();
         public FrameModel M, Base;
         public string Units;
         public readonly Dictionary<string, FrameObj> ById = new Dictionary<string, FrameObj>(StringComparer.OrdinalIgnoreCase);
@@ -841,6 +903,8 @@ public static class FrameWorkbook
         ReadCases(sheet(SCases), x);
         ReadCombos(sheet(SCombos), x);
 
+        Refit(m, res.Base);
+
         // what the sheets no longer have: deleted, users first (a refusal names what still uses it)
         Func<FrameObj, int> rank = o => o is FrameLoad ? 0 : o is FrameLink ? 1 : o is FrameMember ? 2 : o is FrameCombo ? 3 : o is FrameCase ? 4 : o is FrameJoint ? 5 :
                                         o is FrameLinkProp ? 6 : o is FrameSection ? 7 : o is FrameMaterial ? 8 : o is FramePattern ? 9 : 10;
@@ -852,9 +916,38 @@ public static class FrameWorkbook
         if (x.Errors.Count > 0)
             throw new InvalidOperationException("FrameWorkbook: " + Path.GetFileName(path) + ": " + x.Errors.Count + " problem(s): " + string.Join("; ", x.Errors.Take(40).ToArray()));
         res.Warnings.AddRange(x.Warnings);
+        res.Notes.AddRange(x.Notes);
         res.Model = m;
         res.ModelHash = FrameModelJson.Hash(m);
         return res;
+    }
+
+    // SAP's export gives frames and links their Length and centroid: where an object's joints moved (or it got others),
+    // they are worked out again, so nobody reading the .s2k is misled (SAP recomputes them anyway); untouched rows keep
+    // their text
+    static void Refit(FrameModel m, FrameModel b)
+    {
+        var now = new Dictionary<string, double[]>(StringComparer.Ordinal); var was = new Dictionary<string, double[]>(StringComparer.Ordinal);
+        foreach (var j in m.Joints) now[j.Label] = j.Xyz;
+        foreach (var j in b.Joints) was[j.Label] = j.Xyz;
+        var old = new Dictionary<int, string[]>();
+        foreach (var f in b.Frames) old[f.Uid] = new[] { f.JointI, f.JointJ };
+        foreach (var l in b.Links) old[l.Uid] = new[] { l.JointI, l.JointJ == "" ? l.JointI : l.JointJ };
+        Action<FrameObj, FrameRec, string, string> fit = (o, rec, ji, jj) =>
+        {
+            if (rec == null || !(rec.Has("Length") || rec.Has("CentroidX"))) return;
+            double[] a, z, a0, z0; string[] o0;
+            if (!now.TryGetValue(ji, out a) || !now.TryGetValue(jj, out z)) return;
+            if (old.TryGetValue(o.Uid, out o0) && o0[0] == ji && o0[1] == jj && was.TryGetValue(ji, out a0) && was.TryGetValue(jj, out z0) &&
+                Enumerable.Range(0, 3).All(k => WbBase.Same(a[k], a0[k]) && WbBase.Same(z[k], z0[k]))) return;
+            double len = Math.Sqrt((z[0] - a[0]) * (z[0] - a[0]) + (z[1] - a[1]) * (z[1] - a[1]) + (z[2] - a[2]) * (z[2] - a[2]));
+            Func<double, double> r9 = v => Math.Round(v, 9);
+            if (rec.Has("Length")) rec.SetNum("Length", r9(len));
+            string[] cn = { "CentroidX", "CentroidY", "CentroidZ" };
+            for (int k = 0; k < 3; k++) if (rec.Has(cn[k])) rec.SetNum(cn[k], r9((a[k] + z[k]) / 2));
+        };
+        foreach (var f in m.Frames) fit(f, f.Rec(FrameMember.Conn), f.JointI, f.JointJ);
+        foreach (var l in m.Links) fit(l, l.Rec(FrameLink.Conn), l.JointI, l.JointJ == "" ? l.JointI : l.JointJ);
     }
 
     // the sheet an object's rows are on (null: a sheet the workbook does not have, so nothing is deleted)
@@ -877,10 +970,49 @@ public static class FrameWorkbook
     {
         string unit;
         double v = WbRead.Raw(c, r, col, x, out unit);
-        if (double.IsNaN(v) || dim == null || unit == null) return v;
+        if (double.IsNaN(v) || unit == null) return v;
+        if (dim == null) { x.Err(c.S.Name + "!" + XlsxBook.Ref(0, c.At[col]) + ": this column takes no unit (\"" + unit + "\"): the values are as SAP has them"); return double.NaN; }
         double f = FrameUnits.Factor(unit, dim, x.Units);
         if (double.IsNaN(f)) { x.Err(c.S.Name + "!" + XlsxBook.Ref(0, c.At[col]) + ": the unit \"" + unit + "\" (this column takes " + FrameUnits.Label(dim, x.Units) + " or another unit of that kind)"); return double.NaN; }
-        return v * f;
+        return FrameUnits.Converted(v, f);
+    }
+
+    // a column whose unit depends on the row: "Value (kip | kip-in)" (a force row, a moment row), "Distance (in)" (an Abs
+    // row; a Rel row is a fraction). which: 0 the first unit, 1 the second; dim: that row's dimension (null: no unit)
+    static double NumBy(WbCols c, int r, string col, Ctx x, string dim, int which)
+    {
+        string unit;
+        double v = WbRead.Raw(c, r, col, x, out unit);
+        if (double.IsNaN(v) || unit == null || dim == null) return v;
+        string[] parts = unit.Split('|');
+        string u = (parts.Length > 1 ? parts[Math.Min(which, parts.Length - 1)] : parts[0]).Trim();
+        double f = FrameUnits.Factor(u, dim, x.Units);
+        if (double.IsNaN(f)) { x.Err(At(c, r, col) + ": the header's unit \"" + u + "\" is not a " + FrameUnits.Label(dim, x.Units) + " unit, which this row needs"); return double.NaN; }
+        return FrameUnits.Converted(v, f);
+    }
+
+    // " (W10X33?)": the closest name, when one is close (case aside, or two letters off)
+    static string Hint(string v, IEnumerable<string> names)
+    {
+        string best = null; int bd = 3;
+        foreach (string n in names)
+        {
+            if (string.Equals(n, v, StringComparison.OrdinalIgnoreCase)) return " (" + n + "?)";
+            int d = Distance(n.ToUpperInvariant(), v.ToUpperInvariant());
+            if (d < bd) { bd = d; best = n; }
+        }
+        return best != null ? " (" + best + "?)" : "";
+    }
+    static int Distance(string a, string b)
+    {
+        if (Math.Abs(a.Length - b.Length) > 2) return 99;
+        var d = new int[a.Length + 1, b.Length + 1];
+        for (int i = 0; i <= a.Length; i++) d[i, 0] = i;
+        for (int j = 0; j <= b.Length; j++) d[0, j] = j;
+        for (int i = 1; i <= a.Length; i++)
+            for (int j = 1; j <= b.Length; j++)
+                d[i, j] = Math.Min(Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1), d[i - 1, j - 1] + (a[i - 1] == b[j - 1] ? 0 : 1));
+        return d[a.Length, b.Length];
     }
 
     static bool YesNo(WbCols c, int r, string col, Ctx x, bool dflt)
@@ -905,10 +1037,10 @@ public static class FrameWorkbook
     }
 
     // the row's object: the Id's, renamed to the row's label, or a new one
-    static T Take<T>(WbCols c, int r, Ctx x, string kind, string label, Func<T> make) where T : FrameObj
+    static T Take<T>(WbCols c, int r, Ctx x, string kind, string label, string labelCol, Func<T> make) where T : FrameObj
     {
         var o = Match<T>(c, r, x);
-        if (!x.Labels(kind).Add(label)) x.Err(At(c, r, c.At.Keys.Contains("Joint") ? "Joint" : "Id") + ": the " + kind + " " + label + " is on an earlier row too");
+        if (!x.Labels(kind).Add(label)) x.Err(At(c, r, labelCol) + ": the " + kind + " " + label + " is on an earlier row too");
         if (o == null) { o = make(); x.M.Add(o, label); }
         else if (o.Label != label)
         {
@@ -945,7 +1077,7 @@ public static class FrameWorkbook
         {
             string name = Text(c, r, "Name", x);
             if (name.Length == 0) { x.Err(At(c, r, "Name") + ": a material with no name"); continue; }
-            var mt = Take<FrameMaterial>(c, r, x, "material", name, () => new FrameMaterial());
+            var mt = Take<FrameMaterial>(c, r, x, "material", name, "Name", () => new FrameMaterial());
             string ty = Text(c, r, "Type", x); if (ty.Length > 0) mt.Type = ty;
             for (int k = 0; k < mk.Length; k++) { double v = Num(c, r, heads[k], x, dims[k]); if (!double.IsNaN(v)) mt.SetMech(mk[k], v); }
             double p = Num(c, r, "Poisson", x, null); if (!double.IsNaN(p) && (p < 0 || p > 0.5)) x.Err(At(c, r, "Poisson") + ": Poisson's ratio is 0 to 0.5");
@@ -972,18 +1104,31 @@ public static class FrameWorkbook
     {
         if (s == null) return;
         var c = WbRead.ColsOf(s, x, null);
-        string[] keys = { "t3", "t2", "tf", "tw", "t2b", "tfb", "Area", "I33", "I22", "TorsConst" }, heads = { "t3", "t2", "tf", "tw", "t2b", "tfb", "Area", "I33", "I22", "J" },
-                 dims = { "L", "L", "L", "L", "L", "L", "L2", "L4", "L4", "L4" };
+        string[] keys = { "t3", "t2", "tf", "tw", "t2b", "tfb", "dis", "Area", "I33", "I22", "TorsConst" }, heads = { "t3", "t2", "tf", "tw", "t2b", "tfb", "dis", "Area", "I33", "I22", "J" },
+                 dims = { "L", "L", "L", "L", "L", "L", "L", "L2", "L4", "L4", "L4" };
         foreach (int r in Rows(c))
         {
             string name = Text(c, r, "Name", x);
             if (name.Length == 0) { x.Err(At(c, r, "Name") + ": a section with no name"); continue; }
-            var sec = Take<FrameSection>(c, r, x, "section", name, () => new FrameSection());
+            var sec = Take<FrameSection>(c, r, x, "section", name, "Name", () => new FrameSection());
             string shape = Text(c, r, "Shape", x), mat = x.Ref("material", Text(c, r, "Material", x));
             if (shape.Length > 0 && sec.Shape != shape) sec.Shape = shape;
             if (mat.Length > 0 && sec.Material != mat) sec.Material = mat;
-            if (mat.Length > 0 && !x.Labels("material").Contains(mat)) x.Err(At(c, r, "Material") + ": no material " + mat + " on Materials");
+            if (mat.Length > 0 && !x.Labels("material").Contains(mat)) x.Err(At(c, r, "Material") + ": no material " + mat + " on Materials" + Hint(mat, x.Labels("material")));
             for (int k = 0; k < keys.Length; k++) { double v = Num(c, r, heads[k], x, dims[k]); if (!double.IsNaN(v)) sec.SetDim(keys[k], v); }
+            var g = sec.Rec(FrameSection.General);
+            if (g != null && g.Yes("FromFile")) continue;          // a catalog section from SAP: SAP has its sizes
+            bool isNew = !x.Base.Sections.Any(q => q.Uid == sec.Uid);
+            if (isNew && Text(c, r, "Catalog", x).Length > 0) { x.Err(At(c, r, "Catalog") + ": a new section from a catalog is not written yet: give its dimensions (SAP 24 did not find AISC16.xml for the probe)"); continue; }
+            string sk = sec.Shape.ToLowerInvariant();
+            if (isNew && sk.StartsWith("i/") && !g.Has("t2b") && g.Has("t2")) sec.SetDim("t2b", sec.Dim("t2"));
+            if (isNew && sk.StartsWith("i/") && !g.Has("tfb") && g.Has("tf")) sec.SetDim("tfb", sec.Dim("tf"));
+            string[] need = sk == "pipe" ? new[] { "t3", "tw" } : sk == "rectangular" ? new[] { "t3", "t2" } : sk == "circle" ? new[] { "t3" } :
+                            sk == "general" ? new[] { "Area", "I33", "I22", "TorsConst" } : sk == "double angle" ? new[] { "t3", "t2", "tf", "tw", "dis" } :
+                            sk.Length == 0 ? new string[0] : new[] { "t3", "t2", "tf", "tw" };
+            if (sk.Length == 0) { x.Err(At(c, r, "Shape") + ": the section " + name + " has no shape"); continue; }
+            var missing = need.Where(k => g == null || g.Num(k, 0) <= 0).ToList();
+            if (missing.Count > 0) x.Err(At(c, r, "Name") + ": a " + sec.Shape + " section needs " + string.Join(", ", missing.Select(k => k == "TorsConst" ? "J" : k).ToArray()) + " (above 0)");
         }
     }
 
@@ -995,7 +1140,7 @@ public static class FrameWorkbook
         {
             string label = Text(c, r, "Joint", x);
             if (label.Length == 0) { x.Err(At(c, r, "Joint") + ": a joint with no label"); continue; }
-            var j = Take<FrameJoint>(c, r, x, "joint", label, () => new FrameJoint());
+            var j = Take<FrameJoint>(c, r, x, "joint", label, "Joint", () => new FrameJoint());
             double X = Num(c, r, "X", x, "L"), Y = Num(c, r, "Y", x, "L"), Z = Num(c, r, "Z", x, "L");
             var p = j.Xyz;
             double nx = double.IsNaN(X) ? 0 : X, ny = double.IsNaN(Y) ? 0 : Y, nz = double.IsNaN(Z) ? 0 : Z;
@@ -1064,7 +1209,7 @@ public static class FrameWorkbook
         {
             string label = Text(c, r, "Frame", x);
             if (label.Length == 0) { x.Err(At(c, r, "Frame") + ": a frame with no label"); continue; }
-            var f = Take<FrameMember>(c, r, x, "frame", label, () => new FrameMember());
+            var f = Take<FrameMember>(c, r, x, "frame", label, "Frame", () => new FrameMember());
             order.Add(label);
             string ji = x.Ref("joint", Text(c, r, "Joint I", x)), jj = x.Ref("joint", Text(c, r, "Joint J", x));
             double dx = Num(c, r, "DX", x, "L"), dy = Num(c, r, "DY", x, "L"), dz = Num(c, r, "DZ", x, "L");
@@ -1087,6 +1232,8 @@ public static class FrameWorkbook
                 {
                     if (jb == null) { jb = new FrameJoint(); m.Add(jb, jj); }
                     jb.SetXyz(want[0], want[1], want[2]);
+                    x.Notes.Add(At(c, r, "Joint J") + ": joint " + jj + " made at " + FrameModel.Fmt(Math.Round(want[0], 9)) + ", " + FrameModel.Fmt(Math.Round(want[1], 9)) + ", " +
+                                FrameModel.Fmt(Math.Round(want[2], 9)) + " (frame " + label + "'s delta)");
                     x.Labels("joint").Add(jj); x.Seen.Add(jb);
                 }
             }
@@ -1095,7 +1242,7 @@ public static class FrameWorkbook
             if (f.JointI != ji) f.JointI = ji;
             if (f.JointJ != jj) f.JointJ = jj;
             string sec = x.Ref("section", Text(c, r, "Section", x));
-            if (sec.Length == 0 || !x.Labels("section").Contains(sec)) x.Err(At(c, r, "Section") + ": no section " + (sec.Length > 0 ? sec : "(blank)") + " on Sections");
+            if (sec.Length == 0 || !x.Labels("section").Contains(sec)) x.Err(At(c, r, "Section") + ": no section " + (sec.Length > 0 ? sec : "(blank)") + " on Sections" + Hint(sec, x.Labels("section")));
             else f.Section = sec;
             string kd = Text(c, r, "Kind", x), ln = Text(c, r, "Line", x);
             if (kd.Length > 0) kindOf[label] = kd;
@@ -1103,7 +1250,7 @@ public static class FrameWorkbook
             string rn = Text(c, r, "Release", x);
             Preset p0;
             if (rn.Length == 0) rn = "FIXED";
-            if (!rel.TryGetValue(rn, out p0)) x.Err(At(c, r, "Release") + ": no release preset " + rn + " on Releases");
+            if (!rel.TryGetValue(rn, out p0)) x.Err(At(c, r, "Release") + ": no release preset " + rn + " on Releases" + Hint(rn, rel.Keys));
             else
             {
                 var r12 = p0.Rel; var v12 = p0.Val;
@@ -1117,7 +1264,7 @@ public static class FrameWorkbook
             if (cp < 1 || cp > 11) x.Err(At(c, r, "Insertion") + ": a cardinal point 1 to 11 (\"" + ins + "\")"); else f.CardinalPoint = cp;
             string mn = Text(c, r, "Modifiers", x);
             if (mn.Length == 0) { if (!f.PropertyModifiers.All(v => v == 1)) f.PropertyModifiers = null; }
-            else if (!mod.TryGetValue(mn, out p0)) x.Err(At(c, r, "Modifiers") + ": no modifiers preset " + mn + " on Modifiers");
+            else if (!mod.TryGetValue(mn, out p0)) x.Err(At(c, r, "Modifiers") + ": no modifiers preset " + mn + " on Modifiers" + Hint(mn, mod.Keys));
             else if (!f.PropertyModifiers.SequenceEqual(p0.Val)) f.PropertyModifiers = p0.Val;
         }
         return order;
@@ -1139,7 +1286,7 @@ public static class FrameWorkbook
             if (name.Length > 0)
             {
                 finish();
-                cur = Take<FrameLinkProp>(c, r, x, "linkprop", name, () => new FrameLinkProp());
+                cur = Take<FrameLinkProp>(c, r, x, "linkprop", name, "Name", () => new FrameLinkProp());
                 string ty = Text(c, r, "Type", x); if (ty.Length > 0) cur.LinkType = ty;
             }
             else if (cur == null) { x.Err(At(c, r, "Name") + ": a DOF row with no property above it"); continue; }
@@ -1173,12 +1320,12 @@ public static class FrameWorkbook
         {
             string label = Text(c, r, "Link", x);
             if (label.Length == 0) { x.Err(At(c, r, "Link") + ": a link with no label"); continue; }
-            var l = Take<FrameLink>(c, r, x, "link", label, () => new FrameLink());
+            var l = Take<FrameLink>(c, r, x, "link", label, "Link", () => new FrameLink());
             string ji = x.Ref("joint", Text(c, r, "Joint I", x)), jj = x.Ref("joint", Text(c, r, "Joint J", x)), pr = x.Ref("linkprop", Text(c, r, "Property", x));
             if (!x.Labels("joint").Contains(ji)) { x.Err(At(c, r, "Joint I") + ": no joint " + ji); continue; }
             if (jj.Length > 0 && !x.Labels("joint").Contains(jj)) { x.Err(At(c, r, "Joint J") + ": no joint " + jj); continue; }
             l.SetJoints(ji, jj);
-            if (!x.Labels("linkprop").Contains(pr)) x.Err(At(c, r, "Property") + ": no link property " + pr + " on Link props"); else l.Property = pr;
+            if (!x.Labels("linkprop").Contains(pr)) x.Err(At(c, r, "Property") + ": no link property " + pr + " on Link props" + Hint(pr, x.Labels("linkprop"))); else l.Property = pr;
             double a = Num(c, r, "Angle", x, "deg");
             if (!WbBase.Same(l.Angle, double.IsNaN(a) ? 0 : a)) l.Angle = double.IsNaN(a) ? 0 : a;
         }
@@ -1214,7 +1361,7 @@ public static class FrameWorkbook
         {
             string name = Text(c, r, "Name", x);
             if (name.Length == 0) { x.Err(At(c, r, "Name") + ": a pattern with no name"); continue; }
-            var p = Take<FramePattern>(c, r, x, "pattern", name, () => new FramePattern());
+            var p = Take<FramePattern>(c, r, x, "pattern", name, "Name", () => new FramePattern());
             string ty = Text(c, r, "Type", x); if (ty.Length > 0) p.DesignType = ty;
             double sw = Num(c, r, "Self weight", x, null);
             if (!WbBase.Same(p.SelfWeight, double.IsNaN(sw) ? 0 : sw)) p.SelfWeight = double.IsNaN(sw) ? 0 : sw;
@@ -1281,7 +1428,7 @@ public static class FrameWorkbook
             string jl = x.Ref("joint", Text(c, r, "Joint", x)), pat = x.Ref("pattern", Text(c, r, "Pattern", x));
             if (x.Gone("joint", jl)) { x.Warnings.Add(At(c, r, "Joint") + ": joint " + jl + " is deleted: its load goes with it"); continue; }
             if (!x.Labels("joint").Contains(jl)) { x.Err(At(c, r, "Joint") + ": no joint " + jl); continue; }
-            if (!x.Labels("pattern").Contains(pat)) { x.Err(At(c, r, "Pattern") + ": no load pattern " + pat); continue; }
+            if (!x.Labels("pattern").Contains(pat)) { x.Err(At(c, r, "Pattern") + ": no load pattern " + pat + Hint(pat, x.Labels("pattern"))); continue; }
             var ld = Match<FrameLoad>(c, r, x);
             if (ld != null && ld.Table != table) ld = null;
             if (ld == null) { ld = x.M.AddLoad(table); var row = ld.Row; row.Set("Joint", jl).Set("LoadPat", pat).Set("CoordSys", "GLOBAL"); foreach (var k in keys) row.Set(k, "0"); }
@@ -1299,7 +1446,8 @@ public static class FrameWorkbook
         if (s == null) return;
         var c = WbRead.ColsOf(s, x, null);
         var m = x.M;
-        var pos = m.Joints.ToDictionary(j => j.Label, j => j.Xyz, StringComparer.Ordinal);
+        var pos = new Dictionary<string, double[]>(StringComparer.Ordinal);
+        foreach (var j in m.Joints) pos[j.Label] = j.Xyz;
         Func<FrameMember, double> len = f => { double[] a, b; return pos.TryGetValue(f.JointI, out a) && pos.TryGetValue(f.JointJ, out b) ? Math.Sqrt((b[0] - a[0]) * (b[0] - a[0]) + (b[1] - a[1]) * (b[1] - a[1]) + (b[2] - a[2]) * (b[2] - a[2])) : 0; };
         foreach (int r in Rows(c))
         {
@@ -1308,7 +1456,7 @@ public static class FrameWorkbook
             string one = x.Ref("frame", sel);
             string err;
             var frames = FrameSelect.Frames(m, one, order, kindOf, lineOf, out err);
-            if (err.Length > 0) { x.Err(At(c, r, "Frames") + ": " + err); continue; }
+            if (err.Length > 0) { x.Err(At(c, r, "Frames") + ": " + err + (one.IndexOf(':') < 0 && one.IndexOf(',') < 0 ? Hint(one, x.Labels("frame")) : "")); continue; }
             // only frames the Frames sheet still has: one named outright and gone is an error, a group's are dropped
             var gone = frames.Where(f => !x.Labels("frame").Contains(f.Label)).ToList();
             if (gone.Count > 0 && frames.Count == 1)
@@ -1319,7 +1467,7 @@ public static class FrameWorkbook
             }
             frames = frames.Except(gone).ToList();
             if (frames.Count == 0) { x.Err(At(c, r, "Frames") + ": no frames"); continue; }
-            if (!x.Labels("pattern").Contains(pat)) { x.Err(At(c, r, "Pattern") + ": no load pattern " + pat); continue; }
+            if (!x.Labels("pattern").Contains(pat)) { x.Err(At(c, r, "Pattern") + ": no load pattern " + pat + Hint(pat, x.Labels("pattern"))); continue; }
             var first = Match<FrameLoad>(c, r, x);
             if (first != null && first.Table != table) first = null;
             for (int i = 0; i < frames.Count; i++)
@@ -1354,17 +1502,17 @@ public static class FrameWorkbook
                 bool moment = type.Equals("Moment", StringComparison.OrdinalIgnoreCase);
                 if (table == FrameLoad.Point)
                 {
-                    place("RelDist", "AbsDist", Num(c, r, "Distance", x, null), 0);
-                    double v = Num(c, r, "Value", x, null);
+                    place("RelDist", "AbsDist", NumBy(c, r, "Distance", x, rel ? null : "L", 0), 0);
+                    double v = NumBy(c, r, "Value", x, moment ? "F-L" : "F", moment ? 1 : 0);
                     string vk = moment ? "Moment" : "Force", other = moment ? "Force" : "Moment";
                     if (rw.Has(other)) rw.Remove(other);
                     rw.SetNum(vk, double.IsNaN(v) ? 0 : v);
                 }
                 else
                 {
-                    place("RelDistA", "AbsDistA", Num(c, r, "Start", x, null), 0);
-                    place("RelDistB", "AbsDistB", Num(c, r, "End", x, null), rel ? 1 : L);
-                    double a = Num(c, r, "Value A", x, null), b2 = Num(c, r, "Value B", x, null);
+                    place("RelDistA", "AbsDistA", NumBy(c, r, "Start", x, rel ? null : "L", 0), 0);
+                    place("RelDistB", "AbsDistB", NumBy(c, r, "End", x, rel ? null : "L", 0), rel ? 1 : L);
+                    double a = NumBy(c, r, "Value A", x, moment ? "F-L/L" : "F/L", moment ? 1 : 0), b2 = NumBy(c, r, "Value B", x, moment ? "F-L/L" : "F/L", moment ? 1 : 0);
                     if (double.IsNaN(b2)) b2 = a;
                     string pa = moment ? "MOverLA" : "FOverLA", pb = moment ? "MOverLB" : "FOverLB";
                     foreach (var o in moment ? new[] { "FOverLA", "FOverLB" } : new[] { "MOverLA", "MOverLB" }) if (rw.Has(o)) rw.Remove(o);
@@ -1398,7 +1546,7 @@ public static class FrameWorkbook
             if (name.Length > 0)
             {
                 finish();
-                cur = Take<FrameCase>(c, r, x, "case", name, () => new FrameCase());
+                cur = Take<FrameCase>(c, r, x, "case", name, "Case", () => new FrameCase());
                 string ty = Text(c, r, "Type", x), ini = Text(c, r, "Initial", x);
                 if (ty.Length > 0) cur.Type = ty;
                 if (ini.Length == 0) ini = "Zero";
@@ -1413,11 +1561,29 @@ public static class FrameWorkbook
             loads.Add(new object[] { lt, ln, double.IsNaN(sf) ? 1.0 : sf });
         }
         finish();
+        var byName = x.M.Cases.ToDictionary(k => k.Label, k => k, StringComparer.Ordinal);
         foreach (var it in initials)
         {
+            var cs = (FrameCase)it[0];
             string ini = x.Ref("case", (string)it[1]);
-            if (!ini.Equals("Zero", StringComparison.OrdinalIgnoreCase) && !x.Labels("case").Contains(ini)) { x.Err((string)it[2] + ": no case " + ini + " (Zero, or a case's name)"); continue; }
-            ((FrameCase)it[0]).Initial = ini;
+            if (ini.Equals("Zero", StringComparison.OrdinalIgnoreCase)) { cs.Initial = ini; continue; }
+            FrameCase from;
+            if (!x.Labels("case").Contains(ini) || !byName.TryGetValue(ini, out from)) { x.Err((string)it[2] + ": no case " + ini + " (Zero, or a nonlinear case's name)" + Hint(ini, x.Labels("case"))); continue; }
+            // SAP continues only from the end of a nonlinear case (a linear case takes its stiffness, a nonlinear one its state)
+            if (!from.Type.StartsWith("Non", StringComparison.OrdinalIgnoreCase)) { x.Err((string)it[2] + ": " + cs.Label + " starts from " + ini + ", a " + from.Type + " case: SAP continues only from a nonlinear (NonStatic) case"); continue; }
+            cs.Initial = ini;
+        }
+        // no loops (SUS from OPE, OPE from SUS), each said once
+        var loops = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var cs in x.M.Cases)
+        {
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var at = cs;
+            while (at != null && !at.Initial.Equals("Zero", StringComparison.OrdinalIgnoreCase) && at.Initial.Length > 0)
+            {
+                if (!seen.Add(at.Label)) { if (loops.Add(string.Join("|", seen.OrderBy(q => q, StringComparer.Ordinal).ToArray()))) x.Err(SCases + ": the cases " + string.Join(" -> ", seen.ToArray()) + " start from each other in a loop"); break; }
+                FrameCase nx; at = byName.TryGetValue(at.Initial, out nx) ? nx : null;
+            }
         }
     }
 
@@ -1433,7 +1599,7 @@ public static class FrameWorkbook
             string name = Text(c, r, "Combination", x);
             if (name.Length > 0)
             {
-                cur = Take<FrameCombo>(c, r, x, "combo", name, () => new FrameCombo());
+                cur = Take<FrameCombo>(c, r, x, "combo", name, "Combination", () => new FrameCombo());
                 string ty = Text(c, r, "Type", x); if (ty.Length > 0) cur.Type = ty;
             }
             else if (cur == null) { x.Err(At(c, r, "Combination") + ": an item with no combination above it"); continue; }

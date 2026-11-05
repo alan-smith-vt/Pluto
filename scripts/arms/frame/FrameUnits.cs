@@ -67,8 +67,16 @@ public static class FrameUnits
         double[] a = Of(unit), b = Of(mine);
         if (a == null || b == null) return double.NaN;
         for (int i = 1; i < 6; i++) if (Math.Abs(a[i] - b[i]) > 1e-12) return double.NaN;
-        // 12 significant digits: 0.3048 / 0.0254 is 12.000000000000002 in doubles, and 0.5 ft must read 6 in exactly
-        return double.Parse((a[0] / b[0]).ToString("G12", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+        // 15 significant digits: 0.3048 / 0.0254 is 12.000000000000002 in doubles, and 0.5 ft must read 6 in exactly
+        return double.Parse((a[0] / b[0]).ToString("G15", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+    }
+
+    // a value converted from another unit, to 12 significant digits (50.4 lb/ft is 0.0042 kip/in, not 0.0041999999999999983)
+    public static double Converted(double v, double factor)
+    {
+        if (factor == 1) return v;
+        double x = v * factor;
+        return x == 0 || double.IsNaN(x) || double.IsInfinity(x) ? x : double.Parse(x.ToString("G12", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
     }
 
     // a unit expression -> {scale, F, L, T, s, rad}; null when it does not parse
