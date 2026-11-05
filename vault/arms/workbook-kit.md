@@ -28,6 +28,7 @@ and texts, and hands them to the kit.
 > | `WbRead`, `WbCols`, `WbReadCtx` | `WbData.cs` | Columns by header (the unit in brackets apart), cell text with its problem reported, `Raw` numbers and the header unit, list entries, Ids. |
 > | `WbRefresh` | `WbData.cs` | The layout rebuilt with typed cells kept (formulas re-pointed, user columns and sheets kept, settings by name). |
 > | `WbFormula` | `WbFormula.cs` | Values for formulas a script library saved without them. The workbook gives its input sheets. |
+> | `WbPlot` | `WbPlot.cs` | The live 3D view's generic parts: `Param` (named cells right of the calc table), `Angles` (`pl_az` … `pl_sin_e` from the view's Direction, Azimuth, Elevation), the projection `U` / `V` (`pl_zup` makes Z vertical), `Extents` (`pl_minu` … `pl_h`, the square frame), `Square` / `SquareSeries` (the frame and the axis triad, points columns AB:AM), `Controls` (title and the View block, C6:C8), `Key`, and the view list (`Views`, `ViewAz`, `ViewEl`). |
 >
 > Reused as they are:
 > - `XlsxWriter.cs` (`XlsxBook`, `XlsxBookSheet`, styles, validations, charts);
@@ -35,7 +36,8 @@ and texts, and hands them to the kit.
 >
 > Still in the CAESAR workbook:
 > - its fixed Lists layout (the `L*` constants);
-> - the 3D View sheets. Their generic parts (`WbPlot`) move out when the frame workbook draws its own.
+> - its PlotCalc rows (bends, pieces placed by CAESAR's rules, its checks) and its PlotPts series. `WbPlot` was
+>   extracted from them on 2026-11-05 for the frame workbook's 3D View; the gate below stayed byte-identical.
 
 > [!info]- The gate
 > The extraction had to leave every CAESAR workbook byte-identical. A mono harness writes 38 workbooks and records the

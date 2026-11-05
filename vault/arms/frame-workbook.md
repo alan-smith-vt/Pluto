@@ -28,7 +28,7 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
   the viewer shows releases (`releases.js`), links (`links.js`), springs / hooks / friction supports, and loads by
   pattern, case or combination ([[vault/format/features-sidecar|features-sidecar]]).
 - 3: the workbook. **3a done 2026-11-05** (the sheets, reading, refresh, the runner's workbook switches, launchers);
-  3b: `-Open` in SAP done (production check to do); the workbook's own 3D View is still to do.
+  3b: `-Open` in SAP done (production check to do); the 3D View **done 2026-11-05** (below).
 - 4: the pipe-stress layer (support presets, contents, insulation, thermal, equipment).
 - 5: the review.
 - 6: unit changes.
@@ -83,6 +83,30 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 >
 > **Refresh** writes the workbook in this version's layout from its own base, every typed cell back where it was, so
 > the next read gives the same model.
+
+> [!info]- The 3D View (`FrameView`, 2026-11-05)
+> The **3D View** sheet (after Frames) draws the model as an Excel XY chart that follows Joints, Frames, Releases,
+> Sections and Links as they are edited, on the kit's `WbPlot` ([[vault/arms/workbook-kit|workbook-kit]]). Z is up.
+> - **Drawn:** steel and pipe frames joint to joint (pipe: a Pipe section, or Kind PIPE / DUCT); the highlighted
+>   frame (by label); pinned ends (a red dot 8 % in from an end whose release preset frees M2 or M3); fixed supports
+>   (squares) and other restraints (triangles) from Joints' Restraint; links (dashed) and one-joint links (diamonds);
+>   joint labels; the axis triad.
+> - **Controls:** Direction (Iso, Plan, Front along +Y, Side along -X, Custom with Azimuth / Elevation), Highlight
+>   frame, Joint labels, Supports, Pinned ends, Links.
+> - **Figures:** the highlighted frame (joints, length, section), frames drawn, rows not drawn (a joint not on Joints,
+>   or a frame from a joint to itself; amber), steel and pipe length, extents X Y Z.
+> - **Not shown:** insertion points and offsets. Room for 200 more frames, joints and links than the model had;
+>   Refresh follows a model that grew. Above 8,000 frames the sheet is a note only (the viewer shows the model).
+> - Hidden `PlotCalc` (a frame block on the Frames rows, a joint block on the Joints rows, the `pl_` parameters) and
+>   `PlotPts` (the series). Each frame is drawn J to I with a gap row after it, WbPlot's rule for LibreOffice.
+> - LibreOffice draws a marker series under the line series, Excel over them, so the pinned-end dots are solid and
+>   wider than a line.
+>
+> **Checked (LibreOffice recalculation):** each frame's length equals its joints' distance (rack, round-2 export);
+> every joint's projection matches a direct computation to 5e-13; the pins sit on PIN-PIN and PIN-I ends only (a
+> partial fixity is not drawn as a pin); supports, links and the one-joint link land on their joints; the rendered
+> rack shows its portals, pinned beams, supports and the pipe with its link. The workbook round trips stay byte for
+> byte, and a Refresh of an older workbook adds the view with the same model.
 
 > [!info]- Frames go between joints (2026-11-05)
 > Every element, steel or pipe, is a Frames row between two joints on Joints. That is SAP's own form: its exports are

@@ -640,9 +640,8 @@ static class PipeWorkbookGui
         for (int j = 0; j <= 5; j++)
         {
             string x = "([P" + j + "x]+[o2x])", y = "([P" + j + "y]+[o2y])", z = "([P" + j + "z]+[o2z])";
-            string zz = "IF(pl_zup,-" + y + "," + z + ")", yy = "IF(pl_zup," + z + "," + y + ")";
-            f["U" + j] = "IFERROR(" + x + "*pl_cos_a-" + zz + "*pl_sin_a,\"\")";
-            f["V" + j] = "IFERROR(" + yy + "*pl_cos_e-(" + x + "*pl_sin_a+" + zz + "*pl_cos_a)*pl_sin_e,\"\")";
+            f["U" + j] = "IFERROR(" + WbPlot.U(x, y, z) + ",\"\")";
+            f["V" + j] = "IFERROR(" + WbPlot.V(x, y, z) + ",\"\")";
         }
         var first = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -664,13 +663,8 @@ static class PipeWorkbookGui
             }
 
         // parameters, right of the table; each a named cell
-        int pc = CalcCols.Length + 1, pr = 1;
-        Action<string, string, string> param = (name, formula, what) =>
-        {
-            calc.Set(pr, pc, name, XlsxBook.Bold); calc.SetFormula(pr, pc + 1, formula, 0); calc.Set(pr, pc + 2, what, XlsxBook.Note);
-            b.Names[name] = Calc + "!$" + XlsxBook.Column(pc + 1) + "$" + (pr + 1);
-            pr++;
-        };
+        var pl = new WbPlot(b, calc, Calc, CalcCols.Length + 1);
+        Action<string, string, string> param = pl.Param;
         b.Names["pl_secs"] = "Sections!$1:$1048576";
         b.Names["pl_rest"] = "Restraints!$1:$1048576";
         b.Names["pl_odl"] = "Lists!$L$2:$L$27";
@@ -700,27 +694,16 @@ static class PipeWorkbookGui
         param("pl_rnode", "MATCH(\"Node\",Restraints!$1:$1,0)", "Restraints columns");
         param("pl_rtype", "MATCH(\"Type\",Restraints!$1:$1,0)", "");
         param("pl_zup", "IFERROR(UPPER(TRIM(INDEX(Settings!$B:$B,MATCH(\"Vertical axis\",Settings!$A:$A,0))))=\"Z\",FALSE)", "Z is up (Settings)");
-        param("pl_az", "IF(" + vs + "!$C$6=\"Custom\",N(" + vs + "!$C$7),IFERROR(INDEX(Lists!$O$2:$O$6,MATCH(" + vs + "!$C$6,Lists!$H$2:$H$6,0)),45))", "azimuth, deg");
-        param("pl_elev", "IF(" + vs + "!$C$6=\"Custom\",N(" + vs + "!$C$8),IFERROR(INDEX(Lists!$P$2:$P$6,MATCH(" + vs + "!$C$6,Lists!$H$2:$H$6,0)),35.264))", "elevation, deg");
-        param("pl_cos_a", "COS(RADIANS(pl_az))", "");
-        param("pl_sin_a", "SIN(RADIANS(pl_az))", "");
-        param("pl_cos_e", "COS(RADIANS(pl_elev))", "");
-        param("pl_sin_e", "SIN(RADIANS(pl_elev))", "");
+        pl.Angles(vs, LView, "Lists!$O$2:$O$6", "Lists!$P$2:$P$6");
         param("pl_i2l", inToLen.ToString("R", CultureInfo.InvariantCulture), "inches -> the job's length unit");
         param("pl_d2in", diaToIn.ToString("R", CultureInfo.InvariantCulture), "the job's diameter unit -> inches");
         string us = string.Join(",", Enumerable.Range(0, 6).Select(j => "$" + col["U" + j] + "$2:$" + col["U" + j] + "$" + last).ToArray());
         string vsr = string.Join(",", Enumerable.Range(0, 6).Select(j => "$" + col["V" + j] + "$2:$" + col["V" + j] + "$" + last).ToArray());
-        param("pl_minu", "MIN(" + us + ")", "the drawing's extent");
-        param("pl_maxu", "MAX(" + us + ")", "");
-        param("pl_minv", "MIN(" + vsr + ")", "");
-        param("pl_maxv", "MAX(" + vsr + ")", "");
-        param("pl_cu", "(pl_minu+pl_maxu)/2", "its centre");
-        param("pl_cv", "(pl_minv+pl_maxv)/2", "");
-        param("pl_h", "MAX(pl_maxu-pl_minu,pl_maxv-pl_minv,1E-6)/2*1.12", "half the square frame (equal scales)");
+        pl.Extents(us, vsr);
         param("pl_hl", "TRIM(" + vs + "!$C$10&\"\")", "highlighted element");
         param("pl_lab", "LOWER(TRIM(" + vs + "!$C$11&\"\"))=\"yes\"", "node numbers shown");
         param("pl_shr", "LOWER(TRIM(" + vs + "!$C$12&\"\"))<>\"no\"", "restraints shown");
-        calc.Width(pc, 12); calc.Width(pc + 2, 40);
+        pl.Widths();
 
         // ---- PlotPts: the chart's points. A point not drawn has #N/A as its v (y) and 0 as its u (x): Excel and
         // LibreOffice skip it, and an x column stays numeric (a series whose x values are all errors would make
@@ -784,35 +767,12 @@ static class PipeWorkbookGui
             pts.SetFormula(row, 24, "IF(AND(" + sl + "=1,ISNUMBER(" + v0 + "))," + v0 + "-pl_cv,NA())", 0);
             pts.SetFormula(row, 25, "IF(AND(pl_lab," + sl + "=1)," + calcR + col["Fr"] + cr + "&\"\",\"\")", 0);
         }
-        // the frame: a square around the drawing, so both axes take the same scale
-        pts.SetFormula(1, 27, "-pl_h", 0); pts.SetFormula(1, 28, "-pl_h", 0); pts.SetFormula(2, 27, "pl_h", 0); pts.SetFormula(2, 28, "pl_h", 0);
-        // the axis triad, bottom left: X, Y, Z of the model projected like the pipe
-        string[][] axes = { new[] { "1", "0", "0", "X" }, new[] { "0", "1", "0", "Y" }, new[] { "0", "0", "1", "Z" } };
-        for (int a = 0; a < 3; a++)
-        {
-            string x = axes[a][0], y = axes[a][1], z = axes[a][2];
-            string zz = "IF(pl_zup,-" + y + "," + z + ")", yy = "IF(pl_zup," + z + "," + y + ")";
-            string pu = "(" + x + "*pl_cos_a-" + zz + "*pl_sin_a)", pv = "(" + yy + "*pl_cos_e-(" + x + "*pl_sin_a+" + zz + "*pl_cos_a)*pl_sin_e)";
-            int c0 = 30 + a * 3;
-            pts.SetFormula(1, c0, "-0.82*pl_h", 0); pts.SetFormula(1, c0 + 1, "-0.82*pl_h", 0);
-            pts.SetFormula(2, c0, "-0.82*pl_h+0.13*pl_h*" + pu, 0); pts.SetFormula(2, c0 + 1, "-0.82*pl_h+0.13*pl_h*" + pv, 0);
-            pts.Set(2, c0 + 2, axes[a][3]);
-        }
+        // the frame (a square around the drawing, so both axes take the same scale) and the axis triad
+        WbPlot.Square(pts);
 
         // ---- the 3D View sheet: controls, figures, the chart
-        view.ShowGrid = false;
-        view.TabColor = "6A1B9A";
-        view.Width(0, 2); view.Width(1, 22); view.Width(2, 26); view.Width(3, 2);
-        view.Set(1, 1, "3D view", t.Title); view.Height(1, 30);
-        view.Set(2, 1, "Live: follows Elements, Sections, Restraints and Coords as you edit them.", t.Subtitle);
-        view.Set(4, 1, "View", t.Section); view.Style(4, 2, t.Section);
-        view.Set(5, 1, "Direction", t.Label); view.Set(5, 2, "Iso", t.Value);
-        view.Validate("C6", new XlsxValidation { Type = "list", Formula1 = LView, PromptTitle = "View", Prompt = "Iso (CAESAR's), Plan (from above), Front (along -Z), Side (along -X), or Custom: give the azimuth and elevation below.", ErrorTitle = "A view", Error = "Pick a view from the list." });
-        view.Set(6, 1, "Azimuth (deg)", t.Label); view.Set(6, 2, 45, t.Value);
-        view.Set(7, 1, "Elevation (deg)", t.Label); view.Set(7, 2, 35.264, t.Value);
-        foreach (string a in new[] { "C7", "C8" })
-            view.Validate(a, new XlsxValidation { Type = "decimal", Operator = "between", Formula1 = "-360", Formula2 = "360", PromptTitle = "Custom view", Prompt = "Used when the view is Custom. Azimuth turns the model about the vertical axis; elevation tilts it toward you (90 = from above).", ErrorTitle = "Degrees", Error = "An angle in degrees, -360 to 360." });
-        view.Conditional("C7:C8", "$C$6<>\"Custom\"", t.Muted);
+        WbPlot.Controls(t, view, "Live: follows Elements, Sections, Restraints and Coords as you edit them.", LView,
+                        "Iso (CAESAR's), Plan (from above), Front (along -Z), Side (along -X), or Custom: give the azimuth and elevation below.");
         view.Set(9, 1, "Highlight element", t.Label); view.Set(9, 2, "", t.Value);
         view.Validate("C10", new XlsxValidation { Type = "list", Formula1 = "Elements!$A$2:$A$" + t.Form.RefRows, ShowError = false, PromptTitle = "Highlight", Prompt = "An element Id (E12): drawn thick and orange. Blank = none." });
         view.Set(10, 1, "Node numbers", t.Label); view.Set(10, 2, "no", t.Value);
@@ -843,11 +803,7 @@ static class PipeWorkbookGui
             new[] { "\u2501\u2501\u2501", "F57C00", "Highlighted element" }, new[] { "\u25A0", "C62828", "Anchor" }, new[] { "\u25B2", "43A047", "Vertical support" },
             new[] { "\u25C6", "8E24AA", "Other restraint" }, new[] { "X Y Z", "1565C0", "Axes (X blue, Y green, Z red)" },
         };
-        for (int i = 0; i < legend.Length; i++)
-        {
-            view.Set(23 + i, 1, legend[i][0], b.Style(new XlsxStyle { Bold = true, Color = legend[i][1], Align = "center" }));
-            view.Set(23 + i, 2, legend[i][2], t.Body);
-        }
+        WbPlot.Key(b, t, view, 23, legend);
         view.Set(32, 1, "Bends are drawn with their radius (a name - LR, SR, 3D, 5D, or one CAESAR wrote - from the section's OD). A CAESAR code that is no radius is drawn as a corner. " +
                         "Nodes placed on a bend's curve, and elements past the first " + cap + " rows, are not drawn. Rows not drawn: their From / To are missing or not numbers.", t.Small);
         view.Merge("B33:C41");
@@ -866,13 +822,7 @@ static class PipeWorkbookGui
         ch.Series.Add(new XlsxChartSeries { Name = "Other restraint", X = rng("R", 2, capR + 1), Y = rng("S", 2, capR + 1), Marker = "diamond", MarkerSize = 8, MarkerFill = "8E24AA", MarkerLine = "4A148C" });
         ch.Series.Add(new XlsxChartSeries { Name = "Nodes", X = rng("U", 2, last), Y = rng("V", 2, last), Labels = rng("W", 2, last), InLegend = false });
         ch.Series.Add(new XlsxChartSeries { Name = "Starts", X = rng("X", 2, last), Y = rng("Y", 2, last), Labels = rng("Z", 2, last), InLegend = false });
-        ch.Series.Add(new XlsxChartSeries { Name = "Frame", X = rng("AB", 2, 3), Y = rng("AC", 2, 3), InLegend = false });
-        string[] axisColor = { "1565C0", "2E7D32", "C62828" };
-        for (int a = 0; a < 3; a++)
-        {
-            string cu = XlsxBook.Column(30 + a * 3), cv = XlsxBook.Column(31 + a * 3), cl = XlsxBook.Column(32 + a * 3);
-            ch.Series.Add(new XlsxChartSeries { Name = "XYZ"[a] + " axis", X = rng(cu, 2, 3), Y = rng(cv, 2, 3), Line = axisColor[a], LineWidth = 1.75, Labels = rng(cl, 2, 3), LabelColor = axisColor[a], LabelSize = 9, InLegend = false });
-        }
+        WbPlot.SquareSeries(ch, P);
         view.Charts.Add(ch);
     }
 }

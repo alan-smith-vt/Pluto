@@ -210,10 +210,11 @@ public static class FrameWorkbook
     static string[][] ListCols()
     {
         return new[] { Shapes, FrameMember.CardinalNames.Skip(1).Select((n, k) => FrameMember.CardinalText(k + 1)).ToArray(), new[] { "yes", "no" }, DofNames, LinkTypes,
-                       PatternTypes, CaseTypes, ComboTypes, LoadTypes, Dirs, DistTypes, CoordSyss, TempTypes, RestraintPresets, ObjectTypes, CaseLoadTypes, MaterialTypes };
+                       PatternTypes, CaseTypes, ComboTypes, LoadTypes, Dirs, DistTypes, CoordSyss, TempTypes, RestraintPresets, ObjectTypes, CaseLoadTypes, MaterialTypes, WbPlot.Views };
     }
     static readonly string[] ListNames = { "Shapes", "Insertion points", "Yes / no", "DOFs", "Link types", "Pattern types", "Case types", "Combination types", "Load types",
-                                           "Directions", "Rel / Abs", "Coordinate systems", "Temperature types", "Restraints", "Object types", "Case load types", "Material types" };
+                                           "Directions", "Rel / Abs", "Coordinate systems", "Temperature types", "Restraints", "Object types", "Case load types", "Material types", "Views" };
+    const int ViewList = 17;   // the Views list's column; its azimuths and elevations are the next two
     static string ListRange(int col)
     {
         string c = XlsxBook.Column(col);
@@ -353,6 +354,7 @@ public static class FrameWorkbook
         fs.Conditional("E2:E" + lim, "AND(ISNUMBER(E2),E2=0)", t.Amber);
         fs.Width(0, 8); fs.Width(1, 10); fs.Width(2, 9); fs.Width(3, 9); fs.Width(4, 11); fs.Width(5, 16); fs.Width(6, 10); fs.Width(7, 10);
         fs.Width(8, 10); fs.Width(9, 10); fs.Width(10, 16); fs.Width(11, 11); fs.Width(12, 14); fs.Width(13, 14);
+        var view = b.Add(FrameView.View);                       // filled with the hidden PlotCalc / PlotPts, after Lists
 
         // ---- Sections
         var ss = b.Add(SSections);
@@ -689,6 +691,11 @@ public static class FrameWorkbook
             li.Set(0, k, ListNames[k], XlsxBook.Header);
             for (int i = 0; i < lcols[k].Length; i++) li.Set(1 + i, k, lcols[k][i]);
         }
+        li.Set(0, ViewList + 1, "View azimuth", XlsxBook.Header); li.Set(0, ViewList + 2, "View elevation", XlsxBook.Header);
+        for (int i = 0; i < WbPlot.Views.Length; i++) { li.Set(1 + i, ViewList + 1, WbPlot.ViewAz[i]); li.Set(1 + i, ViewList + 2, WbPlot.ViewEl[i]); }
+        Func<int, string> numList = k => "Lists!$" + XlsxBook.Column(k) + "$2:$" + XlsxBook.Column(k) + "$" + (1 + WbPlot.Views.Length).ToString(Inv);
+        FrameView.Sheets(b, t, view, b.Add(FrameView.Calc), b.Add(FrameView.Pts), m.Frames.Count, m.Joints.Count, m.Links.Count, lim, FrameUnits.Label("L", units),
+                         ListRange(ViewList), numList(ViewList + 1), numList(ViewList + 2), ListRange(2));
         WbBase.Write(b, Format, Version, hash, sourceName, json);
 
         // ---- Settings
@@ -707,6 +714,7 @@ public static class FrameWorkbook
             new WbSheetInfo("Settings", "SAP version stamp, units, where the model came from", null),
             new WbSheetInfo(SJoints, "Joints: X Y Z, restraints, local axes", rowsOf(SJoints, "B")),
             new WbSheetInfo(SFrames, "Frames: two joints, section, kind, line, release preset, angle, insertion, modifiers", rowsOf(SFrames, "B")),
+            new WbSheetInfo(FrameView.View, "A live drawing: steel and pipe, pinned ends, supports, links, joint labels", null),
             new WbSheetInfo(SSections, "Sections: shape, material, dimensions", rowsOf(SSections, "B")),
             new WbSheetInfo(SMaterials, "Materials: E, Poisson, unit weight, alpha, Fy, Fu", rowsOf(SMaterials, "B")),
             new WbSheetInfo(SReleases, "End release presets", rowsOf(SReleases, "A")),
