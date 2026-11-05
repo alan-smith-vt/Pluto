@@ -315,6 +315,26 @@ public static class Sap2kReader {
 			Node j = new Node();
 			j.id = id;
 			
+			// a joint in another coordinate type (cylindrical, spherical): SAP's own global position when the row
+			// gives it (its exports do), else a cylindrical one worked out from XorR (R), T (degrees) and Z
+			string ctype;
+			if (row.TryGetValue("CoordType", out ctype) && !string.Equals(ctype, "Cartesian", StringComparison.OrdinalIgnoreCase))
+			{
+				if (row.ContainsKey("GlobalX") && row.ContainsKey("GlobalY") && row.ContainsKey("GlobalZ"))
+				{
+					j.xyz = new Vector3((float)ParseD(row, "GlobalX"), (float)ParseD(row, "GlobalY"), (float)ParseD(row, "GlobalZ"));
+					if (toStaadAxes) j.xyz = new Vector3(j.xyz.X, j.xyz.Z, -j.xyz.Y);
+					joints.Add(j);
+					continue;
+				}
+				if (ctype.StartsWith("Cyl", StringComparison.OrdinalIgnoreCase))
+				{
+					double t = (row.ContainsKey("T") ? ParseD(row, "T") : y) * Math.PI / 180.0;
+					double r0 = x;
+					x = r0 * Math.Cos(t); y = r0 * Math.Sin(t);
+				}
+			}
+			
 			if (string.Equals(sysName, "GLOBAL", StringComparison.OrdinalIgnoreCase)
 				|| string.Equals(sysName, "GLOBAL_meshrefine", StringComparison.OrdinalIgnoreCase))
 			{

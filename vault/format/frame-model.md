@@ -58,8 +58,8 @@ itself, typed**: every object owns the rows that describe it, and every value is
 
 > [!info]- Typed access and editing
 > - **Typed accessors read and write through the text.** Examples: `FrameJoint.Xyz` / `SetXyz` (SAP's `GlobalX/Y/Z`
->   when the row has them, else worked out from `COORDINATE SYSTEMS`, cartesian or cylindrical; a moved joint in a
->   user system is written in GLOBAL), `Restraint`, `Spring`, `LocalAngles`; `FrameMember.Section`, `Angle`,
+>   when the row has them, else worked out from `COORDINATE SYSTEMS`, cartesian or cylindrical, whose angle is SAP's
+>   `T` field; a moved joint in a user system is written in GLOBAL, its `T` becoming `Y` in place), `Restraint`, `Spring`, `LocalAngles`; `FrameMember.Section`, `Angle`,
 >   `Releases`, `PartialFixity`, `ReleaseMask`, `CardinalPoint`, `PropertyModifiers`; `FrameLink.JointJ` ("" for a
 >   one-joint link).
 > - **A number set is written in the shortest form that reads back exactly** (G15, else G17), and a number set to its

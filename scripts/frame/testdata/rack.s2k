@@ -1,7 +1,7 @@
 File <project dir>\rack.s2k was saved on 11/5/26 at 10:00:00 AM
 
 TABLE:  "PROGRAM CONTROL"
-   ProgramName=SAP2000   Version=22.0.0   ProgLevel=Ultimate   LicenseNum=0   LicenseOS=Yes   LicenseSC=Yes   LicenseHT=No   CurrUnits="Kip, in, F"   SteelCode=AISC360-16   ConcCode="ACI 318-19"   AlumCode="AA 2015"   ColdCode=AISI-16   RegenHinge=Yes
+   ProgramName=SAP2000   Version=22.0.0   ProgLevel=Ultimate   LicenseNum=0   LicenseOS=Yes   LicenseSC=Yes   LicenseHT=No   CurrUnits="Kip, in, F"   SteelCode="AISC 360-16"   ConcCode="ACI 318-19"   AlumCode="AA 2015"   ColdCode=AISI-16   RegenHinge=Yes
 
 TABLE:  "ACTIVE DEGREES OF FREEDOM"
    UX=Yes   UY=Yes   UZ=Yes   RX=Yes   RY=Yes   RZ=Yes
@@ -11,6 +11,9 @@ TABLE:  "ANALYSIS OPTIONS"
 
 TABLE:  "AREA SECTION ASSIGNMENTS"
    Area=W1   Section=WALL6   MatProp=Default
+
+TABLE:  "AREA SECTION PROPERTIES"
+   Section=WALL6   Material=A992   MatAngle=0   AreaType=Shell   Type=Shell-Thin   Thickness=6   BendThick=6   Color=Gray8Dark
 
 TABLE:  "CASE - STATIC 1 - LOAD ASSIGNMENTS"
    Case=DEAD   LoadType="Load pattern"   LoadName=DEAD   LoadSF=1
@@ -140,7 +143,7 @@ TABLE:  "JOINT COORDINATES"
    Joint=12   CoordSys=GLOBAL   CoordType=Cartesian   XorR=0   Y=60   Z=186   SpecialJt=No   GlobalX=0   GlobalY=60   GlobalZ=186
    Joint=13   CoordSys=GLOBAL   CoordType=Cartesian   XorR=240   Y=60   Z=186   SpecialJt=No   GlobalX=240   GlobalY=60   GlobalZ=186
    Joint=14   CoordSys=GLOBAL   CoordType=Cartesian   XorR=264   Y=60   Z=186   SpecialJt=No   GlobalX=264   GlobalY=60   GlobalZ=186
-   Joint=20   CoordSys=CYL1   CoordType=Cylindrical   XorR=10   Y=0   Z=0   SpecialJt=Yes   GlobalX=500   GlobalY=10   GlobalZ=0
+   Joint=20   CoordSys=CYL1   CoordType=Cylindrical   XorR=10   T=0   Z=0   SpecialJt=Yes   GlobalX=500   GlobalY=10   GlobalZ=0
 
 TABLE:  "JOINT LOADS - FORCE"
    Joint=14   LoadPat=CONTENTS   CoordSys=GLOBAL   F1=0   F2=0   F3=-0.5   M1=0   M2=0   M3=0

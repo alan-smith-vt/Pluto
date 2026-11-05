@@ -84,6 +84,24 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 > **Refresh** writes the workbook in this version's layout from its own base, every typed cell back where it was, so
 > the next read gives the same model.
 
+> [!info]- The first production import of an edited rack (2026-11-05)
+> A workbook edit of the rack went to SAP 24.2 with `-Open`. The import log showed 13 errors and 3 warnings:
+> - **Errors 1–10:** SAP's own design tables, as in the probe.
+> - **The edit's fault: an unstable release.** A user preset freed P, V2 and V3 at both ends of C1. SAP refuses that
+>   and removes every release of such a frame. The workbook only warned. Now:
+>   - a frame using an unstable preset is refused;
+>   - the preset's name is red on Releases.
+>
+>   The rule is CSI's: P, V2, V3 or T at both ends; M2 at both ends with V3 at either; M3 at both ends with V2. A
+>   partly fixed DOF counts as held.
+> - **The fixture's fault (`rack.s2k`, written by hand, not by SAP):**
+>   - its `SteelCode=AISC360-16` is not SAP's name (`"AISC 360-16"`);
+>   - its cylindrical joint 20 gave the angle in `Y` where SAP reads `T`, so SAP skipped the joint;
+>   - its wall area named a section, WALL6, it never defined.
+>
+>   The fixture is corrected. The model reads a cylindrical joint's angle from `T`, and so does the viewer's reader
+>   (`SapReader`, which now prefers SAP's `GlobalX/Y/Z` for any non-cartesian joint).
+
 > [!info]- Ids (2026-11-05)
 > The Id column is each row's link to its object in the model, not a row counter.
 > - **A new row shows `new`** by formula as soon as its next column is filled. Nothing is typed, and `new` reads as a

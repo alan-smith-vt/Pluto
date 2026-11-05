@@ -433,6 +433,10 @@ public static class FrameWorkbook
         t.Form.Table(rs, t, rh, new[] { C("Name", "key", "text", "The preset's name, as Frames' Release column gives it.") }
             .Concat(RelHeads.Select(h => C(h, "prop", "text", "Released at this end: yes; partly fixed: its spring stiffness; blank = fixed."))).ToArray(), rel.Count, 400);
         rs.Width(0, 12);
+        // a preset SAP refuses as unstable (Unstable): its name red
+        Func<string, string> yes = cl => "LOWER(TRIM(" + cl + "2&\"\"))=\"yes\"";
+        rs.Conditional("A2:A400", "OR(AND(" + yes("B") + "," + yes("H") + "),AND(" + yes("C") + "," + yes("I") + "),AND(" + yes("D") + "," + yes("J") + "),AND(" + yes("E") + "," + yes("K") +
+                       "),AND(" + yes("F") + "," + yes("L") + ",OR(" + yes("D") + "," + yes("J") + ")),AND(" + yes("G") + "," + yes("M") + ",OR(" + yes("C") + "," + yes("I") + ")))", t.Red);
 
         // ---- Modifiers (presets)
         var mo = b.Add(SModifiers);
@@ -1229,11 +1233,26 @@ public static class FrameWorkbook
                 else if (tx.Equals("yes", StringComparison.OrdinalIgnoreCase) || tx.Equals("y", StringComparison.OrdinalIgnoreCase) || tx.Equals("released", StringComparison.OrdinalIgnoreCase)) p.Rel[i] = true;
                 else if (!tx.Equals("no", StringComparison.OrdinalIgnoreCase)) x.Err(At(c, r, heads[i]) + ": yes, a number (partly fixed) or blank (\"" + tx + "\")");
             }
-            if (releases && (p.Rel[0] && p.Rel[6] || p.Rel[3] && p.Rel[9] || p.Rel[1] && p.Rel[7] || p.Rel[2] && p.Rel[8]) && !p.Val.Any(v => v != 0))
-                x.Warnings.Add(At(c, r, "Name") + ": " + name + " releases P, V2, V3 or T at both ends: a mechanism in SAP");
+            string why = releases ? Unstable(p) : null;
+            if (why != null) x.Warnings.Add(At(c, r, "Name") + ": " + name + " releases " + why + ": unstable, SAP refuses it (a frame using it is refused)");
             o[name] = p;
         }
         return o;
+    }
+
+    // the end releases SAP refuses as unstable (CSI Analysis Reference, frame end releases): P, V2, V3 or T at both ends;
+    // M2 at both ends with V3 at either; M3 at both ends with V2 at either. A DOF partly fixed (a spring) is held. SAP
+    // removes every release of such a frame on import (seen on 24.2, 2026-11-05). null when stable
+    static string Unstable(Preset p)
+    {
+        Func<int, bool> f = i => p.Rel[i] && p.Val[i] == 0;
+        if (f(0) && f(6)) return "P at both ends";
+        if (f(1) && f(7)) return "V2 at both ends";
+        if (f(2) && f(8)) return "V3 at both ends";
+        if (f(3) && f(9)) return "T at both ends";
+        if (f(4) && f(10) && (f(2) || f(8))) return "M2 at both ends with V3";
+        if (f(5) && f(11) && (f(1) || f(7))) return "M3 at both ends with V2";
+        return null;
     }
 
     static List<string> ReadFrames(CaesarSheet s, Ctx x, Dictionary<string, Preset> rel, Dictionary<string, Preset> mod, Dictionary<string, string> kindOf, Dictionary<string, string> lineOf)
@@ -1275,6 +1294,8 @@ public static class FrameWorkbook
             Preset p0;
             if (rn.Length == 0) rn = "FIXED";
             if (!rel.TryGetValue(rn, out p0)) x.Err(At(c, r, "Release") + ": no release preset " + rn + " on Releases" + Hint(rn, rel.Keys));
+            else if (Unstable(p0) != null)
+                x.Err(At(c, r, "Release") + ": frame " + label + " uses " + rn + ", which releases " + Unstable(p0) + ": unstable, and SAP removes every release of such a frame on import. Pick a stable preset");
             else
             {
                 var r12 = p0.Rel; var v12 = p0.Val;

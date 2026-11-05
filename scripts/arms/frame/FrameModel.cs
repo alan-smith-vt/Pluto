@@ -102,7 +102,18 @@ public sealed class FrameJoint : FrameObj
     public void SetXyz(double x, double y, double z)
     {
         var r = Need(Coords);
-        if (!IsGlobalCartesian(r)) { r.Set("CoordSys", "GLOBAL"); r.Set("CoordType", "Cartesian"); }
+        // a joint given in another system (cylindrical: XorR T Z; spherical: XorR B A) becomes global X Y Z
+        if (!IsGlobalCartesian(r))
+        {
+            r.Set("CoordSys", "GLOBAL"); r.Set("CoordType", "Cartesian");
+            // the angle fields become Y (and Z) in their place, SAP's field order
+            foreach (var f in r.F)
+            {
+                if ((f[0] == "T" || f[0] == "B") && !r.Has("Y")) f[0] = "Y";
+                else if (f[0] == "A" && !r.Has("Z")) f[0] = "Z";
+            }
+            r.Remove("T"); r.Remove("B"); r.Remove("A");
+        }
         r.SetNum("XorR", x).SetNum("Y", y).SetNum("Z", z);
         if (r.Has("GlobalX")) r.SetNum("GlobalX", x);
         if (r.Has("GlobalY")) r.SetNum("GlobalY", y);
@@ -616,7 +627,8 @@ public sealed class FrameModel
         double a = r.Num("XorR", 0), b = r.Num("Y", 0), c = r.Num("Z", 0);
         string ct = r.Get("CoordType") ?? "Cartesian";
         double lx = a, ly = b, lz = c;
-        if (ct.StartsWith("Cyl", StringComparison.OrdinalIgnoreCase)) { double t = b * Math.PI / 180; lx = a * Math.Cos(t); ly = a * Math.Sin(t); }
+        // cylindrical: XorR = R, T = the angle (SAP's field; an older guess put it in Y), Z
+        if (ct.StartsWith("Cyl", StringComparison.OrdinalIgnoreCase)) { double t = (r.Has("T") ? r.Num("T", 0) : b) * Math.PI / 180; lx = a * Math.Cos(t); ly = a * Math.Sin(t); }
         string cs = r.Get("CoordSys") ?? "GLOBAL";
         if (cs.StartsWith("GLOBAL", StringComparison.OrdinalIgnoreCase)) return new[] { lx, ly, lz };
         if (_systems == null) _systems = Systems(Source);
