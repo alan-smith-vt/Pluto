@@ -39,7 +39,8 @@ type is a viewer tab that owns one section of the envelope.
 }
 ```
 
-The last three (and `model.source`) are a pipe model's, written by the CAESAR export (below).
+The last three (and `model.source`) are a pipe model's, written by the CAESAR export (below); a SAP model
+writes `loads` as version 2 (below).
 
 Rules:
 - Every section is `{ version, items[] }`, versioned independently so predicates can
@@ -368,6 +369,60 @@ everything the model holds before CAESAR imports it. The CAESAR export (`CaesarT
     pinned element's card (every field, the loads on it, the checks about it), and **Node numbers**.
   - `labels.js` (`FEALabels`): screen labels, culled where they would overlap.
   - Tests: `viewer/tests/test_loads.js`, `viewer/tests/test_review.js`.
+
+### SAP frame models: loads version 2 (live 2026-11-05)
+
+`SapToPluto` (`FrameSidecar.Loads`) writes the `loads` section of every SAP model as **version 2**: the load
+patterns, cases and combinations, and one item per load row. The CAESAR export keeps writing version 1
+(above); the viewer tells them apart by `patterns`.
+
+```json
+"loads": { "version": 2, "units": { "force": "kip", "length": "in", "moment": "kip-in", "uniform": "kip/in", "temperature": "F" },
+  "patterns": [ { "name": "DEAD", "type": "Dead", "selfWeight": 1 }, { "name": "T1", "type": "Temperature", "selfWeight": 0 } ],
+  "cases": [ { "name": "OPE", "type": "NonStatic", "initial": "SUS", "loads": [ { "type": "Load pattern", "name": "T1", "sf": 1 } ] } ],
+  "combinations": [ { "name": "EXP", "type": "Linear Add", "items": [ { "type": "Nonlinear Static", "name": "OPE", "sf": 1 },
+                                                                         { "type": "Nonlinear Static", "name": "SUS", "sf": -1 } ] } ],
+  "items": [
+    { "id": "sap-load-21", "pattern": "CONTENTS", "coordSys": "GLOBAL", "name": "P2 CONTENTS", "kind": "point",
+      "members": [{ "domain": "beams", "ids": [12] }], "frame": "P2", "type": "force", "dir": "Gravity",
+      "at": { "rel": 0.4, "abs": 96 }, "value": 0.85 },
+    { "id": "…", "kind": "distributed", …, "dir": "X Proj", "from": { "rel": 0.2, "abs": 24 }, "to": { "rel": 0.8, "abs": 96 },
+      "valueA": 0.001, "valueB": 0.003 },
+    { "id": "…", "kind": "temperature", …, "type": "Temperature", "dT": 230 },
+    { "id": "sap-load-46", "pattern": "CONTENTS", "coordSys": "GLOBAL", "name": "14 CONTENTS", "kind": "force",
+      "nodeIds": [14], "vectors": [{ "v": 1, "values": [0, 0, -0.5, 0, 0, 0] }] } ] }
+```
+
+- **Items** name their `pattern`, `coordSys` and SAP's own labels (`name` = frame or joint, then pattern). Joint
+  forces and ground displacements are `force` / `displacement` items as in version 1, with one vector (`v` 1;
+  rotations in radians). Frame loads carry `members` (the frame's beam), `frame` and `type` (`force | moment`):
+  `point` (`at`: relative and absolute distance from end I, `value`), `distributed` (`from` / `to`, `valueA` /
+  `valueB`: a trapezoid), `temperature` (`dT`, `type` as SAP has it).
+- **`dir`** is SAP's: `Gravity` (−Z; a positive value points down), `X Y Z` (global), `1 2 3` (the frame's
+  local axes: 1 = I → J, 2 = the viewer's local z, 3 = minus its local y, [[vault/format/v4-schema|v4-schema]]
+  §4.3), and the projected `X Proj` … (drawn along the global axis).
+- **Cases and combinations**: a case's `loads` are `{type, name, sf}` (`Load pattern`, or another kind such as
+  `Accel`); `initial` is the case a nonlinear case continues from (`Zero` = none). A combination's `items` name
+  a case or another combination with its factor; `type` is SAP's (`Linear Add`, `Envelope`, `Abs Add`, `SRSS` …).
+- **Viewer** (`loads.js`): a version-2 section adds the **Loads of** select (all patterns, a pattern, a case or
+  a combination), remembered per model; the Vector and Wind rows are hidden.
+  - a pattern draws its items ×1; a case its `Load pattern` entries × `sf` (a pattern listed twice sums;
+    other entries are skipped with a note). A nonlinear case continuing from another nonlinear case carries
+    that case's loads, as SAP's staged analysis does ("OPE includes SUS"), so `EXP = OPE − SUS` draws the
+    thermal pattern alone and the cancelled patterns are named; any other `initial` gives only stiffness and
+    is named ("continues from SUS").
+  - a `Linear Add` combination resolves each item as a case, else as a combination; factors multiply down the
+    tree, a pattern reached by several paths sums its factor, and a cycle is cut.
+  - any other combination type draws the union of every pattern it reaches, ±1 ("envelope: union shown").
+  - self weight is listed ("+ self weight ×1"), never drawn.
+  - symbols: a point load is one arrow at its place along the member (a moment double-headed); a distributed
+    load a row of arrows from `from` to `to` whose lengths follow the value, with a line through their tails;
+    a temperature load a translucent band along the member (red hotter, blue colder) labelled `ΔT 230 F`,
+    which leaves the pick to the member. The factor scales the values; −1 flips the arrows.
+  - for the properties card: `FEALoads.itemsAt(null, beamId)` also returns the frame's point, distributed and
+    temperature items; `FEALoads.itemText(item)` is one line for any item, version 1 or 2
+    (`P2 CONTENTS: point 0.85 kip Gravity at 0.4 (96 in)`).
+  - Test: `viewer/tests/test_loads.js`.
 
 ### springs (planned)
 Same envelope, one item per spring: `{ id, name, nodeIds, dof, stiffness }`.

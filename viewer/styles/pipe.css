@@ -94,9 +94,10 @@
 .ld-k { display: flex; align-items: center; gap: 4px; cursor: pointer; }
 .ld-k input { margin: 0; }
 .ld-k span { color: #8a8a95; font-size: 10px; }
-.ld-force::before, .ld-moment::before, .ld-displacement::before, .ld-uniform::before, .ld-wind::before {
+.ld-force::before, .ld-moment::before, .ld-displacement::before, .ld-uniform::before, .ld-wind::before, .ld-temperature::before {
     content: ''; width: 8px; height: 8px; border-radius: 2px; display: inline-block; order: -1;
 }
+.ld-temperature::before { background: linear-gradient(90deg, rgb(229, 57, 53) 50%, rgb(30, 136, 229) 50%); }
 .ld-force::before { background: rgb(239, 83, 80); }
 .ld-moment::before { background: rgb(171, 71, 188); }
 .ld-displacement::before { background: rgb(236, 64, 122); }
@@ -117,3 +118,5 @@
 #labelLayer .lbl-displacement { background: rgba(173, 20, 87, 0.8); }
 #labelLayer .lbl-uniform { background: rgba(46, 125, 50, 0.8); }
 #labelLayer .lbl-wind { background: rgba(21, 101, 192, 0.8); }
+#labelLayer .lbl-temp-hot { background: rgba(198, 40, 40, 0.8); }
+#labelLayer .lbl-temp-cold { background: rgba(21, 101, 192, 0.8); }

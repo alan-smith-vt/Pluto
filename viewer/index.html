@@ -200,12 +200,18 @@
                 <input type="checkbox" id="ldShow" class="fea-check" checked>
                 <span class="fea-hint" id="ldCount" style="margin-left:6px;"></span>
             </div>
+            <div class="fea-row" id="ldPickRow" style="display:none;">
+                <label class="fea-label" for="ldPick">Loads of</label>
+                <select id="ldPick" class="fea-select" title="SAP model: every load pattern, one pattern, a load case (its patterns times their scale factors) or a combination (its cases and combinations, the factors multiplied down; an envelope draws the union). Remembered per model."></select>
+            </div>
+            <div class="fea-hint" id="ldPickNote" style="display:none; margin:-2px 0 6px;"></div>
             <div class="ld-kinds">
                 <label class="ld-k ld-force"><input type="checkbox" id="ldKForce" checked> Forces <span class="ld-n-force"></span></label>
                 <label class="ld-k ld-moment"><input type="checkbox" id="ldKMoment" checked> Moments <span class="ld-n-moment"></span></label>
                 <label class="ld-k ld-displacement"><input type="checkbox" id="ldKDisplacement" checked> Displacements <span class="ld-n-displacement"></span></label>
                 <label class="ld-k ld-uniform"><input type="checkbox" id="ldKUniform" checked> Uniform <span class="ld-n-uniform"></span></label>
                 <label class="ld-k ld-wind"><input type="checkbox" id="ldKWind" checked> Wind <span class="ld-n-wind"></span></label>
+                <label class="ld-k ld-temperature" style="display:none;"><input type="checkbox" id="ldKTemperature" checked> Temperature <span class="ld-n-temperature"></span></label>
             </div>
             <div class="fea-row">
                 <label class="fea-label" for="ldVector">Vector</label>
@@ -223,7 +229,7 @@
                 <input type="checkbox" id="ldLabels" class="fea-check" checked>
                 <span class="fea-label" style="width:auto;">Labels (vector, value, unit)</span>
             </div>
-            <div class="fea-hint" style="margin-top:2px;">From the sidecar <em>loads</em>: arrows pushing on the pipe = forces; double-headed arrows = moments (right-hand rule) and imposed rotations; arrows out from the pipe = imposed displacements; rows of arrows = uniform loads (teal: in g's) and wind. Lengths grow with the value. Hover for the load, click for every vector.</div>
+            <div class="fea-hint" style="margin-top:2px;">From the sidecar <em>loads</em>: arrows pushing on the pipe = forces; double-headed arrows = moments (right-hand rule) and imposed rotations; arrows out from the pipe = imposed displacements; rows of arrows = uniform loads (teal: in g's) and wind. Lengths grow with the value. Hover for the load, click for every vector. SAP models: pick a pattern, case or combination under <em>Loads of</em>; a point load is one arrow, a distributed load a row of arrows whose lengths follow the value with a line through their tails, a temperature load a band along the member (red: hotter, blue: colder). Self weight is listed, not drawn.</div>
             <div class="fea-hint" id="ldNote" style="margin-top:4px;"></div>
         </div>
     </details>
