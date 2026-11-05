@@ -184,7 +184,12 @@ public sealed class S2kDoc : IS2kTables
 
     // ---------------- read
 
-    public static S2kDoc Load(string path) { return Parse(File.ReadAllBytes(path)); }
+    // read shared: a file another program holds open for writing still reads
+    public static S2kDoc Load(string path)
+    {
+        using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+        using (var ms = new MemoryStream()) { fs.CopyTo(ms); return Parse(ms.ToArray()); }
+    }
     public static S2kDoc Parse(byte[] bytes) { return ParseText(Latin1.GetString(bytes)); }
 
     public static S2kDoc ParseText(string text)

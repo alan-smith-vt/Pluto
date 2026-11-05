@@ -68,7 +68,12 @@ function Say([string]$step, [string]$text) { Write-Output ("[{0}] {1}" -f $step.
 function Q([string]$s) { if ([string]::IsNullOrEmpty($s)) { return "null" } return (ConvertTo-Json -InputObject $s -Compress) }
 function Full([string]$p) { return (Resolve-Path -LiteralPath $p).ProviderPath }
 function Fail([string]$msg) { Say "error" $msg; Write-Output ("RESULT {""error"":" + (Q $msg) + "}"); exit 1 }
-function FileSha([string]$p) { $h = [Security.Cryptography.SHA256]::Create(); try { $s = [IO.File]::OpenRead($p); try { return (($h.ComputeHash($s) | ForEach-Object { $_.ToString("x2") }) -join "") } finally { $s.Dispose() } } finally { $h.Dispose() } }
+# every input is opened shared: Excel keeps an open workbook locked for writing, and a plain OpenRead / ReadAllBytes
+# asks for that lock too, so it fails while the workbook is open (the live preview's whole use)
+function OpenShared([string]$p) { return New-Object IO.FileStream($p, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)) }
+function FileSha([string]$p) { $fs = OpenShared $p; try { $h = [Security.Cryptography.SHA256]::Create(); try { return (($h.ComputeHash($fs) | ForEach-Object { $_.ToString("x2") }) -join "") } finally { $h.Dispose() } } finally { $fs.Dispose() } }
+function ReadShared([string]$p) { $fs = OpenShared $p; try { $ms = New-Object IO.MemoryStream; $fs.CopyTo($ms); return ,$ms.ToArray() } finally { $fs.Dispose() } }
+function ReadSharedText([string]$p) { $fs = OpenShared $p; try { $sr = New-Object IO.StreamReader($fs, $true); try { return $sr.ReadToEnd() } finally { $sr.Dispose() } } finally { $fs.Dispose() } }
 function Innermost($err) { $e = $err.Exception; while ($e.InnerException) { $e = $e.InnerException }; return $e.Message }
 $repoRoot = (Resolve-Path -LiteralPath (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))).ProviderPath.TrimEnd('\', '/')
 function InRepo([string]$p) { return $p.Equals($repoRoot, [StringComparison]::OrdinalIgnoreCase) -or $p.StartsWith($repoRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) }
@@ -225,7 +230,7 @@ function Check-Target([byte[]]$bytes, $model) {
     if (-not (Test-Path -LiteralPath $s2kFile -PathType Leaf)) { return }
     $st = Read-Stamp
     if ($st -and $st.s2k -and $st.s2k.sha256 -eq (FileSha $s2kFile)) { return }
-    $old = [IO.File]::ReadAllBytes($s2kFile)
+    $old = ReadShared $s2kFile
     if ([S2kDoc]::SameBytes($old, $bytes)) { return }
     if ($model.Source -and [S2kDoc]::SameBytes($old, $model.Source.ToBytes())) { return }
     if ($Force) { Say "warn" ("-Force: replacing {0}, changed outside this runner" -f $s2kFile); return }
@@ -242,7 +247,7 @@ function Build-Once {
     $identical = $null
     $warnings = @()
     if ($kind -eq "s2k") {
-        $bytes = [IO.File]::ReadAllBytes($inPath)
+        $bytes = ReadShared $inPath
         $doc = [S2kDoc]::Parse($bytes)
         $model = [FrameS2k]::Read($doc)
         $identical = [S2kDoc]::SameBytes($bytes, [FrameS2k]::ToBytes($model))
@@ -254,7 +259,7 @@ function Build-Once {
         Say "read" ("{0}: {1}" -f $inPath, $wb.Summary())
         foreach ($w in $wb.Warnings) { Say "warn" $w; $warnings += $w }
     } else {
-        $model = [FrameModelJson]::Read([IO.File]::ReadAllText($inPath))
+        $model = [FrameModelJson]::Read((ReadSharedText $inPath))
         Say "read" ("{0}: the frame model" -f $inPath)
     }
     $counts = "{0} joints, {1} frames, {2} sections, {3} materials, {4} link properties, {5} links, {6} groups, {7} load patterns, {8} loads, {9} cases, {10} combinations; units {11}" -f `

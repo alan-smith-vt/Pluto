@@ -190,7 +190,9 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 >   stamped for that SAP's version (`SapSession.OpenStamped`), saved beside it as `.sdb`. SAP's joint, frame and link
 >   counts are compared with the model's; a difference is a warning (a table SAP did not read).
 > - `-Watch` (with an `.xlsx`): every save rebuilds the outputs (`-Preview` when none is given). A save that does not
->   build leaves the last good outputs.
+>   build leaves the last good outputs. Every input is opened shared: Excel keeps an open workbook locked for writing,
+>   and the first production run's live preview failed on it ("being used by another process", 2026-11-05) because
+>   the input's fingerprint used a plain `OpenRead`.
 > - `-NewWorkbook -Out <name>.xlsx [-Units "Kip, in, F"] [-SapVersion 22.0.0]`: an empty model's workbook and launchers.
 > - `-Refresh -In <x>.xlsx`: the workbook in this version's layout over itself, edits kept; the previous file is
 >   `<x>.xlsx.bak`.
