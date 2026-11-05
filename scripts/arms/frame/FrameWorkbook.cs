@@ -788,8 +788,24 @@ public static class FrameWorkbook
             },
         };
         WbStart.StartSheet(start, t, x0, run == null ? (Func<int, int>)null : r => RunBlock(start, t, r, run), sheets, checks);
+        // tabs coloured by what they hold, the column headers' groups (the CAESAR workbook's scheme)
+        foreach (var tab in b.Sheets)
+        {
+            string tc;
+            if (TabColors.TryGetValue(tab.Name, out tc)) tab.TabColor = tc;
+        }
         return b;
     }
+
+    static readonly Dictionary<string, string> TabColors = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        { "Settings", "37474F" }, { SJoints, "1565C0" }, { SFrames, "1565C0" },
+        { SSections, "00796B" }, { SMaterials, "00796B" }, { SReleases, "00796B" }, { SModifiers, "00796B" },
+        { SLinks, "B45309" }, { SLinkProps, "B45309" }, { SSprings, "B45309" },
+        { SPatterns, "9A3412" }, { SJointLoads, "9A3412" }, { SGround, "9A3412" }, { SPoint, "9A3412" }, { SDist, "9A3412" }, { STemp, "9A3412" },
+        { SCases, "9A3412" }, { SCombos, "9A3412" },
+        { SGroups, "37474F" }, { "Carried", "7F7F7F" },
+    };
 
     const string FramesHint = "The frames it loads: a label, a range in Frames' order (C1:C9), group:NAME, line:NAME, kind:NAME, section:NAME or all; several, separated by commas.";
 
