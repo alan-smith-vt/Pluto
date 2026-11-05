@@ -160,7 +160,8 @@ public static class FrameS2k
         if (bm.Control != null && bm.Control.Row != null) owned.Add(map[bm.Control.Row]);
 
         // PROGRAM CONTROL
-        Reconcile(doc, map, bm.Control == null ? new List<FrameRec>() : new List<FrameRec> { bm.Control }, m.Control == null ? new List<FrameRec>() : new List<FrameRec> { m.Control });
+        var added = new List<string>();     // tables given new rows
+        Reconcile(doc, map, bm.Control == null ? new List<FrameRec>() : new List<FrameRec> { bm.Control }, m.Control == null ? new List<FrameRec>() : new List<FrameRec> { m.Control }, added);
 
         var baseByUid = new Dictionary<int, FrameObj>();
         foreach (var o in bm.All()) baseByUid[o.Uid] = o;
@@ -176,7 +177,7 @@ public static class FrameS2k
                 seen.Add(b.Uid);
                 if (b.Kind != "load" && b.Label != o.Label) Map(renamed, b.Kind)[b.Label] = o.Label;
             }
-            Reconcile(doc, map, b == null ? new List<FrameRec>() : b.Recs, o.Recs);
+            Reconcile(doc, map, b == null ? new List<FrameRec>() : b.Recs, o.Recs, added);
         }
         foreach (var b in bm.All())
         {
@@ -211,6 +212,8 @@ public static class FrameS2k
                 }
             if (errors.Count > 0) throw new InvalidOperationException("FrameS2k: " + string.Join("; ", errors.Distinct().Take(12).ToArray()));
         }
+        foreach (string t in added.Distinct(StringComparer.OrdinalIgnoreCase))
+            if (!FrameS2kSchema.Confirmed(t)) notes.Add("s2k-unconfirmed: new rows in " + t + ", a table SAP has not confirmed yet (the SAP probe settles it): check them after the import");
         return doc;
     }
 
@@ -254,7 +257,7 @@ public static class FrameS2k
     }
 
     // one object's rows against its base rows, table by table, row by row in order
-    static void Reconcile(S2kDoc doc, Dictionary<S2kRow, S2kRow> map, List<FrameRec> baseRecs, List<FrameRec> curRecs)
+    static void Reconcile(S2kDoc doc, Dictionary<S2kRow, S2kRow> map, List<FrameRec> baseRecs, List<FrameRec> curRecs, List<string> added)
     {
         var tables = new List<string>();
         foreach (var r in baseRecs) if (!tables.Contains(r.Table, StringComparer.OrdinalIgnoreCase)) tables.Add(r.Table);
@@ -280,6 +283,7 @@ public static class FrameS2k
                     var table = doc.Table(t) ?? InsertTable(doc, t);
                     if (last != null) table.InsertRowAfter(last, row); else table.AddRow(row);
                     last = row;
+                    added.Add(t);
                 }
                 else RemoveRow(doc, t, map[b[i].Row]);
             }

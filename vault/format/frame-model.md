@@ -111,4 +111,6 @@ itself, typed**: every object owns the rows that describe it, and every value is
 > [!info]- Not yet
 > - Typed views of link-type tables beyond their DOF rows; combinations and cases typed beyond their rows.
 > - Changing the model's unit set (Phase 6).
-> - The confirmed / unconfirmed flag per table and field, set from the SAP probe ([[vault/arms/frame-workbook|frame-workbook]]).
+> - Confirmed tables are in `FrameS2kSchema` (the proven writers' tables); new rows elsewhere get an `s2k-unconfirmed`
+>   notice. Per-field flags, and the tables the probe confirms, come with its results
+>   ([[vault/arms/frame-workbook|frame-workbook]]).

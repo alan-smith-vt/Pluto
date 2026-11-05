@@ -55,3 +55,7 @@ created: 2026-11-05
 
   Byte-for-byte round trips, and an edit harness in which each edit changes only its own lines, are recorded in
   [[vault/format/frame-model|frame-model]]. The probe results from SAP are pending.
+- **2026-11-05, later:** the viewer (Phase 2); the shared kit `scripts/arms/workbook/Wb*`, extracted with every CAESAR
+  workbook byte-identical (Phase 0b, [[vault/arms/workbook-kit|workbook-kit]]); the frame workbook and the runner's
+  workbook switches (Phase 3a, [[vault/arms/frame-workbook|frame-workbook]]). Tables SAP has not confirmed are written
+  with a notice until the probe's results come back.

@@ -223,7 +223,13 @@ public static class WbRefresh
                 if (h.Length == 0) continue;
                 int to = -1;
                 for (int k = 0; k <= newLast && to < 0; k++) if (!used.Contains(k) && ns.TextAt(0, k) == h) to = k;
-                for (int k = 0; k <= newLast && to < 0; k++) if (!used.Contains(k) && stem(ns.TextAt(0, k) ?? "") == stem(h)) to = k;
+                for (int k = 0; k <= newLast && to < 0; k++)
+                    if (!used.Contains(k) && stem(ns.TextAt(0, k) ?? "") == stem(h))
+                    {
+                        to = k;
+                        // the same column in another unit: its cells are in that unit, so the header keeps it
+                        if (h.IndexOf(" (", StringComparison.Ordinal) > 0 && ns.TextAt(0, k) != h) { ns.Set(0, k, h, ns.StyleAt(0, k)); notes.Add(os.Name + ": the column \"" + h + "\" keeps its unit"); }
+                    }
                 if (to < 0) { to = extra++; ns.Set(0, to, h, ns.StyleAt(0, newLast)); ns.Width(to, Math.Max(8, Math.Min(30, h.Length + 2))); notes.Add(os.Name + ": the column \"" + h + "\" is not Pluto's: kept, after Pluto's columns"); }
                 used.Add(to);
                 map[c] = to;

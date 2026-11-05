@@ -8,7 +8,7 @@ using System.Text;
 // FrameModelJson  --  the whole frame model as JSON, exactly (2026-11-05): "pluto-frame-model" v1. Every value in
 // the model is text, so the JSON is exact by construction: the source file as written (its text), and every object
 // with its uid and its rows (table, fields). Reading it gives the model back; the source read again gives the base the
-// writer overlays edits on (FrameS2k.ToDoc), so nothing else is stored. Non-ASCII characters are escaped (é),
+// writer overlays edits on (FrameS2k.ToDoc), so nothing else is stored. Non-ASCII characters are escaped (an e with an acute accent as \u00e9),
 // the text stays ASCII. Hash: SHA-256 of the JSON, the model's fingerprint (the workbook's base, the build stamp).
 // C# 5, one global batch (prefix Frame).
 
@@ -186,9 +186,10 @@ public static class FrameModelJson
                 }
             }
             if (c == '"') return String();
-            if (s.Substring(i).StartsWith("true")) { i += 4; return true; }
-            if (s.Substring(i).StartsWith("false")) { i += 5; return false; }
-            if (s.Substring(i).StartsWith("null")) { i += 4; return null; }
+            // in place: a Substring of the rest of the text per value made reading quadratic (4 s for a 1.4 MB model)
+            if (string.CompareOrdinal(s, i, "true", 0, 4) == 0) { i += 4; return true; }
+            if (string.CompareOrdinal(s, i, "false", 0, 5) == 0) { i += 5; return false; }
+            if (string.CompareOrdinal(s, i, "null", 0, 4) == 0) { i += 4; return null; }
             int st = i;
             while (i < s.Length && "+-0123456789.eE".IndexOf(s[i]) >= 0) i++;
             return double.Parse(s.Substring(st, i - st), NumberStyles.Float, CultureInfo.InvariantCulture);

@@ -230,6 +230,10 @@ public sealed class FrameMember : FrameObj
         }
     }
 
+    public static readonly string[] CardinalNames = { "", "bottom left", "bottom center", "bottom right", "middle left", "middle center", "middle right",
+                                                      "top left", "top center", "top right", "centroid", "shear center" };
+    // SAP's text for a cardinal point: "8 (top center)"
+    public static string CardinalText(int n) { return n >= 1 && n <= 11 ? n.ToString(CultureInfo.InvariantCulture) + " (" + CardinalNames[n] + ")" : "10 (centroid)"; }
     public int CardinalPoint
     {
         get
@@ -240,6 +244,11 @@ public sealed class FrameMember : FrameObj
             int n = 0, i = 0;
             while (i < s.Length && char.IsDigit(s[i])) { n = n * 10 + (s[i] - '0'); i++; }
             return n == 0 ? 10 : n;
+        }
+        set
+        {
+            if (value == CardinalPoint) return;
+            Need(Insertion).Set("CardinalPt", CardinalText(value));
         }
     }
 
@@ -274,8 +283,13 @@ public sealed class FrameMaterial : FrameObj
     public override string Kind { get { return "material"; } }
     public override string KeyField { get { return "Material"; } }
     public override string MainTable { get { return General; } }
-    public string Type { get { var r = Rec(General); return r == null ? "" : r.Get("Type") ?? ""; } }
+    public const string Steel = "MATERIAL PROPERTIES 03A - STEEL DATA";
+    public string Type { get { var r = Rec(General); return r == null ? "" : r.Get("Type") ?? ""; } set { if (Type != value) Need(General).Set("Type", value); } }
     public double Mech(string k) { var r = Rec(Mechanical); return r == null ? 0 : r.Num(k, 0); }
+    public void SetMech(string k, double v) { Need(Mechanical).SetNum(k, v); }
+    // steel data (Fy, Fu); NaN = no row
+    public double SteelData(string k) { var r = Rec(Steel); return r == null ? double.NaN : r.Num(k, double.NaN); }
+    public void SetSteelData(string k, double v) { Need(Steel).SetNum(k, v); }
 }
 
 public sealed class FrameLinkProp : FrameObj
@@ -284,9 +298,33 @@ public sealed class FrameLinkProp : FrameObj
     public override string Kind { get { return "linkprop"; } }
     public override string KeyField { get { return "Link"; } }
     public override string MainTable { get { return General; } }
-    public string LinkType { get { var r = Rec(General); return r == null ? "" : r.Get("LinkType") ?? ""; } }
+    public string LinkType { get { var r = Rec(General); return r == null ? "" : r.Get("LinkType") ?? ""; } set { if (LinkType != value) Need(General).Set("LinkType", value); } }
     // the per-DOF rows: every row it owns outside its general table that names a DOF
     public IEnumerable<FrameRec> DofRows { get { foreach (var r in Recs) if (r.Has("DOF") && !string.Equals(r.Table, General, StringComparison.OrdinalIgnoreCase)) yield return r; } }
+    public FrameRec DofRow(string dof) { foreach (var r in DofRows) if (string.Equals(r.Get("DOF"), dof, StringComparison.OrdinalIgnoreCase)) return r; return null; }
+
+    // the table a link type's DOF rows go in (SAP's numbering; the probe confirms them)
+    public static string DofTable(string linkType)
+    {
+        string t = (linkType ?? "").ToLowerInvariant();
+        if (t == "gap") return "LINK PROPERTY DEFINITIONS 05 - GAP";
+        if (t == "hook") return "LINK PROPERTY DEFINITIONS 06 - HOOK";
+        if (t.Contains("damper")) return "LINK PROPERTY DEFINITIONS 03 - DAMPER";
+        if (t.Contains("friction")) return "LINK PROPERTY DEFINITIONS 08 - FRICTION ISOLATOR";
+        if (t.Contains("multilinear")) return "LINK PROPERTY DEFINITIONS 10 - MULTILINEAR ELASTIC";
+        return "LINK PROPERTY DEFINITIONS 02 - LINEAR";
+    }
+
+    // a new DOF row in its type's table, in SAP's field order: Link, DOF, Fixed[, NonLinear], KE, CE (trans or rot)
+    public FrameRec AddDofRow(string dof)
+    {
+        bool rot = dof.StartsWith("R", StringComparison.OrdinalIgnoreCase), lin = DofTable(LinkType).EndsWith("LINEAR") && !DofTable(LinkType).Contains("MULTI");
+        var r = new FrameRec(DofTable(LinkType)).Set("Link", Label).Set("DOF", dof).Set("Fixed", "No");
+        if (!lin) r.Set("NonLinear", "No");
+        r.Set(rot ? "RotKE" : "TransKE", "0").Set(rot ? "RotCE" : "TransCE", "0");
+        Recs.Add(r);
+        return r;
+    }
 }
 
 public sealed class FrameLink : FrameObj
@@ -298,8 +336,26 @@ public sealed class FrameLink : FrameObj
     public string JointI { get { var r = Rec(Conn); return r == null ? "" : r.Get("JointI") ?? ""; } }
     // the second joint; "" for a one-joint (grounded) link
     public string JointJ { get { var r = Rec(Conn); string j = r == null ? null : r.Get("JointJ"); return j == null || j == JointI ? "" : j; } }
-    public string Property { get { var r = Rec(PropAssign); return r == null ? "" : r.Get("LinkProp") ?? ""; } }
-    public double Angle { get { var r = Rec(LocalAxes); return r == null ? 0 : r.Num("Angle", 0); } }
+    public string Property { get { var r = Rec(PropAssign); return r == null ? "" : r.Get("LinkProp") ?? ""; } set { if (Property != value) Need(PropAssign).Set("LinkProp", value); } }
+    public double Angle
+    {
+        get { var r = Rec(LocalAxes); return r == null ? 0 : r.Num("Angle", 0); }
+        set
+        {
+            var r = Rec(LocalAxes);
+            if (value == 0 && (r == null || !r.Yes("AdvanceAxes"))) { Drop(LocalAxes); return; }
+            if (r == null) r = Need(LocalAxes);
+            r.SetNum("Angle", value);
+        }
+    }
+    // its joints; j "" = a one-joint (grounded) link, written as JointJ = JointI (the probe confirms the form)
+    public void SetJoints(string i, string j)
+    {
+        if (JointI == i && JointJ == j) return;
+        var r = Need(Conn);
+        r.Set("JointI", i);
+        r.Set("JointJ", j == "" ? i : j);
+    }
 }
 
 public sealed class FrameGroup : FrameObj
@@ -310,6 +366,18 @@ public sealed class FrameGroup : FrameObj
     public override string MainTable { get { return Defs; } }
     // its members: {ObjectType, ObjectLabel}
     public IEnumerable<string[]> Members { get { foreach (var r in RecsOf(Assign)) yield return new[] { r.Get("ObjectType") ?? "", r.Get("ObjectLabel") ?? "" }; } }
+    // set the members ({ObjectType, ObjectLabel}): rows already there stay as written and in place, the others go,
+    // new ones follow
+    public void SetMembers(IList<string[]> want)
+    {
+        Func<string, string, string> key = (t, l) => (t ?? "").ToLowerInvariant() + "|" + (l ?? "");
+        var keep = new HashSet<string>(want.Select(w => key(w[0], w[1])));
+        var have = new HashSet<string>();
+        Recs.RemoveAll(r => string.Equals(r.Table, Assign, StringComparison.OrdinalIgnoreCase) && !keep.Contains(key(r.Get("ObjectType"), r.Get("ObjectLabel"))));
+        foreach (var r in RecsOf(Assign)) have.Add(key(r.Get("ObjectType"), r.Get("ObjectLabel")));
+        foreach (var w in want)
+            if (have.Add(key(w[0], w[1]))) Recs.Add(new FrameRec(Assign).Set("GroupName", Label).Set("ObjectType", w[0]).Set("ObjectLabel", w[1]));
+    }
 }
 
 public sealed class FramePattern : FrameObj
@@ -318,8 +386,8 @@ public sealed class FramePattern : FrameObj
     public override string Kind { get { return "pattern"; } }
     public override string KeyField { get { return "LoadPat"; } }
     public override string MainTable { get { return Defs; } }
-    public string DesignType { get { var r = Rec(Defs); return r == null ? "" : r.Get("DesignType") ?? ""; } }
-    public double SelfWeight { get { var r = Rec(Defs); return r == null ? 0 : r.Num("SelfWtMult", 0); } }
+    public string DesignType { get { var r = Rec(Defs); return r == null ? "" : r.Get("DesignType") ?? ""; } set { if (DesignType != value) Need(Defs).Set("DesignType", value); } }
+    public double SelfWeight { get { var r = Rec(Defs); return r == null ? 0 : r.Num("SelfWtMult", 0); } set { Need(Defs).SetNum("SelfWtMult", value); } }
 }
 
 // one load row: a joint force, a ground displacement, a frame point / distributed / temperature load (its table)
@@ -342,10 +410,24 @@ public sealed class FrameCase : FrameObj
     public override string Kind { get { return "case"; } }
     public override string KeyField { get { return "Case"; } }
     public override string MainTable { get { return Defs; } }
-    public string Type { get { var r = Rec(Defs); return r == null ? "" : r.Get("Type") ?? ""; } }
-    public string Initial { get { var r = Rec(Defs); return r == null ? "" : r.Get("InitialCond") ?? ""; } }
+    public string Type { get { var r = Rec(Defs); return r == null ? "" : r.Get("Type") ?? ""; } set { if (Type != value) Need(Defs).Set("Type", value); } }
+    public string Initial { get { var r = Rec(Defs); return r == null ? "" : r.Get("InitialCond") ?? ""; } set { if (Initial != value) Need(Defs).Set("InitialCond", value); } }
     // its static loads: {LoadType, LoadName, LoadSF}
     public IEnumerable<string[]> Loads { get { foreach (var r in RecsOf(StaticLoads)) yield return new[] { r.Get("LoadType") ?? "", r.Get("LoadName") ?? "", r.Get("LoadSF") ?? "1" }; } }
+    // set them (type, name, factor): the k-th row is rewritten only where it differs, extra rows go, new rows follow
+    public void SetLoads(IList<object[]> want)
+    {
+        var rows = RecsOf(StaticLoads).ToList();
+        for (int k = 0; k < want.Count; k++)
+        {
+            var r = k < rows.Count ? rows[k] : null;
+            if (r == null) { r = new FrameRec(StaticLoads).Set("Case", Label).Set("LoadType", "").Set("LoadName", "").Set("LoadSF", "1"); Recs.Add(r); }
+            if (r.Get("LoadType") != (string)want[k][0]) r.Set("LoadType", (string)want[k][0]);
+            if (r.Get("LoadName") != (string)want[k][1]) r.Set("LoadName", (string)want[k][1]);
+            r.SetNum("LoadSF", (double)want[k][2]);
+        }
+        for (int k = want.Count; k < rows.Count; k++) Recs.Remove(rows[k]);
+    }
 }
 
 public sealed class FrameCombo : FrameObj
@@ -354,9 +436,30 @@ public sealed class FrameCombo : FrameObj
     public override string Kind { get { return "combo"; } }
     public override string KeyField { get { return "ComboName"; } }
     public override string MainTable { get { return Defs; } }
-    public string Type { get { var r = Rec(Defs); return r == null ? "" : r.Get("ComboType") ?? ""; } }
+    public string Type { get { var r = Rec(Defs); return r == null ? "" : r.Get("ComboType") ?? ""; } set { if (Type != value) Need(Defs).Set("ComboType", value); } }
     // its items: {CaseType, CaseName, ScaleFactor}
     public IEnumerable<string[]> Items { get { foreach (var r in RecsOf(Defs)) yield return new[] { r.Get("CaseType") ?? "", r.Get("CaseName") ?? "", r.Get("ScaleFactor") ?? "1" }; } }
+    // set them (case type, name, factor) as SetLoads does; the first row carries the combination's own fields
+    public void SetItems(IList<object[]> want)
+    {
+        var rows = RecsOf(Defs).ToList();
+        for (int k = 0; k < want.Count; k++)
+        {
+            var r = k < rows.Count ? rows[k] : null;
+            if (r == null)
+            {
+                r = new FrameRec(Defs).Set("ComboName", Label);
+                if (k == 0) r.Set("ComboType", "Linear Add").Set("AutoDesign", "No");
+                r.Set("CaseType", "").Set("CaseName", "").Set("ScaleFactor", "1");
+                if (k == 0) r.Set("SteelDesign", "None").Set("ConcDesign", "None").Set("AlumDesign", "None").Set("ColdDesign", "None");
+                Recs.Add(r);
+            }
+            if (r.Get("CaseType") != (string)want[k][0]) r.Set("CaseType", (string)want[k][0]);
+            if (r.Get("CaseName") != (string)want[k][1]) r.Set("CaseName", (string)want[k][1]);
+            r.SetNum("ScaleFactor", (double)want[k][2]);
+        }
+        for (int k = Math.Max(1, want.Count); k < rows.Count; k++) Recs.Remove(rows[k]);
+    }
 }
 
 public sealed class FrameModel
