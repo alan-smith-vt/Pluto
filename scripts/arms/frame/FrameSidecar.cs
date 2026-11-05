@@ -135,7 +135,7 @@ public static class FrameSidecar
                     int k = Array.IndexOf(FrameJoint.Dofs, dn);
                     if (k < 0) continue;
                     bool fixd = r.Yes("Fixed"), nl = r.Yes("NonLinear");
-                    double ke = r.Num(k < 3 ? "TransKE" : "RotKE", 0), kk = r.Num(k < 3 ? "TransK" : "RotK", ke), open = r.Num("Open", 0);
+                    double ke = r.Num(k < 3 ? "TransKE" : "RotKE", 0), kk = r.Num(k < 3 ? "TransK" : "RotK", ke), open = r.Num(FrameLinkProp.OpenField(r), 0);
                     if (!fixd && ke == 0 && kk == 0) continue;
                     string kind; string letter;
                     if (type == "gap") { kind = "oneway"; letter = "gap"; }
@@ -224,7 +224,7 @@ public static class FrameSidecar
             var f = new List<string> { "\"fixed\": " + (r.Yes("Fixed") ? "true" : "false"), "\"nonlinear\": " + (r.Yes("NonLinear") ? "true" : "false") };
             Action<string, string> num = (key, field) => { if (r.Has(field)) f.Add("\"" + key + "\": " + N(r.Num(field, 0))); };
             num("ke", rot ? "RotKE" : "TransKE"); num("ce", rot ? "RotCE" : "TransCE"); num("k", rot ? "RotK" : "TransK");
-            num("open", "Open"); num("muSlow", "Slow"); num("muFast", "Fast"); num("radius", "Radius");
+            num("open", FrameLinkProp.OpenField(r)); num("muSlow", "Slow"); num("muFast", "Fast"); num("radius", "Radius");
             parts.Add(Q(dn) + ": {" + string.Join(", ", f.ToArray()) + "}");
         }
         return string.Join(", ", parts.ToArray());

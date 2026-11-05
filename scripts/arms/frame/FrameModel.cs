@@ -152,7 +152,8 @@ public sealed class FrameMember : FrameObj
                         Insertion = "FRAME INSERTION POINT ASSIGNMENTS", Modifiers = "FRAME PROPERTY MODIFIERS", EndOffsets = "FRAME OFFSET ALONG LENGTH ASSIGNMENTS";
     // the 12 end DOFs in SAP's order (I end, then J end); bit i of the viewer's release mask
     public static readonly string[] ReleaseDofs = { "PI", "V2I", "V3I", "TI", "M2I", "M3I", "PJ", "V2J", "V3J", "TJ", "M2J", "M3J" };
-    public static readonly string[] ModifierKeys = { "AMod", "A2Mod", "A3Mod", "JMod", "I2Mod", "I3Mod", "MMod", "WMod" };
+    // FRAME PROPERTY MODIFIERS' own names (SAP 24 export, 2026-11-05; the section table's A2Mod ... WMod are not read here)
+    public static readonly string[] ModifierKeys = { "AMod", "AS2Mod", "AS3Mod", "JMod", "I22Mod", "I33Mod", "MassMod", "WeightMod" };
     public override string Kind { get { return "frame"; } }
     public override string KeyField { get { return "Frame"; } }
     public override string MainTable { get { return Conn; } }
@@ -214,7 +215,8 @@ public sealed class FrameMember : FrameObj
             var g = Rec(Release);
             if (!any) { Drop(Partial); if (g != null) g.SetYes("PartialFix", false); return; }
             var r = Need(Partial);
-            for (int i = 0; i < 12; i++) r.SetNum(ReleaseDofs[i], value[i]);
+            // SAP writes the partly fixed DOFs only (Frame=5   M3I=1111   M3J=2222)
+            for (int i = 0; i < 12; i++) if (value[i] != 0 || r.Has(ReleaseDofs[i])) r.SetNum(ReleaseDofs[i], value[i]);
             Need(Release).SetYes("PartialFix", true);
         }
     }
@@ -303,16 +305,25 @@ public sealed class FrameLinkProp : FrameObj
     public IEnumerable<FrameRec> DofRows { get { foreach (var r in Recs) if (r.Has("DOF") && !string.Equals(r.Table, General, StringComparison.OrdinalIgnoreCase)) yield return r; } }
     public FrameRec DofRow(string dof) { foreach (var r in DofRows) if (string.Equals(r.Get("DOF"), dof, StringComparison.OrdinalIgnoreCase)) return r; return null; }
 
-    // the table a link type's DOF rows go in (SAP's numbering; the probe confirms them)
+    // the table a link type's DOF rows go in: SAP 24's numbering (its export, 2026-11-05). 02, 05 and 06 are confirmed;
+    // 03, 04 and 08 are the tables SAP lists for those types, their fields still to confirm (vault/format/sap-s2k-tables.md)
     public static string DofTable(string linkType)
     {
         string t = (linkType ?? "").ToLowerInvariant();
         if (t == "gap") return "LINK PROPERTY DEFINITIONS 05 - GAP";
         if (t == "hook") return "LINK PROPERTY DEFINITIONS 06 - HOOK";
-        if (t.Contains("damper")) return "LINK PROPERTY DEFINITIONS 03 - DAMPER";
-        if (t.Contains("friction")) return "LINK PROPERTY DEFINITIONS 08 - FRICTION ISOLATOR";
-        if (t.Contains("multilinear")) return "LINK PROPERTY DEFINITIONS 10 - MULTILINEAR ELASTIC";
+        if (t.Contains("damper")) return "LINK PROPERTY DEFINITIONS 04 - DAMPER";
+        if (t.Contains("friction") || t.Contains("sliding")) return "LINK PROPERTY DEFINITIONS 08 - SLIDING ISOLATOR";
+        if (t.Contains("multilinear")) return "LINK PROPERTY DEFINITIONS 03 - MULTILINEAR";
         return "LINK PROPERTY DEFINITIONS 02 - LINEAR";
+    }
+
+    // the field a DOF row's opening is in: SAP writes TransOpen / RotOpen; older files have Open (SAP ignores it)
+    public static string OpenField(FrameRec d)
+    {
+        bool rot = (d.Get("DOF") ?? "").StartsWith("R", StringComparison.OrdinalIgnoreCase);
+        string mine = rot ? "RotOpen" : "TransOpen";
+        return !d.Has(mine) && d.Has("Open") ? "Open" : mine;
     }
 
     // a new DOF row in its type's table, in SAP's field order: Link, DOF, Fixed[, NonLinear], KE, CE (trans or rot)
@@ -585,9 +596,9 @@ public sealed class FrameModel
         { FrameMember.SectionAssign, new[] { "SectionType", "", "AutoSelect", "N.A.", "AnalSect", "", "DesignSect", "", "MatProp", "Default" } },
         { FrameMember.LocalAxes, new[] { "Angle", "0", "AdvanceAxes", "No" } },
         { FrameMember.Release, new[] { "PI", "No", "V2I", "No", "V3I", "No", "TI", "No", "M2I", "No", "M3I", "No", "PJ", "No", "V2J", "No", "V3J", "No", "TJ", "No", "M2J", "No", "M3J", "No", "PartialFix", "No" } },
-        { FrameMember.Partial, new[] { "PI", "0", "V2I", "0", "V3I", "0", "TI", "0", "M2I", "0", "M3I", "0", "PJ", "0", "V2J", "0", "V3J", "0", "TJ", "0", "M2J", "0", "M3J", "0" } },
+        { FrameMember.Partial, new string[0] },
         { FrameMember.Insertion, new[] { "CardinalPt", "10 (centroid)", "Mirror2", "No", "Mirror3", "No", "Transform", "Yes", "CoordSys", "Local", "Offset1I", "0", "Offset2I", "0", "Offset3I", "0", "Offset1J", "0", "Offset2J", "0", "Offset3J", "0" } },
-        { FrameMember.Modifiers, new[] { "AMod", "1", "A2Mod", "1", "A3Mod", "1", "JMod", "1", "I2Mod", "1", "I3Mod", "1", "MMod", "1", "WMod", "1" } },
+        { FrameMember.Modifiers, new[] { "AMod", "1", "AS2Mod", "1", "AS3Mod", "1", "JMod", "1", "I22Mod", "1", "I33Mod", "1", "MassMod", "1", "WeightMod", "1" } },
         { FrameSection.General, new[] { "Material", "", "Shape", "", "Color", "Green" } },
         { FrameMaterial.General, new[] { "Type", "Steel", "SymType", "Isotropic", "TempDepend", "No", "Color", "Blue" } },
         { FrameMaterial.Mechanical, new[] { "UnitWeight", "0", "UnitMass", "0", "E1", "0", "G12", "0", "U12", "0", "A1", "0" } },

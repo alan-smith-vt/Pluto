@@ -183,7 +183,7 @@ public static class FrameWorkbook
     // the Lists sheet's columns: name -> values
     static readonly string[] Shapes = { "Pipe", "Box/Tube", "I/Wide Flange", "Channel", "Angle", "Tee", "Double Angle", "Rectangular", "Circle", "General" };
     static readonly string[] DofNames = { "U1", "U2", "U3", "R1", "R2", "R3" };
-    static readonly string[] LinkTypes = { "Linear", "Gap", "Hook", "Friction Isolator", "MultiLinear Elastic", "Damper" };
+    static readonly string[] LinkTypes = { "Linear", "Gap", "Hook", "Friction Isolator", "MultiLinear Elastic", "Damper - Exponential" };
     static readonly string[] PatternTypes = { "Dead", "Super Dead", "Live", "Temperature", "Wind", "Quake", "Snow", "Other" };
     static readonly string[] CaseTypes = { "LinStatic", "NonStatic", "LinModal" };
     static readonly string[] ComboTypes = { "Linear Add", "Envelope", "Abs Add", "SRSS", "Range Add" };
@@ -439,7 +439,7 @@ public static class FrameWorkbook
                 lp.Set(r0, 3, d.Get("DOF") ?? ""); lp.Set(r0, 4, d.Yes("Fixed") ? "yes" : "no"); if (d.Has("NonLinear")) lp.Set(r0, 5, d.Yes("NonLinear") ? "yes" : "no");
                 for (int k = 0; k < lpk.Length; k++)
                 {
-                    string fld = k < 5 ? (rot ? "Rot" : "Trans") + lpk[k] : lpk[k];
+                    string fld = k < 5 ? (rot ? "Rot" : "Trans") + lpk[k] : k == 5 ? FrameLinkProp.OpenField(d) : lpk[k];
                     if (d.Has(fld)) Num(lp, r0, 6 + k, d.Get(fld));
                 }
                 r0++; lpRows++;
@@ -950,7 +950,9 @@ public static class FrameWorkbook
             for (int k = 0; k < mk.Length; k++) { double v = Num(c, r, heads[k], x, dims[k]); if (!double.IsNaN(v)) mt.SetMech(mk[k], v); }
             double p = Num(c, r, "Poisson", x, null); if (!double.IsNaN(p) && (p < 0 || p > 0.5)) x.Err(At(c, r, "Poisson") + ": Poisson's ratio is 0 to 0.5");
             foreach (var fy in new[] { "Fy", "Fu" }) { double v = Num(c, r, fy, x, "F/L2"); if (!double.IsNaN(v)) mt.SetSteelData(fy, v); }
-            // what a new material leaves blank and SAP needs: G from E and Poisson, the mass from the weight
+            // what a new material leaves blank and SAP needs: G from E and Poisson, the mass from the weight (never on a
+            // material from the model: SAP's uniaxial ones, rebar and tendon, have no G)
+            if (x.Base.Materials.Any(q => q.Uid == mt.Uid)) continue;
             double e = mt.Mech("E1"), nu = mt.Mech("U12"), w = mt.Mech("UnitWeight");
             if (mt.Mech("G12") == 0 && double.IsNaN(Num(c, r, "G", x, "F/L2")) && e > 0) mt.SetMech("G12", e / (2 * (1 + nu)));
             if (mt.Mech("UnitMass") == 0 && double.IsNaN(Num(c, r, "Unit mass", x, "F-s2/L4")) && w > 0) mt.SetMech("UnitMass", w / Gravity(x.Units));
@@ -1153,8 +1155,11 @@ public static class FrameWorkbook
             for (int k = 0; k < keys.Length; k++)
             {
                 double v = Num(c, r, keys[k], x, null);
-                string fld = k < 5 ? (rot ? "Rot" : "Trans") + flds[k] : flds[k];
-                if (!double.IsNaN(v)) d.SetNum(fld, v);
+                string fld = k < 5 ? (rot ? "Rot" : "Trans") + flds[k] : k == 5 ? FrameLinkProp.OpenField(d) : flds[k];
+                if (double.IsNaN(v)) continue;
+                // an opening in the old Open field (SAP ignores it) moves to TransOpen / RotOpen when it changes
+                if (fld == "Open" && d.Num("Open", double.NaN) != v) { d.Remove("Open"); fld = rot ? "RotOpen" : "TransOpen"; }
+                d.SetNum(fld, v);
             }
         }
         finish();
@@ -1465,7 +1470,7 @@ public static class FrameWorkbook
         switch ((t ?? "").ToLowerInvariant())
         {
             case "linstatic": return "Linear Static";
-            case "nonstatic": return "Nonlinear Static";
+            case "nonstatic": return "NonLin Static";     // SAP's own text (its export); it reads "Nonlinear Static" too
             case "linmodal": return "Linear Modal";
             case "linresspec": return "Response Spectrum";
             default: return t;

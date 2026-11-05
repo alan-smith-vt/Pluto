@@ -154,4 +154,10 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 > Where a link-type table name is a guess, the export still shows the right one: the type comes from the general
 > table.
 >
-> **Status:** the probe was sent to the user on 2026-11-05; results are pending.
+> **Status:**
+> - Round 1 was imported in SAP 24.2.0 and exported again on 2026-11-05. The results, SAP's own names and what is
+>   still open are in [[vault/format/sap-s2k-tables|sap-s2k-tables]].
+> - The fixes are in the model, the workbook, the sidecar and `FrameS2kSchema`. SAP's export is now a fixture
+>   (`scripts/frame/testdata/probe.sap-export.s2k`).
+> - Round 2 (the multilinear, damper and sliding-isolator tables; the insertion offsets, set in SAP) is what
+>   `-Probe` writes now.

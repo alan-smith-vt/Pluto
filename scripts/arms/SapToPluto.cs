@@ -910,6 +910,10 @@ public class SapToPluto
         Dictionary<string, string> p;
         if (secName == null || !props.TryGetValue(secName, out p)) return;
         A = Num(p, "Area", 0); S33 = Num(p, "S33", 0); S22 = Num(p, "S22", 0);
+        // SAP's own exports give each face (S33Top / S33Bot, S22Left / S22Right): the smaller governs
+        Func<string, string, double> least = (a, b) => { double x = Num(p, a, 0), y = Num(p, b, 0); return x > 0 && y > 0 ? Math.Min(x, y) : Math.Max(x, y); };
+        if (S33 <= 0) S33 = least("S33Top", "S33Bot");
+        if (S22 <= 0) S22 = least("S22Left", "S22Right");
         if (A > 0 && S33 > 0 && S22 > 0) return;
         string shape; p.TryGetValue("Shape", out shape);
         double t3 = Num(p, "t3", 0), t2 = Num(p, "t2", 0);

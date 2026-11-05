@@ -14,7 +14,7 @@ using System.Text;
 //   releases (several patterns, one with partial fixity), a frame local-axis angle, insertion offsets, end offsets
 //   along the length, frame property modifiers; text joint and frame labels; joint springs and joint local axes;
 //   link properties of each type (linear, gap, hook, multilinear elastic, friction isolator, damper), two-joint
-//   links, a zero-length link between coincident joints, one-joint (grounded) links in two forms, link local axes;
+//   links, a zero-length link between coincident joints, a one-joint (grounded) link, link local axes;
 //   load patterns (dead, other, temperature, wind); joint forces and ground displacements; frame point loads (a
 //   force at a relative distance, a moment at an absolute distance, local), distributed loads (full uniform, partial
 //   trapezoidal, projected, local), temperature loads; linear and nonlinear static cases (one starting from another),
@@ -22,6 +22,11 @@ using System.Text;
 // Where a table name is a guess (the link-type tables), SAP's export still shows the right name: the property's type
 // comes from LINK PROPERTY DEFINITIONS 01, and SAP writes its own table for it, with its defaults if our values were
 // not read.
+// Round 2 (2026-11-05), after SAP 24.2.0 imported and exported round 1: the names SAP corrected are written its way
+// (frame modifiers AS2Mod ... WeightMod, gap / hook TransOpen, offsets along the length Type, partial fixity only where
+// partly fixed, NonLin Static, Damper - Exponential, one-joint links as JointJ = JointI, General sections' S33Top ...),
+// and the multilinear, damper and sliding-isolator DOF rows go in the tables SAP listed for them (03, 04, 08), to see
+// their fields. The catalog section and the explicit insertion offsets are left to SAP's own dialogs (see the note).
 // Check(probe, export) compares the two field by field: same, changed, missing (not read, or SAP dropped a default),
 // and the fields and tables SAP added. Synthetic geometry and names only. C# 5, one global batch (prefix Frame).
 
@@ -37,7 +42,7 @@ public static class FrameProbe
         w.Add("");
         Action<string, string[]> table = (name, rows) => { w.Add("TABLE:  \"" + name + "\""); foreach (var r in rows) w.Add("   " + r); w.Add(""); };
 
-        table("PROGRAM CONTROL", new[] { "ProgramName=SAP2000   Version=" + version + "   CurrUnits=\"Kip, in, F\"   MergeTol=0.001" });
+        table("PROGRAM CONTROL", new[] { "ProgramName=SAP2000   Version=" + version + "   CurrUnits=\"Kip, in, F\"" });
 
         // ---- materials: steel with its 03A row and a note
         table("MATERIAL PROPERTIES 01 - GENERAL", new[] { "Material=PROBE_STEEL   Type=Steel   SymType=Isotropic   TempDepend=No   Color=Blue   Notes=\"pluto: probe material\"" });
@@ -53,9 +58,9 @@ public static class FrameProbe
             "SectionName=P_ANGLE   Material=PROBE_STEEL   Shape=Angle   t3=4   t2=3   tf=0.375   tw=0.3125   Color=Green",
             "SectionName=P_TEE   Material=PROBE_STEEL   Shape=Tee   t3=6   t2=8   tf=0.5   tw=0.3   Color=Green",
             "SectionName=P_2L   Material=PROBE_STEEL   Shape=\"Double Angle\"   t3=4   t2=7.375   tf=0.375   tw=0.375   dis=0.375   Color=Green",
-            "SectionName=P_GEN   Material=PROBE_STEEL   Shape=General   t3=10   t2=6   Area=11.5   TorsConst=2.3   I33=210   I22=40   I23=0   AS2=4   AS3=5   S33=42   S22=13   Z33=48   Z22=20   R33=4.27   R22=1.86   Color=Green",
+            "SectionName=P_GEN   Material=PROBE_STEEL   Shape=General   t3=10   t2=6   Area=11.5   TorsConst=2.3   I33=210   I22=40   I23=0   AS2=4   AS3=5   S33Top=42   S33Bot=42   S22Left=13   S22Right=13   Z33=48   Z22=20   R33=4.27   R22=1.86   Color=Green",
             "SectionName=P_MOD   Material=PROBE_STEEL   Shape=Rectangular   t3=6   t2=4   AMod=2   A2Mod=3   A3Mod=4   JMod=5   I2Mod=6   I3Mod=7   MMod=0.5   WMod=0.25   Color=Green",
-            "SectionName=W12X26   Material=PROBE_STEEL   Shape=\"I/Wide Flange\"   FromFile=Yes   FileName=AISC16.xml   SectInFile=W12X26   t3=12.2   t2=6.49   tf=0.38   tw=0.23   Color=Green",
+            "SectionName=W12X26   Material=PROBE_STEEL   Shape=\"I/Wide Flange\"   t3=12.2   t2=6.49   tf=0.38   tw=0.23   Color=Green",
         });
 
         // ---- joints: frame k runs from joint 100+k to 200+k along X, 24 in apart in Y; text labels A1, A2; extra joints
@@ -67,7 +72,7 @@ public static class FrameProbe
         // links: pairs along X at Y = -24 * n (two-joint), plus the coincident pair and the grounded joints
         for (int n = 1; n <= 6; n++) { joints.Add(J((300 + n).ToString(Inv), 0, -24 * n, 0)); joints.Add(J((310 + n).ToString(Inv), 12, -24 * n, 0)); }
         joints.Add(J("401", 0, -200, 0)); joints.Add(J("402", 0, -200, 0));
-        joints.Add(J("501", 0, -240, 0)); joints.Add(J("502", 0, -264, 0));
+        joints.Add(J("501", 0, -240, 0));
         table("JOINT COORDINATES", joints.ToArray());
 
         table("JOINT RESTRAINT ASSIGNMENTS", new[] {
@@ -102,11 +107,11 @@ public static class FrameProbe
             return sb.ToString();
         };
         table("FRAME RELEASE ASSIGNMENTS 1 - GENERAL", new[] { rel(1, "M2I M3I M2J M3J"), rel(2, "M2I M3I"), rel(3, "PJ TJ"), rel(4, "V2I V3I"), rel(5, "M3I M3J") });
-        table("FRAME RELEASE ASSIGNMENTS 2 - PARTIAL FIXITY", new[] { "Frame=5   PI=0   V2I=0   V3I=0   TI=0   M2I=0   M3I=1111   PJ=0   V2J=0   V3J=0   TJ=0   M2J=0   M3J=2222" });
+        table("FRAME RELEASE ASSIGNMENTS 2 - PARTIAL FIXITY", new[] { "Frame=5   M3I=1111   M3J=2222" });
         table("FRAME LOCAL AXES ASSIGNMENTS 1 - TYPICAL", new[] { "Frame=6   Angle=30   AdvanceAxes=No" });
-        table("FRAME INSERTION POINT ASSIGNMENTS", new[] { "Frame=7   CardinalPt=\"8 (top center)\"   Mirror2=No   Mirror3=No   Transform=No   CoordSys=Local   Offset1I=0   Offset2I=1.25   Offset3I=2.5   Offset1J=0   Offset2J=3.75   Offset3J=5" });
-        table("FRAME OFFSET ALONG LENGTH ASSIGNMENTS", new[] { "Frame=8   OffsetType=Define   LengthI=6.5   LengthJ=8.5   RigidFactor=0.55   SelfWtOpt=Auto" });
-        table("FRAME PROPERTY MODIFIERS", new[] { "Frame=9   AMod=1.1   A2Mod=1.2   A3Mod=1.3   JMod=1.4   I2Mod=1.5   I3Mod=1.6   MMod=0.7   WMod=0.8" });
+        table("FRAME INSERTION POINT ASSIGNMENTS", new[] { "Frame=7   CardinalPt=\"8 (top center)\"   Mirror2=No   Mirror3=No   Transform=No" });
+        table("FRAME OFFSET ALONG LENGTH ASSIGNMENTS", new[] { "Frame=8   Type=User   LengthI=6.5   LengthJ=8.5   RigidFactor=0.55" });
+        table("FRAME PROPERTY MODIFIERS", new[] { "Frame=9   AMod=1.1   AS2Mod=1.2   AS3Mod=1.3   JMod=1.4   I22Mod=1.5   I33Mod=1.6   MassMod=0.7   WeightMod=0.8" });
 
         // ---- link properties: the type comes from 01; each type's own table is a guess SAP's export corrects
         string gen = "   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   Color=Magenta";
@@ -116,31 +121,30 @@ public static class FrameProbe
             "Link=L_HOOK   LinkType=Hook" + gen,
             "Link=L_MLE   LinkType=\"MultiLinear Elastic\"" + gen,
             "Link=L_FRIC   LinkType=\"Friction Isolator\"" + gen,
-            "Link=L_DAMP   LinkType=Damper" + gen });
+            "Link=L_DAMP   LinkType=\"Damper - Exponential\"" + gen });
         table("LINK PROPERTY DEFINITIONS 02 - LINEAR", new[] {
             "Link=L_LIN   DOF=U1   Fixed=No   TransKE=111   TransCE=0",
             "Link=L_LIN   DOF=U2   Fixed=Yes",
             "Link=L_LIN   DOF=R3   Fixed=No   RotKE=333   RotCE=0" });
-        table("LINK PROPERTY DEFINITIONS 03 - DAMPER", new[] { "Link=L_DAMP   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=12   TransCE=1.5   TransK=1212   TransC=5.5   TransCExp=1.1" });
-        table("LINK PROPERTY DEFINITIONS 05 - GAP", new[] { "Link=L_GAP   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=1001   TransCE=0   TransK=1002   Open=0.25" });
-        table("LINK PROPERTY DEFINITIONS 06 - HOOK", new[] { "Link=L_HOOK   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=0   TransCE=0   TransK=2002   Open=0.5" });
-        table("LINK PROPERTY DEFINITIONS 08 - FRICTION ISOLATOR", new[] {
+        table("LINK PROPERTY DEFINITIONS 04 - DAMPER", new[] { "Link=L_DAMP   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=12   TransCE=1.5   TransK=1212   TransC=5.5   TransCExp=1.1" });
+        table("LINK PROPERTY DEFINITIONS 05 - GAP", new[] { "Link=L_GAP   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=1001   TransCE=0   TransK=1002   TransOpen=0.25" });
+        table("LINK PROPERTY DEFINITIONS 06 - HOOK", new[] { "Link=L_HOOK   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=0   TransCE=0   TransK=2002   TransOpen=0.5" });
+        table("LINK PROPERTY DEFINITIONS 08 - SLIDING ISOLATOR", new[] {
             "Link=L_FRIC   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=10001   TransCE=0   TransK=10002   TransC=0",
             "Link=L_FRIC   DOF=U2   Fixed=No   NonLinear=Yes   TransKE=101   TransCE=0   TransK=102   Slow=0.31   Fast=0.32   Rate=0   Radius=0",
             "Link=L_FRIC   DOF=U3   Fixed=No   NonLinear=Yes   TransKE=103   TransCE=0   TransK=104   Slow=0.33   Fast=0.34   Rate=0   Radius=0" });
-        table("LINK PROPERTY DEFINITIONS 10 - MULTILINEAR ELASTIC", new[] { "Link=L_MLE   DOF=U2   Fixed=No   NonLinear=Yes   TransKE=505   TransCE=0" });
+        table("LINK PROPERTY DEFINITIONS 03 - MULTILINEAR", new[] { "Link=L_MLE   DOF=U2   Fixed=No   NonLinear=Yes   TransKE=505   TransCE=0" });
 
         // ---- links: two-joint of each type, a zero-length one between coincident joints, two one-joint forms
         table("CONNECTIVITY - LINK", new[] {
             "Link=K1   JointI=301   JointJ=311", "Link=K2   JointI=302   JointJ=312", "Link=K3   JointI=303   JointJ=313",
             "Link=K4   JointI=304   JointJ=314", "Link=K5   JointI=305   JointJ=315", "Link=K6   JointI=306   JointJ=316",
             "Link=K7   JointI=401   JointJ=402",
-            "Link=G1   JointI=501   JointJ=501",
-            "Link=G2   JointI=502" });
+            "Link=G1   JointI=501   JointJ=501" });
         table("LINK PROPERTY ASSIGNMENTS", new[] {
             "Link=K1   LinkProp=L_LIN   LinkFDProp=None", "Link=K2   LinkProp=L_GAP   LinkFDProp=None", "Link=K3   LinkProp=L_HOOK   LinkFDProp=None",
             "Link=K4   LinkProp=L_MLE   LinkFDProp=None", "Link=K5   LinkProp=L_FRIC   LinkFDProp=None", "Link=K6   LinkProp=L_DAMP   LinkFDProp=None",
-            "Link=K7   LinkProp=L_LIN   LinkFDProp=None", "Link=G1   LinkProp=L_LIN   LinkFDProp=None", "Link=G2   LinkProp=L_GAP   LinkFDProp=None" });
+            "Link=K7   LinkProp=L_LIN   LinkFDProp=None", "Link=G1   LinkProp=L_LIN   LinkFDProp=None" });
         table("LINK LOCAL AXES ASSIGNMENTS 1 - TYPICAL", new[] { "Link=G1   Angle=45   AdvanceAxes=No", "Link=K2   Angle=20   AdvanceAxes=No" });
 
         // ---- groups (Pluto's kind / line groups)
@@ -178,8 +182,8 @@ public static class FrameProbe
             "Case=SUS   LoadApp=\"Full Load\"   MonitorDOF=U3   MonitorJt=105", "Case=OPE   LoadApp=\"Full Load\"   MonitorDOF=U1   MonitorJt=105" });
         table("CASE - STATIC 4 - NONLINEAR PARAMETERS", new[] { "Case=OPE   GeoNonLin=P-Delta" });
         table("COMBINATION DEFINITIONS", new[] {
-            "ComboName=EXP   ComboType=\"Linear Add\"   AutoDesign=No   CaseType=\"Nonlinear Static\"   CaseName=OPE   ScaleFactor=1   SteelDesign=None   ConcDesign=None   AlumDesign=None   ColdDesign=None",
-            "ComboName=EXP   CaseType=\"Nonlinear Static\"   CaseName=SUS   ScaleFactor=-1",
+            "ComboName=EXP   ComboType=\"Linear Add\"   AutoDesign=No   CaseType=\"NonLin Static\"   CaseName=OPE   ScaleFactor=1   SteelDesign=None   ConcDesign=None   AlumDesign=None   ColdDesign=None",
+            "ComboName=EXP   CaseType=\"NonLin Static\"   CaseName=SUS   ScaleFactor=-1",
             "ComboName=ENV   ComboType=Envelope   AutoDesign=No   CaseType=\"Linear Static\"   CaseName=DEAD   ScaleFactor=1.4   SteelDesign=None   ConcDesign=None   AlumDesign=None   ColdDesign=None",
             "ComboName=ENV   CaseType=\"Linear Static\"   CaseName=WIND   ScaleFactor=1",
             "ComboName=ENV   CaseType=\"Response Combo\"   CaseName=EXP   ScaleFactor=1" });
