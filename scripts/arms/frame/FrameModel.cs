@@ -177,6 +177,9 @@ public sealed class FrameMember : FrameObj
         }
     }
 
+    // SAP's advanced local axes (a reference vector / plane): the angle alone does not give the axes
+    public bool AdvancedAxes { get { var r = Rec(LocalAxes); return r != null && r.Yes("AdvanceAxes"); } }
+
     public double Angle
     {
         get { var r = Rec(LocalAxes); return r == null ? 0 : r.Num("Angle", 0); }

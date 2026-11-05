@@ -10,7 +10,8 @@ using System.Text;
 //
 // Replaces the Python s2k_to_bin.py from the SapViewer repo (archived at
 // pythonTools/sap/), which wrote the v3 format. This arm reuses the lib:
-//   scripts/lib/readers/SapReader.cs   Sap2kParser (tables) + Sap2kReader (geometry)
+//   scripts/lib/readers/SapReader.cs   Sap2kParser (results tables) + Sap2kReader (geometry)
+//   scripts/lib/readers/S2kDoc.cs      the model, lossless; scripts/arms/frame/ its typed view
 //   scripts/lib/writers/RawViewerWriter.cs   v4 writer (AppendShellValues / AppendDisplacements)
 //   scripts/lib/sidecar/FeaturesSidecar.cs   groups
 //
@@ -25,12 +26,17 @@ using System.Text;
 //   JOINT COORDINATES          -> nodes, SAP global axes kept AS-IS (no STAAD
 //                                 rotation; tick "Z up" in the viewer). Local
 //                                 coordinate systems are resolved by Sap2kReader.
-//   CONNECTIVITY - AREA        -> shell elements (tri / quad). Joint and Area
-//                                 labels must be integers (SAP default); the
-//                                 label text is also written to the LABL block.
+//   CONNECTIVITY - AREA        -> shell elements (tri / quad). Labels may be text
+//                                 (2026-11-05, SapLabels): an integer label is its
+//                                 own id, any other gets the next id above them;
+//                                 the label text is written to the LABL block.
 //   FRAME INSERTION POINT ASSIGNMENTS -> BPRP section offsets from the cardinal point
-//                                 (top centre = section hangs below the joints);
-//                                 parametric shapes only, POLY outlines are anchored.
+//                                 (top centre = section hangs below the joints;
+//                                 parametric shapes only, POLY outlines are anchored)
+//                                 plus the explicit end offsets (Local 2 / 3, or
+//                                 global projected onto the frame's axes).
+//   FRAME RELEASE ASSIGNMENTS  -> BPRP release mask (v4-schema 4.3): bits 0-5 end I
+//                                 P V2 V3 T M2 M3, 6-11 end J, 12-23 partial fixity.
 //   CONNECTIVITY - FRAME       -> beam domain (2026-09-03). Section from FRAME
 //   FRAME SECTION ASSIGNMENTS     SECTION ASSIGNMENTS (AnalSect) + FRAME SECTION
 //   FRAME SECTION PROPERTIES 01   PROPERTIES 01 - GENERAL (Shape, t3 t2 tf tw):
@@ -43,7 +49,9 @@ using System.Text;
 //                                 file units) -> POLY outline, wins over Shape.
 //                                 The tank builder writes it for its Z eave ring.
 //                                 Local 2 = SAP default (vertical plane; +X for
-//                                 vertical members); roll angles are NOT read.
+//                                 vertical members) turned by the FRAME LOCAL AXES
+//                                 angle; advanced axes are drawn as the default
+//                                 plus angle, with a warning.
 //                                 Viewer frame: z = x cross y carries the depth
 //                                 (schema 4.3), so LocalY = local2 cross local1
 //                                 = MINUS SAP local 3.
@@ -90,6 +98,10 @@ using System.Text;
 //   "Local axes assigned"              tags sap, localAxes      (nodes)
 //   one per FRAME section name         tags sap, frameSection   (beams)
 //   SAP GROUPS 2 - ASSIGNMENTS         tags sap, group          (areas / joints / frames)
+//                                      + kind / line for the frame workbook's PL_KIND_ / PL_LINE_ groups
+// and, from the typed frame model (FrameSidecar): supports (restraints, springs,
+// one-joint links), links (two-joint), loads v2 (patterns, cases, combinations,
+// joint / frame loads) and properties (one per frame).
 // Hydrostatic head (JOINT PATTERN ASSIGNMENTS) is deliberately NOT exported;
 // it is a continuous scalar, not a category -- add it as a "model" component
 // if it is ever wanted.
@@ -98,6 +110,8 @@ using System.Text;
 //   . <repo>\scripts\lib\Config.ps1
 //   $r = [SapToPluto]::Export('C:\Temp\tank.s2k', 'C:\Temp\results.s2k', 'C:\Temp\tank', 'sap/tank')
 //   $r.Summary()
+// A model already in memory (the frame workbook's preview): Export(S2kDoc, results, outlinesPath, outBase, modelId,
+// cylindrical).
 // then drop tank.bin + tank.features.json on the viewer together.
 
 public class SapExportResult
@@ -106,6 +120,9 @@ public class SapExportResult
     public int Nodes, Elements, LoadCases, ForceRows, ForceRowsUsed, DispRows, DispRowsUsed, Groups;
     public int Frames, FrameSections, FramesUnknownShape, FrameForceRows, FrameForceRowsUsed;
     public int NodesWithoutDisp;      // model joints with no JOINT DISPLACEMENTS row: results older than the model?
+    public int TextLabels;            // labels that were not integers, given ids (SapLabels)
+    public int FramesTurned, FramesOffset, FramesReleased;
+    public int Supports, Links, Loads, Properties;
     public string ForceUnit, LengthUnit;
     public List<string> LoadCaseNames = new List<string>();
     public List<string> Warnings = new List<string>();
@@ -124,6 +141,10 @@ public class SapExportResult
             sb.AppendLine(string.Format("  {0} frames -> beams, {1} section(s){2}; frame force rows {3} (used {4})", Frames, FrameSections,
                 FramesUnknownShape > 0 ? string.Format(", {0} with an unknown shape (RECT placeholder)", FramesUnknownShape) : "",
                 FrameForceRows, FrameForceRowsUsed));
+        if (FramesTurned + FramesOffset + FramesReleased > 0)
+            sb.AppendLine(string.Format("  frames: {0} turned by a local axis angle, {1} with end offsets, {2} with releases", FramesTurned, FramesOffset, FramesReleased));
+        if (TextLabels > 0) sb.AppendLine(string.Format("  {0} text labels given ids (the text is the viewer's label)", TextLabels));
+        sb.AppendLine(string.Format("  sidecar: {0} supports, {1} links, {2} loads, {3} frame properties", Supports, Links, Loads, Properties));
         sb.AppendLine(string.Format("  {0} groups -> {1}", Groups, SidecarPath));
         if (!string.IsNullOrEmpty(SidecarMerge)) sb.AppendLine("  " + SidecarMerge);
         sb.AppendLine("  bin -> " + BinPath);
@@ -236,17 +257,34 @@ public class SapToPluto
     public static SapExportResult Export(string modelS2k, string resultsS2k, string outBase, string modelId, bool cylindrical)
     {
         if (modelS2k == null || !File.Exists(modelS2k)) throw new Exception("SapToPluto: model file not found: " + modelS2k);
-        var res = new SapExportResult();
-
-        // ---- parse ----
-        var model = new Sap2kParser(modelS2k);
-        Sap2kParser results = model;
+        var doc = S2kDoc.Load(modelS2k);
+        IS2kTables results = null;
         if (string.IsNullOrEmpty(resultsS2k)) resultsS2k = null;   // PowerShell $null arrives as ""
         if (resultsS2k != null && !string.Equals(Path.GetFullPath(resultsS2k), Path.GetFullPath(modelS2k), StringComparison.OrdinalIgnoreCase))
         {
             if (!File.Exists(resultsS2k)) throw new Exception("SapToPluto: results file not found: " + resultsS2k);
             results = new Sap2kParser(resultsS2k);
         }
+        var preview = new FramePreview();
+        preview.SourceJson = PipeSidecar.SourceOf(modelS2k, "s2k", null);
+        return Export(doc, results, Path.ChangeExtension(modelS2k, ".outlines.txt"), outBase, modelId, cylindrical, preview);
+    }
+
+    // The model as a document in memory (a file read, or the frame workbook's preview, which draws the document it
+    // writes); resultsS2k null = results, if any, are in the model. outlinesPath: the optional section outlines file.
+    // preview: model.source and the build's messages (null = neither); the export's own warnings join the messages.
+    public static SapExportResult Export(S2kDoc doc, IS2kTables resultsS2k, string outlinesPath, string outBase, string modelId, bool cylindrical,
+                                         FramePreview preview)
+    {
+        var res = new SapExportResult();
+
+        // ---- parse: labels as the viewer's ids, the typed model ----
+        var labels = new SapLabels(doc);
+        IS2kTables model = labels.View(doc);
+        IS2kTables results = resultsS2k == null ? model : labels.View(resultsS2k);
+        FrameModel fm = FrameS2k.Read(doc);
+        var memberOf = new Dictionary<int, FrameMember>();
+        foreach (var f in fm.Frames) memberOf[labels.Id("frame", f.Label)] = f;
 
         // ---- units ----
         string forceUnit = "kip", lengthUnit = "ft";
@@ -254,11 +292,10 @@ public class SapToPluto
         res.ForceUnit = forceUnit; res.LengthUnit = lengthUnit;
 
         // ---- geometry (SAP axes, no STAAD rotation) ----
-        CheckIntegerLabels(model, res);
         GeometryResult geo = Sap2kReader.ExtractGeometry(model, false);
         Dictionary<int, Node> nodes = geo.NodeDict;
         Dictionary<int, Element> elements = geo.ElementDict;
-        if (nodes.Count == 0) throw new Exception("SapToPluto: no JOINT COORDINATES rows in " + modelS2k);
+        if (nodes.Count == 0) throw new Exception("SapToPluto: no JOINT COORDINATES rows in the model");
         // frame-only models (ducts, steel) are fine: the shell domain is then empty (2026-10-02)
         res.Nodes = nodes.Count; res.Elements = elements.Count;
 
@@ -275,13 +312,14 @@ public class SapToPluto
             string s;
             if (r.TryGetValue("SectionName", out s)) frameSecProps[s] = r;
         }
-        Dictionary<string, float[][]> outlines = ReadOutlines(Path.ChangeExtension(modelS2k, ".outlines.txt"));
+        Dictionary<string, float[][]> outlines = ReadOutlines(outlinesPath);
         var beams = new Dictionary<int, RawViewerWriter.BeamMember>();
         var beamLabels = new Dictionary<int, string>();
         var sectionDefs = new List<RawViewerWriter.SectionDef>();
         var sectionIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         var beamsBySection = new Dictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
         var beamSectionOrder = new List<string>();
+        int advanced = 0;
         foreach (var r in model.GetTable("CONNECTIVITY - FRAME"))
         {
             string f, ji, jj;
@@ -308,27 +346,44 @@ public class SapToPluto
             var m = new RawViewerWriter.BeamMember();
             m.Id = fid; m.NodeA = a; m.NodeB = b; m.SectionIndex = si;
             m.LocalY = DefaultLocalY(na, nb);
+            FrameMember fmm;
+            if (memberOf.TryGetValue(fid, out fmm))
+            {
+                double ang = fmm.Angle;
+                if (ang != 0) { m.LocalY = TurnLocalY(na, nb, m.LocalY, ang); res.FramesTurned++; }
+                if (fmm.AdvancedAxes) advanced++;
+                m.ReleaseMask = fmm.ReleaseMask;
+                if (m.ReleaseMask != 0) res.FramesReleased++;
+            }
             beams[fid] = m;
-            beamLabels[fid] = f;
+            beamLabels[fid] = labels.Label("frame", fid);
             Add(beamsBySection, beamSectionOrder, secName, (uint)fid);
         }
+        if (advanced > 0) res.Warnings.Add(advanced + " frame(s) use advanced local axes: drawn with SAP's default axes turned by their angle");
         // insertion points: a cardinal point other than the centroid shifts the
         // drawn section off the joint axis (BPRP offsets, both ends alike).
         // Parametric shapes only -- a POLY outline is anchored by construction.
+        // Explicit end offsets add to it, each end its own.
         foreach (var r in model.GetTable("FRAME INSERTION POINT ASSIGNMENTS"))
         {
             string f, cp, secName;
-            if (!r.TryGetValue("Frame", out f) || !r.TryGetValue("CardinalPt", out cp)) continue;
+            if (!r.TryGetValue("Frame", out f)) continue;
             RawViewerWriter.BeamMember m;
-            if (!beams.TryGetValue(Int(f), out m) || !frameSecOf.TryGetValue(m.Id, out secName)) continue;
+            if (!beams.TryGetValue(Int(f), out m)) continue;
             Dictionary<string, string> props;
-            if (!frameSecProps.TryGetValue(secName, out props) || outlines.ContainsKey(secName)) continue;
             double dy, dz;
-            if (!CardinalOffset(LeadingInt(cp), Num(props, "t3", 0), Num(props, "t2", 0), out dy, out dz)) continue;
-            m.OffsetAy = m.OffsetBy = dy; m.OffsetAz = m.OffsetBz = dz;
+            if (r.TryGetValue("CardinalPt", out cp) && frameSecOf.TryGetValue(m.Id, out secName) && frameSecProps.TryGetValue(secName, out props) &&
+                !outlines.ContainsKey(secName) && CardinalOffset(LeadingInt(cp), Num(props, "t3", 0), Num(props, "t2", 0), out dy, out dz))
+            {
+                m.OffsetAy = m.OffsetBy = dy; m.OffsetAz = m.OffsetBz = dz;
+            }
+            double[] oa = EndOffset(r, "I", nodes[m.NodeA], nodes[m.NodeB], m.LocalY), ob = EndOffset(r, "J", nodes[m.NodeA], nodes[m.NodeB], m.LocalY);
+            if (oa != null) { m.OffsetAy += oa[0]; m.OffsetAz += oa[1]; }
+            if (ob != null) { m.OffsetBy += ob[0]; m.OffsetBz += ob[1]; }
+            if (oa != null || ob != null) res.FramesOffset++;
         }
         res.Frames = beams.Count; res.FrameSections = sectionDefs.Count;
-        if (elements.Count == 0 && beams.Count == 0) throw new Exception("SapToPluto: no CONNECTIVITY - AREA or CONNECTIVITY - FRAME rows in " + modelS2k);
+        if (elements.Count == 0 && beams.Count == 0) throw new Exception("SapToPluto: no CONNECTIVITY - AREA or CONNECTIVITY - FRAME rows in the model");
 
         // ---- load cases (first-seen order across both result tables) ----
         List<Dictionary<string, string>> forceRows = results.GetTable("ELEMENT FORCES - AREA SHELLS");
@@ -415,9 +470,9 @@ public class SapToPluto
 
         // ---- labels ----
         var nodeLabels = new Dictionary<int, string>();
-        foreach (var r in model.GetTable("JOINT COORDINATES")) { string s; if (r.TryGetValue("Joint", out s)) nodeLabels[Int(s)] = s; }
+        foreach (var r in doc.GetTable("JOINT COORDINATES")) { string s; if (r.TryGetValue("Joint", out s)) nodeLabels[labels.Id("joint", s)] = s; }
         var shellLabels = new Dictionary<int, string>();
-        foreach (var r in model.GetTable("CONNECTIVITY - AREA")) { string s; if (r.TryGetValue("Area", out s)) shellLabels[Int(s)] = s; }
+        foreach (var r in doc.GetTable("CONNECTIVITY - AREA")) { string s; if (r.TryGetValue("Area", out s)) shellLabels[labels.Id("area", s)] = s; }
 
         // ---- binary ----
         var units = new Dictionary<string, string>();
@@ -720,23 +775,36 @@ public class SapToPluto
             else if (string.Equals(ty, "Joint", StringComparison.OrdinalIgnoreCase)) Add(grpJoints, grpOrder, g, (uint)Int(lab));
             else if (string.Equals(ty, "Frame", StringComparison.OrdinalIgnoreCase) && beams.ContainsKey(Int(lab))) Add(grpFrames, grpOrder, g, (uint)Int(lab));
         }
-        foreach (string g in grpOrder)
+        // a group with members of several kinds is in the order once (it was listed once per kind)
+        foreach (string g in grpOrder.Distinct(StringComparer.OrdinalIgnoreCase).ToList())
         {
             if (string.Equals(g, "ALL", StringComparison.OrdinalIgnoreCase)) continue;
             FeaturesSidecar.Group grp = null;
             List<uint> ids;
-            if (grpAreas.TryGetValue(g, out ids)) grp = sc.AddGroup(g, null, "shells", ids, new[] { "sap", "group" }, StaadName(g));
+            string[] gtags = g.StartsWith("PL_KIND_", StringComparison.OrdinalIgnoreCase) ? new[] { "sap", "group", "kind" } :
+                             g.StartsWith("PL_LINE_", StringComparison.OrdinalIgnoreCase) ? new[] { "sap", "group", "line" } : new[] { "sap", "group" };
+            if (grpAreas.TryGetValue(g, out ids)) grp = sc.AddGroup(g, null, "shells", ids, gtags, StaadName(g));
             if (grpFrames.TryGetValue(g, out ids))
             {
-                if (grp == null) grp = sc.AddGroup(g, null, "beams", ids, new[] { "sap", "group" }, StaadName(g));
+                if (grp == null) grp = sc.AddGroup(g, null, "beams", ids, gtags, StaadName(g));
                 else grp.Members.Add(new FeaturesSidecar.Member { Domain = "beams", Ids = ids });
             }
             if (grpJoints.TryGetValue(g, out ids))
             {
-                if (grp == null) sc.AddNodeGroup(g, null, ids, new[] { "sap", "group" }, StaadName(g));
+                if (grp == null) sc.AddNodeGroup(g, null, ids, gtags, StaadName(g));
                 else grp.Members.Add(new FeaturesSidecar.Member { Domain = "nodes", NodeIds = ids });
             }
         }
+
+        // supports, links, loads and frame properties from the typed model
+        var fc = FrameSidecar.Add(sc, fm, labels, forceUnit, lengthUnit);
+        res.Supports = fc.Supports; res.Links = fc.Links; res.Loads = fc.Loads; res.Properties = fc.Properties;
+        res.TextLabels = labels.TextLabels;
+        if (preview != null) sc.SourceJson = preview.SourceJson;
+        var review = new List<PipeReviewItem>();
+        if (preview != null) review.AddRange(preview.Messages);
+        foreach (string wmsg in res.Warnings) review.Add(new PipeReviewItem("notice", "sap-export", wmsg));
+        sc.AddSection("review", FrameSidecar.Review(review));     // always: a stale one must not pass through the merge
 
         // the previous sidecar is the user's layer: keep section cuts, predicates,
         // hand-made groups and the colour / enable edits on our own groups
@@ -750,7 +818,7 @@ public class SapToPluto
 
     // ---- helpers ----------------------------------------------------------
 
-    static void ParseUnits(Sap2kParser model, ref string force, ref string length)
+    static void ParseUnits(IS2kTables model, ref string force, ref string length)
     {
         var rows = model.GetTable("PROGRAM CONTROL");
         if (rows.Count == 0) return;
@@ -762,23 +830,6 @@ public class SapToPluto
             force = parts[0].Trim().ToLowerInvariant();
             length = parts[1].Trim().ToLowerInvariant();
         }
-    }
-
-    static void CheckIntegerLabels(Sap2kParser model, SapExportResult res)
-    {
-        int bad = 0; string first = null;
-        foreach (var r in model.GetTable("JOINT COORDINATES"))
-        {
-            string s; int v;
-            if (r.TryGetValue("Joint", out s) && !int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out v)) { bad++; if (first == null) first = "Joint " + s; }
-        }
-        foreach (var r in model.GetTable("CONNECTIVITY - AREA"))
-        {
-            string s; int v;
-            if (r.TryGetValue("Area", out s) && !int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out v)) { bad++; if (first == null) first = "Area " + s; }
-        }
-        if (bad > 0)
-            throw new Exception(string.Format("SapToPluto: {0} non-integer SAP labels (first: {1}). Renumber joints/areas in SAP (Edit > Change Labels) before exporting.", bad, first));
     }
 
     static string CaseOf(Dictionary<string, string> r)
@@ -946,6 +997,47 @@ public class SapToPluto
         return new double[] { yx / n, yy / n, yz / n };
     }
 
+    // SAP's local axis angle turns local 2 and 3 about local 1, right-handed. The viewer's y is minus local 3, so it
+    // becomes sin(a) local 2 + cos(a) y, where local 2 = local 1 x y.
+    static double[] TurnLocalY(Node a, Node b, double[] y, double deg)
+    {
+        double dx = b.xyz.X - a.xyz.X, dy = b.xyz.Y - a.xyz.Y, dz = b.xyz.Z - a.xyz.Z;
+        double len = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+        if (len < 1e-12) return y;
+        double tx = dx / len, ty = dy / len, tz = dz / len;
+        double l2x = ty * y[2] - tz * y[1], l2y = tz * y[0] - tx * y[2], l2z = tx * y[1] - ty * y[0];
+        double t = deg * Math.PI / 180.0, s = Math.Sin(t), c = Math.Cos(t);
+        // cos 90 deg is 6e-17, not 0: snap such residues, so a right angle gives an exact axis on every runtime
+        Func<double, double> snap = v => Math.Abs(v) < 1e-12 ? 0.0 : v;
+        return new double[] { snap(s * l2x + c * y[0]), snap(s * l2y + c * y[1]), snap(s * l2z + c * y[2]) };
+    }
+
+    // An explicit insertion offset at one end as viewer (y, z), null when there is none. Offset1I..3I (or XI YI ZI) in
+    // the row's CoordSys: Local is along local 1 2 3 (y = -local 3, z = local 2; the axial part is not drawn), anything
+    // else is global X Y Z projected onto the frame's axes.
+    static double[] EndOffset(Dictionary<string, string> r, string end, Node a, Node b, double[] y)
+    {
+        string[] local = { "Offset1", "Offset2", "Offset3" }, glob = { "X", "Y", "Z" };
+        var v = new double[3];
+        bool any = false, named = false;
+        for (int i = 0; i < 3; i++)
+        {
+            if (r.ContainsKey(local[i] + end)) named = true;
+            v[i] = Num(r, local[i] + end, Num(r, glob[i] + end, 0));
+            if (v[i] != 0) any = true;
+        }
+        if (!any) return null;
+        string cs;
+        if (!r.TryGetValue("CoordSys", out cs)) cs = named ? "Local" : "GLOBAL";
+        if (string.Equals(cs.Trim(), "Local", StringComparison.OrdinalIgnoreCase)) return new[] { -v[2], v[1] };
+        double dx = b.xyz.X - a.xyz.X, dy = b.xyz.Y - a.xyz.Y, dz = b.xyz.Z - a.xyz.Z;
+        double len = Math.Sqrt(dx * dx + dy * dy + dz * dz);
+        if (len < 1e-12) return null;
+        double tx = dx / len, ty = dy / len, tz = dz / len;
+        double zx = ty * y[2] - tz * y[1], zy = tz * y[0] - tx * y[2], zz = tx * y[1] - ty * y[0];
+        return new[] { v[0] * y[0] + v[1] * y[1] + v[2] * y[2], v[0] * zx + v[1] * zy + v[2] * zz };
+    }
+
     // Stress = force/length / thickness, in file units force/length^2; report ksi
     // when the file is Kip with ft or in (144 ksf = 1 ksi), else leave the file units.
     static void StressUnits(string forceUnit, string lengthUnit, out double scale, out string unit)
@@ -976,7 +1068,7 @@ public class SapToPluto
     // Z(3), then B about the new Y(2), then C about the new X(1). The matrix
     // whose COLUMNS are the local axes in global coordinates is Rz(A)Ry(B)Rx(C);
     // global = M . local. Stored row-major [9].
-    static Dictionary<int, double[]> JointLocalFrames(Sap2kParser model)
+    static Dictionary<int, double[]> JointLocalFrames(IS2kTables model)
     {
         var frames = new Dictionary<int, double[]>();
         foreach (var r in model.GetTable("JOINT LOCAL AXES ASSIGNMENTS 1 - TYPICAL"))

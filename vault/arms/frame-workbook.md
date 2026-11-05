@@ -35,6 +35,9 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 >   - Prints the model's counts and units.
 > - `-S2k`: writes `<base>.s2k`. It never writes over the input. An existing file with other contents needs `-Force`.
 > - `-Json`: writes `<base>.frame.json`.
+> - `-Preview`: writes `<base>.bin` and `<base>.features.json` for the viewer, drawn from the very document `-S2k`
+>   writes (`SapToPluto.Export(S2kDoc, …, FramePreview)`). The build's notes go to the Checks panel; `model.source` names
+>   the input and the model hash. `-ModelId` names the model (default `sap/<name>`).
 > - `-Out <base>`: as in `Build-Pipe.ps1`. Outputs inside the repo are refused.
 > - `-Probe <folder>` and `-ProbeCheck <export>`: see the SAP probe below.
 > - The last line is `RESULT {json}`.
@@ -42,6 +45,9 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 >   runner is exercised under pwsh 7 on Linux.
 >
 > **Checked (2026-11-05, pwsh 7 with the mono-built assembly):**
+> - `-Preview` from `rack.s2k` and from its `.frame.json` gives the same geometry hash as a plain SAP export of the
+>   file (the sidecar merge needs .NET Framework's serializer: on Linux only a first run, with no previous sidecar,
+>   gets that far);
 > - `.s2k` → `.frame.json` → `.s2k` is byte-identical to the source;
 > - the `-Force` guard, the repo guard, `-Probe` and `-ProbeCheck` all work;
 > - the PS 5.1 compile probe on the production machine is still to do.

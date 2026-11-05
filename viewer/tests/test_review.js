@@ -124,7 +124,27 @@ assert(P.sourceText() === 'from line.xlsx (xlsx) Â· saved 2026-10-23 10:41 UTC Â
          JSON.stringify(out.model.source) === JSON.stringify(SOURCE), 'review, properties and model.source export exactly as loaded');
 }
 
-// 8. cleared
+// 8. a SAP frame model (FrameSidecar): frame items, SAP's text labels on the joints
+{
+  view.nodeLabels = { get: i => ['A1', '20', 'B-3', ''][i] };
+  const FPROPS = { version: 1, units: { length: 'in', force: 'kip' }, items: [
+    { element: 100, label: 'S1', from: 10, to: 20, fromLabel: 'A1', toLabel: '20', kind: 'Box/Tube', name: '', line: '', members: [{ domain: 'beams', ids: [100] }],
+      values: { section: 'HSS4X4', shape: 'Box/Tube', material: 'A992', dx: 100, dy: 0, dz: 0, length: 100, t3: 4, t2: 4, tf: 0.233, angle: 30, releases: 'I: M2 M3; J: M2 M3~' } }] };
+  const e = env(); e.properties = FPROPS;
+  FEAFeatures.setEnvelope(e, 'rack_edit.features.json');
+  const s = P._summary(P._prop(0));
+  assert(s === 'Frame S1 A1-20 \u00b7 HSS4X4 (Box/Tube) \u00b7 A992 \u00b7 L 100 in \u00b7 angle 30 \u00b7 releases I: M2 M3; J: M2 M3~', 'frame summary: ' + s);
+  P._setNodeNums(true);
+  const texts = FEALabels._layers().nodes.map(l => l.text);
+  assert(texts.join(',') === 'A1,20,B-3', 'joints show SAP labels, the synthetic point skipped: ' + texts.join(','));
+  P._setNodeNums(false);
+  delete view.nodeLabels;
+  FEAFeatures.setEnvelope(env(), 'line.features.json');
+  assert(!isFrameSummary(P._summary(P._prop(0))), 'a pipe model reads as before');
+}
+function isFrameSummary(s) { return /^Frame /.test(s); }
+
+// 9. cleared
 FEAPipe.onModelCleared();
 assert(!P.hasProperties() && P._items().length === 0, 'cleared');
 

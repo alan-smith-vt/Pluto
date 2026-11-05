@@ -19,6 +19,11 @@
 //   Node numbers    the Display panel's "Node numbers": every real node's
 //                   number on screen (FEALabels; bend / valve points and
 //                   other synthetic vertices, ids from 10,000,000, skipped)
+//   Frame models    (2026-11-05) a SAP frame model's items (SapToPluto /
+//                   FrameSidecar: values.section) read as frames: section,
+//                   shape and dimensions, material, angle, releases,
+//                   modifiers; joints show SAP's labels (fromLabel / toLabel,
+//                   the node labels), which may be text
 //
 // Hooks (guarded by window.FEAPipe): viewer.js load / clear, showReadout,
 // pin; features.js sync -> onFeatures.
@@ -34,6 +39,7 @@ var FEAPipe = (function () {
     var levelOn = { error: true, warning: true, notice: true, info: true };
     var selected = '';
     var nodeNums = false;
+    var textLabels = false;     // a SAP model: the node labels are SAP's (maybe text), shown instead of the ids
     var SYNTHETIC_FROM = 10000000;
 
     var elPanel   = document.getElementById('rvPanel');
@@ -82,6 +88,7 @@ var FEAPipe = (function () {
         if (p !== propsRef) {
             propsRef = p;
             units = (p && p.units) || {};
+            textLabels = !!(p && p.items.length && p.items[0].fromLabel !== undefined);
             beamProp = null;
             if (p && beamIndex) {
                 beamProp = new Map();
@@ -244,7 +251,50 @@ var FEAPipe = (function () {
     // ---- properties ----------------------------------------------------------
     function u(k) { return units[k] ? ' ' + units[k] : ''; }
     function propOf(beam) { return beamProp ? beamProp.get(beam) || null : null; }
+    // ---- frame items (SAP) ----
+    function isFrame(it) { return !!(it && it.values && it.values.section !== undefined); }
+    function ends(it) { return (it.fromLabel !== undefined ? it.fromLabel : it.from) + '-' + (it.toLabel !== undefined ? it.toLabel : it.to); }
+    var DIMS = [['t3', 'depth t3'], ['t2', 'width t2'], ['tf', 'flange tf'], ['tw', 'web tw'], ['t2b', 'bottom width t2b'], ['tfb', 'bottom flange tfb']];
+    var MODS = ['A', 'A2', 'A3', 'J', 'I2', 'I3', 'mass', 'weight'];
+    function frameSummary(it) {
+        var v = it.values, parts = [];
+        parts.push((it.label ? 'Frame ' + it.label + ' ' : '') + ends(it));
+        parts.push(v.section + (v.shape ? ' (' + v.shape + ')' : ''));
+        if (v.material) parts.push(v.material);
+        parts.push('L ' + f(v.length, 4) + u('length'));
+        if (v.angle) parts.push('angle ' + f(v.angle, 3));
+        if (v.releases) parts.push('releases ' + v.releases);
+        if (it.line) parts.push('line ' + it.line);
+        return parts.join(' \u00b7 ');
+    }
+    function frameCard(it) {
+        var v = it.values, t;
+        var head = document.createElement('div');
+        head.className = 'cc-head';
+        head.textContent = 'Frame ' + (it.label || it.element) + ': ' + ends(it) + '  ' + it.kind + (it.line ? ', line ' + it.line : '');
+        elCalcCard.appendChild(head);
+        ccSub(elCalcCard, 'Geometry');
+        t = document.createElement('table');
+        ccRow(t, 'DX DY DZ' + u('length'), [v.dx, v.dy, v.dz].map(function (x) { return f(x, 4); }).join('  '));
+        ccRow(t, 'length' + u('length'), f(v.length, 4));
+        if (v.angle) ccRow(t, 'local axis angle (deg)', f(v.angle, 3));
+        if (v.cardinal) ccRow(t, 'insertion point', String(v.cardinal));
+        elCalcCard.appendChild(t);
+        ccSub(elCalcCard, 'Section');
+        t = document.createElement('table');
+        ccRow(t, 'section', v.section + (v.shape ? ' (' + v.shape + ')' : ''));
+        ccRow(t, 'material', v.material ? String(v.material) : '\u2014');
+        DIMS.forEach(function (d) { if (v[d[0]] !== undefined) ccRow(t, d[1] + u('length'), f(v[d[0]], 4)); });
+        if (v.modifiers) ccRow(t, 'modifiers', v.modifiers.map(function (x, k) { return x === 1 ? null : MODS[k] + ' x' + f(x, 3); }).filter(Boolean).join(', '));
+        elCalcCard.appendChild(t);
+        ccSub(elCalcCard, 'End releases');
+        t = document.createElement('table');
+        ccRow(t, 'releases', v.releases ? v.releases + (v.releases.indexOf('~') >= 0 ? '  (~ partly fixed)' : '') : 'none (fixed both ends)');
+        elCalcCard.appendChild(t);
+    }
+
     function summaryOf(it) {
+        if (isFrame(it)) return frameSummary(it);
         var v = it.values || {}, parts = [];
         parts.push(it.kind + ' ' + it.from + '-' + it.to + (it.name ? ' ' + it.name : ''));
         if (v.od !== undefined) parts.push(f(v.od, 4) + ' x ' + f(v.wall, 4) + u('diameter'));
@@ -271,6 +321,7 @@ var FEAPipe = (function () {
         var v = it.values || {};
         elCalcCard.style.display = '';
         elCalcCard.innerHTML = '';
+        if (isFrame(it)) { frameCard(it); appendLoadsAndChecks(it); return true; }
         var head = document.createElement('div');
         head.className = 'cc-head';
         head.textContent = 'Element ' + it.element + ': ' + it.from + '-' + it.to + '  ' + it.kind + (it.name ? ' (' + it.name + ')' : '') + (it.line ? ', line ' + it.line : '');
@@ -326,7 +377,13 @@ var FEAPipe = (function () {
             if (v.reducer) ccRow(t, 'to OD x wall' + u('diameter'), f(v.reducer.od2, 4) + ' x ' + f(v.reducer.wall2, 4));
             elCalcCard.appendChild(t);
         }
-        // loads on the element and at its ends
+        appendLoadsAndChecks(it);
+        return true;
+    }
+
+    // the loads on an element and at its ends, then the checks about it
+    function appendLoadsAndChecks(it) {
+        var t;
         var loads = [];
         if (window.FEALoads && FEALoads.itemsAt) {
             loads = FEALoads.itemsAt(null, it.element).concat(FEALoads.itemsAt(it.from, 0)).concat(FEALoads.itemsAt(it.to, 0));
@@ -338,6 +395,7 @@ var FEAPipe = (function () {
             loads.forEach(function (ld) {
                 if (seen.indexOf(ld) >= 0) return;
                 seen.push(ld);
+                if (ld.pattern !== undefined && FEALoads.itemText) { ccRow(t, ld.name, FEALoads.itemText(ld)); return; }
                 if (ld.kind === 'wind') { ccRow(t, ld.name, (ld.wind && ld.wind.type) + ' shape ' + f(ld.wind && ld.wind.shape, 3)); return; }
                 (ld.vectors || []).forEach(function (vc) {
                     var pre = ld.kind === 'force' ? 'F' : ld.kind === 'displacement' ? 'D' : 'U';
@@ -359,7 +417,6 @@ var FEAPipe = (function () {
                 elCalcCard.appendChild(d);
             });
         }
-        return true;
     }
 
     // ---- node numbers ----------------------------------------------------------
@@ -370,7 +427,8 @@ var FEAPipe = (function () {
         for (var i = 0; i < view.nodeIds.length; i++) {
             var id = view.nodeIds[i];
             if (skip && id >= SYNTHETIC_FROM) continue;
-            list.push({ pos: new THREE.Vector3(nd[i * 3], nd[i * 3 + 1], nd[i * 3 + 2]), text: String(id), cls: 'lbl-node', priority: 1 });
+            var text = textLabels && view.nodeLabels ? view.nodeLabels.get(i) || String(id) : String(id);
+            list.push({ pos: new THREE.Vector3(nd[i * 3], nd[i * 3 + 1], nd[i * 3 + 2]), text: text, cls: 'lbl-node', priority: 1 });
         }
         FEALabels.set('nodes', list);
     }

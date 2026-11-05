@@ -137,9 +137,22 @@ allows more; the viewer interpolates linearly between whatever stations exist.
 | 0–2 | local **y** axis, unit vector in world frame — resolved by the importer; the viewer never sees roll angles / K-nodes |
 | 3–4 | offset at end A (local y, z)                                                                     |
 | 5–6 | offset at end B (local y, z)                                                                     |
-| 7   | release bitmask (u32 bit pattern stored in the f32 slot; 0 = none). Display hint only.           |
+| 7   | release bitmask (u32 bit pattern stored in the f32 slot; 0 = none). Display hint only. Bits below |
 
 Local x = n0→n1; local z = x × y; reader re-orthogonalises y against x.
+
+**Release bits** (2026-11-05, written by `SapToPluto` from SAP's frame releases; read through a `Uint32Array` view of
+the block, never as a float):
+
+| bits | meaning |
+|---|---|
+| 0–5 | released at end A: P, V2, V3, T, M2, M3 (SAP's order) |
+| 6–11 | the same at end B |
+| 12–23 | partially fixed (a spring, not free): same layout, set only where the release bit is set |
+| 24–31 | 0 |
+
+SAP's V2 and M3 act in the local 1–2 plane, local 2 being the viewer's z; V3 and M2 in the 1–3 plane, local 3 being
+minus the viewer's y. A pin (M2 and M3 released) is `0x30` at end A, `0xc00` at end B.
 
 ## 5. META JSON
 

@@ -9,6 +9,11 @@
 #   out   -S2k      <base>.s2k for SAP2000 (File > Import > SAP2000 .s2k). Never written over the input file; an
 #                   existing <base>.s2k with other contents needs -Force.
 #         -Json     <base>.frame.json, the whole model (FrameModelJson; exact)
+#         -Preview  <base>.bin + <base>.features.json for the Pluto viewer, drawn from the very document -S2k writes
+#                   (SapToPluto): frames with their sections, local axis angles, offsets and releases; supports,
+#                   links, loads by pattern / case / combination, per-frame properties; the build's notes in Checks.
+#                   A previous sidecar's user layer (colours, cuts, hand-made groups) is kept. -ModelId names it
+#                   (default sap/<name>).
 #   -Out <base>     default beside the input, same name with spaces -> underscores; an existing folder or a path ending
 #                   in \ or / means <folder>\<name>; a trailing .s2k is dropped. Outputs inside this repo are refused.
 #   -Probe <folder>      writes probe-v22.s2k and probe-v26.s2k (the same probe stamped for SAP 22.0.0 and 26.3.0):
@@ -22,6 +27,7 @@
 # Every line of progress starts with "[step]"; the last line is "RESULT {json}" ({"error": "..."} with exit code 1).
 #   powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.s2k" -Json
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.frame.json" -Out "<project dir>\rack_v2" -S2k
+#   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.s2k" -Out "<project dir>\rack_edit" -Preview
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -Probe "<project dir>\probe"
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -ProbeCheck "<project dir>\probe\probe.sap-export.s2k"
 param(
@@ -29,6 +35,8 @@ param(
     [string]$Out,
     [switch]$S2k,
     [switch]$Json,
+    [switch]$Preview,
+    [string]$ModelId,
     [switch]$Force,
     [string]$Probe,
     [string]$ProbeCheck,
@@ -77,8 +85,8 @@ if ($In) {
         $outBase = [IO.Path]::Combine([IO.Path]::GetDirectoryName($inPath), $jobName)
     }
     $outBase = [IO.Path]::GetFullPath($outBase)
-    $s2kFile = $outBase + ".s2k"; $jsonFile = $outBase + ".frame.json"
-    if ($S2k -or $Json) {
+    $s2kFile = $outBase + ".s2k"; $jsonFile = $outBase + ".frame.json"; $binFile = $outBase + ".bin"; $scFile = $outBase + ".features.json"
+    if ($S2k -or $Json -or $Preview) {
         if (InRepo $outBase) { Fail ("Build-Frame: refusing to write {0}.* inside the Pluto repo ({1}): project outputs never land in Pluto. Pass -Out <project dir>\<name>." -f $outBase, $repoRoot) }
         foreach ($pair in @(@($S2k, $s2kFile, "-S2k"), @($Json, $jsonFile, "-Json"))) {
             if ($pair[0] -and $pair[1].Equals($inPath, [StringComparison]::OrdinalIgnoreCase)) { Fail ("Build-Frame: {0} would write over the input {1}; pass -Out <another name>" -f $pair[2], $inPath) }
@@ -86,7 +94,7 @@ if ($In) {
         $outDir = [IO.Path]::GetDirectoryName($outBase)
         if ($outDir) { $null = [IO.Directory]::CreateDirectory($outDir) }
     }
-    $outs = @(); if ($S2k) { $outs += $s2kFile }; if ($Json) { $outs += $jsonFile }
+    $outs = @(); if ($S2k) { $outs += $s2kFile }; if ($Json) { $outs += $jsonFile }; if ($Preview) { $outs += $binFile; $outs += $scFile }
     Say "check" ("{0} ({1}) -> {2}" -f $inPath, $kind, $(if ($outs.Count) { $outs -join ", " } else { "no files (a report only)" }))
 }
 
@@ -151,9 +159,24 @@ try {
         [IO.File]::WriteAllText($jsonFile, [FrameModelJson]::Write($model), (New-Object Text.UTF8Encoding($false)))
         Say "write" ("{0}: the whole model" -f $jsonFile)
     }
+    if ($Preview) {
+        $notes = New-Object 'System.Collections.Generic.List[string]'
+        $doc = [FrameS2k]::ToDoc($model, $notes)
+        $pv = New-Object FramePreview
+        $pv.SourceJson = [PipeSidecar]::SourceOf($inPath, $kind, $hash)
+        if ($identical -eq $false) { $null = $pv.AddMessage("warning", "s2k-not-identical", "Written back, the .s2k is not the source byte for byte: check the outputs before use") }
+        foreach ($n in $notes) { $null = $pv.AddMessage("notice", "s2k-write", $n) }
+        $mid = $(if ($ModelId) { $ModelId } else { "sap/" + $jobName })
+        $outlines = [IO.Path]::ChangeExtension($inPath, ".outlines.txt")
+        $px = [SapToPluto]::Export($doc, $null, $outlines, $outBase, $mid, $false, $pv)
+        foreach ($w in $px.Warnings) { Say "warn" $w }
+        Say "write" ("{0} + .features.json: the viewer preview ({1} supports, {2} links, {3} loads; {4} frames released, {5} turned)" -f `
+            $px.BinPath, $px.Supports, $px.Links, $px.Loads, $px.FramesReleased, $px.FramesTurned)
+    }
     $res = "RESULT {""input"":" + (Q $inPath) + ",""kind"":" + (Q $kind) + ",""model"":" + (Q $hash)
     $res += ",""identical"":" + $(if ($identical -eq $null) { "null" } elseif ($identical) { "true" } else { "false" })
     $res += ",""s2k"":" + $(if ($S2k) { Q $s2kFile } else { "null" }) + ",""json"":" + $(if ($Json) { Q $jsonFile } else { "null" })
+    $res += ",""bin"":" + $(if ($Preview) { Q $binFile } else { "null" }) + ",""sidecar"":" + $(if ($Preview) { Q $scFile } else { "null" })
     $res += ",""counts"":" + (Q $counts) + "}"
     Write-Output $res
     exit 0
