@@ -625,7 +625,7 @@ public static class FrameWorkbook
             C("Id", "key", "id", "CASE and the case's number, on its first row: keep it."), C("Case", "key", "text", "The case's name on its first row; a blank Case continues the case above."),
             L("Type", "load", "list?", ListRange(6), "LinStatic, NonStatic (gaps, hooks, friction need it) ..."),
             C("Initial", "load", "text", "Zero, or the nonlinear case it continues from (OPE from SUS)."),
-            L("Load type", "load", "list?", ListRange(15), "Load pattern (usually)."), L("Load name", "load", "text", null, "The pattern."), C("SF", "load", "num", "Scale factor."),
+            L("Load type", "load", "list?", ListRange(15), "Load pattern (usually)."), L("Load name", "load", "list?", patNames, "The load pattern (a dropdown of Load patterns; an Accel load takes U1, U2 or U3)."), C("SF", "load", "num", "Scale factor."),
             L("Geometric nonlinearity", "load", "list!", ListRange(GeoList), "A nonlinear case's, on its first row: None, P-Delta, or P-Delta plus Large Displacements. Blank = None."),
         }, r0 - 1, lim);
         cs.Conditional("F2:F" + lim, "AND(F2<>\"\",E2=\"Load pattern\",COUNTIF(" + patNames + ",F2)=0)", t.Red);
