@@ -19,7 +19,7 @@ TABLE:  "COORDINATE SYSTEMS"
 TABLE:  "GRID LINES"
    CoordSys=GLOBAL   AxisDir=X   XRYZCoord=0   LineType=Primary   LineColor=Gray8Dark   Visible=Yes   BubbleLoc=End   AllVisible=Yes   BubbleSize=48
    CoordSys=GLOBAL   AxisDir=X   XRYZCoord=120   LineType=Primary   LineColor=Gray8Dark   Visible=Yes   BubbleLoc=End
-   CoordSys=GLOBAL   AxisDir=Y   XRYZCoord=-264   LineType=Primary   LineColor=Gray8Dark   Visible=Yes   BubbleLoc=End
+   CoordSys=GLOBAL   AxisDir=Y   XRYZCoord=-240   LineType=Primary   LineColor=Gray8Dark   Visible=Yes   BubbleLoc=End
    CoordSys=GLOBAL   AxisDir=Y   XRYZCoord=0   LineType=Primary   LineColor=Gray8Dark   Visible=Yes   BubbleLoc=End
    CoordSys=GLOBAL   AxisDir=Y   XRYZCoord=480   LineType=Primary   LineColor=Gray8Dark   Visible=Yes   BubbleLoc=End
    CoordSys=GLOBAL   AxisDir=Z   XRYZCoord=0   LineType=Primary   LineColor=Gray8Dark   Visible=Yes   BubbleLoc=End
@@ -35,9 +35,9 @@ TABLE:  "GENERAL REFERENCE LINE 03 - ELEVATION POINTS"
 TABLE:  "GENERAL REFERENCE LINE 04 - DISCRETIZED COORDINATES"
  
 TABLE:  "MATERIAL PROPERTIES 01 - GENERAL"
-   Material=4000Psi   Type=Concrete   Grade="f'c 4000 psi"   SymType=Isotropic   TempDepend=No   Color=Cyan   GUID=6deea3c3-1a7a-426a-8d15-30d521342d2f   Notes="Customary f'c 4000 psi 11/5/2026 8:02:03 AM"
-   Material=A416Gr270   Type=Tendon   Grade="Grade 270"   SymType=Uniaxial   TempDepend=No   Color=Green   GUID=c7c7612d-7ab5-4bd3-aa74-2af6436d2f8e   Notes="ASTM A416 Grade 270 11/5/2026 8:02:03 AM"
-   Material=A615Gr60   Type=Rebar   Grade="Grade 60"   SymType=Uniaxial   TempDepend=No   Color=Green   GUID=ac90b867-994c-492a-bcc0-87fa6fe7c17c   Notes="ASTM A615 Grade 60 11/5/2026 8:02:51 AM"
+   Material=4000Psi   Type=Concrete   Grade="f'c 4000 psi"   SymType=Isotropic   TempDepend=No   Color=Cyan   GUID=ceda22f1-bf3d-4bda-8d8f-3d1bd921e4d4   Notes="Customary f'c 4000 psi 11/5/2026 8:30:48 AM"
+   Material=A416Gr270   Type=Tendon   Grade="Grade 270"   SymType=Uniaxial   TempDepend=No   Color=Green   GUID=50df3dbd-28e5-4df0-9171-58386d9090db   Notes="ASTM A416 Grade 270 11/5/2026 8:30:48 AM"
+   Material=A615Gr60   Type=Rebar   Grade="Grade 60"   SymType=Uniaxial   TempDepend=No   Color=Green   GUID=0144e917-d1ba-4e07-aaad-ff315e164045   Notes="ASTM A615 Grade 60 11/5/2026 8:30:59 AM"
    Material=PROBE_STEEL   Type=Steel   Grade="Grade 50"   SymType=Isotropic   TempDepend=No   Color=Blue   Notes="pluto: probe material"
  
 TABLE:  "MATERIAL PROPERTIES 01T - MATERIAL TEMPERATURES"
@@ -131,37 +131,39 @@ TABLE:  "FRAME SECTION PROPERTIES 01 - GENERAL"
    SectionName=P_2L   Material=PROBE_STEEL   Shape="Double Angle"   t3=4   t2=7.375   SngAngWid=3.5   tf=0.375   tw=0.375   dis=0.375   FilletRadius=0   Area=5.34375   TorsConst=0.24079833984375   I33=8.3500398334704   I22=12.9478759765625 _
         I23=0   AS2=3   AS3=2.625   S33Top=6.92924142686533   S33Bot=2.9875387713319   S22Left=3.51128840042373   S22Right=3.51128840042373   Z33=5.4169921875   Z22=6.10546875   R33=1.25003222103748   R22=1.55659703674243   CGOffset3=0 _
         CGOffset2=0.794956140350877   EccV2=0   EccV3=1.01479538305151   Cw=0.268834590911865   ConcCol=No   ConcBeam=No   Color=Green   TotalWt=0.18183605625   TotalMass=0.000470967345   FromFile=No   AMod=1   A2Mod=1   A3Mod=1   JMod=1 _
-        I2Mod=1   I3Mod=1   MMod=1   WMod=1   Notes="Added 11/5/2026 8:01:26 AM"
+        I2Mod=1   I3Mod=1   MMod=1   WMod=1   Notes="Added 11/5/2026 8:30:48 AM"
    SectionName=P_ANGLE   Material=PROBE_STEEL   Shape=Angle   t3=4   t2=3   tf=0.375   tw=0.3125   FilletRadius=0   Area=2.2578125   TorsConst=0.0856091562906901   I33=3.51145774902907   I22=1.87216937143222   I23=1.51694961072664 _
         AS2=1.25   AS3=1.125   S33Top=1.25005625002005   S33Bot=2.94842575476855   S22Left=2.26709733494896   S22Right=0.861084316258279   Z33=2.264111328125   Z22=1.54589462280273   R33=1.24709571515316   R22=0.910602066210748 _
         CGOffset3=0.674199826989619   CGOffset2=-0.809039792387543   EccV2=0.657342795831597   EccV3=-0.978084729645109   Cw=0.0850074990954417   ConcCol=No   ConcBeam=No   Color=Green   TotalWt=0.0768283921875   TotalMass=0.00019899058875 _
-        FromFile=No   AMod=1   A2Mod=1   A3Mod=1   JMod=1   I2Mod=1   I3Mod=1   MMod=1   WMod=1   Notes="Added 11/5/2026 8:01:26 AM"
+        FromFile=No   AMod=1   A2Mod=1   A3Mod=1   JMod=1   I2Mod=1   I3Mod=1   MMod=1   WMod=1   Notes="Added 11/5/2026 8:30:48 AM"
    SectionName=P_BOX   Material=PROBE_STEEL   Shape=Box/Tube   t3=12   t2=8   tf=0.5   tw=0.375   FilletRadius=0   Area=16.25   TorsConst=334.915324410163   I33=347.854166666667   I22=162.678385416667   I23=0   AS2=9   AS3=8 _
         S33Top=57.9756944444444   S33Bot=57.9756944444444   S22Left=40.6695963541667   S22Right=40.6695963541667   Z33=68.6875   Z22=47.453125   R33=4.62670619949119   R22=3.16401288937048   CGOffset3=0   CGOffset2=0   EccV2=0   EccV3=0 _
-        Cw=0   ConcCol=No   ConcBeam=No   Color=Green   TotalWt=1.1059035   TotalMass=0.0028643628   FromFile=No   AMod=1   A2Mod=1   A3Mod=1   JMod=1   I2Mod=1   I3Mod=1   MMod=1   WMod=1   Notes="Added 11/5/2026 8:01:26 AM"
+        Cw=0   ConcCol=No   ConcBeam=No   Color=Green   TotalWt=1.1059035   TotalMass=0.0028643628   FromFile=No   AMod=1   A2Mod=1   A3Mod=1   JMod=1   I2Mod=1   I3Mod=1   MMod=1   WMod=1   Notes="Added 11/5/2026 8:30:48 AM"
    SectionName=P_CHAN   Material=PROBE_STEEL   Shape=Channel   t3=10   t2=2.6   tf=0.436   tw=0.24   FilletRadius=0   Area=4.45792   TorsConst=0.169849652662613   I33=67.0921351867733   I22=2.83905000294901   I23=0   AS2=2.4   AS3=2.2672 _
         S33Top=13.4184270373547   S33Bot=13.4184270373547   S22Left=3.94245681239498   S22Right=1.51023100874819   Z33=15.84097344   Z22=2.71342013184   R33=3.87944564574843   R22=0.798032145579125   CGOffset3=0.579877969994975 _
         CGOffset2=0   EccV2=1.51606038392349   EccV3=0   Cw=45.3380293772247   IncludeSCAn=Yes   ConcCol=No   ConcBeam=No   Color=Green   TotalWt=0.151693210176   TotalMass=0.0003928953911808   FromFile=No   AMod=1   A2Mod=1   A3Mod=1 _
-        JMod=1   I2Mod=1   I3Mod=1   MMod=1   WMod=1   Notes="Added 11/5/2026 8:01:26 AM"
-   SectionName=P_GEN   Material=PROBE_STEEL   Shape=General   t3=10   t2=6   Area=11.5   TorsConst=2.3   I33=210   I22=40   I23=0   AS2=4   AS3=5   S33Top=42   S33Bot=42   S22Left=13   S22Right=13   Z33=48   Z22=20   R33=4.27   R22=1.86 _
+        JMod=1   I2Mod=1   I3Mod=1   MMod=1   WMod=1   Notes="Added 11/5/2026 8:30:48 AM"
+   SectionName=P_GEN   Material=PROBE_STEEL   Shape=General   t3=10   t2=6   Area=11.5   TorsConst=2.3   I33=210   I22=40   I23=0   AS2=4   AS3=5   S33Top=0   S33Bot=42   S22Left=0   S22Right=13   Z33=48   Z22=20   R33=4.27   R22=1.86 _
         CGOffset3=0   CGOffset2=0   EccV2=0   EccV3=0   Cw=0   IncludeSCAn=Yes   ConcCol=No   ConcBeam=No   Color=Green   TotalWt=0.3913197   TotalMass=0.00101354376   FromFile=No   AMod=1   A2Mod=1   A3Mod=1   JMod=1   I2Mod=1   I3Mod=1 _
-        MMod=1   WMod=1   Notes="Added 11/5/2026 8:01:26 AM"
+        MMod=1   WMod=1   Notes="Added 11/5/2026 8:30:48 AM"
    SectionName=P_IUNEQ   Material=PROBE_STEEL   Shape="I/Wide Flange"   t3=12.2   t2=8.08   tf=0.64   tw=0.37   t2b=10.08   tfb=0.8   FilletRadius=0   Area=17.2164   TorsConst=2.4828527083   I33=459.383210707956   I22=96.45900563   I23=0 _
         AS2=4.514   AS3=11.0293333333333   S33Top=65.483806368127   S33Bot=88.6022317088314   S22Left=19.138691593254   S22Right=19.138691593254   Z33=81.1409367567567   Z22=31.135365   R33=5.16554782999411   R22=2.36701068346494 _
         CGOffset3=0   CGOffset2=-0.915218512581027   EccV2=0   EccV3=-1.43484588411873   Cw=2625.84256449899   ConcCol=No   ConcBeam=No   Color=Green   TotalWt=1.75750864776   TotalMass=0.004552062988608   FromFile=No   AMod=1   A2Mod=1 _
-        A3Mod=1   JMod=1   I2Mod=1   I3Mod=1   MMod=1   WMod=1   Notes="Added 11/5/2026 8:01:26 AM"
+        A3Mod=1   JMod=1   I2Mod=1   I3Mod=1   MMod=1   WMod=1   Notes="Added 11/5/2026 8:30:48 AM"
    SectionName=P_MOD   Material=PROBE_STEEL   Shape=Rectangular   t3=6   t2=4   Area=24   TorsConst=75.1249382716049   I33=72   I22=32   I23=0   AS2=20   AS3=20   S33Top=24   S33Bot=24   S22Left=16   S22Right=16   Z33=36   Z22=24 _
-        R33=1.73205080756888   R22=1.15470053837925   CGOffset3=0   CGOffset2=0   EccV2=0   EccV3=0   Cw=0   ConcCol=No   ConcBeam=No   Color=Green   TotalWt=0.4083336   TotalMass=0.00211522176   FromFile=No   AMod=2   A2Mod=3   A3Mod=4 _
-        JMod=5   I2Mod=6   I3Mod=7   MMod=0.5   WMod=0.25   Notes="Added 11/5/2026 8:01:26 AM"
+        R33=1.73205080756888   R22=1.15470053837925   CGOffset3=0   CGOffset2=0   EccV2=0   EccV3=0   Cw=0   ConcCol=No   ConcBeam=No   Color=Green   TotalWt=0.36750024   TotalMass=0.001797938496   FromFile=No   AMod=2   A2Mod=3   A3Mod=4 _
+        JMod=5   I2Mod=6   I3Mod=7   MMod=0.5   WMod=0.25   Notes="Added 11/5/2026 8:30:48 AM"
    SectionName=P_PIPE   Material=PROBE_STEEL   Shape=Pipe   t3=8.625   tw=0.322   Area=8.39925530448745   TorsConst=144.978481205148   I33=72.489240602574   I22=72.489240602574   I23=0   AS2=4.20383630918293   AS3=4.20383630918293 _
         S33Top=16.8090992701621   S33Bot=16.8090992701621   S22Left=16.8090992701621   S22Right=16.8090992701621   Z33=22.2097472473333   Z22=22.2097472473333   R33=2.93776047781299   R22=2.93776047781299   CGOffset3=0   CGOffset2=0 _
         EccV2=0   EccV3=0   Cw=0   ConcCol=No   ConcBeam=No   Color=Green   TotalWt=2.00065725755027   TotalMass=0.00518183387978879   FromFile=No   AMod=1   A2Mod=1   A3Mod=1   JMod=1   I2Mod=1   I3Mod=1   MMod=1   WMod=1   Notes="pluto: ins=2 insd=1.1e-05"
    SectionName=P_TEE   Material=PROBE_STEEL   Shape=Tee   t3=6   t2=8   tf=0.5   tw=0.3   FilletRadius=0   Area=5.65   TorsConst=0.374482833333333   I33=14.7559826696165   I22=21.3457083333333   I23=0   AS2=1.8   AS3=3.33333333333333 _
         S33Top=13.1035445317616   S33Bot=3.02755522771978   S22Left=5.33642708333333   S22Right=5.33642708333333   Z33=5.364921875   Z22=8.12375   R33=1.61606879451485   R22=1.94370817637995   CGOffset3=0   CGOffset2=1.87389380530973 _
         EccV2=0   EccV3=0.874366969201926   Cw=0.587026475694444   ConcCol=No   ConcBeam=No   Color=Green   TotalWt=0.19225707   TotalMass=0.000497958456   FromFile=No   AMod=1   A2Mod=1   A3Mod=1   JMod=1   I2Mod=1   I3Mod=1   MMod=1 _
-        WMod=1   Notes="Added 11/5/2026 8:01:26 AM"
-   SectionName=W12X26   Material=PROBE_STEEL   Shape=General   t3=1   t2=1   Area=1   TorsConst=1   I33=1   I22=1   I23=0   AS2=1   AS3=1   S33Top=1   S33Bot=1   S22Left=1   S22Right=1   Z33=1   Z22=1   R33=1   R22=1   CGOffset3=0 _
-        CGOffset2=0   EccV2=0   EccV3=0   Cw=0   IncludeSCAn=Yes   ConcCol=No   ConcBeam=No   Color=Green   TotalWt=0.0340278   TotalMass=8.813424E-05   FromFile=No   AMod=1   A2Mod=1   A3Mod=1   JMod=1   I2Mod=1   I3Mod=1   MMod=1   WMod=1   Notes="Added 11/5/2026 8:01:26 AM"
+        WMod=1   Notes="Added 11/5/2026 8:30:48 AM"
+   SectionName=W12X26   Material=PROBE_STEEL   Shape="I/Wide Flange"   t3=12.2   t2=6.49   tf=0.38   tw=0.23   t2b=0   tfb=0   FilletRadius=0   Area=5.1848   TorsConst=0.161677954966667   I33=79.7988227895582   I22=8.66836704666667   I23=0 _
+        AS2=2.806   AS3=2.05516666666667   S33Top=23.5500606651071   S33Bot=9.05618887785247   S22Left=2.67129955213148   S22Right=2.67129955213148   Z33=16.4662586086957   Z22=4.157729   R33=3.92312583175303   R22=1.29301225775669 _
+        CGOffset3=0   CGOffset2=2.71152368461657   EccV2=0   EccV3=3.19847631538343   Cw=0   ConcCol=No   ConcBeam=No   Color=Green   TotalWt=0.17642733744   TotalMass=0.000456958407552   FromFile=No   AMod=1   A2Mod=1   A3Mod=1   JMod=1 _
+        I2Mod=1   I3Mod=1   MMod=1   WMod=1   Notes="Added 11/5/2026 8:30:48 AM"
  
 TABLE:  "FRAME SECTION PROPERTIES 02 - CONCRETE COLUMN"
  
@@ -195,7 +197,7 @@ TABLE:  "FRAME SECTION PROPERTIES 13 - TIME DEPENDENT"
    SectionName=P_MOD   TypeSize=Auto   AutoValSize=2.4   AutoSFSize=1
    SectionName=P_PIPE   TypeSize=Auto   AutoValSize=0.322   AutoSFSize=1
    SectionName=P_TEE   TypeSize=Auto   AutoValSize=0.403571428571429   AutoSFSize=1
-   SectionName=W12X26   TypeSize=None
+   SectionName=W12X26   TypeSize=Auto   AutoValSize=0.433149540517962   AutoSFSize=1
  
 TABLE:  "FRAME SECTION PROPERTIES 14 - TENDON DATA"
  
@@ -335,14 +337,17 @@ TABLE:  "SOLID PROPERTY DEFINITIONS"
 TABLE:  "SOLID PROPERTY DEFINITIONS - BRIDGE OBJECT FLAGS"
  
 TABLE:  "LINK PROPERTY DEFINITIONS 01 - GENERAL"
-   Link=L_DAMP   LinkType="Damper - Exponential"   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   StiffDFact=1   Color=Magenta   GUID=6ff0c8aa-7f7d-46b5-b1f2-ad6fbd38dda9
-   Link=L_FRIC   LinkType="Friction Isolator"   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   StiffDFact=1   Color=Magenta   GUID=0f235226-41e4-48d4-b78f-df624970671d
+   Link=L_DAMP   LinkType="Damper - Exponential"   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   StiffLOpt="Effective from Zero"   StiffDOpt=Initial _
+        StiffDFact=1   Color=Magenta   GUID=40fdef96-4ece-41b0-ae9e-30d93387710a
+   Link=L_FRIC   LinkType="Friction Isolator"   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   StiffLOpt="Effective from Zero"   StiffDOpt=Initial _
+        StiffDFact=1   Color=Magenta   GUID=222a3147-8618-4866-a458-354f547006f6
    Link=L_GAP   LinkType=Gap   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   StiffLOpt="Effective from Zero"   StiffDOpt=Initial   StiffDFact=1 _
-        Color=Magenta   GUID=ca53ad6f-d97e-458d-9ce8-e995d3a1a56a
+        Color=Magenta   GUID=e00cd324-3068-4c78-976b-3c295dccbb7e
    Link=L_HOOK   LinkType=Hook   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   StiffLOpt="Effective from Zero"   StiffDOpt=Initial   StiffDFact=1 _
-        Color=Magenta   GUID=66d58129-4ef2-48d8-b236-22bc0ed4722e
-   Link=L_LIN   LinkType=Linear   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   StiffDFact=1   Color=Magenta   GUID=be03295b-e167-4a75-9237-04b271625c62   Notes="pluto: probe linear"
-   Link=L_MLE   LinkType="MultiLinear Elastic"   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   StiffDFact=1   Color=Magenta   GUID=f0f8f6a2-3ce0-436b-893b-80d66ed497e3
+        Color=Magenta   GUID=90ada36b-98f1-4b01-b8c1-aae56a62773b
+   Link=L_LIN   LinkType=Linear   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   StiffDFact=1   Color=Magenta   GUID=483f5234-227d-47eb-9008-28add850b370   Notes="pluto: probe linear"
+   Link=L_MLE   LinkType="MultiLinear Elastic"   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   StiffLOpt="Effective from Zero"   StiffDOpt=Initial _
+        StiffDFact=1   Color=Magenta   GUID=a7262f25-0c6c-47ab-9e09-47c87e092c8a
  
 TABLE:  "LINK PROPERTY DEFINITIONS 02 - LINEAR"
    Link=L_LIN   DOF=U1   Fixed=No   TransKE=111   TransCE=0
@@ -350,18 +355,27 @@ TABLE:  "LINK PROPERTY DEFINITIONS 02 - LINEAR"
    Link=L_LIN   DOF=R3   Fixed=No   RotKE=333   RotCE=0
  
 TABLE:  "LINK PROPERTY DEFINITIONS 03 - MULTILINEAR"
+   Link=L_MLE   DOF=U2   Fixed=No   NonLinear=Yes   TransKE=505   TransCE=0   DJ=0   Point=1   Force=-1   Displ=-10
+   Link=L_MLE   DOF=U2   Point=2   Force=-1   Displ=-1
+   Link=L_MLE   DOF=U2   Point=3   Force=0   Displ=0
+   Link=L_MLE   DOF=U2   Point=4   Force=1   Displ=1
+   Link=L_MLE   DOF=U2   Point=5   Force=1   Displ=10
  
 TABLE:  "LINK PROPERTY DEFINITIONS 04 - DAMPER"
+   Link=L_DAMP   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=12   TransCE=1.5   TransK=1212   TransC=5.5   CExp=1   FLDamper=Yes
  
 TABLE:  "LINK PROPERTY DEFINITIONS 05 - GAP"
-   Link=L_GAP   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=1001   TransCE=0   TransK=1002   TransOpen=0
+   Link=L_GAP   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=1001   TransCE=0   TransK=1002   TransOpen=0.25
  
 TABLE:  "LINK PROPERTY DEFINITIONS 06 - HOOK"
-   Link=L_HOOK   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=0   TransCE=0   TransK=2002   TransOpen=0
+   Link=L_HOOK   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=0   TransCE=0   TransK=2002   TransOpen=0.5
  
 TABLE:  "LINK PROPERTY DEFINITIONS 07 - RUBBER ISOLATOR"
  
 TABLE:  "LINK PROPERTY DEFINITIONS 08 - SLIDING ISOLATOR"
+   Link=L_FRIC   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=10001   TransCE=0   TransK=10002   TransC=0
+   Link=L_FRIC   DOF=U2   Fixed=No   NonLinear=Yes   TransKE=101   TransCE=0   DJ=0   TransK=102   Slow=0.31   Fast=0.32   Rate=0   Radius=0
+   Link=L_FRIC   DOF=U3   Fixed=No   NonLinear=Yes   TransKE=103   TransCE=0   DJ=0   TransK=104   Slow=0.33   Fast=0.34   Rate=0   Radius=0
  
 TABLE:  "LINK PROPERTY DEFINITIONS 09 - TC SLIDING ISOLATOR"
  
@@ -523,10 +537,10 @@ TABLE:  "CABLE PROPERTY MODIFIER DEFINITIONS"
 TABLE:  "AREA STIFFNESS MODIFIER DEFINITIONS"
  
 TABLE:  "LOAD PATTERN DEFINITIONS"
-   LoadPat=DEAD   DesignType=Dead   SelfWtMult=1   GUID=e7745a8f-09fa-4340-abd6-dc939db352de
-   LoadPat=CONTENTS   DesignType=Other   SelfWtMult=0   GUID=af3e3e46-667f-4411-b2c5-af33aa6973c5
-   LoadPat=T1   DesignType=Temperature   SelfWtMult=0   GUID=319a96f3-bf76-4a73-84c7-485ea41e351c
-   LoadPat=WIND   DesignType=Wind   SelfWtMult=0   AutoLoad=None   GUID=83cbdfb5-f9da-429a-94a2-1bb2aa6033bd
+   LoadPat=DEAD   DesignType=Dead   SelfWtMult=1   GUID=3b4c5dc6-e4a8-4613-822b-b0086066872d
+   LoadPat=CONTENTS   DesignType=Other   SelfWtMult=0   GUID=0530cd2a-1b3d-46e9-bcab-11e55d7c9078
+   LoadPat=T1   DesignType=Temperature   SelfWtMult=0   GUID=f1e4fad7-abe1-4584-836f-9615de1b95f5
+   LoadPat=WIND   DesignType=Wind   SelfWtMult=0   AutoLoad=None   GUID=e9b284c8-bb08-4888-b079-53b42a731a6a
  
 TABLE:  "AUTO SEISMIC - AS 1170 2007"
  
@@ -710,9 +724,9 @@ TABLE:  "MULTI-STEP TRAIN LOAD 1 - GENERAL"
 TABLE:  "MULTI-STEP TRAIN LOAD 2 - VEHICLE DATA"
  
 TABLE:  "COMBINATION DEFINITIONS"
-   ComboName=EXP   ComboType="Linear Add"   AutoDesign=No   CaseType="NonLin Static"   CaseName=OPE   ScaleFactor=1   SteelDesign=None   ConcDesign=None   AlumDesign=None   ColdDesign=None   GUID=a00306e8-90b9-470c-887f-c842eb7cae32
+   ComboName=EXP   ComboType="Linear Add"   AutoDesign=No   CaseType="NonLin Static"   CaseName=OPE   ScaleFactor=1   SteelDesign=None   ConcDesign=None   AlumDesign=None   ColdDesign=None   GUID=a303ded9-25c0-492d-9f74-72d4c9709fcc
    ComboName=EXP   CaseType="NonLin Static"   CaseName=SUS   ScaleFactor=-1
-   ComboName=ENV   ComboType=Envelope   AutoDesign=No   CaseType="Linear Static"   CaseName=DEAD   ScaleFactor=1.4   SteelDesign=None   ConcDesign=None   AlumDesign=None   ColdDesign=None   GUID=d2aeba65-bba1-449b-a5c9-56bbe70c2313
+   ComboName=ENV   ComboType=Envelope   AutoDesign=No   CaseType="Linear Static"   CaseName=DEAD   ScaleFactor=1.4   SteelDesign=None   ConcDesign=None   AlumDesign=None   ColdDesign=None   GUID=8df2b2cb-5890-4c9a-9448-76fb15e12411
    ComboName=ENV   CaseType="Linear Static"   CaseName=WIND   ScaleFactor=1
    ComboName=ENV   CaseType="Response Combo"   CaseName=EXP   ScaleFactor=1
  
@@ -979,10 +993,10 @@ TABLE:  "NAMED SETS - RESPONSE SPECTRUM 3 - DAMPING"
 TABLE:  "NAMED SETS - RESPONSE SPECTRUM 4 - USER FREQ/PERIODS"
  
 TABLE:  "LOAD CASE DEFINITIONS"
-   Case=DEAD   Type=LinStatic   InitialCond=Zero   DesTypeOpt="Prog Det"   DesignType=Dead   DesActOpt="Prog Det"   DesignAct=Non-Composite   AutoType=None   RunCase=Yes   CaseStatus="Not Run"   GUID=8579982c-0a4e-42aa-a41f-ad8a3719a2c3
-   Case=WIND   Type=LinStatic   InitialCond=Zero   DesTypeOpt="Prog Det"   DesignType=Wind   DesActOpt="Prog Det"   DesignAct="Short-Term Composite"   AutoType=None   RunCase=Yes   CaseStatus="Not Run"   GUID=2a508bf8-685b-4dca-b4bb-33044cc7eb2a
-   Case=SUS   Type=NonStatic   InitialCond=Zero   DesTypeOpt="Prog Det"   DesignType=Other   DesActOpt="Prog Det"   DesignAct=Non-Composite   AutoType=None   RunCase=Yes   CaseStatus="Not Run"   GUID=d4e59782-ada6-4ae6-8991-d742e1a3db49
-   Case=OPE   Type=NonStatic   InitialCond=SUS   DesTypeOpt="Prog Det"   DesignType=Temperature   DesActOpt="Prog Det"   DesignAct="Short-Term Composite"   AutoType=None   RunCase=Yes   CaseStatus="Not Run"   GUID=093bd645-808b-46d1-aec0-e2ff8523b788
+   Case=DEAD   Type=LinStatic   InitialCond=Zero   DesTypeOpt="Prog Det"   DesignType=Dead   DesActOpt="Prog Det"   DesignAct=Non-Composite   AutoType=None   RunCase=Yes   CaseStatus="Not Run"   GUID=a8c50f1c-66f9-40da-b48f-c20ac7af9ec4
+   Case=WIND   Type=LinStatic   InitialCond=Zero   DesTypeOpt="Prog Det"   DesignType=Wind   DesActOpt="Prog Det"   DesignAct="Short-Term Composite"   AutoType=None   RunCase=Yes   CaseStatus="Not Run"   GUID=0d42d2c9-f7fa-4bd8-9197-40d50a0177cf
+   Case=SUS   Type=NonStatic   InitialCond=Zero   DesTypeOpt="Prog Det"   DesignType=Other   DesActOpt="Prog Det"   DesignAct=Non-Composite   AutoType=None   RunCase=Yes   CaseStatus="Not Run"   GUID=02911ac4-195c-4495-9f1d-73869c332694
+   Case=OPE   Type=NonStatic   InitialCond=SUS   DesTypeOpt="Prog Det"   DesignType=Temperature   DesActOpt="Prog Det"   DesignAct="Short-Term Composite"   AutoType=None   RunCase=Yes   CaseStatus="Not Run"   GUID=e9cfebe1-9fd8-48f6-8aa5-2029192b0af9
  
 TABLE:  "CASE - STATIC 1 - LOAD ASSIGNMENTS"
    Case=DEAD   LoadType="Load pattern"   LoadName=DEAD   LoadSF=1
@@ -2185,29 +2199,28 @@ TABLE:  "JOINT COORDINATES"
    Joint=401   CoordSys=GLOBAL   CoordType=Cartesian   XorR=0   Y=-200   Z=0   SpecialJt=Yes   GlobalX=0   GlobalY=-200   GlobalZ=0
    Joint=402   CoordSys=GLOBAL   CoordType=Cartesian   XorR=0   Y=-200   Z=0   SpecialJt=Yes   GlobalX=0   GlobalY=-200   GlobalZ=0
    Joint=501   CoordSys=GLOBAL   CoordType=Cartesian   XorR=0   Y=-240   Z=0   SpecialJt=Yes   GlobalX=0   GlobalY=-240   GlobalZ=0
-   Joint=502   CoordSys=GLOBAL   CoordType=Cartesian   XorR=0   Y=-264   Z=0   SpecialJt=Yes   GlobalX=0   GlobalY=-264   GlobalZ=0
  
 TABLE:  "CONNECTIVITY - FRAME"
-   Frame=1   JointI=101   JointJ=201   IsCurved=No   Length=120   CentroidX=60   CentroidY=24   CentroidZ=0   GUID=b5abacb4-f788-4c41-bc5b-a796bc45e8da
-   Frame=2   JointI=102   JointJ=202   IsCurved=No   Length=120   CentroidX=60   CentroidY=48   CentroidZ=0   GUID=a25c9bfa-a1d9-4bb1-a2b2-2b23273f45ea
-   Frame=3   JointI=103   JointJ=203   IsCurved=No   Length=120   CentroidX=60   CentroidY=72   CentroidZ=0   GUID=5a085cda-59c2-47d1-8908-8f3e1bc01975
-   Frame=4   JointI=104   JointJ=204   IsCurved=No   Length=120   CentroidX=60   CentroidY=96   CentroidZ=0   GUID=15ac2a06-6e2b-4120-b638-923f2e74aea0
-   Frame=5   JointI=105   JointJ=205   IsCurved=No   Length=120   CentroidX=60   CentroidY=120   CentroidZ=0   GUID=9e12ec0c-91f3-4a8a-8b37-315124d0bf7b
-   Frame=6   JointI=106   JointJ=206   IsCurved=No   Length=120   CentroidX=60   CentroidY=144   CentroidZ=0   GUID=31707478-720f-4d86-b251-397c86ec9dd4
-   Frame=7   JointI=107   JointJ=207   IsCurved=No   Length=120   CentroidX=60   CentroidY=168   CentroidZ=0   GUID=c81d1ea2-d9d0-4951-9724-5cfdbfdd277c
-   Frame=8   JointI=108   JointJ=208   IsCurved=No   Length=120   CentroidX=60   CentroidY=192   CentroidZ=0   GUID=5e6a287e-d726-4f9c-be56-1f311e1c729e
-   Frame=9   JointI=109   JointJ=209   IsCurved=No   Length=120   CentroidX=60   CentroidY=216   CentroidZ=0   GUID=b71e2ee4-3984-4581-bbf1-b40c435d65d4
-   Frame=10   JointI=110   JointJ=210   IsCurved=No   Length=120   CentroidX=60   CentroidY=240   CentroidZ=0   GUID=aca15b9d-62e5-4f89-8a3b-e8507b67969f
-   Frame=11   JointI=111   JointJ=211   IsCurved=No   Length=120   CentroidX=60   CentroidY=264   CentroidZ=0   GUID=55c16564-daed-48ff-8cba-c058be624024
-   Frame=12   JointI=112   JointJ=212   IsCurved=No   Length=120   CentroidX=60   CentroidY=288   CentroidZ=0   GUID=6e3e16d3-08f8-4771-a645-b06c90cc4926
-   Frame=13   JointI=113   JointJ=213   IsCurved=No   Length=120   CentroidX=60   CentroidY=312   CentroidZ=0   GUID=46734d91-083b-44f3-b0a6-e23906a11ce9
-   Frame=14   JointI=114   JointJ=214   IsCurved=No   Length=120   CentroidX=60   CentroidY=336   CentroidZ=0   GUID=abd1fe93-ff76-48c0-abdb-4af5524fd720
-   Frame=15   JointI=115   JointJ=215   IsCurved=No   Length=120   CentroidX=60   CentroidY=360   CentroidZ=0   GUID=b6b03f61-364b-4da8-a36e-08dbc78c4e60
-   Frame=16   JointI=116   JointJ=216   IsCurved=No   Length=120   CentroidX=60   CentroidY=384   CentroidZ=0   GUID=b8861311-e3b8-4103-b589-b174571dbf14
-   Frame=17   JointI=117   JointJ=217   IsCurved=No   Length=120   CentroidX=60   CentroidY=408   CentroidZ=0   GUID=558b5493-89fd-44b9-b109-b13b76d66add
-   Frame=18   JointI=118   JointJ=218   IsCurved=No   Length=120   CentroidX=60   CentroidY=432   CentroidZ=0   GUID=dbd4067d-38e8-4de0-9068-f2859973e717
-   Frame=19   JointI=119   JointJ=219   IsCurved=No   Length=120   CentroidX=60   CentroidY=456   CentroidZ=0   GUID=1b3e84e2-90b9-4e85-9bdf-a19f065a43c4
-   Frame=B-1   JointI=A1   JointJ=A2   IsCurved=No   Length=120   CentroidX=60   CentroidY=480   CentroidZ=0   GUID=ceef955e-870a-4615-a8ca-c35dfbeb1e4b
+   Frame=1   JointI=101   JointJ=201   IsCurved=No   Length=120   CentroidX=60   CentroidY=24   CentroidZ=0   GUID=dd37b90a-70c0-4f29-9059-79ac8e924b05
+   Frame=2   JointI=102   JointJ=202   IsCurved=No   Length=120   CentroidX=60   CentroidY=48   CentroidZ=0   GUID=825153ee-f01f-49ea-8856-ba11c79dc3c9
+   Frame=3   JointI=103   JointJ=203   IsCurved=No   Length=120   CentroidX=60   CentroidY=72   CentroidZ=0   GUID=6f723e42-113f-4231-b0a4-370f592bd507
+   Frame=4   JointI=104   JointJ=204   IsCurved=No   Length=120   CentroidX=60   CentroidY=96   CentroidZ=0   GUID=c76a3f38-2b09-4172-98d6-2d626a07622b
+   Frame=5   JointI=105   JointJ=205   IsCurved=No   Length=120   CentroidX=60   CentroidY=120   CentroidZ=0   GUID=13ca314d-bcc4-4906-a392-56d0cf82071b
+   Frame=6   JointI=106   JointJ=206   IsCurved=No   Length=120   CentroidX=60   CentroidY=144   CentroidZ=0   GUID=28098dfd-b623-4080-bd8c-b6f2f191c5d0
+   Frame=7   JointI=107   JointJ=207   IsCurved=No   Length=120   CentroidX=60   CentroidY=168   CentroidZ=0   GUID=decb55e2-217c-443d-9db7-2e6aa971ab16
+   Frame=8   JointI=108   JointJ=208   IsCurved=No   Length=120   CentroidX=60   CentroidY=192   CentroidZ=0   GUID=06656495-3a9d-48b2-bc7f-ac2dc40e77b5
+   Frame=9   JointI=109   JointJ=209   IsCurved=No   Length=120   CentroidX=60   CentroidY=216   CentroidZ=0   GUID=10354c84-60df-4b49-a29f-4723212c6729
+   Frame=10   JointI=110   JointJ=210   IsCurved=No   Length=120   CentroidX=60   CentroidY=240   CentroidZ=0   GUID=8f771da9-113e-4e89-a252-6efaf4ab47a3
+   Frame=11   JointI=111   JointJ=211   IsCurved=No   Length=120   CentroidX=60   CentroidY=264   CentroidZ=0   GUID=650260ae-38d7-407d-bb6a-d499722aa191
+   Frame=12   JointI=112   JointJ=212   IsCurved=No   Length=120   CentroidX=60   CentroidY=288   CentroidZ=0   GUID=967f2dbd-6116-472d-8602-02f2d5930dd0
+   Frame=13   JointI=113   JointJ=213   IsCurved=No   Length=120   CentroidX=60   CentroidY=312   CentroidZ=0   GUID=1205f922-433b-4e4c-a8ab-3581ce7b35d4
+   Frame=14   JointI=114   JointJ=214   IsCurved=No   Length=120   CentroidX=60   CentroidY=336   CentroidZ=0   GUID=437f330d-f0fd-44e0-af36-f7ce403c8cb0
+   Frame=15   JointI=115   JointJ=215   IsCurved=No   Length=120   CentroidX=60   CentroidY=360   CentroidZ=0   GUID=9c8a09dc-88e1-4a85-be5b-0837d1f8d34e
+   Frame=16   JointI=116   JointJ=216   IsCurved=No   Length=120   CentroidX=60   CentroidY=384   CentroidZ=0   GUID=92823d5a-cf14-40ea-bcb0-c38a5a8c2b69
+   Frame=17   JointI=117   JointJ=217   IsCurved=No   Length=120   CentroidX=60   CentroidY=408   CentroidZ=0   GUID=b1259bc8-54f9-4d8e-84b1-aa4db028ce9f
+   Frame=18   JointI=118   JointJ=218   IsCurved=No   Length=120   CentroidX=60   CentroidY=432   CentroidZ=0   GUID=9ae63194-d998-4eec-b877-47e5bd51e861
+   Frame=19   JointI=119   JointJ=219   IsCurved=No   Length=120   CentroidX=60   CentroidY=456   CentroidZ=0   GUID=c15b2d24-5f3d-4510-84dc-46639b9796e6
+   Frame=B-1   JointI=A1   JointJ=A2   IsCurved=No   Length=120   CentroidX=60   CentroidY=480   CentroidZ=0   GUID=1e34bddb-7022-4456-a1a5-bc5168128c68
  
 TABLE:  "CONNECTIVITY - CABLE"
  
@@ -2258,7 +2271,7 @@ TABLE:  "JOINT MERGE NUMBER ASSIGNMENTS"
 TABLE:  "JOINT BRIDGE OBJECT FLAGS"
  
 TABLE:  "JOINT LOADS - FORCE"
-   Joint=105   LoadPat=CONTENTS   CoordSys=GLOBAL   F1=1.5   F2=-2.5   F3=-3.5   M1=4.5   M2=5.5   M3=6.5   GUID=b25b2f6e-d3ee-4ffd-b868-3f0013e39fc8
+   Joint=105   LoadPat=CONTENTS   CoordSys=GLOBAL   F1=1.5   F2=-2.5   F3=-3.5   M1=4.5   M2=5.5   M3=6.5   GUID=4c8a4ccd-7040-4aad-95b2-3e8dc02983de
  
 TABLE:  "JOINT LOADS - GROUND DISPLACEMENT"
    Joint=102   LoadPat=T1   CoordSys=GLOBAL   U1=0   U2=0   U3=-0.125   R1=0   R2=0   R3=0
@@ -2288,11 +2301,11 @@ TABLE:  "FRAME SECTION ASSIGNMENTS"
    Frame=16   SectionType="Double Angle"   AutoSelect=N.A.   AnalSect=P_2L   DesignSect=P_2L   MatProp=Default
    Frame=17   SectionType=General   AutoSelect=N.A.   AnalSect=P_GEN   DesignSect=P_GEN   MatProp=Default
    Frame=18   SectionType=Rectangular   AutoSelect=N.A.   AnalSect=P_MOD   DesignSect=P_MOD   MatProp=Default
-   Frame=19   SectionType=General   AutoSelect=N.A.   AnalSect=W12X26   DesignSect=W12X26   MatProp=Default
+   Frame=19   SectionType="I/Wide Flange"   AutoSelect=N.A.   AnalSect=W12X26   DesignSect=W12X26   MatProp=Default
    Frame=B-1   SectionType=Pipe   AutoSelect=N.A.   AnalSect=P_PIPE   DesignSect=P_PIPE   MatProp=Default
  
 TABLE:  "FRAME PROPERTY MODIFIERS"
-   Frame=9   AMod=1.1   AS2Mod=1   AS3Mod=1   JMod=1.4   I22Mod=1   I33Mod=1   MassMod=1   WeightMod=1
+   Frame=9   AMod=1.1   AS2Mod=1.2   AS3Mod=1.3   JMod=1.4   I22Mod=1.5   I33Mod=1.6   MassMod=0.7   WeightMod=0.8
  
 TABLE:  "FRAME RELEASE ASSIGNMENTS 1 - GENERAL"
    Frame=1   PI=No   V2I=No   V3I=No   TI=No   M2I=Yes   M3I=Yes   PJ=No   V2J=No   V3J=No   TJ=No   M2J=Yes   M3J=Yes   PartialFix=No
@@ -2316,7 +2329,7 @@ TABLE:  "FRAME INSERTION POINT ASSIGNMENTS"
    Frame=4   CardinalPt="10 (centroid)"   Mirror2=No   Mirror3=No   Transform=Yes
    Frame=5   CardinalPt="10 (centroid)"   Mirror2=No   Mirror3=No   Transform=Yes
    Frame=6   CardinalPt="10 (centroid)"   Mirror2=No   Mirror3=No   Transform=Yes
-   Frame=7   CardinalPt="8 (top center)"   Mirror2=No   Mirror3=No   Transform=No
+   Frame=7   CardinalPt="10 (centroid)"   CoordSys=Local   JtOffsetXI=1   JtOffsetYI=2   JtOffsetZI=3   JtOffsetXJ=4   JtOffsetYJ=5   JtOffsetZJ=6   Mirror2=No   Mirror3=No   Transform=Yes
    Frame=8   CardinalPt="10 (centroid)"   Mirror2=No   Mirror3=No   Transform=Yes
    Frame=9   CardinalPt="10 (centroid)"   Mirror2=No   Mirror3=No   Transform=Yes
    Frame=10   CardinalPt="10 (centroid)"   Mirror2=No   Mirror3=No   Transform=Yes
@@ -2502,13 +2515,13 @@ TABLE:  "FRAME JOINT OFFSETS - BRIDGE OBJECT FLAGS"
 TABLE:  "FRAME LOADS - GRAVITY"
  
 TABLE:  "FRAME LOADS - POINT"
-   Frame=11   LoadPat=CONTENTS   CoordSys=GLOBAL   Type=Force   Dir=Gravity   DistType=RelDist   RelDist=0.35   AbsDist=42   Force=1.25   GUID=fa78f75e-4dd8-4f62-a2fd-0a90147232f3
-   Frame=12   LoadPat=CONTENTS   CoordSys=Local   Type=Moment   Dir=2   DistType=AbsDist   RelDist=0.25   AbsDist=30   Moment=7.5   GUID=413d9871-cca5-40d6-9037-dcb2a4e9bc01
+   Frame=11   LoadPat=CONTENTS   CoordSys=GLOBAL   Type=Force   Dir=Gravity   DistType=RelDist   RelDist=0.35   AbsDist=42   Force=1.25   GUID=8a8954b7-97b0-476a-b7fc-d95e4a55376c
+   Frame=12   LoadPat=CONTENTS   CoordSys=Local   Type=Moment   Dir=2   DistType=AbsDist   RelDist=0.25   AbsDist=30   Moment=7.5   GUID=018032d2-2fc0-408e-b8fa-133c75301e4e
  
 TABLE:  "FRAME LOADS - DISTRIBUTED"
-   Frame=11   LoadPat=CONTENTS   CoordSys=GLOBAL   Type=Force   Dir=Gravity   DistType=RelDist   RelDistA=0   RelDistB=1   AbsDistA=0   AbsDistB=120   FOverLA=0.0021   FOverLB=0.0021   GUID=cac5d653-8e86-473e-ae6d-67af712a3785
-   Frame=12   LoadPat=WIND   CoordSys=GLOBAL   Type=Force   Dir="X Proj"   DistType=AbsDist   RelDistA=0.2   RelDistB=0.8   AbsDistA=24   AbsDistB=96   FOverLA=0.001   FOverLB=0.003   GUID=67924c66-06b1-472b-a597-6972e636fddc
-   Frame=13   LoadPat=WIND   CoordSys=Local   Type=Force   Dir=2   DistType=RelDist   RelDistA=0   RelDistB=1   AbsDistA=0   AbsDistB=120   FOverLA=0.004   FOverLB=0.004   GUID=52e555e9-4bc4-4cc2-9fa9-b3ce8c046cc1
+   Frame=11   LoadPat=CONTENTS   CoordSys=GLOBAL   Type=Force   Dir=Gravity   DistType=RelDist   RelDistA=0   RelDistB=1   AbsDistA=0   AbsDistB=120   FOverLA=0.0021   FOverLB=0.0021   GUID=ace88708-bd6c-48a2-ad5b-86f05f182772
+   Frame=12   LoadPat=WIND   CoordSys=GLOBAL   Type=Force   Dir="X Proj"   DistType=AbsDist   RelDistA=0.2   RelDistB=0.8   AbsDistA=24   AbsDistB=96   FOverLA=0.001   FOverLB=0.003   GUID=54e65bfe-3015-4e72-8db1-e6a56784dbb2
+   Frame=13   LoadPat=WIND   CoordSys=Local   Type=Force   Dir=2   DistType=RelDist   RelDistA=0   RelDistB=1   AbsDistA=0   AbsDistB=120   FOverLA=0.004   FOverLB=0.004   GUID=e22b8889-c151-4e12-a591-36df07a3e126
  
 TABLE:  "FRAME LOADS - TEMPERATURE"
    Frame=11   LoadPat=T1   Type=Temperature   Temp=150   JtPattern=None

@@ -214,6 +214,15 @@ public static class FrameS2k
         }
         foreach (string t in added.Distinct(StringComparer.OrdinalIgnoreCase))
             if (!FrameS2kSchema.Confirmed(t)) notes.Add("s2k-unconfirmed: new rows in " + t + ", a table SAP has not confirmed yet (the SAP probe settles it): check them after the import");
+        // SAP 24.2 read a General section's S33Top and S22Left back as 0 while it kept S33Bot and S22Right (probe round
+        // 2, 2026-11-05); S33 / S22 (round 1) set both faces
+        foreach (var sc in m.Sections)
+        {
+            var g = sc.Rec(FrameSection.General);
+            if (g == null || !string.Equals((g.Get("Shape") ?? "").Trim(), "General", StringComparison.OrdinalIgnoreCase)) continue;
+            if ((g.Num("S33Top", 0) != 0 && !g.Has("S33")) || (g.Num("S22Left", 0) != 0 && !g.Has("S22")))
+                notes.Add("s2k-general-moduli: section " + sc.Label + " (General) gives S33Top / S22Left, which SAP 24.2 read back as 0 (the SAP probe): check its section moduli in SAP after the import");
+        }
         return doc;
     }
 
@@ -272,7 +281,12 @@ public static class FrameS2k
                 if (i < b.Count && i < c.Count)
                 {
                     var row = map[b[i].Row];
-                    foreach (var f in c[i].F) if (b[i].Get(f[0]) != f[1]) row.Set(f[0], f[1]);
+                    // a field new to the row goes after the field before it in the model's order (SAP's)
+                    for (int k = 0; k < c[i].F.Count; k++)
+                    {
+                        var f = c[i].F[k];
+                        if (b[i].Get(f[0]) != f[1]) row.SetAfter(k > 0 ? c[i].F[k - 1][0] : null, f[0], f[1]);
+                    }
                     foreach (var f in b[i].F) if (!c[i].Has(f[0])) row.Remove(f[0]);
                     last = row;
                 }

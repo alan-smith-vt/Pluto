@@ -7,7 +7,7 @@
 // Items: {id, name, label, type: linear | gap | hook | friction |
 // multilinear | damper | other, linkType (SAP's name), nodeIds: [i, j],
 // property, length, axis1, axis2 (unit, the link's local 1 and 2), dofs:
-// {U1: {fixed, nonlinear, ke, ce, k, open, muSlow, muFast, radius}, ...},
+// {U1: {fixed, nonlinear, ke, ce, k, open, muSlow, muFast, radius, c, cexp, points: [{f, d}, ...]}, ...},
 // tags}. Each draws a thin line between its two joints and a symbol at its
 // midpoint, local 1 along the link:
 //   linear       a coil spring
@@ -435,7 +435,8 @@ var FEALinks = (function () {
 
     // ---- text ------------------------------------------------------------------
     var DOF_ORDER = ['U1', 'U2', 'U3', 'R1', 'R2', 'R3'];
-    var DOF_KEYS = [['ke', 'ke'], ['ce', 'ce'], ['k', 'k'], ['open', 'open'], ['muSlow', '\u03bc slow'], ['muFast', '\u03bc fast'], ['radius', 'radius']];
+    var DOF_KEYS = [['ke', 'ke'], ['ce', 'ce'], ['k', 'k'], ['open', 'open'], ['muSlow', '\u03bc slow'], ['muFast', '\u03bc fast'], ['radius', 'radius'],
+                    ['c', 'c'], ['cexp', 'exp']];
     function dofNames(item) {
         var d = item && item.dofs ? item.dofs : {};
         var names = DOF_ORDER.filter(function (k) { return d[k]; });
@@ -448,6 +449,8 @@ var FEALinks = (function () {
         if (d.fixed) return 'fixed';
         var out = [d.nonlinear ? 'nonlinear' : 'linear'];
         DOF_KEYS.forEach(function (k) { if (d[k[0]] !== undefined && d[k[0]] !== null) out.push(k[1] + ' ' + nf(d[k[0]])); });
+        // a multilinear curve: (displacement, force) pairs, as a graph reads them
+        if (d.points && d.points.length) out.push('points (d, F) ' + d.points.map(function (p) { return '(' + nf(p.d) + ', ' + nf(p.f) + ')'; }).join(' '));
         return out.join(', ');
     }
     function dofText(item) {

@@ -1017,9 +1017,10 @@ public class SapToPluto
         return new double[] { snap(s * l2x + c * y[0]), snap(s * l2y + c * y[1]), snap(s * l2z + c * y[2]) };
     }
 
-    // An explicit insertion offset at one end as viewer (y, z), null when there is none. Offset1I..3I (or XI YI ZI) in
-    // the row's CoordSys: Local is along local 1 2 3 (y = -local 3, z = local 2; the axial part is not drawn), anything
-    // else is global X Y Z projected onto the frame's axes.
+    // An explicit insertion offset at one end as viewer (y, z), null when there is none. SAP 24.2 writes JtOffsetXI YI
+    // ZI (probe round 2, 2026-11-05; older guesses Offset1I..3I and XI YI ZI still read) in the row's CoordSys: Local is
+    // along local 1 2 3 (y = -local 3, z = local 2; the axial part is not drawn), anything else is global X Y Z
+    // projected onto the frame's axes.
     static double[] EndOffset(Dictionary<string, string> r, string end, Node a, Node b, double[] y)
     {
         string[] local = { "Offset1", "Offset2", "Offset3" }, glob = { "X", "Y", "Z" };
@@ -1028,7 +1029,7 @@ public class SapToPluto
         for (int i = 0; i < 3; i++)
         {
             if (r.ContainsKey(local[i] + end)) named = true;
-            v[i] = Num(r, local[i] + end, Num(r, glob[i] + end, 0));
+            v[i] = Num(r, "JtOffset" + glob[i] + end, Num(r, local[i] + end, Num(r, glob[i] + end, 0)));
             if (v[i] != 0) any = true;
         }
         if (!any) return null;

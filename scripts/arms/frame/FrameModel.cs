@@ -254,6 +254,36 @@ public sealed class FrameMember : FrameObj
         }
     }
 
+    // the joint offsets of the insertion point (SAP 24.2's export, probe round 2): CoordSys, then JtOffsetXI YI ZI XJ YJ
+    // ZJ after CardinalPt. With CoordSys=Local, X Y Z are local 1 2 3. None: no CoordSys and no JtOffset fields.
+    public static readonly string[] JtOffsetKeys = { "JtOffsetXI", "JtOffsetYI", "JtOffsetZI", "JtOffsetXJ", "JtOffsetYJ", "JtOffsetZJ" };
+    public string JointOffsetSys { get { var r = Rec(Insertion); return r == null || !JtOffsetKeys.Any(r.Has) ? "" : r.Get("CoordSys") ?? "GLOBAL"; } }
+    public double[] JointOffsets { get { var r = Rec(Insertion); var o = new double[6]; for (int i = 0; i < 6; i++) o[i] = r == null ? 0 : r.Num(JtOffsetKeys[i], 0); return o; } }
+    // set them in local 1 2 3 (CoordSys=Local); all zero removes them
+    public void SetJointOffsets(double[] v)
+    {
+        var r = Rec(Insertion);
+        bool none = v.All(q => q == 0);
+        if (none)
+        {
+            if (r == null) return;
+            if (JtOffsetKeys.Any(r.Has)) { r.Remove("CoordSys"); foreach (string k in JtOffsetKeys) r.Remove(k); }
+            return;
+        }
+        if (JointOffsetSys.Equals("Local", StringComparison.OrdinalIgnoreCase) && JointOffsets.SequenceEqual(v)) return;
+        r = Need(Insertion);
+        // SAP's order: CardinalPt CoordSys JtOffsetXI ... JtOffsetZJ Mirror2 ...
+        int at = r.F.FindIndex(f => string.Equals(f[0], "CardinalPt", StringComparison.OrdinalIgnoreCase)) + 1;
+        if (!r.Has("CoordSys")) r.F.Insert(at, new[] { "CoordSys", "Local" }); else r.Set("CoordSys", "Local");
+        at = r.F.FindIndex(f => string.Equals(f[0], "CoordSys", StringComparison.OrdinalIgnoreCase)) + 1;
+        for (int i = 0; i < 6; i++)
+        {
+            if (r.Has(JtOffsetKeys[i])) r.SetNum(JtOffsetKeys[i], v[i]);
+            else r.F.Insert(at, new[] { JtOffsetKeys[i], FrameModel.Fmt(v[i]) });
+            at = r.F.FindIndex(f => string.Equals(f[0], JtOffsetKeys[i], StringComparison.OrdinalIgnoreCase)) + 1;
+        }
+    }
+
     // property modifiers AMod..WMod (1 = none)
     public double[] PropertyModifiers
     {
@@ -301,12 +331,48 @@ public sealed class FrameLinkProp : FrameObj
     public override string KeyField { get { return "Link"; } }
     public override string MainTable { get { return General; } }
     public string LinkType { get { var r = Rec(General); return r == null ? "" : r.Get("LinkType") ?? ""; } set { if (LinkType != value) Need(General).Set("LinkType", value); } }
-    // the per-DOF rows: every row it owns outside its general table that names a DOF
-    public IEnumerable<FrameRec> DofRows { get { foreach (var r in Recs) if (r.Has("DOF") && !string.Equals(r.Table, General, StringComparison.OrdinalIgnoreCase)) yield return r; } }
+    // the per-DOF rows: every row it owns outside its general table that names a DOF, a multilinear curve's further
+    // points aside
+    public IEnumerable<FrameRec> DofRows { get { foreach (var r in Recs) if (r.Has("DOF") && !string.Equals(r.Table, General, StringComparison.OrdinalIgnoreCase) && !IsPointRow(r)) yield return r; } }
     public FrameRec DofRow(string dof) { foreach (var r in DofRows) if (string.Equals(r.Get("DOF"), dof, StringComparison.OrdinalIgnoreCase)) return r; return null; }
 
-    // the table a link type's DOF rows go in: SAP 24's numbering (its export, 2026-11-05). 02, 05 and 06 are confirmed;
-    // 03, 04 and 08 are the tables SAP lists for those types, their fields still to confirm (vault/format/sap-s2k-tables.md)
+    // a multilinear curve is one row per point (SAP 24.2's export, probe round 2): Link DOF Point Force Displ; the first
+    // point is on the DOF row itself (Link DOF Fixed NonLinear TransKE TransCE DJ Point Force Displ)
+    public static bool IsPointRow(FrameRec r) { return r.Has("Point") && !r.Has("Fixed"); }
+    IEnumerable<FrameRec> PointRows(string dof)
+    {
+        foreach (var r in Recs)
+            if (r.Has("Point") && string.Equals(r.Get("DOF"), dof, StringComparison.OrdinalIgnoreCase) && !string.Equals(r.Table, General, StringComparison.OrdinalIgnoreCase)) yield return r;
+    }
+    // a DOF's curve points, {Force, Displ} as written, in order
+    public List<string[]> Points(string dof) { return PointRows(dof).Select(r => new[] { r.Get("Force") ?? "0", r.Get("Displ") ?? "0" }).ToList(); }
+    // set a DOF's curve ({force, displacement} each): points the same stay as written, further ones are rows after the
+    // DOF's last, fewer drop the rows at the end
+    public void SetPoints(string dof, IList<double[]> pts)
+    {
+        var d = DofRow(dof);
+        if (d == null) throw new InvalidOperationException("FrameLinkProp: " + Label + " has no " + dof + " row for its points");
+        var have = PointRows(dof).ToList();
+        if (have.Count > 0 && have[0] != d) throw new InvalidOperationException("FrameLinkProp: " + Label + " " + dof + ": the first point is not on the DOF row");
+        for (int i = 0; i < Math.Min(have.Count, pts.Count); i++) have[i].SetNum("Force", pts[i][0]).SetNum("Displ", pts[i][1]);
+        for (int i = pts.Count; i < have.Count; i++)
+        {
+            if (i == 0) { d.Remove("Point"); d.Remove("Force"); d.Remove("Displ"); }
+            else Recs.Remove(have[i]);
+        }
+        var last = have.Count > 0 && pts.Count >= have.Count ? have[have.Count - 1] : d;
+        for (int i = have.Count; i < pts.Count; i++)
+        {
+            string n = (i + 1).ToString(CultureInfo.InvariantCulture);
+            if (i == 0) { d.Set("Point", n).Set("Force", FrameModel.Fmt(pts[i][0])).Set("Displ", FrameModel.Fmt(pts[i][1])); continue; }
+            var r = new FrameRec(d.Table).Set("Link", Label).Set("DOF", d.Get("DOF")).Set("Point", n).Set("Force", FrameModel.Fmt(pts[i][0])).Set("Displ", FrameModel.Fmt(pts[i][1]));
+            Recs.Insert(Recs.IndexOf(last) + 1, r);
+            last = r;
+        }
+    }
+
+    // the table a link type's DOF rows go in: SAP 24's numbering, every one confirmed by SAP 24.2's export (probe rounds
+    // 1 and 2, 2026-11-05; vault/format/sap-s2k-tables.md) but multilinear plastic's (11)
     public static string DofTable(string linkType)
     {
         string t = (linkType ?? "").ToLowerInvariant();
@@ -314,9 +380,10 @@ public sealed class FrameLinkProp : FrameObj
         if (t == "hook") return "LINK PROPERTY DEFINITIONS 06 - HOOK";
         if (t.Contains("damper")) return "LINK PROPERTY DEFINITIONS 04 - DAMPER";
         if (t.Contains("friction") || t.Contains("sliding")) return "LINK PROPERTY DEFINITIONS 08 - SLIDING ISOLATOR";
-        if (t.Contains("multilinear")) return "LINK PROPERTY DEFINITIONS 03 - MULTILINEAR";
+        if (t.Contains("multilinear")) return t.Contains("plastic") ? "LINK PROPERTY DEFINITIONS 11 - MULTILINEAR PLASTIC" : "LINK PROPERTY DEFINITIONS 03 - MULTILINEAR";
         return "LINK PROPERTY DEFINITIONS 02 - LINEAR";
     }
+    public static bool IsMultilinear(string linkType) { return (linkType ?? "").IndexOf("multilinear", StringComparison.OrdinalIgnoreCase) >= 0; }
 
     // the field a DOF row's opening is in: SAP writes TransOpen / RotOpen; older files have Open (SAP ignores it)
     public static string OpenField(FrameRec d)
@@ -597,7 +664,7 @@ public sealed class FrameModel
         { FrameMember.LocalAxes, new[] { "Angle", "0", "AdvanceAxes", "No" } },
         { FrameMember.Release, new[] { "PI", "No", "V2I", "No", "V3I", "No", "TI", "No", "M2I", "No", "M3I", "No", "PJ", "No", "V2J", "No", "V3J", "No", "TJ", "No", "M2J", "No", "M3J", "No", "PartialFix", "No" } },
         { FrameMember.Partial, new string[0] },
-        { FrameMember.Insertion, new[] { "CardinalPt", "10 (centroid)", "Mirror2", "No", "Mirror3", "No", "Transform", "Yes", "CoordSys", "Local", "Offset1I", "0", "Offset2I", "0", "Offset3I", "0", "Offset1J", "0", "Offset2J", "0", "Offset3J", "0" } },
+        { FrameMember.Insertion, new[] { "CardinalPt", "10 (centroid)", "Mirror2", "No", "Mirror3", "No", "Transform", "Yes" } },
         { FrameMember.Modifiers, new[] { "AMod", "1", "AS2Mod", "1", "AS3Mod", "1", "JMod", "1", "I22Mod", "1", "I33Mod", "1", "MassMod", "1", "WeightMod", "1" } },
         { FrameSection.General, new[] { "Material", "", "Shape", "", "Color", "Green" } },
         { FrameMaterial.General, new[] { "Type", "Steel", "SymType", "Isotropic", "TempDepend", "No", "Color", "Blue" } },

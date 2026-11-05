@@ -5,8 +5,8 @@ using System.Collections.Generic;
 // field it does not know without a word, so a table counts as confirmed only once SAP has imported it and exported it
 // again: the proven Pluto writers (the tank builder's golden file, SapSession's test beam) and SAP's own exports. New
 // rows in any other table are still written, with a notice (FrameS2k.ToDoc): the SAP probe (FrameProbe,
-// Build-Frame.ps1 -Probe / -ProbeCheck) settles the rest, and its results move tables into this list. Still open
-// (2026-11-05): the multilinear, damper and sliding-isolator DOF tables (03, 04, 08), which SAP's export listed empty.
+// Build-Frame.ps1 -Probe / -ProbeCheck) settles the rest, and its results move tables into this list. Round 2
+// (2026-11-05) confirmed the last link DOF tables Pluto writes: multilinear (03), damper (04), sliding isolator (08).
 // C# 5 (prefix Frame).
 
 public static class FrameS2kSchema
@@ -25,6 +25,8 @@ public static class FrameS2kSchema
         "FRAME PROPERTY MODIFIERS", "FRAME RELEASE ASSIGNMENTS 1 - GENERAL", "FRAME RELEASE ASSIGNMENTS 2 - PARTIAL FIXITY", "FRAME OFFSET ALONG LENGTH ASSIGNMENTS",
         "FRAME LOADS - POINT", "FRAME LOADS - DISTRIBUTED", "FRAME LOADS - TEMPERATURE", "LINK PROPERTY DEFINITIONS 02 - LINEAR", "LINK PROPERTY DEFINITIONS 06 - HOOK",
         "LINK LOCAL AXES ASSIGNMENTS 1 - TYPICAL",
+        // probe round 2 (2026-11-05): multilinear points, the damper's CExp, the sliding isolator as written
+        "LINK PROPERTY DEFINITIONS 03 - MULTILINEAR", "LINK PROPERTY DEFINITIONS 04 - DAMPER", "LINK PROPERTY DEFINITIONS 08 - SLIDING ISOLATOR",
     };
 
     public static bool Confirmed(string table) { return Proven.Contains(table ?? ""); }

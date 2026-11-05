@@ -299,7 +299,8 @@ public static class FrameWorkbook
 
         // ---- Frames
         var fs = b.Add(SFrames);
-        var fh = new[] { "Id", "Frame", "Joint I", "Joint J", H("Length", "L", units), "Section", "Kind", "Line", "Release", H("Angle", "deg", ""), "Insertion", "Modifiers" };
+        var fh = new[] { "Id", "Frame", "Joint I", "Joint J", H("Length", "L", units), "Section", "Kind", "Line", "Release", H("Angle", "deg", ""), "Insertion", "Modifiers",
+                         H("Offset I", "L", units), H("Offset J", "L", units) };
         fs.FreezeCols = 2;
         var pos = new Dictionary<string, double[]>(StringComparer.Ordinal);
         foreach (var j in m.Joints) pos[j.Label] = j.Xyz;
@@ -313,6 +314,7 @@ public static class FrameWorkbook
             if (f.Angle != 0) fs.Set(r0, 9, f.Angle);
             if (f.CardinalPoint != 10) fs.Set(r0, 10, FrameMember.CardinalText(f.CardinalPoint));
             if (modOf[f].Length > 0) fs.Set(r0, 11, modOf[f]);
+            for (int e = 0; e < 2; e++) { string ot = OffsetText(f, e); if (ot.Length > 0) fs.Set(r0, 12 + e, ot); }
             r0++;
         }
         for (int r = 1; r < m.Frames.Count + 201; r++)
@@ -342,13 +344,15 @@ public static class FrameWorkbook
             C("Angle", "geom", "num", "Local axis angle (degrees): local 2 and 3 turned about local 1 from SAP's default."),
             L("Insertion", "prop", "list!", ListRange(1), "Cardinal point: where the joint sits on the section (10 = centroid, 8 = top center ...)."),
             L("Modifiers", "prop", "list!", modNames, "Property modifiers: a preset on the Modifiers sheet. Blank = none."),
+            C("Offset I", "geom", "text", "Joint offset of the insertion point at end I: three numbers along local 1 2 3 (\"0 0 6\"). Blank = none. An offset SAP holds in another system shows it (\"GLOBAL: 0 6 0\"): change it in SAP, or give local values."),
+            C("Offset J", "geom", "text", "Joint offset at end J, as Offset I."),
         }, m.Frames.Count, lim);
         fs.Conditional("C2:D" + lim, "AND(C2<>\"\",COUNTIF(" + jointIds + ",C2)=0)", t.Red);
         fs.Conditional("C2:D" + lim, "AND($C2<>\"\",$C2=$D2)", t.Red);
         fs.Conditional("B2:B" + lim, "AND(B2<>\"\",COUNTIF($B$2:$B$" + lim + ",B2)>1)", t.Red);
         fs.Conditional("E2:E" + lim, "AND(ISNUMBER(E2),E2=0)", t.Amber);
         fs.Width(0, 8); fs.Width(1, 10); fs.Width(2, 9); fs.Width(3, 9); fs.Width(4, 11); fs.Width(5, 16); fs.Width(6, 10); fs.Width(7, 10);
-        fs.Width(8, 10); fs.Width(9, 10); fs.Width(10, 16); fs.Width(11, 11);
+        fs.Width(8, 10); fs.Width(9, 10); fs.Width(10, 16); fs.Width(11, 11); fs.Width(12, 14); fs.Width(13, 14);
 
         // ---- Sections
         var ss = b.Add(SSections);
@@ -443,7 +447,7 @@ public static class FrameWorkbook
 
         // ---- Link props (one row per DOF)
         var lp = b.Add(SLinkProps);
-        var lph = new[] { "Id", "Name", "Type", "DOF", "Fixed", "NonLinear", "KE", "CE", "K", "C", "CExp", "Open", "Mu slow", "Mu fast", "Rate", "Radius" };
+        var lph = new[] { "Id", "Name", "Type", "DOF", "Fixed", "NonLinear", "KE", "CE", "K", "C", "CExp", "Open", "Mu slow", "Mu fast", "Rate", "Radius", "Points" };
         string[] lpk = { "KE", "CE", "K", "C", "CExp", "Open", "Slow", "Fast", "Rate", "Radius" };
         r0 = 1;
         int lpRows = 0;
@@ -458,9 +462,11 @@ public static class FrameWorkbook
                 lp.Set(r0, 3, d.Get("DOF") ?? ""); lp.Set(r0, 4, d.Yes("Fixed") ? "yes" : "no"); if (d.Has("NonLinear")) lp.Set(r0, 5, d.Yes("NonLinear") ? "yes" : "no");
                 for (int k = 0; k < lpk.Length; k++)
                 {
-                    string fld = k < 5 ? (rot ? "Rot" : "Trans") + lpk[k] : k == 5 ? FrameLinkProp.OpenField(d) : lpk[k];
+                    string fld = LinkField(lpk[k], rot, d);
                     if (d.Has(fld)) Num(lp, r0, 6 + k, d.Get(fld));
                 }
+                var pts = p.Points(d.Get("DOF") ?? "");
+                if (pts.Count > 0) lp.Set(r0, 16, string.Join("; ", pts.Select(q => q[0] + ", " + q[1]).ToArray()));
                 r0++; lpRows++;
             }
         }
@@ -473,6 +479,7 @@ public static class FrameWorkbook
             C("K", "bc", "num", "Nonlinear stiffness (gap, hook, friction: the contact / elastic stiffness)."), C("C", "bc", "num", "Damper coefficient."), C("CExp", "bc", "num", "Damper exponent."),
             C("Open", "bc", "num", "Gap / hook opening (length)."), C("Mu slow", "bc", "num", "Friction coefficient, slow."), C("Mu fast", "bc", "num", "Friction coefficient, fast."),
             C("Rate", "bc", "num", "Friction rate parameter."), C("Radius", "bc", "num", "Friction isolator radius (0 = flat)."),
+            C("Points", "bc", "text", "MultiLinear: the force-deformation curve as force, displacement pairs (\"-12, -2; 0, 0; 12, 2\"): at least three, displacements increasing, through 0, 0."),
         }, lpRows, lim);
 
         // ---- Springs (per joint)
@@ -1244,11 +1251,56 @@ public static class FrameWorkbook
             if (mn.Length == 0) { if (!f.PropertyModifiers.All(v => v == 1)) f.PropertyModifiers = null; }
             else if (!mod.TryGetValue(mn, out p0)) x.Err(At(c, r, "Modifiers") + ": no modifiers preset " + mn + " on Modifiers" + Hint(mn, mod.Keys));
             else if (!f.PropertyModifiers.SequenceEqual(p0.Val)) f.PropertyModifiers = p0.Val;
+            ReadOffsets(c, r, x, f);
         }
         return order;
     }
 
     static int LeadNumber(string s) { int n = 0, i = 0; while (i < s.Length && char.IsDigit(s[i])) { n = n * 10 + (s[i] - '0'); i++; } return i == 0 ? -1 : n; }
+
+    // a frame's joint offsets as the Frames sheet shows them, end 0 = I, 1 = J: "1 2 3" in local 1 2 3, as written; an
+    // offset SAP holds in another system with that system first ("GLOBAL: 1 2 3"); "" for none
+    static string OffsetText(FrameMember f, int end)
+    {
+        string sys = f.JointOffsetSys;
+        if (sys.Length == 0) return "";
+        var r = f.Rec(FrameMember.Insertion);
+        var v = Enumerable.Range(0, 3).Select(i => r.Get(FrameMember.JtOffsetKeys[end * 3 + i]) ?? "0").ToArray();
+        double d;
+        if (v.All(q => double.TryParse(q, NumberStyles.Float, Inv, out d) && d == 0)) return "";
+        string t = string.Join(" ", v);
+        return sys.Equals("Local", StringComparison.OrdinalIgnoreCase) ? t : sys + ": " + t;
+    }
+
+    static void ReadOffsets(WbCols c, int r, Ctx x, FrameMember f)
+    {
+        if (!c.At.ContainsKey("Offset I") && !c.At.ContainsKey("Offset J")) return;
+        string[] cell = { Text(c, r, "Offset I", x).Trim(), Text(c, r, "Offset J", x).Trim() };
+        string sys = f.JointOffsetSys;
+        bool local = sys.Length == 0 || sys.Equals("Local", StringComparison.OrdinalIgnoreCase);
+        // an offset in another system, shown as it is: left as SAP has it
+        if (!local && cell[0] == OffsetText(f, 0) && cell[1] == OffsetText(f, 1)) return;
+        var want = new double[6];
+        for (int e = 0; e < 2; e++)
+        {
+            string col = e == 0 ? "Offset I" : "Offset J", t = cell[e];
+            if (t.Length == 0) continue;
+            if (t.IndexOf(':') >= 0) { x.Err(At(c, r, col) + ": \"" + t + "\": only offsets along local 1 2 3 are edited here (three numbers); one in another system stays as SAP has it, so change it in SAP"); return; }
+            var parts = t.Split(new[] { ' ', ',', ';', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+            double f0 = 1;
+            string unit;
+            if (c.Unit.TryGetValue(c.At[col], out unit)) f0 = FrameUnits.Factor(unit, "L", x.Units);
+            if (double.IsNaN(f0)) { x.Err(c.S.Name + "!" + XlsxBook.Ref(0, c.At[col]) + ": the unit \"" + unit + "\" (this column takes " + FrameUnits.Label("L", x.Units) + " or another length)"); return; }
+            for (int i = 0; i < 3; i++)
+            {
+                double v;
+                if (parts.Length != 3 || !double.TryParse(parts[i], NumberStyles.Float, Inv, out v)) { x.Err(At(c, r, col) + ": three numbers along local 1 2 3 (\"" + t + "\")"); return; }
+                want[e * 3 + i] = FrameUnits.Converted(v, f0);
+            }
+        }
+        if (local && f.JointOffsets.SequenceEqual(want)) return;
+        f.SetJointOffsets(want);
+    }
 
     static void ReadLinkProps(CaesarSheet s, Ctx x)
     {
@@ -1257,7 +1309,13 @@ public static class FrameWorkbook
         string[] keys = { "KE", "CE", "K", "C", "CExp", "Open", "Mu slow", "Mu fast", "Rate", "Radius" }, flds = { "KE", "CE", "K", "C", "CExp", "Open", "Slow", "Fast", "Rate", "Radius" };
         FrameLinkProp cur = null;
         var done = new HashSet<FrameRec>();
-        Action finish = () => { if (cur != null) cur.Recs.RemoveAll(q => q.Has("DOF") && q.Table != FrameLinkProp.General && !done.Contains(q)); };
+        // the DOF rows the sheet no longer has go, with their curve points
+        Action finish = () =>
+        {
+            if (cur == null) return;
+            var kept = new HashSet<string>(done.Select(d => (d.Get("DOF") ?? "").ToUpperInvariant()));
+            cur.Recs.RemoveAll(q => q.Has("DOF") && q.Table != FrameLinkProp.General && !done.Contains(q) && !(FrameLinkProp.IsPointRow(q) && kept.Contains((q.Get("DOF") ?? "").ToUpperInvariant())));
+        };
         foreach (int r in Rows(c))
         {
             string name = Text(c, r, "Name", x);
@@ -1265,7 +1323,14 @@ public static class FrameWorkbook
             {
                 finish();
                 cur = Take<FrameLinkProp>(c, r, x, "linkprop", name, "Name", () => new FrameLinkProp());
-                string ty = Text(c, r, "Type", x); if (ty.Length > 0) cur.LinkType = ty;
+                string ty = Text(c, r, "Type", x);
+                if (ty.Length > 0 && ty != cur.LinkType)
+                {
+                    bool had = cur.LinkType.Length > 0;
+                    cur.LinkType = ty;
+                    // a type changed: its DOF rows (and points) move to the new type's table
+                    if (had) foreach (var q in cur.Recs) if (q.Has("DOF") && q.Table != FrameLinkProp.General) q.Table = FrameLinkProp.DofTable(ty);
+                }
             }
             else if (cur == null) { x.Err(At(c, r, "Name") + ": a DOF row with no property above it"); continue; }
             string dof = Text(c, r, "DOF", x).ToUpperInvariant();
@@ -1276,18 +1341,63 @@ public static class FrameWorkbook
             done.Add(d);
             bool rot = dof.StartsWith("R");
             d.SetYes("Fixed", YesNo(c, r, "Fixed", x, false));
-            if (c.At.ContainsKey("NonLinear") && (d.Has("NonLinear") || Text(c, r, "NonLinear", x).Length > 0)) d.SetYes("NonLinear", YesNo(c, r, "NonLinear", x, false));
+            if (c.At.ContainsKey("NonLinear") && (d.Has("NonLinear") || Text(c, r, "NonLinear", x).Length > 0))
+            {
+                // SAP's order: Link DOF Fixed NonLinear ...
+                if (!d.Has("NonLinear")) d.F.Insert(d.F.FindIndex(q => q[0] == "Fixed") + 1, new[] { "NonLinear", "No" });
+                d.SetYes("NonLinear", YesNo(c, r, "NonLinear", x, false));
+            }
             for (int k = 0; k < keys.Length; k++)
             {
                 double v = Num(c, r, keys[k], x, null);
-                string fld = k < 5 ? (rot ? "Rot" : "Trans") + flds[k] : k == 5 ? FrameLinkProp.OpenField(d) : flds[k];
+                string fld = LinkField(flds[k], rot, d);
                 if (double.IsNaN(v)) continue;
                 // an opening in the old Open field (SAP ignores it) moves to TransOpen / RotOpen when it changes
                 if (fld == "Open" && d.Num("Open", double.NaN) != v) { d.Remove("Open"); fld = rot ? "RotOpen" : "TransOpen"; }
                 d.SetNum(fld, v);
             }
+            ReadPoints(c, r, x, cur, d, dof);
         }
         finish();
+    }
+
+    // a Link props column's field on a DOF row: KE CE K C carry Trans / Rot; CExp is plain (SAP 24.2, probe round 2); the
+    // opening is TransOpen / RotOpen (or an older file's Open); the friction fields are plain
+    static string LinkField(string key, bool rot, FrameRec d)
+    {
+        if (key == "KE" || key == "CE" || key == "K" || key == "C") return (rot ? "Rot" : "Trans") + key;
+        return key == "Open" ? FrameLinkProp.OpenField(d) : key;
+    }
+
+    // a multilinear DOF's curve: "force, displacement; ..." (SAP: at least three points, else its import makes the DOF
+    // linear; displacements increasing; through the origin)
+    static void ReadPoints(WbCols c, int r, Ctx x, FrameLinkProp p, FrameRec d, string dof)
+    {
+        if (!c.At.ContainsKey("Points")) return;
+        string t = Text(c, r, "Points", x).Trim();
+        var pts = new List<double[]>();
+        foreach (string pair in t.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+        {
+            var q = pair.Split(new[] { ',', ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+            double fo, di;
+            if (q.Length != 2 || !double.TryParse(q[0], NumberStyles.Float, Inv, out fo) || !double.TryParse(q[1], NumberStyles.Float, Inv, out di))
+            { x.Err(At(c, r, "Points") + ": force, displacement pairs separated by ';' (\"" + pair.Trim() + "\")"); return; }
+            pts.Add(new[] { fo, di });
+        }
+        bool multi = FrameLinkProp.IsMultilinear(p.LinkType);
+        if (pts.Count > 0 && !multi) { x.Err(At(c, r, "Points") + ": a curve is for a MultiLinear property (" + p.Label + " is " + p.LinkType + ")"); return; }
+        if (multi && d.Yes("NonLinear") && !d.Yes("Fixed"))
+        {
+            if (pts.Count < 3) { x.Err(At(c, r, "Points") + ": " + p.Label + " " + dof + " is nonlinear: SAP needs at least three force, displacement points (with fewer its import makes the DOF linear)"); return; }
+            for (int i = 1; i < pts.Count; i++)
+                if (pts[i][1] <= pts[i - 1][1]) { x.Err(At(c, r, "Points") + ": the displacements must increase (" + FrameModel.Fmt(pts[i - 1][1]) + " then " + FrameModel.Fmt(pts[i][1]) + ")"); return; }
+            if (!pts.Any(q => q[0] == 0 && q[1] == 0)) x.Warnings.Add(At(c, r, "Points") + ": " + p.Label + " " + dof + "'s curve does not pass through 0, 0, which SAP's multilinear elastic link expects");
+        }
+        var have = p.Points(dof);
+        double hv;
+        bool same = have.Count == pts.Count && have.Select((q, i) => double.TryParse(q[0], NumberStyles.Float, Inv, out hv) && hv == pts[i][0] &&
+                                                                     double.TryParse(q[1], NumberStyles.Float, Inv, out hv) && hv == pts[i][1]).All(b => b);
+        if (!same) p.SetPoints(dof, pts);
     }
 
     static void ReadLinks(CaesarSheet s, Ctx x)

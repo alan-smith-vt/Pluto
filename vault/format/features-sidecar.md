@@ -333,7 +333,8 @@ A SAP model's two-joint link elements: gaps, hooks, springs, friction isolators,
   (SAP's default), turned by the link's angle.
 - **`dofs`:** one entry per DOF the property sets (`U1`…`R3`). Each has `fixed` and `nonlinear`, and as SAP has them `ke`
   (effective stiffness), `ce` (effective damping), `k` (nonlinear stiffness), `open` (gap or hook opening),
-  `muSlow` / `muFast` and `radius` (friction isolator). Units are the file's (`model.units`).
+  `muSlow` / `muFast` and `radius` (friction isolator), `c` and `cexp` (damper coefficient and exponent), `points`
+  (a multilinear curve: `[{"f": force, "d": displacement}, …]` in SAP's order). Units are the file's (`model.units`).
 - **Member end releases are not here.** They are geometry in the binary (BPRP slot 7,
   [[vault/format/v4-schema|v4-schema]] §4.3), drawn by `viewer/scripts/releases.js` (the **Releases** panel).
 

@@ -65,6 +65,14 @@ public sealed class S2kRow
         Bare[i] = false;
         Dirty = true;
     }
+    // a field set; when absent it goes right after `after` (at the end when that is absent too), the order SAP writes
+    public void SetAfter(string after, string key, string value)
+    {
+        if (Has(key) || after == null || !Has(after)) { Set(key, value); return; }
+        int i = IndexOf(after) + 1;
+        Keys.Insert(i, key); Values.Insert(i, value ?? ""); Quoted.Insert(i, false); Bare.Insert(i, false);
+        Dirty = true;
+    }
     public void Remove(string key)
     {
         int i = IndexOf(key);

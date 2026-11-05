@@ -49,9 +49,9 @@ the confirmed tables; new rows anywhere else carry an `s2k-unconfirmed` notice.
 >   `JointJ = JointI`; SAP exports it with `LinkJoints=SingleJoint`.
 > - **The multilinear elastic, friction isolator and damper DOF rows.** The table names were guesses. SAP 24's are
 >   `03 - MULTILINEAR`, `08 - SLIDING ISOLATOR` and `04 - DAMPER` (also `13 - LINEAR EXPONENTIAL DAMPER`,
->   `14 - BILINEAR DAMPER` …). Their fields are still to confirm: round 2.
+>   `14 - BILINEAR DAMPER` …). Their fields: round 2, below.
 > - **Explicit insertion offsets.** `FRAME INSERTION POINT ASSIGNMENTS` came back with `Frame CardinalPt Mirror2 Mirror3
->   Transform` only; the offset fields' names are still to learn.
+>   Transform` only; the offset fields' names: round 2, below.
 > - **The catalog section** (`FromFile=Yes FileName=AISC16.xml SectInFile=W12X26`): "Unable to open property file or
 >   section not found", and SAP substituted a default General section. The workbook only carries catalog sections from
 >   SAP's own exports.
@@ -64,15 +64,40 @@ the confirmed tables; new rows anywhere else carry an `s2k-unconfirmed` notice.
 > assignments' `LinkType`, `LinkJoints` and `PropMod`, connectivity `Length` and centroids, case design fields,
 > `JtPattern` on temperature loads.
 
-> [!info]- Round 2 (to run)
-> `Build-Frame.ps1 -Probe <folder>` now writes round 2:
-> - the corrected names above, to see them read;
-> - the multilinear, sliding isolator and damper rows in `03`, `04` and `08`, to see their fields.
+> [!info]- Round 2: SAP 24.2.0, 2026-11-05
+> The round-2 probe was imported as a new model in SAP 24.2.0. In SAP, frame 7 was given joint offsets (Local: 1 2 3 at
+> I, 4 5 6 at J) and L_MLE a five-point curve; the model was then exported with every table. The scrubbed export is
+> now the fixture `scripts/frame/testdata/probe.sap-export.s2k` (the first-line path and the licence number replaced).
+> `-ProbeCheck`: 1,189 fields as written, 5 changed, 1 missing. Everything round 1 corrected was read as Pluto now
+> writes it.
 >
-> Two things are easier set in SAP before exporting:
-> 1. **Frame 7:** Assign > Frame > Insertion Point, joint offsets (Local), I end 1 2 3 and J end 4 5 6. This shows the
->    offset fields' names.
-> 2. **Link property L_MLE:** Define > Section Properties > Link/Support Properties, U2 nonlinear, three or four
->    force–deformation points. This shows where SAP keeps the points.
+> **Confirmed** (now in `FrameS2kSchema`):
 >
-> Then export with every table and run `-ProbeCheck`.
+> | Table | Fields, in SAP's order |
+> |---|---|
+> | `LINK PROPERTY DEFINITIONS 03 - MULTILINEAR` | `Link DOF Fixed NonLinear TransKE TransCE DJ Point Force Displ` on the first row, then one row per further point: `Link DOF Point Force Displ` |
+> | `LINK PROPERTY DEFINITIONS 04 - DAMPER` | `Link DOF Fixed NonLinear TransKE TransCE TransK TransC CExp FLDamper` |
+> | `LINK PROPERTY DEFINITIONS 08 - SLIDING ISOLATOR` | `Link DOF Fixed NonLinear TransKE TransCE DJ TransK Slow Fast Rate Radius` (U1 without the friction fields) |
+> | `FRAME INSERTION POINT ASSIGNMENTS` | `Frame CardinalPt CoordSys JtOffsetXI JtOffsetYI JtOffsetZI JtOffsetXJ JtOffsetYJ JtOffsetZJ Mirror2 Mirror3 Transform`; with `CoordSys=Local`, X Y Z are local 1 2 3; no offsets: no `CoordSys` and no `JtOffset` fields |
+>
+> **Findings:**
+> - **The damper exponent is `CExp`,** with no Trans / Rot prefix. Pluto's `TransCExp` was dropped and SAP used 1.
+> - **A multilinear DOF needs at least three points.** With only one, SAP's import made the DOF linear (log error
+>   11). The workbook refuses fewer than three on a nonlinear DOF, and displacements that do not increase.
+> - **A General section's `S33Top` and `S22Left` came back 0.** `S33Bot` and `S22Right` were kept. In round 1,
+>   `S33` / `S22` set both faces. So SAP 24.2 does not read `S33Top` / `S22Left` on import, although it exports them.
+>   The probe writes `S33` / `S22` again. A `.s2k` holding a General section with `S33Top` / `S22Left` gets an
+>   `s2k-general-moduli` notice: check its section moduli in SAP after the import. The viewer takes the smaller
+>   nonzero face.
+> - **Defaults SAP filled** (warnings): `FLDamper` (Yes), and `03A`'s stress-strain fields as in round 1. Errors
+>   1–10 are SAP's own design tables again.
+>
+> **What Pluto does with them:**
+> - `FrameLinkProp`: `Points(dof)` / `SetPoints`. A curve's further points are not DOF rows.
+> - The Link props sheet has a **Points** column (`force, displacement; …`). The **CExp** column is SAP's plain
+>   `CExp`.
+> - A property whose type changes moves its DOF rows to the new type's table.
+> - `FrameMember.JointOffsets`: the Frames sheet has **Offset I** / **Offset J** columns (`1 2 3` along local 1 2 3).
+>   An offset SAP holds in another system shows as `GLOBAL: 1 2 3` and is carried unchanged.
+> - The viewer draws the offsets (`SapToPluto.EndOffset` reads `JtOffset…`). Its link card shows `c`, `exp` and the
+>   curve's `(d, F)` points.

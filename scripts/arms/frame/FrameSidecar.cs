@@ -225,6 +225,9 @@ public static class FrameSidecar
             Action<string, string> num = (key, field) => { if (r.Has(field)) f.Add("\"" + key + "\": " + N(r.Num(field, 0))); };
             num("ke", rot ? "RotKE" : "TransKE"); num("ce", rot ? "RotCE" : "TransCE"); num("k", rot ? "RotK" : "TransK");
             num("open", FrameLinkProp.OpenField(r)); num("muSlow", "Slow"); num("muFast", "Fast"); num("radius", "Radius");
+            num("c", rot ? "RotC" : "TransC"); num("cexp", "CExp");
+            var pts = p.Points(dn);
+            if (pts.Count > 0) f.Add("\"points\": [" + string.Join(", ", pts.Select(q => "{\"f\": " + N(Dbl(q[0])) + ", \"d\": " + N(Dbl(q[1])) + "}").ToArray()) + "]");
             parts.Add(Q(dn) + ": {" + string.Join(", ", f.ToArray()) + "}");
         }
         return string.Join(", ", parts.ToArray());
@@ -387,6 +390,7 @@ public static class FrameSidecar
         return sb.Append('"').ToString();
     }
     static string N(double v) { return double.IsNaN(v) || double.IsInfinity(v) ? "null" : FrameModel.Fmt(v); }
+    static double Dbl(string t) { double v; return double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out v) ? v : double.NaN; }
     // a derived number (a length, a difference of coordinates): 12 digits, so 0.4557673999999992 reads 0.4557674
     static string G(double v) { return double.IsNaN(v) || double.IsInfinity(v) ? "null" : (Math.Abs(v) < 1e-12 ? 0 : v).ToString("G12", Inv); }
     static string V(double[] d) { return "[" + N(Round(d[0])) + ", " + N(Round(d[1])) + ", " + N(Round(d[2])) + "]"; }

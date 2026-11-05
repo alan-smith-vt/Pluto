@@ -62,8 +62,8 @@ const LINKS = { version: 1, items: [
   item('K3', 'hook', [14, 15], Z, X, { length: 12 }),
   item('K4', 'friction', [16, 17], X, Z, { length: 12, linkType: 'Friction Isolator',
     dofs: { U1: { fixed: false, nonlinear: true, ke: 1000, k: 1001 }, U2: { fixed: false, nonlinear: true, ke: 10, k: 11, muSlow: 0.3, muFast: 0.4, radius: 0 } } }),
-  item('K5', 'multilinear', [18, 19], X, Z, { length: 12 }),
-  item('K6', 'damper', [20, 21], X, Z, { length: 12 }),
+  item('K5', 'multilinear', [18, 19], X, Z, { length: 12, dofs: { U2: { fixed: false, nonlinear: true, ke: 505, points: [{ f: -1, d: -10 }, { f: 0, d: 0 }, { f: 1, d: 10 }] } } }),
+  item('K6', 'damper', [20, 21], X, Z, { length: 12, dofs: { U1: { fixed: false, nonlinear: true, ke: 12, k: 1212, c: 5.5, cexp: 0.5 } } }),
   item('K7', 'weird', [22, 23], X, Z, { length: 12, linkType: 'Something Else' }),
   item('K8', 'linear', [2, 3], Z, X, { length: 3 }),
   item('K9', 'gap', [10, 11], X, Z, { length: 12, hidden: true }),
@@ -143,6 +143,8 @@ const axisOf = (pt, local) => new THREE.Vector3(local[0], local[1], local[2]).ap
   assert(t0 === 'K1 GAPP: gap, property GAPP, length 12 in; U1 nonlinear, ke 100, k 200, open 0.5', 'text(0): ' + t0);
   assert(t3.indexOf('friction (Friction Isolator)') > 0 && t3.indexOf('U2 nonlinear, ke 10, k 11, \u03bc slow 0.3, \u03bc fast 0.4, radius 0') > 0, 'text(3): the type, SAP\'s name and the friction values');
   assert(S.text(1).indexOf('zero length; U1 linear, ke 111, ce 0; U2 fixed') > 0, 'text(1): zero length, a fixed DOF');
+  assert(S.text(4).indexOf('U2 nonlinear, ke 505, points (d, F) (-10, -1) (0, 0) (10, 1)') > 0, 'text(4): a multilinear curve as (d, F) points: ' + S.text(4));
+  assert(S.text(5).indexOf('U1 nonlinear, ke 12, k 1212, c 5.5, exp 0.5') > 0, 'text(5): the damper coefficient and exponent: ' + S.text(5));
   assert(S.text(99) === '', 'text of no item: ""');
   const ro = {};
   ['elRoValue', 'elRoComp', 'elRoElem', 'elRoNode', 'elRoCorners', 'elRoUV', 'elRoPos'].forEach(k => { global[k] = ro[k] = { textContent: '', className: '' }; });

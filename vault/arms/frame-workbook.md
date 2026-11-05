@@ -40,12 +40,12 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 > | Sheet | Rows |
 > |---|---|
 > | Joints | Id, Joint, X Y Z (global; formulas welcome), Restraint (`fixed`, `pin`, or the DOFs held: `U1 U2 U3 R3`), Local A B C |
-> | Frames | Id, Frame, Joint I, Joint J (both on Joints), Length (live, read-only), Section, Kind, Line, Release (a preset), Angle, Insertion (cardinal point), Modifiers (a preset) |
+> | Frames | Id, Frame, Joint I, Joint J (both on Joints), Length (live, read-only), Section, Kind, Line, Release (a preset), Angle, Insertion (cardinal point), Modifiers (a preset), Offset I / Offset J (joint offsets along local 1 2 3: `0 0 6`; one SAP holds in another system shows as `GLOBAL: 0 6 0` and is kept) |
 > | Sections | Id, Name, Shape, Material, t3 t2 tf tw t2b tfb dis, Area I33 I22 J (General sections), Catalog and section modifiers (read-only). Each shape's dimensions are required (a new I's blank t2b / tfb are t2 / tf); a new section from a catalog is refused (give its dimensions) |
 > | Materials | Id, Name, Type, E, Poisson, G, Unit weight, Unit mass, Alpha, Fy, Fu. A new material's blank G is E/(2(1+ν)), its blank mass the weight / g |
 > | Releases | Named presets of the 12 end DOFs (P V2 V3 T M2 M3 at I and J): `yes`, a partial-fixity stiffness, or blank. Built in: FIXED, PIN-PIN, PIN-I, PIN-J, SLIP-J; an imported pattern with no match becomes R1, R2 … |
 > | Modifiers | Named presets of the 8 property modifiers; imported sets become M1, M2 … |
-> | Links, Link props | Joints (blank J = grounded), property, angle; a property's type then one row per DOF (Fixed, NonLinear, KE, CE, K, C, CExp, Open, Mu slow / fast, Rate, Radius) |
+> | Links, Link props | Joints (blank J = grounded), property, angle; a property's type then one row per DOF (Fixed, NonLinear, KE, CE, K, C, CExp, Open, Mu slow / fast, Rate, Radius, Points: a multilinear curve `force, displacement; …`, at least three, displacements increasing). A changed type moves the DOF rows to its table |
 > | Springs | Joint, CoordSys, U1–R3 |
 > | Load patterns | Name, Type, Self weight |
 > | Joint loads, Ground displacements | Joint, Pattern, CoordSys, six values |
@@ -128,7 +128,6 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 >   now named by what they release (`R1 I M3~ J M3~`); a hint on link local axes.
 >
 > Still open:
-> - entering a multilinear link's force–deformation curve (round 2 of the probe shows where SAP keeps it);
 > - catalog sections for new rows;
 > - the deleted-frame warning repeating until its Groups row is removed;
 > - the `.bak` name.
@@ -213,5 +212,6 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 >   still open are in [[vault/format/sap-s2k-tables|sap-s2k-tables]].
 > - The fixes are in the model, the workbook, the sidecar and `FrameS2kSchema`. SAP's export is now a fixture
 >   (`scripts/frame/testdata/probe.sap-export.s2k`).
-> - Round 2 (the multilinear, damper and sliding-isolator tables; the insertion offsets, set in SAP) is what
->   `-Probe` writes now.
+> - Round 2 was imported and exported on 2026-11-05: the multilinear, damper and sliding-isolator tables and the
+>   insertion offsets are confirmed, and its export is now the fixture. The probe writes SAP's names throughout; a
+>   further round only re-checks them.

@@ -27,6 +27,10 @@ using System.Text;
 // partly fixed, NonLin Static, Damper - Exponential, one-joint links as JointJ = JointI, General sections' S33Top ...),
 // and the multilinear, damper and sliding-isolator DOF rows go in the tables SAP listed for them (03, 04, 08), to see
 // their fields. The catalog section and the explicit insertion offsets are left to SAP's own dialogs (see the note).
+// After round 2 (SAP 24.2.0 again, 2026-11-05): every link DOF table is confirmed; the probe now writes SAP's names
+// throughout (the damper's CExp, a multilinear curve as one row per point, insertion offsets as CoordSys=Local
+// JtOffsetXI ... JtOffsetZJ), so a further round only re-checks them. A General section's moduli go back to S33 / S22:
+// SAP 24.2 read S33Top and S22Left back as 0 (it kept S33Bot and S22Right), while S33 / S22 set both faces (round 1).
 // Check(probe, export) compares the two field by field: same, changed, missing (not read, or SAP dropped a default),
 // and the fields and tables SAP added. Synthetic geometry and names only. C# 5, one global batch (prefix Frame).
 
@@ -58,7 +62,7 @@ public static class FrameProbe
             "SectionName=P_ANGLE   Material=PROBE_STEEL   Shape=Angle   t3=4   t2=3   tf=0.375   tw=0.3125   Color=Green",
             "SectionName=P_TEE   Material=PROBE_STEEL   Shape=Tee   t3=6   t2=8   tf=0.5   tw=0.3   Color=Green",
             "SectionName=P_2L   Material=PROBE_STEEL   Shape=\"Double Angle\"   t3=4   t2=7.375   tf=0.375   tw=0.375   dis=0.375   Color=Green",
-            "SectionName=P_GEN   Material=PROBE_STEEL   Shape=General   t3=10   t2=6   Area=11.5   TorsConst=2.3   I33=210   I22=40   I23=0   AS2=4   AS3=5   S33Top=42   S33Bot=42   S22Left=13   S22Right=13   Z33=48   Z22=20   R33=4.27   R22=1.86   Color=Green",
+            "SectionName=P_GEN   Material=PROBE_STEEL   Shape=General   t3=10   t2=6   Area=11.5   TorsConst=2.3   I33=210   I22=40   I23=0   AS2=4   AS3=5   S33=42   S22=13   Z33=48   Z22=20   R33=4.27   R22=1.86   Color=Green",
             "SectionName=P_MOD   Material=PROBE_STEEL   Shape=Rectangular   t3=6   t2=4   AMod=2   A2Mod=3   A3Mod=4   JMod=5   I2Mod=6   I3Mod=7   MMod=0.5   WMod=0.25   Color=Green",
             "SectionName=W12X26   Material=PROBE_STEEL   Shape=\"I/Wide Flange\"   t3=12.2   t2=6.49   tf=0.38   tw=0.23   Color=Green",
         });
@@ -109,7 +113,8 @@ public static class FrameProbe
         table("FRAME RELEASE ASSIGNMENTS 1 - GENERAL", new[] { rel(1, "M2I M3I M2J M3J"), rel(2, "M2I M3I"), rel(3, "PJ TJ"), rel(4, "V2I V3I"), rel(5, "M3I M3J") });
         table("FRAME RELEASE ASSIGNMENTS 2 - PARTIAL FIXITY", new[] { "Frame=5   M3I=1111   M3J=2222" });
         table("FRAME LOCAL AXES ASSIGNMENTS 1 - TYPICAL", new[] { "Frame=6   Angle=30   AdvanceAxes=No" });
-        table("FRAME INSERTION POINT ASSIGNMENTS", new[] { "Frame=7   CardinalPt=\"8 (top center)\"   Mirror2=No   Mirror3=No   Transform=No" });
+        table("FRAME INSERTION POINT ASSIGNMENTS", new[] {
+            "Frame=7   CardinalPt=\"8 (top center)\"   CoordSys=Local   JtOffsetXI=1.5   JtOffsetYI=2.5   JtOffsetZI=3.5   JtOffsetXJ=4.5   JtOffsetYJ=5.5   JtOffsetZJ=6.5   Mirror2=No   Mirror3=No   Transform=No" });
         table("FRAME OFFSET ALONG LENGTH ASSIGNMENTS", new[] { "Frame=8   Type=User   LengthI=6.5   LengthJ=8.5   RigidFactor=0.55" });
         table("FRAME PROPERTY MODIFIERS", new[] { "Frame=9   AMod=1.1   AS2Mod=1.2   AS3Mod=1.3   JMod=1.4   I22Mod=1.5   I33Mod=1.6   MassMod=0.7   WeightMod=0.8" });
 
@@ -126,14 +131,17 @@ public static class FrameProbe
             "Link=L_LIN   DOF=U1   Fixed=No   TransKE=111   TransCE=0",
             "Link=L_LIN   DOF=U2   Fixed=Yes",
             "Link=L_LIN   DOF=R3   Fixed=No   RotKE=333   RotCE=0" });
-        table("LINK PROPERTY DEFINITIONS 04 - DAMPER", new[] { "Link=L_DAMP   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=12   TransCE=1.5   TransK=1212   TransC=5.5   TransCExp=1.1" });
+        table("LINK PROPERTY DEFINITIONS 04 - DAMPER", new[] { "Link=L_DAMP   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=12   TransCE=1.5   TransK=1212   TransC=5.5   CExp=1.1" });
         table("LINK PROPERTY DEFINITIONS 05 - GAP", new[] { "Link=L_GAP   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=1001   TransCE=0   TransK=1002   TransOpen=0.25" });
         table("LINK PROPERTY DEFINITIONS 06 - HOOK", new[] { "Link=L_HOOK   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=0   TransCE=0   TransK=2002   TransOpen=0.5" });
         table("LINK PROPERTY DEFINITIONS 08 - SLIDING ISOLATOR", new[] {
             "Link=L_FRIC   DOF=U1   Fixed=No   NonLinear=Yes   TransKE=10001   TransCE=0   TransK=10002   TransC=0",
             "Link=L_FRIC   DOF=U2   Fixed=No   NonLinear=Yes   TransKE=101   TransCE=0   TransK=102   Slow=0.31   Fast=0.32   Rate=0   Radius=0",
             "Link=L_FRIC   DOF=U3   Fixed=No   NonLinear=Yes   TransKE=103   TransCE=0   TransK=104   Slow=0.33   Fast=0.34   Rate=0   Radius=0" });
-        table("LINK PROPERTY DEFINITIONS 03 - MULTILINEAR", new[] { "Link=L_MLE   DOF=U2   Fixed=No   NonLinear=Yes   TransKE=505   TransCE=0" });
+        table("LINK PROPERTY DEFINITIONS 03 - MULTILINEAR", new[] {
+            "Link=L_MLE   DOF=U2   Fixed=No   NonLinear=Yes   TransKE=505   TransCE=0   Point=1   Force=-7   Displ=-3",
+            "Link=L_MLE   DOF=U2   Point=2   Force=-5   Displ=-1", "Link=L_MLE   DOF=U2   Point=3   Force=0   Displ=0",
+            "Link=L_MLE   DOF=U2   Point=4   Force=6   Displ=1.5", "Link=L_MLE   DOF=U2   Point=5   Force=8   Displ=4" });
 
         // ---- links: two-joint of each type, a zero-length one between coincident joints, two one-joint forms
         table("CONNECTIVITY - LINK", new[] {
@@ -203,7 +211,7 @@ public static class FrameProbe
     // ---------------- the check
 
     // fields that name a row within its table (beyond the first field), for matching probe rows to SAP's
-    static readonly string[] RowKeys = { "DOF", "LoadPat", "LoadName", "CaseName", "GroupName", "ObjectLabel", "ObjectType", "Dir", "Type" };
+    static readonly string[] RowKeys = { "DOF", "Point", "LoadPat", "LoadName", "CaseName", "GroupName", "ObjectLabel", "ObjectType", "Dir", "Type" };
 
     // Probe vs SAP's re-export: one line per table and field. Markdown, for the vault note.
     public static List<string> Check(string probePath, string exportPath)
