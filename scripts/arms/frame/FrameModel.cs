@@ -500,6 +500,11 @@ public sealed class FrameLoad : FrameObj
     public const string JointForce = "JOINT LOADS - FORCE", GroundDisp = "JOINT LOADS - GROUND DISPLACEMENT", Point = "FRAME LOADS - POINT",
                         Distributed = "FRAME LOADS - DISTRIBUTED", Temperature = "FRAME LOADS - TEMPERATURE";
     public string Table = "";
+    // the load tables the model types (and the workbook shows)
+    public static bool Typed(string table)
+    {
+        return new[] { JointForce, GroundDisp, Point, Distributed, Temperature }.Any(x => string.Equals(x, table, StringComparison.OrdinalIgnoreCase));
+    }
     public override string Kind { get { return "load"; } }
     public override string KeyField { get { return Table.StartsWith("JOINT", StringComparison.OrdinalIgnoreCase) ? "Joint" : "Frame"; } }
     public override string MainTable { get { return Table; } }

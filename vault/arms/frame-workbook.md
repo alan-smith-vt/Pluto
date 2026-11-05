@@ -117,6 +117,13 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 >   - it says the problems and refreshes, so the new checks can then show where they are;
 >   - a user's workbook with an unstable release refreshed to the same model and `.s2k`.
 
+> [!info]- Load tables the workbook does not show (2026-11-05)
+> Every `JOINT LOADS - *` and `FRAME LOADS - *` table used to become a load. A gravity, strain or deformation load was
+> filed under the Temperature sheet but never listed there, so reading a workbook deleted it: the table came back
+> empty. Now only the five typed tables are loads. Any other load table stays with its joint or frame and is carried
+> as written, listed on Carried. Checked: a rack with a `FRAME LOADS - GRAVITY` row goes to a workbook and back byte
+> for byte, where the previous build lost the row.
+
 > [!info]- "An item with the same key has already been added" (2026-11-05)
 > A live-preview rebuild failed with .NET's bare duplicate-key message. Reproduced two ways:
 > - **A load case name given twice.** The reader reports a repeated name ("on an earlier row too") but reads on, and

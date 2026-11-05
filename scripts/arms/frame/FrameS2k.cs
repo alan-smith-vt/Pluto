@@ -123,8 +123,10 @@ public static class FrameS2k
         Func<string, bool> key = k => string.Equals(first, k, StringComparison.OrdinalIgnoreCase);
         if (t == "PROGRAM CONTROL") { kind = "control"; return true; }
         if (t == "JOINT COORDINATES") { kind = "joint"; main = true; return key("Joint"); }
-        if (t.StartsWith("JOINT LOADS")) { kind = "load"; return key("Joint"); }
-        if (t.StartsWith("FRAME LOADS")) { kind = "load"; return key("Frame"); }
+        // the five load tables the workbook shows are loads; any other (FRAME LOADS - GRAVITY, - STRAIN, - DEFORMATION ...)
+        // stays with its joint or frame below, carried as written (it was once a load no sheet listed, so a workbook
+        // read deleted it)
+        if (FrameLoad.Typed(t)) { kind = "load"; return key(t.StartsWith("JOINT") ? "Joint" : "Frame"); }
         if (t.StartsWith("JOINT ") && key("Joint")) { kind = "joint"; return true; }
         if (t.StartsWith("MATERIAL PROPERTIES") && key("Material")) { kind = "material"; main = t.StartsWith("MATERIAL PROPERTIES 01"); return true; }
         if (t.StartsWith("FRAME SECTION PROPERTIES") && key("SectionName")) { kind = "section"; main = t.StartsWith("FRAME SECTION PROPERTIES 01"); return true; }
