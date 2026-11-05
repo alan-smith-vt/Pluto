@@ -4,6 +4,9 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using Col = WbCol;
+using SheetInfo = WbSheetInfo;
+using Check = WbCheck;
 
 // PipeWorkbookGui  --  what makes the pipe model workbook (PipeWorkbook) a form: header colours by kind of column,
 // a note on every header, a hint and a dropdown or rule on every input column, conditional formatting that marks
@@ -15,14 +18,6 @@ using System.Text.RegularExpressions;
 static class PipeWorkbookGui
 {
     // ---------------------------------------------------------------- look
-
-    internal sealed class Theme
-    {
-        public int Title, Subtitle, Section, Body, BodyWrap, Small, Link, Key, Label, Value, Stat, Code, Note, ReadOnly, Center;
-        public readonly Dictionary<string, int> Head = new Dictionary<string, int>(StringComparer.Ordinal);
-        public readonly Dictionary<string, int> Chip = new Dictionary<string, int>(StringComparer.Ordinal);
-        public int Red, Amber, Green, Muted;           // conditional formats
-    }
 
     // header colours by kind of column (the Start sheet's key explains them)
     internal static readonly string[][] Groups =
@@ -38,35 +33,8 @@ static class PipeWorkbookGui
         new[] { "ro", "9E9E9E", "Read-only: rebuilt on every export, never read" },
     };
 
-    internal static Theme MakeTheme(XlsxBook b)
-    {
-        var t = new Theme();
-        t.Title = b.Style(new XlsxStyle { Bold = true, Size = 20, Color = "1F2937" });
-        t.Subtitle = b.Style(new XlsxStyle { Size = 11, Color = "6B7280" });
-        t.Section = b.Style(new XlsxStyle { Bold = true, Size = 13, Color = "1F2937", Bottom = "1565C0", BottomMedium = true });
-        t.Body = b.Style(new XlsxStyle { Color = "1F2937", VAlign = "top" });
-        t.BodyWrap = b.Style(new XlsxStyle { Color = "1F2937", VAlign = "top", Wrap = true });
-        t.Small = b.Style(new XlsxStyle { Size = 9, Color = "6B7280", VAlign = "top", Wrap = true });
-        t.Link = b.Style(new XlsxStyle { Color = "1565C0", Underline = true, VAlign = "top" });
-        t.Key = b.Style(new XlsxStyle { Bold = true, Color = "37474F", Fill = "ECEFF1" });
-        t.Label = b.Style(new XlsxStyle { Bold = true, Color = "37474F", VAlign = "center" });
-        t.Value = b.Style(new XlsxStyle { Color = "1F2937", Fill = "FFFFFF", Border = "B0BEC5", Align = "center", VAlign = "center" });
-        t.Stat = b.Style(new XlsxStyle { Color = "1F2937", Align = "right", Format = "#,##0.###" });
-        t.Code = b.Style(new XlsxStyle { Bold = true, Align = "center", Border = "D0D7DE" });
-        t.Note = XlsxBook.Note;
-        t.ReadOnly = XlsxBook.ReadOnly;
-        t.Center = b.Style(new XlsxStyle { Align = "center" });
-        foreach (var g in Groups)
-        {
-            t.Head[g[0]] = b.Style(new XlsxStyle { Bold = true, Color = "FFFFFF", Fill = g[1], Align = "center", VAlign = "center", Wrap = true, Border = "FFFFFF" });
-            t.Chip[g[0]] = b.Style(new XlsxStyle { Fill = g[1], Border = "FFFFFF" });
-        }
-        t.Red = b.Dxf("9C0006", "FFC7CE", false);
-        t.Amber = b.Dxf("9C5700", "FFEB9C", false);
-        t.Green = b.Dxf("006100", "C6EFCE", false);
-        t.Muted = b.Dxf("9E9E9E", null, false);
-        return t;
-    }
+    // the kit's theme (WbTheme) with the pipe workbook's header groups; its form (Form) is made per book, in Book
+    internal static WbTheme MakeTheme(XlsxBook b) { return WbTheme.Make(b, Groups); }
 
     // ---------------------------------------------------------------- columns
 
@@ -78,12 +46,7 @@ static class PipeWorkbookGui
     //   list!   one of a list (a dropdown; anything else is red)   list?  a dropdown, anything allowed
     //   radius  a bend radius: > 0, LR, SR, or a CAESAR coded value   elemref  an element Id or range (E3:E9)
     //   text    free text
-    internal sealed class Col
-    {
-        public string Name, Group, Kind, List, Hint, Note;
-        public Col(string name, string group, string kind, string list, string hint, string note) { Name = name; Group = group; Kind = kind; List = list; Hint = hint; Note = note; }
-    }
-
+    // The kit (WbForm) knows the generic kinds; node, catalog, vector, radius and elemref are this workbook's (NewForm).
     static Col C(string name, string group, string kind, string hint) { return new Col(name, group, kind, null, hint, null); }
     static Col C(string name, string group, string kind, string hint, string note) { return new Col(name, group, kind, null, hint, note); }
     static Col L(string name, string group, string kind, string list, string hint, string note) { return new Col(name, group, kind, list, hint, note); }
@@ -362,42 +325,33 @@ static class PipeWorkbookGui
 
     // ---------------------------------------------------------------- applying a column table to a sheet
 
-    static string NameOf(string header)
+    static string NameOf(string header) { return WbForm.NameOf(header); }
+
+    // the book's form: the kit's kinds plus this workbook's own; refRows = how far rules look into the Elements sheet
+    internal static WbForm NewForm(int refRows)
     {
-        int p = header.IndexOf(" (", StringComparison.Ordinal);
-        return p > 0 && header.EndsWith(")", StringComparison.Ordinal) ? header.Substring(0, p) : header;
+        var f = new WbForm { RefRows = refRows };
+        f.KindRule = (c, at) => KindRule(c, at, f.RefRows);
+        f.KindValidation = KindValidation;
+        return f;
     }
 
-    // the cell rule for a kind ({0} = the column's first data cell, relative), red when true
-    static string Rule(Col c, string at)
+    // the cell rule for this workbook's kinds (at = the column's first data cell, relative), red when true
+    static string KindRule(Col c, string at, int refRows)
     {
         switch (c.Kind)
         {
-            case "num": return "AND(" + at + "<>\"\",NOT(ISNUMBER(" + at + ")))";
-            case "pos": return "IF(ISNUMBER(" + at + ")," + at + "<=0," + at + "<>\"\")";
-            case "nonneg": return "IF(ISNUMBER(" + at + ")," + at + "<0," + at + "<>\"\")";
-            case "int0": return "IF(ISNUMBER(" + at + "),OR(" + at + "<0," + at + "<>INT(" + at + "))," + at + "<>\"\")";
             case "node": return "IF(ISNUMBER(" + at + "),OR(" + at + "<1," + at + ">8000000," + at + "<>INT(" + at + "))," + at + "<>\"\")";
-            case "cos": return "IF(ISNUMBER(" + at + "),ABS(" + at + ")>1," + at + "<>\"\")";
             // a number from CAESAR's list, or a list entry ("106 - A106 Grade B"): anything else is red
             case "catalog": return "AND(" + at + "<>\"\",NOT(ISNUMBER(" + at + ")),NOT(ISNUMBER(--LEFT(" + at + ",FIND(\" \"," + at + "&\" \")-1))))";
             case "vector": return "IF(ISNUMBER(" + at + "),OR(" + at + "<1," + at + ">9," + at + "<>INT(" + at + "))," + at + "<>\"\")";
-            case "list!": return "AND(" + at + "<>\"\",COUNTIF(" + c.List + "," + at + ")=0)";
-            case "yesno":   // no array constant: Excel refuses them in conditional formatting (and repairs the sheet away)
-                string lo = "LOWER(TRIM(" + at + "&\"\"))";
-                return "AND(" + at + "<>\"\",NOT(OR(" + string.Join(",", new[] { "yes", "y", "true", "g", "1", "no", "n", "false", "0" }.Select(w => lo + "=\"" + w + "\"").ToArray()) + ")))";
             case "radius":
                 return "IF(ISNUMBER(" + at + "),AND(" + at + "<=0,NOT(AND(" + at + "<0,ABS(-" + at + "/1.0101-ROUND(-" + at + "/1.0101,0))<0.0001,ROUND(-" + at + "/1.0101,0)<=9))),AND(" + at +
                        "<>\"\"," + string.Join(",", RadiusNames.Select(n => "UPPER(TRIM(" + at + "))<>\"" + n + "\"").ToArray()) + "))";
-            case "elemref":
-                string t = "TRIM(" + at + ")", ids = "Elements!$A$2:$A$" + RefRows;
-                return "IF(" + t + "=\"\",FALSE,IF(ISNUMBER(FIND(\":\"," + t + ")),OR(COUNTIF(" + ids + ",TRIM(LEFT(" + t + ",FIND(\":\"," + t + ")-1)))=0,COUNTIF(" + ids + ",TRIM(MID(" + t + ",FIND(\":\"," + t +
-                       ")+1,99)))=0),COUNTIF(" + ids + "," + t + ")=0))";
+            case "elemref": return WbForm.RefRule(at, "Elements!$A$2:$A$" + refRows);
         }
         return null;
     }
-
-    internal static int RefRows = 5000;      // how far rules look into the Elements sheet
 
     // the bend radius names the reader takes (the cell rule, the dropdown's check and Start's count all accept them)
     internal static readonly string[] RadiusNames = { "LR", "SR", "LONG", "SHORT", "3D", "5D" };
@@ -408,52 +362,21 @@ static class PipeWorkbookGui
         return "AND(ISNUMBER(" + at + ")," + at + "<0,ABS(-" + at + "/1.0101-ROUND(-" + at + "/1.0101,0))<0.0001,OR(ROUND(-" + at + "/1.0101,0)=2,AND(ROUND(-" + at + "/1.0101,0)>=6,ROUND(-" + at + "/1.0101,0)<=9)))";
     }
 
-    static XlsxValidation Validation(Col c, string at)
+    static bool KindValidation(Col c, XlsxValidation v)
     {
-        var v = new XlsxValidation { PromptTitle = NameOf(c.Name), Prompt = c.Hint };
         switch (c.Kind)
         {
-            case "num": v.Type = "decimal"; v.Operator = "between"; v.Formula1 = "-1E+307"; v.Formula2 = "1E+307"; v.ErrorTitle = "A number"; v.Error = c.Name + " takes a number."; break;
-            case "pos": v.Type = "decimal"; v.Operator = "greaterThan"; v.Formula1 = "0"; v.ErrorTitle = "A positive number"; v.Error = c.Name + " takes a number above 0."; break;
-            case "nonneg": v.Type = "decimal"; v.Operator = "greaterThanOrEqual"; v.Formula1 = "0"; v.ErrorTitle = "A number"; v.Error = c.Name + " takes a number, 0 or more."; break;
-            case "int0": v.Type = "whole"; v.Operator = "greaterThanOrEqual"; v.Formula1 = "0"; v.ErrorTitle = "A whole number"; v.Error = c.Name + " takes a whole number, 0 or more."; break;
-            case "node": v.Type = "whole"; v.Operator = "between"; v.Formula1 = "1"; v.Formula2 = "8000000"; v.ErrorTitle = "A node number"; v.Error = c.Name + " takes a node number (a whole number from 1 to 8,000,000, CAESAR's range)."; break;
-            case "cos": v.Type = "decimal"; v.Operator = "between"; v.Formula1 = "-1"; v.Formula2 = "1"; v.ErrorTitle = "A direction cosine"; v.Error = c.Name + " takes a number from -1 to 1."; break;
-            case "vector": v.Type = "list"; v.Formula1 = c.List ?? LVector; v.ErrorTitle = "A load vector"; v.Error = "The vector is 1 to 9."; break;
-            case "list!": case "yesno": v.Type = "list"; v.Formula1 = c.List; v.ErrorTitle = "Not on the list"; v.Error = "Pick a value from the list (" + NameOf(c.Name) + ")."; break;
-            case "list?": case "catalog": v.Type = "list"; v.Formula1 = c.List; v.ShowError = false; break;
-            case "radius":   // a dropdown of the names that takes a number too: anything else turns red (Rule)
-                v.Type = "list"; v.Formula1 = LRadius; v.ShowError = false; break;
+            case "node": v.Type = "whole"; v.Operator = "between"; v.Formula1 = "1"; v.Formula2 = "8000000"; v.ErrorTitle = "A node number"; v.Error = c.Name + " takes a node number (a whole number from 1 to 8,000,000, CAESAR's range)."; return true;
+            case "vector": v.Type = "list"; v.Formula1 = c.List ?? LVector; v.ErrorTitle = "A load vector"; v.Error = "The vector is 1 to 9."; return true;
+            case "catalog": v.Type = "list"; v.Formula1 = c.List; v.ShowError = false; return true;
+            case "radius":   // a dropdown of the names that takes a number too: anything else turns red (KindRule)
+                v.Type = "list"; v.Formula1 = LRadius; v.ShowError = false; return true;
         }
-        return v;
+        return false;
     }
 
-    // headers styled by group, notes, a hint and a rule per column, highlighting; rows: the data rows written
-    internal static void Table(XlsxBookSheet s, Theme t, string[] headers, Col[] cols, int rows, int lim)
-    {
-        var byName = new Dictionary<string, Col>(StringComparer.OrdinalIgnoreCase);
-        foreach (var c in cols) byName[c.Name] = c;
-        s.Height(0, 46);
-        s.FreezeRows = Math.Max(1, s.FreezeRows);
-        for (int k = 0; k < headers.Length; k++)
-        {
-            Col c;
-            if (!byName.TryGetValue(NameOf(headers[k]), out c)) { s.Set(0, k, headers[k], t.Head["ro"]); continue; }
-            s.Set(0, k, headers[k], t.Head[c.Group]);
-            if (c.Note != null || c.Hint != null) s.Note(0, k, (c.Note ?? c.Hint));
-            string col = XlsxBook.Column(k), at = col + "2", range = col + "2:" + col + lim;
-            s.Validate(range, Validation(c, at));
-            s.Conditional(range, "ISERROR(" + at + ")", t.Red);
-            string rule = Rule(c, at);
-            if (rule != null) s.Conditional(range, rule, t.Red);
-            if (c.Kind == "id")
-            {
-                s.Conditional(range, "AND(" + at + "<>\"\",COUNTIF($" + col + "$2:$" + col + "$" + lim + "," + at + ")>1)", t.Amber);
-                for (int r = 1; r <= rows; r++) s.Style(r, k, t.Key);
-            }
-        }
-        s.AutoFilter = "A1:" + XlsxBook.Column(headers.Length - 1) + Math.Max(2, rows + 1);
-    }
+    // headers styled by group, notes, a hint and a rule per column, highlighting (the kit's Table, with the book's form)
+    internal static void Table(XlsxBookSheet s, WbTheme t, string[] headers, Col[] cols, int rows, int lim) { t.Form.Table(s, t, headers, cols, rows, lim); }
 
     // a rule across columns: red (or amber) where the formula is true
     internal static void Rule(XlsxBookSheet s, string range, string formula, int dxf) { s.Conditional(range, formula, dxf); }
@@ -493,110 +416,54 @@ static class PipeWorkbookGui
 
     // ---------------------------------------------------------------- the Start sheet
 
-    internal sealed class SheetInfo
+    // the kit's Start sheet (WbStart) with this workbook's texts
+    internal static void StartSheet(XlsxBookSheet s, WbTheme t, string title, string source, string units, List<SheetInfo> sheets, List<Check> checks, string[] reference, PipeWorkbookRun run)
     {
-        public string Name, What, Count;
-        public SheetInfo(string name, string what, string count) { Name = name; What = what; Count = count; }
-    }
-
-    internal sealed class Check
-    {
-        public string What, Formula;
-        public bool Warning;
-        public Check(string what, string formula, bool warning) { What = what; Formula = formula; Warning = warning; }
-    }
-
-    internal static void StartSheet(XlsxBookSheet s, Theme t, string title, string source, string units, List<SheetInfo> sheets, List<Check> checks, string[] reference, PipeWorkbookRun run)
-    {
-        s.ShowGrid = false;
-        s.TabColor = "1F2937";
-        s.Width(0, 2); s.Width(1, 30); s.Width(2, 78); s.Width(3, 12); s.Width(4, 12);
-        int r = 1;
-        s.Set(r, 1, "Pipe model workbook", t.Title); s.Height(r, 30); r++;
-        s.Set(r, 1, (title.Length > 0 ? title + "   |   " : "") + "made from " + (source.Length > 0 ? source : "a new model") + "   |   units: " + units, t.Subtitle); r += 2;
-
-        s.Set(r, 1, "How to use it", t.Section); s.Style(r, 2, t.Section); s.Style(r, 3, t.Section); s.Style(r, 4, t.Section); r++;
-        string[] steps =
+        var x = new WbStart.Texts
         {
-            "1   Edit the white cells on the input sheets. A dropdown offers the allowed values; selecting a cell shows a hint; the red corner on a header holds its note.",
-            "2   Red cells will stop the build; amber ones are worth a look. The checks below count them as you type.",
-            "3   3D View draws the model as you edit it: pipe, bends, rigids, expansion joints, restraints.",
-            "4   Save, then build: the links under Build it from here, or Build-Pipe.ps1 -In <this>.xlsx -Preview (the viewer) or -Cii (CAESAR). -Watch rebuilds on every save.",
-            "5   Keep the Id column. It ties each row to the model this workbook was written from; leave it blank on a new row.",
+            Heading = "Pipe model workbook",
+            Subtitle = (title.Length > 0 ? title + "   |   " : "") + "made from " + (source.Length > 0 ? source : "a new model") + "   |   units: " + units,
+            Steps = new[]
+            {
+                "1   Edit the white cells on the input sheets. A dropdown offers the allowed values; selecting a cell shows a hint; the red corner on a header holds its note.",
+                "2   Red cells will stop the build; amber ones are worth a look. The checks below count them as you type.",
+                "3   3D View draws the model as you edit it: pipe, bends, rigids, expansion joints, restraints.",
+                "4   Save, then build: the links under Build it from here, or Build-Pipe.ps1 -In <this>.xlsx -Preview (the viewer) or -Cii (CAESAR). -Watch rebuilds on every save.",
+                "5   Keep the Id column. It ties each row to the model this workbook was written from; leave it blank on a new row.",
+            },
+            CheckNote = "A check counts cells or rows. Red counts stop the build; amber ones (nodes no element has, copied Ids) may be fine.",
+            IdExample = "E12",
+            RedText = "Will stop the build: text where a number belongs, a name no sheet has, a missing node ...",
+            AmberText = "Worth a look: a node no element has, a copied Id, a zero-length element",
+            Reference = reference,
         };
-        foreach (string st in steps) { s.Set(r, 1, st, t.BodyWrap); s.Merge("B" + (r + 1) + ":E" + (r + 1)); s.Height(r, 18); r++; }
-        r++;
-        if (run != null) r = RunBlock(s, t, r, run);
-
-        s.Set(r, 1, "Sheets", t.Section); s.Set(r, 2, "", t.Section); s.Set(r, 3, "Rows", t.Section); s.Style(r, 4, t.Section); r++;
-        foreach (var si in sheets)
-        {
-            s.Set(r, 1, si.Name, t.Link); s.Link(r, 1, XlsxBook.SheetRef(si.Name) + "!A1", "go to " + si.Name);
-            s.Set(r, 2, si.What, t.Body);
-            if (si.Count != null) s.SetFormula(r, 3, si.Count, t.Stat);
-            r++;
-        }
-        r++;
-
-        s.Set(r, 1, "Checks", t.Section); s.Set(r, 2, "(live: they follow your edits)", t.Section); s.Set(r, 3, "Count", t.Section); s.Set(r, 4, "", t.Section); r++;
-        int first = r;
-        foreach (var c in checks)
-        {
-            s.Set(r, 1, c.What, t.Body); s.Merge("B" + (r + 1) + ":C" + (r + 1));
-            s.SetFormula(r, 3, "IFERROR(" + c.Formula + ",\"?\")", t.Stat);
-            string cnt = "D" + (r + 1);
-            s.SetFormula(r, 4, "IF(" + cnt + "=0,\"OK\",IF(ISNUMBER(" + cnt + ")," + (c.Warning ? "\"check\"" : "\"fix\"") + ",\"see red cells\"))", t.Code);
-            r++;
-        }
-        string status = "E" + (first + 1) + ":E" + r;
-        s.Conditional(status, "E" + (first + 1) + "=\"OK\"", t.Green);
-        s.Conditional(status, "E" + (first + 1) + "=\"check\"", t.Amber);
-        s.Conditional(status, "AND(E" + (first + 1) + "<>\"OK\",E" + (first + 1) + "<>\"check\")", t.Red);
-        s.Set(r, 1, "A check counts cells or rows. Red counts stop the build; amber ones (nodes no element has, copied Ids) may be fine.", t.Small); s.Merge("B" + (r + 1) + ":E" + (r + 1)); r += 2;
-
-        s.Set(r, 1, "Colour key", t.Section); s.Style(r, 2, t.Section); s.Style(r, 3, t.Section); s.Style(r, 4, t.Section); r++;
-        foreach (var g in Groups)
-        {
-            s.Set(r, 1, "", t.Chip[g[0]]);
-            s.Set(r, 2, g[2], t.Body);
-            r++;
-        }
-        s.Set(r, 1, "E12", t.Key); s.Set(r, 2, "An Id: keep it", t.Body); r++;
-        s.Set(r, 1, "red", t.Code); s.Conditional("B" + (r + 1), "TRUE", t.Red); s.Set(r, 2, "Will stop the build: text where a number belongs, a name no sheet has, a missing node ...", t.Body); r++;
-        s.Set(r, 1, "amber", t.Code); s.Conditional("B" + (r + 1), "TRUE", t.Amber); s.Set(r, 2, "Worth a look: a node no element has, a copied Id, a zero-length element", t.Body); r++;
-        s.Set(r, 1, "grey", t.ReadOnly); s.Set(r, 2, "Read-only: rebuilt on every export, never read back", t.Body); r += 2;
-
-        s.Set(r, 1, "Reference", t.Section); s.Style(r, 2, t.Section); s.Style(r, 3, t.Section); s.Style(r, 4, t.Section); r++;
-        foreach (string line in reference) { s.Set(r, 1, line, t.BodyWrap); s.Merge("B" + (r + 1) + ":E" + (r + 1)); s.Height(r, line.Length > 150 ? 32 : 18); r++; }
+        WbStart.StartSheet(s, t, x, run == null ? (Func<int, int>)null : r => RunBlock(s, t, r, run), sheets, checks);
     }
 
     // "Build it from here": links to the launchers beside the workbook, the viewer and the folder, and the commands
     // they run (PipeWorkbookRun); returns the next free row
-    static int RunBlock(XlsxBookSheet s, Theme t, int r, PipeWorkbookRun run)
+    static int RunBlock(XlsxBookSheet s, WbTheme t, int r, PipeWorkbookRun run)
     {
-        s.Set(r, 1, "Build it from here", t.Section); s.Set(r, 2, "(save first: the build reads the saved file)", t.Section); s.Style(r, 3, t.Section); s.Style(r, 4, t.Section); r++;
-        Action<string, string, string> link = (target, label, what) =>
+        var links = new List<WbLink>
         {
-            s.SetFormula(r, 1, "HYPERLINK(" + target + "," + PipeWorkbookRun.Lit(label) + ")", t.Link);
-            s.Set(r, 2, what, t.BodyWrap); s.Merge("C" + (r + 1) + ":E" + (r + 1)); s.Height(r, 30);
-            r++;
+            new WbLink(WbRun.Lit(run.PreviewCmd), "\u25B6  Live preview",
+                       "Runs \"" + run.PreviewCmd + "\" beside this workbook: every save (Ctrl+S) rebuilds " + run.Out + ".bin and " + run.Out +
+                       ".features.json for Pluto's viewer (tick Auto-reload there). Close its window to stop."),
+            new WbLink(WbRun.Lit(run.CiiCmd), "\u25B6  Write the .cii",
+                       "Runs \"" + run.CiiCmd + "\": " + run.Out + ".cii for CAESAR II (File, Import, CAESAR II Neutral File) and the preview with it. Its report says whether the model is the one you previewed."),
         };
-        link(PipeWorkbookRun.Lit(run.PreviewCmd), "\u25B6  Live preview",
-             "Runs \"" + run.PreviewCmd + "\" beside this workbook: every save (Ctrl+S) rebuilds " + run.Out + ".bin and " + run.Out +
-             ".features.json for Pluto's viewer (tick Auto-reload there). Close its window to stop.");
-        link(PipeWorkbookRun.Lit(run.CiiCmd), "\u25B6  Write the .cii",
-             "Runs \"" + run.CiiCmd + "\": " + run.Out + ".cii for CAESAR II (File, Import, CAESAR II Neutral File) and the preview with it. Its report says whether the model is the one you previewed.");
         if (run.Viewer != null)
-            link(PipeWorkbookRun.Lit(run.Viewer), "Open Pluto's viewer", "Then Choose files... and pick " + run.Out + ".bin and " + run.Out + ".features.json together (Chrome or Edge).");
-        link(run.FolderFormula(), "Open this folder", "The workbook, the two launchers and what they write.");
-        s.Set(r, 1, "Excel asks before it follows a link to a .cmd file; where it will not, double-click the file in the folder. Or paste a command into PowerShell:", t.Small);
-        s.Merge("B" + (r + 1) + ":E" + (r + 1)); s.Height(r, 26); r++;
-        s.Set(r, 1, "Preview command", t.Label); s.SetFormula(r, 2, run.CommandFormula(true), t.Small); s.Merge("C" + (r + 1) + ":E" + (r + 1)); s.Height(r, 40); r++;
-        s.Set(r, 1, ".cii command", t.Label); s.SetFormula(r, 2, run.CommandFormula(false), t.Small); s.Merge("C" + (r + 1) + ":E" + (r + 1)); s.Height(r, 40); r++;
-        s.Set(r, 1, "Refresh command", t.Label); s.SetFormula(r, 2, run.RefreshFormula(), t.Small); s.Merge("C" + (r + 1) + ":E" + (r + 1)); s.Height(r, 40);
-        s.Note(r, 1, "Brings this workbook to the newest Pluto's layout, over itself, edits kept; the previous file stays beside it as .xlsx.bak. Close the workbook first: Excel holds it while it is open.");
-        r++;
-        return r + 1;
+            links.Add(new WbLink(WbRun.Lit(run.Viewer), "Open Pluto's viewer", "Then Choose files... and pick " + run.Out + ".bin and " + run.Out + ".features.json together (Chrome or Edge)."));
+        links.Add(new WbLink(run.FolderFormula(), "Open this folder", "The workbook, the two launchers and what they write."));
+        var commands = new List<WbCommand>
+        {
+            new WbCommand("Preview command", run.CommandFormula(true), null),
+            new WbCommand(".cii command", run.CommandFormula(false), null),
+            new WbCommand("Refresh command", run.RefreshFormula(),
+                          "Brings this workbook to the newest Pluto's layout, over itself, edits kept; the previous file stays beside it as .xlsx.bak. Close the workbook first: Excel holds it while it is open."),
+        };
+        return WbStart.RunBlock(s, t, r, links,
+            "Excel asks before it follows a link to a .cmd file; where it will not, double-click the file in the folder. Or paste a command into PowerShell:", commands);
     }
 
     // ---------------------------------------------------------------- the 3D view
@@ -624,21 +491,12 @@ static class PipeWorkbookGui
         "gT", "gF", "Gp", "cM", "Gc",
     };
 
-    // PlotCalc's last row for a model of n elements, and a reference to one of its columns
-    internal static int CalcLast(int elements) { return Math.Max(300, elements + 300) + 1; }
-    // the PlotCalc cell of the row being formatted, found by ROW(): a highlight rule on Elements that named PlotCalc's cell
-    // (PlotCalc!$I2) kept that cell when a row was inserted above its first row and read the row above's flags from then on
-    internal static string CalcAt(string key)
-    {
-        string c = XlsxBook.Column(Array.IndexOf(CalcCols, key));
-        return "INDEX(" + Calc + "!$" + c + ":$" + c + ",ROW())";
-    }
-    internal static string CalcRange(string key, int elements)
-    {
-        string c = XlsxBook.Column(Array.IndexOf(CalcCols, key));
-        return Calc + "!$" + c + "$2:$" + c + "$" + CalcLast(elements).ToString(CultureInfo.InvariantCulture);
-    }
-    internal static string CalcCount(string key, int elements) { return "COUNTIF(" + CalcRange(key, elements) + ",TRUE)"; }
+    // PlotCalc through the kit (WbCalc): its last row for a model of n elements, and references to its columns by key
+    static readonly WbCalc CalcSheet = new WbCalc(Calc, CalcCols);
+    internal static int CalcLast(int elements) { return WbCalc.Last(elements); }
+    internal static string CalcAt(string key) { return CalcSheet.At(key); }
+    internal static string CalcRange(string key, int elements) { return CalcSheet.Range(key, elements); }
+    internal static string CalcCount(string key, int elements) { return CalcSheet.Count(key, elements); }
 
     // the OD of the elements at a node (their mean; 0 on no element), in the job's diameter unit: a nozzle's OD left blank
     internal static string OdAtNode(string node, int elements)
@@ -648,26 +506,7 @@ static class PipeWorkbookGui
         return "((SUMIF(" + fr + "," + node + "," + od + ")+SUMIF(" + to + "," + node + "," + od + "))/(" + count + "+(" + count + "=0)))";
     }
 
-    static readonly Regex Token = new Regex(@"\[(\w+)([-+:^*]?)\]");
-
-    // [k] this row's cell; [k-] the row above; [k+] the row below; [k:] the rows above from the header ($A$1:A(r-1));
-    // [k^] the whole column from the header (a MATCH position is then the row number); [k*] the data rows
-    static string Expand(string tpl, Dictionary<string, string> col, int row, int last)
-    {
-        return Token.Replace(tpl, m =>
-        {
-            string c = col[m.Groups[1].Value];
-            switch (m.Groups[2].Value)
-            {
-                case "-": return c + (row - 1);
-                case "+": return c + (row + 1);
-                case ":": return "$" + c + "$1:" + c + (row - 1);
-                case "^": return "$" + c + "$1:$" + c + "$" + last;
-                case "*": return "$" + c + "$2:$" + c + "$" + last;
-            }
-            return c + row;
-        });
-    }
+    static string Expand(string tpl, Dictionary<string, string> col, int row, int last) { return WbCalc.Expand(tpl, col, row, last); }
 
     // an Elements cell on this row, by the column's key (ElementKeys): INDEX over that one column, so PlotCalc row r stays
     // the Elements row r when rows are inserted, and only edits to that column recalculate the formulas that read it
@@ -677,7 +516,7 @@ static class PipeWorkbookGui
     // the Elements columns PlotCalc reads: key -> 0-based column (PipeWorkbook's layout)
     internal static readonly string[] ElementKeys = { "id", "from", "to", "dx", "dy", "dz", "type", "sec", "od", "bend", "bn", "wall", "corr", "eja", "ejt", "ejb", "ejr" };
 
-    internal static void ViewSheets(XlsxBook b, Theme t, XlsxBookSheet view, XlsxBookSheet calc, XlsxBookSheet pts, int elements, int restraints, double inToLen, double diaToIn, string lenUnit,
+    internal static void ViewSheets(XlsxBook b, WbTheme t, XlsxBookSheet view, XlsxBookSheet calc, XlsxBookSheet pts, int elements, int restraints, double inToLen, double diaToIn, string lenUnit,
                                     Dictionary<string, int> elementCols)
     {
         _elCol = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -975,7 +814,7 @@ static class PipeWorkbookGui
             view.Validate(a, new XlsxValidation { Type = "decimal", Operator = "between", Formula1 = "-360", Formula2 = "360", PromptTitle = "Custom view", Prompt = "Used when the view is Custom. Azimuth turns the model about the vertical axis; elevation tilts it toward you (90 = from above).", ErrorTitle = "Degrees", Error = "An angle in degrees, -360 to 360." });
         view.Conditional("C7:C8", "$C$6<>\"Custom\"", t.Muted);
         view.Set(9, 1, "Highlight element", t.Label); view.Set(9, 2, "", t.Value);
-        view.Validate("C10", new XlsxValidation { Type = "list", Formula1 = "Elements!$A$2:$A$" + RefRows, ShowError = false, PromptTitle = "Highlight", Prompt = "An element Id (E12): drawn thick and orange. Blank = none." });
+        view.Validate("C10", new XlsxValidation { Type = "list", Formula1 = "Elements!$A$2:$A$" + t.Form.RefRows, ShowError = false, PromptTitle = "Highlight", Prompt = "An element Id (E12): drawn thick and orange. Blank = none." });
         view.Set(10, 1, "Node numbers", t.Label); view.Set(10, 2, "no", t.Value);
         view.Set(11, 1, "Restraints", t.Label); view.Set(11, 2, "yes", t.Value);
         foreach (string a in new[] { "C11", "C12" })

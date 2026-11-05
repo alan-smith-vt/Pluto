@@ -8,7 +8,7 @@ created: 2026-10-22
 
 # Pipe model workbook
 
-A pipe-stress model as an Excel workbook you edit, built back into the model by `scripts/caesar/Build-Pipe.ps1`. That gives a CAESAR II `.cii`, a viewer preview, or both. The workbook is the model's master copy, and the viewer only shows it.
+A pipe-stress model as an Excel workbook you edit, built back into the model by `scripts/caesar/Build-Pipe.ps1`. Its machinery (form, Start sheet, launchers, base, reading, refresh) is the shared [[vault/arms/workbook-kit|workbook-kit]]. That gives a CAESAR II `.cii`, a viewer preview, or both. The workbook is the model's master copy, and the viewer only shows it.
 - The workbook is written from:
   - a `.cii` job;
   - a TOML config ([[vault/arms/pipe-builder|pipe-builder]]);

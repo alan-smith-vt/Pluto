@@ -143,8 +143,11 @@ if ($Set) { Say "check" ("-Set {0}" -f $Set) }
 
 # ---- load: the C# batch ----
 $sw = [Diagnostics.Stopwatch]::StartNew()
-. (Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) "lib") "Config.ps1")
-Say "load" ("scripts\lib + scripts\arms compiled ({0:0.0}s)" -f $sw.Elapsed.TotalSeconds)
+if ($env:PLUTO_DLL) { Add-Type -Path $env:PLUTO_DLL; Say "load" ("{0} (PLUTO_DLL: a prebuilt assembly, for development)" -f $env:PLUTO_DLL) }
+else {
+    . (Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) "lib") "Config.ps1")
+    Say "load" ("scripts\lib + scripts\arms compiled ({0:0.0}s)" -f $sw.Elapsed.TotalSeconds)
+}
 
 # ---- -NewWorkbook: the template, written once ----
 if ($NewWorkbook) {

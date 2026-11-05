@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using Cols = WbCols;
 
 // PipeWorkbook  --  a pipe model (PipeModel) <-> an Excel workbook you edit, and read back. C# 5 / PowerShell 5.1:
 // Build-Pipe.ps1 -In <model> -Xlsx writes one, -In <workbook>.xlsx reads one; -NewWorkbook starts from a template.
@@ -67,7 +68,6 @@ public static class PipeWorkbook
 {
     public const string Format = "pluto-pipe-workbook";
     public const int Version = 1;
-    const int Chunk = 30000;                  // characters of base JSON per cell (Excel holds 32767)
 
     // ======================================================================== units
 
@@ -263,7 +263,7 @@ public static class PipeWorkbook
         var t = PipeWorkbookGui.MakeTheme(b);
         int n = m.Elements.Count;
         int lim = Math.Max(2000, n + 1500);                   // rows the hints, dropdowns and checks cover
-        PipeWorkbookGui.RefRows = lim;
+        t.Form = PipeWorkbookGui.NewForm(lim);
         var start = b.Add("Start");                           // filled last: it counts and checks the others
 
         // ---- Settings
@@ -720,40 +720,32 @@ public static class PipeWorkbook
             { "bn", cBendN }, { "wall", cWall }, { "corr", cCorr }, { "eja", cEjAx }, { "ejt", cEjTr }, { "ejb", cEjBe }, { "ejr", cEjTo },
         });
 
-        var pl = b.Add("_pluto");
-        pl.State = "veryHidden";
-        string compact = Compact(json);
-        int nc = (compact.Length + Chunk - 1) / Chunk;
-        pl.Set(0, 0, Format); pl.Set(0, 1, Version);
-        pl.Set(1, 0, "base"); pl.Set(1, 1, hash);
-        pl.Set(2, 0, "source"); pl.Set(2, 1, sourceName ?? "");
-        pl.Set(3, 0, "chunks"); pl.Set(3, 1, nc);
-        for (int k = 0; k < nc; k++) pl.Set(4 + k, 0, compact.Substring(k * Chunk, Math.Min(Chunk, compact.Length - k * Chunk)));
+        WbBase.Write(b, Format, Version, hash, sourceName, json);
 
         // ---- Start: how to use it, the sheets, the live checks, the colour key, the reference
         Func<string, string, string> rowsOf = (sheet, cols) => "SUMPRODUCT(--(LEN(" + string.Join("&", cols.Split(',').Select(c => sheet + "!$" + c + "$2:$" + c + "$" + L2).ToArray()) + ")>0))";
         bool tailWhole = m.Source != null && !m.Source.Seed && m.Source.TailNozzleLines < 0 && m.Source.MiscelTail.Count > 4;
-        var sheets = new List<PipeWorkbookGui.SheetInfo>
+        var sheets = new List<WbSheetInfo>
         {
-            new PipeWorkbookGui.SheetInfo("Settings", "title, notes, vertical axis, ambient temperature", null),
-            new PipeWorkbookGui.SheetInfo("Elements", "one row per element, in CAESAR's order: nodes, lengths, type, section, process, bend, components", rowsOf("Elements", "B,C")),
-            new PipeWorkbookGui.SheetInfo(PipeWorkbookGui.View, "the model drawn live as you edit it", null),
-            new PipeWorkbookGui.SheetInfo("Sections", "pipe sizes: OD, wall, insulation, corrosion, material", rowsOf("Sections", "A,B")),
-            new PipeWorkbookGui.SheetInfo("Processes", "operating conditions: T1-T9, P1-P9, fluid density", rowsOf("Processes", "A,B")),
-            new PipeWorkbookGui.SheetInfo("Restraints", "anchors, supports, guides, limit stops, springs, ties to other nodes", rowsOf("Restraints", "B,C")),
-            new PipeWorkbookGui.SheetInfo("SIFs", "SIFs and tees at nodes", rowsOf("SIFs", "B,C")),
-            new PipeWorkbookGui.SheetInfo("Forces", "forces and moments at nodes, per load vector", rowsOf("Forces", "B,C")),
-            new PipeWorkbookGui.SheetInfo("Displacements", "imposed displacements at nodes, per load vector", rowsOf("Displacements", "B,C")),
-            new PipeWorkbookGui.SheetInfo("Uniform", "uniform loads (weight, seismic g's) on elements", rowsOf("Uniform", "A,B")),
-            new PipeWorkbookGui.SheetInfo("Wind", "wind / wave data on elements", rowsOf("Wind", "A,B")),
-            new PipeWorkbookGui.SheetInfo("Joints", "couplings, hinges, slip joints: ties between two nodes per DOF", rowsOf("Joints", "B,C")),
+            new WbSheetInfo("Settings", "title, notes, vertical axis, ambient temperature", null),
+            new WbSheetInfo("Elements", "one row per element, in CAESAR's order: nodes, lengths, type, section, process, bend, components", rowsOf("Elements", "B,C")),
+            new WbSheetInfo(PipeWorkbookGui.View, "the model drawn live as you edit it", null),
+            new WbSheetInfo("Sections", "pipe sizes: OD, wall, insulation, corrosion, material", rowsOf("Sections", "A,B")),
+            new WbSheetInfo("Processes", "operating conditions: T1-T9, P1-P9, fluid density", rowsOf("Processes", "A,B")),
+            new WbSheetInfo("Restraints", "anchors, supports, guides, limit stops, springs, ties to other nodes", rowsOf("Restraints", "B,C")),
+            new WbSheetInfo("SIFs", "SIFs and tees at nodes", rowsOf("SIFs", "B,C")),
+            new WbSheetInfo("Forces", "forces and moments at nodes, per load vector", rowsOf("Forces", "B,C")),
+            new WbSheetInfo("Displacements", "imposed displacements at nodes, per load vector", rowsOf("Displacements", "B,C")),
+            new WbSheetInfo("Uniform", "uniform loads (weight, seismic g's) on elements", rowsOf("Uniform", "A,B")),
+            new WbSheetInfo("Wind", "wind / wave data on elements", rowsOf("Wind", "A,B")),
+            new WbSheetInfo("Joints", "couplings, hinges, slip joints: ties between two nodes per DOF", rowsOf("Joints", "B,C")),
             // a tail Pluto does not take apart is carried whole: said here, not on the sheet, whose header row is read
-            new PipeWorkbookGui.SheetInfo("Hangers", tailWhole ? "this job's hangers and nozzles are in a MISCEL_1 layout Pluto does not take apart: carried as written (CAESAR keeps them), not listed here, not editable"
+            new WbSheetInfo("Hangers", tailWhole ? "this job's hangers and nozzles are in a MISCEL_1 layout Pluto does not take apart: carried as written (CAESAR keeps them), not listed here, not editable"
                                                                : "spring hangers: designed by CAESAR, springs as given, constant supports", rowsOf("Hangers", "B,C")),
-            new PipeWorkbookGui.SheetInfo("Nozzles", "flexible nozzles on vessels and tanks: WRC 297, API 650, PD 5500, custom stiffnesses", rowsOf("Nozzles", "B,D")),
-            new PipeWorkbookGui.SheetInfo("Coords", "where pieces of the model start", rowsOf("Coords", "A")),
-            new PipeWorkbookGui.SheetInfo("Nodes", "read-only: every node, its position and what is on it", null),
-            new PipeWorkbookGui.SheetInfo("Carried", "read-only: what the job holds that the sheets do not show (kept as written)", null),
+            new WbSheetInfo("Nozzles", "flexible nozzles on vessels and tanks: WRC 297, API 650, PD 5500, custom stiffnesses", rowsOf("Nozzles", "B,D")),
+            new WbSheetInfo("Coords", "where pieces of the model start", rowsOf("Coords", "A")),
+            new WbSheetInfo("Nodes", "read-only: every node, its position and what is on it", null),
+            new WbSheetInfo("Carried", "read-only: what the job holds that the sheets do not show (kept as written)", null),
         };
         Func<string, string, string> textIn = (sheet, cols) => string.Join("+", cols.Split(',').Select(c => "SUMPRODUCT(--ISTEXT(" + sheet + "!$" + c.Split(':')[0] + "$2:$" + c.Split(':')[c.Split(':').Length - 1] + "$" + L2 + "))").ToArray());
         Func<string, string, string> errIn = (sheet, cols) => "SUMPRODUCT(--ISERROR(" + sheet + "!$" + cols.Split(':')[0] + "$2:$" + cols.Split(':')[1] + "$" + L2 + "))";
@@ -781,93 +773,93 @@ public static class PipeWorkbook
         }
         string ccEnd = "$" + L2;
         string LS = limS.ToString(CultureInfo.InvariantCulture);
-        var checks = new List<PipeWorkbookGui.Check>
+        var checks = new List<WbCheck>
         {
-            new PipeWorkbookGui.Check("Error values (#N/A, #DIV/0! ...) on the input sheets",
+            new WbCheck("Error values (#N/A, #DIV/0! ...) on the input sheets",
                 errIn("Elements", "A:BE") + "+" + errIn("Sections", "A:M") + "+" + errIn("Processes", "A:U") + "+" + errIn("Restraints", "A:K") + "+" + errIn("Forces", "A:I") + "+" + errIn("Displacements", "A:I") + "+" +
                 errIn("Uniform", "A:H") + "+" + errIn("Wind", "A:I") + "+" + errIn("Hangers", "A:U") + "+" + errIn("Nozzles", "A:AC") + "+" + errIn("Coords", "A:D"), false),
-            new PipeWorkbookGui.Check("Elements: text where a number belongs", textIn("Elements", "B:F,J:J,M:T,W:AA,AC:BD") + "-SUMPRODUCT(" + string.Join("+", PipeWorkbookGui.RadiusNames.Select(rn => "(UPPER(TRIM(" + col("J") + "))=\"" + rn + "\")").ToArray()) + ")", false),
-            new PipeWorkbookGui.Check("Elements: rows without From or To", "SUMPRODUCT(((" + col("B") + "=\"\")+(" + col("C") + "=\"\")>0)*(LEN(" + col("A") + "&" + col("D") + "&" + col("E") + "&" + col("F") + "&" + col("G") + ")>0))", false),
-            new PipeWorkbookGui.Check("Elements: unknown Type, Section or Process",
+            new WbCheck("Elements: text where a number belongs", textIn("Elements", "B:F,J:J,M:T,W:AA,AC:BD") + "-SUMPRODUCT(" + string.Join("+", PipeWorkbookGui.RadiusNames.Select(rn => "(UPPER(TRIM(" + col("J") + "))=\"" + rn + "\")").ToArray()) + ")", false),
+            new WbCheck("Elements: rows without From or To", "SUMPRODUCT(((" + col("B") + "=\"\")+(" + col("C") + "=\"\")>0)*(LEN(" + col("A") + "&" + col("D") + "&" + col("E") + "&" + col("F") + "&" + col("G") + ")>0))", false),
+            new WbCheck("Elements: unknown Type, Section or Process",
                 unknown(col("G"), PipeWorkbookGui.LType, "") + "+" + unknown(col("H"), secList, "") + "+" + unknown(col("I"), procList, ""), false),
-            new PipeWorkbookGui.Check("Materials, hanger tables: neither a number nor an entry of CAESAR's list",
+            new WbCheck("Materials, hanger tables: neither a number nor an entry of CAESAR's list",
                 string.Join("+", new[] { "Sections!$G$2:$G$", "Elements!$AB$2:$AB$", "Nozzles!$T$2:$T$", "Hangers!$G$2:$G$" }.Select(r0 =>
                     "SUMPRODUCT((" + r0 + L2 + "<>\"\")*NOT(ISNUMBER(" + r0 + L2 + "))*NOT(ISNUMBER(--LEFT(" + r0 + L2 + ",FIND(\" \"," + r0 + L2 + "&\" \")-1))))").ToArray()), false),
-            new PipeWorkbookGui.Check("Sections / Processes: text where a number belongs", textIn("Sections", "B:F,H:L") + "+" + textIn("Processes", "B:U"), false),
-            new PipeWorkbookGui.Check("Restraints: unknown type, or text where a number belongs", unknown("Restraints!$C$2:$C$" + L2, typeList, "") + "+" + textIn("Restraints", "B:B,D:J"), false),
-            new PipeWorkbookGui.Check("Forces / Displacements / Uniform: text where a number belongs, or a vector outside 1-9",
+            new WbCheck("Sections / Processes: text where a number belongs", textIn("Sections", "B:F,H:L") + "+" + textIn("Processes", "B:U"), false),
+            new WbCheck("Restraints: unknown type, or text where a number belongs", unknown("Restraints!$C$2:$C$" + L2, typeList, "") + "+" + textIn("Restraints", "B:B,D:J"), false),
+            new WbCheck("Forces / Displacements / Uniform: text where a number belongs, or a vector outside 1-9",
                 textIn("Forces", "B:I") + "+" + textIn("Displacements", "B:I") + "+" + textIn("Uniform", "B:G") + "+" +
                 string.Join("+", new[] { "Forces!$C", "Displacements!$C", "Uniform!$D" }.Select(c => "SUMPRODUCT(ISNUMBER(" + c + "$2:" + c.Substring(c.IndexOf('!') + 1) + "$" + L2 + ")*((" + c + "$2:" + c.Substring(c.IndexOf('!') + 1) + "$" + L2 + "<1)+(" + c + "$2:" + c.Substring(c.IndexOf('!') + 1) + "$" + L2 + ">9)>0))").ToArray()), false),
-            new PipeWorkbookGui.Check("Uniform / Wind: unknown element Ids (single Ids)",
+            new WbCheck("Uniform / Wind: unknown element Ids (single Ids)",
                 "SUMPRODUCT((Uniform!$A$2:$A$" + L2 + "<>\"\")*ISERROR(FIND(\":\",Uniform!$A$2:$A$" + L2 + "))*(COUNTIF(" + col("A") + ",Uniform!$A$2:$A$" + L2 + ")=0))+SUMPRODUCT((Wind!$A$2:$A$" + L2 +
                 "<>\"\")*ISERROR(FIND(\":\",Wind!$A$2:$A$" + L2 + "))*(COUNTIF(" + col("A") + ",Wind!$A$2:$A$" + L2 + ")=0))", false),
-            new PipeWorkbookGui.Check("Restraints, SIFs, loads, hangers: nodes on no element's From / To (bend nodes are fine)",
+            new WbCheck("Restraints, SIFs, loads, hangers: nodes on no element's From / To (bend nodes are fine)",
                 "COUNTIF(CheckCalc!$A$2:$F" + ccEnd + ",TRUE)", true),
-            new PipeWorkbookGui.Check("Nozzles: unknown type, text where a number belongs, or a value the nozzle's type does not use",
+            new WbCheck("Nozzles: unknown type, text where a number belongs, or a value the nozzle's type does not use",
                 unknown("Nozzles!$D$2:$D$" + L2, PipeWorkbookGui.LNozzle, "") + "+" + textIn("Nozzles", "B:C,E:F,H:J,L:S,U:AC") + "+" + NozzleMisfits(L2), false),
-            new PipeWorkbookGui.Check("Hangers: text where a number belongs, a rate without its cold load or with a constant load, a node to free without its code",
+            new WbCheck("Hangers: text where a number belongs, a rate without its cold load or with a constant load, a node to free without its code",
                 textIn("Hangers", "B:F,H:I,K:Q,S:S") + "+SUMPRODUCT(ISNUMBER(Hangers!$D$2:$D$" + L2 + ")*(Hangers!$D$2:$D$" + L2 + ">0)*(NOT(ISNUMBER(Hangers!$E$2:$E$" + L2 + "))+ISNUMBER(Hangers!$F$2:$F$" + L2 +
                 ")*(Hangers!$F$2:$F$" + L2 + ">0)>0))+SUMPRODUCT((ISNUMBER(Hangers!$Q$2:$Q$" + L2 + ")<>(Hangers!$R$2:$R$" + L2 + "<>\"\"))+(ISNUMBER(Hangers!$S$2:$S$" + L2 + ")<>(Hangers!$T$2:$T$" + L2 + "<>\"\")))", false),
-            new PipeWorkbookGui.Check("Elements: a row whose end misses its To node by more than 1 in, where an earlier row put it: CAESAR stops on the loop (44E)",
+            new WbCheck("Elements: a row whose end misses its To node by more than 1 in, where an earlier row put it: CAESAR stops on the loop (44E)",
                 "COUNTIF(" + PipeWorkbookGui.CalcRange("Gp", n) + ",\">\"&pl_i2l)", false),
-            new PipeWorkbookGui.Check("Elements: a gap, where a row's end misses its To node (To cell) or a From node's Coords entry is off the pipe (From cell) by 0.001 in or more. " +
+            new WbCheck("Elements: a gap, where a row's end misses its To node (To cell) or a From node's Coords entry is off the pipe (From cell) by 0.001 in or more. " +
                 "CAESAR draws the gap and does not warn under 1 in: check the deltas and Coords around it",
                 "COUNTIF(" + PipeWorkbookGui.CalcRange("Gp", n) + ",\">\"&0.001*pl_i2l)+COUNTIF(" + PipeWorkbookGui.CalcRange("Gc", n) + ",\">\"&0.001*pl_i2l)", true),
-            new PipeWorkbookGui.Check("Elements: a bend node number used twice (on two bends, or also a From / To): CAESAR stops on it",
+            new WbCheck("Elements: a bend node number used twice (on two bends, or also a From / To): CAESAR stops on it",
                 PipeWorkbookGui.CalcCount("fB", n), false),
             // CAESAR's error checker (vault/arms/caesar-checks.md): red = it stops, amber = it warns
-            new PipeWorkbookGui.Check("Elements: a bend outside 5-95 deg, or a node on a bend within 5 deg of its far end or of another: CAESAR stops on it (5E, 12E)",
+            new WbCheck("Elements: a bend outside 5-95 deg, or a node on a bend within 5 deg of its far end or of another: CAESAR stops on it (5E, 12E)",
                 PipeWorkbookGui.CalcCount("fA", n) + "+" + PipeWorkbookGui.CalcCount("fN", n), false),
-            new PipeWorkbookGui.Check("Elements: an expansion joint without its axial stiffness, or without transverse and bending: CAESAR stops on it (19E)",
+            new WbCheck("Elements: an expansion joint without its axial stiffness, or without transverse and bending: CAESAR stops on it (19E)",
                 PipeWorkbookGui.CalcCount("fE", n), false),
-            new PipeWorkbookGui.Check("Nozzles: a WRC 297 / PD 5500 nozzle's stiffener or head closer than its radius, or not given: CAESAR stops on it (118E)",
+            new WbCheck("Nozzles: a WRC 297 / PD 5500 nozzle's stiffener or head closer than its radius, or not given: CAESAR stops on it (118E)",
                 "COUNTIF(CheckCalc!$G$2:$G" + ccEnd + ",TRUE)", false),
-            new PipeWorkbookGui.Check("Nozzles: a custom nozzle without its vessel material: CAESAR stops on it (79E)",
+            new WbCheck("Nozzles: a custom nozzle without its vessel material: CAESAR stops on it (79E)",
                 "SUMPRODUCT((" + nzc("D") + "=\"Custom\")*(((NOT(ISNUMBER(" + nzc("T") + ")))+(" + nzc("T") + "<=0))>0))", false),
-            new PipeWorkbookGui.Check("Elements / Sections: corrosion as thick as the wall: CAESAR stops on it",
+            new WbCheck("Elements / Sections: corrosion as thick as the wall: CAESAR stops on it",
                 PipeWorkbookGui.CalcCount("fC", n) + "+SUMPRODUCT(ISNUMBER(Sections!$E$2:$E$" + LS + ")*(Sections!$E$2:$E$" + LS + ">0)*ISNUMBER(Sections!$C$2:$C$" + LS + ")*(Sections!$E$2:$E$" + LS + ">=Sections!$C$2:$C$" + LS + "))", false),
-            new PipeWorkbookGui.Check("SIFs: a user SIF below 1.0: CAESAR does not accept it",
+            new WbCheck("SIFs: a user SIF below 1.0: CAESAR does not accept it",
                 "SUMPRODUCT(ISNUMBER(SIFs!$D$2:$E$" + L2 + ")*(SIFs!$D$2:$E$" + L2 + ">0)*(SIFs!$D$2:$E$" + L2 + "<1))", false),
-            new PipeWorkbookGui.Check("Displacements: a node a restraint holds to ground: CAESAR stops on it (57E, overspecified)",
+            new WbCheck("Displacements: a node a restraint holds to ground: CAESAR stops on it (57E, overspecified)",
                 "SUMPRODUCT((COUNTIFS(ck_rn,Displacements!$B$2:$B$" + L2 + ",ck_rc,\"\")>0)*(((Displacements!$D$2:$D$" + L2 + "<>\"\")+(Displacements!$E$2:$E$" + L2 + "<>\"\")+(Displacements!$F$2:$F$" + L2 +
                 "<>\"\")+(Displacements!$G$2:$G$" + L2 + "<>\"\")+(Displacements!$H$2:$H$" + L2 + "<>\"\")+(Displacements!$I$2:$I$" + L2 + "<>\"\"))>0))", false),
-            new PipeWorkbookGui.Check("Node numbers above 8,000,000 (CAESAR's limit)",
+            new WbCheck("Node numbers above 8,000,000 (CAESAR's limit)",
                 string.Join("+", new[] { "Elements!$B$2:$C$", "Restraints!$B$2:$B$", "Restraints!$D$2:$D$", "SIFs!$B$2:$B$", "Forces!$B$2:$B$", "Displacements!$B$2:$B$", "Hangers!$B$2:$C$", "Nozzles!$B$2:$C$", "Coords!$A$2:$A$" }
                     .Select(r0 => "SUMPRODUCT(ISNUMBER(" + r0 + L2 + ")*(" + r0 + L2 + ">8000000))").ToArray()), false),
-            new PipeWorkbookGui.Check("Elements: a change of direction with no bend or tee: CAESAR warns where the second element follows the first (21E); the others it does not see",
+            new WbCheck("Elements: a change of direction with no bend or tee: CAESAR warns where the second element follows the first (21E); the others it does not see",
                 PipeWorkbookGui.CalcCount("fK", n), true),
-            new PipeWorkbookGui.Check("Elements: a node on a bend within 5 deg of its near end (CAESAR's configuration asks for 5 deg; 15.01 let one at 3 deg pass)",
+            new WbCheck("Elements: a node on a bend within 5 deg of its near end (CAESAR's configuration asks for 5 deg; 15.01 let one at 3 deg pass)",
                 PipeWorkbookGui.CalcCount("fH", n), true),
-            new PipeWorkbookGui.Check("Elements: an expansion joint without its torsion stiffness, or with both transverse and bending on a joint with length",
+            new WbCheck("Elements: an expansion joint without its torsion stiffness, or with both transverse and bending on a joint with length",
                 PipeWorkbookGui.CalcCount("fF", n), true),
-            new PipeWorkbookGui.Check("Elements: a rigid (valve, flange ...) with no weight: CAESAR warns (18E) and adds no fluid or insulation weight",
+            new WbCheck("Elements: a rigid (valve, flange ...) with no weight: CAESAR warns (18E) and adds no fluid or insulation weight",
                 "SUMPRODUCT(((LEFT(" + col("G") + ",5)=\"Rigid\")+(" + col("G") + "=\"Valve\")+(" + col("G") + "=\"Flange\")+(" + col("G") + "=\"Flange pair\")+(" + col("G") + "=\"Flanged valve\")>0)*" +
                 "(((" + col("M") + "=\"\")+(" + col("M") + "=0))>0))", true),
-            new PipeWorkbookGui.Check("SIFs: a tee where other than three pipes meet: CAESAR warns (39E)",
+            new WbCheck("SIFs: a tee where other than three pipes meet: CAESAR warns (39E)",
                 "SUMPRODUCT(ISNUMBER(SIFs!$B$2:$B$" + L2 + ")*((ISNUMBER(MATCH(SIFs!$C$2:$C$" + L2 + "," + PipeWorkbookGui.LSifTees + ",0))+ISNUMBER(SIFs!$C$2:$C$" + L2 + ")*(SIFs!$C$2:$C$" + L2 + ">=1)*(SIFs!$C$2:$C$" + L2 + "<=6))>0)*" +
                 "((COUNTIF(" + nFrom + ",SIFs!$B$2:$B$" + L2 + ")+COUNTIF(" + nTo + ",SIFs!$B$2:$B$" + L2 + "))<>3))", true),
-            new PipeWorkbookGui.Check("SIFs: a type not on CAESAR 15.01's list (0-13)",
+            new WbCheck("SIFs: a type not on CAESAR 15.01's list (0-13)",
                 "SUMPRODUCT((SIFs!$C$2:$C$" + L2 + "<>\"\")*ISNA(MATCH(SIFs!$C$2:$C$" + L2 + "," + lSif + ",0))*(1-ISNUMBER(SIFs!$C$2:$C$" + L2 + ")*(SIFs!$C$2:$C$" + L2 + ">=0)*(SIFs!$C$2:$C$" + L2 + "<=" + PipeModelSifTypes.Max + ")))", false),
-            new PipeWorkbookGui.Check("Hangers: a hanger CAESAR designs at a node with a restraint or an imposed displacement: CAESAR warns (72E)",
+            new WbCheck("Hangers: a hanger CAESAR designs at a node with a restraint or an imposed displacement: CAESAR warns (72E)",
                 "SUMPRODUCT(ISNUMBER(Hangers!$B$2:$B$" + L2 + ")*(1-ISNUMBER(Hangers!$D$2:$D$" + L2 + ")*(Hangers!$D$2:$D$" + L2 + ">0))*(1-ISNUMBER(Hangers!$F$2:$F$" + L2 + ")*(Hangers!$F$2:$F$" + L2 + ">0))*" +
                 "((COUNTIF(ck_rn,Hangers!$B$2:$B$" + L2 + ")+COUNTIF(Displacements!$B$2:$B$" + L2 + ",Hangers!$B$2:$B$" + L2 + "))>0))", true),
-            new PipeWorkbookGui.Check("Nozzles: the nozzle node also a restraint's, a displacement's or a hanger's: CAESAR warns (266E)",
+            new WbCheck("Nozzles: the nozzle node also a restraint's, a displacement's or a hanger's: CAESAR warns (266E)",
                 "SUMPRODUCT(ISNUMBER(" + nzc("B") + ")*((COUNTIF(ck_rn," + nzc("B") + ")+COUNTIF(Displacements!$B$2:$B$" + L2 + "," + nzc("B") + ")+COUNTIF(Hangers!$B$2:$B$" + L2 + "," + nzc("B") + "))>0))", true),
-            new PipeWorkbookGui.Check("Nozzles: an API 650 tank under 120 ft (CAESAR warns, 123E), or its growth in a vector imposed displacements use (244E)",
+            new WbCheck("Nozzles: an API 650 tank under 120 ft (CAESAR warns, 123E), or its growth in a vector imposed displacements use (244E)",
                 "IFERROR(SUMPRODUCT((" + nzc("D") + "=\"API 650\")*ISNUMBER(" + nzc("H") + ")*(" + nzc("H") + ">0)*(" + nzc("H") + "*pl_d2in<" + PipeReview.ApiMinTankOdIn.ToString(CultureInfo.InvariantCulture) + ")),0)+" +
                 "SUMPRODUCT((" + nzc("D") + "=\"API 650\")*ISNUMBER(" + nzc("U") + ")*(COUNTIF(Displacements!$C$2:$C$" + L2 + "," + nzc("U") + ")>0))", true),
-            new PipeWorkbookGui.Check("Nozzles: a WRC 297 / PD 5500 nozzle without its vessel material (CAESAR stopped on a custom one without, 79E)",
+            new WbCheck("Nozzles: a WRC 297 / PD 5500 nozzle without its vessel material (CAESAR stopped on a custom one without, 79E)",
                 "SUMPRODUCT(((" + nzc("D") + "=\"WRC 297\")+(" + nzc("D") + "=\"PD 5500\"))*(((NOT(ISNUMBER(" + nzc("T") + ")))+(" + nzc("T") + "<=0))>0))", true),
-            new PipeWorkbookGui.Check("Processes / Elements: a temperature under 0.05 (CAESAR reads it as a thermal expansion)",
+            new WbCheck("Processes / Elements: a temperature under 0.05 (CAESAR reads it as a thermal expansion)",
                 string.Join("+", new[] { "Processes!$B$2:$J$", "Elements!$AF$2:$AN$" }.Select(r0 => "SUMPRODUCT(ISNUMBER(" + r0 + L2 + ")*(" + r0 + L2 + "<>0)*(" + r0 + L2 + "<0.05)*(" + r0 + L2 + ">-0.05))").ToArray()), true),
-            new PipeWorkbookGui.Check("Uniform: g's and force per length both used: CAESAR warns",
+            new WbCheck("Uniform: g's and force per length both used: CAESAR warns",
                 "IF(COUNTIF(Uniform!$H$2:$H$" + L2 + ",\"yes\")*(COUNTIF(Uniform!$H$2:$H$" + L2 + ",\"no\")+COUNTIFS(Uniform!$D$2:$D$" + L2 + ",\"<>\",Uniform!$H$2:$H$" + L2 + ",\"\"))>0," +
                 "MIN(COUNTIF(Uniform!$H$2:$H$" + L2 + ",\"yes\"),COUNTIF(Uniform!$H$2:$H$" + L2 + ",\"no\")+COUNTIFS(Uniform!$D$2:$D$" + L2 + ",\"<>\",Uniform!$H$2:$H$" + L2 + ",\"\")),0)", true),
-            new PipeWorkbookGui.Check("Wind: a wave added-mass coefficient over 1.0: CAESAR warns",
+            new WbCheck("Wind: a wave added-mass coefficient over 1.0: CAESAR warns",
                 "SUMPRODUCT(ISNUMBER(Wind!$F$2:$F$" + L2 + ")*(Wind!$F$2:$F$" + L2 + ">1)*(LOWER(TRIM(Wind!$D$2:$D$" + L2 + "))=\"wave\"))", true),
-            new PipeWorkbookGui.Check("Sections: D/t over 100 (CAESAR warns at bends and tees)",
+            new WbCheck("Sections: D/t over 100 (CAESAR warns at bends and tees)",
                 "SUMPRODUCT(ISNUMBER(Sections!$B$2:$B$" + LS + ")*ISNUMBER(Sections!$C$2:$C$" + LS + ")*(Sections!$C$2:$C$" + LS + ">0)*(Sections!$B$2:$B$" + LS + ">100*Sections!$C$2:$C$" + LS + "))", true),
-            new PipeWorkbookGui.Check("Ids used twice (a copied row is read as a new item)",
+            new WbCheck("Ids used twice (a copied row is read as a new item)",
                 "SUMPRODUCT((" + col("A") + "<>\"\")*(COUNTIF(" + col("A") + "," + col("A") + ")>1))+SUMPRODUCT((Restraints!$A$2:$A$" + L2 + "<>\"\")*(COUNTIF(Restraints!$A$2:$A$" + L2 + ",Restraints!$A$2:$A$" + L2 + ")>1))", true),
         };
         string[] reference =
@@ -890,163 +882,22 @@ public static class PipeWorkbook
 
     // ======================================================================== refresh
 
-    // The workbook at path, in this version's layout, with what was typed in it kept as typed: every input cell's formula
-    // (live node numbers, a delta worked out from other cells) or entry (a bend radius "LR", a blank left blank) goes
-    // back where it was, the sheets, checks, highlights and hidden model around it rebuilt from `read` (its model, read
-    // from the same file). Columns are matched by header (the unit in brackets aside), so a column this version moved
-    // takes its cells along and the references to it are rewritten; a column of the user's own goes after Pluto's. A
-    // column this version adds is filled from the model, on the rows the model's rows came from. A sheet of the user's
-    // own is copied as values and formulas. Settings keep their values by name. notes: what the caller should say.
+    // The workbook at path, in this version's layout, with what was typed in it kept as typed (the kit's WbRefresh):
+    // every input cell's formula (live node numbers, a delta worked out from other cells) or entry (a bend radius "LR",
+    // a blank left blank) goes back where it was, the sheets, checks, highlights and hidden model around it rebuilt from
+    // `read` (its model, read from the same file). Settings keep Title, Notes, Vertical axis and Ambient (its unit aside).
     static readonly string[] InputSheets =
     { "Settings", "Elements", "Sections", "Processes", "Restraints", "SIFs", "Forces", "Displacements", "Uniform", "Wind", "Joints", "Hangers", "Nozzles", "Coords" };
 
     public static byte[] RefreshBytes(string path, PipeWorkbookResult read, string sourceName, PipeWorkbookRun run, List<string> notes)
     {
-        notes = notes ?? new List<string>();
         var b = Book(read.Model, sourceName, run);
-        var old = CaesarWorkbook.Read(path);
-        Func<string, XlsxBookSheet> mine = n => b.Sheets.FirstOrDefault(q => string.Equals(q.Name, n, StringComparison.OrdinalIgnoreCase));
-        var inputs = InputSheets.Where(n => n != "Settings").ToList();
-
-        // columns: old -> new, per input sheet
-        var maps = new Dictionary<string, Dictionary<int, int>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var os in old)
-        {
-            var ns = mine(os.Name);
-            if (ns == null || !inputs.Contains(ns.Name, StringComparer.OrdinalIgnoreCase)) continue;
-            var map = new Dictionary<int, int>();
-            int newLast = ns.LastCol(0), extra = newLast + 1, oldLast = os.Rows.Count > 0 && os.Rows[0] != null ? os.Rows[0].Length - 1 : -1;
-            var used = new HashSet<int>();
-            Func<string, string> stem = h => { int k = h.IndexOf(" ("); return (k > 0 ? h.Substring(0, k) : h).Trim().ToLowerInvariant(); };
-            for (int c = 0; c <= oldLast; c++)
-            {
-                string h = os.Text(0, c);
-                if (h.Length == 0) continue;
-                int to = -1;
-                for (int k = 0; k <= newLast && to < 0; k++) if (!used.Contains(k) && ns.TextAt(0, k) == h) to = k;
-                for (int k = 0; k <= newLast && to < 0; k++) if (!used.Contains(k) && stem(ns.TextAt(0, k) ?? "") == stem(h)) to = k;
-                if (to < 0) { to = extra++; ns.Set(0, to, h, ns.StyleAt(0, newLast)); ns.Width(to, Math.Max(8, Math.Min(30, h.Length + 2))); notes.Add(os.Name + ": the column \"" + h + "\" is not Pluto's: kept, after Pluto's columns"); }
-                used.Add(to);
-                map[c] = to;
-            }
-            maps[os.Name] = map;
-        }
-        Func<string, Func<string, int, bool, int>> colMap = here => (sh, c, abs) =>
-        {
-            Dictionary<int, int> mp; int to;
-            return maps.TryGetValue(sh ?? here, out mp) && mp.TryGetValue(c, out to) ? to : c;
-        };
-
-        foreach (var os in old)
-        {
-            var ns = mine(os.Name);
-            if (ns == null)
-            {
-                if (!os.Name.StartsWith("_")) { ns = b.Add(os.Name); Copy(os, ns, null, colMap(os.Name), 0); notes.Add(os.Name + ": a sheet of the workbook's own, copied as values and formulas (its formatting is in the .bak)"); }
-                continue;
-            }
-            if (string.Equals(os.Name, "Settings", StringComparison.OrdinalIgnoreCase)) { KeepSettings(os, ns, colMap(os.Name)); continue; }
-            Dictionary<int, int> map;
-            if (!maps.TryGetValue(os.Name, out map)) continue;   // Start, 3D View, the hidden sheets: this version's
-            // the rows the model's rows came from: Pluto's columns' cells per old row; this version's new columns (if any)
-            // move from the rows they were written on to those
-            var newOnly = Enumerable.Range(0, ns.LastCol(0) + 1).Where(k => !map.ContainsValue(k)).ToList();
-            var oldRows = Enumerable.Range(1, Math.Max(0, os.Rows.Count - 1)).Where(r => map.Keys.Any(c => map[c] <= ns.LastCol(0) && Has(os, r, c))).ToList();
-            var newRows = ns.RowsUsed().Where(r => r > 0 && map.Values.Any(k => ns.HasContent(r, k))).OrderBy(r => r).ToList();
-            if (newOnly.Count > 0 && newOnly.Any(k => newRows.Any(r => ns.HasContent(r, k))) && !oldRows.SequenceEqual(newRows))
-            {
-                if (oldRows.Count == newRows.Count) Move(ns, newOnly, newRows, oldRows);
-                else
-                {
-                    foreach (int k in newOnly) foreach (int r in newRows) ns.ClearContent(r, k);
-                    notes.Add(os.Name + ": the new column(s) " + string.Join(", ", newOnly.Select(k => "\"" + ns.TextAt(0, k) + "\"").ToArray()) + " left blank: the rows could not be matched to the model's");
-                }
-            }
-            Copy(os, ns, map, colMap(os.Name), 1);
-        }
-        return b.ToBytes();
-    }
-
-    static bool Has(CaesarSheet s, int r, int c)
-    {
-        string a = XlsxBook.Ref(r, c);
-        return s.AllFormulas.ContainsKey(a) || s.Problems.ContainsKey(a) || !string.IsNullOrEmpty(s.Cell(r, c));
-    }
-
-    // this version's cells in columns cols moved from rows `from` to rows `to` (pairwise), styles staying with their rows
-    static void Move(XlsxBookSheet ns, List<int> cols, List<int> from, List<int> to)
-    {
-        var keep = new List<object[]>();
-        foreach (int k in cols)
-            for (int i = 0; i < from.Count; i++)
-            {
-                if (!ns.HasContent(from[i], k)) continue;
-                string tx = ns.TextAt(from[i], k);
-                keep.Add(new object[] { to[i], k, tx });
-            }
-        foreach (int k in cols) foreach (int r in from) ns.ClearContent(r, k);
-        foreach (var x in keep)
-        {
-            int r = (int)x[0], k = (int)x[1]; string tx = (string)x[2];
-            if (tx != null) ns.Set(r, k, tx, ns.StyleAt(r, k));
-        }
-    }
-
-    // the old sheet's cells from row `first` on, column c going to map[c] (map null: the same column), as typed: a formula
-    // with its references rewritten and the value it last gave, else the value (text stays text); the new cell's style kept
-    static void Copy(CaesarSheet os, XlsxBookSheet ns, Dictionary<int, int> map, Func<string, int, bool, int> colMap, int first)
-    {
-        int lastRow = Math.Max(os.Rows.Count - 1, ns.RowsUsed().DefaultIfEmpty(0).Max());
-        var cols = map != null ? map.Keys.ToList() : Enumerable.Range(0, os.Rows.Where(q => q != null).Select(q => q.Length).DefaultIfEmpty(0).Max()).ToList();
-        foreach (int c in cols)
-        {
-            int k = map != null ? map[c] : c;
-            for (int r = first; r <= lastRow; r++)
-            {
-                ns.ClearContent(r, k);
-                Put(os, r, c, ns, r, k, colMap);
-            }
-        }
-    }
-
-    static void Put(CaesarSheet os, int r, int c, XlsxBookSheet ns, int nr, int k, Func<string, int, bool, int> colMap)
-    {
-        string a = XlsxBook.Ref(r, c), f, v = os.Cell(r, c);
-        int st = ns.StyleAt(nr, k);
-        bool text = os.TextCells.Contains(a);
-        double d;
-        bool num = !text && v != null && double.TryParse(v, NumberStyles.Float, CultureInfo.InvariantCulture, out d);
-        if (os.AllFormulas.TryGetValue(a, out f))
-        {
-            f = XlsxFormulaRefs.Rewrite(f, colMap, (row, abs) => row);
-            if (num) ns.SetFormula(nr, k, f, double.Parse(v, NumberStyles.Float, CultureInfo.InvariantCulture), st);
-            else if (v != null) ns.SetFormulaText(nr, k, f, v, st);
-            else ns.SetFormula(nr, k, f, st);
-            return;
-        }
-        if (v == null) return;
-        if (num) ns.Set(nr, k, double.Parse(v, NumberStyles.Float, CultureInfo.InvariantCulture), st);
-        else ns.Set(nr, k, v, st);
-    }
-
-    // Settings: the values typed for the settings this version still has, by name (Ambient's unit aside)
-    static void KeepSettings(CaesarSheet os, XlsxBookSheet ns, Func<string, int, bool, int> colMap)
-    {
-        Func<string, string> key = s => s.StartsWith("Ambient", StringComparison.Ordinal) ? "Ambient" : s;
-        var editable = new HashSet<string> { "Title", "Notes", "Vertical axis", "Ambient" };
-        var at = new Dictionary<string, int>();
-        foreach (int r in ns.RowsUsed()) { string k = ns.TextAt(r, 0); if (r > 0 && !string.IsNullOrEmpty(k) && !at.ContainsKey(key(k))) at[key(k)] = r; }
-        for (int r = 1; r < os.Rows.Count; r++)
-        {
-            int nr; string k = key(os.Text(r, 0));
-            if (!editable.Contains(k) || !at.TryGetValue(k, out nr)) continue;
-            ns.ClearContent(nr, 1);
-            Put(os, r, 1, ns, nr, 1, colMap);
-        }
+        return WbRefresh.Bytes(b, path, InputSheets.Where(n => n != "Settings").ToList(), "Settings", new HashSet<string> { "Title", "Notes", "Vertical axis", "Ambient" },
+                               s => s.StartsWith("Ambient", StringComparison.Ordinal) ? "Ambient" : s, notes);
     }
 
     static void Head(XlsxBookSheet s, params string[] h) { for (int c = 0; c < h.Length; c++) { s.Set(0, c, h[c], XlsxBook.Header); s.Width(c, Math.Max(8, Math.Min(30, h[c].Length + 2))); } }
-    static void Row(XlsxBookSheet s, PipeWorkbookGui.Theme t, int r, string k, string v, string note, string kind)
+    static void Row(XlsxBookSheet s, WbTheme t, int r, string k, string v, string note, string kind)
     {
         s.Set(r, 0, k, t.Label); s.Set(r, 1, v ?? "", t.Value); s.Set(r, 2, note, XlsxBook.Note);
         if (kind == "text") s.Validate(XlsxBook.Ref(r, 1), new XlsxValidation { PromptTitle = k, Prompt = note });
@@ -1270,82 +1121,27 @@ public static class PipeWorkbook
         if (r == 1) s.Set(1, 0, "(nothing carried)", XlsxBook.Note);
     }
 
-    // the base JSON without its line breaks and indents (they are never inside a string: PipeModelJson escapes them)
-    static string Compact(string json)
-    {
-        var sb = new StringBuilder(json.Length);
-        int i = 0;
-        while (i < json.Length)
-        {
-            char c = json[i];
-            if (c == '\n') { i++; while (i < json.Length && json[i] == ' ') i++; continue; }
-            sb.Append(c); i++;
-        }
-        return sb.ToString();
-    }
-
     // ======================================================================== read
 
-    sealed class Ctx
+    sealed class Ctx : WbReadCtx
     {
         public PipeModel M, Base;
         public Units U;
-        public readonly List<string> Errors = new List<string>();
-        public readonly List<string> Warnings = new List<string>();
-        public void Err(string s) { if (Errors.Count < 200) Errors.Add(s); }
     }
 
-    // a sheet's columns by header name (the text before " ("), with the header's unit
-    sealed class Cols
-    {
-        public CaesarSheet S;
-        public readonly Dictionary<string, int> At = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        public readonly Dictionary<int, string> Unit = new Dictionary<int, string>();
-        public int Rows { get { return S.Rows.Count; } }
-    }
-
-    static Cols ColsOf(CaesarSheet s, Ctx x, string[] known)
-    {
-        var c = new Cols { S = s };
-        var head = s.Rows.Count > 0 ? s.Rows[0] : null;
-        if (head == null) return c;
-        for (int k = 0; k < head.Length; k++)
-        {
-            string h = (head[k] ?? "").Trim();
-            if (h.Length == 0) continue;
-            string name = h, unit = null;
-            int p = h.IndexOf(" (", StringComparison.Ordinal);
-            if (p > 0 && h.EndsWith(")", StringComparison.Ordinal)) { name = h.Substring(0, p).Trim(); unit = h.Substring(p + 2, h.Length - p - 3).Trim(); }
-            if (c.At.ContainsKey(name)) { x.Err(s.Name + "!" + XlsxBook.Ref(0, k) + ": a second column \"" + name + "\""); continue; }
-            c.At[name] = k;
-            if (unit != null) c.Unit[k] = unit;
-            if (known != null && !known.Contains(name, StringComparer.OrdinalIgnoreCase)) x.Warnings.Add(s.Name + ": column \"" + h + "\" is not one the workbook reads (ignored)");
-        }
-        return c;
-    }
-
-    static string Text(Cols c, int row, string col, Ctx x)
-    {
-        int k;
-        if (!c.At.TryGetValue(col, out k)) return "";
-        string addr = XlsxBook.Ref(row, k);
-        string prob;
-        if (c.S.Problems.TryGetValue(addr, out prob)) { x.Err(c.S.Name + "!" + addr + ": " + prob); return ""; }
-        return c.S.Text(row, k);
-    }
+    // a sheet's columns by header name, a cell's text (the kit's WbRead)
+    static Cols ColsOf(CaesarSheet s, Ctx x, string[] known) { return WbRead.ColsOf(s, x, known); }
+    static string Text(Cols c, int row, string col, Ctx x) { return WbRead.Text(c, row, col, x); }
 
     // a number cell: NaN when blank; a length column converted from its header's unit (kind: the factor index
     // of the unit the model holds -- 0 length, 20 diameter, 21 wall -- or -1 for no conversion)
     static double Num(Cols c, int row, string col, Ctx x, int kind, string expectUnit)
     {
-        int k;
-        if (!c.At.TryGetValue(col, out k)) return double.NaN;
-        string t = Text(c, row, col, x);
-        if (t.Length == 0) return double.NaN;
-        double v;
-        if (!double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out v)) { x.Err(c.S.Name + "!" + XlsxBook.Ref(row, k) + ": \"" + t + "\" is not a number"); return double.NaN; }
         string unit;
-        if (expectUnit != null && c.Unit.TryGetValue(k, out unit) && !string.Equals(unit, expectUnit, StringComparison.OrdinalIgnoreCase))
+        double v = WbRead.Raw(c, row, col, x, out unit);
+        if (double.IsNaN(v)) return v;
+        int k = c.At[col];
+        if (expectUnit != null && unit != null && !string.Equals(unit, expectUnit, StringComparison.OrdinalIgnoreCase))
         {
             double per, perJob;
             if (kind >= 0 && LengthUnits.TryGetValue(unit, out per))
@@ -1363,62 +1159,31 @@ public static class PipeWorkbook
     static int SifType(Cols c, int row, Ctx x) { return LeadInt(c, row, "Type", x, 0); }
 
     // a number from one of CAESAR's lists, as a list entry ("106 - A106 Grade B") or the bare number; blank = dflt
-    static int LeadInt(Cols c, int row, string col, Ctx x, int dflt)
-    {
-        if (!c.At.ContainsKey(col)) return dflt;
-        string tx = Text(c, row, col, x).Trim();
-        if (tx.Length == 0) return dflt;
-        int sp = tx.IndexOf(' ');
-        string head = sp > 0 ? tx.Substring(0, sp) : tx;
-        double v;
-        if (double.TryParse(head, NumberStyles.Float, CultureInfo.InvariantCulture, out v) && Math.Abs(v - Math.Round(v)) < 1e-9) return (int)Math.Round(v);
-        x.Err(c.S.Name + "!" + XlsxBook.Ref(row, c.At[col]) + ": " + col + " \"" + tx + "\" (pick one from the list, or give its number)");
-        return dflt;
-    }
+    static int LeadInt(Cols c, int row, string col, Ctx x, int dflt) { return WbRead.LeadInt(c, row, col, x, dflt); }
+    static int Int(Cols c, int row, string col, Ctx x, int dflt) { return WbRead.Int(c, row, col, x, dflt); }
+    static bool Blank(CaesarSheet s, int row) { return WbRead.Blank(s, row); }
 
-    static int Int(Cols c, int row, string col, Ctx x, int dflt)
-    {
-        double v = Num(c, row, col, x, -1, null);
-        if (double.IsNaN(v)) return dflt;
-        if (Math.Abs(v - Math.Round(v)) > 1e-9) { x.Err(c.S.Name + "!" + XlsxBook.Ref(row, c.At[col]) + ": a whole number is expected (" + R(v) + ")"); return dflt; }
-        return (int)Math.Round(v);
-    }
-
-    static bool Blank(CaesarSheet s, int row)
-    {
-        var r = row < s.Rows.Count ? s.Rows[row] : null;
-        return r == null || r.All(v => v == null || v.Trim().Length == 0);
-    }
-
-    static int IdNum(string id, char prefix)
-    {
-        int n;
-        if (id.Length > 1 && char.ToUpperInvariant(id[0]) == prefix && int.TryParse(id.Substring(1), NumberStyles.Integer, CultureInfo.InvariantCulture, out n) && n > 0) return n;
-        return 0;
-    }
+    static int IdNum(string id, char prefix) { return WbRead.IdNum(id, prefix); }
 
     public static PipeWorkbookResult Read(string path)
     {
         var res = new PipeWorkbookResult { Path = path ?? "" };
         var sheets = CaesarWorkbook.Read(path);
         Func<string, CaesarSheet> sheet = n => sheets.FirstOrDefault(s => string.Equals(s.Name, n, StringComparison.OrdinalIgnoreCase));
-        PipeWorkbookFormula.Resolve(sheets);
+        WbFormula.Resolve(sheets, InputSheets);
         var x = new Ctx();
 
         // the base model from _pluto
-        var pl = sheet("_pluto");
-        if (pl != null && pl.Text(0, 0) == Format)
+        var pl = WbBase.Read(sheet("_pluto"), Format);
+        if (pl != null)
         {
-            int ver = (int)ToNum(pl.Text(0, 1));
+            int ver = pl.Version;
             if (ver > Version) throw new InvalidOperationException("PipeWorkbook: " + Path.GetFileName(path) + " is workbook version " + ver + ", newer than this reader (" + Version + ")");
-            int n = (int)ToNum(pl.Text(3, 1));
-            var sb = new StringBuilder();
-            for (int k = 0; k < n; k++) sb.Append(pl.Cell(4 + k, 0) ?? "");
             bool upgraded = false;
-            try { res.Base = PipeModelJson.Read(sb.ToString(), out upgraded); }
+            try { res.Base = PipeModelJson.Read(pl.Json, out upgraded); }
             catch (Exception ex) { throw new InvalidOperationException("PipeWorkbook: the hidden base model (_pluto) does not read (" + ex.Message + "): make the workbook again from its source"); }
-            res.BaseHash = pl.Text(1, 1);
-            res.SourceName = pl.Text(2, 1);
+            res.BaseHash = pl.Hash;
+            res.SourceName = pl.Source;
             // a base in an older form (nozzles before 2026-10-26) writes again differently: its fingerprint cannot be checked
             if (!upgraded && Sha(PipeModelJson.Write(res.Base)) != res.BaseHash) res.Warnings.Add("the hidden base model does not match its fingerprint: it was changed outside Pluto");
         }
@@ -1459,7 +1224,7 @@ public static class PipeWorkbook
         return res;
     }
 
-    static double ToNum(string s) { double v; return double.TryParse((s ?? "").Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out v) ? v : 0; }
+    static double ToNum(string s) { return WbRead.ToNum(s); }
 
     // ---- Settings
 
@@ -2298,21 +2063,12 @@ public static class PipeWorkbook
     // a fingerprint of a model: SHA-256 of its exact JSON
     public static string Hash(PipeModel m) { return Sha(PipeModelJson.Write(m)); }
 
-    static string Sha(string text)
-    {
-        using (var h = SHA256.Create())
-            return string.Concat(h.ComputeHash(new UTF8Encoding(false).GetBytes(text)).Select(b => b.ToString("x2")).ToArray());
-    }
+    static string Sha(string text) { return WbBase.Sha(text); }
 
     // a value the sheet gives: the field keeps its exact value when the cell holds the same one
     static void SetN(ref double field, double v) { if (!Same(field, v)) field = v; }
 
-    static bool Same(double a, double b)
-    {
-        if (a == b) return true;
-        if (double.IsNaN(a) || double.IsNaN(b)) return false;
-        return Math.Abs(a - b) <= 1e-9 * Math.Max(Math.Abs(a), Math.Abs(b)) + 1e-15;
-    }
+    static bool Same(double a, double b) { return WbBase.Same(a, b); }
 
     static bool SameCos(double[] a, double[] b) { return a != null && b != null && Same(a[0], b[0]) && Same(a[1], b[1]) && Same(a[2], b[2]); }
 
@@ -2336,270 +2092,5 @@ public static class PipeWorkbook
             else sb.Append(c);
         }
         return sb.Append('"').ToString();
-    }
-}
-
-// The formulas a workbook saved by a program that does not calculate (a script library) holds without their values:
-// the node numbers and node references Pluto writes (live numbering) and plain arithmetic, worked out here so the
-// workbook still reads. Numbers, "text", cell references (another sheet's too, $ or not), + - * / &, = <>, parentheses,
-// ROW(), ROW(ref), IF(a,b,c), INDEX(column,n). Anything else stays a cell with no value (reported as before).
-static class PipeWorkbookFormula
-{
-    sealed class Fail : Exception { }
-
-    // the sheets the reader takes values from (the hidden ones calculate for the 3D view and the checks only)
-    static readonly HashSet<string> Inputs = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-    { "Settings", "Elements", "Sections", "Processes", "Restraints", "SIFs", "Forces", "Displacements", "Uniform", "Wind", "Joints", "Hangers", "Nozzles", "Coords" };
-
-    public static void Resolve(List<CaesarSheet> sheets)
-    {
-        if (!sheets.Any(s => Inputs.Contains(s.Name) && s.Formulas.Count > 0)) return;
-        var memo = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
-        var busy = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var s in sheets.Where(q => Inputs.Contains(q.Name)))
-            foreach (var kv in s.Formulas.ToList())
-            {
-                object v;
-                try { v = Cell(sheets, s, kv.Key, memo, busy); }
-                catch (Fail) { continue; }
-                int col, row;
-                if (!Pos(kv.Key, out col, out row)) continue;
-                s.Set(row, col, Parser.Str(v));
-                s.Problems.Remove(kv.Key);
-                s.Formulas.Remove(kv.Key);
-            }
-    }
-
-    static bool Pos(string a, out int col, out int row)
-    {
-        col = 0; row = -1;
-        int i = 0;
-        while (i < a.Length && char.IsLetter(a[i])) { col = col * 26 + (char.ToUpperInvariant(a[i]) - 'A' + 1); i++; }
-        col--;
-        int r;
-        if (i == 0 || i >= a.Length || !int.TryParse(a.Substring(i), NumberStyles.Integer, CultureInfo.InvariantCulture, out r)) return false;
-        row = r - 1;
-        return true;
-    }
-
-    // a cell's value: its saved value, else its formula worked out (a number as double, else text)
-    static object Cell(List<CaesarSheet> sheets, CaesarSheet s, string at, Dictionary<string, object> memo, HashSet<string> busy)
-    {
-        string key = s.Name + "!" + at;
-        object m;
-        if (memo.TryGetValue(key, out m)) return m;
-        string f;
-        if (!s.Formulas.TryGetValue(at, out f))
-        {
-            int col, row;
-            if (!Pos(at, out col, out row)) throw new Fail();
-            if (s.Problems.ContainsKey(at)) throw new Fail();
-            string t = s.Cell(row, col);
-            double d;
-            if (t == null) return "";
-            return double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out d) ? (object)d : t;
-        }
-        if (!busy.Add(key)) throw new Fail();
-        int c0, r0;
-        Pos(at, out c0, out r0);
-        var p = new Parser { Src = f.StartsWith("=") ? f.Substring(1) : f, Sheets = sheets, Here = s, Row = r0 + 1, Memo = memo, Busy = busy };
-        object v = p.Val(p.Expr());
-        p.Ws();
-        if (p.I != p.Src.Length) throw new Fail();
-        busy.Remove(key);
-        memo[key] = v;
-        return v;
-    }
-
-    sealed class Ref { public CaesarSheet Sheet; public int Col, Row; public bool WholeColumn; }
-
-    sealed class Parser
-    {
-        public string Src; public int I; public List<CaesarSheet> Sheets; public CaesarSheet Here; public int Row;
-        public Dictionary<string, object> Memo; public HashSet<string> Busy;
-
-        public void Ws() { while (I < Src.Length && Src[I] == ' ') I++; }
-        bool Eat(string t) { Ws(); if (string.Compare(Src, I, t, 0, t.Length, StringComparison.OrdinalIgnoreCase) == 0) { I += t.Length; return true; } return false; }
-
-        public object Val(object v)
-        {
-            var r = v as Ref;
-            if (r == null) return v;
-            if (r.WholeColumn) throw new Fail();
-            return Cell(Sheets, r.Sheet, XlsxBook.Ref(r.Row, r.Col), Memo, Busy);
-        }
-        static double Num(object v) { if (v is double) return (double)v; if (v is bool) return (bool)v ? 1 : 0; if (v as string == "") return 0; throw new Fail(); }
-        public static string Str(object v) { return v is double ? ((double)v).ToString("R", CultureInfo.InvariantCulture) : v is bool ? ((bool)v ? "TRUE" : "FALSE") : v as string ?? ""; }
-
-        public object Expr()
-        {
-            object a = Concat();
-            if (Eat("<>")) { object b = Concat(); return !Same(Val(a), Val(b)); }
-            if (Eat("=")) { object b = Concat(); return Same(Val(a), Val(b)); }
-            return a;
-        }
-        static bool Same(object a, object b)
-        {
-            if (a is double && b is double) return (double)a == (double)b;
-            if (a is string && b is string) return string.Equals((string)a, (string)b, StringComparison.OrdinalIgnoreCase);
-            if (a is bool && b is bool) return (bool)a == (bool)b;
-            return false;   // a number never equals text (Excel)
-        }
-        object Concat()
-        {
-            object a = Add();
-            while (Eat("&")) a = Str(Val(a)) + Str(Val(Add()));
-            return a;
-        }
-        object Add()
-        {
-            object a = Mul();
-            while (true)
-            {
-                if (Eat("+")) a = Num(Val(a)) + Num(Val(Mul()));
-                else if (Eat("-")) a = Num(Val(a)) - Num(Val(Mul()));
-                else return a;
-            }
-        }
-        object Mul()
-        {
-            object a = Unary();
-            while (true)
-            {
-                if (Eat("*")) a = Num(Val(a)) * Num(Val(Unary()));
-                else if (Eat("/")) { double d = Num(Val(Unary())); if (d == 0) throw new Fail(); a = Num(Val(a)) / d; }
-                else return a;
-            }
-        }
-        object Unary()
-        {
-            if (Eat("-")) return -Num(Val(Unary()));
-            if (Eat("+")) return Num(Val(Unary()));
-            return Primary();
-        }
-        object Primary()
-        {
-            Ws();
-            if (I >= Src.Length) throw new Fail();
-            char c = Src[I];
-            if (c == '(') { I++; object v = Expr(); if (!Eat(")")) throw new Fail(); return v; }
-            if (c == '"')
-            {
-                var sb = new StringBuilder();
-                I++;
-                while (I < Src.Length) { if (Src[I] == '"') { if (I + 1 < Src.Length && Src[I + 1] == '"') { sb.Append('"'); I += 2; continue; } break; } sb.Append(Src[I++]); }
-                if (I >= Src.Length) throw new Fail();
-                I++;
-                return sb.ToString();
-            }
-            if (char.IsDigit(c) || c == '.')
-            {
-                int j = I;
-                while (I < Src.Length && (char.IsDigit(Src[I]) || Src[I] == '.' || ((Src[I] == 'E' || Src[I] == 'e') && I + 1 < Src.Length && (char.IsDigit(Src[I + 1]) || Src[I + 1] == '-' || Src[I + 1] == '+')) ||
-                                          ((Src[I] == '-' || Src[I] == '+') && I > j && (Src[I - 1] == 'E' || Src[I - 1] == 'e')))) I++;
-                double d;
-                if (!double.TryParse(Src.Substring(j, I - j), NumberStyles.Float, CultureInfo.InvariantCulture, out d)) throw new Fail();
-                return d;
-            }
-            if (Eat("ROW("))
-            {
-                if (Eat(")")) return (double)Row;
-                var r = Reference();
-                if (!Eat(")") || r.WholeColumn) throw new Fail();
-                return (double)(r.Row + 1);
-            }
-            if (Eat("IF("))
-            {
-                object cond = Val(Expr());
-                if (!Eat(",")) throw new Fail();
-                bool yes = cond is bool ? (bool)cond : Num(cond) != 0;
-                // both branches are parsed; only the one taken is worked out
-                object a = null, b = null;
-                if (yes) { a = Val(Expr()); if (!Eat(",")) throw new Fail(); SkipArg(); }
-                else { SkipArg(); if (!Eat(",")) throw new Fail(); b = Val(Expr()); }
-                if (!Eat(")")) throw new Fail();
-                return yes ? a : b;
-            }
-            if (Eat("INDEX("))
-            {
-                var r = Reference();
-                if (!r.WholeColumn || !Eat(",")) throw new Fail();
-                double n = Num(Val(Expr()));
-                if (!Eat(")") || n < 1 || n != Math.Floor(n)) throw new Fail();
-                return Cell(Sheets, r.Sheet, XlsxBook.Ref((int)n - 1, r.Col), Memo, Busy);
-            }
-            return Reference();
-        }
-
-        // an argument skipped over (the IF branch not taken): to the next comma or close at this depth
-        void SkipArg()
-        {
-            int depth = 0;
-            bool q = false;
-            while (I < Src.Length)
-            {
-                char c = Src[I];
-                if (q) { if (c == '"') q = false; I++; continue; }
-                if (c == '"') q = true;
-                else if (c == '(') depth++;
-                else if (c == ')') { if (depth == 0) return; depth--; }
-                else if (c == ',' && depth == 0) return;
-                I++;
-            }
-        }
-
-        // [Sheet!]$A$1 or [Sheet!]$A:$A
-        Ref Reference()
-        {
-            Ws();
-            var sheet = Here;
-            int j = I;
-            string name = null;
-            if (I < Src.Length && Src[I] == '\'')
-            {
-                int k = Src.IndexOf("'!", I + 1, StringComparison.Ordinal);
-                if (k < 0) throw new Fail();
-                name = Src.Substring(I + 1, k - I - 1).Replace("''", "'");
-                I = k + 2;
-            }
-            else
-            {
-                int k = I;
-                while (k < Src.Length && (char.IsLetterOrDigit(Src[k]) || Src[k] == '_' || Src[k] == ' ')) k++;
-                if (k < Src.Length && Src[k] == '!') { name = Src.Substring(I, k - I); I = k + 1; }
-            }
-            if (name != null)
-            {
-                sheet = Sheets.FirstOrDefault(s => string.Equals(s.Name, name, StringComparison.OrdinalIgnoreCase));
-                if (sheet == null) throw new Fail();
-            }
-            int col, row;
-            if (!Part(out col, out row)) { I = j; throw new Fail(); }
-            if (row < 0)
-            {
-                // a whole column: $A:$A
-                if (!Eat(":")) throw new Fail();
-                int col2, row2;
-                if (!Part(out col2, out row2) || row2 >= 0 || col2 != col) throw new Fail();
-                return new Ref { Sheet = sheet, Col = col, Row = -1, WholeColumn = true };
-            }
-            return new Ref { Sheet = sheet, Col = col, Row = row };
-        }
-
-        // $A$1 -> col 0, row 0; $A -> row -1
-        bool Part(out int col, out int row)
-        {
-            col = 0; row = -1;
-            if (I < Src.Length && Src[I] == '$') I++;
-            int j = I;
-            while (I < Src.Length && char.IsLetter(Src[I])) { col = col * 26 + (char.ToUpperInvariant(Src[I]) - 'A' + 1); I++; }
-            if (I == j || I - j > 3) return false;
-            col--;
-            if (I < Src.Length && Src[I] == '$') I++;
-            int k = I;
-            while (I < Src.Length && char.IsDigit(Src[I])) I++;
-            if (I > k) row = int.Parse(Src.Substring(k, I - k), CultureInfo.InvariantCulture) - 1;
-            return true;
-        }
     }
 }
