@@ -40,7 +40,7 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 > | Sheet | Rows |
 > |---|---|
 > | Joints | Id, Joint, X Y Z (global; formulas welcome), Restraint (`fixed`, `pin`, or the DOFs held: `U1 U2 U3 R3`), Local A B C |
-> | Frames | Id, Frame, Joint I, Joint J (both on Joints), Length (live, read-only), Section, Kind, Line, Release (a preset), Angle, Insertion (cardinal point), Modifiers (a preset), Offset I / Offset J (joint offsets along local 1 2 3: `0 0 6`; one SAP holds in another system shows as `GLOBAL: 0 6 0` and is kept) |
+> | Frames | Id, Frame, Joint I, Joint J (both on Joints), Length (live, read-only), Section, Kind, Line, Release (a preset), Angle, Insertion (cardinal point), Modifiers (a preset), Offset I / Offset J (joint offsets along local 1 2 3: `0 0 6`; one SAP holds in another system shows as `GLOBAL: 0 6 0` and is kept), End length I / J and Rigid zone (end length offsets, SAP's `FRAME OFFSET ALONG LENGTH`; a Type other than User shows its type and is kept) |
 > | Sections | Id, Name, Shape, Material, t3 t2 tf tw t2b tfb dis, Area I33 I22 J (General sections), Catalog and section modifiers (read-only). Each shape's dimensions are required (a new I's blank t2b / tfb are t2 / tf); a new section from a catalog is refused (give its dimensions) |
 > | Materials | Id, Name, Type, E, Poisson, G, Unit weight, Unit mass, Alpha, Fy, Fu. A new material's blank G is E/(2(1+ν)), its blank mass the weight / g |
 > | Releases | Named presets of the 12 end DOFs (P V2 V3 T M2 M3 at I and J): `yes`, a partial-fixity stiffness, or blank. Built in: FIXED, PIN-PIN, PIN-I, PIN-J, SLIP-J; an imported pattern with no match becomes R1, R2 … |
@@ -50,7 +50,7 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 > | Load patterns | Name, Type, Self weight |
 > | Joint loads, Ground displacements | Joint, Pattern, CoordSys, six values |
 > | Point loads, Distributed loads, Temperature | Frames (a selector), Pattern, CoordSys, Type, Dir, Rel / Abs, where, values. A row naming several frames gives one load per frame. Headers carry two units where the row decides: `Value (kip \| kip-in)` (a force row, a moment row), `Value A (kip/in \| kip-in/in)`; `Distance (in)`, `Start`, `End` convert on Abs rows (a Rel row is a fraction) |
-> | Load cases | Case, Type, Initial (Zero, or a NonStatic case: SAP continues only from one; a loop is refused), then one row per load (Load type, Load name, SF) |
+> | Load cases | Case, Type, Initial (Zero, or a NonStatic case: SAP continues only from one; a loop is refused), then one row per load (Load type, Load name, SF); Geometric nonlinearity on a NonStatic case's first row (None, P-Delta, P-Delta plus Large Displacements: `CASE - STATIC 4`) |
 > | Combinations | Combination, Type, then one row per item (a case or a combination, SF; SAP's case type is worked out) |
 > | Groups | SAP's groups, one row per member; the `PL_KIND_` / `PL_LINE_` groups are Frames' Kind and Line |
 > | Carried | Read-only: each table no object owns, with its row count, and each table objects keep that no sheet shows (offsets along the length, nonlinear case parameters, auto mesh, design data …): they ride along unchanged and follow renames and deletions |
@@ -83,6 +83,21 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 >
 > **Refresh** writes the workbook in this version's layout from its own base, every typed cell back where it was, so
 > the next read gives the same model.
+
+> [!info]- What an import fills (2026-11-05)
+> An `.s2k` fills every sheet whose objects it holds:
+> - joints, frames, sections, materials, release and modifier presets, links and their properties (with multilinear
+>   curves), springs;
+> - patterns, every load table, cases (with geometric nonlinearity), combinations, groups;
+> - insertion points with joint offsets, and end length offsets.
+>
+> What stays on **Carried** applies to no frame model edit:
+> - SAP's analysis and design settings and preferences, grid lines, mass source, project information;
+> - area objects, which a frame workbook does not edit;
+> - per-frame SAP defaults (auto mesh, design procedures, output stations, end skew, load transfer);
+> - the nonlinear cases' solver controls beyond geometric nonlinearity.
+>
+> A table SAP exports with data that is not listed above shows on Carried by name, with its row count.
 
 > [!info]- The 3D View (`FrameView`, 2026-11-05)
 > The **3D View** sheet (after Frames) draws the model as an Excel XY chart that follows Joints, Frames, Releases,

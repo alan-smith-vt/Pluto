@@ -254,6 +254,21 @@ public sealed class FrameMember : FrameObj
         }
     }
 
+    // the end length offsets (rigid end zones; SAP's own names, probe round 1): Type=User with LengthI, LengthJ and the
+    // rigid-zone factor. EndOffsetType is "" when the frame has no row, else SAP's Type (User, or one SAP works out)
+    public string EndOffsetType { get { var r = Rec(EndOffsets); return r == null ? "" : r.Get("Type") ?? ""; } }
+    public double[] EndLengths { get { var r = Rec(EndOffsets); return new[] { r == null ? 0 : r.Num("LengthI", 0), r == null ? 0 : r.Num("LengthJ", 0), r == null ? 0 : r.Num("RigidFactor", 0) }; } }
+    // set them as user lengths; all zero on a frame with no row adds none
+    public void SetEndLengths(double i, double j, double factor)
+    {
+        var r = Rec(EndOffsets);
+        if (r == null && i == 0 && j == 0 && factor == 0) return;
+        if (r != null && EndOffsetType.Equals("User", StringComparison.OrdinalIgnoreCase) && EndLengths.SequenceEqual(new[] { i, j, factor })) return;
+        r = Need(EndOffsets);
+        r.Set("Type", "User");
+        r.SetNum("LengthI", i).SetNum("LengthJ", j).SetNum("RigidFactor", factor);
+    }
+
     // the joint offsets of the insertion point (SAP 24.2's export, probe round 2): CoordSys, then JtOffsetXI YI ZI XJ YJ
     // ZJ after CardinalPt. With CoordSys=Local, X Y Z are local 1 2 3. None: no CoordSys and no JtOffset fields.
     public static readonly string[] JtOffsetKeys = { "JtOffsetXI", "JtOffsetYI", "JtOffsetZI", "JtOffsetXJ", "JtOffsetYJ", "JtOffsetZJ" };
@@ -484,8 +499,10 @@ public sealed class FrameLoad : FrameObj
 
 public sealed class FrameCase : FrameObj
 {
-    public const string Defs = "LOAD CASE DEFINITIONS", StaticLoads = "CASE - STATIC 1 - LOAD ASSIGNMENTS";
+    public const string Defs = "LOAD CASE DEFINITIONS", StaticLoads = "CASE - STATIC 1 - LOAD ASSIGNMENTS", NonlinParams = "CASE - STATIC 4 - NONLINEAR PARAMETERS";
     public override string Kind { get { return "case"; } }
+    // a nonlinear case's geometric nonlinearity: None, P-Delta, or P-Delta plus Large Displacements (SAP's names)
+    public string GeoNonLin { get { var r = Rec(NonlinParams); return r == null ? "None" : r.Get("GeoNonLin") ?? "None"; } set { if (GeoNonLin != value) Need(NonlinParams).Set("GeoNonLin", value); } }
     public override string KeyField { get { return "Case"; } }
     public override string MainTable { get { return Defs; } }
     public string Type { get { var r = Rec(Defs); return r == null ? "" : r.Get("Type") ?? ""; } set { if (Type != value) Need(Defs).Set("Type", value); } }
@@ -666,6 +683,8 @@ public sealed class FrameModel
         { FrameMember.Partial, new string[0] },
         { FrameMember.Insertion, new[] { "CardinalPt", "10 (centroid)", "Mirror2", "No", "Mirror3", "No", "Transform", "Yes" } },
         { FrameMember.Modifiers, new[] { "AMod", "1", "AS2Mod", "1", "AS3Mod", "1", "JMod", "1", "I22Mod", "1", "I33Mod", "1", "MassMod", "1", "WeightMod", "1" } },
+        { FrameMember.EndOffsets, new[] { "Type", "User", "LengthI", "0", "LengthJ", "0", "RigidFactor", "0" } },
+        { FrameCase.NonlinParams, new[] { "GeoNonLin", "None" } },
         { FrameSection.General, new[] { "Material", "", "Shape", "", "Color", "Green" } },
         { FrameMaterial.General, new[] { "Type", "Steel", "SymType", "Isotropic", "TempDepend", "No", "Color", "Blue" } },
         { FrameMaterial.Mechanical, new[] { "UnitWeight", "0", "UnitMass", "0", "E1", "0", "G12", "0", "U12", "0", "A1", "0" } },

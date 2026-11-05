@@ -210,11 +210,13 @@ public static class FrameWorkbook
     static string[][] ListCols()
     {
         return new[] { Shapes, FrameMember.CardinalNames.Skip(1).Select((n, k) => FrameMember.CardinalText(k + 1)).ToArray(), new[] { "yes", "no" }, DofNames, LinkTypes,
-                       PatternTypes, CaseTypes, ComboTypes, LoadTypes, Dirs, DistTypes, CoordSyss, TempTypes, RestraintPresets, ObjectTypes, CaseLoadTypes, MaterialTypes, WbPlot.Views };
+                       PatternTypes, CaseTypes, ComboTypes, LoadTypes, Dirs, DistTypes, CoordSyss, TempTypes, RestraintPresets, ObjectTypes, CaseLoadTypes, MaterialTypes, WbPlot.Views, GeoNonLins };
     }
     static readonly string[] ListNames = { "Shapes", "Insertion points", "Yes / no", "DOFs", "Link types", "Pattern types", "Case types", "Combination types", "Load types",
-                                           "Directions", "Rel / Abs", "Coordinate systems", "Temperature types", "Restraints", "Object types", "Case load types", "Material types", "Views" };
-    const int ViewList = 17;   // the Views list's column; its azimuths and elevations are the next two
+                                           "Directions", "Rel / Abs", "Coordinate systems", "Temperature types", "Restraints", "Object types", "Case load types", "Material types", "Views",
+                                           "Geometric nonlinearity" };
+    const int ViewList = 17, GeoList = 18;   // the Views list's column (its azimuths and elevations follow the last list)
+    static readonly string[] GeoNonLins = { "None", "P-Delta", "P-Delta plus Large Displacements" };
     static string ListRange(int col)
     {
         string c = XlsxBook.Column(col);
@@ -301,7 +303,7 @@ public static class FrameWorkbook
         // ---- Frames
         var fs = b.Add(SFrames);
         var fh = new[] { "Id", "Frame", "Joint I", "Joint J", H("Length", "L", units), "Section", "Kind", "Line", "Release", H("Angle", "deg", ""), "Insertion", "Modifiers",
-                         H("Offset I", "L", units), H("Offset J", "L", units) };
+                         H("Offset I", "L", units), H("Offset J", "L", units), H("End length I", "L", units), H("End length J", "L", units), "Rigid zone" };
         fs.FreezeCols = 2;
         var pos = new Dictionary<string, double[]>(StringComparer.Ordinal);
         foreach (var j in m.Joints) pos[j.Label] = j.Xyz;
@@ -316,6 +318,10 @@ public static class FrameWorkbook
             if (f.CardinalPoint != 10) fs.Set(r0, 10, FrameMember.CardinalText(f.CardinalPoint));
             if (modOf[f].Length > 0) fs.Set(r0, 11, modOf[f]);
             for (int e = 0; e < 2; e++) { string ot = OffsetText(f, e); if (ot.Length > 0) fs.Set(r0, 12 + e, ot); }
+            // end length offsets: user lengths as numbers; one SAP works out (another Type) shows its Type and stays
+            var el = f.EndLengths;
+            if (f.EndOffsetType.Length > 0 && !f.EndOffsetType.Equals("User", StringComparison.OrdinalIgnoreCase)) fs.Set(r0, 14, f.EndOffsetType);
+            else for (int k = 0; k < 3; k++) if (el[k] != 0) fs.Set(r0, 14 + k, el[k]);
             r0++;
         }
         for (int r = 1; r < m.Frames.Count + 201; r++)
@@ -347,13 +353,17 @@ public static class FrameWorkbook
             L("Modifiers", "prop", "list!", modNames, "Property modifiers: a preset on the Modifiers sheet. Blank = none."),
             C("Offset I", "geom", "text", "Joint offset of the insertion point at end I: three numbers along local 1 2 3 (\"0 0 6\"). Blank = none. An offset SAP holds in another system shows it (\"GLOBAL: 0 6 0\"): change it in SAP, or give local values."),
             C("Offset J", "geom", "text", "Joint offset at end J, as Offset I."),
+            C("End length I", "geom", "text", "End length offset at I (a rigid end zone, e.g. half the column's depth). Blank = 0. SAP's own (another type) shows its type: leave it, or give lengths."),
+            C("End length J", "geom", "num", "End length offset at J."),
+            C("Rigid zone", "geom", "num", "Rigid-zone factor of the end lengths, 0 to 1 (0 = flexible, 1 = fully rigid)."),
         }, m.Frames.Count, lim);
         fs.Conditional("C2:D" + lim, "AND(C2<>\"\",COUNTIF(" + jointIds + ",C2)=0)", t.Red);
         fs.Conditional("C2:D" + lim, "AND($C2<>\"\",$C2=$D2)", t.Red);
         fs.Conditional("B2:B" + lim, "AND(B2<>\"\",COUNTIF($B$2:$B$" + lim + ",B2)>1)", t.Red);
         fs.Conditional("E2:E" + lim, "AND(ISNUMBER(E2),E2=0)", t.Amber);
         fs.Width(0, 8); fs.Width(1, 10); fs.Width(2, 9); fs.Width(3, 9); fs.Width(4, 11); fs.Width(5, 16); fs.Width(6, 10); fs.Width(7, 10);
-        fs.Width(8, 10); fs.Width(9, 10); fs.Width(10, 16); fs.Width(11, 11); fs.Width(12, 14); fs.Width(13, 14);
+        fs.Width(8, 10); fs.Width(9, 10); fs.Width(10, 16); fs.Width(11, 11); fs.Width(12, 14); fs.Width(13, 14); fs.Width(14, 13); fs.Width(15, 13); fs.Width(16, 10);
+        fs.Conditional("Q2:Q" + lim, "IF(ISNUMBER(Q2),OR(Q2<0,Q2>1),Q2<>\"\")", t.Red);
         var view = b.Add(FrameView.View);                       // filled with the hidden PlotCalc / PlotPts, after Lists
 
         // ---- Sections
@@ -607,14 +617,16 @@ public static class FrameWorkbook
         {
             var lds = c.Loads.ToList();
             cs.Set(r0, 0, Id(c)); cs.Set(r0, 1, c.Label); cs.Set(r0, 2, c.Type); cs.Set(r0, 3, c.Initial);
+            if (c.Type.StartsWith("Non", StringComparison.OrdinalIgnoreCase)) cs.Set(r0, 7, c.GeoNonLin);
             if (lds.Count == 0) { r0++; continue; }
             foreach (var x in lds) { cs.Set(r0, 4, x[0]); cs.Set(r0, 5, x[1]); Num(cs, r0, 6, x[2]); r0++; }
         }
-        t.Form.Table(cs, t, new[] { "Id", "Case", "Type", "Initial", "Load type", "Load name", "SF" }, new[] {
+        t.Form.Table(cs, t, new[] { "Id", "Case", "Type", "Initial", "Load type", "Load name", "SF", "Geometric nonlinearity" }, new[] {
             C("Id", "key", "id", "CASE and the case's number, on its first row: keep it."), C("Case", "key", "text", "The case's name on its first row; a blank Case continues the case above."),
             L("Type", "load", "list?", ListRange(6), "LinStatic, NonStatic (gaps, hooks, friction need it) ..."),
             C("Initial", "load", "text", "Zero, or the nonlinear case it continues from (OPE from SUS)."),
             L("Load type", "load", "list?", ListRange(15), "Load pattern (usually)."), L("Load name", "load", "text", null, "The pattern."), C("SF", "load", "num", "Scale factor."),
+            L("Geometric nonlinearity", "load", "list!", ListRange(GeoList), "A nonlinear case's, on its first row: None, P-Delta, or P-Delta plus Large Displacements. Blank = None."),
         }, r0 - 1, lim);
         cs.Conditional("F2:F" + lim, "AND(F2<>\"\",E2=\"Load pattern\",COUNTIF(" + patNames + ",F2)=0)", t.Red);
 
@@ -668,6 +680,7 @@ public static class FrameWorkbook
             FrameMember.Release, FrameMember.Partial, FrameMember.Insertion, FrameMember.Modifiers, FrameSection.General, FrameMaterial.General, FrameMaterial.Mechanical,
             FrameMaterial.Steel, FrameLinkProp.General, FrameLink.Conn, FrameLink.PropAssign, FrameLink.LocalAxes, FrameGroup.Defs, FrameGroup.Assign, FramePattern.Defs,
             FrameLoad.JointForce, FrameLoad.GroundDisp, FrameLoad.Point, FrameLoad.Distributed, FrameLoad.Temperature, FrameCase.Defs, FrameCase.StaticLoads, FrameCombo.Defs,
+            FrameMember.EndOffsets,
         };
         var kept = new SortedDictionary<string, int>(StringComparer.Ordinal);
         foreach (var o in m.All())
@@ -691,11 +704,12 @@ public static class FrameWorkbook
             li.Set(0, k, ListNames[k], XlsxBook.Header);
             for (int i = 0; i < lcols[k].Length; i++) li.Set(1 + i, k, lcols[k][i]);
         }
-        li.Set(0, ViewList + 1, "View azimuth", XlsxBook.Header); li.Set(0, ViewList + 2, "View elevation", XlsxBook.Header);
-        for (int i = 0; i < WbPlot.Views.Length; i++) { li.Set(1 + i, ViewList + 1, WbPlot.ViewAz[i]); li.Set(1 + i, ViewList + 2, WbPlot.ViewEl[i]); }
+        int azCol = lcols.Length, elCol = lcols.Length + 1;
+        li.Set(0, azCol, "View azimuth", XlsxBook.Header); li.Set(0, elCol, "View elevation", XlsxBook.Header);
+        for (int i = 0; i < WbPlot.Views.Length; i++) { li.Set(1 + i, azCol, WbPlot.ViewAz[i]); li.Set(1 + i, elCol, WbPlot.ViewEl[i]); }
         Func<int, string> numList = k => "Lists!$" + XlsxBook.Column(k) + "$2:$" + XlsxBook.Column(k) + "$" + (1 + WbPlot.Views.Length).ToString(Inv);
         FrameView.Sheets(b, t, view, b.Add(FrameView.Calc), b.Add(FrameView.Pts), m.Frames.Count, m.Joints.Count, m.Links.Count, lim, FrameUnits.Label("L", units),
-                         ListRange(ViewList), numList(ViewList + 1), numList(ViewList + 2), ListRange(2));
+                         ListRange(ViewList), numList(azCol), numList(elCol), ListRange(2));
         WbBase.Write(b, Format, Version, hash, sourceName, json);
 
         // ---- Settings
@@ -1260,6 +1274,7 @@ public static class FrameWorkbook
             else if (!mod.TryGetValue(mn, out p0)) x.Err(At(c, r, "Modifiers") + ": no modifiers preset " + mn + " on Modifiers" + Hint(mn, mod.Keys));
             else if (!f.PropertyModifiers.SequenceEqual(p0.Val)) f.PropertyModifiers = p0.Val;
             ReadOffsets(c, r, x, f);
+            ReadEndLengths(c, r, x, f);
         }
         return order;
     }
@@ -1278,6 +1293,29 @@ public static class FrameWorkbook
         if (v.All(q => double.TryParse(q, NumberStyles.Float, Inv, out d) && d == 0)) return "";
         string t = string.Join(" ", v);
         return sys.Equals("Local", StringComparison.OrdinalIgnoreCase) ? t : sys + ": " + t;
+    }
+
+    static void ReadEndLengths(WbCols c, int r, Ctx x, FrameMember f)
+    {
+        if (!c.At.ContainsKey("End length I")) return;
+        string ty = f.EndOffsetType, ti = Text(c, r, "End length I", x).Trim();
+        // SAP's own end offsets (another Type), shown as their type: left as they are
+        if (ty.Length > 0 && !ty.Equals("User", StringComparison.OrdinalIgnoreCase) && ti.Equals(ty, StringComparison.OrdinalIgnoreCase)) return;
+        double li = Num(c, r, "End length I", x, "L"), lj = Num(c, r, "End length J", x, "L"), rf = Num(c, r, "Rigid zone", x, null);
+        if (ti.Length > 0 && double.IsNaN(li)) return;   // not a number: reported
+        li = double.IsNaN(li) ? 0 : li; lj = double.IsNaN(lj) ? 0 : lj; rf = double.IsNaN(rf) ? 0 : rf;
+        if (li < 0 || lj < 0) { x.Err(At(c, r, "End length I") + ": end lengths are not negative"); return; }
+        if (rf < 0 || rf > 1) { x.Err(At(c, r, "Rigid zone") + ": a factor 0 to 1 (" + FrameModel.Fmt(rf) + ")"); return; }
+        if (li + lj >= FrameLength(x.M, f) && li + lj > 0) x.Warnings.Add(At(c, r, "End length I") + ": frame " + f.Label + "'s end lengths add up to its length or more");
+        f.SetEndLengths(li, lj, rf);
+    }
+
+    static double FrameLength(FrameModel m, FrameMember f)
+    {
+        var a = m.JointNamed(f.JointI); var b = m.JointNamed(f.JointJ);
+        if (a == null || b == null) return double.PositiveInfinity;
+        double[] p = a.Xyz, q = b.Xyz;
+        return Math.Sqrt((q[0] - p[0]) * (q[0] - p[0]) + (q[1] - p[1]) * (q[1] - p[1]) + (q[2] - p[2]) * (q[2] - p[2]));
     }
 
     static void ReadOffsets(WbCols c, int r, Ctx x, FrameMember f)
@@ -1394,17 +1432,20 @@ public static class FrameWorkbook
         }
         bool multi = FrameLinkProp.IsMultilinear(p.LinkType);
         if (pts.Count > 0 && !multi) { x.Err(At(c, r, "Points") + ": a curve is for a MultiLinear property (" + p.Label + " is " + p.LinkType + ")"); return; }
-        if (multi && d.Yes("NonLinear") && !d.Yes("Fixed"))
-        {
-            if (pts.Count < 3) { x.Err(At(c, r, "Points") + ": " + p.Label + " " + dof + " is nonlinear: SAP needs at least three force, displacement points (with fewer its import makes the DOF linear)"); return; }
-            for (int i = 1; i < pts.Count; i++)
-                if (pts[i][1] <= pts[i - 1][1]) { x.Err(At(c, r, "Points") + ": the displacements must increase (" + FrameModel.Fmt(pts[i - 1][1]) + " then " + FrameModel.Fmt(pts[i][1]) + ")"); return; }
-            if (!pts.Any(q => q[0] == 0 && q[1] == 0)) x.Warnings.Add(At(c, r, "Points") + ": " + p.Label + " " + dof + "'s curve does not pass through 0, 0, which SAP's multilinear elastic link expects");
-        }
         var have = p.Points(dof);
         double hv;
         bool same = have.Count == pts.Count && have.Select((q, i) => double.TryParse(q[0], NumberStyles.Float, Inv, out hv) && hv == pts[i][0] &&
                                                                      double.TryParse(q[1], NumberStyles.Float, Inv, out hv) && hv == pts[i][1]).All(b => b);
+        if (multi && d.Yes("NonLinear") && !d.Yes("Fixed"))
+        {
+            // a curve as the model already had it is said, not refused (SAP makes such a DOF linear on import)
+            string few = At(c, r, "Points") + ": " + p.Label + " " + dof + " is nonlinear: SAP needs at least three force, displacement points (with fewer its import makes the DOF linear)";
+            if (pts.Count < 3 && same) { x.Warnings.Add(few); return; }
+            if (pts.Count < 3) { x.Err(few); return; }
+            for (int i = 1; i < pts.Count; i++)
+                if (pts[i][1] <= pts[i - 1][1]) { x.Err(At(c, r, "Points") + ": the displacements must increase (" + FrameModel.Fmt(pts[i - 1][1]) + " then " + FrameModel.Fmt(pts[i][1]) + ")"); return; }
+            if (!pts.Any(q => q[0] == 0 && q[1] == 0)) x.Warnings.Add(At(c, r, "Points") + ": " + p.Label + " " + dof + "'s curve does not pass through 0, 0, which SAP's multilinear elastic link expects");
+        }
         if (!same) p.SetPoints(dof, pts);
     }
 
@@ -1628,6 +1669,18 @@ public static class FrameWorkbook
         else row.Set("RelDistA", "0").Set("RelDistB", "1").Set("AbsDistA", "0").Set("AbsDistB", "0").Set("FOverLA", "0").Set("FOverLB", "0");
     }
 
+    static void ReadGeoNonLin(WbCols c, int r, Ctx x, FrameCase cs)
+    {
+        if (!c.At.ContainsKey("Geometric nonlinearity")) return;
+        string g = Text(c, r, "Geometric nonlinearity", x).Trim();
+        bool non = cs.Type.StartsWith("Non", StringComparison.OrdinalIgnoreCase);
+        if (!non) { if (g.Length > 0 && !g.Equals("None", StringComparison.OrdinalIgnoreCase)) x.Err(At(c, r, "Geometric nonlinearity") + ": " + cs.Label + " is " + cs.Type + ": only a nonlinear (NonStatic) case takes it"); return; }
+        if (g.Length == 0) g = "None";
+        string hit = GeoNonLins.FirstOrDefault(v => v.Equals(g, StringComparison.OrdinalIgnoreCase));
+        if (hit == null) { x.Err(At(c, r, "Geometric nonlinearity") + ": \"" + g + "\" (None, P-Delta, or P-Delta plus Large Displacements)"); return; }
+        if (cs.GeoNonLin != hit) cs.GeoNonLin = hit;
+    }
+
     static void ReadCases(CaesarSheet s, Ctx x)
     {
         if (s == null) return;
@@ -1645,6 +1698,7 @@ public static class FrameWorkbook
                 cur = Take<FrameCase>(c, r, x, "case", name, "Case", () => new FrameCase());
                 string ty = Text(c, r, "Type", x), ini = Text(c, r, "Initial", x);
                 if (ty.Length > 0) cur.Type = ty;
+                ReadGeoNonLin(c, r, x, cur);
                 if (ini.Length == 0) ini = "Zero";
                 initials.Add(new object[] { cur, ini, At(c, r, "Initial") });
             }
