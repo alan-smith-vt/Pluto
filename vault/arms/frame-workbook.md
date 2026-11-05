@@ -22,7 +22,10 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 - 0a: the SAP probe.
 - 1: the lossless core and the runner.
 - 0b: the shared workbook kit.
-- 2: the viewer (releases, supports, links, loads by pattern / case).
+- 2: the viewer (releases, supports, links, loads by pattern / case). **Done 2026-11-05**: any SAP `.s2k` draws
+  text labels, local axis angles, explicit offsets and end releases ([[vault/arms/sap-s2k-to-viewer|sap-s2k-to-viewer]]);
+  the viewer shows releases (`releases.js`), links (`links.js`), springs / hooks / friction supports, and loads by
+  pattern, case or combination ([[vault/format/features-sidecar|features-sidecar]]).
 - 3: the workbook.
 - 4: the pipe-stress layer (support presets, contents, insulation, thermal, equipment).
 - 5: the review.

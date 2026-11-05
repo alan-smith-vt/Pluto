@@ -262,5 +262,84 @@ assert(S._entries().length === 0 && S.count() === 0 && !meshes(), 'no supports s
 FEASupports.onModelCleared();
 assert(S._entries().length === 0 && !meshes(), 'model cleared: symbols gone');
 
+// 12. SAP's kinds (FrameSidecar.Supports): spring (a coil; a rotational one a spiral on a stem),
+// hook (a shank curling into a hook at the pipe), a one-way with friction (its arrow on a hatched
+// plate; not on a CAESAR item), a one-joint link of another type (a diamond). R = 1, u = 1, L = 2.4.
+{
+  FEASupports.onModelLoaded();
+  const sap = (id, name, node, tags, restraints) => ({ id: id, name: name, nodeIds: [node], dof: {}, tags: tags, restraints: restraints });
+  const SAPS = { version: 1, items: [
+    sap('s1', '1 U3~ R3~', 1, ['sap', 'support'], [{ type: 'U3 spring', kind: 'spring', direction: [0, 0, 1], stiffness: 33 },
+                                                   { type: 'R3 spring', kind: 'spring', direction: [0, 0, 1], stiffness: 66 }]),
+    sap('s2', 'G3 L_HOOK', 2, ['sap', 'support', 'link'], [{ type: 'L_HOOK U1', kind: 'hook', direction: [0, 1, 0], tag: 'G3', stiffness: 2002 }]),
+    sap('s3', 'G4 L_ODD', 2, ['sap', 'support', 'link'], [{ type: 'L_ODD', kind: 'other', tag: 'G4' }]),
+    sap('s4', 'G5 L_FRIC', 3, ['sap', 'support', 'link'], [{ type: 'L_FRIC U1', kind: 'oneway', direction: [0, 1, 0], tag: 'G5', stiffness: 10002, friction: 0.31 }]),
+    sap('c4', '3 +Y mu', 3, ['caesar', 'support'], [{ type: '+Y', kind: 'oneway', direction: [0, 1, 0], sign: '+', axis: [1, 0, 0], friction: 0.3 }]),
+    sap('c5', '1 OTHER', 1, ['caesar', 'support'], [{ type: 'OTHER(99)', kind: 'other' }])
+  ] };
+  FEAFeatures.setEnvelope({ format: 'pluto-features', version: 1, model: { geometryHash: 'h' }, groups: { version: 1, items: [] }, supports: SAPS }, 'sap.features.json');
+  const ent = name => S._entries().find(e => e.name === name);
+  const ps = name => S._parts(ent(name));
+  const up = (pt, local) => new THREE.Vector3(local[0], local[1], local[2]).applyQuaternion(pt.quat);
+  const nearV = (v, x, y, z, t = 1e-4) => near(v.x, x, t) && near(v.y, y, t) && near(v.z, z, t);
+  assert(S.count() === 6, 'SAP items: six drawn');
+  {
+    const p = ps('1 U3~ R3~');
+    const coil = p.filter(q => q.prim === 'coil'), spiral = p.filter(q => q.prim === 'spiral');
+    assert(coil.length === 1 && nearV(coil[0].pos, 0, 0, -2.2) && near(coil[0].scale.y, 2.4) && near(Math.abs(up(coil[0], [0, 1, 0]).z), 1),
+           'U3 spring: a coil 2.4u long below the pipe (where the arrow would be), along Z: ' + coil[0].pos.toArray().map(v => v.toFixed(3)));
+    assert(p.some(q => q.prim === 'box' && nearV(q.pos, 0, 0, -3.45) && near(q.scale.y, 0.1)), 'U3 spring: on a small base plate at its far end');
+    assert(spiral.length === 1 && nearV(spiral[0].pos, 0, 0, 3.7) && near(Math.abs(up(spiral[0], [0, 1, 0]).z), 1),
+           'R3 spring: a flat spiral square to its axis, beyond the pipe (R + L + 0.3u): ' + spiral[0].pos.toArray().map(v => v.toFixed(3)));
+    assert(p.some(q => q.prim === 'cyl' && nearV(q.pos, 0, 0, 2.35)), 'R3 spring: on a stem from the pipe surface');
+    assert(p.every(q => q.kind === 'spring'), 'spring parts carry the spring kind (its colour)');
+  }
+  {
+    const p = ps('G3 L_HOOK');
+    const arc = p.filter(q => q.prim === 'arc'), shank = p.filter(q => q.prim === 'cyl');
+    assert(arc.length === 1 && nearV(arc[0].pos, 10, -1.35, 0) && near(up(arc[0], [1, 0, 0]).y, 1),
+           'hook: the curl just below the pipe, its closed side towards it: ' + arc[0].pos.toArray().map(v => v.toFixed(3)));
+    assert(shank.length === 1 && shank[0].pos.y < -1.5 && near(Math.abs(up(shank[0], [0, 1, 0]).y), 1), 'hook: a shank below it, along the direction');
+    assert(p.every(q => q.kind === 'hook'), 'hook parts carry the hook kind');
+  }
+  {
+    const p = ps('G4 L_ODD');
+    assert(p.length === 1 && p[0].prim === 'oct' && nearV(p[0].pos, 10, 1.55, 0), 'a SAP one-joint link of another type: a diamond on top (as links.js)');
+    const q = ps('1 OTHER');
+    assert(q.length === 1 && q[0].prim === 'ball', 'a CAESAR "other": the ball, as before');
+  }
+  {
+    const p = ps('G5 L_FRIC');
+    assert(p.filter(q => q.prim === 'cone').length === 1 && p.filter(q => q.prim === 'box').length === 1 && p.filter(q => q.prim === 'cyl').length === 5,
+           'friction (SAP): the one-way arrow, a plate, four hatch strokes');
+    const plate = p.find(q => q.prim === 'box');
+    assert(nearV(plate.pos, 20, -3.45, 0) && near(Math.abs(up(plate, [0, 1, 0]).y), 1), 'friction: the plate across the arrow\'s tail, square to it');
+    const hatch = p.filter(q => q.prim === 'cyl' && near(q.scale.y, 0.5));
+    assert(hatch.length === 4 && hatch.every(q => q.pos.y < -3.5), 'friction: the hatching beyond the plate');
+    const c = ps('3 +Y mu');
+    assert(c.length === 2 && c.every(q => q.prim === 'cone' || q.prim === 'cyl'), 'a CAESAR one-way with friction draws as before: one arrow, no plate');
+  }
+  S._set({ colorMode: 'kind' });
+  {
+    const m = meshes(), k = Array.from(m.coil.owner).indexOf(S._entries().indexOf(ent('1 U3~ R3~')));
+    const c = new THREE.Color(); m.coil.mesh.getColorAt(k, c);
+    assert(near(c.r, 92 / 255, 1e-3) && near(c.b, 192 / 255, 1e-3), 'colour by kind: a spring in the spring colour');
+    assert(m.spiral && m.arc && m.oct, 'instanced: coil, spiral, arc, diamond');
+  }
+  S._set({ colorMode: 'group' });
+  // a polygon section (no parameters) sizes the symbols from its outline
+  const saved = beamView.sections[0];
+  beamView.sections[0] = { name: 'RING', type: 'POLY', params: {}, points: [[0, -2], [0, 0.5], [-1, 0.5], [-1, 0]] };
+  FEASupports.onModelLoaded();
+  FEAFeatures.setEnvelope(env(), 't.features.json');
+  {
+    const k = find('box', '1 ANC')[0], m = new THREE.Matrix4(); meshes().box.mesh.getMatrixAt(k, m);
+    const s = new THREE.Vector3(); m.decompose(new THREE.Vector3(), new THREE.Quaternion(), s);
+    assert(near(s.x, 2 * 2 + 1.6 * 2), 'a POLY section: R = its outline\'s reach (2), the anchor plate 2R + 1.6u = 7.2: ' + s.x.toFixed(3));
+  }
+  beamView.sections[0] = saved;
+  FEASupports.onModelCleared();
+}
+
 console.log(fails ? fails + ' FAILED' : 'ALL SUPPORT TESTS PASSED');
 process.exitCode = fails ? 1 : 0;

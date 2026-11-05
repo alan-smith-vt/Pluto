@@ -171,6 +171,38 @@
         <div class="fea-hint" style="margin-top:2px;">Beams use their own auto range with the active colormap (in a beam-only model the Display Min/Max set it). Envelope / strength / DSR views, and load cases with no beam values for the component, draw beams neutral.</div>
     </details>
 
+    <details class="fea-section fea-details" id="relSection" style="display:none;" open>
+        <summary class="fea-sub" style="margin-bottom:0;">Releases</summary>
+        <div class="fea-details-body">
+            <div class="fea-row" style="margin-top:8px;">
+                <label class="fea-label" for="relShow">Show</label>
+                <input type="checkbox" id="relShow" class="fea-check" checked>
+                <span class="fea-hint" id="relCount" style="margin-left:6px;"></span>
+            </div>
+            <div class="fea-row">
+                <label class="fea-label" for="relSize">Size</label>
+                <input type="range" id="relSize" min="0.25" max="4" step="0.05" value="1" style="flex:1;" title="Symbol size, relative to the member">
+            </div>
+            <div class="fea-hint" style="margin-top:2px;">Member end releases (SAP frame releases), a little in from the released end: two crossed rings = pinned (M2 and M3 free); one ring with a pin through it = one moment free (the ring lies in the plane the end turns in); a collar round the member = torsion free; a hollow square = shear free (V2 / V3); two square plates with a gap = axial free. Amber = partly fixed. They follow the beams' visibility. Hover a beam: the readout's Releases row.</div>
+        </div>
+    </details>
+
+    <details class="fea-section fea-details" id="lnkSection" style="display:none;" open>
+        <summary class="fea-sub" style="margin-bottom:0;">Links</summary>
+        <div class="fea-details-body">
+            <div class="fea-row" style="margin-top:8px;">
+                <label class="fea-label" for="lnkShow">Show</label>
+                <input type="checkbox" id="lnkShow" class="fea-check" checked>
+                <span class="fea-hint" id="lnkCount" style="margin-left:6px;"></span>
+            </div>
+            <div class="fea-row">
+                <label class="fea-label" for="lnkSize">Size</label>
+                <input type="range" id="lnkSize" min="0.25" max="4" step="0.05" value="1" style="flex:1;" title="Symbol size, relative to the members at the link's joints">
+            </div>
+            <div class="fea-hint" style="margin-top:2px;">Two-joint links from the sidecar <em>links</em>: a line between the joints and a symbol at its middle: coil = linear; two plates with a gap = gap (compression only); two hooks = hook (tension only); block on a hatched plate = friction isolator; zig-zag = multilinear; pot and rod = damper; diamond = other. A zero-length link is the symbol alone at its joint. Links buried in the members they join show through them, faint. Hover for the link and its DOFs, click for a card. One-joint links are supports.</div>
+        </div>
+    </details>
+
     <details class="fea-section fea-details" id="supSection" style="display:none;" open>
         <summary class="fea-sub" style="margin-bottom:0;">Supports</summary>
         <div class="fea-details-body">
@@ -188,7 +220,7 @@
                 <select id="supColor" class="fea-select" title="Support group colour, restraint kind, or a restraint load in the current load case"></select>
             </div>
             <div class="fea-hint" id="supRange" style="margin-top:4px;">&mdash;</div>
-            <div class="fea-hint" style="margin-top:2px;">Symbols from the sidecar <em>supports</em>, as in CAESAR II: square plate through the pipe = anchor; arrows pointing at the pipe = restraints (two = both directions, one = one-way, e.g. a rest or a hanger below the pipe); arrows across the pipe = guide; arrows along its top = limit stop; double-headed arrow = rotation. A node group unticked in Groups &rsaquo; Nodes hides its supports. Deformed shape: a line runs from each support to its displaced node.</div>
+            <div class="fea-hint" style="margin-top:2px;">Symbols from the sidecar <em>supports</em>, as in CAESAR II: square plate through the pipe = anchor; arrows pointing at the pipe = restraints (two = both directions, one = one-way, e.g. a rest or a hanger below the pipe); arrows across the pipe = guide; arrows along its top = limit stop; double-headed arrow = rotation; coil = spring (a flat spiral: a rotational one); hook = tension only; arrow on a hatched plate = friction (SAP). A node group unticked in Groups &rsaquo; Nodes hides its supports. Deformed shape: a line runs from each support to its displaced node.</div>
         </div>
     </details>
 
@@ -493,6 +525,7 @@
     <div class="ro-row" id="roPropsRow" style="display:none;"><span class="ro-key">Properties</span><span id="roProps" class="ro-val">&mdash;</span></div>
     <div class="ro-row"><span class="ro-key">Nearest node</span><span id="roNode" class="ro-val">&mdash;</span></div>
     <div class="ro-row"><span class="ro-key">Corner nodes</span><span id="roCorners" class="ro-val">&mdash;</span></div>
+    <div class="ro-row" id="roRelRow" style="display:none;"><span class="ro-key">Releases</span><span id="roRel" class="ro-val">&mdash;</span></div>
     <div class="ro-row" id="roControllingRow" style="display:none;"><span class="ro-key">Controlling</span><span id="roControlling" class="ro-val">&mdash;</span></div>
     <div class="ro-row"><span class="ro-key">Quad (u,v)</span><span id="roUV" class="ro-val">&mdash;</span></div>
     <div class="ro-row"><span class="ro-key">World xyz</span><span id="roPos" class="ro-val">&mdash;</span></div>
@@ -520,6 +553,8 @@
 <script src="scripts/viewer.js"></script>
 <script src="scripts/viewerBeams.js"></script>
 <script src="scripts/supports.js"></script>
+<script src="scripts/releases.js"></script>
+<script src="scripts/links.js"></script>
 <script src="scripts/labels.js"></script>
 <script src="scripts/loads.js"></script>
 <script src="scripts/pipe.js"></script>

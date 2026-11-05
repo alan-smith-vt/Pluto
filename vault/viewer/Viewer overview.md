@@ -89,6 +89,8 @@ test file from `sampleModel.js`, then open it back through the picker.
 | `pipe.js` | the pipe model (`FEAPipe`): Checks flyout from the sidecar `review` (click to fly to an item), the model's source line, the element property readout row and pin card from `properties`, node-number labels |
 | `labels.js` | screen-space labels (`FEALabels`): node numbers and load values, placed after each render by priority with overlap culling |
 | `supports.js` | support symbols from the sidecar `supports` items (`FEASupports`, Supports panel): one instanced shape per restraint kind, coloured by node group / kind / restraint load, deflection lines, readout + pin card with the loads per load case |
+| `releases.js` | member end releases from the binary (BPRP slot 7, `FEAReleases`, Releases panel): rings, pins, collars, squares and slots a short way in from each released end, amber where partly fixed; follows the beams' visibility; the readout's Releases row; `FEAReleases.text(e)` |
+| `links.js` | two-joint links from the sidecar `links` (`FEALinks`, Links panel): a line and a symbol per link type (coil, gap plates, hooks, friction plate, zig-zag, dashpot, diamond), zero-length ones at the joint, a ghost for links buried in their members; readout + pin card with the DOFs; `FEALinks.text(i)` |
 | `attributeUpdaters.js` | rewrite `cornerVals` on component/LC swap (only per-update path) |
 | `shaders.js` | bilinear vertex/fragment GLSL, colormap LUTs |
 | `pointQuery.js` | raycast → inverse-bilinear → exact field eval |

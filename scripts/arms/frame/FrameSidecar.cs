@@ -84,6 +84,7 @@ public static class FrameSidecar
     static void Supports(FeaturesSidecar sc, FrameModel fm, SapLabels ids, Dictionary<string, double[]> pos, Counts c)
     {
         sc.WriteSupports = true;
+        var restrained = new HashSet<uint>(); var others = new List<uint>();   // the springs' and grounded links' joints get a ticked group
         foreach (var j in fm.Joints)
         {
             var res = j.Restraint; var spr = j.Spring;
@@ -111,6 +112,7 @@ public static class FrameSidecar
                 }
             }
             uint id = (uint)ids.Id("joint", j.Label);
+            if (res.Any(b => b)) restrained.Add(id); else if (!others.Contains(id)) others.Add(id);
             string name = j.Label + " " + (anchor ? "fixed" : string.Join(" ", Enumerable.Range(0, 6).Where(i => res[i] || spr[i] != 0).Select(i => FrameJoint.Dofs[i] + (res[i] ? "" : "~")).ToArray()));
             sc.AddSupport(name, new[] { id }, dof, new[] { "sap", "support" }, "\"restraints\": [" + string.Join(", ", entries.ToArray()) + "], \"source\": {\"exporter\": \"sap\", \"joint\": " + Q(j.Label) + "}");
             c.Supports++;
@@ -156,10 +158,15 @@ public static class FrameSidecar
                     dof.Add(new KeyValuePair<string, string>(DofKeys[(k < 3 ? 0 : 3) + Dominant(d)], letter));
                 }
             if (entries.Count == 0) entries.Add("{\"type\": " + Q(l.Property) + ", \"kind\": \"other\", \"tag\": " + Q(l.Label) + "}");
-            sc.AddSupport(l.Label + " " + l.Property, new[] { (uint)ids.Id("joint", l.JointI) }, dof, new[] { "sap", "support", "link" },
+            uint lj = (uint)ids.Id("joint", l.JointI);
+            if (!others.Contains(lj)) others.Add(lj);
+            sc.AddSupport(l.Label + " " + l.Property, new[] { lj }, dof, new[] { "sap", "support", "link" },
                           "\"restraints\": [" + string.Join(", ", entries.ToArray()) + "], \"source\": {\"exporter\": \"sap\", \"link\": " + Q(l.Label) + "}");
             c.Supports++;
         }
+        others.RemoveAll(restrained.Contains);
+        // ticked, like the restraint groups: a support whose joint only unticked groups list is hidden (supports.js)
+        if (others.Count > 0) sc.AddNodeGroup("Springs and grounded links", null, others, new[] { "sap", "support" }, "_SPRINGS_LINKS").Hidden = false;
     }
 
     // linear / gap / hook / friction / multilinear / damper / other

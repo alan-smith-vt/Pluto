@@ -71,7 +71,7 @@ Writes `<outBase>.bin` + `<outBase>.features.json`. Drop both on the viewer toge
 | `OutputCase` | load cases, first-seen order, ids 1..N |
 | `AREA SECTION ASSIGNMENTS` | one shell group per section name (`sap`, `section`) |
 | `AREA SECTION PROPERTIES` | thickness goes into the section group's name, e.g. `WALL_T1 (0.500 in)` (`sap`, `section`, `thickness`); also drives the derived membrane stresses `S11 S22 S12 = F / t` (ksi for Kip/ft files) written after the forces |
-| `JOINT RESTRAINT ASSIGNMENTS` | one node group per restraint pattern, e.g. `Restrained U1 U3` (`sap`, `restraint`) |
+| `JOINT RESTRAINT ASSIGNMENTS` | one node group per restraint pattern, e.g. `Restrained U1 U3` (`sap`, `restraint`), ticked (`hidden: false`, 2026-11-05) so their supports show on load; joints held only by springs or one-joint links get `Springs and grounded links` (`sap`, `support`), also ticked |
 | `JOINT LOCAL AXES ASSIGNMENTS 1 - TYPICAL` | node group `Local axes assigned` (`sap`, `localAxes`) |
 | previous `<outBase>.features.json` | merged before writing (2026-09-04): section cuts, predicates, user groups and the colour / enable edits on `sap` groups survive a re-export (`FeaturesSidecar.MergeFrom`) |
 | `GROUPS 2 - ASSIGNMENTS` | SAP groups (areas + joints + frames, `ALL` skipped) (`sap`, `group`; the frame workbook's `PL_KIND_*` / `PL_LINE_*` also `kind` / `line`). A group with members of several kinds is one group (it was listed once per kind until 2026-11-05) |

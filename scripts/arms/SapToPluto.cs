@@ -94,7 +94,7 @@ using System.Text;
 // the binary that is not a result):
 //   one per area SECTION name, thickness in the name ("WALL_T1 (0.500 in)")
 //                                      tags sap, section, thickness  (shells)
-//   one per distinct restraint pattern tags sap, restraint      (nodes)
+//   one per distinct restraint pattern tags sap, restraint      (nodes; ticked, so their supports show)
 //   "Local axes assigned"              tags sap, localAxes      (nodes)
 //   one per FRAME section name         tags sap, frameSection   (beams)
 //   SAP GROUPS 2 - ASSIGNMENTS         tags sap, group          (areas / joints / frames)
@@ -749,8 +749,9 @@ public class SapToPluto
             if (fixedDofs.Count == 0) continue;
             Add(byRestraint, restraintOrder, string.Join(" ", fixedDofs), (uint)Int(j));
         }
+        // ticked (hidden: false): the viewer hides a support whose node only unticked groups list
         foreach (string p in restraintOrder)
-            sc.AddNodeGroup("Restrained " + p, null, byRestraint[p], new[] { "sap", "restraint" }, StaadName("RESTR_" + p.Replace(' ', '_')));
+            sc.AddNodeGroup("Restrained " + p, null, byRestraint[p], new[] { "sap", "restraint" }, StaadName("RESTR_" + p.Replace(' ', '_'))).Hidden = false;
 
         // joint local axes
         var axesNodes = new List<uint>();

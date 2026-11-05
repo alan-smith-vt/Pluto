@@ -34,7 +34,8 @@
 // The `supports` section (2026-10-04) is drawn by supports.js, which reads
 // it from envelope() and takes each symbol's colour and visibility from the
 // node groups (nodeGroupAt); sync() hands over through FEASupports.onFeatures.
-// This module never edits the section, so it round-trips verbatim.
+// This module never edits the section, so it round-trips verbatim. The
+// `links` section (2026-11-05) goes the same way to links.js (FEALinks.onFeatures).
 //
 // Precedence: an element in several groups takes the LAST enabled group
 // that lists it (envelope order) -- so "all W shapes grey" first, then
@@ -405,6 +406,7 @@ var FEAFeatures = (function () {
         if (typeof updateViewCaption === 'function') updateViewCaption();
         // Support symbols read the `supports` section and colour / show by the node groups.
         if (window.FEASupports && FEASupports.onFeatures) FEASupports.onFeatures();
+        if (window.FEALinks && FEALinks.onFeatures) FEALinks.onFeatures();      // the `links` section (links.js)
         // The pipe model's loads, checks and properties (2026-10-23): read-only sections, drawn by loads.js / pipe.js.
         if (window.FEALoads && FEALoads.onFeatures) FEALoads.onFeatures();
         if (window.FEAPipe && FEAPipe.onFeatures) FEAPipe.onFeatures();

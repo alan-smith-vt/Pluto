@@ -32,6 +32,7 @@ type is a viewer tab that owns one section of the envelope.
   "predicates":  { "version": 1, "items": [] },
   "sectionCuts": { "version": 1, "items": [] },
   "supports":    { "version": 1, "items": [] },
+  "links":       { "version": 1, "items": [] },
   "springs":     { "version": 1, "items": [] },
   "properties":  { "version": 1, "units": {}, "items": [] },
   "loads":       { "version": 1, "units": {}, "items": [] },
@@ -39,8 +40,9 @@ type is a viewer tab that owns one section of the envelope.
 }
 ```
 
-The last three (and `model.source`) are a pipe model's, written by the CAESAR export (below); a SAP model
-writes `loads` as version 2 (below).
+The last three (and `model.source`) are a pipe model's, written by the CAESAR export (below). A SAP frame model
+(`SapToPluto`, 2026-11-05) writes `supports`, `links`, `loads` (version 2), `properties`, `review` and `model.source`
+(below).
 
 Rules:
 - Every section is `{ version, items[] }`, versioned independently so predicates can
@@ -245,7 +247,7 @@ or by hand. Decision: [[vault/decisions/2026-10-03-imported-restraints|2026-10-0
 - **`restraints`** (optional, written by an exporter that knows them): one entry per restraint
   at the node.
   - `type`: the program's own code (`ANC`, `+Y`, `GUI`, `LIM`, `RX` …).
-  - `kind`: `anchor | translation | oneway | guide | limit | rotation | hanger | nozzle | imposed | other`.
+  - `kind`: `anchor | translation | oneway | guide | limit | rotation | hanger | nozzle | imposed | spring | hook | other`.
   - `direction`: unit vector the restraint acts along. For a one-way it is the way it pushes; for a
     guide, across the pipe. It is absent for an anchor, and for a guide on a vertical pipe, which
     carries `vertical: true` instead.
@@ -255,6 +257,18 @@ or by hand. Decision: [[vault/decisions/2026-10-03-imported-restraints|2026-10-0
     `constant`: a constant-effort support), `coldLoad` / `hotLoad`, and as given `stiffness` (its rate),
     `constantLoad`, `table`, `count`; a nozzle has `nozzleType` and its vessel node as `cnode`; an imposed displacement has `fixed[6]`.
   - An item without `restraints` is drawn from its `dof` letters.
+- **SAP2000** (`SapToPluto`, `FrameSidecar.Supports`, 2026-11-05) writes one item per joint held by restraints or
+  springs (directions in the joint's local axes), and one per one-joint (grounded) link, tagged `sap`, `support`, and
+  `link` for a link (its label in each restraint's `tag`). The model is [[vault/format/frame-model|frame-model]]. Kinds:
+  - `anchor` (all six restrained), `translation` / `rotation` (a restrained DOF, or a fixed DOF of a linear link);
+  - `spring`: a joint spring or a linear link's DOF, with `stiffness`; a `type` naming R1–R3 is rotational;
+  - `oneway`: a gap link, compression only along +`direction`, `gap` its opening; or a friction isolator, with
+    `friction` (μ slow);
+  - `hook`: tension only; `limit`: a multilinear link; `other`: a link with no DOF written.
+
+  Its node groups are ticked (`hidden: false`) so every support shows on load (the viewer hides a support whose node
+  only unticked groups list): one `Restrained …` group per restraint pattern, and `Springs and grounded links` for
+  the joints held only by springs or one-joint links.
 - **Loads are not here.** Results stay in the binary. CAESAR writes the loads on the supports as
   beam components of kind `restraint` (`Restraint FX … |M|`): node totals on every beam end at the
   support, NaN elsewhere ([[vault/format/v4-schema|v4-schema]] §4.1).
@@ -272,9 +286,15 @@ or by hand. Decision: [[vault/decisions/2026-10-03-imported-restraints|2026-10-0
     - rotation: a double-headed arrow (moment vector) at ¾ size on one side, beyond where a
       translation arrow on that line ends.
     - hanger: one arrow below the pipe, holding it up.
-    - other: a small ball on top.
-  - **Size and gaps:** sized from the drawn pipe radius at the node, times the Size slider. The
-    arrow tips stay on the pipe, and a restraint with a gap stops short of it.
+    - other: a small ball on top. A SAP link of another type: a diamond, as in `links`.
+    - spring: a coil where the arrow would be, on a small plate; a rotational one is a flat spiral on its axis,
+      beyond the pipe, on a stem.
+    - hook: a shank from the side it pulls towards, curling into a hook at the pipe.
+    - one-way with `friction` (SAP): its arrow ends on a plate hatched on the far side. A CAESAR one-way with a
+      friction coefficient draws as before.
+  - **Size and gaps:** sized from the drawn section at the node (a pipe's radius; on structural steel the
+    section's largest dimension, a polygon section's outline), times the Size slider. The arrow tips stay on the
+    pipe, and a restraint with a gap stops short of it.
   - **Colour:**
     - the node's winning node group (the CAESAR export writes one group per restraint combination);
     - or the restraint kind;
@@ -291,6 +311,54 @@ or by hand. Decision: [[vault/decisions/2026-10-03-imported-restraints|2026-10-0
   - Test: `viewer/tests/test_supports.js`.
 - **C#:** `FeaturesSidecar.AddSupport(name, nodeIds, dof, tags, extraJson)` with
   `WriteSupports = true`; `extraJson` carries the extension keys. See the merge rules below.
+
+### links (live 2026-11-05)
+
+A SAP model's two-joint link elements: gaps, hooks, springs, friction isolators, dampers. Written by `SapToPluto`
+(`FrameSidecar.Links`) for every link with two joints; a one-joint link is a `supports` item instead (above).
+
+```json
+"links": { "version": 1, "items": [
+  { "id": "sap-link-K1", "name": "K1 REST", "label": "K1", "type": "gap", "linkType": "Gap",
+    "nodeIds": [9, 12], "property": "REST", "length": 6, "axis1": [0, 0, 1], "axis2": [1, 0, 0],
+    "dofs": { "U1": { "fixed": false, "nonlinear": true, "ke": 1000, "ce": 0, "k": 1000, "open": 0 } },
+    "tags": ["sap", "link"] }
+] }
+```
+
+- **Item:** `label` is SAP's, `property` its link property and `linkType` SAP's name for that property's type.
+  `type` is `linear | gap | hook | friction | multilinear | damper | other`.
+- **Geometry:** `nodeIds` are joint I then J (viewer ids). `length` may be 0 (coincident joints).
+  `axis1` / `axis2` are the link's local 1 and 2 (unit, global): local 1 runs I → J, or is +Z for a zero-length link
+  (SAP's default), turned by the link's angle.
+- **`dofs`:** one entry per DOF the property sets (`U1`…`R3`). Each has `fixed` and `nonlinear`, and as SAP has them `ke`
+  (effective stiffness), `ce` (effective damping), `k` (nonlinear stiffness), `open` (gap or hook opening),
+  `muSlow` / `muFast` and `radius` (friction isolator). Units are the file's (`model.units`).
+- **Member end releases are not here.** They are geometry in the binary (BPRP slot 7,
+  [[vault/format/v4-schema|v4-schema]] §4.3), drawn by `viewer/scripts/releases.js` (the **Releases** panel).
+
+> [!info]- Viewer (`viewer/scripts/links.js`, `FEALinks`; the Links panel under Beams)
+> - **Symbols:** a thin line between the joints, and a symbol at its middle with local 1 along the link:
+>   - linear: a coil spring;
+>   - gap: two plates facing each other across a gap;
+>   - hook: two hooks caught in each other;
+>   - friction: a block on a plate hatched underneath;
+>   - multilinear: a zig-zag;
+>   - damper: a dashpot (a pot with a rod out of it);
+>   - other: a diamond.
+>
+>   A zero-length link is the symbol alone at its joint, along `axis1`.
+> - **Size:** ¾ of the radius of the drawn members at the joints, with a floor from the model span, times the Size
+>   slider. Along the link the symbol stays within its length.
+> - **Buried links:** a link shorter than the members at its joints reach (a pipe shoe link from a beam's axis to
+>   the pipe's) also draws as a faint ghost through them.
+> - **Readout and pin:** hovering gives the label, type, property, joints and DOFs. A link inside a member wins
+>   the hover over that member's surface. Pinning gives a card with every DOF. `FEALinks.text(i)` gives item *i* as
+>   one line.
+> - **Visibility:** an item `hidden: true`, the section-cut isolate (shown while either joint is kept), or Show off
+>   hides it. The viewer never edits the section, so it round-trips verbatim.
+> - Tests: `viewer/tests/test_links.js`; the SAP kinds in `supports`: `viewer/tests/test_supports.js`; releases:
+>   `viewer/tests/test_releases.js`.
 
 ### The pipe model: loads, properties, review, model.source (live 2026-10-23)
 
@@ -425,7 +493,8 @@ patterns, cases and combinations, and one item per load row. The CAESAR export k
   - Test: `viewer/tests/test_loads.js`.
 
 ### springs (planned)
-Same envelope, one item per spring: `{ id, name, nodeIds, dof, stiffness }`.
+Same envelope, one item per spring: `{ id, name, nodeIds, dof, stiffness }`. SAP's joint springs and linear one-joint
+links are `supports` restraints of kind `spring` (2026-11-05).
 
 ## Re-export keeps the user's layer (2026-09-04)
 
@@ -439,13 +508,13 @@ survive `run_sap.py`; only the exporter's own groups are regenerated. A group wh
 no longer match the new geometry shows as unmatched in the viewer rather than vanishing.
 
 **Supports (2026-10-04)** follow the same rules, but only for an exporter that writes them
-(`WriteSupports = true`, `CaesarToPluto` with tag `caesar`):
+(`WriteSupports = true`: `CaesarToPluto` with tag `caesar`, and since 2026-11-05 `SapToPluto` with tag `sap`):
 - exporter items matched by name keep their `id` and `hidden`;
 - items without the tag (hand-made) are kept verbatim;
 - the summary adds `… user support(s) kept, … exporter support(s) restyled`.
 
-Without `WriteSupports` a previous `supports` section passes through untouched, as before, so
-`SapToPluto`'s output is byte-identical.
+Without `WriteSupports` (an exporter that writes no supports) a previous `supports` section passes
+through untouched, as before.
 
 ## Naming / discovery
 

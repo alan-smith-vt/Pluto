@@ -19,16 +19,28 @@
 //   rotation      a double-headed arrow (moment vector) at 3/4 size on one side,
 //                 beyond where a translation arrow on that line ends
 //   hanger        one arrow below the pipe, holding it up (on a riser, on its side, pointing up)
-//   other         a small ball on top of the pipe
+//   other         a small ball on top of the pipe (a SAP one-joint link of
+//                 another type: a diamond, as links.js draws one)
+// SAP's kinds (2026-11-05, FrameSidecar.Supports; CAESAR writes none of them):
+//   spring        a coil where a translation arrow would be, ending on a
+//                 small plate (a joint spring, or a linear one-joint link);
+//                 a rotational one (type R1 / R2 / R3) a flat spiral beyond
+//                 the pipe on its axis, on a stem
+//   hook          tension only: a shank from the side it pulls towards,
+//                 curling into a hook at the pipe surface
+//   oneway with `friction` (a friction isolator): the arrow ends on a plate
+//                 hatched on its far side. Not on CAESAR items: their one-way
+//                 arrows draw as before, friction or not.
 // A restraint with a gap stops short of the pipe by a visible space. Items
 // written by the CAESAR export carry `restraints` (kind, direction, axis, gap,
 // cnode ...); an item with only `dof` (a hand-made one) draws from its dof letters.
 //
 // Sizes follow the pipe: the outer radius of the drawn beams at the node
-// (a flange or valve at the node counts), with a floor from the model span,
-// times the Size slider; the arrow tips stay on the pipe surface. One
-// InstancedMesh per primitive (cone, cylinder, box, ball), headlight shaded,
-// frustumCulled = false.
+// (a flange or valve at the node counts; on structural steel the section's
+// largest dimension, a polygon section its outline), with a floor from the
+// model span, times the Size slider; the arrow tips stay on the pipe surface.
+// One InstancedMesh per primitive (cone, cylinder, box, ball, coil, spiral,
+// arc, diamond), headlight shaded, frustumCulled = false.
 //
 // Colour (Supports panel): the support's node group (the LAST enabled node
 // group listing the node, as for the markers -- the CAESAR export writes one
@@ -72,10 +84,11 @@ var FEASupports = (function () {
     var loadRange = null;     // {min, max, name, unit} of the load colouring, or null
     var shown = [];           // entry indices drawn
 
-    var PRIMS = ['cone', 'cyl', 'box', 'ball'];
+    var PRIMS = ['cone', 'cyl', 'box', 'ball', 'coil', 'spiral', 'arc', 'oct'];
     var KIND_RGB = {
         anchor: [229, 57, 53], translation: [3, 155, 229], oneway: [124, 179, 66], guide: [0, 137, 123],
         limit: [251, 140, 0], rotation: [142, 36, 170], hanger: [253, 216, 53], imposed: [216, 27, 96], nozzle: [0, 172, 193],
+        spring: [92, 107, 192], hook: [141, 110, 99],
         other: [176, 176, 186]
     };
     var NEUTRAL = [0.35, 0.35, 0.38];
@@ -159,6 +172,11 @@ var FEASupports = (function () {
         if (sec.type === 'PIPE') return (p.od || 0) / 2;
         var m = 0;
         ['b', 'h', 'd', 'bf', 'bfTop', 'bfBot'].forEach(function (k) { if (p[k] > m) m = p[k]; });
+        if (!m && sec.points && sec.points.length) {      // a polygon section (no parameters): its outline's reach
+            var r = 0;
+            sec.points.forEach(function (q) { var d = Math.sqrt(q[0] * q[0] + q[1] * q[1]); if (d > r && isFinite(d)) r = d; });
+            return r;
+        }
         return m / 2;
     }
 
@@ -311,6 +329,48 @@ var FEASupports = (function () {
             var t = up.clone();
             put('ball', P.clone().addScaledVector(t, R + 0.4 * u), null, 0.4 * u, 0.4 * u, 0.4 * u, kind);
         }
+        // ---- SAP's kinds (spring, hook, friction, a link's other) ----
+        var item = en.item || {}, tags = Array.isArray(item.tags) ? item.tags : [];
+        var caesarItem = tags.indexOf('caesar') >= 0 || !!(item.source && item.source.exporter === 'caesar');
+        var linkItem = tags.indexOf('link') >= 0;
+        // a side square to a: towards the pipe axis where it can
+        function sideOf(a, ax) {
+            var s = ax.clone().addScaledVector(a, -ax.dot(a));
+            return s.lengthSq() > 1e-6 ? s.normalize() : perp(a);
+        }
+        // where a one-way arrow (as drawn above) starts, and the way it points
+        function onewayTail(d, ax, axial, gapOff) {
+            var tip, a;
+            if (axial) {
+                var sgn = d.dot(ax) > 0 ? -1 : 1;
+                tip = P.clone().addScaledVector(topOf(ax), R + 0.32 * u).addScaledVector(ax, sgn * (0.45 * u + gapOff));
+                a = ax.clone().multiplyScalar(-sgn);
+            } else {
+                tip = P.clone().addScaledVector(d, -(R + gapOff));
+                a = d.clone();
+            }
+            return { tail: tip.addScaledVector(a, -L), a: a };
+        }
+        // friction: a plate across the arrow's tail, hatched on its far side
+        function frictionMark(t, ax, kind) {
+            var s = sideOf(t.a, ax), hd = t.a.clone().negate().add(s).normalize(), hl = 0.5 * u;
+            put('box', t.tail.clone().addScaledVector(t.a, -0.05 * u), quatFrom(Y, t.a), 1.5 * u, 0.1 * u, 1.5 * u, kind);
+            [-0.6, -0.2, 0.2, 0.6].forEach(function (f) {
+                var mid = t.tail.clone().addScaledVector(t.a, -0.1 * u - 0.3536 * hl).addScaledVector(s, f * u + 0.3536 * hl);
+                put('cyl', mid, quatFrom(Y, hd), 0.04 * u, hl, 0.04 * u, kind);
+            });
+        }
+        // a coil spring along a (pointing at the pipe), its end at `tip`, on a small base plate
+        function coil(tip, a, kind) {
+            var q = quatFrom(Y, a);
+            put('coil', tip.clone().addScaledVector(a, -L / 2), q, 0.4 * u / 0.3, L, 0.4 * u / 0.3, kind);
+            put('box', tip.clone().addScaledVector(a, -L - 0.05 * u), q, 1.2 * u, 0.1 * u, 1.2 * u, kind);
+        }
+        // the point a symbol towards the pipe along d ends at: on its surface, or on its top surface when axial
+        function towardsPipe(d, ax, axial, gapOff) {
+            return axial ? P.clone().addScaledVector(topOf(ax), R + 0.45 * u).addScaledVector(d, -(0.45 * u + gapOff))
+                         : P.clone().addScaledVector(d, -(R + gapOff));
+        }
         en.rs.forEach(function (r) {
             var ax = r.axis || nodeAxis(ni) || perp(r.dir || up);
             var d = r.dir;
@@ -333,7 +393,33 @@ var FEASupports = (function () {
                     if (!d) { ball('other'); break; }
                     if (axial) alongPipe(ax, [d.dot(ax) > 0 ? -1 : 1], r.kind, 0.45 * u + gapOff);
                     else across(d, false, r.kind, gapOff);
+                    if (r.friction > 0 && !caesarItem) frictionMark(onewayTail(d, ax, axial, gapOff), ax, r.kind);
                     break;
+                case 'spring': {
+                    if (!d) { ball('other'); break; }
+                    if (/(^|\s)R[123](\s|$)/i.test(r.type)) {     // rotational: a flat spiral on its axis, beyond the pipe
+                        if (Math.abs(d.dot(ax)) > 0.9) {
+                            put('spiral', P.clone().addScaledVector(topOf(ax), R + 0.75 * u).addScaledVector(d, 0.45 * u + L + 0.3 * u),
+                                quatFrom(Y, d), 0.6 * u, 0.6 * u, 0.6 * u, r.kind);
+                        } else {
+                            var stem = L + 0.3 * u;
+                            put('cyl', P.clone().addScaledVector(d, R + stem / 2), quatFrom(Y, d), 0.08 * u, stem, 0.08 * u, r.kind);
+                            put('spiral', P.clone().addScaledVector(d, R + stem), quatFrom(Y, d), 0.6 * u, 0.6 * u, 0.6 * u, r.kind);
+                        }
+                        break;
+                    }
+                    coil(towardsPipe(d, ax, axial, gapOff), d, r.kind);   // translational: a coil where the arrow would be
+                    break;
+                }
+                case 'hook': {                            // tension only: a shank from the side it pulls towards, hooked at the pipe
+                    if (!d) { ball('other'); break; }
+                    var hs = sideOf(d, ax), hr = 0.35 * u;
+                    var hc = towardsPipe(d, ax, axial, gapOff).addScaledVector(d, -hr);
+                    put('arc', hc, quatBasis(d, hs), hr, hr, hr, r.kind);
+                    var h0 = hc.clone().addScaledVector(d, -0.5 * hr).addScaledVector(hs, -0.866 * hr), hlen = L - 1.5 * hr;
+                    put('cyl', h0.addScaledVector(d, -hlen / 2), quatFrom(Y, d), 0.1 * u, hlen, 0.1 * u, r.kind);
+                    break;
+                }
                 case 'guide':
                     if (r.vertical || !d) {               // a riser: both horizontal directions
                         var g1 = perp(ax), g2 = new THREE.Vector3().crossVectors(ax, g1);
@@ -358,17 +444,41 @@ var FEASupports = (function () {
                     break;
                 }
                 default:
-                    ball('other');
+                    if (r.kind === 'other' && linkItem)  // a SAP one-joint link of another type: a diamond, as links.js
+                        put('oct', P.clone().addScaledVector(up, R + 0.55 * u), quatFrom(Y, up), 0.35 * u, 0.5 * u, 0.35 * u, 'other');
+                    else ball('other');
             }
         });
         return out;
     }
+    // rotation taking the primitive's x / y / z to x / y / x cross y (x, y unit and square)
+    function quatBasis(x, y) {
+        var z = new THREE.Vector3().crossVectors(x, y);
+        return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+    }
 
+    // a tube along a curve through pts
+    function tubeGeometry(pts, segs, r) {
+        return new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), segs, r, 6, false);
+    }
     function primGeometry(p) {
+        var pts = [], i, t, a;
         switch (p) {
             case 'cone':   return new THREE.ConeGeometry(1, 1, 14);
             case 'cyl':    return new THREE.CylinderGeometry(1, 1, 1, 10);
             case 'box':    return new THREE.BoxGeometry(1, 1, 1);
+            case 'coil':                                // 5 turns of radius 0.3 along y, length 1
+                for (i = 0; i <= 80; i++) { t = i / 80; a = 10 * Math.PI * t; pts.push(new THREE.Vector3(0.3 * Math.cos(a), t - 0.5, 0.3 * Math.sin(a))); }
+                return tubeGeometry(pts, 160, 0.035);
+            case 'spiral':                              // 2.25 turns in the x-z plane, radius 0.2 .. 1
+                for (i = 0; i <= 72; i++) { t = i / 72; a = 4.5 * Math.PI * t; pts.push(new THREE.Vector3((0.2 + 0.8 * t) * Math.cos(a), 0, (0.2 + 0.8 * t) * Math.sin(a))); }
+                return tubeGeometry(pts, 144, 0.07);
+            case 'arc': {                               // a C in the x-y plane, radius 1, open towards -x
+                var g = new THREE.TorusGeometry(1, 0.28, 8, 24, Math.PI * 4 / 3);
+                g.rotateZ(Math.PI * 4 / 3);
+                return g;
+            }
+            case 'oct':    return new THREE.OctahedronGeometry(1, 0);
             default:       return new THREE.SphereGeometry(1, 14, 8);
         }
     }
