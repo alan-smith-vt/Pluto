@@ -117,6 +117,18 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 >   - it says the problems and refreshes, so the new checks can then show where they are;
 >   - a user's workbook with an unstable release refreshed to the same model and `.s2k`.
 
+> [!info]- "An item with the same key has already been added" (2026-11-05)
+> A live-preview rebuild failed with .NET's bare duplicate-key message. Reproduced two ways:
+> - **A load case name given twice.** The reader reports a repeated name ("on an earlier row too") but reads on, and
+>   the case lookup that follows threw first. That lookup now keeps the first, so the report comes through.
+> - **Two sections whose names differ only in capitals** (`W10X33`, `w10x33`). The workbook keeps them apart, but the
+>   preview's section lookup ignores capitals and threw. Its lookups no longer throw.
+>
+> What changed besides those fixes:
+> - Names of one kind that differ only in capitals now get a warning: SAP may take them as one, keeping the last.
+> - Every sheet of named things now marks a repeated name red while you type.
+> - An unexpected error in a rebuild says which step it came from.
+
 > [!info]- Ids (2026-11-05)
 > The Id column is each row's link to its object in the model, not a row counter.
 > - **A new row shows `new`** by formula as soon as its next column is filled. Nothing is typed, and `new` reads as a

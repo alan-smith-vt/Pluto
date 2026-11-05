@@ -118,7 +118,7 @@ public static class FrameSidecar
             c.Supports++;
         }
         // one-joint links: supports of their joint
-        var props = fm.LinkProps.ToDictionary(p => p.Label, p => p, StringComparer.Ordinal);
+        var props = ByLabel(fm.LinkProps, StringComparer.Ordinal);
         foreach (var l in fm.Links)
         {
             if (l.JointJ != "") continue;
@@ -186,7 +186,7 @@ public static class FrameSidecar
 
     static string Links(FrameModel fm, SapLabels ids, Dictionary<string, double[]> pos, Counts c)
     {
-        var props = fm.LinkProps.ToDictionary(p => p.Label, p => p, StringComparer.Ordinal);
+        var props = ByLabel(fm.LinkProps, StringComparer.Ordinal);
         var sb = new StringBuilder("{\"version\": 1, \"items\": [");
         bool first = true;
         foreach (var l in fm.Links)
@@ -246,7 +246,7 @@ public static class FrameSidecar
             ", \"items\": [" + string.Join(", ", k.Items.Select(x => "{\"type\": " + Q(x[0]) + ", \"name\": " + Q(x[1]) + ", \"sf\": " + N(D(x[2], 1)) + "}").ToArray()) + "]}").ToArray())).Append(']');
         sb.Append(",\n\"items\": [");
         bool first = true;
-        var frames = fm.Frames.ToDictionary(f => f.Label, f => f, StringComparer.Ordinal);
+        var frames = ByLabel(fm.Frames, StringComparer.Ordinal);
         foreach (var ld in fm.Loads)
         {
             var r = ld.Row;
@@ -301,7 +301,8 @@ public static class FrameSidecar
     static string Properties(FrameModel fm, SapLabels ids, Dictionary<string, double[]> pos, string forceUnit, string lengthUnit, Counts c)
     {
         var sb = new StringBuilder("{\"version\": 1, \"units\": {\"length\": " + Q(lengthUnit) + ", \"force\": " + Q(forceUnit) + ", \"diameter\": " + Q(lengthUnit) + "}, \"items\": [");
-        var secs = fm.Sections.ToDictionary(s => s.Label, s => s, StringComparer.OrdinalIgnoreCase);
+        var secs = ByLabel(fm.Sections, StringComparer.Ordinal);
+        var secsAnyCase = ByLabel(fm.Sections, StringComparer.OrdinalIgnoreCase);
         var kindOf = new Dictionary<string, string>(StringComparer.Ordinal); var lineOf = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var g in fm.Groups)
         {
@@ -317,7 +318,7 @@ public static class FrameSidecar
             if (!pos.TryGetValue(f.JointI, out a) || !pos.TryGetValue(f.JointJ, out b)) continue;
             var d = Sub(b, a);
             FrameSection s;
-            secs.TryGetValue(f.Section, out s);
+            if (!secs.TryGetValue(f.Section, out s)) secsAnyCase.TryGetValue(f.Section, out s);
             var v = new List<string> { "\"section\": " + Q(f.Section), "\"shape\": " + Q(s == null ? "" : s.Shape), "\"material\": " + Q(s == null ? "" : s.Material),
                                        "\"dx\": " + G(d[0]), "\"dy\": " + G(d[1]), "\"dz\": " + G(d[2]), "\"length\": " + G(Len(d)) };
             if (s != null) foreach (var k in new[] { "t3", "t2", "tf", "tw", "t2b", "tfb" }) { double x = s.Dim(k); if (x != 0) v.Add(Q(k) + ": " + N(x)); }
@@ -390,6 +391,14 @@ public static class FrameSidecar
         return sb.Append('"').ToString();
     }
     static string N(double v) { return double.IsNaN(v) || double.IsInfinity(v) ? "null" : FrameModel.Fmt(v); }
+
+    // objects by label, the first of any repeated label kept (a lookup never throws on a model the reader let through)
+    static Dictionary<string, T> ByLabel<T>(IEnumerable<T> items, StringComparer cmp) where T : FrameObj
+    {
+        var d = new Dictionary<string, T>(cmp);
+        foreach (var o in items) if (!d.ContainsKey(o.Label)) d[o.Label] = o;
+        return d;
+    }
     static double Dbl(string t) { double v; return double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out v) ? v : double.NaN; }
     // a derived number (a length, a difference of coordinates): 12 digits, so 0.4557673999999992 reads 0.4557674
     static string G(double v) { return double.IsNaN(v) || double.IsInfinity(v) ? "null" : (Math.Abs(v) < 1e-12 ? 0 : v).ToString("G12", Inv); }

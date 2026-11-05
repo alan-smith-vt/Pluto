@@ -839,6 +839,14 @@ public static class FrameWorkbook
                 "Carried: everything the sheets do not show (design data, areas, analysis options ...) is kept from the source and written back unchanged.",
             },
         };
+        // a name a sheet gives twice is red (the build refuses it), on every sheet of named things (Joints, Frames and
+        // Sections have theirs above); Excel compares without capitals, as SAP may
+        foreach (var dn in new[] { new object[] { ms, "B" }, new object[] { rs, "A" }, new object[] { mo, "A" }, new object[] { ls, "B" }, new object[] { lp, "B" },
+                                   new object[] { sp, "A" }, new object[] { ps, "B" }, new object[] { cs, "B" }, new object[] { cb, "B" } })
+        {
+            string cl = (string)dn[1];
+            ((XlsxBookSheet)dn[0]).Conditional(cl + "2:" + cl + lim, "AND(" + cl + "2<>\"\",COUNTIF($" + cl + "$2:$" + cl + "$" + lim + "," + cl + "2)>1)", t.Red);
+        }
         WbStart.StartSheet(start, t, x0, run == null ? (Func<int, int>)null : r => RunBlock(start, t, r, run), sheets, checks);
         // tabs coloured by what they hold, the column headers' groups (the CAESAR workbook's scheme)
         foreach (var tab in b.Sheets)
@@ -1007,6 +1015,7 @@ public static class FrameWorkbook
         ReadCases(sheet(SCases), x);
         ReadCombos(sheet(SCombos), x);
 
+        CapitalsOnly(x);
         Refit(m, res.Base);
 
         // what the sheets no longer have: deleted, users first (a refusal names what still uses it)
@@ -1023,6 +1032,17 @@ public static class FrameWorkbook
         res.Model = m;
         res.ModelHash = FrameModelJson.Hash(m);
         return res;
+    }
+
+    // two names of one kind that differ only in capitals (W10X33, w10x33): the workbook keeps them apart, but SAP may take
+    // them as one name, and its import then keeps the last
+    static void CapitalsOnly(Ctx x)
+    {
+        foreach (var kv in x.Present)
+        {
+            var clash = kv.Value.GroupBy(l => l.ToUpperInvariant()).Where(g => g.Count() > 1).Select(g => string.Join(" and ", g.ToArray())).ToList();
+            foreach (string c in clash) x.Warnings.Add("the " + kv.Key + " names " + c + " differ only in capitals: SAP may take them as one name (its import keeps the last); rename one");
+        }
     }
 
     // SAP's export gives frames and links their Length and centroid: where an object's joints moved (or it got others),
@@ -1810,7 +1830,9 @@ public static class FrameWorkbook
             loads.Add(new object[] { lt, ln, double.IsNaN(sf) ? 1.0 : sf });
         }
         finish();
-        var byName = x.M.Cases.ToDictionary(k => k.Label, k => k, StringComparer.Ordinal);
+        // a case name repeated is reported (Take); the first of them stands here, so nothing throws before the report
+        var byName = new Dictionary<string, FrameCase>(StringComparer.Ordinal);
+        foreach (var k in x.M.Cases) if (!byName.ContainsKey(k.Label)) byName[k.Label] = k;
         foreach (var it in initials)
         {
             var cs = (FrameCase)it[0];

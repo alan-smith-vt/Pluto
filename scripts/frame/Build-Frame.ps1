@@ -75,6 +75,14 @@ function FileSha([string]$p) { $fs = OpenShared $p; try { $h = [Security.Cryptog
 function ReadShared([string]$p) { $fs = OpenShared $p; try { $ms = New-Object IO.MemoryStream; $fs.CopyTo($ms); return ,$ms.ToArray() } finally { $fs.Dispose() } }
 function ReadSharedText([string]$p) { $fs = OpenShared $p; try { $sr = New-Object IO.StreamReader($fs, $true); try { return $sr.ReadToEnd() } finally { $sr.Dispose() } } finally { $fs.Dispose() } }
 function Innermost($err) { $e = $err.Exception; while ($e.InnerException) { $e = $e.InnerException }; return $e.Message }
+# a build's error with the step it came from when it is not one of Pluto's own (which name their sheet and cell)
+$script:step = ""
+function BuildError($err)
+{
+    $e = $err.Exception; while ($e.InnerException) { $e = $e.InnerException }
+    if ($e -is [InvalidOperationException] -or -not $script:step) { return $e.Message }
+    return ("{0} ({1}: an unexpected error, not a check; the workbook's other problems are reported once it is fixed)" -f $e.Message, $script:step)
+}
 $repoRoot = (Resolve-Path -LiteralPath (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))).ProviderPath.TrimEnd('\', '/')
 function InRepo([string]$p) { return $p.Equals($repoRoot, [StringComparison]::OrdinalIgnoreCase) -or $p.StartsWith($repoRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) }
 
@@ -248,6 +256,7 @@ function Check-Target([byte[]]$bytes, $model) {
 }
 
 function Build-Once {
+    $script:step = "reading " + [IO.Path]::GetFileName($inPath)
     $script:sw.Reset(); $script:sw.Start()
     $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
     $inSha = FileSha $inPath
@@ -275,6 +284,7 @@ function Build-Once {
     Say "model" $counts
     $hash = [FrameModelJson]::Hash($model)
     $notes = New-Object 'System.Collections.Generic.List[string]'
+    $script:step = "writing the .s2k"
     $doc = [FrameS2k]::ToDoc($model, $notes)
     foreach ($n in $notes) { Say "notice" $n }
 
@@ -313,6 +323,7 @@ function Build-Once {
         Say "write" ("{0}: the whole model" -f $jsonFile)
     }
     if ($Preview) {
+        $script:step = "building the viewer preview"
         # the very document -S2k writes, exported to temporary names (the sidecar's user layer merged in), then moved
         $tmp = $outBase + ".~new"
         if (Test-Path -LiteralPath $scFile -PathType Leaf) { Copy-Item -LiteralPath $scFile -Destination ($tmp + ".features.json") -Force }
@@ -345,7 +356,7 @@ function Build-Once {
 }
 
 if (-not $Watch) {
-    try { Build-Once } catch { Fail (Innermost $_) }
+    try { Build-Once } catch { Fail (BuildError $_) }
     exit 0
 }
 
@@ -364,7 +375,7 @@ while ($true) {
             Say "watch" ("{0} -- {1} saved, rebuilding" -f [DateTime]::Now.ToString("HH:mm:ss"), [IO.Path]::GetFileName($inPath))
             try { Build-Once }
             catch {
-                $msg = Innermost $_
+                $msg = BuildError $_
                 Say "error" $msg
                 Say "watch" "the last good outputs stay; fix the input and save again"
                 Write-Output ("RESULT {""error"":" + (Q $msg) + "}")
