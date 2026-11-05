@@ -17,6 +17,10 @@
 #                   links, loads by pattern / case / combination, per-frame properties; the build's notes in Checks.
 #                   A previous sidecar's user layer (colours, cuts, hand-made groups) is kept. -ModelId names it
 #                   (default sap/<name>).
+#   -Open           (with -S2k; production machine) imports the .s2k in a SAP2000 of its own: scripts\sap\Run-Sap.ps1
+#                   -Open <s2k> -Stamp -NewInstance -KeepOpen in a separate PowerShell (the SAP controller), stamped for
+#                   that SAP's version and saved beside it as .sdb; SAP's joint, frame and link counts are compared with
+#                   the model's. Not with -Watch.
 #   -Watch          with an .xlsx: every save rebuilds the outputs (-Preview when none is given); Ctrl+C stops
 #   -NewWorkbook    -Out <name>.xlsx: an empty workbook (-Units "Kip, in, F" by default, -SapVersion 22.0.0) and its
 #                   launchers
@@ -48,6 +52,7 @@ param(
     [switch]$Json,
     [switch]$Preview,
     [switch]$Watch,
+    [switch]$Open,
     [switch]$NewWorkbook,
     [switch]$Refresh,
     [string]$Units,
@@ -101,6 +106,8 @@ if ($In) {
     if ($Refresh -and $kind -ne "xlsx") { Fail "Build-Frame: -Refresh takes -In <workbook>.xlsx" }
     if ($Watch -and $kind -ne "xlsx") { Fail "Build-Frame: -Watch follows a workbook: -In <name>.xlsx" }
     if ($Watch -and -not ($S2k -or $Json -or $Preview)) { $Preview = $true }
+    if ($Open -and $Watch) { Fail "Build-Frame: -Open is not for -Watch (it would start SAP on every save)" }
+    if ($Open) { $S2k = $true }
 }
 $jobName = $null
 if ($inPath) { $jobName = ([IO.Path]::GetFileName($inPath) -replace '\.frame\.json$', '' -replace '\.[^.]+$', '') -replace ' ', '_' }
@@ -265,6 +272,22 @@ function Build-Once {
         [IO.File]::WriteAllBytes($s2kFile, $bytes)
         Say "write" ("{0}: for SAP2000 (File > Import > SAP2000 .s2k)" -f $s2kFile)
         Write-Stamp ("{""sha256"":" + (Q (FileSha $s2kFile)) + ",""model"":" + (Q $hash) + ",""input"":" + (Q $inPath) + ",""inputSha256"":" + (Q $inSha) + ",""written"":" + (Q $now) + "}") $null
+    }
+    if ($Open) {
+        # the SAP controller in a process of its own (its Add-Type batch holds SAP2000v1.dll), on a SAP of its own
+        $runSap = [IO.Path]::Combine($repoRoot, "scripts", "sap", "Run-Sap.ps1")
+        $ps = [IO.Path]::Combine($env:SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
+        Say "open" ("SAP2000: importing {0} in a SAP of its own ..." -f $s2kFile)
+        $lines = @(& $ps -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $runSap -Open $s2kFile -Stamp -NewInstance -KeepOpen 2>&1 | ForEach-Object { "$_" })
+        foreach ($l in $lines) { if ($l -notlike "RESULT *") { Write-Output ("   sap: " + $l) } }
+        $last = $lines | Where-Object { $_ -like "RESULT *" } | Select-Object -Last 1
+        if (-not $last) { throw "SAP2000: Run-Sap.ps1 gave no result (see its lines above)" }
+        $sr = $last.Substring(7) | ConvertFrom-Json
+        if ($sr.error) { throw ("SAP2000: " + $sr.error) }
+        $want = @{ joints = $model.Joints.Count; frames = $model.Frames.Count; links = $model.Links.Count }
+        $miss = @($want.Keys | Where-Object { $sr.counts.$_ -ne $want[$_] } | ForEach-Object { "{0}: SAP {1}, the model {2}" -f $_, $sr.counts.$_, $want[$_] })
+        if ($miss.Count -gt 0) { Say "warn" ("SAP2000 holds other counts than the model: {0}. A table SAP did not read? Check its import log." -f ($miss -join "; ")) }
+        else { Say "open" ("SAP2000 {0} holds the model ({1} joints, {2} frames, {3} links): {4}" -f $sr.version, $want.joints, $want.frames, $want.links, $sr.held) }
     }
     if ($Xlsx) {
         $xf = $outBase + ".xlsx"

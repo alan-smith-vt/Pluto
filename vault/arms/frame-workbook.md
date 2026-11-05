@@ -28,7 +28,7 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
   the viewer shows releases (`releases.js`), links (`links.js`), springs / hooks / friction supports, and loads by
   pattern, case or combination ([[vault/format/features-sidecar|features-sidecar]]).
 - 3: the workbook. **3a done 2026-11-05** (the sheets, reading, refresh, the runner's workbook switches, launchers);
-  3b, the 3D View and `-Open` in SAP, is next.
+  3b: `-Open` in SAP done (production check to do); the workbook's own 3D View is still to do.
 - 4: the pipe-stress layer (support presets, contents, insulation, thermal, equipment).
 - 5: the review.
 - 6: unit changes.
@@ -88,12 +88,16 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 > - `-S2k`: writes `<base>.s2k`. It never writes over the input. An existing file is replaced only when this runner
 >   wrote it (its stamp, `<base>.build.json`), when it is the model's own source, or when nothing would change;
 >   otherwise its first differing lines are listed and `-Force` is needed.
-> - `-Xlsx`: writes `<base>.xlsx` and its launchers, `<base> - preview.cmd` (`-Preview -Watch`) and `<base> - s2k.cmd`
->   (`-S2k -Preview`). The Start sheet links them.
+> - `-Xlsx`: writes `<base>.xlsx` and its launchers, `<base> - preview.cmd` (`-Preview -Watch`), `<base> - s2k.cmd`
+>   (`-S2k -Preview`) and `<base> - open in SAP.cmd` (`-S2k -Preview -Open`). The Start sheet links them.
 > - `-Json`: writes `<base>.frame.json`.
 > - `-Preview`: writes `<base>.bin` and `<base>.features.json` for the viewer, drawn from the very document `-S2k`
 >   writes (`SapToPluto.Export(S2kDoc, …, FramePreview)`). The build's notes and the workbook's warnings go to the
 >   Checks panel; `model.source` names the input and the model hash. `-ModelId` names the model (default `sap/<name>`).
+> - `-Open` (production machine; implies `-S2k`; not with `-Watch`): imports the `.s2k` in a SAP2000 of its own,
+>   through the SAP controller in a separate PowerShell (`Run-Sap.ps1 -Open <s2k> -Stamp -NewInstance -KeepOpen`):
+>   stamped for that SAP's version (`SapSession.OpenStamped`), saved beside it as `.sdb`. SAP's joint, frame and link
+>   counts are compared with the model's; a difference is a warning (a table SAP did not read).
 > - `-Watch` (with an `.xlsx`): every save rebuilds the outputs (`-Preview` when none is given). A save that does not
 >   build leaves the last good outputs.
 > - `-NewWorkbook -Out <name>.xlsx [-Units "Kip, in, F"] [-SapVersion 22.0.0]`: an empty model's workbook and launchers.

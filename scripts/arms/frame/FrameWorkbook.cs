@@ -42,6 +42,7 @@ public sealed class FrameWorkbookRun : WbRun
 {
     public string PreviewCmd { get { return Name + " - preview.cmd"; } }
     public string S2kCmd { get { return Name + " - s2k.cmd"; } }
+    public string OpenCmd { get { return Name + " - open in SAP.cmd"; } }
 
     public static FrameWorkbookRun For(string xlsxPath, string repoRoot, string sourcePath)
     {
@@ -59,6 +60,9 @@ public sealed class FrameWorkbookRun : WbRun
         done.Add(WriteLauncher(S2kCmd, LauncherText("Build-Frame.ps1", "the SAP2000 .s2k", "write the .s2k",
             new[] { "Writing " + Echo(Out) + ".s2k (and the viewer preview) from " + Echo(Name) + ".xlsx ..." }, "-S2k -Preview",
             new[] { "In SAP2000: File, Import, SAP2000 .s2k, then " + Echo(Out) + ".s2k" })));
+        done.Add(WriteLauncher(OpenCmd, LauncherText("Build-Frame.ps1", "the model opened in SAP2000", "open in SAP",
+            new[] { "Writing " + Echo(Out) + ".s2k from " + Echo(Name) + ".xlsx and importing it in a SAP2000 of its own (stamped for its version, saved as " + Echo(Out) + ".sdb) ..." },
+            "-S2k -Preview -Open", new string[0])));
         return done;
     }
 }
@@ -740,14 +744,17 @@ public static class FrameWorkbook
                        ".features.json for Pluto's viewer (tick Auto-reload there). Close its window to stop."),
             new WbLink(WbRun.Lit(run.S2kCmd), "\u25B6  Write the .s2k",
                        "Runs \"" + run.S2kCmd + "\": " + run.Out + ".s2k for SAP2000 (File, Import, SAP2000 .s2k) and the preview with it."),
+            new WbLink(WbRun.Lit(run.OpenCmd), "\u25B6  Open in SAP2000",
+                       "Runs \"" + run.OpenCmd + "\": writes " + run.Out + ".s2k, then imports it in a SAP2000 of its own, stamped for its version, and saves " + run.Out + ".sdb. Its report compares SAP's joint, frame and link counts with the model's."),
         };
         if (run.Viewer != null)
             links.Add(new WbLink(WbRun.Lit(run.Viewer), "Open Pluto's viewer", "Then Choose files... and pick " + run.Out + ".bin and " + run.Out + ".features.json together (Chrome or Edge)."));
-        links.Add(new WbLink(run.FolderFormula(), "Open this folder", "The workbook, the two launchers and what they write."));
+        links.Add(new WbLink(run.FolderFormula(), "Open this folder", "The workbook, the three launchers and what they write."));
         var commands = new List<WbCommand>
         {
             new WbCommand("Preview command", run.CommandFormula("-Preview -Watch"), null),
             new WbCommand(".s2k command", run.CommandFormula("-S2k -Preview"), null),
+            new WbCommand("Open in SAP command", run.CommandFormula("-S2k -Preview -Open"), null),
             new WbCommand("Refresh command", run.RefreshFormula(),
                           "Brings this workbook to the newest Pluto's layout, over itself, edits kept; the previous file stays beside it as .xlsx.bak. Close the workbook first: Excel holds it while it is open."),
         };

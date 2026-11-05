@@ -4,7 +4,8 @@
 #
 #   attach   the running SAP2000, or start one (-NewInstance: always a second SAP, closed at the end
 #            unless -KeepOpen; a SAP this script started is closed at the end unless -KeepOpen)
-#   open     -Open <.s2k|.sdb>: OpenFile; an imported .s2k is saved beside it as .sdb (-NoSaveSdb: not)
+#   open     -Open <.s2k|.sdb>: OpenFile; an imported .s2k is saved beside it as .sdb (-NoSaveSdb: not).
+#            -Stamp: a .s2k stamped for another SAP version is opened as a re-stamped copy (SapSession.OpenStamped)
 #   axes     -AreaAxes <tsv>: local 1 of every area object, global direction cosines
 #   run      -Run: RunAnalysis on the file SAP holds (it saves it). -RunOnCopy <sdb>: save AS that copy
 #            first and run every case there (the opened file is never written; "auto" = <export base>.sdb).
@@ -23,6 +24,7 @@
 param(
     [string]$Open,
     [switch]$NoSaveSdb,
+    [switch]$Stamp,
     [switch]$NewInstance,
     [switch]$KeepOpen,
     [string]$AreaAxes,
@@ -59,7 +61,10 @@ try {
         $Open = $s2k; $Run = $true; $Results = Join-Path (Full $SelfTest) "results.s2k"
     }
     if ($Open) {
-        $out.held = $sap.Open((Full $Open), -not $NoSaveSdb)
+        if ($Stamp) {
+            $out.held = $sap.OpenStamped((Full $Open), -not $NoSaveSdb)
+            if ($sap.Restamped) { $out.restamped = $sap.Restamped; Say "stamp" ("{0}: imported as a copy stamped for this SAP ({1})" -f (Full $Open), $sap.Restamped) }
+        } else { $out.held = $sap.Open((Full $Open), -not $NoSaveSdb) }
         $c = $sap.Counts()
         $out.counts = @{ joints = $c[0]; areas = $c[1]; frames = $c[2]; links = $c[3] }
         $out.groups = @($sap.Groups())

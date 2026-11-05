@@ -32,6 +32,7 @@ This is the only route that runs on the production machine (SAP 22, no Python). 
 | attach to the running SAP, else start one | `SapSession.AttachOrStart` | every runner | all |
 | a second SAP whatever is running | `SapSession.NewInstance` | `Run-Sap.ps1 -NewInstance [-KeepOpen]` | `export_model.py --new-instance` |
 | open `.sdb` / import `.s2k` (+ save `.sdb`) | `Open` | `-Open X [-NoSaveSdb]` | `run_sap.py`, `offset_study.py`, `export_model.py` |
+| import a `.s2k` stamped for another SAP version: a re-stamped copy (2026-11-05) | `OpenStamped`, `Restamped` | `-Open X -Stamp` | `Build-Frame.ps1 -Open` (frame workbook) |
 | run; run on a saved copy; only if results are missing | `Run`, `RunOnCopy`, `AllCasesFinished` | `-Run`, `-RunOnCopy <sdb>\|auto`, `-RunIfNeeded` | tank, export |
 | shell local 1 axis in global | `AreaLocal1`, `WriteAreaLocal1` | `-AreaAxes <tsv>` | `run_sap.py` axes check |
 | input tables read back (display precision) | `TableRows`, `WriteTablesS2k` | `-Tables "a;b" -TablesOut <s2k>` | `offset_study.py` (insertion points, gap props) |

@@ -19,6 +19,7 @@ using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using SAP2000v1;
 
 public class SapSession
@@ -102,6 +103,38 @@ public class SapSession
         Check(Model.File.OpenFile(path), "OpenFile " + path);
         string held = path;
         if (saveSdb && !path.EndsWith(".sdb", StringComparison.OrdinalIgnoreCase))
+        {
+            held = Path.ChangeExtension(path, ".sdb");
+            Check(Model.File.Save(held), "Save " + held);
+        }
+        OpenSeconds = sw.Elapsed.TotalSeconds;
+        return held;
+    }
+
+    // Import a .s2k stamped for THIS SAP (2026-11-05, the frame workbook's -Open): when PROGRAM CONTROL's Version is
+    // another, a copy re-stamped with Version() is opened from the temp folder (SAP 26 imports nothing from a file
+    // stamped 22.0.0, and says nothing). The .sdb is saved beside the original. A .sdb opens as Open does.
+    // Restamped: "22.0.0 -> 26.3.0", or "" when the stamp was already this SAP's.
+    public string Restamped = "";
+    public string OpenStamped(string path, bool saveSdb)
+    {
+        Restamped = "";
+        if (path.EndsWith(".sdb", StringComparison.OrdinalIgnoreCase)) return Open(path, saveSdb);
+        Stopwatch sw = Stopwatch.StartNew();
+        string mine = Version();
+        Encoding latin1 = Encoding.GetEncoding(28591);
+        string text = File.ReadAllText(path, latin1);
+        Match m = Regex.Match(text, "TABLE:\\s+\"PROGRAM CONTROL\"\\s*\\r?\\n[^\\r\\n]*?\\bVersion=(\"[^\"]*\"|[^\\s]+)");
+        string open = path;
+        if (m.Success && m.Groups[1].Value.Trim('"') != mine)
+        {
+            Restamped = m.Groups[1].Value.Trim('"') + " -> " + mine;
+            open = Path.Combine(Path.GetTempPath(), Path.GetFileNameWithoutExtension(path) + ".stamped.s2k");
+            File.WriteAllText(open, text.Substring(0, m.Groups[1].Index) + mine + text.Substring(m.Groups[1].Index + m.Groups[1].Length), latin1);
+        }
+        Check(Model.File.OpenFile(open), "OpenFile " + open);
+        string held = open;
+        if (saveSdb)
         {
             held = Path.ChangeExtension(path, ".sdb");
             Check(Model.File.Save(held), "Save " + held);
