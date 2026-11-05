@@ -13,7 +13,7 @@ mirroring pipe-stress features: gap, hook and friction links, springs, linear an
 the CAESAR [[vault/arms/pipe-workbook|pipe-workbook]]:
 - edit in Excel;
 - every save rebuilds the viewer preview (supports, pinned ends, links, loads);
-- a launcher writes the `.s2k` for SAP;
+- a launcher writes the `.s2k` for SAP, another the `.std` for STAAD.Pro;
 - an existing SAP model round-trips through it.
 
 The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decisions/2026-11-05-frame-model|2026-11-05-frame-model]].
@@ -259,8 +259,17 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 > - `-S2k`: writes `<base>.s2k`. It never writes over the input. An existing file is replaced only when this runner
 >   wrote it (its stamp, `<base>.build.json`), when it is the model's own source, or when nothing would change;
 >   otherwise its first differing lines are listed and `-Force` is needed.
-> - `-Xlsx`: writes `<base>.xlsx` and its launchers, `<base> - preview.cmd` (`-Preview -Watch`), `<base> - s2k.cmd`
->   (`-S2k -Preview`) and `<base> - open in SAP.cmd` (`-S2k -Preview -Open`). The Start sheet links them.
+> - `-Std`: writes `<base>.std` for STAAD.Pro (`FrameStd`, [[vault/format/frame-to-staad|frame-to-staad]]): exact or
+>   refused, every refusal on a `[refuse]` line; notices on `[notice] std:` lines. An existing `.std` is replaced only
+>   when this runner wrote it (the stamp's `std` part) or nothing would change; STAAD saves its own edits into the
+>   `.std`, so anything else needs `-Force`.
+> - `-Xlsx`: writes `<base>.xlsx` and its launchers:
+>   - `<base> - preview.cmd` (`-Preview -Watch`);
+>   - `<base> - s2k.cmd` (`-S2k -Preview`);
+>   - `<base> - open in SAP.cmd` (`-S2k -Preview -Open`);
+>   - `<base> - std.cmd` (`-Std`).
+>
+>   The Start sheet links them and gives each command.
 > - `-Json`: writes `<base>.frame.json`.
 > - `-Preview`: writes `<base>.bin` and `<base>.features.json` for the viewer, drawn from the very document `-S2k`
 >   writes (`SapToPluto.Export(S2kDoc, …, FramePreview)`). The build's notes and the workbook's warnings go to the
@@ -278,7 +287,8 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 >   `<x>.xlsx.bak`.
 > - `-Out <base>`: as in `Build-Pipe.ps1`. A workbook beside an `.s2k` of its name that this runner did not write (the
 >   SAP export it came from) writes `<name>_edit.*`. Outputs inside the repo are refused.
-> - `-Probe <folder>` and `-ProbeCheck <export>`: see the SAP probe below.
+> - `-Probe <folder>` and `-ProbeCheck <export>`: see the SAP probe below. `-StdProbe <folder>`: the STAAD probe
+>   ([[vault/format/frame-to-staad|frame-to-staad]]).
 > - The last line is `RESULT {json}`.
 > - **Development only:** `PLUTO_DLL=<a prebuilt pluto.dll>` loads that assembly instead of compiling. This is how the
 >   runner is exercised under pwsh 7 on Linux. `-Preview` there needs mono's `System.Web.Extensions` loaded first (the

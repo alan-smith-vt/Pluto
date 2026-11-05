@@ -10,7 +10,14 @@
 #   out   -S2k      <base>.s2k for SAP2000 (File > Import > SAP2000 .s2k). Never written over the input file. An
 #                   existing <base>.s2k is replaced only when this runner wrote it (the stamp, <base>.build.json, says
 #                   so), when it is the model's own source, or when nothing in it would change; else -Force.
-#         -Xlsx     <base>.xlsx, the frame workbook, and its launchers ("<base> - preview.cmd", "<base> - s2k.cmd")
+#         -Xlsx     <base>.xlsx, the frame workbook, and its launchers ("<base> - preview.cmd", "<base> - s2k.cmd",
+#                   "<base> - open in SAP.cmd", "<base> - std.cmd")
+#         -Std      <base>.std for STAAD.Pro (FrameStd; vault/format/frame-to-staad.md): Y up, a BETA per member, STAAD's
+#                   table for W shapes, exact properties for the rest, patterns as reference loads and cases as primary
+#                   loads. Exact or refused: what STAAD cannot hold exactly (a nonlinear link, a partly rigid end zone,
+#                   an angle's product of inertia ...) refuses the file, every item named on a [refuse] line; what
+#                   leaving out cannot change (modal cases, envelopes) is a [notice]. An existing <base>.std is replaced
+#                   only when this runner wrote it or nothing in it would change; else -Force (STAAD saves its own edits)
 #         -Json     <base>.frame.json, the whole model (FrameModelJson; exact)
 #         -Preview  <base>.bin + <base>.features.json for the Pluto viewer, drawn from the very document -S2k writes
 #                   (SapToPluto): frames with their sections, local axis angles, offsets and releases; supports,
@@ -34,6 +41,10 @@
 #                        shown yet (FrameProbe). Import the one matching your SAP (File > Import > SAP2000 .s2k; if
 #                        Help > About shows another version, edit the Version on the file's PROGRAM CONTROL line to
 #                        it), then File > Export > SAP2000 .s2k with every table, to <folder>\probe.sap-export.s2k.
+#   -StdProbe <folder>   writes staad-probe.s2k and staad-probe.std (FrameStdProbe): one small model, every part
+#                        analysable, for SAP2000 and STAAD.Pro alike. Run both (-SapVersion stamps the .s2k, default
+#                        22.0.0) and compare SAP's joint displacements and reactions with STAAD's .anl: it confirms the
+#                        BETA sign, gradient signs, spring units, inclined supports and offsets (vault/format/frame-to-staad.md).
 #   -ProbeCheck <export> compares SAP's export with the probe it came from (-ProbeFile, default probe-v22.s2k beside
 #                        the export) field by field and writes <export>.check.md: what SAP kept, changed, dropped or
 #                        added, and the tables it wrote that the probe did not.
@@ -41,6 +52,7 @@
 #   powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.s2k" -Xlsx
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.xlsx" -Preview -Watch
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.xlsx" -S2k -Preview
+#   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.xlsx" -Std
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -NewWorkbook -Out "<project dir>\duct.xlsx" -Units "lb, in, F"
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -Probe "<project dir>\probe"
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -ProbeCheck "<project dir>\probe\probe.sap-export.s2k"
@@ -48,6 +60,7 @@ param(
     [string]$In,
     [string]$Out,
     [switch]$S2k,
+    [switch]$Std,
     [switch]$Xlsx,
     [switch]$Json,
     [switch]$Preview,
@@ -60,6 +73,7 @@ param(
     [string]$ModelId,
     [switch]$Force,
     [string]$Probe,
+    [string]$StdProbe,
     [string]$ProbeCheck,
     [string]$ProbeFile
 )
@@ -87,14 +101,19 @@ $repoRoot = (Resolve-Path -LiteralPath (Split-Path -Parent (Split-Path -Parent $
 function InRepo([string]$p) { return $p.Equals($repoRoot, [StringComparison]::OrdinalIgnoreCase) -or $p.StartsWith($repoRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) }
 
 # ---- check: arguments and the output location, before the C# batch loads ----
-$modes = @($In, $Probe, $ProbeCheck) | Where-Object { $_ }
+$modes = @($In, $Probe, $StdProbe, $ProbeCheck) | Where-Object { $_ }
 if ($NewWorkbook) {
     if ($modes.Count -ne 0 -or -not $Out) { Fail "Build-Frame: -NewWorkbook takes -Out <name>.xlsx (and -Units, -SapVersion) only" }
-} elseif ($modes.Count -ne 1) { Fail "Build-Frame: give one of -In <.s2k | .xlsx | .frame.json>, -NewWorkbook -Out <name>.xlsx, -Probe <folder>, -ProbeCheck <SAP's export .s2k>" }
+} elseif ($modes.Count -ne 1) { Fail "Build-Frame: give one of -In <.s2k | .xlsx | .frame.json>, -NewWorkbook -Out <name>.xlsx, -Probe <folder>, -StdProbe <folder>, -ProbeCheck <SAP's export .s2k>" }
 if ($Probe) {
     $dir = [IO.Path]::GetFullPath($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Probe))
     if (InRepo $dir) { Fail ("Build-Frame: refusing to write the probe inside the Pluto repo ({0}); pass -Probe <project dir>\probe" -f $repoRoot) }
     $null = [IO.Directory]::CreateDirectory($dir)
+}
+if ($StdProbe) {
+    $sdir = [IO.Path]::GetFullPath($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($StdProbe))
+    if (InRepo $sdir) { Fail ("Build-Frame: refusing to write the STAAD probe inside the Pluto repo ({0}); pass -StdProbe <project dir>\staad-probe" -f $repoRoot) }
+    $null = [IO.Directory]::CreateDirectory($sdir)
 }
 if ($ProbeCheck) {
     if (-not (Test-Path -LiteralPath $ProbeCheck -PathType Leaf)) { Fail "Build-Frame: SAP's export not found: $ProbeCheck" }
@@ -118,7 +137,7 @@ if ($In) {
     else { Fail ("Build-Frame: {0}: give a SAP2000 .s2k (or .`$2k), a frame workbook .xlsx or a .frame.json model" -f $inPath) }
     if ($Refresh -and $kind -ne "xlsx") { Fail "Build-Frame: -Refresh takes -In <workbook>.xlsx" }
     if ($Watch -and $kind -ne "xlsx") { Fail "Build-Frame: -Watch follows a workbook: -In <name>.xlsx" }
-    if ($Watch -and -not ($S2k -or $Json -or $Preview)) { $Preview = $true }
+    if ($Watch -and -not ($S2k -or $Std -or $Json -or $Preview)) { $Preview = $true }
     if ($Open -and $Watch) { Fail "Build-Frame: -Open is not for -Watch (it would start SAP on every save)" }
     if ($Open) { $S2k = $true }
 }
@@ -140,10 +159,10 @@ if ($Out) {
 }
 if ($outBase) {
     $outBase = [IO.Path]::GetFullPath($outBase)
-    $s2kFile = $outBase + ".s2k"; $jsonFile = $outBase + ".frame.json"; $binFile = $outBase + ".bin"; $scFile = $outBase + ".features.json"; $stampFile = $outBase + ".build.json"
+    $s2kFile = $outBase + ".s2k"; $stdFile = $outBase + ".std"; $jsonFile = $outBase + ".frame.json"; $binFile = $outBase + ".bin"; $scFile = $outBase + ".features.json"; $stampFile = $outBase + ".build.json"
     $xlsxFile = $(if ($NewWorkbook -or $Xlsx) { $outBase + ".xlsx" } else { $inPath })
 }
-if ($S2k -or $Json -or $Preview -or $Xlsx -or $NewWorkbook) {
+if ($S2k -or $Std -or $Json -or $Preview -or $Xlsx -or $NewWorkbook) {
     if (InRepo $outBase) { Fail ("Build-Frame: refusing to write {0}.* inside the Pluto repo ({1}): project outputs never land in Pluto. Pass -Out <project dir>\<name>." -f $outBase, $repoRoot) }
     foreach ($pair in @(@($S2k, $s2kFile, "-S2k"), @($Json, $jsonFile, "-Json"), @($Xlsx, ($outBase + ".xlsx"), "-Xlsx"))) {
         if ($pair[0] -and $inPath -and $pair[1].Equals($inPath, [StringComparison]::OrdinalIgnoreCase)) { Fail ("Build-Frame: {0} would write over the input {1}; pass -Out <another name>" -f $pair[2], $inPath) }
@@ -151,7 +170,7 @@ if ($S2k -or $Json -or $Preview -or $Xlsx -or $NewWorkbook) {
     $outDir = [IO.Path]::GetDirectoryName($outBase)
     if ($outDir) { $null = [IO.Directory]::CreateDirectory($outDir) }
 }
-$outs = @(); if ($S2k) { $outs += $s2kFile }; if ($Xlsx) { $outs += ($outBase + ".xlsx") }; if ($Json) { $outs += $jsonFile }; if ($Preview) { $outs += $binFile; $outs += $scFile }
+$outs = @(); if ($S2k) { $outs += $s2kFile }; if ($Std) { $outs += $stdFile }; if ($Xlsx) { $outs += ($outBase + ".xlsx") }; if ($Json) { $outs += $jsonFile }; if ($Preview) { $outs += $binFile; $outs += $scFile }
 if ($inPath -and -not $Refresh) { Say "check" ("{0} ({1}) -> {2}" -f $inPath, $kind, $(if ($outs.Count) { $outs -join ", " } else { "no files (a report only)" })) }
 
 # ---- load: the C# batch ----
@@ -170,6 +189,15 @@ try {
         [FrameProbe]::Write($v26, "26.3.0")
         Say "write" ("{0} and {1}: import the one for your SAP version, then export it again as {2}" -f $v22, $v26, [IO.Path]::Combine($dir, "probe.sap-export.s2k"))
         Write-Output ("RESULT {""kind"":""probe"",""files"":[" + (Q $v22) + "," + (Q $v26) + "]}")
+        exit 0
+    }
+    if ($StdProbe) {
+        $pnotes = New-Object 'System.Collections.Generic.List[string]'
+        $files = [FrameStdProbe]::Write($sdir, $(if ($SapVersion) { $SapVersion } else { "22.0.0" }), $pnotes)
+        foreach ($n in $pnotes) { Say "notice" ("std: " + $n) }
+        Say "write" ("{0}: import it in SAP2000 (edit its Version to Help > About's if SAP asks), run all cases, export joint displacements and reactions" -f $files[0])
+        Say "write" ("{0}: open it in STAAD.Pro and run it; its .anl holds the same results" -f $files[1])
+        Write-Output ("RESULT {""kind"":""stdprobe"",""files"":[" + (Q $files[0]) + "," + (Q $files[1]) + "]}")
         exit 0
     }
     if ($ProbeCheck) {
@@ -231,12 +259,13 @@ function Read-Stamp {
     try { return (Get-Content -LiteralPath $stampFile -Raw | ConvertFrom-Json) } catch { return $null }
 }
 
-function Write-Stamp($s2kPart, $previewPart) {
+function Write-Stamp($s2kPart, $previewPart, $stdPart) {
     $o = Read-Stamp
-    $sj = "null"; $pj = "null"
+    $sj = "null"; $pj = "null"; $tj = "null"
     if ($s2kPart) { $sj = $s2kPart } elseif ($o -and $o.s2k) { $sj = (ConvertTo-Json -InputObject $o.s2k -Compress) }
     if ($previewPart) { $pj = $previewPart } elseif ($o -and $o.preview) { $pj = (ConvertTo-Json -InputObject $o.preview -Compress) }
-    [IO.File]::WriteAllText($stampFile, "{""format"":""pluto-frame-build"",""s2k"":" + $sj + ",""preview"":" + $pj + "}", (New-Object Text.UTF8Encoding($false)))
+    if ($stdPart) { $tj = $stdPart } elseif ($o -and $o.std) { $tj = (ConvertTo-Json -InputObject $o.std -Compress) }
+    [IO.File]::WriteAllText($stampFile, "{""format"":""pluto-frame-build"",""s2k"":" + $sj + ",""preview"":" + $pj + ",""std"":" + $tj + "}", (New-Object Text.UTF8Encoding($false)))
 }
 
 # an existing .s2k may be replaced when this runner wrote it, when it is the model's own source, or when nothing in it
@@ -253,6 +282,18 @@ function Check-Target([byte[]]$bytes, $model) {
     $only = @(Compare-Object -ReferenceObject $a -DifferenceObject $b | Where-Object { $_.InputObject.Trim().Length -gt 0 } | Select-Object -First 6)
     foreach ($d in $only) { Say "target" ("{0} {1}" -f $(if ($d.SideIndicator -eq "<=") { "only in the file:" } else { "only in this model:" }), $d.InputObject.Trim()) }
     throw ("{0} was changed since this runner wrote it (by SAP or by hand); the first differences are listed above. Make the workbook again from it (-In {1} -Xlsx), write elsewhere (-Out), or -Force to replace it." -f $s2kFile, [IO.Path]::GetFileName($s2kFile))
+}
+
+# an existing .std may be replaced when this runner wrote it or nothing in it would change; STAAD.Pro saves its own
+# edits into the .std it opened, so anything else needs -Force
+function Check-Std([byte[]]$bytes) {
+    if (-not (Test-Path -LiteralPath $stdFile -PathType Leaf)) { return }
+    $st = Read-Stamp
+    if ($st -and $st.std -and $st.std.sha256 -eq (FileSha $stdFile)) { return }
+    $old = ReadShared $stdFile
+    if ([S2kDoc]::SameBytes($old, $bytes)) { return }
+    if ($Force) { Say "warn" ("-Force: replacing {0}, changed outside this runner" -f $stdFile); return }
+    throw (New-Object InvalidOperationException(("{0} was changed since this runner wrote it (STAAD.Pro saves its edits into it). Write elsewhere (-Out), or -Force to replace it." -f $stdFile)))
 }
 
 function Build-Once {
@@ -294,6 +335,23 @@ function Build-Once {
         [IO.File]::WriteAllBytes($s2kFile, $bytes)
         Say "write" ("{0}: for SAP2000 (File > Import > SAP2000 .s2k)" -f $s2kFile)
         Write-Stamp ("{""sha256"":" + (Q (FileSha $s2kFile)) + ",""model"":" + (Q $hash) + ",""input"":" + (Q $inPath) + ",""inputSha256"":" + (Q $inSha) + ",""written"":" + (Q $now) + "}") $null
+    }
+    $stdNotes = New-Object 'System.Collections.Generic.List[string]'
+    if ($Std) {
+        $script:step = "writing the STAAD .std"
+        try { $text = [FrameStd]::ToText($model, [IO.Path]::GetFileName($inPath), $stdNotes) }
+        catch {
+            $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }
+            if ($e -isnot [FrameStdRefusal]) { throw }
+            foreach ($i in $e.Items) { Say "refuse" $i }
+            throw (New-Object InvalidOperationException(("STAAD: the {0} item(s) above cannot be written exactly; {1} is not written" -f $e.Items.Count, $stdFile)))
+        }
+        foreach ($n in $stdNotes) { Say "notice" ("std: " + $n) }
+        $bytes = (New-Object Text.UTF8Encoding($false)).GetBytes($text)
+        Check-Std $bytes
+        [IO.File]::WriteAllBytes($stdFile, $bytes)
+        Say "write" ("{0}: for STAAD.Pro (File > Open)" -f $stdFile)
+        Write-Stamp $null $null ("{""sha256"":" + (Q (FileSha $stdFile)) + ",""model"":" + (Q $hash) + ",""input"":" + (Q $inPath) + ",""inputSha256"":" + (Q $inSha) + ",""written"":" + (Q $now) + "}")
     }
     if ($Open) {
         # the SAP controller in a process of its own (its Add-Type batch holds SAP2000v1.dll), on a SAP of its own
@@ -349,9 +407,9 @@ function Build-Once {
     }
     $res = "RESULT {""input"":" + (Q $inPath) + ",""kind"":" + (Q $kind) + ",""model"":" + (Q $hash)
     $res += ",""identical"":" + $(if ($identical -eq $null) { "null" } elseif ($identical) { "true" } else { "false" })
-    $res += ",""s2k"":" + $(if ($S2k) { Q $s2kFile } else { "null" }) + ",""xlsx"":" + $(if ($Xlsx) { Q ($outBase + ".xlsx") } else { "null" }) + ",""json"":" + $(if ($Json) { Q $jsonFile } else { "null" })
+    $res += ",""s2k"":" + $(if ($S2k) { Q $s2kFile } else { "null" }) + ",""std"":" + $(if ($Std) { Q $stdFile } else { "null" }) + ",""xlsx"":" + $(if ($Xlsx) { Q ($outBase + ".xlsx") } else { "null" }) + ",""json"":" + $(if ($Json) { Q $jsonFile } else { "null" })
     $res += ",""bin"":" + $(if ($Preview) { Q $binFile } else { "null" }) + ",""sidecar"":" + $(if ($Preview) { Q $scFile } else { "null" })
-    $res += ",""notices"":" + $notes.Count + ",""counts"":" + (Q $counts) + "}"
+    $res += ",""notices"":" + ($notes.Count + $stdNotes.Count) + ",""counts"":" + (Q $counts) + "}"
     Write-Output $res
 }
 
