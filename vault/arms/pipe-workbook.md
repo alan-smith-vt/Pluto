@@ -77,6 +77,15 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > - **Units are the job's.** Each header says which (`DX (in)`).
 > - **Sections and Processes** are named from what they hold (`8in STD ins2`, `T300 P150`).
 
+> [!info]- Ids (2026-11-05)
+> The Id column is each row's link to its object in the model, not a row counter.
+> - **A new row shows `new`** by formula as soon as its next column is filled. Nothing is typed, and `new` reads as a
+>   new object.
+> - **A row-number formula was asked for and declined:**
+>   - inserting or deleting a row would shift every Id below it;
+>   - on named objects that reads as a chain of renames, which re-point everything that names them;
+>   - on CAESAR's Elements, the blocks carried with each element would move to the wrong one.
+
 > [!info]- Couplings on the Joints sheet (2026-11-05)
 > CAESAR keeps a coupling as CNODE restraints between two nodes at one point, one per DOF, and so does the TOML
 > builder. Until 2026-11-05 a workbook made from a `.cii` or a TOML showed them as plain rows on Restraints and left

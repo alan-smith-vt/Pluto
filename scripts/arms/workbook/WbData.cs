@@ -177,6 +177,13 @@ public static class WbRead
     }
 
     // "E12" with prefix 'E' -> 12; 0 when it is not such an Id
+    // a row's Id cell: "" for none and for "new" (what a row shows until the model gives it an Id)
+    public static string Id(WbCols c, int row, WbReadCtx x)
+    {
+        string id = Text(c, row, "Id", x).Trim();
+        return id.Equals(WbForm.NewId, StringComparison.OrdinalIgnoreCase) ? "" : id;
+    }
+
     public static int IdNum(string id, char prefix)
     {
         int n;

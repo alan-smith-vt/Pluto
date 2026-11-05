@@ -67,6 +67,8 @@ public sealed class WbCol
 public sealed class WbForm
 {
     public int RefRows = 5000;                                  // how far rules look into a sheet they reference
+    public const string NewId = "new";                          // the Id a row shows until the model has given it one
+    const int NewRows = 300;                                    // the rows below the data that show it
     public Func<WbCol, string, string> KindRule;                // a workbook's own kinds: the red rule (null = none)
     public Func<WbCol, XlsxValidation, bool> KindValidation;    // ... and the dropdown / hint (true = handled)
 
@@ -142,8 +144,16 @@ public sealed class WbForm
             if (rule != null) s.Conditional(range, rule, t.Red);
             if (c.Kind == "id")
             {
-                s.Conditional(range, "AND(" + at + "<>\"\",COUNTIF($" + col + "$2:$" + col + "$" + lim + "," + at + ")>1)", t.Amber);
+                s.Conditional(range, "AND(" + at + "<>\"\"," + at + "<>\"" + NewId + "\",COUNTIF($" + col + "$2:$" + col + "$" + lim + "," + at + ")>1)", t.Amber);
                 for (int r = 1; r <= rows; r++) s.Style(r, k, t.Key);
+                // the rows below: "new" as soon as the next column (the row's node, label or name) is filled, so every
+                // row shows an Id and none is typed; the reader takes "new" as a blank Id (a new object)
+                if (k + 1 < headers.Length)
+                {
+                    string key = XlsxBook.Column(k + 1);
+                    for (int r = rows + 1; r <= Math.Min(lim - 1, rows + NewRows); r++)
+                        s.SetFormula(r, k, "IF(" + key + (r + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) + "=\"\",\"\",\"" + NewId + "\")", t.Key);
+                }
             }
         }
         s.AutoFilter = "A1:" + XlsxBook.Column(headers.Length - 1) + Math.Max(2, rows + 1);

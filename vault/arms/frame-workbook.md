@@ -84,6 +84,15 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 > **Refresh** writes the workbook in this version's layout from its own base, every typed cell back where it was, so
 > the next read gives the same model.
 
+> [!info]- Ids (2026-11-05)
+> The Id column is each row's link to its object in the model, not a row counter.
+> - **A new row shows `new`** by formula as soon as its next column is filled. Nothing is typed, and `new` reads as a
+>   new object.
+> - **A row-number formula was asked for and declined:**
+>   - inserting or deleting a row would shift every Id below it;
+>   - on named objects that reads as a chain of renames, which re-point everything that names them;
+>   - on CAESAR's Elements, the blocks carried with each element would move to the wrong one.
+
 > [!info]- Dropdowns and tab colours (2026-11-05)
 > - **Dropdowns that take only a listed value:** section, release and modifier presets, material, link property,
 >   pattern, Rel / Abs, geometric nonlinearity, DOF.

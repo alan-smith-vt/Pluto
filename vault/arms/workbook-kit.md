@@ -20,7 +20,7 @@ and texts, and hands them to the kit.
 > | Type | File | What it does |
 > |---|---|---|
 > | `WbTheme` | `WbForm.cs` | Cell styles and conditional formats, created in a fixed order. Header colour groups are given by the workbook. |
-> | `WbCol`, `WbForm` | `WbForm.cs` | A column (name, group, kind, list, hint, note). `Table` puts a column table on a sheet. Built-in kinds: `id text num pos nonneg int0 cos yesno list! list? ref`. A workbook adds its own kinds through `KindRule` / `KindValidation` (CAESAR: `node catalog vector radius elemref`). `RefRows` is per book (it was a static). |
+> | `WbCol`, `WbForm` | `WbForm.cs` | A column (name, group, kind, list, hint, note). `Table` puts a column table on a sheet. Built-in kinds: `id text num pos nonneg int0 cos yesno list! list? ref`. An `id` column links a row to its object (never a row counter): the 300 rows below the data show `new` by formula once their next column is filled, so no Id is typed, and the readers take `new` as blank (`WbRead.Id`; the copied-Id rule and checks skip it). A workbook adds its own kinds through `KindRule` / `KindValidation` (CAESAR: `node catalog vector radius elemref`). `RefRows` is per book (it was a static). |
 > | `WbStart` | `WbStart.cs` | The Start sheet (`Texts` holds the workbook's wording) and its run block (`WbLink`, `WbCommand`); `WbSheetInfo`, `WbCheck`. |
 > | `WbCalc` | `WbStart.cs` | A hidden helper sheet with one row per input row: `At`, `Range`, `Count`, `Last`, and row templates (`Expand`: `[k] [k-] [k+] [k:] [k^] [k*]`). |
 > | `WbRun` | `WbRun.cs` | Launchers beside the workbook and the Start sheet's command formulas. A workbook's subclass names its runner and launchers (`PipeWorkbookRun`). |

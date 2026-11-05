@@ -290,7 +290,7 @@ public static class FrameWorkbook
             r0++;
         }
         t.Form.Table(js, t, jh, new[] {
-            C("Id", "key", "id", "J and the joint's number in the model: keep it. Blank on a new joint."),
+            C("Id", "key", "id", "J and the joint's number in the model: keep it. A new row shows \"new\" by itself: never type an Id."),
             C("Joint", "key", "text", "SAP's label: a number or text (A1). A new label renames the joint; Frames, Links and loads naming the old label follow."),
             C("X", "geom", "num", "Global X. A formula is fine: a pipe run's next joint is =C12+24 (the joint in row 12, 24 along X)."),
             C("Y", "geom", "num", "Global Y (a formula is fine)."), C("Z", "geom", "num", "Global Z (up; a formula is fine)."),
@@ -341,7 +341,7 @@ public static class FrameWorkbook
             else fs.SetFormula(r, 4, len, XlsxBook.ReadOnly);
         }
         t.Form.Table(fs, t, fh, new[] {
-            C("Id", "key", "id", "F and the frame's number in the model: keep it. Blank on a new frame."),
+            C("Id", "key", "id", "F and the frame's number in the model: keep it. A new row shows \"new\" by itself: never type an Id."),
             C("Frame", "key", "text", "SAP's label. A new label renames the frame; loads and groups naming it follow."),
             L("Joint I", "geom", "list?", jointIds, "The joint at end I: a label on Joints."),
             L("Joint J", "geom", "list?", jointIds, "The joint at end J: a label on Joints. A frame meeting another names the same joint."),
@@ -385,7 +385,7 @@ public static class FrameWorkbook
             r0++;
         }
         t.Form.Table(ss, t, sh, new[] {
-            C("Id", "key", "id", "S and the section's number: keep it. Blank on a new section."), C("Name", "key", "text", "SAP's section name. A new name renames it; Frames naming the old one follow."),
+            C("Id", "key", "id", "S and the section's number: keep it. A new row shows \"new\" by itself: never type an Id."), C("Name", "key", "text", "SAP's section name. A new name renames it; Frames naming the old one follow."),
             L("Shape", "prop", "list?", ListRange(0), "SAP's shape: Pipe (t3 = OD, tw = wall), Box/Tube, I/Wide Flange, Channel, Angle, Tee, Double Angle, Rectangular, General ..."),
             L("Material", "prop", "list!", matNames, "A material on the Materials sheet."),
             C("t3", "prop", "pos", "Depth (OD for a pipe)."), C("t2", "prop", "pos", "Width."), C("tf", "prop", "pos", "Flange thickness."), C("tw", "prop", "pos", "Web (wall) thickness."),
@@ -412,7 +412,7 @@ public static class FrameWorkbook
             r0++;
         }
         t.Form.Table(ms, t, mh, new[] {
-            C("Id", "key", "id", "M and the material's number: keep it."), C("Name", "key", "text", "SAP's material name."), L("Type", "prop", "list?", ListRange(16), "Steel, Concrete, Other ..."),
+            C("Id", "key", "id", "M and the material's number: keep it. A new row shows \"new\" by itself."), C("Name", "key", "text", "SAP's material name."), L("Type", "prop", "list?", ListRange(16), "Steel, Concrete, Other ..."),
             C("E", "prop", "pos", "Modulus of elasticity."), C("Poisson", "prop", "num", "Poisson's ratio (0 to 0.5)."), C("G", "prop", "pos", "Shear modulus."),
             C("Unit weight", "prop", "nonneg", "Weight per volume (self weight)."), C("Unit mass", "prop", "nonneg", "Mass per volume."), C("Alpha", "prop", "num", "Thermal expansion per degree."),
             C("Fy", "prop", "pos", "Yield (steel)."), C("Fu", "prop", "pos", "Tensile strength (steel)."),
@@ -452,7 +452,7 @@ public static class FrameWorkbook
             r0++;
         }
         t.Form.Table(ls, t, lh, new[] {
-            C("Id", "key", "id", "K and the link's number: keep it."), C("Link", "key", "text", "SAP's label."), L("Joint I", "bc", "list?", jointIds, "Its first joint."),
+            C("Id", "key", "id", "K and the link's number: keep it. A new row shows \"new\" by itself."), C("Link", "key", "text", "SAP's label."), L("Joint I", "bc", "list?", jointIds, "Its first joint."),
             L("Joint J", "bc", "list?", jointIds, "Its second joint; blank = a one-joint (grounded) link."), L("Property", "bc", "list!", lpNames, "A property on Link props."),
             C("Angle", "geom", "num", "Local axis angle (degrees), about local 1. SAP's default axes: local 1 from I to J (+Z for a one-joint or zero-length link); local 2 in the vertical plane through 1 (+X when 1 is vertical); local 3 = 1 x 2. A gap's U1 acts along local 1."),
         }, m.Links.Count, lim);
@@ -484,7 +484,7 @@ public static class FrameWorkbook
             }
         }
         t.Form.Table(lp, t, lph, new[] {
-            C("Id", "key", "id", "LP and the property's number, on its first row: keep it."), C("Name", "key", "text", "The property's name, on its first row; a blank Name continues the property above."),
+            C("Id", "key", "id", "LP and the property's number, on its first row: keep it. A new row shows \"new\" by itself."), C("Name", "key", "text", "The property's name, on its first row; a blank Name continues the property above."),
             L("Type", "bc", "list?", ListRange(4), "Linear, Gap, Hook, Friction Isolator, MultiLinear Elastic, Damper (first row)."),
             L("DOF", "bc", "list!", ListRange(3), "U1 (along local 1, axial) ... R3."), L("Fixed", "bc", "yesno", ListRange(2), "yes: rigid in this DOF."),
             L("NonLinear", "bc", "yesno", ListRange(2), "yes: its nonlinear behaviour (gap, hook, friction ...) in nonlinear cases."),
@@ -516,7 +516,7 @@ public static class FrameWorkbook
         r0 = 1;
         foreach (var p in m.Patterns) { ps.Set(r0, 0, Id(p)); ps.Set(r0, 1, p.Label); ps.Set(r0, 2, p.DesignType); ps.Set(r0, 3, p.SelfWeight); r0++; }
         t.Form.Table(ps, t, new[] { "Id", "Name", "Type", "Self weight" }, new[] {
-            C("Id", "key", "id", "PAT and the pattern's number: keep it."), C("Name", "key", "text", "The pattern's name."), L("Type", "load", "list?", ListRange(5), "Dead, Live, Temperature, Wind, Other ..."),
+            C("Id", "key", "id", "PAT and the pattern's number: keep it. A new row shows \"new\" by itself."), C("Name", "key", "text", "The pattern's name."), L("Type", "load", "list?", ListRange(5), "Dead, Live, Temperature, Wind, Other ..."),
             C("Self weight", "load", "num", "Self-weight multiplier (1 on one dead pattern, 0 elsewhere)."),
         }, m.Patterns.Count, 400);
 
@@ -539,7 +539,7 @@ public static class FrameWorkbook
                 r0++;
             }
             t.Form.Table(ws, t, new[] { "Id", "Joint", "Pattern", "CoordSys" }.Concat(keys.Select((k, i) => H(k, dims[i], units))).ToArray(),
-                new[] { C("Id", "key", "id", (disp ? "GD" : "JL") + " and the load's number: keep it."), L("Joint", "key", "list?", jointIds, "The joint."),
+                new[] { C("Id", "key", "id", (disp ? "GD" : "JL") + " and the load's number: keep it. A new row shows \"new\" by itself."), L("Joint", "key", "list?", jointIds, "The joint."),
                         L("Pattern", "load", "list!", patNames, "Its load pattern."), L("CoordSys", "load", "list?", ListRange(11), "GLOBAL or Local.") }
                 .Concat(keys.Select(k => C(k, "load", "num", (disp ? "Imposed " : "") + k + "."))).ToArray(), list.Count, lim);
             ws.Conditional("B2:B" + lim, noJoint("B2") + ">0", t.Red);
@@ -605,7 +605,7 @@ public static class FrameWorkbook
                 r0++;
             }
             t.Form.Table(ws, t, new[] { "Id", "Frames", "Pattern", "Type", H("Value", "T", units) }, new[] {
-                C("Id", "key", "id", "TL and the load's number: keep it."), L("Frames", "key", "list?", frameIds, FramesHint), L("Pattern", "load", "list!", patNames, "Its load pattern."),
+                C("Id", "key", "id", "TL and the load's number: keep it. A new row shows \"new\" by itself."), L("Frames", "key", "list?", frameIds, FramesHint), L("Pattern", "load", "list!", patNames, "Its load pattern."),
                 L("Type", "load", "list?", ListRange(12), "Temperature (a uniform change), or a gradient."), C("Value", "load", "num", "The temperature change."),
             }, list.Count, lim);
             ws.Conditional("B2:B" + lim, noFrame("B2") + ">0", t.Red);
@@ -623,7 +623,7 @@ public static class FrameWorkbook
             foreach (var x in lds) { cs.Set(r0, 4, x[0]); cs.Set(r0, 5, x[1]); Num(cs, r0, 6, x[2]); r0++; }
         }
         t.Form.Table(cs, t, new[] { "Id", "Case", "Type", "Initial", "Load type", "Load name", "SF", "Geometric nonlinearity" }, new[] {
-            C("Id", "key", "id", "CASE and the case's number, on its first row: keep it."), C("Case", "key", "text", "The case's name on its first row; a blank Case continues the case above."),
+            C("Id", "key", "id", "CASE and the case's number, on its first row: keep it. A new row shows \"new\" by itself."), C("Case", "key", "text", "The case's name on its first row; a blank Case continues the case above."),
             L("Type", "load", "list?", ListRange(6), "LinStatic, NonStatic (gaps, hooks, friction need it) ..."),
             L("Initial", "load", "list?", col(SCases, "B"), "Blank or Zero, or the nonlinear case it continues from (OPE from SUS)."),
             L("Load type", "load", "list?", ListRange(15), "Load pattern (usually)."), L("Load name", "load", "list?", patNames, "The load pattern (a dropdown of Load patterns; an Accel load takes U1, U2 or U3)."), C("SF", "load", "num", "Scale factor."),
@@ -642,7 +642,7 @@ public static class FrameWorkbook
             foreach (var x in items) { cb.Set(r0, 3, x[1]); Num(cb, r0, 4, x[2]); r0++; }
         }
         t.Form.Table(cb, t, new[] { "Id", "Combination", "Type", "Item", "SF" }, new[] {
-            C("Id", "key", "id", "CMB and the combination's number, on its first row: keep it."),
+            C("Id", "key", "id", "CMB and the combination's number, on its first row: keep it. A new row shows \"new\" by itself."),
             C("Combination", "key", "text", "Its name on its first row; a blank name continues the combination above."),
             L("Type", "load", "list?", ListRange(7), "Linear Add, Envelope, Abs Add, SRSS, Range Add."), L("Item", "load", "list?", col(SCases, "B"), "A load case (the dropdown), or another combination's name."), C("SF", "load", "num", "Scale factor."),
         }, r0 - 1, lim);
@@ -761,7 +761,7 @@ public static class FrameWorkbook
             new WbCheck("Loads naming a pattern no sheet has", string.Join("+", new[] { SJointLoads, SGround, SPoint, SDist, STemp }.Select(sn => "SUMPRODUCT((" + col(sn, "C") + "<>\"\")*(COUNTIF(" + patNames + "," + col(sn, "C") + ")=0))").ToArray()), false),
             new WbCheck("Loads on a frame no sheet has", string.Join("+", new[] { SPoint, SDist, STemp }.Select(sn => "SUMPRODUCT(" + noFrame(col(sn, "B")) + ")").ToArray()), false),
             new WbCheck("Joints no frame or link uses", light ? "0" : "SUMPRODUCT((" + jointIds + "<>\"\")*(COUNTIF(" + fr + "," + jointIds + ")+COUNTIF(" + frJ + "," + jointIds + ")+COUNTIF(" + col(SLinks, "C") + "," + jointIds + ")+COUNTIF(" + col(SLinks, "D") + "," + jointIds + ")=0))", true),
-            new WbCheck("Ids used twice (a copied row: read as new)", string.Join("+", new[] { SJoints, SFrames, SSections, SLinks, SPoint, SDist }.Select(sn => "SUMPRODUCT((" + col(sn, "A") + "<>\"\")*(COUNTIF(" + col(sn, "A") + "," + col(sn, "A") + ")>1))").ToArray()), true),
+            new WbCheck("Ids used twice (a copied row: read as new)", string.Join("+", new[] { SJoints, SFrames, SSections, SLinks, SPoint, SDist }.Select(sn => "SUMPRODUCT((" + col(sn, "A") + "<>\"\")*(" + col(sn, "A") + "<>\"" + WbForm.NewId + "\")*(COUNTIF(" + col(sn, "A") + "," + col(sn, "A") + ")>1))").ToArray()), true),
         };
         var x0 = new WbStart.Texts
         {
@@ -813,7 +813,7 @@ public static class FrameWorkbook
     static WbCol[] LoadCols(string prefix, string patNames, string frameIds)
     {
         return new[] {
-            C("Id", "key", "id", prefix + " and the load's number: keep it. A row naming several frames gives one load per frame."), L("Frames", "key", "list?", frameIds, FramesHint),
+            C("Id", "key", "id", prefix + " and the load's number: keep it. A new row shows \"new\" by itself. A row naming several frames gives one load per frame."), L("Frames", "key", "list?", frameIds, FramesHint),
             L("Pattern", "load", "list!", patNames, "Its load pattern."), L("CoordSys", "load", "list?", ListRange(11), "GLOBAL, or Local for directions 1 2 3."),
             L("Type", "load", "list?", ListRange(8), "Force or Moment."), L("Dir", "load", "list?", ListRange(9), "Gravity, X, Y, Z, 1, 2, 3, X Proj ..."),
         };
@@ -1066,7 +1066,7 @@ public static class FrameWorkbook
     // the object a row's Id names (of type T, not taken by an earlier row); a copied Id is read as new, with a warning
     static T Match<T>(WbCols c, int r, Ctx x) where T : FrameObj
     {
-        string id = Text(c, r, "Id", x);
+        string id = WbRead.Id(c, r, x);
         if (id.Length == 0) return null;
         FrameObj o;
         if (!x.ById.TryGetValue(id, out o) || !(o is T)) { x.Warnings.Add(At(c, r, "Id") + ": " + id + " is no object of this sheet's: read as new"); return null; }

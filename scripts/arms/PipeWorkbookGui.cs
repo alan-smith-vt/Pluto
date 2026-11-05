@@ -151,7 +151,7 @@ static class PipeWorkbookGui
     {
         return new[]
         {
-            C("Id", "key", "id", "Keep it on rows from the model; leave it blank on a new row."),
+            C("Id", "key", "id", "The row's link to its item in the model: keep it, never type one. A new row shows \"new\" by itself."),
             C("Node", "key", "node", "The restrained node (a node of the Elements sheet)."),
             L("Type", "prop", "list!", types, "CAESAR's restraint type: ANC, X, Y, Z, RX ... GUI, LIM, +Y, -Y ...",
               "Type: CAESAR's restraint type. ANC anchors; X / Y / Z (and +Y ...) act along an axis, RX ... about one; GUI guides and LIM limit stops act across / along the pipe. Codes CAESAR's documentation lists but no CAESAR file has shown yet are written with a notice."),
@@ -170,7 +170,7 @@ static class PipeWorkbookGui
     {
         return new[]
         {
-            C("Id", "key", "id", "Keep it on rows from the model; leave it blank on a new row."),
+            C("Id", "key", "id", "The row's link to its item in the model: keep it, never type one. A new row shows \"new\" by itself."),
             C("Node", "key", "node", "The node of the SIF / tee."),
             L("Type", "prop", "list!", types, "Pick from the list: 0 user SIFs, 1-6 tees (3 = welding tee), 7-13 joints.",
               "Type: CAESAR's SIF & tee type, as CAESAR 15.01 lists them: " + string.Join("; ", Enumerable.Range(0, PipeModelSifTypes.Names.Length).Select(k => SifLabel(k)).ToArray()) +
@@ -188,7 +188,7 @@ static class PipeWorkbookGui
     {
         var l = new List<Col>
         {
-            C("Id", "key", "id", "Keep it on rows from the model; leave it blank on a new row. One Id = one node."),
+            C("Id", "key", "id", "The row's link to its item in the model: keep it, never type one. A new row shows \"new\" by itself. One Id = one node."),
             C("Node", "key", "node", "The loaded node."),
             L("Vector", "load", "vector", LVector, disp ? "Load vector 1-9 (CAESAR's D1-D9)." : "Load vector 1-9 (CAESAR's F1-F9).",
               disp ? "Vector: CAESAR's displacement vectors D1-D9; one row per node and vector. A DOF left blank is free; 0 holds it." : "Vector: CAESAR's force vectors F1-F9; one row per node and vector."),
@@ -235,7 +235,7 @@ static class PipeWorkbookGui
     {
         return new[]
         {
-            C("Id", "key", "id", "Keep it on rows from the model; leave it blank on a new row. Couplings in a .cii or a TOML build (CNODE restraints between two nodes at one point) come here, their restraints off the Restraints sheet."),
+            C("Id", "key", "id", "The row's link to its item in the model: keep it, never type one. A new row shows \"new\" by itself. Couplings in a .cii or a TOML build (CNODE restraints between two nodes at one point) come here, their restraints off the Restraints sheet."),
             C("Node", "key", "node", "One end of the joint."),
             C("CNode", "key", "node", "The other end (written as CNODE restraints Node -> CNode)."),
             L("Kind", "prop", "list?", LKind, "A label: coupling, hinge, slip, ball, link (or your own).", null),
@@ -251,7 +251,7 @@ static class PipeWorkbookGui
     {
         return new[]
         {
-            C("Id", "key", "id", "Keep it on rows from the model; leave it blank on a new row."),
+            C("Id", "key", "id", "The row's link to its item in the model: keep it, never type one. A new row shows \"new\" by itself."),
             C("Node", "key", "node", "The hanger's node (a node of the Elements sheet).",
               "Hangers: one row per hanger node. Leave Rate and Constant blank for CAESAR to design the hanger from its table; give Rate with Cold load for a spring as given; give Constant for a constant-effort support."),
             C("CNode", "key", "node", "Connecting node: the hanger ties Node to it. Blank = to ground."),
@@ -281,7 +281,7 @@ static class PipeWorkbookGui
     {
         var l = new List<Col>
         {
-            C("Id", "key", "id", "Keep it on rows from the model; leave it blank on a new row."),
+            C("Id", "key", "id", "The row's link to its item in the model: keep it, never type one. A new row shows \"new\" by itself."),
             C("Node", "key", "node", "The nozzle's node: the pipe end at the vessel or tank wall.",
               "Nozzles: one row per flexible nozzle. CAESAR works out its flexibility (WRC 297, PD 5500: on a vessel; API 650: on a tank shell) or takes the stiffnesses given (Custom), between Node and Vessel node (or ground without one). Fill the columns the type uses; a value in a column the type does not use is red."),
             C("Vessel node", "key", "node", "The vessel's node the nozzle ties to. Blank = ground (a rigid vessel)."),

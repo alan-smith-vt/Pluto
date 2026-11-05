@@ -862,12 +862,12 @@ public static class PipeWorkbook
             new WbCheck("Sections: D/t over 100 (CAESAR warns at bends and tees)",
                 "SUMPRODUCT(ISNUMBER(Sections!$B$2:$B$" + LS + ")*ISNUMBER(Sections!$C$2:$C$" + LS + ")*(Sections!$C$2:$C$" + LS + ">0)*(Sections!$B$2:$B$" + LS + ">100*Sections!$C$2:$C$" + LS + "))", true),
             new WbCheck("Ids used twice (a copied row is read as a new item)",
-                "SUMPRODUCT((" + col("A") + "<>\"\")*(COUNTIF(" + col("A") + "," + col("A") + ")>1))+SUMPRODUCT((Restraints!$A$2:$A$" + L2 + "<>\"\")*(COUNTIF(Restraints!$A$2:$A$" + L2 + ",Restraints!$A$2:$A$" + L2 + ")>1))", true),
+                "SUMPRODUCT((" + col("A") + "<>\"\")*(" + col("A") + "<>\"" + WbForm.NewId + "\")*(COUNTIF(" + col("A") + "," + col("A") + ")>1))+SUMPRODUCT((Restraints!$A$2:$A$" + L2 + "<>\"\")*(Restraints!$A$2:$A$" + L2 + "<>\"" + WbForm.NewId + "\")*(COUNTIF(Restraints!$A$2:$A$" + L2 + ",Restraints!$A$2:$A$" + L2 + ")>1))", true),
         };
         string[] reference =
         {
             "Units are the job's, shown in each header: " + u.Len + ", " + u.Force + ", " + u.Temp + ", " + u.Press + ". A length header may name another length unit (in ft mm cm m): the column is read in that unit.",
-            "Id: keep it. A row without an Id is a new item; a deleted row deletes the item; moving rows reorders the elements (CAESAR's order). A copied row keeps its original's Id: clear it.",
+            "Id: keep it. A row without one (it shows \"new\") is a new item; a deleted row deletes the item; moving rows reorders the elements (CAESAR's order). A copied row keeps its original's Id: clear it.",
             "Elements: a bend radius makes the element a bend at its TO node (LR / SR = 1.5 / 1 x nominal). Bend nodes: angle:node pairs, M = the mid point (M:19; 0:18).",
             "Bend radius by name: LR or Long (1.5 x nominal), SR or Short (1 x), 3D, 5D. A radius CAESAR wrote by name shows its name and is written back as CAESAR's code. A negative number (-2.0202, -6.0606 ...) is a code CAESAR reads as no radius (amber): keep it or replace it.",
             "Section / Process: a name from those sheets; blank = the row above's. The grouped columns at the right of Elements (+) override one value for one element.",
@@ -1334,7 +1334,7 @@ public static class PipeWorkbook
         {
             if (Blank(s, r)) continue;
             string w = "Elements row " + (r + 1);
-            string id = Text(c, r, "Id", x);
+            string id = WbRead.Id(c, r, x);
             PipeModelElement e = null;
             int uid = IdNum(id, 'E');
             if (uid > 0 && byUid.TryGetValue(uid, out e))
@@ -1534,7 +1534,7 @@ public static class PipeWorkbook
         for (int r = 1; r < s.Rows.Count; r++)
         {
             if (Blank(s, r)) continue;
-            string id = Text(c, r, "Id", x), w = "Restraints row " + (r + 1) + (id.Length > 0 ? " (" + id + ")" : "");
+            string id = WbRead.Id(c, r, x), w = "Restraints row " + (r + 1) + (id.Length > 0 ? " (" + id + ")" : "");
             int n = IdNum(id, 'R');
             PipeModelRestraint q = n > 0 && n <= old.Count && seen.Add(n) ? old[n - 1] : null;
             if (q == null) q = new PipeModelRestraint { Source = "workbook" };
@@ -1604,7 +1604,7 @@ public static class PipeWorkbook
         for (int r = 1; r < s.Rows.Count; r++)
         {
             if (Blank(s, r)) continue;
-            string id = Text(c, r, "Id", x), w = "SIFs row " + (r + 1);
+            string id = WbRead.Id(c, r, x), w = "SIFs row " + (r + 1);
             int n = IdNum(id, 'S');
             var t = n > 0 && n <= old.Count && seen.Add(n) ? old[n - 1] : new PipeModelSif();
             int node = Int(c, r, "Node", x, 0);
@@ -1646,7 +1646,7 @@ public static class PipeWorkbook
         for (int r = 1; r < s.Rows.Count; r++)
         {
             if (Blank(s, r)) continue;
-            string id = Text(c, r, "Id", x), w = "Joints row " + (r + 1);
+            string id = WbRead.Id(c, r, x), w = "Joints row " + (r + 1);
             PipeModelJoint j;
             int n = IdNum(id, 'J');
             if (n <= 0 || !old.TryGetValue(n, out j)) j = new PipeModelJoint { Backed = true };   // a new joint's restraints go in the model (PipeJoints.Sync)
@@ -1729,7 +1729,7 @@ public static class PipeWorkbook
         for (int r = 1; r < s.Rows.Count; r++)
         {
             if (Blank(s, r)) continue;
-            string id = Text(c, r, "Id", x), w = "Nozzles row " + (r + 1) + (id.Length > 0 ? " (" + id + ")" : "");
+            string id = WbRead.Id(c, r, x), w = "Nozzles row " + (r + 1) + (id.Length > 0 ? " (" + id + ")" : "");
             int n = IdNum(id, 'N');
             var z = n > 0 && n <= old.Count && seen.Add(n) ? old[n - 1] : new PipeModelNozzle { Source = "workbook" };
             int node = Int(c, r, "Node", x, 0);
@@ -1780,7 +1780,7 @@ public static class PipeWorkbook
         for (int r = 1; r < s.Rows.Count; r++)
         {
             if (Blank(s, r)) continue;
-            string id = Text(c, r, "Id", x), w = "Hangers row " + (r + 1) + (id.Length > 0 ? " (" + id + ")" : "");
+            string id = WbRead.Id(c, r, x), w = "Hangers row " + (r + 1) + (id.Length > 0 ? " (" + id + ")" : "");
             int n = IdNum(id, 'H');
             var h = n > 0 && n <= old.Count && seen.Add(n) ? old[n - 1] : new PipeModelHanger { Source = "workbook" };
             int node = Int(c, r, "Node", x, 0);
@@ -1844,7 +1844,7 @@ public static class PipeWorkbook
         for (int r = 1; r < s.Rows.Count; r++)
         {
             if (Blank(s, r)) continue;
-            string id = Text(c, r, "Id", x);
+            string id = WbRead.Id(c, r, x);
             string key = id.Length > 0 ? "id:" + id : "node:" + Int(c, r, "Node", x, 0);
             List<int> rows;
             if (!byKey.TryGetValue(key, out rows)) { rows = new List<int>(); byKey[key] = rows; groups.Add(new KeyValuePair<string, List<int>>(key, rows)); }
