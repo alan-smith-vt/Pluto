@@ -192,9 +192,16 @@ if ($NewWorkbook) {
 # ---- -Refresh: the workbook read (edits and all), then written over itself in this version's layout ----
 if ($Refresh) {
     try {
-        $wb = [FrameWorkbook]::Read($inPath)
-        Say "read" $wb.Summary()
-        foreach ($w in $wb.Warnings) { Say "warn" $w }
+        # the layout comes from the hidden base and the typed cells, so a workbook whose sheets do not build (yet)
+        # refreshes too: its problems are said, and its new checks then show where they are
+        try {
+            $wb = [FrameWorkbook]::Read($inPath)
+            Say "read" $wb.Summary()
+            foreach ($w in $wb.Warnings) { Say "warn" $w }
+        } catch {
+            Say "warn" ("the sheets do not build yet, refreshed all the same (fix them in the refreshed workbook): {0}" -f (Innermost $_))
+            $wb = [FrameWorkbook]::ReadBase($inPath)
+        }
         $source = $wb.SourceName; if (-not $source) { $source = [IO.Path]::GetFileName($inPath) }
         $run = [FrameWorkbookRun]::For($inPath, $repoRoot, $null)
         $tmp = $inPath + ".refresh.tmp"

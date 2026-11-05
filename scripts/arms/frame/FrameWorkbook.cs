@@ -218,6 +218,22 @@ public static class FrameWorkbook
     const int ViewList = 17, GeoList = 18, KindList = 19;   // the Views list's column (its azimuths and elevations follow the last list)
     static readonly string[] GeoNonLins = { "None", "P-Delta", "P-Delta plus Large Displacements" };
     static readonly string[] Kinds = { "PIPE", "DUCT", "STEEL" };
+    // the hidden Lists columns of the joint, frame and link labels the workbook was written with (k = 0, 1, 2), after
+    // the view angles
+    static int OldCol(int k) { return ListCols().Length + 2 + k; }
+    static string OldRange(int k, int count)
+    {
+        string c = XlsxBook.Column(OldCol(k));
+        return "Lists!$" + c + "$2:$" + c + "$" + (1 + Math.Max(1, count)).ToString(Inv);
+    }
+
+    // Groups rows whose label, by its Object type, matches `test` (a rule taking the cell, the sheet's labels and the old ones)
+    static string GroupCount(string types, string labels, Func<string, string, string, string> test, string jIds, string oJ, string fIds, string oF, string lIds, string oL)
+    {
+        Func<string, string, string, string> one = (ty, ids, old) => "SUMPRODUCT((LOWER(TRIM(" + types + "&\"\"))=\"" + ty + "\")*" + test(labels, ids, old) + ")";
+        return one("joint", jIds, oJ) + "+" + one("frame", fIds, oF) + "+" + one("link", lIds, oL);
+    }
+
     static string ListRange(int col)
     {
         string c = XlsxBook.Column(col);
@@ -239,10 +255,18 @@ public static class FrameWorkbook
                lpNames = col(SLinkProps, "B"), patNames = col(SPatterns, "B");
         bool light = m.Frames.Count > 5000;
         // a joint not on Joints (red); at = a cell, or a whole column in SUMPRODUCT
-        Func<string, string> noJoint = at => "(" + at + "<>\"\")*(COUNTIF(" + jointIds + "," + at + ")=0)";
+        // the labels the model had when the workbook was written (hidden Lists columns): a reference naming one that no
+        // sheet has now is a rename the build follows, or a deletion (amber); any other unknown label is red
+        string oldJ = OldRange(0, m.Joints.Count), oldF = OldRange(1, m.Frames.Count), oldL = OldRange(2, m.Links.Count), linkIds = col(SLinks, "B");
+        Func<string, string, string, string> unknown = (at, ids, old) => "(" + at + "<>\"\")*(COUNTIF(" + ids + "," + at + ")=0)*(COUNTIF(" + old + "," + at + ")=0)";
+        Func<string, string, string, string> renamed = (at, ids, old) => "(" + at + "<>\"\")*(COUNTIF(" + ids + "," + at + ")=0)*(COUNTIF(" + old + "," + at + ")>0)";
+        Func<string, string> noJoint = at => unknown(at, jointIds, oldJ);
+        Func<string, string> oldJoint = at => renamed(at, jointIds, oldJ);
         string frameIds = col(SFrames, "B");
         // a load's Frames cell naming one frame no sheet has (selectors, lists and ranges are checked by the build)
-        Func<string, string> noFrame = at => "(" + at + "<>\"\")*ISERROR(FIND(\":\"," + at + "))*ISERROR(FIND(\",\"," + at + "))*(LOWER(" + at + ")<>\"all\")*(COUNTIF(" + frameIds + "," + at + ")=0)";
+        Func<string, string> selector = at => "ISERROR(FIND(\":\"," + at + "))*ISERROR(FIND(\",\"," + at + "))*(LOWER(" + at + ")<>\"all\")";
+        Func<string, string> noFrame = at => selector(at) + "*" + unknown(at, frameIds, oldF);
+        Func<string, string> oldFrame = at => selector(at) + "*" + renamed(at, frameIds, oldF);
 
         var start = b.Add("Start");
         var st = b.Add("Settings");
@@ -358,7 +382,8 @@ public static class FrameWorkbook
             C("End length J", "geom", "num", "End length offset at J."),
             C("Rigid zone", "geom", "num", "Rigid-zone factor of the end lengths, 0 to 1 (0 = flexible, 1 = fully rigid)."),
         }, m.Frames.Count, lim);
-        fs.Conditional("C2:D" + lim, "AND(C2<>\"\",COUNTIF(" + jointIds + ",C2)=0)", t.Red);
+        fs.Conditional("C2:D" + lim, noJoint("C2") + ">0", t.Red);
+        fs.Conditional("C2:D" + lim, oldJoint("C2") + ">0", t.Amber);
         fs.Conditional("C2:D" + lim, "AND($C2<>\"\",$C2=$D2)", t.Red);
         fs.Conditional("B2:B" + lim, "AND(B2<>\"\",COUNTIF($B$2:$B$" + lim + ",B2)>1)", t.Red);
         fs.Conditional("E2:E" + lim, "AND(ISNUMBER(E2),E2=0)", t.Amber);
@@ -461,6 +486,7 @@ public static class FrameWorkbook
             C("Angle", "geom", "num", "Local axis angle (degrees), about local 1. SAP's default axes: local 1 from I to J (+Z for a one-joint or zero-length link); local 2 in the vertical plane through 1 (+X when 1 is vertical); local 3 = 1 x 2. A gap's U1 acts along local 1."),
         }, m.Links.Count, lim);
         ls.Conditional("C2:D" + lim, noJoint("C2") + ">0", t.Red);
+        ls.Conditional("C2:D" + lim, oldJoint("C2") + ">0", t.Amber);
 
         // ---- Link props (one row per DOF)
         var lp = b.Add(SLinkProps);
@@ -514,6 +540,7 @@ public static class FrameWorkbook
         t.Form.Table(sp, t, sph, new[] { L("Joint", "key", "list?", jointIds, "The joint, once."), L("CoordSys", "bc", "list?", ListRange(11), "GLOBAL or Local (the joint's local axes).") }
             .Concat(FrameJoint.Dofs.Select(d => C(d, "bc", "nonneg", "Spring stiffness in " + d + "."))).ToArray(), r0 - 1, lim);
         sp.Conditional("A2:A" + lim, noJoint("A2") + ">0", t.Red);
+        sp.Conditional("A2:A" + lim, oldJoint("A2") + ">0", t.Amber);
 
         // ---- Load patterns
         var ps = b.Add(SPatterns);
@@ -547,6 +574,7 @@ public static class FrameWorkbook
                         L("Pattern", "load", "list!", patNames, "Its load pattern."), L("CoordSys", "load", "list?", ListRange(11), "GLOBAL or Local.") }
                 .Concat(keys.Select(k => C(k, "load", "num", (disp ? "Imposed " : "") + k + "."))).ToArray(), list.Count, lim);
             ws.Conditional("B2:B" + lim, noJoint("B2") + ">0", t.Red);
+            ws.Conditional("B2:B" + lim, oldJoint("B2") + ">0", t.Amber);
         }
         // frame point loads
         {
@@ -569,6 +597,7 @@ public static class FrameWorkbook
             }).ToArray(), list.Count, lim);
             ws.Conditional("H2:H" + lim, "AND(G2=\"Rel\",ISNUMBER(H2),OR(H2<0,H2>1))", t.Red);
             ws.Conditional("B2:B" + lim, noFrame("B2") + ">0", t.Red);
+            ws.Conditional("B2:B" + lim, oldFrame("B2") + ">0", t.Amber);
         }
         // frame distributed loads
         {
@@ -596,6 +625,7 @@ public static class FrameWorkbook
             }).ToArray(), list.Count, lim);
             ws.Conditional("H2:I" + lim, "AND($G2=\"Rel\",ISNUMBER(H2),OR(H2<0,H2>1))", t.Red);
             ws.Conditional("B2:B" + lim, noFrame("B2") + ">0", t.Red);
+            ws.Conditional("B2:B" + lim, oldFrame("B2") + ">0", t.Amber);
         }
         // frame temperature loads
         {
@@ -613,6 +643,7 @@ public static class FrameWorkbook
                 L("Type", "load", "list?", ListRange(12), "Temperature (a uniform change), or a gradient."), C("Value", "load", "num", "The temperature change."),
             }, list.Count, lim);
             ws.Conditional("B2:B" + lim, noFrame("B2") + ">0", t.Red);
+            ws.Conditional("B2:B" + lim, oldFrame("B2") + ">0", t.Amber);
         }
 
         // ---- Load cases (one row per load)
@@ -666,6 +697,9 @@ public static class FrameWorkbook
             C("Group", "key", "text", "The group, on every row of it."), L("Object type", "text", "list?", ListRange(14), "Joint, Frame, Link, Area."), C("Label", "text", "text", "The object's label."),
         }, r0 - 1, lim);
         gs.Width(0, 16); gs.Width(1, 12); gs.Width(2, 12);
+        Func<string, string, string> ofType = (ty, f) => "(LOWER(TRIM(B2&\"\"))=\"" + ty + "\")*" + f;
+        gs.Conditional("C2:C" + lim, ofType("joint", noJoint("C2")) + "+" + ofType("frame", unknown("C2", frameIds, oldF)) + "+" + ofType("link", unknown("C2", linkIds, oldL)) + ">0", t.Red);
+        gs.Conditional("C2:C" + lim, ofType("joint", oldJoint("C2")) + "+" + ofType("frame", renamed("C2", frameIds, oldF)) + "+" + ofType("link", renamed("C2", linkIds, oldL)) + ">0", t.Amber);
 
         // ---- Carried (read-only)
         var ca = b.Add("Carried");
@@ -713,6 +747,14 @@ public static class FrameWorkbook
         li.Set(0, azCol, "View azimuth", XlsxBook.Header); li.Set(0, elCol, "View elevation", XlsxBook.Header);
         for (int i = 0; i < WbPlot.Views.Length; i++) { li.Set(1 + i, azCol, WbPlot.ViewAz[i]); li.Set(1 + i, elCol, WbPlot.ViewEl[i]); }
         Func<int, string> numList = k => "Lists!$" + XlsxBook.Column(k) + "$2:$" + XlsxBook.Column(k) + "$" + (1 + WbPlot.Views.Length).ToString(Inv);
+        // the labels as written (see OldRange)
+        var olds = new[] { m.Joints.Select(o => o.Label).ToList(), m.Frames.Select(o => o.Label).ToList(), m.Links.Select(o => o.Label).ToList() };
+        string[] oldNames = { "Joint labels as written", "Frame labels as written", "Link labels as written" };
+        for (int k = 0; k < 3; k++)
+        {
+            li.Set(0, OldCol(k), oldNames[k], XlsxBook.Header);
+            for (int i = 0; i < olds[k].Count; i++) Label(li, 1 + i, OldCol(k), olds[k][i], 0);
+        }
         FrameView.Sheets(b, t, view, b.Add(FrameView.Calc), b.Add(FrameView.Pts), m.Frames.Count, m.Joints.Count, m.Links.Count, lim, FrameUnits.Label("L", units),
                          ListRange(ViewList), numList(azCol), numList(elCol), ListRange(2));
         WbBase.Write(b, Format, Version, hash, sourceName, json);
@@ -764,6 +806,11 @@ public static class FrameWorkbook
                         col(SLinks, "E") + "<>\"\")*(COUNTIF(" + lpNames + "," + col(SLinks, "E") + ")=0))", false),
             new WbCheck("Loads naming a pattern no sheet has", string.Join("+", new[] { SJointLoads, SGround, SPoint, SDist, STemp }.Select(sn => "SUMPRODUCT((" + col(sn, "C") + "<>\"\")*(COUNTIF(" + patNames + "," + col(sn, "C") + ")=0))").ToArray()), false),
             new WbCheck("Loads on a frame no sheet has", string.Join("+", new[] { SPoint, SDist, STemp }.Select(sn => "SUMPRODUCT(" + noFrame(col(sn, "B")) + ")").ToArray()), false),
+            new WbCheck("Group rows naming a joint, frame or link no sheet has", GroupCount(col(SGroups, "B"), col(SGroups, "C"), (at, ids, old) => unknown(at, ids, old), jointIds, oldJ, frameIds, oldF, linkIds, oldL), false),
+            new WbCheck("References to an old label (renamed: the build follows it; deleted: it drops the row)", light ? "0" :
+                        "SUMPRODUCT(" + oldJoint(fr) + ")+SUMPRODUCT(" + oldJoint(frJ) + ")+SUMPRODUCT(" + oldJoint(col(SLinks, "C")) + ")+SUMPRODUCT(" + oldJoint(col(SLinks, "D")) + ")+" +
+                        string.Join("+", new[] { SPoint, SDist, STemp }.Select(sn => "SUMPRODUCT(" + oldFrame(col(sn, "B")) + ")").ToArray()) + "+" +
+                        GroupCount(col(SGroups, "B"), col(SGroups, "C"), (at, ids, old) => renamed(at, ids, old), jointIds, oldJ, frameIds, oldF, linkIds, oldL), true),
             new WbCheck("Joints no frame or link uses", light ? "0" : "SUMPRODUCT((" + jointIds + "<>\"\")*(COUNTIF(" + fr + "," + jointIds + ")+COUNTIF(" + frJ + "," + jointIds + ")+COUNTIF(" + col(SLinks, "C") + "," + jointIds + ")+COUNTIF(" + col(SLinks, "D") + "," + jointIds + ")=0))", true),
             new WbCheck("Ids used twice (a copied row: read as new)", string.Join("+", new[] { SJoints, SFrames, SSections, SLinks, SPoint, SDist }.Select(sn => "SUMPRODUCT((" + col(sn, "A") + "<>\"\")*(" + col(sn, "A") + "<>\"" + WbForm.NewId + "\")*(COUNTIF(" + col(sn, "A") + "," + col(sn, "A") + ")>1))").ToArray()), true),
         };
@@ -904,6 +951,20 @@ public static class FrameWorkbook
             if (Labels(kind).Contains(label)) return label;
             return Renamed.TryGetValue(kind, out m) && m.TryGetValue(label, out n) ? n : label;
         }
+    }
+
+    // the workbook's hidden base model alone (what Refresh needs), its sheets unread: a workbook whose sheets do not
+    // build still refreshes
+    public static FrameWorkbookResult ReadBase(string path)
+    {
+        var res = new FrameWorkbookResult { Path = path ?? "" };
+        var sheets = CaesarWorkbook.Read(path);
+        var pl = WbBase.Read(sheets.FirstOrDefault(s => string.Equals(s.Name, "_pluto", StringComparison.OrdinalIgnoreCase)), Format);
+        if (pl == null) throw new InvalidOperationException("FrameWorkbook: " + Path.GetFileName(path) + " has no hidden base model (_pluto): make it with Build-Frame.ps1 -NewWorkbook, or -Xlsx from a model");
+        if (pl.Version > Version) throw new InvalidOperationException("FrameWorkbook: " + Path.GetFileName(path) + " is workbook version " + pl.Version + ", newer than this reader (" + Version + ")");
+        res.Base = FrameModelJson.Read(pl.Json);
+        res.BaseHash = pl.Hash; res.SourceName = pl.Source;
+        return res;
     }
 
     public static FrameWorkbookResult Read(string path)

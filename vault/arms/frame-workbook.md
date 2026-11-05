@@ -102,6 +102,21 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 >   The fixture is corrected. The model reads a cylindrical joint's angle from `T`, and so does the viewer's reader
 >   (`SapReader`, which now prefers SAP's `GlobalX/Y/Z` for any non-cartesian joint).
 
+> [!info]- Renamed objects and the Groups sheet (2026-11-05)
+> - **The Groups sheet's Label column is checked live** against the sheet of its row's Object type (Joints, Frames,
+>   Links).
+> - **Red or amber, everywhere a label is named:** the hidden Lists sheet holds the joint, frame and link labels the
+>   workbook was written with. A label no sheet has is:
+>   - **red** when it never existed (the build refuses it);
+>   - **amber** when it is an old label: a rename the build follows, or a deleted object whose row the build drops.
+>
+>   The same split now applies to the joints on Frames, Links, Springs and Joint loads, and to the frames on the
+>   frame-load sheets, where a renamed object used to show red. A Start check counts each kind.
+> - **`-Refresh` works on a workbook whose sheets do not build:**
+>   - it needs only the hidden base and the typed cells (`FrameWorkbook.ReadBase`);
+>   - it says the problems and refreshes, so the new checks can then show where they are;
+>   - a user's workbook with an unstable release refreshed to the same model and `.s2k`.
+
 > [!info]- Ids (2026-11-05)
 > The Id column is each row's link to its object in the model, not a row counter.
 > - **A new row shows `new`** by formula as soon as its next column is filled. Nothing is typed, and `new` reads as a
