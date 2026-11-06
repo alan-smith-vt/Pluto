@@ -1,0 +1,4 @@
+﻿Type,Description,Slots,Notes
+BC-WELD,"beam to column flange, all-around fillet weld of the beam's I section",support,support = the column (its flange is the base metal)
+BP-1,column base plate with anchor rods,,
+BRC-GUSSET,"brace to gusset lap weld, then gusset to support fillet weld",support,

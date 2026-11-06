@@ -1,0 +1,5 @@
+﻿Frame,Fx,Fy,Fz,Mx,My,Mz,Mirror,Action,Confirmed,Notes
+BEAM-END-WELD,-Fz,+Fy,+Fx,-Mz,+My,+Mx,N,on_connection,N,"weld plane at a beam end: x across the flange, y along the web, z along the beam (example: confirm against the template's axes)"
+BP-COLUMN,-Fy,-Fz,+Fx,-My,-Mz,+Mx,N,on_connection,N,"plate axes under a vertical column at BETA 0, z up (example: confirm against the template's axes and the column's BETA)"
+BRACE-WELD,+Fx,+Fy,+Fz,+Mx,+My,+Mz,N,on_connection,N,"the brace's own axes, the force on the gusset (example)"
+IDENTITY,+Fx,+Fy,+Fz,+Mx,+My,+Mz,N,on_member,Y,STAAD's member-local end forces as printed (built in)

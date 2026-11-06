@@ -1,0 +1,5 @@
+﻿Type,Step,Template,Demand,Slot,Frame,Notes
+BC-WELD,1,WG-I,concurrent_envelope,this,BEAM-END-WELD,
+BP-1,1,BP,concurrent_envelope,this,BP-COLUMN,
+BRC-GUSSET,1,WG-RECT,concurrent_envelope,this,BRACE-WELD,brace to gusset
+BRC-GUSSET,2,WG-RECT,governing_set,this,BRACE-WELD,gusset to support

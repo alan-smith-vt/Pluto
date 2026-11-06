@@ -20,8 +20,8 @@ $repo = Split-Path -Parent (Split-Path -Parent $cf)
 . (Join-Path $cf 'Import-CalcFlow.ps1')
 Import-CalcFlowEngine
 Import-PlutoLib
-# the function files (Stage.ps1, ExcelCom.ps1); runners such as Export-AnlFrame.ps1 are run as child processes
-foreach ($f in @(Get-ChildItem -LiteralPath $cf -Filter '*.ps1' | Where-Object { $_.Name -ne 'Import-CalcFlow.ps1' -and $_.Name -notlike 'Export-*' })) { . $f.FullName }
+# the function files; the runners (Export-AnlFrame.ps1, CalcFlow.ps1) are run as child processes
+foreach ($f in 'Stage.ps1', 'ExcelCom.ps1') { . (Join-Path $cf $f) }
 $script:Fixtures = Join-Path $PSScriptRoot 'fixtures'
 $script:CalcFlow = $cf
 $script:Repo = $repo

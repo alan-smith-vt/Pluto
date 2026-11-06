@@ -1,0 +1,30 @@
+﻿Type,Step,Param,Default,Unit,Notes
+BC-WELD,,FEXX,70,ksi,
+BC-WELD,,FlangeWelds,Outside faces,,
+BC-WELD,,FuBase,65,ksi,
+BC-WELD,,WebWelds,Both sides,,
+BC-WELD,,wleg,0.3125,in,
+BP-1,,B,14,in,
+BP-1,,da,0.75,in,
+BP-1,,fc,4000,psi,
+BP-1,,Fy,36,ksi,
+BP-1,,N,14,in,
+BP-1,,tp,1,in,
+BRC-GUSSET,,FEXX,70,ksi,
+BRC-GUSSET,,FuBase,58,ksi,
+BRC-GUSSET,1,ax,3,in,brace to gusset
+BRC-GUSSET,1,ay,2,in,brace to gusset
+BRC-GUSSET,1,bx,3,in,brace to gusset
+BRC-GUSSET,1,by,2,in,brace to gusset
+BRC-GUSSET,1,h,4,in,brace to gusset
+BRC-GUSSET,1,tBM,0.375,in,brace to gusset
+BRC-GUSSET,1,w,6,in,brace to gusset
+BRC-GUSSET,1,wleg,0.25,in,brace to gusset
+BRC-GUSSET,2,ax,6,in,gusset to support
+BRC-GUSSET,2,ay,3,in,gusset to support
+BRC-GUSSET,2,bx,6,in,gusset to support
+BRC-GUSSET,2,by,3,in,gusset to support
+BRC-GUSSET,2,h,6,in,gusset to support
+BRC-GUSSET,2,tBM,0.5,in,gusset to support
+BRC-GUSSET,2,w,12,in,gusset to support
+BRC-GUSSET,2,wleg,0.3125,in,gusset to support

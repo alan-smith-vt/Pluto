@@ -1,5 +1,5 @@
 // Copied from pipe-review (src/cs/Xlsx.cs at d4b33aa, 2026-11-06) for CalcFlow; namespace PipeReview -> CalcFlow,
-// otherwise unchanged. The writer overlaps Pluto's XlsxBook (scripts/lib/writers/XlsxWriter.cs): to be merged later.
+// and the zip / XML helpers made internal for Template.cs; otherwise unchanged. The writer overlaps Pluto's XlsxBook (scripts/lib/writers/XlsxWriter.cs): to be merged later.
 // Xlsx.cs -- reads .xlsx / .csv / .txt without Excel and writes .xlsx workbooks (values and styles, no formulas).
 // C# 5 (Windows PowerShell 5.1 Add-Type, warnings are errors). The reader is a port of Pluto's CaesarWorkbook
 // (scripts/arms/CaesarResults.cs) extended with tables, defined names and cell types.
@@ -293,7 +293,7 @@ namespace CalcFlow
             }
         }
 
-        static XTable ReadTable(ZipArchive zip, string path, string sheet)
+        internal static XTable ReadTable(ZipArchive zip, string path, string sheet)
         {
             ZipArchiveEntry e = Entry(zip, path);
             if (e == null) return null;
@@ -322,7 +322,7 @@ namespace CalcFlow
             return t;
         }
 
-        static XmlReader Xml(ZipArchiveEntry e)
+        internal static XmlReader Xml(ZipArchiveEntry e)
         {
             var st = new XmlReaderSettings();
             st.DtdProcessing = DtdProcessing.Prohibit;
@@ -333,7 +333,7 @@ namespace CalcFlow
             return XmlReader.Create(e.Open(), st);
         }
 
-        static ZipArchiveEntry Entry(ZipArchive zip, string path)
+        internal static ZipArchiveEntry Entry(ZipArchive zip, string path)
         {
             if (path == null) return null;
             string p = path.Replace('\\', '/').TrimStart('/');
@@ -344,19 +344,19 @@ namespace CalcFlow
             return null;
         }
 
-        static string DirOf(string p)
+        internal static string DirOf(string p)
         {
             int i = p.LastIndexOf('/');
             return i < 0 ? "" : p.Substring(0, i + 1);
         }
 
-        static string FileOf(string p)
+        internal static string FileOf(string p)
         {
             int i = p.LastIndexOf('/');
             return i < 0 ? p : p.Substring(i + 1);
         }
 
-        static List<string[]> Rels(ZipArchive zip, string relsPath, string baseDir)
+        internal static List<string[]> Rels(ZipArchive zip, string relsPath, string baseDir)
         {
             var list = new List<string[]>();
             ZipArchiveEntry e = Entry(zip, relsPath);
@@ -372,7 +372,7 @@ namespace CalcFlow
             return list;
         }
 
-        static string Resolve(string baseDir, string target)
+        internal static string Resolve(string baseDir, string target)
         {
             string t = target.Replace('\\', '/');
             if (t.StartsWith("/", StringComparison.Ordinal)) return t.TrimStart('/');
@@ -386,7 +386,7 @@ namespace CalcFlow
             return string.Join("/", outp.ToArray());
         }
 
-        static List<string> SharedStrings(ZipArchive zip, string path)
+        internal static List<string> SharedStrings(ZipArchive zip, string path)
         {
             var list = new List<string>();
             ZipArchiveEntry e = Entry(zip, path);

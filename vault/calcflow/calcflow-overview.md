@@ -139,8 +139,8 @@ From these, the tool works out:
 |---|---|---|
 | 0 | this note, the decision | done 2026-11-06 |
 | **1** | **the STAAD frame reader and the analysis package** ([[vault/calcflow/calcflow-staad-frame-reader|calcflow-staad-frame-reader]]) | built and tested on a made-up fixture (2026-11-06). Still to do: one real `.anl` on the production machine, with five end forces spot-checked against STAAD. |
-| 2 | the calc library (Excel + text export), the register, `harvest`, `plan` | **the config / setup milestone**: `plan` resolves every input of three connection types on a fixture project, and names every gap |
-| 3 | the Excel stage (case loop, case tables, record copies) | the loop's DCRs equal a fixture's closed form; the governing case reproduces; a hung Excel is stopped; seconds per case measured |
+| **2** | **the calc library (Excel + text export), `harvest`, the register, `plan`** ([[vault/calcflow/calcflow-calc-library\|calcflow-calc-library]], [[vault/calcflow/calcflow-connection-register\|calcflow-connection-register]]) | **built 2026-11-06**: `plan` resolves every input of three connection types on the fixture project (4 calcs, 0 errors) and names every gap. Still to do: harvest the real templates on the production machine, and a 5.1 run |
+| 3 | the Excel stage (case loop, case tables, record copies), reading the plan as it is; the **DCR summary per member end with a joint rollup** | the loop's DCRs equal a fixture's closed form; the governing case reproduces; a hung Excel is stopped; seconds per case measured |
 | 4 | statuses, design revs, reports | a two-revision fixture (a load rise, a sign flip, a new joint) gives the expected status table |
 | 5 | typing rules, the viewer overlay | every fixture joint gets the expected suggestion; the sidecar keeps the user's groups |
 | 6 | groups, the combination pre-filter with its audit | `governing_set` reproduces `per_combo`'s governing DCR on a 200-combination fixture |
@@ -148,7 +148,8 @@ From these, the tool works out:
 > [!info]- Open engineering questions (answers go here, and into a decision note)
 > | Question | Answer |
 > |---|---|
-> | STAAD gives the force on the member at its end. Which way does each template want it (on the connection?), and what is positive (base plate Fz > 0 = uplift)? | |
+> | STAAD gives the force on the member at its end; CalcFlow takes it in the end's own axes ([[vault/decisions/2026-11-06-calcflow-end-axes\|end axes]]). Which way does each template want it (on the connection?), and what is positive (base plate Fz > 0 = uplift)? Each template's frame needs one hand-checked connection before Confirmed = Y | |
+> | SRSS / ABS combinations: STAAD forms them from magnitudes. Do any connection calcs take them, and how? | |
 > | ASD or LRFD: each combination's basis against each template's method cell (the method cell is always bound, never left at its default) | |
 > | Units: STAAD's printed units against the template's (kip, kip-in, in, ksi) | |
 > | Do STAAD member ids stay stable across revisions, or do the connection keys need marks from the model's source? | |

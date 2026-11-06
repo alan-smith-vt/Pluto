@@ -1,0 +1,6 @@
+﻿Template,Sheet,Cell,GuardCell,GuardText,Output,Kind,Check,Expect,PerCase,Notes,Example,Formula,Found
+BP,Calc,dcr_all,B108,max of all checks ≤ 1.0,Governing DCR,dcr,Base plate,,N,,,,
+BP,Rigid,Converged,A668,Converged (last step <= 1e-9 x scale),Converged,health,,TRUE,N,the rigid-plate solve converged,,,
+BP,Rigid,Singular,A669,Singular system in any iteration,Singular,health,,FALSE,N,no singular system,,,
+WG-I,I Fillet Weld Group,F58,B58,"max( DCRweld , DCRbase ) ≤ 1.0",Governing DCR,dcr,Weld,,N,,,,
+WG-RECT,Rect. Fillet Weld Group,F49,B49,"max( DCRweld , DCRbase ) ≤ 1.0",Governing DCR,dcr,Weld,,N,,,,

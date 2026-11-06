@@ -1,0 +1,4 @@
+﻿Template,File,Sha256,Shape,MaxCases,Basis,Calculation,Notes
+BP,Base_Plate_Anchorage.xlsx,f80e3e820c8e5eb87f3953f1b72ccf7f2843d0ecf14b7c65e64f3072900af13c,single_case,,LRFD,normal,generic base plate anchorage tool (example)
+WG-I,Weld Group Design Tool.xlsx,6ea879600ab5b47722d8719a28a27eab55c2aa38d84bfe9807bc1308b72ef25c,single_case,,LRFD,normal,the I-shape fillet weld group tab (example)
+WG-RECT,Weld Group Design Tool.xlsx,6ea879600ab5b47722d8719a28a27eab55c2aa38d84bfe9807bc1308b72ef25c,single_case,,LRFD,normal,the rectangular fillet weld group tab (example)

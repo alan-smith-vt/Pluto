@@ -1135,7 +1135,12 @@ public static class AnlFrameReader
                 if (end.Length == 0) { badJoints.Add(r.memID); continue; }
                 var f = new AnlFrameEndForce();
                 f.Member = r.memID; f.End = end; f.Node = r.nodeID; f.LC = r.LC;
-                for (int d = 0; d < 6; d++) f.F[d] = (float)(r.Ff[d] * (d < 3 ? ff : mf));
+                for (int d = 0; d < 6; d++)
+                {
+                    double k = d < 3 ? ff : mf;
+                    // converted from the printed decimal (1.632 kip-in / 12 = 0.136, not 0.13599999 through float arithmetic)
+                    f.F[d] = k == 1 ? r.Ff[d] : (float)(double.Parse(r.Ff[d].ToString("R", Inv), Inv) * k);
+                }
                 if (_m.PutForce(f)) dup++;
             }
             if (unknownMembers.Count > 0)
