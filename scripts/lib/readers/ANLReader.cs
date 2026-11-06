@@ -63,12 +63,57 @@ public class AnlIndexer
 		"FINISH"
 	};
 
+	// Commands that only end the section before them (2026-11-06, frame models). They match only on STAAD's command
+	// echo ("  NN. TEXT"), as a whole word, so a section now ends where the next command starts instead of at the next
+	// marker above: a PRINT MEMBER FORCES section no longer runs on through a support reaction print or the CHECK CODE
+	// output, whose numeric rows read as member forces. EchoFirstMarkers are tried before SectionMarkers ("LOAD" would
+	// take them), EchoOnlyMarkers after (the specific PRINT ... markers above win over the generic PRINT).
+	private static readonly string[] EchoFirstMarkers = new string[]
+	{
+		"LOAD LIST",
+		"REPEAT LOAD"
+	};
+
+	private static readonly string[] EchoOnlyMarkers = new string[]
+	{
+		"PRINT SUPPORT REACTION",
+		"PRINT",
+		"PARAMETER",
+		"PARAMETERS",
+		"CHECK CODE",
+		"SELECT",
+		"SET",
+		"DEFINE",
+		"PDELTA",
+		"PERFORM",
+		"STEEL",
+		"CODE",
+		"MEMBER TRUSS",
+		"MEMBER TENSION",
+		"MEMBER COMPRESSION",
+		"MEMBER CABLE",
+		"SPRING",
+		"INACTIVE",
+		"CHANGE",
+		"CUT OFF",
+		"START",
+		"END"
+	};
+
 	private static readonly HashSet<byte> InterestingFirstBytes = BuildInterestingBytes();
 
 	private static HashSet<byte> BuildInterestingBytes()
 	{
 		var set = new HashSet<byte>();
 		foreach (string marker in SectionMarkers)
+		{
+			set.Add((byte)marker[0]);
+		}
+		foreach (string marker in EchoFirstMarkers)
+		{
+			set.Add((byte)marker[0]);
+		}
+		foreach (string marker in EchoOnlyMarkers)
 		{
 			set.Add((byte)marker[0]);
 		}
@@ -126,6 +171,7 @@ public class AnlIndexer
 				byte firstByte = lineBuf[start];
 
 				int contentStart = start;
+				bool hasEcho = false;	// the line carries STAAD's "NN." command echo prefix
 				// Section headers start with a non-zero number
 				if (firstByte > (byte)'0' && firstByte <= (byte)'9')
 				{
@@ -145,6 +191,7 @@ public class AnlIndexer
 
 					if (dotIdx > start)
 					{
+						hasEcho = true;
 						contentStart = dotIdx + 1;
 						while (contentStart < lineLen &&
 							(lineBuf[contentStart] == (byte)' ' || lineBuf[contentStart] == (byte)'\t'))
@@ -170,7 +217,7 @@ public class AnlIndexer
 				string trimmed = Encoding.UTF8.GetString(lineBuf, contentStart, lineLen - contentStart);
 
 				// Check if this line is a known section
-				string matchedSection = MatchSectionHeader(trimmed);
+				string matchedSection = MatchSectionHeader(trimmed, hasEcho);
 
 				//if (lineStartOffset > 822742L && lineStartOffset < 1040117L)
 				// Console.WriteLine("Testing");
@@ -198,15 +245,40 @@ public class AnlIndexer
 		return sections;
 	}
 
-	private static string MatchSectionHeader(string trimmedLine)
+	private static string MatchSectionHeader(string trimmedLine, bool hasEcho)
 	{
 		string upper = trimmedLine.ToUpperInvariant();
+		if (hasEcho)
+		{
+			for (int i = 0; i < EchoFirstMarkers.Length; i++)
+			{
+				if (StartsWithWord(upper, EchoFirstMarkers[i]))
+					return EchoFirstMarkers[i];
+			}
+		}
 		for (int i = 0; i < SectionMarkers.Length; i++)
 		{
 			if (upper.StartsWith(SectionMarkers[i]))
 				return SectionMarkers[i];
 		}
+		if (hasEcho)
+		{
+			for (int i = 0; i < EchoOnlyMarkers.Length; i++)
+			{
+				if (StartsWithWord(upper, EchoOnlyMarkers[i]))
+					return EchoOnlyMarkers[i];
+			}
+		}
 		return null;
+	}
+
+	// "PRINT" matches "PRINT ANALYSIS RESULTS" but "SET" does not match "SETTLE"
+	private static bool StartsWithWord(string upper, string marker)
+	{
+		if (!upper.StartsWith(marker)) return false;
+		if (upper.Length == marker.Length) return true;
+		char c = upper[marker.Length];
+		return c == ' ' || c == '\t' || c == '\r';
 	}
 }
 
@@ -842,13 +914,17 @@ public class AnlForceParser : AnlBlockParser
 	private Dictionary<int, Member> _mems;
 	private CoordFrame _targetState;
 
+	// true: the caller reads the print's units itself (AnlFrameReader), so the warning below is not printed
+	public bool UnitsReadByCaller;
+
 	public AnlForceParser(string path) : base(path) { }
 
 	public void ParseSection(AnlSection section, Dictionary<int, Member> mems, CoordFrame targetState)
 	{
 		_mems = mems;
 		_targetState = targetState;
-		Console.WriteLine("WARNING: MEMBER FORCE UNIT NORMALIZATION NOT SUPPORTED");
+		if (!UnitsReadByCaller)
+			Console.WriteLine("WARNING: MEMBER FORCE UNIT NORMALIZATION NOT SUPPORTED");
 
 		// One day we'll abstract this all away...
 		long bytesToRead = section.EndOffset - section.StartOffset;

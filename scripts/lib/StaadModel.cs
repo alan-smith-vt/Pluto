@@ -49,7 +49,7 @@ public class StaadModel
 	{
 		this.config = config;
 		this.anlPath = config.anlPath;
-		this.indexPath = anlPath + ".index.json";
+		this.indexPath = anlPath + ".index.v2.json";	// v2 (2026-11-06): sections also end at the next command (AnlIndexer)
 		this.forcePath = anlPath + ".force.json";
 		this.stressPath = anlPath + ".stress.bin";
 		this.dispPath = anlPath + ".disp.bin";
@@ -143,7 +143,9 @@ public class StaadModel
 		Debug.Printf("Parsing Element Indices", flag);
 		var geo = new AnlGeomParser(anlPath);
 		var elemSection = Sections.Find(s => s.Name.ToUpper().Contains("ELEMENT INCIDENCES"));
-		geo.ParseElementSection(elemSection, NodeDict, grp.Thickness);
+		// a frame model has no plates: no ELEMENT INCIDENCES section, an empty element list (it crashed before)
+		if (elemSection != null)
+			geo.ParseElementSection(elemSection, NodeDict, grp.Thickness);
 		ElementList = geo.Elements;
 		ElementDict = ElementList.ToDictionary(n => n.id);
 

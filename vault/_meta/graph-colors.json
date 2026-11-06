@@ -51,6 +51,13 @@
       }
     },
     {
+      "query": "path:vault/calcflow",
+      "color": {
+        "a": 1,
+        "rgb": 14711327
+      }
+    },
+    {
       "query": "path:README.md",
       "color": {
         "a": 1,

@@ -18,3 +18,7 @@ Thumbs.db
 
 # production-side settings (copy of duct-config.example.psd1)
 scripts/duct/duct-config.psd1
+
+# CalcFlow test output and the local denylist of project words (scripts/calcflow/tests/Lint.Tests.ps1)
+scripts/calcflow/tests/out/
+scripts/calcflow/tests/denylist.local.txt

@@ -17,6 +17,7 @@ This stub exists so the repo works as a standalone vault. The full description o
 - **[[vault/viewer/Viewer map|Viewer map]]** — viewer feature overview and the old-viewer merge plan.
 - **[[vault/audits/Audits map|Audits map]]** — read-only audits.
 - **[[vault/decisions/Decisions map|Decisions map]]** — design decisions, one dated note each.
+- **[[vault/calcflow/CalcFlow map|CalcFlow map]]** — steel connection calcs set up and run from one STAAD analysis data set: the design, the roadmap, and step 1 (the STAAD `.anl` frame reader → the analysis package).
 
 ## Project data
 
