@@ -125,10 +125,10 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 > for byte, where the previous build lost the row.
 
 > [!info]- Temperature gradients do not reach SAP as gradients (2026-11-07)
-> SAP 24.2 reads the Temperature sheet's `Temp Gradient 2` / `Temp Gradient 3` as a uniform temperature (found by the
-> STAAD probe; [[vault/format/sap-s2k-tables|sap-s2k-tables]]). Until SAP's own name is confirmed, every gradient row
-> gets a warning naming its frame and the uniform change SAP will apply. Once the name is known, the list takes it and
-> a workbook read turns the old names into it.
+> SAP 24.2 read the Temperature sheet's old `Temp Gradient 2` / `Temp Gradient 3` as a uniform temperature (found by
+> the STAAD probe; [[vault/format/sap-s2k-tables|sap-s2k-tables]]). SAP's own form is `Gradient2` with its value in
+> `TempGrad2` (and `Gradient3` / `TempGrad3`). The Type list now offers Temperature, Gradient2 and Gradient3. A row with
+> an old name is written SAP's way, its value moved to the gradient's field in place, with a warning at its cell.
 
 > [!info]- "An item with the same key has already been added" (2026-11-05)
 > A live-preview rebuild failed with .NET's bare duplicate-key message. Reproduced two ways:

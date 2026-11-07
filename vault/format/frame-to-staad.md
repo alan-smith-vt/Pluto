@@ -158,8 +158,9 @@ parse). The STAAD probe (end of this note) settles the conventions still marked 
 >
 >     Varying or projected distributed moments are refused.
 >   - `TEMPERATURE LOAD`: `TEMP f1 f2 f4` (sic: f3 is the strain form [V]). Uniform → f1; gradient 2 × t3 → f2
->     (top +y minus bottom); gradient 3 × t2 → f4 (+z side minus −z: round 2's cantilevers bent toward the cooler side, as these signs give). SAP's own name for a
->     gradient is still unknown (round 2).
+>     (top +y minus bottom); gradient 3 × t2 → f4 (+z side minus −z: round 2's cantilevers bent toward the cooler side, as these signs give). SAP's gradients are
+>     `Type=Gradient2` / `Gradient3` with their value in `TempGrad2` / `TempGrad3`; any other type name is refused
+>     (SAP reads it as a uniform temperature, or drops it).
 >   - A load by joint pattern, in another coordinate system, or from SAP's automatic lateral loads is refused.
 > - **Ground displacements.**
 >   - They go in the primary loads, as `SUPPORT DISPLACEMENT LOAD` with each case's factor. Rotations are in degrees
@@ -222,7 +223,7 @@ parse). The STAAD probe (end of this note) settles the conventions still marked 
 > | 8, 19 | partial fixity and a hinge |
 > | 9 | springs |
 > | 10, 11 | a uniform temperature (fixed-fixed and cantilever) |
-> | 22 – 25 | gradients 2 and 3, one spelling SAP might take per cantilever (`Temperature Gradient 2`, `Temperature Gradient 2-2`, `Temp Gradient 2-2`, `Gradient 2`, and 3) |
+> | 22 | gradients 2 and 3 on a cantilever, SAP's `Gradient2` / `TempGrad2` (round 2 tried four guessed spellings on parts 22 – 25) |
 > | 12 | an inclined support |
 > | 13, 14 | a grounded link and an axial link |
 > | 15 | a settlement with a rotation |

@@ -910,13 +910,16 @@ public static class FrameStd
 
         void TempLoad(FrameInfo fi, FrameRec row, PatternLoads pl, string who)
         {
+            // SAP's own types (STAAD probe, 2026-11-07): Temperature / Temp, Gradient2 / TempGrad2, Gradient3 / TempGrad3.
+            // Any other name SAP 24.2 reads as a uniform temperature ("Temp Gradient 2") or drops ("Gradient 2"): refused,
+            // since what SAP analyses is not what the row says (a workbook read writes SAP's names)
             string type = (row.Get("Type") ?? "Temperature").Trim();
-            double t = row.Num("Temp", 0);
+            if (!FrameLoad.TempTypes.Any(x => Is(type, x))) { Refuse(who + ": type \"" + type + "\", which SAP does not read as written (its types: Temperature, Gradient2, Gradient3; a workbook read writes them)"); return; }
+            double t = row.Num(FrameLoad.TempField(type), 0);
             if (t == 0) return;
             var v = Six(pl, pl.Temp, fi.Id, 0);
             if (Is(type, "Temperature")) { v[0] += t; return; }
-            if (type.IndexOf("Gradient", StringComparison.OrdinalIgnoreCase) < 0) { Refuse(who + ": type " + type); return; }
-            bool two = type.EndsWith("2");
+            bool two = Is(type, "Gradient2");
             double depth = two ? fi.P.Depth : fi.P.Width;
             if (depth <= 0) { Refuse(who + ": a gradient on section " + fi.S.Label + ", which has no " + (two ? "t3" : "t2")); return; }
             // STAAD: the difference top (+y) minus bottom, and side to side along z, over the section's depth / width

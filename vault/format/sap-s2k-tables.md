@@ -107,8 +107,11 @@ the confirmed tables; new rows anywhere else carry an `s2k-unconfirmed` notice.
 > workbook's names, never in a SAP probe before) were read without an error. SAP exported them as `Type=Temperature`
 > with the same values, and analysed them so: a cantilever with 20, gradient 2 = 3 and gradient 3 = −2 grew by
 > α × 21 × L and did not bend.
-> - **Until SAP's own name is known,** a gradient row reaches SAP as a uniform temperature, and the workbook warns on
->   every such row.
-> - **The probe's round 2** tries `Temperature Gradient 2`, `Temperature Gradient 2-2`, `Temp Gradient 2-2` and
->   `Gradient 2` (and 3), one per cantilever. SAP's export shows which it keeps; if none, a gradient assigned in SAP's
->   own dialog and exported gives the name.
+> - **Round 2's guesses failed too:** `Temperature Gradient 2`, `Temperature Gradient 2-2` and `Temp Gradient 2-2` came
+>   back as `Temperature`, and `Gradient 2` / `Gradient 3` were dropped.
+> - **SAP's own form**, from a gradient assigned in SAP 24.2's dialog and exported: `Type=Gradient2 TempGrad2=3` and
+>   `Type=Gradient3 TempGrad3=-2`. The value has its own field (`TempGrad2` / `TempGrad3`, °F per in), not `Temp`. The
+>   table's columns are `Frame LoadPat Type Temp TempGrad2 TempGrad3 JtPattern`.
+> - **Pluto now writes SAP's form.** The workbook lists Temperature, Gradient2 and Gradient3. A workbook read turns an
+>   older name into SAP's, moves its value to the gradient's field in place, and says so. `-Std` refuses any other
+>   name.

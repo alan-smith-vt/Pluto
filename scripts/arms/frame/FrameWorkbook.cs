@@ -206,7 +206,7 @@ public static class FrameWorkbook
     static readonly string[] Dirs = { "Gravity", "X", "Y", "Z", "1", "2", "3", "X Proj", "Y Proj", "Z Proj", "Gravity Proj" };
     static readonly string[] DistTypes = { "Rel", "Abs" };
     static readonly string[] CoordSyss = { "GLOBAL", "Local" };
-    static readonly string[] TempTypes = { "Temperature", "Temp Gradient 2", "Temp Gradient 3" };
+    static readonly string[] TempTypes = FrameLoad.TempTypes;
     static readonly string[] RestraintPresets = { "fixed", "pin", "U3", "U1 U2", "U1 U3", "U2 U3" };
     static readonly string[] ObjectTypes = { "Joint", "Frame", "Link", "Area" };
     static readonly string[] CaseLoadTypes = { "Load pattern", "Accel" };
@@ -639,12 +639,13 @@ public static class FrameWorkbook
             foreach (var ld in list)
             {
                 var row = ld.Row;
-                ws.Set(r0, 0, Id(ld)); Label(ws, r0, 1, ld.Target, 0); ws.Set(r0, 2, ld.Pattern); ws.Set(r0, 3, row.Get("Type") ?? "Temperature"); Num(ws, r0, 4, row.Get("Temp"));
+                ws.Set(r0, 0, Id(ld)); Label(ws, r0, 1, ld.Target, 0); ws.Set(r0, 2, ld.Pattern); ws.Set(r0, 3, row.Get("Type") ?? "Temperature"); Num(ws, r0, 4, row.Get(FrameLoad.TempField(row.Get("Type") ?? "Temperature")));
                 r0++;
             }
             t.Form.Table(ws, t, new[] { "Id", "Frames", "Pattern", "Type", H("Value", "T", units) }, new[] {
                 C("Id", "key", "id", "TL and the load's number: keep it. A new row shows \"new\" by itself."), L("Frames", "key", "list?", frameIds, FramesHint), L("Pattern", "load", "list!", patNames, "Its load pattern."),
-                L("Type", "load", "list?", ListRange(12), "Temperature (a uniform change), or a gradient."), C("Value", "load", "num", "The temperature change."),
+                L("Type", "load", "list?", ListRange(12), "Temperature (a uniform change), Gradient2 or Gradient3 (SAP's names: a change per length along local 2 or 3)."),
+                C("Value", "load", "num", "The temperature change; for a gradient, its change per unit length of the model across the section (deg per in, for instance)."),
             }, list.Count, lim);
             ws.Conditional("B2:B" + lim, noFrame("B2") + ">0", t.Red);
             ws.Conditional("B2:B" + lim, oldFrame("B2") + ">0", t.Amber);
@@ -1744,13 +1745,17 @@ public static class FrameWorkbook
                 if (rw.Get("LoadPat") != pat) rw.Set("LoadPat", pat);
                 if (table == FrameLoad.Temperature)
                 {
-                    string ty = Text(c, r, "Type", x); if (ty.Length > 0 && rw.Get("Type") != ty) rw.Set("Type", ty);
-                    double v = Num(c, r, "Value", x, "T"); rw.SetNum("Temp", double.IsNaN(v) ? 0 : v);
-                    // SAP 24.2 imported "Temp Gradient 2" / "3" as Type=Temperature (the STAAD probe, 2026-11-07): until
-                    // SAP's own name is confirmed, a gradient row reaches SAP as a uniform change
-                    string tyNow = rw.Get("Type") ?? "";
-                    if (tyNow.IndexOf("Gradient", StringComparison.OrdinalIgnoreCase) >= 0)
-                        x.Warnings.Add(At(c, r, "Type") + ": \"" + tyNow + "\": SAP's name for a temperature gradient is not confirmed yet (SAP2000 24.2 read \"Temp Gradient 2\" / \"3\" as a uniform temperature), so frame " + f.Label + " may get a uniform change of " + FrameModel.Fmt(rw.Num("Temp", 0)) + " in SAP");
+                    // SAP's own names (Gradient2 / TempGrad2 ...); the older "Temp Gradient 2" (which SAP 24.2 read as a
+                    // uniform temperature) is written SAP's way, its value moved to the gradient's field in place
+                    string ty = Text(c, r, "Type", x), want = FrameLoad.TempTypeOf(ty.Length > 0 ? ty : rw.Get("Type"));
+                    if (want == null) { x.Err(At(c, r, "Type") + ": \"" + ty + "\": Temperature, Gradient2 or Gradient3"); continue; }
+                    if (i == 0 && ty.Length > 0 && !string.Equals(ty, want, StringComparison.OrdinalIgnoreCase))
+                        x.Warnings.Add(At(c, r, "Type") + ": \"" + ty + "\" written as SAP's " + want + " (SAP2000 24.2 reads the old name as a uniform temperature)");
+                    if (rw.Get("Type") != want) rw.Set("Type", want);
+                    string field = FrameLoad.TempField(want);
+                    foreach (var fv in rw.F) if ((fv[0] == "Temp" || fv[0] == "TempGrad2" || fv[0] == "TempGrad3") && fv[0] != field && !rw.Has(field)) fv[0] = field;
+                    foreach (string other in new[] { "Temp", "TempGrad2", "TempGrad3" }) if (other != field) rw.Remove(other);
+                    double v = Num(c, r, "Value", x, "T"); rw.SetNum(field, double.IsNaN(v) ? 0 : v);
                     continue;
                 }
                 string cs = Text(c, r, "CoordSys", x), type = Text(c, r, "Type", x), dir = Text(c, r, "Dir", x), dt = Text(c, r, "Rel / Abs", x);

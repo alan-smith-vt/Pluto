@@ -505,6 +505,29 @@ public sealed class FrameLoad : FrameObj
     {
         return new[] { JointForce, GroundDisp, Point, Distributed, Temperature }.Any(x => string.Equals(x, table, StringComparison.OrdinalIgnoreCase));
     }
+    // SAP 24.2's frame temperature types and the field each holds its value in (the STAAD probe, 2026-11-07: a gradient
+    // assigned in SAP's own dialog exported as Type=Gradient2 TempGrad2=3): Temperature / Temp, Gradient2 / TempGrad2
+    // (change per length along local 2), Gradient3 / TempGrad3
+    public static readonly string[] TempTypes = { "Temperature", "Gradient2", "Gradient3" };
+    public static string TempField(string type)
+    {
+        if (string.Equals(type, "Gradient2", StringComparison.OrdinalIgnoreCase)) return "TempGrad2";
+        if (string.Equals(type, "Gradient3", StringComparison.OrdinalIgnoreCase)) return "TempGrad3";
+        return "Temp";
+    }
+    // SAP's name for a type as a person or an older workbook wrote it ("Temp Gradient 2", which SAP read as a uniform
+    // Temperature; "gradient 3"), null when it names none
+    public static string TempTypeOf(string text)
+    {
+        string t = (text ?? "").Replace(" ", "").Replace("-", "").ToLowerInvariant();
+        if (t == "" || t == "temperature" || t == "temp") return "Temperature";
+        if (!t.Contains("grad")) return null;
+        if (t.EndsWith("22") || t.EndsWith("2")) return "Gradient2";
+        if (t.EndsWith("33") || t.EndsWith("3")) return "Gradient3";
+        return null;
+    }
+    // a temperature row's value (its type's field)
+    public double TempValue { get { return Row == null ? 0 : Row.Num(TempField(Row.Get("Type") ?? "Temperature"), 0); } }
     public override string Kind { get { return "load"; } }
     public override string KeyField { get { return Table.StartsWith("JOINT", StringComparison.OrdinalIgnoreCase) ? "Joint" : "Frame"; } }
     public override string MainTable { get { return Table; } }

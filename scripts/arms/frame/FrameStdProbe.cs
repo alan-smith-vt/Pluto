@@ -17,9 +17,8 @@ using System.Text;
 //    8, 19        partial fixity (M2 3000, M3 5000) at a frame's I end; a hinge (M2 M3) between two frames
 //    9 springs    a tip on springs U1 U2 U3 R1 R2 R3
 //   10, 11        a uniform temperature on a fixed-fixed beam and a cantilever
-//   22 - 25       temperature gradients 2 and 3 on cantilevers, one per spelling SAP might take for them: SAP 24.2 read
-//                 the workbook's "Temp Gradient 2" / "3" as a uniform temperature (round 1, 2026-11-07), so SAP's export
-//                 of these says which name it keeps (FrameStd reads every one of them as the gradient)
+//   22            temperature gradients 2 and 3 on a cantilever, in SAP's own form (Gradient2 / TempGrad2, Gradient3 /
+//                 TempGrad3: SAP's dialog, 2026-11-07; round 2's four guessed spellings were read as uniform or dropped)
 //   12 inclined   a tip held along joint local 1 (A 30, B 20)
 //   13, 14        a grounded linear link (U1, U2 fixed, R3; angle 45); an axial link between two column tops
 //   15 settlement a fixed end moved U3 -0.1, R2 0.002
@@ -34,10 +33,6 @@ public static class FrameStdProbe
 {
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
-    // the spellings SAP might take for the gradients along local 2 and 3 (parts 22 - 25)
-    static readonly string[][] Gradients = {
-        new[] { "Temperature Gradient 2", "Temperature Gradient 3" }, new[] { "Temperature Gradient 2-2", "Temperature Gradient 3-3" },
-        new[] { "Temp Gradient 2-2", "Temp Gradient 3-3" }, new[] { "Gradient 2", "Gradient 3" } };
 
     public static string Text(string version)
     {
@@ -106,12 +101,8 @@ public static class FrameStdProbe
         J(1901, 0, 1600, 0); J(1902, 40, 1600, 0); J(1903, 80, 1600, 0); F("F19A", 1901, 1902, "S_PIPE"); F("F19B", 1902, 1903, "S_PIPE"); fixd.Add(1901);
         // 21 vertical at angle 90 with local loads
         J(2101, 0, 1700, 0); J(2102, 0, 1700, 60); F("F21", 2101, 2102, "S_IUNEQ"); fixd.Add(2101);
-        // 22 - 25 temperature gradients, one spelling each
-        for (int k = 0; k < Gradients.Length; k++)
-        {
-            int a = 2201 + 100 * k;
-            J(a, 0, 1800 + 50 * k, 0); J(a + 1, 100, 1800 + 50 * k, 0); F("F" + (22 + k).ToString(Inv), a, a + 1, "S_RECT"); fixd.Add(a);
-        }
+        // 22 temperature gradients
+        J(2201, 0, 1800, 0); J(2202, 100, 1800, 0); F("F22", 2201, 2202, "S_RECT"); fixd.Add(2201);
         table("JOINT COORDINATES", joints);
 
         var res = new List<string>();
@@ -182,14 +173,8 @@ public static class FrameStdProbe
             pt("F6", "LIVE", "CoordSys=GLOBAL   Type=Force   Dir=Gravity   DistType=RelDist   RelDistA=0   RelDistB=1   AbsDistA=0   AbsDistB=0   FOverLA=0.02   FOverLB=0.02"),
             pt("F9", "LIVE", "CoordSys=GLOBAL   Type=Force   Dir=Gravity   DistType=RelDist   RelDistA=0   RelDistB=1   AbsDistA=0   AbsDistB=0   FOverLA=0.05   FOverLB=0.05"),
             pt("F21", "WIND", "CoordSys=Local   Type=Force   Dir=2   DistType=RelDist   RelDistA=0   RelDistB=1   AbsDistA=0   AbsDistB=0   FOverLA=0.01   FOverLB=0.01") });
-        var temp = new List<string> { "Frame=F10   LoadPat=TEMP   Type=Temperature   Temp=50", "Frame=F11   LoadPat=TEMP   Type=Temperature   Temp=20" };
-        for (int k = 0; k < Gradients.Length; k++)
-        {
-            string f = "F" + (22 + k).ToString(Inv);
-            temp.Add("Frame=" + f + "   LoadPat=TEMP   Type=\"" + Gradients[k][0] + "\"   Temp=3");
-            temp.Add("Frame=" + f + "   LoadPat=TEMP   Type=\"" + Gradients[k][1] + "\"   Temp=-2");
-        }
-        table("FRAME LOADS - TEMPERATURE", temp);
+        table("FRAME LOADS - TEMPERATURE", new[] { "Frame=F10   LoadPat=TEMP   Type=Temperature   Temp=50", "Frame=F11   LoadPat=TEMP   Type=Temperature   Temp=20",
+            "Frame=F22   LoadPat=TEMP   Type=Gradient2   TempGrad2=3", "Frame=F22   LoadPat=TEMP   Type=Gradient3   TempGrad3=-2" });
 
         table("LOAD CASE DEFINITIONS", new[] {
             "Case=DEAD   Type=LinStatic   InitialCond=Zero", "Case=LIVE   Type=LinStatic   InitialCond=Zero", "Case=WIND   Type=LinStatic   InitialCond=Zero",
