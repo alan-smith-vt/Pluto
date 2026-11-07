@@ -1,6 +1,6 @@
 ---
 title: A SAP frame model as a STAAD.Pro .std (Build-Frame -Std)
-status: draft
+status: current
 created: 2026-11-05
 ---
 
@@ -20,9 +20,11 @@ created: 2026-11-05
   at most, then a count).
 - What leaving out cannot change in the structure is a `[notice]`, also listed in the file's header comment.
 
-**Status: draft.** The forms below come from excerpts of STAAD's Technical Reference, not the pages themselves.
-STAAD.Pro 2025 has since read every command the writer uses ([V] below means the excerpt; round 1 confirms the
-parse). The STAAD probe (end of this note) settles the conventions still marked **[U]**.
+**Status: current** (STAAD.Pro 2025 and SAP 24.2, three probe rounds, 2026-11-07). The forms came from excerpts of
+STAAD's Technical Reference ([V] below means the excerpt). STAAD.Pro 2025 has read every command the writer uses, and
+the STAAD probe (end of this note) confirmed the conventions against SAP's own results. Two differences remain, both
+written with a notice: plates (element formulation, large on coarse meshes) and channels, tees and double angles
+(SAP's shear-center twist).
 
 > [!info]- The file, in order
 > 1. `STAAD SPACE`, then comments:
@@ -158,7 +160,8 @@ parse). The STAAD probe (end of this note) settles the conventions still marked 
 >
 >     Varying or projected distributed moments are refused.
 >   - `TEMPERATURE LOAD`: `TEMP f1 f2 f4` (sic: f3 is the strain form [V]). Uniform → f1; gradient 2 × t3 → f2
->     (top +y minus bottom); gradient 3 × t2 → f4 (+z side minus −z: round 2's cantilevers bent toward the cooler side, as these signs give). SAP's gradients are
+>     (top +y minus bottom); gradient 3 × t2 → f4 (+z side minus −z). Confirmed against SAP in round 3: SAP's `Gradient2` 3 and `Gradient3` −2 on a 100 in cantilever
+>     moved its tip U2 −0.065, U3 −0.0975, R2 0.00195, R3 −0.0013 in both programs. SAP's gradients are
 >     `Type=Gradient2` / `Gradient3` with their value in `TempGrad2` / `TempGrad3`; any other type name is refused
 >     (SAP reads it as a uniform temperature, or drops it).
 >   - A load by joint pattern, in another coordinate system, or from SAP's automatic lateral loads is refused.
