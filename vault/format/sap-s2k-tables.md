@@ -112,6 +112,19 @@ the confirmed tables; new rows anywhere else carry an `s2k-unconfirmed` notice.
 > - **SAP's own form**, from a gradient assigned in SAP 24.2's dialog and exported: `Type=Gradient2 TempGrad2=3` and
 >   `Type=Gradient3 TempGrad3=-2`. The value has its own field (`TempGrad2` / `TempGrad3`, °F per in), not `Temp`. The
 >   table's columns are `Frame LoadPat Type Temp TempGrad2 TempGrad3 JtPattern`.
+> - **SAP reads the form back:** round 3's import read all four temperature rows.
 > - **Pluto now writes SAP's form.** The workbook lists Temperature, Gradient2 and Gradient3. A workbook read turns an
 >   older name into SAP's, moves its value to the gradient's field in place, and says so. `-Std` refuses any other
 >   name.
+
+> [!info]- The ten "Table key … not found" import errors (2026-11-07)
+> Every SAP 24.2 import here logs the same ten errors, "Table key … not found; table skipped". They name design-detail
+> tables: Steel Design / Details 2 - NMM Details for Eurocode 3-2005 and Italian NTC 2008 / 2018, and Cold Formed
+> Design / Details 3a / 3b - Flexure Details for Eurocode 3 1-3 2006.
+> - The keys appear in no file, Pluto's or SAP's own exports; those carry `TABLES AUTOMATICALLY SAVED AFTER ANALYSIS`
+>   with `SaveFile=No` only.
+> - The STAAD probe's round 3 carried that row. SAP read it ("1 of 1 records") and logged the same ten errors, before
+>   any table, with no table name.
+> - So they come from SAP's own default list of tables saved after analysis, which names tables this install does not
+>   have. They change nothing in the model; the fix, if one is wanted, is on SAP's side (CSI, or a repair install).
+

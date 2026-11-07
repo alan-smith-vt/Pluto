@@ -42,8 +42,8 @@ public static class FrameStdProbe
         Action<string, IEnumerable<string>> table = (name, rows) => { w.Add("TABLE:  \"" + name + "\""); foreach (var r in rows) w.Add("   " + r); w.Add(""); };
 
         table("PROGRAM CONTROL", new[] { "ProgramName=SAP2000   Version=" + version + "   CurrUnits=\"Kip, in, F\"" });
-        // as SAP's own exports carry it: SAP's import without it logs ten "Table key ... not found" errors for design
-        // tables of its default after-analysis list (2026-11-07); this checks whether the row stops them
+        // as SAP's own exports carry it. SAP 24.2's import logs ten "Table key ... not found" errors for design tables of
+        // its own default after-analysis list with this row or without it (round 3, 2026-11-07): SAP's, not the file's
         table("TABLES AUTOMATICALLY SAVED AFTER ANALYSIS", new[] { "SaveFile=No" });
         table("ACTIVE DEGREES OF FREEDOM", new[] { "UX=Yes   UY=Yes   UZ=Yes   RX=Yes   RY=Yes   RZ=Yes" });
         table("MATERIAL PROPERTIES 01 - GENERAL", new[] { "Material=STEEL   Type=Steel   SymType=Isotropic   TempDepend=No   Color=Blue" });
