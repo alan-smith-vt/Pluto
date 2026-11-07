@@ -61,3 +61,10 @@ The mapping is in [[vault/format/frame-to-staad|frame-to-staad]]. The choices ma
 > Round 1 (2026-11-07): STAAD 2025 parsed every command; ground displacements are now `ENFORCED` supports. The plate
 > policy waits for the meshed-wall comparison: the rack's single wall element differed by 20× in thrust between the
 > programs, a mesh effect on both sides, not a translation.
+>
+> Round 2 (2026-11-07) confirmed the BETA sign, vertical axes, offsets and end-zone loads, springs per degree,
+> inclined supports, settlement and combinations. Two exceptions remain, and the user decided both:
+> - **Plates:** written, with a notice naming the areas and the coarse-mesh difference. Meshed 8 × 6, the test
+>   wall's thrust was 18.5 kip in SAP and 21.9 in STAAD (one element: 2.1 vs 42.7).
+> - **Channels, tees and double angles:** SAP twists them about their shear center and STAAD does not. They are
+>   written centroidal, with a notice and an eye-catching banner at the member properties in the `.std`.

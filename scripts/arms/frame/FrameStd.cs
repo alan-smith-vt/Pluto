@@ -206,6 +206,7 @@ public static class FrameStd
         readonly Dictionary<int, double> PlateThick = new Dictionary<int, double>();
         readonly Dictionary<int, string> PlateMat = new Dictionary<int, string>();
         readonly List<string> PlaneStress = new List<string>();
+        readonly List<FrameInfo> Mono = new List<FrameInfo>();           // channels, tees, double angles (shear center off the centroid)
         readonly Dictionary<string, int> TrussId = new Dictionary<string, int>(StringComparer.Ordinal);
         readonly List<int[]> Trusses = new List<int[]>();                // id, i, j
         readonly Dictionary<int, double> TrussAx = new Dictionary<int, double>();
@@ -349,6 +350,10 @@ public static class FrameStd
             if (p == null) { Refuse(who + ": section " + s.Label + ": " + why); return false; }
             if (p.I23 != 0) { Refuse(who + ": section " + s.Label + " (" + s.Shape + ") has a product of inertia I23; STAAD's prismatic property has none"); return false; }
             fi.S = s; fi.P = p;
+            // SAP 24 twists a channel about its shear center (STAAD round 2, probe part 3, to 4 digits); STAAD's member is
+            // centroidal. Written so (the user's choice, 2026-11-07), with a notice and a banner in the .std
+            string mono = (s.Shape ?? "").Trim().ToLowerInvariant();
+            if (mono == "channel" || mono == "tee" || mono == "double angle") Mono.Add(fi);
             fi.Mods = f.PropertyModifiers;
             for (int k = 0; k < 6; k++)
                 if (fi.Mods[k] <= 0) { Refuse(who + ": property modifier " + FrameMember.ModifierKeys[k] + " = " + N(fi.Mods[k]) + " (STAAD needs a positive property)"); return false; }
@@ -523,7 +528,10 @@ public static class FrameStd
                 PlateMat[id] = sm;
             }
             NextId = Math.Max(NextId, Plates.Count == 0 ? 0 : Plates.Max(x => x[0]));
-            if (Plates.Count > 0) Note("plates: STAAD's plate element is its own formulation (SAP " + string.Join(" / ", props.Values.Select(x => Get(x, "Type") ?? "").Distinct().ToArray()) + "); its results differ from SAP's by the elements, not the model");
+            if (Plates.Count > 0)
+                Note("plates (" + Plates.Count.ToString(Inv) + (Plates.Count == 1 ? " area: " : " areas: ") + Few(AreaId.Where(kv => Plates.Any(q => q[0] == kv.Value)).Select(kv => kv.Key).ToList()) + "): SAP's shells (" +
+                     string.Join(" / ", props.Values.Select(x => Get(x, "Type") ?? "").Distinct().ToArray()) + ") and STAAD's plates are different elements, and on a coarse mesh their results differ" +
+                     " a great deal (a test wall as one element: 2.1 vs 42.7 kip thrust; meshed 8 x 6: 18.5 vs 21.9). Mesh walls finely before relying on either");
             if (PlaneStress.Count > 0) Note("membranes written as STAAD plane-stress plates: " + string.Join(" ", PlaneStress.ToArray()));
         }
 
@@ -1226,6 +1234,19 @@ public static class FrameStd
 
             if (Frames.Count + Trusses.Count > 0)
             {
+                if (Mono.Count > 0)
+                {
+                    // the banner the user asked for: where a STAAD user reads the properties
+                    o.Add("*************************************************************************");
+                    o.Add("* SHEAR CENTER NOT MODELED: channels, tees and double angles. SAP2000");
+                    o.Add("* twists these about their shear center (a shear along the web, acting");
+                    o.Add("* at the centroid, makes a torque); STAAD's members are centroidal and");
+                    o.Add("* do not. Bending and axial results match SAP's; twist and the joint");
+                    o.Add("* movements it causes do not. Members:");
+                    foreach (var x in Wrap(Condense(Mono.Select(f => f.Id)), 70)) o.Add("*   " + (x.EndsWith(" -") ? x.Substring(0, x.Length - 2) : x));
+                    o.Add("*************************************************************************");
+                    Note("channels, tees and double angles (" + Few(Mono.Select(f => "frame " + f.F.Label + " (" + f.S.Shape + ")").ToList()) + "): SAP2000 twists them about their shear center; STAAD's members are centroidal, so STAAD shows no such twist (the probe: up to 0.03 in on a 70 in channel cantilever). Marked in the .std at MEMBER PROPERTY");
+                }
                 o.Add("MEMBER PROPERTY AMERICAN");
                 var props = new List<KeyValuePair<string, int>>();
                 foreach (var f in Frames) props.Add(new KeyValuePair<string, int>(f.Table != null ? "TABLE ST " + f.Table : Pris(f), f.Id));

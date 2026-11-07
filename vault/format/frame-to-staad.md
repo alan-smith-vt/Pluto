@@ -87,6 +87,10 @@ parse). The STAAD probe (end of this note) settles the conventions still marked 
 >   ignored, as in SAP). YD / ZD = t3 / t2 (temperature gradients need them).
 > - **Refused:** a section with a product of inertia I23 (angles, and General sections that carry one). STAAD's
 >   prismatic property has none.
+> - **Channels, tees and double angles are written centroidal, with a notice and a banner** (the user's choice,
+>   2026-11-07). SAP 24 twists them about their shear center; STAAD does not (round 2). The banner is a starred
+>   block just above `MEMBER PROPERTY AMERICAN`, listing the members: "SHEAR CENTER NOT MODELED …". Bending and axial
+>   results match SAP's; the twist and the joint movement it causes do not.
 > - **Materials.** `ISOTROPIC` with E, POISSON (when 0.01–0.499), G, DENSITY (SAP's unit weight), ALPHA [V]. Steel adds
 >   `TYPE STEEL` and `STRENGTH FY FU RY RT` (RY = EffFy / Fy) [V example].
 >   - A frame whose weight modifier differs from its area modifier gets a copy of its material (`<name>_W2`) with
