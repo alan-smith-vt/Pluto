@@ -1514,48 +1514,19 @@ public static class CaesarNeutralWriter
         return new[] { e.Dx / l, e.Dy / l, e.Dz / l };
     }
 
-    // one joint DOF as CNODE restraints: pipe frame axial / torsion along the pipe, shear / bending as two square to it;
-    // global frame X Y Z RX RY RZ
+    // one joint DOF as its CNODE restraint (PipeJoints): X Y Z RX RY RZ, + or - for one way, in the joint's frame (pipe:
+    // X along the pipe, Y and Z square to it; global: CAESAR's axes). An older pipe-frame name is its DOFs: axial = X,
+    // shear = Y and Z, torsion = RX, bending = RY and RZ
     internal static List<PipeModelRestraint> JointDofRestraints(PipeModel m, PipeModelJoint j, PipeModelJointDof d)
     {
         string w = "joint " + j.Node + "-" + j.CNode + " (" + j.Kind + ")";
-        bool pipe = !string.Equals(j.Frame, "global", StringComparison.OrdinalIgnoreCase);
-        double[] a = null, p1 = null, p2 = null;
-        if (pipe)
-        {
-            a = JointAxis(m, j, w);
-            Perps(a, out p1, out p2);
-        }
-        string dof = (d.Dof ?? "").Trim().ToLowerInvariant();
-        var dirs = new List<KeyValuePair<double[], bool>>();   // direction, rotation
-        if (pipe)
-        {
-            if (dof == "axial") dirs.Add(new KeyValuePair<double[], bool>(a, false));
-            else if (dof == "shear") { dirs.Add(new KeyValuePair<double[], bool>(p1, false)); dirs.Add(new KeyValuePair<double[], bool>(p2, false)); }
-            else if (dof == "torsion") dirs.Add(new KeyValuePair<double[], bool>(a, true));
-            else if (dof == "bending") { dirs.Add(new KeyValuePair<double[], bool>(p1, true)); dirs.Add(new KeyValuePair<double[], bool>(p2, true)); }
-            else throw new InvalidOperationException("CaesarNeutralWriter: " + w + ": DOF \"" + d.Dof + "\" (pipe frame: axial, shear, torsion, bending)");
-        }
-        else
-        {
-            string u = dof.ToUpperInvariant();
-            bool rot = u.StartsWith("R", StringComparison.Ordinal);
-            string ax = rot ? u.Substring(1) : u;
-            int k = ax == "X" ? 0 : ax == "Y" ? 1 : ax == "Z" ? 2 : -1;
-            if (k < 0 || u.Length > 2) throw new InvalidOperationException("CaesarNeutralWriter: " + w + ": DOF \"" + d.Dof + "\" (global frame: X Y Z RX RY RZ)");
-            var v = new double[3]; v[k] = 1;
-            dirs.Add(new KeyValuePair<double[], bool>(v, rot));
-        }
         var o = new List<PipeModelRestraint>();
-        foreach (var kv in dirs)
+        foreach (var e in PipeJoints.Expand(d))
         {
-            var dir = kv.Key;
-            int axis = -1;
-            for (int q = 0; q < 3; q++) if (Math.Abs(Math.Abs(dir[q]) - 1) < 1e-9) axis = q;
-            string type = (kv.Value ? "R" : "") + (axis == 1 ? "Y" : axis == 2 ? "Z" : "X");
-            var r = new PipeModelRestraint { Node = j.Node, CNode = j.CNode, Type = type, Code = PipeModelCodes.Restraint[type], Gap = d.Gap, Stiffness = d.Stiffness, Tag = j.Tag ?? "", Source = w };
-            if (axis < 0) r.Cosines = new[] { dir[0], dir[1], dir[2] };
-            o.Add(r);
+            int sign; bool rot; int ax;
+            if (!PipeJoints.ParseDof(e.Dof, out sign, out rot, out ax))
+                throw new InvalidOperationException("CaesarNeutralWriter: " + w + ": DOF \"" + d.Dof + "\" (X Y Z RX RY RZ, + or - for one way)");
+            o.Add(PipeJoints.RestraintFor(j, PipeJoints.AxisOf(m, j, ax, w), sign, rot, e.Gap, e.Stiffness, w));
         }
         return o;
     }

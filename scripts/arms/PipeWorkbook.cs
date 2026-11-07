@@ -873,7 +873,7 @@ public static class PipeWorkbook
             "Section / Process: a name from those sheets; blank = the row above's. The grouped columns at the right of Elements (+) override one value for one element.",
             "Restraints: Stiffness blank = rigid; Cos blank = the type's own axis (guides and limit stops take the pipe's). Forces / Displacements: one row per node and load vector (1-9); a displacement left blank is free, 0 holds it.",
             "Uniform / Wind: per element; an element no row names has none (CAESAR carries a load on to later elements; Pluto ends it there). Element = an Id, a range in the Elements order (E3:E9), or blank with From and To (a chain of elements).",
-            "Joints: DOFs like 'axial gap=0.125 k=5000; shear; torsion; bending gap=2' (frame pipe) or 'X; Y; RZ k=1e6' (frame global); a DOF not listed is free.",
+            "Joints: DOFs like '+Y; -Y gap=2; RX; RY; RZ' (expansion joint control rods) or 'X; Y; Z; RX gap=1; RY; RZ' (a flexible coupling): X Y Z RX RY RZ, + or - for one way (CAESAR's: +Y acts in +Y), gap=<v> and k=<v> (none: rigid); frame global = CAESAR's axes, pipe = X along the pipe; a DOF not listed is free.",
             "Nozzles: Type WRC 297 / PD 5500 (a vessel: give its OD, wall, centreline, material and the distances to its stiffeners or heads), API 650 (a tank shell), Custom (its four stiffnesses and the vessel's material); Vessel node blank = a rigid vessel. A column the type does not use is red.",
             "Hangers: Rate and Constant blank = CAESAR designs the hanger (from Table; it then asks for its hanger-design load cases). Rate with Cold load = a spring as given. Constant = a constant-effort support. One row per node: Count for more than one.",
             "Read back: only the input sheets. Start, 3D View, Nodes and Carried are rebuilt on every export. The hidden _pluto sheet holds the model this workbook was written from: what you did not change is given back exactly.",
@@ -1657,21 +1657,37 @@ public static class PipeWorkbook
             if (frame != "pipe" && frame != "global") { x.Err(w + ": frame \"" + frame + "\" (pipe or global)"); continue; }
             j.Frame = frame;
             j.Dofs.Clear();
+            // "+Y; -Y gap=2; RX; RY; RZ": X Y Z RX RY RZ, + or - for one way, each with gap=<v> and k=<v> (none: rigid);
+            // the older pipe-frame names (axial shear torsion bending) read as theirs and are written so next time
+            var seen = new Dictionary<string, string>(StringComparer.Ordinal);   // axis (RX ...) -> its DOF
             foreach (string part in Text(c, r, "DOFs", x).Split(';'))
             {
                 var toks = part.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
                 if (toks.Length == 0) continue;
+                if (toks[0].Contains("=")) { x.Err(w + ": \"" + part.Trim() + "\": give a gap or a stiffness by name after the DOF (\"-Y gap=2\", \"RX k=5000\")"); continue; }
                 var d = new PipeModelJointDof { Dof = toks[0] };
+                bool okOpts = true;
                 foreach (string tk in toks.Skip(1))
                 {
                     var kv = tk.Split('=');
                     double v;
-                    if (kv.Length != 2 || !double.TryParse(kv[1], NumberStyles.Float, CultureInfo.InvariantCulture, out v)) { x.Err(w + ": DOF option \"" + tk + "\" (gap=<value> or k=<value>)"); continue; }
+                    if (kv.Length != 2 || !double.TryParse(kv[1], NumberStyles.Float, CultureInfo.InvariantCulture, out v) || v < 0) { x.Err(w + ": DOF option \"" + tk + "\" (gap=<value> or k=<value>, not negative)"); okOpts = false; continue; }
                     if (kv[0].Equals("gap", StringComparison.OrdinalIgnoreCase)) d.Gap = v;
                     else if (kv[0].Equals("k", StringComparison.OrdinalIgnoreCase)) d.Stiffness = v;
-                    else x.Err(w + ": DOF option \"" + tk + "\" (gap=<value> or k=<value>)");
+                    else { x.Err(w + ": DOF option \"" + tk + "\" (gap=<value> or k=<value>)"); okOpts = false; }
                 }
-                j.Dofs.Add(d);
+                if (!okOpts) continue;
+                if (PipeJoints.IsLegacy(d.Dof) && frame != "pipe") { x.Err(w + ": \"" + d.Dof + "\" names a pipe-frame DOF: with frame global give X Y Z RX RY RZ"); continue; }
+                foreach (var e in PipeJoints.Expand(d))
+                {
+                    int sign; bool rot; int ax;
+                    if (!PipeJoints.ParseDof(e.Dof, out sign, out rot, out ax)) { x.Err(w + ": DOF \"" + e.Dof + "\" (X Y Z RX RY RZ, + or - for one way: \"+Y\", \"-RX\")"); continue; }
+                    string key = (rot ? "R" : "") + "XYZ"[ax], had;
+                    if (seen.TryGetValue(key, out had) && (had == e.Dof || sign == 0 || had.Length == key.Length))
+                    { x.Err(w + ": " + e.Dof + " and " + had + " both act along " + key + " (a + and a - pair, or one both-ways DOF)"); continue; }
+                    seen[key] = e.Dof;
+                    j.Dofs.Add(e);
+                }
             }
             j.Sif = Z(Num(c, r, "SIF", x, -1, null));
             j.Tag = Text(c, r, "Tag", x);

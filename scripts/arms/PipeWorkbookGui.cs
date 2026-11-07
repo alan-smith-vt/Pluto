@@ -239,9 +239,9 @@ static class PipeWorkbookGui
             C("Node", "key", "node", "One end of the joint."),
             C("CNode", "key", "node", "The other end (written as CNODE restraints Node -> CNode)."),
             L("Kind", "prop", "list?", LKind, "A label: coupling, hinge, slip, ball, link (or your own).", null),
-            L("Frame", "prop", "list!", LFrame, "pipe: DOFs along the pipe (axial, shear, torsion, bending); global: X Y Z RX RY RZ.", null),
-            C("DOFs", "prop", "text", "e.g. axial gap=0.125 k=5000; shear; torsion; bending gap=2. A DOF not listed is free.",
-              "DOFs: the connected degrees of freedom, separated by ';'. Frame pipe: axial, shear, torsion, bending. Frame global: X, Y, Z, RX, RY, RZ. Each may take gap=<value> and k=<stiffness>; without k it is rigid. A DOF not listed is free."),
+            L("Frame", "prop", "list!", LFrame, "global: X Y Z are CAESAR's axes. pipe: X along the pipe (the element at Node), Y and Z square to it, so one joint means the same on any run.", null),
+            C("DOFs", "prop", "text", "e.g. +Y; -Y gap=2; RX; RY; RZ (control rods) or X; Y; Z; RX gap=1; RY; RZ (a flexible coupling). A DOF not listed is free.",
+              "DOFs: the connected degrees of freedom, separated by ';', each one CAESAR restraint between Node and CNode: X, Y, Z, RX, RY, RZ, or with + or - for one way only (CAESAR's sense: +Y acts in +Y, so Node may move +Y from CNode but not -Y). Each may take gap=<value> (rotations in degrees) and k=<stiffness>; without k it is rigid. A DOF not listed is free. The older axial / shear / torsion / bending (frame pipe) still read, as X; Y and Z; RX; RY and RZ."),
             C("SIF", "prop", "nonneg", "A SIF at the joint. Blank = none."),
             C("Tag", "text", "text", "A tag, kept with the joint."),
         };

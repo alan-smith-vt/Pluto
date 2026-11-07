@@ -66,8 +66,13 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 > [!info]- Joints
 > `PipeModelJoint` is a node-to-node tie described per DOF, expanded to CNODE restraints only when the `.cii` is written:
 > - `node`, `cnode`, `kind` (a label: coupling, hinge, slip, ball, link, custom);
-> - `frame`: `pipe` (axial, shear, torsion, bending, in the pipe's own axes at the node) or `global` (X Y Z RX RY RZ);
-> - `dofs`: each with a `gap` (free travel each way) and a `stiffness` after it (0 = rigid). **A DOF not listed is free.**
+> - `frame`: `global` (CAESAR's X Y Z) or `pipe` (X along the pipe at the node, Y and Z square to it,
+>   `CaesarNeutralWriter.Perps`);
+> - `dofs`: each one CAESAR restraint between the two nodes: `X Y Z RX RY RZ`, or with `+` / `-` for one way only
+>   (CAESAR's sense: `+Y` acts in +Y). Each has a `gap` (free travel; on its own side for a one-way DOF) and a
+>   `stiffness` after it (0 = rigid). **A DOF not listed is free.**
+> - The older pipe-frame names (before 2026-11-07) read as today's: `axial` = X, `shear` = Y and Z, `torsion` = RX,
+>   `bending` = RY and RZ, in the JSON as well as on a workbook.
 > - `sif` (> 0: a user SIF at the node) and `tag`.
 >
 > Pipe-frame DOFs need an element at the node to give the axis; the writer reports a joint without one.

@@ -65,7 +65,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > | SIFs | SIF / tee | Id, node, type (a dropdown of CAESAR's list, "3 - welding tee"; a bare number from an older workbook reads the same), SIF in / out, surface node, pad (a reinforced tee; amber without), crotch radius, weld mismatch |
 > | Forces / Displacements | node and load vector | Id, node, vector (1–9), FX…MZ / DX…RZ. A blank displacement DOF is free; 0 holds it |
 > | Uniform / Wind | element, or a range of elements with the same values | Element (`E4`, a range `E3:E9`, or blank with From and To), vector, UX UY UZ, in g's / type, shape factor, wave data |
-> | Joints | joint | Id, node, CNODE, kind, frame (pipe / global), DOFs (`axial gap=0.125 k=5000; shear; torsion; bending gap=2`), SIF, tag. Couplings in a `.cii` or a TOML build come here (below); their CNODE restraints and SIF are off Restraints and SIFs |
+> | Joints | joint | Id, node, CNODE, kind, frame (global / pipe), DOFs (`+Y; -Y gap=2; RX; RY; RZ`, `X; Y; Z; RX gap=1; RY; RZ`), SIF, tag. Couplings in a `.cii` or a TOML build come here (below); their CNODE restraints and SIF are off Restraints and SIFs |
 > | Hangers | spring hanger (one per node) | Id, node, CNODE; Rate with Cold load (a spring as given) or Constant (a constant-effort support), both blank = CAESAR designs it; table, count, load variation, short range, max travel, space, rigid criteria, operating load, hardware weight, multi-load; anchors freed while it is designed (node + Y / XY / ZY / XYZ / all, two); tag. A workbook made before this sheet keeps its base's hangers |
 > | Nozzles | flexible nozzle | Id, node, vessel node (blank = a rigid vessel), type (WRC 297, API 650, PD 5500, Custom), then the values: nozzle OD / wall, vessel type, vessel OD / wall, pad, reinforcing, distances to stiffeners, nozzle and fluid heights, vessel centreline X Y Z, vessel temperature and material, displacement vector, fluid SG, tank alpha / ΔT / E, the four custom stiffnesses. A column the row's type does not use is red |
 > | Coords | COORDS entry | node, X Y Z |
@@ -116,6 +116,35 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >   - edits to a gap, a stiffness, a SIF, a frame, a deleted and an added joint each change only their own lines.
 > - **A workbook made before this** keeps its couplings on Restraints (Refresh does not move them). Make it again
 >   from the `.cii` to get them on Joints.
+
+> [!info]- Joint DOFs by axis and direction (2026-11-07)
+> The DOFs column names each CAESAR restraint of a joint by axis, with a sign for one way and its gap and stiffness
+> written out:
+> - **Syntax:** DOFs separated by `;`.
+>   - Each is `X Y Z RX RY RZ`, or `+X` … `-RZ` for one way only. The sign is CAESAR's: `+Y` acts in +Y, so Node may
+>     move +Y from CNode but not −Y.
+>   - Each may take `gap=<value>` (rotations in degrees) and `k=<stiffness>`; without `k` it is rigid.
+>   - The values are always named: a bare `-Y=2` is refused at its cell, with the form to use.
+> - **Examples:**
+>   - expansion joint control rods: `+Y; -Y gap=2; RX; RY; RZ`;
+>   - a flexible coupling: `X; Y; Z; RX gap=1; RY; RZ`.
+> - **Frame:**
+>   - `global`: CAESAR's X Y Z.
+>   - `pipe`: X along the pipe at the joint (the element at Node), Y and Z square to it. One spec means the same on any
+>     run, skewed ones too; a pipe-frame `+X` on a run along −Z is written as CAESAR's `-Z`.
+> - **Refused at their cells:** two DOFs along one axis (but a `+` and `-` pair); an unknown DOF; a pipe-frame name with
+>   frame global.
+> - **Recognized couplings** now show in CAESAR's own axes when their restraints lie on them (the sample model's
+>   `X; Y; Z; RX; RY; RZ gap=1`); a skewed one shows in the pipe frame.
+> - **Older workbooks** (`axial gap=0.125; shear; torsion; bending gap=1`) read as `X; Y; Z; RX; RY; RZ` with the same
+>   values, and their restraints keep their place and bytes.
+>
+> **Checked:**
+> - all 16 test models and examples write the same `.cii` as before, from the source and through a workbook;
+> - workbooks made before the change, read now, write it byte for byte;
+> - the gate's model hashes change only for the six models with joints, whose `.cii` is unchanged;
+> - typed into a workbook, the two examples and a pipe-frame one-way DOF give the CAESAR types expected (`+Y`, `-Y`
+>   gap 2 …; `+X` along a Z run as `+Z`).
 
 > [!info]- Node numbers (live)
 > - **From and To are formulas** (2026-10-29), so inserting a node renumbers the nodes after it. Settings says `live, step 10` (the commonest increment) or `fixed` and why.
