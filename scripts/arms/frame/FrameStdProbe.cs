@@ -42,6 +42,9 @@ public static class FrameStdProbe
         Action<string, IEnumerable<string>> table = (name, rows) => { w.Add("TABLE:  \"" + name + "\""); foreach (var r in rows) w.Add("   " + r); w.Add(""); };
 
         table("PROGRAM CONTROL", new[] { "ProgramName=SAP2000   Version=" + version + "   CurrUnits=\"Kip, in, F\"" });
+        // as SAP's own exports carry it: SAP's import without it logs ten "Table key ... not found" errors for design
+        // tables of its default after-analysis list (2026-11-07); this checks whether the row stops them
+        table("TABLES AUTOMATICALLY SAVED AFTER ANALYSIS", new[] { "SaveFile=No" });
         table("ACTIVE DEGREES OF FREEDOM", new[] { "UX=Yes   UY=Yes   UZ=Yes   RX=Yes   RY=Yes   RZ=Yes" });
         table("MATERIAL PROPERTIES 01 - GENERAL", new[] { "Material=STEEL   Type=Steel   SymType=Isotropic   TempDepend=No   Color=Blue" });
         table("MATERIAL PROPERTIES 02 - BASIC MECHANICAL PROPERTIES", new[] { "Material=STEEL   UnitWeight=0.000283564814814815   UnitMass=7.34446554001670E-07   E1=29000   G12=11153.8461538462   U12=0.3   A1=6.5E-06" });
