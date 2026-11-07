@@ -1746,6 +1746,11 @@ public static class FrameWorkbook
                 {
                     string ty = Text(c, r, "Type", x); if (ty.Length > 0 && rw.Get("Type") != ty) rw.Set("Type", ty);
                     double v = Num(c, r, "Value", x, "T"); rw.SetNum("Temp", double.IsNaN(v) ? 0 : v);
+                    // SAP 24.2 imported "Temp Gradient 2" / "3" as Type=Temperature (the STAAD probe, 2026-11-07): until
+                    // SAP's own name is confirmed, a gradient row reaches SAP as a uniform change
+                    string tyNow = rw.Get("Type") ?? "";
+                    if (tyNow.IndexOf("Gradient", StringComparison.OrdinalIgnoreCase) >= 0)
+                        x.Warnings.Add(At(c, r, "Type") + ": \"" + tyNow + "\": SAP's name for a temperature gradient is not confirmed yet (SAP2000 24.2 read \"Temp Gradient 2\" / \"3\" as a uniform temperature), so frame " + f.Label + " may get a uniform change of " + FrameModel.Fmt(rw.Num("Temp", 0)) + " in SAP");
                     continue;
                 }
                 string cs = Text(c, r, "CoordSys", x), type = Text(c, r, "Type", x), dir = Text(c, r, "Dir", x), dt = Text(c, r, "Rel / Abs", x);

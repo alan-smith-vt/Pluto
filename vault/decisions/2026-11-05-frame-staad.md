@@ -57,3 +57,7 @@ The mapping is in [[vault/format/frame-to-staad|frame-to-staad]]. The choices ma
 > - offsets and the loads on rigid end zones.
 >
 > Until then [[vault/format/frame-to-staad|frame-to-staad]] marks these as unconfirmed.
+>
+> Round 1 (2026-11-07): STAAD 2025 parsed every command; ground displacements are now `ENFORCED` supports. The plate
+> policy waits for the meshed-wall comparison: the rack's single wall element differed by 20× in thrust between the
+> programs, a mesh effect on both sides, not a translation.

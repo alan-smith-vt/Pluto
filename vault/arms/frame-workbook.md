@@ -124,6 +124,12 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 > as written, listed on Carried. Checked: a rack with a `FRAME LOADS - GRAVITY` row goes to a workbook and back byte
 > for byte, where the previous build lost the row.
 
+> [!info]- Temperature gradients do not reach SAP as gradients (2026-11-07)
+> SAP 24.2 reads the Temperature sheet's `Temp Gradient 2` / `Temp Gradient 3` as a uniform temperature (found by the
+> STAAD probe; [[vault/format/sap-s2k-tables|sap-s2k-tables]]). Until SAP's own name is confirmed, every gradient row
+> gets a warning naming its frame and the uniform change SAP will apply. Once the name is known, the list takes it and
+> a workbook read turns the old names into it.
+
 > [!info]- "An item with the same key has already been added" (2026-11-05)
 > A live-preview rebuild failed with .NET's bare duplicate-key message. Reproduced two ways:
 > - **A load case name given twice.** The reader reports a repeated name ("on an earlier row too") but reads on, and

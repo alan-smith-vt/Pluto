@@ -20,8 +20,9 @@ created: 2026-11-05
   at most, then a count).
 - What leaving out cannot change in the structure is a `[notice]`, also listed in the file's header comment.
 
-**Status: draft.** The forms below come from excerpts of STAAD's Technical Reference, not the pages themselves. STAAD
-has not yet read a file from this writer. The STAAD probe (end of this note) confirms the open points.
+**Status: draft.** The forms below come from excerpts of STAAD's Technical Reference, not the pages themselves.
+STAAD.Pro 2025 has since read every command the writer uses ([V] below means the excerpt; round 1 confirms the
+parse). The STAAD probe (end of this note) settles the conventions still marked **[U]**.
 
 > [!info]- The file, in order
 > 1. `STAAD SPACE`, then comments:
@@ -116,8 +117,8 @@ has not yet read a file from this writer. The STAAD probe (end of this note) con
 > - **Links.**
 >   - Any nonlinear link refuses the model (each type with its links).
 >   - A grounded linear link adds its DOFs (fixed or KE) to its joint's support, in the link's axes.
->   - A two-joint link with only U1 (KE > 0) is a truss member: material `PL_LINK` (E 1, density 0, α 0), `PRIS AX` =
->     KE × L. Any other two-joint or zero-length link is refused. A link with a weight is refused when a pattern has
+>   - A two-joint link with only U1 (KE > 0) is a truss member: material `PL_LINK` (the model's largest E, so STAAD
+>     does not warn of a soft material; density 0, α 0), `PRIS AX` = KE × L / E. Any other two-joint or zero-length link is refused. A link with a weight is refused when a pattern has
 >     self weight.
 > - **Supports** gather restraints (in the joint's local axes), springs (row CoordSys GLOBAL or Local) and grounded
 >   links:
@@ -153,9 +154,14 @@ has not yet read a file from this writer. The STAAD probe (end of this note) con
 > - **Ground displacements.**
 >   - They go in the primary loads, as `SUPPORT DISPLACEMENT LOAD` with each case's factor. Rotations are in degrees
 >     [V]. The excerpt did not show whether reference loads take them.
->   - Only restrained DOFs move (SAP ignores a free one). Through a spring, or at an inclined support, they are
->     refused.
->   - STAAD takes them in 4 load cases at most [V].
+>   - Only restrained DOFs move (SAP ignores a free one).
+>   - The joint is an `ENFORCED` support (`ENFORCED BUT <free DOFs>`). STAAD 2025 stops a model with plates
+>     otherwise ("not valid on models with finite elements, unless used in conjunction with ENFORCED support
+>     definitions", round 1), and without ENFORCED it takes them in 4 load cases at most.
+>   - Refused: a displacement at an inclined support, or at a joint with springs or a grounded link (ENFORCED takes
+>     no springs).
+> - **Joints nothing connects** (no frame, area or axial link) are left out with their supports and loads, in a
+>   notice. STAAD warns of them; in SAP they carry nothing.
 > - **One primary load per static case** (`LoadPattern` items only; `Accel` is refused): `LOAD n LOADTYPE …` with
 >   `REFERENCE LOAD R1 f …` [V].
 >   - A nonlinear case continuing another (its `InitialCond`) holds the whole chain's patterns.
@@ -205,7 +211,8 @@ has not yet read a file from this writer. The STAAD probe (end of this note) con
 > | 6, 7 | cardinal point 8 and joint offsets |
 > | 8, 19 | partial fixity and a hinge |
 > | 9 | springs |
-> | 10, 11 | temperature (uniform and both gradients; fixed-fixed and cantilever) |
+> | 10, 11 | a uniform temperature (fixed-fixed and cantilever) |
+> | 22 – 25 | gradients 2 and 3, one spelling SAP might take per cantilever (`Temperature Gradient 2`, `Temperature Gradient 2-2`, `Temp Gradient 2-2`, `Gradient 2`, and 3) |
 > | 12 | an inclined support |
 > | 13, 14 | a grounded link and an axial link |
 > | 15 | a settlement with a rotation |
@@ -221,5 +228,52 @@ has not yet read a file from this writer. The STAAD probe (end of this note) con
 > - per pattern, the written joint and member loads (and self weight) give SAP's total force and moment about the
 >   origin.
 >
-> This held for the probe (95 checks), an adjusted SAP export probe (105) and the rack with linear links (44).
-> **Not yet run in STAAD.**
+> This held for the probe (95 checks, 111 in round 2), an adjusted SAP export probe and the rack with linear links.
+
+> [!info]- STAAD round 1 (STAAD.Pro 2025 25.00.01 and SAP 24.2, 2026-11-07)
+> The rack (its gap and friction links made linear) and the probe ran in both programs. SAP's results came back as its
+> Excel export and were compared joint by joint, rotated back.
+>
+> **STAAD parsed every command without an error:**
+> - geometry and properties: `TABLE ST W10X33`, `PRIS`, `MEMBER TRUSS`, `ELEMENT INCIDENCES SHELL`, `ELEMENT
+>   PROPERTY … THICKNESS`;
+> - materials: `ISOTROPIC` with `TYPE STEEL` / `STRENGTH FY FU RY RT`;
+> - `CONSTANTS` (`MATERIAL`, `BETA`), `MEMBER OFFSET`, `MEMBER RELEASE` with `KMY` / `KMZ`;
+> - `SUPPORTS` with `K…` springs and `INCLINED f1 f2 f3`;
+> - reference loads and `REFERENCE LOAD`, `SELFWEIGHT`, `JOINT LOAD`;
+> - `MEMBER LOAD` (`CON`, `CMOM`, `UNI`, `TRAP` in local, global and projected directions), `TEMP f1 f2 f4`,
+>   `SUPPORT DISPLACEMENT LOAD`;
+> - `LOAD COMBINATION` plain / `SRSS` / `ABS`, the prints.
+>
+> **The rack agreed where it could be checked:**
+> - per case, the total vertical reaction (77.30 vs 77.248 kip, 79.26 vs 79.203, at STAAD's printed 2 decimals);
+> - the pipes' thermal growth to every printed digit (0.03754 / 0.41290 / 0.45043 in), so OPE = SUS + T1 and EXP
+>   are right.
+>
+> **Its frames could not be checked.** The wall W1 is one shell element (240 × 180 in, 6 in steel, 73.5 kip, pinned
+> at two corners) that every frame ties into, and the two programs' single elements behave very differently:
+>
+> | (DEAD) | SAP | STAAD |
+> |---|---|---|
+> | wall thrust at each pin | 2.14 kip | 42.67 kip |
+> | top corner sag | 0.00016 in | 0.00171 in |
+> | top corner in the wall's plane | 0.00005 in | 0.00096 in |
+> | top corner out of it | 0.0080 in | 0.0044 in |
+> | column C1 axial | 0.48 kip | 2.93 kip |
+>
+> A plane-stress solve of the wall alone (in the session, Wilson's incompatible-mode quad) reproduces SAP's one
+> element: 2.07 kip thrust, 0.00015 in sag. Refined, the thrust converges to about 21 kip (13 at 2 × 2, 19 at
+> 8 × 6). So:
+> - SAP's single element, its weight at the corners right above the pins, hardly acts as a deep beam;
+> - STAAD's overshoots about 2×;
+> - neither is the wall's answer.
+>
+> Round 2 runs the rack without the wall, and with it meshed 8 × 6, to tell the translation from the mesh.
+>
+> **The probe stopped in STAAD's solver** (support displacement in a model with plates needs `ENFORCED`; now
+> written so). STAAD warned of the rack's unconnected joint 20 (now left out) and of the truss links' E of 1 (now
+> the model's E).
+>
+> **SAP read the workbook's gradient names as uniform temperatures.** `Type="Temp Gradient 2"` / `"3"` came back as
+> `Temperature`: the probe's cantilever grew by α × 21 × L (20 + 3 − 2) and did not bend. See
+> [[vault/format/sap-s2k-tables|sap-s2k-tables]]. Round 2's parts 22 – 25 try four spellings.

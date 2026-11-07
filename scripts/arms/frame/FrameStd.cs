@@ -215,6 +215,9 @@ public static class FrameStd
         readonly List<string> LabelLines = new List<string>();
         bool AnySelfWeight;
         int NextId;
+        double LinkE = 1;                                                // the truss links' E (the model's largest)
+        readonly HashSet<string> Enforced = new HashSet<string>(StringComparer.Ordinal);   // joints with a ground displacement
+        HashSet<int> Used;                                               // joints a member, plate or truss uses
 
         public Writer(FrameModel m, string source, List<string> notes) { M = m; Source = source ?? ""; Notes = notes ?? new List<string>(); }
 
@@ -257,6 +260,7 @@ public static class FrameStd
             FramesIn();
             Areas();
             Links();
+            Connected();
             JointSupports();
             AutoMesh();
             Tables();
@@ -526,6 +530,8 @@ public static class FrameStd
             var props = new Dictionary<string, FrameLinkProp>(StringComparer.Ordinal);
             foreach (var p in M.LinkProps) if (!props.ContainsKey(p.Label)) props[p.Label] = p;
             var nonlinear = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            // the truss links' material: the model's largest E (STAAD warns of a soft material otherwise), AX = KE L / E
+            foreach (var mt in M.Materials) LinkE = Math.Max(LinkE, mt.Mech("E1"));
             foreach (var l in M.Links)
             {
                 string who = "link " + l.Label;
@@ -574,11 +580,23 @@ public static class FrameStd
                 int id = ++NextId;
                 TrussId[l.Label] = id;
                 Trusses.Add(new[] { id, JointId[l.JointI], JointId[l.JointJ] });
-                TrussAx[id] = k[0] * len;
+                TrussAx[id] = k[0] * len / LinkE;
                 LabelLines.Add("link " + l.Label + " = member " + id.ToString(Inv) + " (truss, EA/L = " + N(k[0]) + ")");
             }
             if (nonlinear.Count > 0)
                 Refuse("nonlinear links (make them linear, or leave them out) -- " + string.Join("; ", nonlinear.Select(kv => kv.Key + " (" + kv.Value.Count.ToString(Inv) + "): " + Few(kv.Value)).ToArray()));
+        }
+
+        // joints a member, plate or truss uses; any other is left out (STAAD warns of a joint not connected, and it carries
+        // nothing in SAP either), with its supports and loads
+        void Connected()
+        {
+            Used = new HashSet<int>();
+            foreach (var f in Frames) { Used.Add(JointId[f.F.JointI]); Used.Add(JointId[f.F.JointJ]); }
+            foreach (var p in Plates) for (int i = 1; i < p.Length; i++) Used.Add(p[i]);
+            foreach (var t in Trusses) { Used.Add(t[1]); Used.Add(t[2]); }
+            var lone = M.Joints.Where(j => !Used.Contains(JointId[j.Label])).Select(j => j.Label).ToList();
+            if (lone.Count > 0) Note("joints nothing connects (no frame, area or axial link), left out with their supports and loads: " + Few(lone));
         }
 
         // ---------------- supports
@@ -674,14 +692,21 @@ public static class FrameStd
                 if (!ok) continue;
                 inclined = f > 0;
                 string head = JointId[joint].ToString(Inv) + (inclined ? " INCLINED " + string.Join(" ", frames[f][0].Select(x => N(x, 1)).ToArray()) : "");
-                return head + " " + Spec(sum);
+                return head + " " + Spec(sum, Enforced.Contains(joint));
             }
             return null;
         }
 
-        static string Spec(double[] st)
+        // a joint with a ground displacement is ENFORCED (STAAD takes support displacements in a model with plates, and in
+        // more than 4 load cases, only so; Technical Reference and STAAD 2025's own message); it has no springs (refused)
+        static string Spec(double[] st, bool enforced)
         {
             string[] dof = { "FX", "FY", "FZ", "MX", "MY", "MZ" };
+            if (enforced)
+            {
+                var free = Enumerable.Range(0, 6).Where(i => !double.IsPositiveInfinity(st[i])).Select(i => dof[i]).ToArray();
+                return free.Length == 0 ? "ENFORCED" : "ENFORCED BUT " + string.Join(" ", free);
+            }
             if (st.All(double.IsPositiveInfinity)) return "FIXED";
             if (st.Take(3).All(double.IsPositiveInfinity) && st.Skip(3).All(x => x == 0)) return "PINNED";
             var rel = new List<string>(); var spr = new List<string>();
@@ -857,6 +882,7 @@ public static class FrameStd
             string text = parts == null ? null : SupportText(ld.Target, parts, out inclined);
             if (parts == null || text == null) return;
             if (inclined) { Refuse(who + ": a ground displacement at an inclined support"); return; }
+            if (parts.Any(q => q.K.Any(k => k != 0))) { Refuse(who + ": a ground displacement at a joint with springs or a grounded link (STAAD's ENFORCED support takes no springs)"); return; }
             var glob = new[] { new[] { 1.0, 0, 0 }, new[] { 0.0, 1, 0 }, new[] { 0.0, 0, 1 } };
             var st = new double[6];
             foreach (var s in parts) { var o = InFrame(s, glob); for (int i = 0; i < 6; i++) st[i] = double.IsPositiveInfinity(st[i]) || double.IsPositiveInfinity(o[i]) ? double.PositiveInfinity : st[i] + o[i]; }
@@ -865,7 +891,7 @@ public static class FrameStd
             for (int i = 0; i < 6; i++)
             {
                 if (val[i] == 0) continue;
-                if (double.IsPositiveInfinity(st[i])) d[i] = (double.IsNaN(d[i]) ? 0 : d[i]) + val[i];
+                if (double.IsPositiveInfinity(st[i])) { d[i] = (double.IsNaN(d[i]) ? 0 : d[i]) + val[i]; Enforced.Add(ld.Target); }
                 else if (st[i] != 0) Refuse(who + ": a ground displacement through a spring or a grounded link (STAAD moves supports only)");
             }
         }
@@ -1044,9 +1070,6 @@ public static class FrameStd
             if (o.Any(p => p.PDelta) && o.Any(p => !p.PDelta))
                 Refuse("P-Delta in load cases " + string.Join(" ", o.Where(p => p.PDelta).Select(p => p.C.Label).ToArray()) + " but not in " + string.Join(" ", o.Where(p => !p.PDelta).Select(p => p.C.Label).ToArray()) +
                        " (STAAD's P-Delta analysis takes every load case: give all or none P-Delta)");
-            // support displacements go in the primary loads: STAAD takes them in 4 load cases at most
-            int withDisp = o.Count(p => p.Refs.Any(r => refs[r.Key].Value.Disp.Count > 0));
-            if (withDisp > 4) Refuse("ground displacements in " + withDisp.ToString(Inv) + " load cases (STAAD's support displacement load takes 4)");
             return o;
         }
 
@@ -1151,6 +1174,7 @@ public static class FrameStd
             o.Add("JOINT COORDINATES");
             foreach (var j in M.Joints)
             {
+                if (!Used.Contains(JointId[j.Label])) continue;
                 var p = R(Pos[j.Label]);
                 o.Add(JointId[j.Label].ToString(Inv) + " " + N(p[0]) + " " + N(p[1]) + " " + N(p[2]));
             }
@@ -1193,7 +1217,7 @@ public static class FrameStd
                     }
                 }
             }
-            if (links) { o.Add("ISOTROPIC PL_LINK"); o.Add("E 1"); o.Add("POISSON 0.3"); o.Add("DENSITY 0"); o.Add("ALPHA 0"); }
+            if (links) { o.Add("ISOTROPIC PL_LINK"); o.Add("E " + N(LinkE)); o.Add("POISSON 0.3"); o.Add("DENSITY 0"); o.Add("ALPHA 0"); }
             o.Add("END DEFINE MATERIAL");
 
             if (Frames.Count + Trusses.Count > 0)
@@ -1243,7 +1267,7 @@ public static class FrameStd
             foreach (var j in M.Joints)
             {
                 List<Support> parts;
-                if (!Supports.TryGetValue(j.Label, out parts)) continue;
+                if (!Supports.TryGetValue(j.Label, out parts) || !Used.Contains(JointId[j.Label])) continue;
                 bool inc;
                 string text = SupportText(j.Label, parts, out inc);
                 if (text == null) { Refuse("joint " + j.Label + ": its " + string.Join(", ", parts.Select(p => p.From).ToArray()) + " act in axes no STAAD support holds together"); continue; }
@@ -1266,7 +1290,7 @@ public static class FrameStd
                     refNo[i] = refNo.Count + 1;
                     o.Add("LOAD R" + refNo[i].ToString(Inv) + " LOADTYPE " + LoadType(pat.DesignType) + " TITLE " + Plain(pat.Label, 60));
                     if (pl.SelfWeight != 0) o.Add("SELFWEIGHT Y " + N(-pl.SelfWeight));
-                    var jl = pl.Joint.Where(kv => kv.Value.Any(x => Math.Abs(x) > 0)).ToList();
+                    var jl = pl.Joint.Where(kv => Used.Contains(kv.Key) && kv.Value.Any(x => Math.Abs(x) > 0)).ToList();
                     if (jl.Count > 0)
                     {
                         o.Add("JOINT LOAD");
@@ -1294,6 +1318,7 @@ public static class FrameStd
                 foreach (var kv in p.Refs)
                     foreach (var d in refs[kv.Key].Value.Disp)
                     {
+                        if (!Used.Contains(d.Key)) continue;
                         double[] v;
                         if (!disp.TryGetValue(d.Key, out v)) disp[d.Key] = v = new double[6];
                         for (int i = 0; i < 6; i++) if (!double.IsNaN(d.Value[i])) v[i] += kv.Value * d.Value[i];
@@ -1368,7 +1393,7 @@ public static class FrameStd
                 {
                     string t = mm[0].ToLowerInvariant(), l = mm[1];
                     int id; FrameInfo fi;
-                    if (t == "joint" && JointId.TryGetValue(l, out id)) ids["JOINT"].Add(id);
+                    if (t == "joint" && JointId.TryGetValue(l, out id) && Used.Contains(id)) ids["JOINT"].Add(id);
                     else if (t == "frame" && FrameOf.TryGetValue(l, out fi)) ids["MEMBER"].Add(fi.Id);
                     else if (t == "link" && TrussId.TryGetValue(l, out id)) ids["MEMBER"].Add(id);
                     else if (t == "area" && AreaId.TryGetValue(l, out id) && Plates.Any(p => p[0] == id)) ids["ELEMENT"].Add(id);
