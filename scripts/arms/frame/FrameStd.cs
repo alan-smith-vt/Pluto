@@ -353,7 +353,8 @@ public static class FrameStd
             for (int k = 0; k < 6; k++)
                 if (fi.Mods[k] <= 0) { Refuse(who + ": property modifier " + FrameMember.ModifierKeys[k] + " = " + N(fi.Mods[k]) + " (STAAD needs a positive property)"); return false; }
             bool mods = fi.Mods.Take(6).Any(x => x != 1);
-            fi.Table = TableName(s);
+            fi.Table = TableName(s, p);
+            if (p.Stale) Note("section " + s.Label + ": its row's area and inertias disagree with its dimensions; SAP works them out from the dimensions on import, and so does this file (A " + N(p.A) + ")");
             if (fi.Table != null && mods) { Note("frame " + f.Label + ": section " + s.Label + " written as numbers (PRIS), not STAAD's table, for its property modifiers"); fi.Table = null; }
             if (p.EstimatedJ && fi.Table == null) Note("section " + s.Label + " (" + s.Shape + "): its torsion constant is SAP's rectangle sum, which SAP's own differs from by a junction term (2-3 %)");
             // material: the assignment's own when not Default, else the section's
@@ -367,11 +368,14 @@ public static class FrameStd
             return fi.Mat != null;
         }
 
-        // STAAD's AISC table name for a section SAP took from its own table: W shapes, and channels of a whole weight
-        // (C10X30); every other family is written as numbers (its STAAD names are not confirmed)
-        static string TableName(FrameSection s)
+        // STAAD's AISC table name for a section SAP took from its own database (FromFile=Yes, its SectInFile name): W
+        // shapes, and channels of a whole weight (C10X30); every other family, and any section SAP builds from its
+        // dimensions (no fillets: a hand-made W10X33 is 9.49 in2 in SAP, 9.71 in STAAD's table), is written as numbers
+        static string TableName(FrameSection s, FrameSectionProps p)
         {
-            string n = s.Label.Trim().ToUpperInvariant(), shape = (s.Shape ?? "").ToLowerInvariant();
+            if (!p.Catalog) return null;
+            var r = s.Rec(FrameSection.General);
+            string n = ((r == null ? null : r.Get("SectInFile")) ?? s.Label).Trim().ToUpperInvariant(), shape = (s.Shape ?? "").ToLowerInvariant();
             if (shape == "i/wide flange" && System.Text.RegularExpressions.Regex.IsMatch(n, @"^W\d+X\d+(\.\d+)?$")) return n;
             if (shape == "channel" && System.Text.RegularExpressions.Regex.IsMatch(n, @"^C\d+X\d+$")) return n;
             return null;

@@ -66,11 +66,16 @@ parse). The STAAD probe (end of this note) settles the conventions still marked 
 >   - a vertical member pointing up gets 180° more;
 >   - one pointing down gets the angle.
 >
->   `FrameStd.Beta` works this out for every member; BETA is right-handed about x **[U]**. SAP's advanced local axes
+>   `FrameStd.Beta` works this out for every member; BETA is right-handed about x (confirmed by STAAD round 2, part 1). SAP's advanced local axes
 >   are refused.
 
 > [!info]- Sections and materials
-> - **Table.** `TABLE ST <name>` for W shapes (`W12X26`) and channels of a whole weight (`C10X30`) [V].
+> - **Table.** `TABLE ST <name>` for W shapes (`W12X26`) and channels of a whole weight (`C10X30`) [V], only for
+>   a section SAP took from its own database (`FromFile=Yes`, named by its `SectInFile`). SAP rebuilds any other
+>   shape from its dimensions on import, without fillets: the rack fixture's hand-written W10X33 (`FromFile=No`,
+>   Area 9.71 in its row) was 9.49 in² in SAP, while STAAD's table gave 9.71. Such a section is `PRIS` with the
+>   dimensions' values; its row's are used only where they agree with them (SAP's own export), and a row that
+>   disagrees gets a notice.
 >   - Other families' STAAD names differ from SAP's and are not confirmed: HSS `HSST…`, pipes `PIPS` / `PIPX`, angles
 >     `L40404` in sixteenths, tees by their parent W.
 >   - A table section with property modifiers is written as numbers instead, with a notice.
@@ -113,7 +118,7 @@ parse). The STAAD probe (end of this note) settles the conventions still marked 
 >
 >   **Loads on rigid end zones.** STAAD loads only the clear length; positions are measured from the offset end [V].
 >   The part of a load inside a zone, self weight included, goes to that end's joint as a force and its moment. This
->   assumes SAP loads the full joint-to-joint length **[U: the probe's part 5]**.
+>   assumes SAP loads the full joint-to-joint length (confirmed by round 2, part 5: equal to 0.00002 in).
 > - **Links.**
 >   - Any nonlinear link refuses the model (each type with its links).
 >   - A grounded linear link adds its DOFs (fixed or KE) to its joint's support, in the link's axes.
@@ -149,7 +154,8 @@ parse). The STAAD probe (end of this note) settles the conventions still marked 
 >
 >     Varying or projected distributed moments are refused.
 >   - `TEMPERATURE LOAD`: `TEMP f1 f2 f4` (sic: f3 is the strain form [V]). Uniform → f1; gradient 2 × t3 → f2
->     (top +y minus bottom); gradient 3 × t2 → f4 (+z side minus −z **[U: sign]**).
+>     (top +y minus bottom); gradient 3 × t2 → f4 (+z side minus −z: round 2's cantilevers bent toward the cooler side, as these signs give). SAP's own name for a
+>     gradient is still unknown (round 2).
 >   - A load by joint pattern, in another coordinate system, or from SAP's automatic lateral loads is refused.
 > - **Ground displacements.**
 >   - They go in the primary loads, as `SUPPORT DISPLACEMENT LOAD` with each case's factor. Rotations are in degrees
@@ -269,6 +275,48 @@ parse). The STAAD probe (end of this note) settles the conventions still marked 
 > - neither is the wall's answer.
 >
 > Round 2 runs the rack without the wall, and with it meshed 8 × 6, to tell the translation from the mesh.
+
+> [!info]- STAAD round 2 (2026-11-07)
+> **The probe ran to the end** with the settled joint `ENFORCED`. Per part, the largest joint-displacement difference
+> was at most 0.00002 in for every part but four (STAAD prints 5 decimals):
+> - BETA sign (1);
+> - vertical members, up and down at angles (2, 21);
+> - rigid end zones with loads inside them (5);
+> - cardinal point and joint offsets (6, 7);
+> - partial fixity and springs per degree (8, 9);
+> - uniform temperature (10, 11), the grounded and the axial link (13, 14);
+> - settlement with a rotation (15), a tip moment, modifiers with the weight modifier (16, 17);
+> - the hinge (19), and every combination (Linear Add, nested, SRSS, Abs Add, OPE from SUS).
+>
+> The four that differed:
+> - **Part 12 (inclined support) agrees too.** SAP reports a joint with local axes in those axes. Projected onto
+>   them, STAAD's displacements match to every digit, and the reaction along the support is −1.193 vs −1.188 kip.
+> - **Part 13's reaction** is reported differently: SAP leaves the grounded link's fixed DOF out of the joint
+>   reaction. Its displacements agree.
+> - **Channels (3, 4) twist in SAP and not in STAAD.** SAP 24 puts a channel's torsion axis at its shear center, so
+>   a shear along local 2 at the centroid twists it. Part 3's twist matches exactly: V2 0.0964 × e 1.861 in ×
+>   L / GJ = 0.004925 rad, SAP 0.004924. The joint's extra movement along local 2 is twist × e. STAAD's `PRIS`
+>   member is centroidal and does not twist (R 0). Tees and double angles are monosymmetric the same way.
+> - **Gradients (22 – 25):** SAP read `Temperature Gradient 2`, `Temperature Gradient 2-2` and `Temp Gradient 2-2`
+>   as `Temperature`, and dropped `Gradient 2` / `3`. SAP's name has to come from its own dialog.
+>
+> **The rack without its wall** agreed to 1.5 – 3 %. All of it is the W10X33: SAP rebuilt the hand-written section
+> from its dimensions (9.49 in², J 0.49), while STAAD's table section is 9.71, J 0.583. The DEAD weights differ by
+> exactly that (3.748 vs about 3.807 kip). The section rule above now writes SAP's values.
+>
+> The rack also has a free X-sway once the wall is gone (pinned column bases). STAAD added a weak spring; SAP's
+> nonlinear cases drifted a uniform 0.0033 in, with no force.
+>
+> **The meshed wall (8 × 6)** brings the plates together:
+>
+> | | 1 element | 8 × 6 |
+> |---|---|---|
+> | SAP thrust at each pin | 2.14 kip | 18.54 kip |
+> | STAAD thrust at each pin | 42.67 kip | 21.87 kip |
+>
+> The wall alone in plane stress converges to about 21 kip. Vertical reactions agree (37.54 / 37.55); the pipe
+> anchor away from the wall agrees to 0.1 % (17.25 / 17.27 kip-in). Displacements near the wall still differ 5 –
+> 10 %: plate formulation and the W10X33 together.
 >
 > **The probe stopped in STAAD's solver** (support displacement in a model with plates needs `ENFORCED`; now
 > written so). STAAD warned of the rack's unconnected joint 20 (now left out) and of the truss links' E of 1 (now

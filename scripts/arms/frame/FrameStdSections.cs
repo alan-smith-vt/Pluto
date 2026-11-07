@@ -6,7 +6,10 @@ using System.Linq;
 // FrameStdSections  --  a SAP frame section's analysis properties for the STAAD export (2026-11-05). SAP's own export
 // gives every section's computed properties (Area TorsConst I33 I22 I23 AS2 AS3); those are taken as they are. A section
 // made in the workbook has only its dimensions, so they are worked out here the way SAP does (checked against SAP 24.2's
-// own values for every shape of the probe, vault/format/frame-to-staad.md):
+// own values for every shape of the probe, vault/format/frame-to-staad.md). Which values SAP analyses (STAAD round 2,
+// 2026-11-07): a General section's and a catalog section's (FromFile=Yes) are the row's; any other shape SAP rebuilds
+// from its dimensions on import, whatever the row says (the rack fixture's hand-written W10X33, Area 9.71 with
+// FromFile=No, became 9.49), so the row's values count only when they agree with the dimensions (SAP's own export):
 //   Rectangular  A = t2 t3; I33 = t2 t3^3 / 12; J by the rectangle series; AS2 = AS3 = 5/6 A
 //   Circle       A = pi d^2 / 4; I = pi d^4 / 64; J = 2 I; AS = 0.9 A
 //   Pipe         A, I of the annulus; J = 2 I; AS2 = AS3 = A / 2
@@ -25,6 +28,8 @@ public sealed class FrameSectionProps
     public double Depth, Width;              // along local 2 (t3) and 3 (t2)
     public bool Computed;                    // false: SAP's own values
     public bool EstimatedJ;                  // J by rectangles where SAP adds a junction term
+    public bool Stale;                       // the row's values disagree with its dimensions: SAP's (the dimensions') are used
+    public bool Catalog;                     // SAP's own section database (FromFile=Yes)
 }
 
 public static class FrameStdSections
@@ -32,20 +37,38 @@ public static class FrameStdSections
 
     static double Num(FrameSection s, string k) { double v = s.Dim(k); return double.IsNaN(v) ? 0 : v; }
 
-    // SAP's computed values when the section row has them all, else from the dimensions; null when neither can be had
+    // the properties SAP analyses: a General or catalog section's from its row, any other from its dimensions (the row's
+    // own when they agree with them); null when neither can be had
     public static FrameSectionProps Of(FrameSection s, out string why)
     {
         why = null;
         var r = s.Rec(FrameSection.General);
         string shape = (s.Shape ?? "").Trim().ToLowerInvariant();
-        var p = new FrameSectionProps { Depth = Num(s, "t3"), Width = Num(s, "t2") };
-        if (r != null && r.Has("Area") && r.Has("I33") && r.Has("I22") && r.Has("TorsConst") && (Num(s, "Area") > 0 || shape == "general"))
+        bool catalog = r != null && r.Yes("FromFile");
+        bool row = r != null && r.Has("Area") && r.Has("I33") && r.Has("I22") && r.Has("TorsConst") && (Num(s, "Area") > 0 || shape == "general");
+        Func<FrameSectionProps> fromRow = () =>
         {
-            p.A = Num(s, "Area"); p.J = Num(s, "TorsConst"); p.I33 = Num(s, "I33"); p.I22 = Num(s, "I22"); p.I23 = Num(s, "I23");
-            p.AS2 = Num(s, "AS2"); p.AS3 = Num(s, "AS3");
-            if (!r.Has("AS2") && !r.Has("AS3")) { double as2, as3; Shear(shape, s, p.A, out as2, out as3); p.AS2 = as2; p.AS3 = as3; }
-            return p;
-        }
+            var q = new FrameSectionProps { Depth = Num(s, "t3"), Width = Num(s, "t2"), Catalog = catalog };
+            q.A = Num(s, "Area"); q.J = Num(s, "TorsConst"); q.I33 = Num(s, "I33"); q.I22 = Num(s, "I22"); q.I23 = Num(s, "I23");
+            q.AS2 = Num(s, "AS2"); q.AS3 = Num(s, "AS3");
+            if (!r.Has("AS2") && !r.Has("AS3")) { double as2, as3; Shear(shape, s, q.A, out as2, out as3); q.AS2 = as2; q.AS3 = as3; }
+            return q;
+        };
+        if (row && (shape == "general" || catalog)) return fromRow();
+        var p = Dims(s, shape, out why);
+        if (p == null) { if (row) { why = null; return fromRow(); } return null; }
+        if (!row) return p;
+        // SAP's own export: the row agrees with the dimensions (its J is SAP's, junction term and all)
+        Func<double, double, bool> near = (x, y) => Math.Abs(x - y) <= 1e-3 * Math.Max(Math.Abs(x), Math.Abs(y));
+        if (near(Num(s, "Area"), p.A) && near(Num(s, "I33"), p.I33) && near(Num(s, "I22"), p.I22)) return fromRow();
+        p.Stale = true;
+        return p;
+    }
+
+    static FrameSectionProps Dims(FrameSection s, string shape, out string why)
+    {
+        why = null;
+        var p = new FrameSectionProps { Depth = Num(s, "t3"), Width = Num(s, "t2") };
         p.Computed = true;
         double d = Num(s, "t3"), b = Num(s, "t2"), tf = Num(s, "tf"), tw = Num(s, "tw");
         switch (shape)
