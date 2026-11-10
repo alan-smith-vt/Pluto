@@ -23,14 +23,6 @@ using System.Text;
 public partial class DuctsToPluto
 {
 
-    // As a probe DuctOpening, to reuse ThroughPair / BranchJunction (round = "round", else A x B, A the larger).
-    static DuctOpening AsOpening(RvConn k)
-    {
-        var o = new DuctOpening(); o.C = k.P; o.N = k.D;
-        if (k.Shape == "Round") { o.Shape = "round"; o.Dia = k.Dia; }
-        else { o.Shape = "rect"; o.A = Math.Max(k.W, k.H); o.B = Math.Min(k.W, k.H); }
-        return o;
-    }
 
     static double HalfSizeFt(RvConn k)
     {
@@ -101,7 +93,7 @@ public partial class DuctsToPluto
             foreach (string t in Get(c, "ConnectedTo").Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)) k.To.Add(t);
             // a Curve connector (point on a part's side) connected to nothing: dropped, the part stays a plain
             // straight (test room: fab straights carry them at transitions; drawn as stubs to nothing, 2026-10-12)
-            if (IsTapPoint(k) && k.To.Count == 0) { droppedCurve++; continue; }
+            if (DuctGeom.IsTapPoint(k) && k.To.Count == 0) { droppedCurve++; continue; }
             e.Conns.Add(k); conns[k.Key] = k;
         }
         int noConn = 0;
@@ -264,13 +256,13 @@ public partial class DuctsToPluto
                 while (!nodeOf.ContainsKey(end.Key) && attach.TryGetValue(end, out aq) && visited.Add(end)) { chain.Add(end); end = aq; }
                 if (!nodeOf.TryGetValue(end.Key, out id))
                 {
-                    if (attach.ContainsKey(end)) { id = MakeNode(nodes, ref nextNode, end.P, off, scale); nodeOf[end.Key] = id; }
+                    if (attach.ContainsKey(end)) { id = DuctGeom.MakeNode(nodes, ref nextNode, end.P, off, scale); nodeOf[end.Key] = id; }
                     else id = node(end);   // not attached: the plain path below, no further recursion
                 }
                 foreach (RvConn c in chain) nodeOf[c.Key] = id;
                 return id;
             }
-            id = MakeNode(nodes, ref nextNode, k.P, off, scale); nodeOf[k.Key] = id;
+            id = DuctGeom.MakeNode(nodes, ref nextNode, k.P, off, scale); nodeOf[k.Key] = id;
             foreach (string t in k.To) { RvConn q; if (conns.TryGetValue(t, out q) && inScope.Contains(q.Owner) && !nodeOf.ContainsKey(t)) nodeOf[t] = id; }
             RvConn tq; if (touch.TryGetValue(k, out tq) && !nodeOf.ContainsKey(tq.Key)) nodeOf[tq.Key] = id;
             return id;
@@ -303,7 +295,7 @@ public partial class DuctsToPluto
                     RvConn o = e.Conns[ecc], i = e.Conns[1 - ecc];
                     double back = (o.P[0] - i.P[0]) * o.D[0] + (o.P[1] - i.P[1]) * o.D[1] + (o.P[2] - i.P[2]) * o.D[2];
                     double[] foot = { o.P[0] - back * o.D[0], o.P[1] - back * o.D[1], o.P[2] - back * o.D[2] };
-                    int fn = MakeNode(nodes, ref nextNode, foot, off, scale);
+                    int fn = DuctGeom.MakeNode(nodes, ref nextNode, foot, off, scale);
                     ids.Add(RvBeam(beams, labels, ref nb, fn, node(o), nodes, label));
                     e.Segs.Add(new[] { fn, node(o), -1 });
                     int sid = RvBeam(beams, labels, ref nb, node(i), fn, nodes, label + " | offset stub");
@@ -312,7 +304,7 @@ public partial class DuctsToPluto
                 }
                 else if (corner != null)
                 {
-                    int cn = MakeNode(nodes, ref nextNode, corner, off, scale);
+                    int cn = DuctGeom.MakeNode(nodes, ref nextNode, corner, off, scale);
                     ids.Add(RvBeam(beams, labels, ref nb, node(e.Conns[0]), cn, nodes, label));
                     ids.Add(RvBeam(beams, labels, ref nb, cn, node(e.Conns[1]), nodes, label));
                     e.Segs.Add(new[] { node(e.Conns[0]), cn, -1 });
@@ -329,8 +321,8 @@ public partial class DuctsToPluto
             {
                 // as the probe: the through pair as one line, each other connector along its own axis to where
                 // it meets that line (a star from the mean zig-zagged tees and laterals)
-                var ops = e.Conns.ConvertAll(AsOpening);
-                int[] thr = ThroughPair(ops);
+                var ops = e.Conns.ConvertAll(DuctGeom.AsOpening);
+                int[] thr = DuctGeom.ThroughPair(ops);
                 if (thr != null)
                 {
                     RvConn a = e.Conns[thr[0]], b = e.Conns[thr[1]];
@@ -342,7 +334,7 @@ public partial class DuctsToPluto
                         if (q != thr[0] && q != thr[1])
                         {
                             double[] f = BranchJunction(a.P, b.P, ops[q]);
-                            int jn = MakeNode(nodes, ref nextNode, f, off, scale);
+                            int jn = DuctGeom.MakeNode(nodes, ref nextNode, f, off, scale);
                             ids.Add(RvBeam(beams, labels, ref nb, jn, node(e.Conns[q]), nodes, label));
                             e.Segs.Add(new[] { jn, node(e.Conns[q]), q });
                             junc.Add(new KeyValuePair<double, int>(DuctMath.Dist2(a.P, f), jn));
@@ -354,7 +346,7 @@ public partial class DuctsToPluto
                 }
                 else
                 {
-                    int hub = MakeNode(nodes, ref nextNode, e.P, off, scale);
+                    int hub = DuctGeom.MakeNode(nodes, ref nextNode, e.P, off, scale);
                     for (int q = 0; q < e.Conns.Count; q++)
                     {
                         ids.Add(RvBeam(beams, labels, ref nb, hub, node(e.Conns[q]), nodes, label));
@@ -405,7 +397,7 @@ public partial class DuctsToPluto
                 foreach (RvConn c in new[] { k, best })
                 {
                     RvEl host = endPiece.Contains(c) ? touch[c].Owner : c.Owner;
-                    AddFlag(host, "NEAR_ACROSS_END_PIECES", string.Format(Inv, "{0:0.#} in gap to Revit {1}", bAlong * 12, (c == k ? best : k).Owner.Id));
+                    DuctRunGraph.AddFlag(host, "NEAR_ACROSS_END_PIECES", string.Format(Inv, "{0:0.#} in gap to Revit {1}", bAlong * 12, (c == k ? best : k).Owner.Id));
                 }
             int id = RvBeam(beams, labels, ref nb, node(k), node(best), nodes, string.Format(Inv, "near: {0} {1:0.#} in | Revit {2} -> {3}{4}",
                 bAlong >= 0 ? "gap" : "overlap", Math.Abs(bAlong) * 12, k.Owner.Id, best.Owner.Id, viaPiece ? " | across end pieces" : ""));
@@ -418,7 +410,7 @@ public partial class DuctsToPluto
             foreach (RvConn[] m in mains)
             {
                 if (m[0].Owner == k.Owner) continue;
-                double[] f = BranchJunction(m[0].P, m[1].P, AsOpening(k));
+                double[] f = BranchJunction(m[0].P, m[1].P, DuctGeom.AsOpening(k));
                 if (Math.Sqrt(DuctMath.Dist2(f, m[0].P)) * 12 < 1 || Math.Sqrt(DuctMath.Dist2(f, m[1].P)) * 12 < 1) continue;
                 double d = Math.Sqrt(DuctMath.Dist2(f, k.P));
                 if (d > HalfSizeFt(m[0]) + 0.25 || d >= bd) continue;
@@ -426,7 +418,7 @@ public partial class DuctsToPluto
             }
             if (bestF == null) continue;
             linked.Add(k); sidePairs.Add(new[] { k.Owner, bestM[0].Owner });
-            int jn = MakeNode(nodes, ref nextNode, bestF, off, scale); sideNodes.Add(new[] { node(k), jn });
+            int jn = DuctGeom.MakeNode(nodes, ref nextNode, bestF, off, scale); sideNodes.Add(new[] { node(k), jn });
             int id = RvBeam(beams, labels, ref nb, node(k), jn, nodes,
                 string.Format(Inv, "side branch: Revit {0} -> side of {1} | {2:0.#} in from its line", k.Owner.Id, bestM[0].Owner.Id, bd * 12));
             if (id > 0) gSide.Add((uint)id);
@@ -470,7 +462,7 @@ public partial class DuctsToPluto
                 // NAVIS_SIZE_DIFFERS = Navisworks stated vs Revit (documented, not a geometry problem).
                 string md = MeshDiff(e);
                 if (md != null) { e.Flags.Add("SIZE_DIFFERS"); e.Detail.Add(md); }
-                string sd = SizeDiff(e, rows[NavRow(e, pr2)]);
+                string sd = SizeDiff(e, rows[DuctGeom.NavRow(e, pr2)]);
                 if (sd != null) { e.Flags.Add("NAVIS_SIZE_DIFFERS"); e.Detail.Add(sd); }
             }
             bool fOpen = false, fTouch = false, fNear = false;
@@ -485,9 +477,9 @@ public partial class DuctsToPluto
             if (fTouch) e.Flags.Add("TOUCHING_NOT_CONNECTED");
             if (fNear) e.Flags.Add("NEAR_GAP");
         }
-        // runs, segments and size voting (DuctsRunGraph.cs): adds SIZE_OUTLIER, SIZE_CHANGE_WITHOUT_TRANSITION,
+        // runs, segments and size voting (duct/model/DuctRunGraph.cs): adds SIZE_OUTLIER, SIZE_CHANGE_WITHOUT_TRANSITION,
         // RUNNAME_DEVIATION, SYSTEM_CHANGE and sets each part's Kind / Run / Seg / Voted
-        List<RunSeg> runSegs = AnalyzeRuns(scope, rows, rowsOf, k => node(k), nodes, off, scale, nearPairs);
+        List<DuctRunGraph.RunSeg> runSegs = DuctRunGraph.AnalyzeRuns(scope, rows, rowsOf, k => node(k), nodes, off, scale, nearPairs);
         // Navisworks-only rows a Revit part runs through (a point every 0.25 ft along its frames inside the row's
         // bbox + 0.1 ft) are duplicates of Revit parts (bends, reducers, accessories whose centre missed the box):
         // listed in flags.csv as NAVIS_ONLY with "covered by Revit <id>", no frame. The rest are frames.
@@ -500,7 +492,7 @@ public partial class DuctsToPluto
             {
                 foreach (int[] g in e.Segs)
                 {
-                    double[] a = NodeFt(nodes[g[0]], off, scale), b = NodeFt(nodes[g[1]], off, scale);
+                    double[] a = DuctGeom.NodeFt(nodes[g[0]], off, scale), b = DuctGeom.NodeFt(nodes[g[1]], off, scale);
                     int n = Math.Max(1, (int)Math.Ceiling(Math.Sqrt(DuctMath.Dist2(a, b)) / 0.25));
                     for (int s2 = 0; s2 <= n && by == null; s2++)
                     {
@@ -519,7 +511,7 @@ public partial class DuctsToPluto
         foreach (int i in navOnly)
         {
             double[] p, q; NavAxis(rows[i], out p, out q);
-            int id = RvBeam(beams, labels, ref nb, MakeNode(nodes, ref nextNode, p, off, scale), MakeNode(nodes, ref nextNode, q, off, scale), nodes,
+            int id = RvBeam(beams, labels, ref nb, DuctGeom.MakeNode(nodes, ref nextNode, p, off, scale), DuctGeom.MakeNode(nodes, ref nextNode, q, off, scale), nodes,
                 "Navisworks #" + rows[i].NavisId + " | " + rows[i].Cat + " | " + rows[i].Name + " | " + rows[i].SizeText + " | room " + (rows[i].Room != "" ? rows[i].Room : "(none)") + " | NO REVIT MATCH | FLAGS NAVIS_ONLY");
             if (id > 0) { gNavOnly.Add((uint)id); navBeamRow[id] = i; }
         }
@@ -541,7 +533,7 @@ public partial class DuctsToPluto
         };
         foreach (RvEl e in scope)
         {
-            int nr = NavRow(e, rowsOf(e)); DuctRow r = nr >= 0 ? rows[nr] : null;
+            int nr = DuctGeom.NavRow(e, rowsOf(e)); DuctRow r = nr >= 0 ? rows[nr] : null;
             double t = r != null && !double.IsNaN(r.T) && r.T > 0 ? r.T : 0.06;
             e.Thk = r != null && !double.IsNaN(r.T) && r.T > 0 ? r.T : double.NaN;
             var connOf = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -551,7 +543,7 @@ public partial class DuctsToPluto
                 int q; if (!connOf.TryGetValue(beams[id].NodeA + "-" + beams[id].NodeB, out q)) q = -1;
                 // tap point on a straight's side (Curve connector, 2026-10-12): the stub from the centreline is a
                 // thin link (a box at the tap's size stood out of the duct as a plate); SAP: rigid stub
-                if ((q >= 0 && IsTapPoint(e.Conns[q])) || offsetStubs.Contains(id)) { beams[id].SectionIndex = 0; gTap.Add((uint)id); continue; }
+                if ((q >= 0 && DuctGeom.IsTapPoint(e.Conns[q])) || offsetStubs.Contains(id)) { beams[id].SectionIndex = 0; gTap.Add((uint)id); continue; }
                 string shape, ssrc; double w, h, d; RvConn src;
                 SegSize(e, q, r, out shape, out w, out h, out d, out ssrc, out src);
                 // orientation from the connector AT this beam's end (a bend's width direction turns with it; a tee
@@ -576,29 +568,30 @@ public partial class DuctsToPluto
         foreach (KeyValuePair<int, int> kv in navBeamRow)
         {
             DuctRow r = rows[kv.Value]; string shape; double w, h, d;
-            if (NavSize(r, out shape, out w, out h, out d))
+            if (DuctGeom.NavSize(r, out shape, out w, out h, out d))
                 beams[kv.Key].SectionIndex = sec(shape, w, h, d, !double.IsNaN(r.T) && r.T > 0 ? r.T : 0.06);
         }
 
-        // systems (DuctsSystems.cs): flood fill over connections, touching ends, near / side links and the drawn
+        // systems (duct/model/DuctSystems.cs): flood fill over connections, touching ends, near / side links and the drawn
         // boxes (a centreline inside another part's box + 6 in: overlaps, gaps, branches into a side); adds
         // JOINED_BY_PROXIMITY, sets e.Sys / e.SysName
-        FreeEnds.Clear();
-        foreach (RvConn k in open) if (!touch.ContainsKey(k) && !nearSet.Contains(k) && !linked.Contains(k) && !attach.ContainsKey(k)) FreeEnds.Add(k);
-        List<DuctSystem> systems = AnalyzeSystems(scope, conns, inScope, touch, nearPairs, sidePairs, beams, beamDim, nodes, off, scale, rows, rowsOf);
+        var sysAn = new DuctSystems(Cfg);   // DuctSystems.cs: end contacts and blocked joins out
+        var freeEnds = new HashSet<RvConn>();
+        foreach (RvConn k in open) if (!touch.ContainsKey(k) && !nearSet.Contains(k) && !linked.Contains(k) && !attach.ContainsKey(k)) freeEnds.Add(k);
+        List<DuctSystems.DuctSystem> systems = sysAn.AnalyzeSystems(scope, conns, inScope, touch, nearPairs, sidePairs, beams, beamDim, nodes, off, scale, rows, rowsOf, freeEnds);
         // clean centreline model (DuctsClean.cs): <out>_clean.bin + <out>.frames.csv (the SAP input)
-        foreach (Tuple<RvConn, double[]> c in EndContacts) sideNodes.Add(new[] { node(c.Item1), MakeNode(nodes, ref nextNode, c.Item2, off, scale) });   // end contacts: rigid links
-        HangerScope = inRoom; HangerRowsForView = rows; NavRowFlags.Clear();   // reset per run: CheckHangers only runs when there is steel   // DuctsCleanHangers.cs: the room's rows for the hanger check
-        string cleanNote = BuildClean(outBase, modelId, lengthUnit, scope, beams, beamDim, nodes, off, scale, nearPairs, sideNodes, navBeamRow, rows, k => node(k), attach);
-        WriteRunsCsv(outBase + ".runs.csv", runSegs);
+        foreach (Tuple<RvConn, double[]> c in sysAn.EndContacts) sideNodes.Add(new[] { node(c.Item1), DuctGeom.MakeNode(nodes, ref nextNode, c.Item2, off, scale) });   // end contacts: rigid links
+        SupportRun sr; string orientNew, bridgeNew;   // supports / orientation results for the NEW block and flags.csv
+        string cleanNote = BuildClean(outBase, modelId, lengthUnit, scope, beams, beamDim, nodes, off, scale, nearPairs, sideNodes, navBeamRow, rows, k => node(k), attach, inRoom, out sr, out orientNew, out bridgeNew);
+        DuctRunGraph.WriteRunsCsv(outBase + ".runs.csv", runSegs);
         foreach (RvEl e in scope)
         {
             // room of the Navisworks row(s) (2026-10-17, user: to find the item in Navisworks; NavisId search is unreliable)
             string[] rms = rowsOf(e).Select(i => rows[i].Room).Where(v => v != "").Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
             string extra = " | room " + (rms.Length > 0 ? string.Join(", ", rms) : "(none)") + " | " + (e.Kind != "" ? e.Kind : "?")
-                + (e.Sys >= 0 ? string.Format(Inv, " | system {0} (C{1}), own name {2}", e.SysName, e.Sys, NameSource(e, rows, rowsOf)) : "")
+                + (e.Sys >= 0 ? string.Format(Inv, " | system {0} (C{1}), own name {2}", e.SysName, e.Sys, DuctRunGraph.NameSource(e, rows, rowsOf)) : "")
                 + (e.Run >= 0 ? string.Format(Inv, " | line R{0} seg S{1}", e.Run, e.Seg) : "")
-                + (e.Voted != null ? " voted " + VotedText(e.Voted) : "");
+                + (e.Voted != null ? " voted " + DuctRunGraph.VotedText(e.Voted) : "");
             foreach (int id in e.Beams) labels[id] += extra;
             if (e.Flags.Count > 0) foreach (int id in e.Beams) labels[id] += " | FLAGS " + string.Join(" ", e.Flags.ToArray());
         }
@@ -610,7 +603,7 @@ public partial class DuctsToPluto
                 foreach (int id in e.Beams) l.Add((uint)id);
             }
         if (gNavOnly.Count > 0) flagGroups["NAVIS_ONLY"] = gNavOnly;
-        WriteFlagsCsv(outBase + ".flags.csv", scope, rows, rowsOf, navOnly, navCovered);
+        WriteFlagsCsv(outBase + ".flags.csv", scope, rows, rowsOf, navOnly, navCovered, sr != null ? sr.Hangers : null);
         string framesNote = WriteFramesCsv(outBase + ".parts_frames.csv", scope, rows, rowsOf, navOnly, nodes, off, scale);
 
         var res = new Result();
@@ -647,15 +640,15 @@ public partial class DuctsToPluto
             if (Cfg.PrimarySystems.Count > 0)
             {
                 int gi = 0;
-                foreach (IGrouping<string, DuctSystem> byName in systems.GroupBy(g => g.Name).OrderBy(g => g.Key.StartsWith("other: ") ? 2 : g.Key.EndsWith(" fragments") ? 1 : 0).ThenBy(g => g.Key, StringComparer.Ordinal))
+                foreach (IGrouping<string, DuctSystems.DuctSystem> byName in systems.GroupBy(g => g.Name).OrderBy(g => g.Key.StartsWith("other: ") ? 2 : g.Key.EndsWith(" fragments") ? 1 : 0).ThenBy(g => g.Key, StringComparer.Ordinal))
                 {
-                    var ids = new List<uint>(); foreach (DuctSystem g in byName) foreach (RvEl e in g.Els) foreach (int id in e.Beams) ids.Add((uint)id);
+                    var ids = new List<uint>(); foreach (DuctSystems.DuctSystem g in byName) foreach (RvEl e in g.Els) foreach (int id in e.Beams) ids.Add((uint)id);
                     if (ids.Count == 0) continue;
                     sc.AddGroup(string.Format(Inv, "System {0} ({1} parts)", byName.Key, byName.Sum(g => g.Els.Count)), rpal[gi++ % rpal.Length], "beams", ids, new[] { "duct", "revit", "system" }, null);
                 }
             }
             else
-            foreach (DuctSystem g in systems)
+            foreach (DuctSystems.DuctSystem g in systems)
             {
                 var ids = new List<uint>(); foreach (RvEl e in g.Els) foreach (int id in e.Beams) ids.Add((uint)id);
                 if (ids.Count == 0) continue;
@@ -667,7 +660,7 @@ public partial class DuctsToPluto
             int fi = 0;
             foreach (KeyValuePair<string, List<uint>> kv in flagGroups)
                 sc.AddGroup("Flag: " + kv.Key, fpal[fi++ % fpal.Length], "beams", kv.Value, new[] { "duct", "revit", "flag" }, "FLAG_" + kv.Key);
-            ApplySystemView(sc);
+            new DuctSystems(Cfg).ApplySystemView(sc);
             File.WriteAllText(outBase + ".features.json", sc.ToJson(), new UTF8Encoding(false));
             res.BinPath = outBase + ".bin"; res.SidecarPath = outBase + ".features.json"; res.GeometryHash = w.GeometryHash;
         }
@@ -704,8 +697,9 @@ public partial class DuctsToPluto
             medRes, used, means ? " by GUID group" : " 1:1", Math.Atan2(T[1], T[0]) * 180 / Math.PI, spread,
             inRoom.Count, navFab, scope.Count, rvFab, navMissing.Count, navFabMissing, rvOnly, rvOnlyFab, catDiff.Count,
             nConnected, nTouch, nNear, nSide, nOutside, nOpen, located.Count, usedRow.Count)
-            + (SupportNewLine != "" ? "\n" + SupportNewLine : "")
-            + (OrientNewLine != "" ? "\n" + OrientNewLine : "");
+            + (sr != null && sr.NewLine != "" ? "\n" + sr.NewLine : "")
+            + (orientNew != "" ? "\n" + orientNew : "")
+            + (bridgeNew != "" ? "\n" + bridgeNew : "");
         if (!string.IsNullOrEmpty(part) && part.Contains(","))
         {
             // -Part <id>,<id> (2026-10-17): the gap between two parts' systems, as the NEW block
@@ -732,7 +726,7 @@ public partial class DuctsToPluto
         {
             if (kv.Key == "NAVIS_ONLY") continue;   // rows, not Revit elements: counted below
             int n = 0; foreach (RvEl e in scope) if (e.Flags.Contains(kv.Key)) n++;
-            fc.Add(kv.Key == "UNSUPPORTED_SPAN" ? string.Format(Inv, "UNSUPPORTED_SPAN {0} parts ({1} span{2})", n, SpanTotal, SpanTotal == 1 ? "" : "s") : kv.Key + " " + n);   // the span number stays spans (user decision)
+            fc.Add(kv.Key == "UNSUPPORTED_SPAN" ? string.Format(Inv, "UNSUPPORTED_SPAN {0} parts ({1} span{2})", n, sr != null ? sr.Spans.Count : 0, sr != null && sr.Spans.Count == 1 ? "" : "s") : kv.Key + " " + n);   // the span number stays spans (user decision)
         }
         fc.Add(string.Format(Inv, "NAVIS_ONLY {0} (+ {1} covered by a Revit part, no frame)", navOnly.Count, navCovered.Count));
         s.AppendLine("flags (parts; <out>.flags.csv): " + string.Join(", ", fc.ToArray()));
@@ -743,9 +737,9 @@ public partial class DuctsToPluto
             var kinds = scope.GroupBy(e => e.Kind == "" ? "none" : e.Kind).OrderByDescending(g => g.Count()).Select(g => g.Key + " " + g.Count());
             s.AppendLine(string.Format(Inv, "runs (<out>.runs.csv): {0} runs, {1} segments + {2} transitions; parts: {3}", nRuns, nSeg, nTr, string.Join(", ", kinds.ToArray())));
         }
-        string[] rnCheck = RunNameCheck(scope, rows, rowsOf);
+        string[] rnCheck = DuctRunGraph.RunNameCheck(scope, rows, rowsOf);
         s.AppendLine(rnCheck[0]);
-        string[] sysNote = SystemsNote(systems);
+        string[] sysNote = sysAn.SystemsNote(systems);
         s.AppendLine(sysNote[0]);
         s.AppendLine(cleanNote);
         s.AppendLine(string.Format(Inv, "boxes turned to the Revit connector's width direction: {0} beams{1}", nOriented,
@@ -854,7 +848,7 @@ public partial class DuctsToPluto
         var bad = new List<string>();
         foreach (RvConn k in e.Conns)
         {
-            DuctOpening o = k.Mesh; if (o == null || IsTapPoint(k)) continue;   // a tap point has no mesh end of its own
+            DuctOpening o = k.Mesh; if (o == null || DuctGeom.IsTapPoint(k)) continue;   // a tap point has no mesh end of its own
             // confirmed when ANY ring centred at that end matches (flange edge, duct rim further back, ...)
             bool ok = false;
             var rings = new List<string>();
@@ -903,29 +897,29 @@ public partial class DuctsToPluto
 
     // <out>.flags.csv: one row per flagged part, Revit elements in scope, then Navisworks-only rows. Regenerated
     // every run; flags clear themselves when the upstream models are fixed.
-    static void WriteFlagsCsv(string path, List<RvEl> scope, List<DuctRow> rows, Func<RvEl, List<int>> rowsOf, List<int> navOnly, Dictionary<int, string> navCovered)
+    static void WriteFlagsCsv(string path, List<RvEl> scope, List<DuctRow> rows, Func<RvEl, List<int>> rowsOf, List<int> navOnly, Dictionary<int, string> navCovered, HangerRun hangers)
     {
         var s = new StringBuilder();
         s.AppendLine("Source,RevitElementId,NavisId,RevitIfcGUID,NavisIfcGUID,RevitCategory,RevitFab,NavisCategory,Match,RevitSize,NavisSize,Flags,Detail");
         foreach (RvEl e in scope)
         {
             if (e.Flags.Count == 0) continue;
-            List<int> pr = rowsOf(e); int nr = NavRow(e, pr); DuctRow r = nr >= 0 ? rows[nr] : null;
+            List<int> pr = rowsOf(e); int nr = DuctGeom.NavRow(e, pr); DuctRow r = nr >= 0 ? rows[nr] : null;
             string how = e.Match != "" ? "guid" : e.LocRow >= 0 ? "position" : "none";
             s.AppendLine(string.Join(",", new[] { "Revit", e.Id, r != null ? r.NavisId : "", e.Guid != "" ? e.Guid : e.GuidCalc, r != null ? r.Guid : "",
                 e.Cat, e.Fab ? "1" : "0", r != null ? r.Cat : "", how, e.Size, r != null ? r.SizeText : "",
-                string.Join(" ", e.Flags.ToArray()), string.Join("; ", e.Detail.ToArray()) }.Select(CsvCell).ToArray()));
+                string.Join(" ", e.Flags.ToArray()), string.Join("; ", e.Detail.ToArray()) }.Select(DuctGeom.CsvCell).ToArray()));
         }
         foreach (int i in navOnly)
         {
             DuctRow r = rows[i];
-            s.AppendLine(string.Join(",", new[] { "Navisworks", "", r.NavisId, "", r.Guid, "", "", r.Cat, "none", "", r.SizeText, NavRowFlagText(i), r.Name + "; SAP frame" }.Select(CsvCell).ToArray()));
+            s.AppendLine(string.Join(",", new[] { "Navisworks", "", r.NavisId, "", r.Guid, "", "", r.Cat, "none", "", r.SizeText, HangerCheck.NavRowFlagText(hangers, i), r.Name + "; SAP frame" }.Select(DuctGeom.CsvCell).ToArray()));
         }
         foreach (KeyValuePair<int, string> kv in navCovered)
         {
             DuctRow r = rows[kv.Key];
-            s.AppendLine(string.Join(",", new[] { "Navisworks", kv.Value, r.NavisId, "", r.Guid, "", "", r.Cat, "covered", "", r.SizeText, NavRowFlagText(kv.Key),
-                r.Name + "; covered by Revit " + kv.Value + ", no frame" }.Select(CsvCell).ToArray()));
+            s.AppendLine(string.Join(",", new[] { "Navisworks", kv.Value, r.NavisId, "", r.Guid, "", "", r.Cat, "covered", "", r.SizeText, HangerCheck.NavRowFlagText(hangers, kv.Key),
+                r.Name + "; covered by Revit " + kv.Value + ", no frame" }.Select(DuctGeom.CsvCell).ToArray()));
         }
         File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));
     }
@@ -948,20 +942,20 @@ public partial class DuctsToPluto
             (ji, jj, p, q, shape, w, h, d, t, tsrc, ssrc, src, rid, nid, flags) =>
             {
                 nf++;
-                s.AppendLine(string.Join(",", new[] { "F" + nf, ji, jj, R3(p[0]), R3(p[1]), R3(p[2]), R3(q[0]), R3(q[1]), R3(q[2]), shape,
-                    R3(w), R3(h), R3(d), R3(t), tsrc, ssrc, src, rid, nid, flags }.Select(CsvCell).ToArray()));
+                s.AppendLine(string.Join(",", new[] { "F" + nf, ji, jj, DuctGeom.R3(p[0]), DuctGeom.R3(p[1]), DuctGeom.R3(p[2]), DuctGeom.R3(q[0]), DuctGeom.R3(q[1]), DuctGeom.R3(q[2]), shape,
+                    DuctGeom.R3(w), DuctGeom.R3(h), DuctGeom.R3(d), DuctGeom.R3(t), tsrc, ssrc, src, rid, nid, flags }.Select(DuctGeom.CsvCell).ToArray()));
             };
         foreach (RvEl e in scope)
         {
             if (e.Segs.Count == 0) { noFrame++; continue; }
-            List<int> pr = rowsOf(e); int nr = NavRow(e, pr); DuctRow r = nr >= 0 ? rows[nr] : null;
+            List<int> pr = rowsOf(e); int nr = DuctGeom.NavRow(e, pr); DuctRow r = nr >= 0 ? rows[nr] : null;
             double t = r != null && !double.IsNaN(r.T) && r.T > 0 ? r.T : 0.06;
             string flags = string.Join(" ", e.Flags.ToArray());
             foreach (int[] g in e.Segs)
             {
                 if (g[0] == g[1]) continue;
                 string shape, ssrc; double w, h, d;
-                if ((g[2] >= 0 && IsTapPoint(e.Conns[g[2]])) || g[2] == -3) { shape = "rigid"; w = h = d = double.NaN; ssrc = "tap-stub"; nStub++; }
+                if ((g[2] >= 0 && DuctGeom.IsTapPoint(e.Conns[g[2]])) || g[2] == -3) { shape = "rigid"; w = h = d = double.NaN; ssrc = "tap-stub"; nStub++; }
                 else SegSize(e, g[2], r, out shape, out w, out h, out d, out ssrc);
                 if (ssrc == "none") noSize++;
                 line("N" + g[0], "N" + g[1], at(g[0]), at(g[1]), shape, w, h, d, t, t == 0.06 ? "default" : "navisworks", ssrc, e.Only && e.LocRow < 0 ? "revit-only" : "revit",
@@ -973,7 +967,7 @@ public partial class DuctsToPluto
             DuctRow r = rows[i]; double[] p, q;
             NavAxis(r, out p, out q);
             string shape; double w, h, d;
-            string ssrc = NavSize(r, out shape, out w, out h, out d) ? "navisworks" : "none";
+            string ssrc = DuctGeom.NavSize(r, out shape, out w, out h, out d) ? "navisworks" : "none";
             if (ssrc == "none") noSize++;
             double t = !double.IsNaN(r.T) && r.T > 0 ? r.T : 0.06;
             nav++;
@@ -1026,13 +1020,6 @@ public partial class DuctsToPluto
             got, total, MeshMatchIn, want.Count, noTri);
     }
 
-    // The Navisworks row that stands for element e: the one its mesh connectors matched (an IfcGUID can be shared
-    // by several rows of a fabrication assembly, of other sizes), else the first; -1 = none
-    static int NavRow(RvEl e, List<int> pr)
-    {
-        foreach (RvConn k in e.Conns) if (k.MeshRow >= 0 && pr.Contains(k.MeshRow)) return k.MeshRow;
-        return pr.Count > 0 ? pr[0] : -1;
-    }
 
     static string MeshSize(DuctOpening o)
     {
@@ -1069,7 +1056,7 @@ public partial class DuctsToPluto
         {
             shape = k.Shape == "Round" ? "round" : "rect"; w = k.W; h = k.H; d = k.Dia; ssrc = differ ? "revit-transition" : "revit";
             used = k;
-            // a run segment's voted size (DuctsRunGraph) for main pieces, kept in the connector's W / H order
+            // a run segment's voted size (DuctRunGraph) for main pieces, kept in the connector's W / H order
             if (q < 0 && e.Voted != null && e.Kind != "transition" && (e.Voted[0] == 1) == (shape == "round"))
             {
                 if (shape == "round") d = e.Voted[1];
@@ -1079,7 +1066,7 @@ public partial class DuctsToPluto
             }
             return;
         }
-        if (r != null && NavSize(r, out shape, out w, out h, out d)) { ssrc = "navisworks"; return; }
+        if (r != null && DuctGeom.NavSize(r, out shape, out w, out h, out d)) { ssrc = "navisworks"; return; }
         shape = "rect"; w = h = d = double.NaN; ssrc = "none";
     }
 
@@ -1119,7 +1106,7 @@ public partial class DuctsToPluto
             else if (nearSet.Contains(k)) state = "near";
             else if (linked.Contains(k)) state = "side";
             else state = "open";
-            cs.Add(string.Format(Inv, "{0} {1} {2} {3}", id, k.Type, SizeText(k), state));
+            cs.Add(string.Format(Inv, "{0} {1} {2} {3}", id, k.Type, DuctRunGraph.SizeText(k), state));
             if (inside.Count > 0) continue;
             var cand = new List<KeyValuePair<double, string>>();
             foreach (RvEl e in scope)
@@ -1151,7 +1138,7 @@ public partial class DuctsToPluto
         if (lat <= 1) return -1;
         // same size at both ends = an S-offset: drawn as its diagonal (the chord), not outlet axis + stub
         // (2026-10-12, test room: an S-bend got a sideways bar); taps / eccentric reducers change size
-        if (SameSize(a, b)) return -1;
+        if (DuctRunGraph.SameSize(a, b)) return -1;
         return ConnPerim(a) > 0 && ConnPerim(a) < ConnPerim(b) ? 0 : 1;
     }
 
@@ -1194,12 +1181,12 @@ public partial class DuctsToPluto
     // (connectors with no Revit connection in scope) between the two, with along / off-axis / angle as in the -Part
     // report; the Revit parts and Navisworks rows lying between those two ends (a point every 0.25 ft inside the
     // part's bbox + 0.1 ft), each with run name, room and whether its IfcGUID is shared by other rows or matched.
-    static string GapReport(RvEl pa, RvEl pb, List<DuctSystem> systems, List<RvEl> scope, Dictionary<string, RvConn> conns, HashSet<RvEl> inScope,
+    static string GapReport(RvEl pa, RvEl pb, List<DuctSystems.DuctSystem> systems, List<RvEl> scope, Dictionary<string, RvConn> conns, HashSet<RvEl> inScope,
         Dictionary<RvConn, RvConn> touch, HashSet<RvConn> nearSet, HashSet<RvConn> linked, Dictionary<RvConn, RvConn> attach,
         List<DuctRow> rows, List<int> inRoom, Dictionary<string, List<int>> navByGuid, HashSet<string> matchedGuids)
     {
-        DuctSystem sa = systems.Find(s => s.Id == pa.Sys), sb = systems.Find(s => s.Id == pb.Sys);
-        Func<RvEl, DuctSystem, string> sysText = (e, s) => s == null ? e.Id + " in no system" : string.Format(Inv, "{0} in '{1}' (C{2}, {3} parts)", e.Id, s.Name, s.Id, s.Els.Count);
+        DuctSystems.DuctSystem sa = systems.Find(s => s.Id == pa.Sys), sb = systems.Find(s => s.Id == pb.Sys);
+        Func<RvEl, DuctSystems.DuctSystem, string> sysText = (e, s) => s == null ? e.Id + " in no system" : string.Format(Inv, "{0} in '{1}' (C{2}, {3} parts)", e.Id, s.Name, s.Id, s.Els.Count);
         string l1 = "NEW gap: " + sysText(pa, sa) + " | " + sysText(pb, sb);
         if (sa != null && sa == sb) return l1 + "\nNEW ends: same system, already joined\nNEW between: -";
         Func<RvConn, bool> free = k => !k.To.Exists(t => { RvConn q; return conns.TryGetValue(t, out q) && inScope.Contains(q.Owner); });
@@ -1286,7 +1273,6 @@ public partial class DuctsToPluto
         return l1 + "\n" + l2 + "\nNEW status: " + l3;
     }
 
-    static bool IsTapPoint(RvConn k) { return string.Equals(k.Type, "Curve", StringComparison.OrdinalIgnoreCase); }
 
     static double ConnPerim(RvConn k)
     {
@@ -1304,23 +1290,13 @@ public partial class DuctsToPluto
         p[ax] = r.Min[ax]; q[ax] = r.Max[ax];
     }
 
-    // Navisworks stated size: Width / Height / Diameter, else read from the Name
-    static bool NavSize(DuctRow r, out string shape, out double w, out double h, out double d)
-    {
-        w = !double.IsNaN(r.W) ? r.W : r.NameW; h = !double.IsNaN(r.H) ? r.H : r.NameH; d = !double.IsNaN(r.D) ? r.D : r.NameD;
-        if (!double.IsNaN(w) && !double.IsNaN(h)) { shape = "rect"; d = double.NaN; return true; }
-        if (!double.IsNaN(d)) { shape = "round"; w = h = double.NaN; return true; }
-        shape = "rect"; return false;
-    }
 
-    static double[] NodeFt(Node n, double[] off, double scale) { return new[] { n.xyz.X / scale + off[0], n.xyz.Y / scale + off[1], n.xyz.Z / scale + off[2] }; }
 
-    static string R3(double v) { return double.IsNaN(v) ? "" : v.ToString("0.###", Inv); }
 
     static int RvBeam(Dictionary<int, RawViewerWriter.BeamMember> beams, Dictionary<int, string> labels, ref int nb, int a, int b, Dictionary<int, Node> nodes, string label)
     {
         if (a == b) return 0;
-        beams[nb] = Beam(nb, a, b, 0, nodes); labels[nb] = label; return nb++;
+        beams[nb] = DuctGeom.Beam(nb, a, b, 0, nodes); labels[nb] = label; return nb++;
     }
 
 

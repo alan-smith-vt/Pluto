@@ -39,25 +39,25 @@ function Get-DuctSettings {
         }
         $Notes.Add(("cut points: {0} from {1}" -f $ds.CutPoints.Count, $Cuts))
     }
-    # add-on (DuctsManualDrop.cs): hand-picked drop lists from the viewer's Cut picker; DuctDrop names one file or a
+    # add-on (CleanModel.ApplyManualDrop): hand-picked drop lists from the viewer's Cut picker; DuctDrop names one file or a
     # list, only those named (no default); -Drop overrides, -Drop none = off
     $dropFiles = @($(if ($Drop) { $Drop -split ',' } else { $Data.DuctDrop }) | ForEach-Object { "$_".Trim() } | Where-Object { $_ -and $_ -ne "none" })
     foreach ($f in $dropFiles) {
         if (-not (Test-Path $f)) { throw "drop list not found: $f (DuctDrop in duct-config.psd1 or -Drop; -Drop none = off)" }
         $Notes.Add(("manual drop: {0} parts from {1}" -f [DuctsToPluto]::ReadManualDrop($ds, (Resolve-Path $f).Path), $f))
     }
-    # utility rack steel in the clean model (DuctsSteel.cs): DuctSteel (SteelToPluto CSV, meters, this frame); -Steel
+    # utility rack steel in the clean model (SteelViewWriter.cs): DuctSteel (SteelToPluto CSV, meters, this frame); -Steel
     # overrides, -Steel none = off. DuctSteelSnapIn / DuctSteelNearIn: connection snap and OPEN_NEAR distances (in)
     if (-not $Steel) { $Steel = $Data.DuctSteel }
     if ($Data.DuctSteelSnapIn) { $ds.SteelSettings.SnapIn = [double]$Data.DuctSteelSnapIn }
     if ($Data.DuctSteelNearIn) { $ds.SteelSettings.NearIn = [double]$Data.DuctSteelNearIn }
-    # duct-to-steel supports (DuctsCleanSupports.cs): DuctSupportGapIn = largest duct bottom -> steel top gap that is a
+    # duct-to-steel supports (duct\model\SupportPlacer.cs): DuctSupportGapIn = largest duct bottom -> steel top gap that is a
     # support (in), DuctSpanFt = unsupported span limit (ft); the gap histogram in match.txt helps choose the gap
     if ($Data.DuctSupportGapIn) { $ds.Supports.GapMaxIn = [double]$Data.DuctSupportGapIn }
     if ($Data.DuctSpanFt) { $ds.Supports.SpanFt = [double]$Data.DuctSpanFt }
-    # Navisworks hanger check (DuctsCleanHangers.cs): a hanger and a support match within DuctHangerMatchIn (in)
+    # Navisworks hanger check (duct\model\HangerCheck.cs): a hanger and a support match within DuctHangerMatchIn (in)
     if ($Data.DuctHangerMatchIn) { $ds.HangerMatchIn = [double]$Data.DuctHangerMatchIn }
-    # duct orientation (DuctsCleanOrient.cs): horizontal ducts with the larger side vertical are flagged and, unless
+    # duct orientation (duct\model\Orienter.cs): horizontal ducts with the larger side vertical are flagged and, unless
     # DuctRotateLargeVertical = $false, rotated 90 deg about the centreline with their size run
     $ds.RotateLargeVertical = -not ($Data.ContainsKey('DuctRotateLargeVertical') -and -not $Data.DuctRotateLargeVertical)
     if ($Steel -and $Steel -ne "none") {

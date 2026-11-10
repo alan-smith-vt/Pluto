@@ -1,10 +1,10 @@
 config: <ROOT>\duct-config.psd1
-services: all (no filter); rows dropped by service 0; rows without RunName 0 (drawn, own group); beams by service: EXH 2, SYSA 41, SYSB 36, SYSC 40
-nodes=141 beams=119: ducts 24 (fitted-end fallback 0), fitting centreline 11, fitting blocks 0, accessory blocks 0
-fabrication: beams 62 (straights from bbox + size 62), blocks 5 (fit rejected 0); hanger blocks 3
+services: all (no filter); rows dropped by service 0; rows without RunName 0 (drawn, own group); beams by service: EXH 2, SYSA 46, SYSB 36, SYSC 40
+nodes=151 beams=124: ducts 24 (fitted-end fallback 0), fitting centreline 11, fitting blocks 0, accessory blocks 0
+fabrication: beams 67 (straights from bbox + size 67), blocks 5 (fit rejected 0); hanger blocks 3
 fabrication straights measured from the mesh body (walls, flanges excluded): agrees with stated size 0, differs (drawn from the mesh, own group) 0; placed from the mesh 0
 fabrication straights not measurable and not matching their stated size (still drawn; <out>.fab-mismatch.txt) 0; fittings bridged 0 (fabrication 7)
-symbol-fan segments dropped 0, loose ends 28, unsized 0, rows skipped (no geometry) 0
+symbol-fan segments dropped 0, loose ends 38, unsized 0, rows skipped (no geometry) 0
 <ROOT>\out\navis.bin
 <ROOT>\out\navis.features.json
 [done] <T>s. In the viewer: Add overlay... -> <ROOT>\out\navis.bin

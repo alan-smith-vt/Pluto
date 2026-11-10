@@ -31,25 +31,4 @@ public partial class DuctsToPluto
         return n;
     }
 
-    static string ApplyManualDrop(List<CEdge> clean, Dictionary<int, double[]> P)
-    {
-        if (Cfg.ManualDrop.Count == 0) return "";
-        Func<CEdge, List<string>> partsOf = e => e.Src.Count > 0 ? e.Src.Select(x => x.Id).ToList()
-            : e.NavisId != "" ? new List<string> { "N:" + e.NavisId } : new List<string>();
-        var hit = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        int dropped = 0, atCut = 0; double ft = 0;
-        foreach (CEdge e in clean.ToList())
-        {
-            List<string> ps = partsOf(e);
-            if (ps.Count == 0 || !ps.All(Cfg.ManualDrop.Contains)) continue;
-            foreach (string p in ps) hit.Add(p);
-            if (e.Flags.Contains("CUT_END")) { atCut++; continue; }
-            if (!e.Rigid) ft += DuctMath.Len(P[e.A], P[e.B]);
-            clean.Remove(e); dropped++;
-        }
-        var unused = Cfg.ManualDrop.Where(x => !hit.Contains(x)).ToList();
-        return string.Format(Inv, "NEW manual drop (DuctDrop): {0} listed, {1} members ({2:0.#} ft) dropped, {3} kept because they end at a cut{4}",
-            Cfg.ManualDrop.Count, dropped, ft, atCut,
-            unused.Count > 0 ? string.Format(Inv, "; {0} not in the clean model: {1}", unused.Count, string.Join(" ", unused.Take(10).ToArray()) + (unused.Count > 10 ? " ..." : "")) : "");
-    }
 }

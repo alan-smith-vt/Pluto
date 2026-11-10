@@ -1,8 +1,9 @@
 using System;
+using System.Globalization;
 using System.Collections.Generic;
 using System.Linq;
 
-// Duct orientation in the clean duct model (2026-10-30, task approved on the board: flag + rotate about the
+// Duct orientation in the clean duct model (Orienter; split stage 4: out of the DuctsToPluto partial; 2026-10-30, task approved on the board: flag + rotate about the
 // centreline + carry along the size run). BuildClean runs it before the supports, so the support gap uses the
 // rotated depth.
 //   LARGE_SIDE_VERTICAL: a horizontal rect frame (within OrientHorizDeg) whose vertical extent beats its horizontal
@@ -14,11 +15,13 @@ using System.Linq;
 //   A run that also holds a horizontal frame with its larger side already horizontal is not rotated:
 //     ROTATION_CONFLICT on all its frames.
 // DuctRotateLargeVertical = $false in duct-config.psd1: flag only.
-public partial class DuctsToPluto
+public static class Orienter
 {
+    static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
     const double OrientHorizDeg = 10, OrientTolIn = 1;
 
-    static string ApplyOrientation(List<CEdge> clean, Dictionary<int, double[]> P)
+    // rotate = DuctRotateLargeVertical; newLine = the match.txt NEW line ("" = nothing flagged)
+    public static string Apply(List<CEdge> clean, Dictionary<int, double[]> P, bool rotate, out string newLine)
     {
         double sinH = Math.Sin(OrientHorizDeg * Math.PI / 180);
         // state per frame: +1 larger side vertical, -1 larger side horizontal, 0 neither / not horizontal / unknown
@@ -34,9 +37,9 @@ public partial class DuctsToPluto
             if (state[seed] != 1 || done.Contains(seed)) continue;
             var run = SizeRun(seed, inc); foreach (CEdge e in run) done.Add(e);
             foreach (CEdge e in run) if (state[e] == 1) { e.Flags.Add("LARGE_SIDE_VERTICAL"); flagged++; }
-            string sys = seed.Src.Count > 0 ? seed.Src[0].SysName : seed.Source;
+            string sys = DuctGeom.SystemOf(seed);
             double len = run.Sum(e => DuctMath.Len(P[e.A], P[e.B]));
-            string what = string.Format(Inv, "  {0} {1} run, {2} frame(s), {3:0.#} ft ({4} with the larger side vertical)", sys, DimText(seed.Dim), run.Count, len, run.Count(e => state[e] == 1));
+            string what = string.Format(Inv, "  {0} {1} run, {2} frame(s), {3:0.#} ft ({4} with the larger side vertical)", sys, CleanModel.DimText(seed.Dim), run.Count, len, run.Count(e => state[e] == 1));
             if (run.Any(e => state[e] == -1))
             {
                 foreach (CEdge e in run) e.Flags.Add("ROTATION_CONFLICT");
@@ -44,7 +47,7 @@ public partial class DuctsToPluto
                 continue;
             }
             runs++;
-            if (!Cfg.RotateLargeVertical) { list.Add(what + ": flagged only (DuctRotateLargeVertical off)"); continue; }
+            if (!rotate) { list.Add(what + ": flagged only (DuctRotateLargeVertical off)"); continue; }
             foreach (CEdge e in run)
             {
                 double[] ax = DuctMath.Unit(DuctMath.Sub3(P[e.B], P[e.A]));
@@ -53,17 +56,15 @@ public partial class DuctsToPluto
             list.Add(what + ": rotated 90 deg about the centreline");
         }
         string head = string.Format(Inv, "orientation: {0} frame(s) with the larger side vertical (LARGE_SIDE_VERTICAL), {1} run(s), {2} frame(s) rotated{3}, conflicts {4} (ROTATION_CONFLICT)",
-            flagged, runs, rotated, Cfg.RotateLargeVertical ? "" : " (rotation off)", conflicts);
-        OrientNewLine = flagged + conflicts == 0 ? "" : string.Format(Inv, "NEW orientation: {0} frame(s) LARGE_SIDE_VERTICAL, {1} rotated in {2} run(s), {3} conflict(s)", flagged, rotated, runs, conflicts);
+            flagged, runs, rotated, rotate ? "" : " (rotation off)", conflicts);
+        newLine = flagged + conflicts == 0 ? "" : string.Format(Inv, "NEW orientation: {0} frame(s) LARGE_SIDE_VERTICAL, {1} rotated in {2} run(s), {3} conflict(s)", flagged, rotated, runs, conflicts);
         return head + (list.Count > 0 ? "\n" + string.Join("\n", list.ToArray()) : "");
     }
-
-    static string OrientNewLine = "";
 
     // same W and same H in order (SameDim ignores order: a 16x28 -> 28x16 twist is one size there, two runs here)
     static bool SameWH(CEdge a, CEdge b) { return Math.Abs(a.Dim[1] - b.Dim[1]) <= 0.5 && Math.Abs(a.Dim[2] - b.Dim[2]) <= 0.5; }
 
-    // +1 / -1 / 0, see ApplyOrientation
+    // +1 / -1 / 0, see Apply
     static int OrientState(CEdge ce, Dictionary<int, double[]> P, double sinH)
     {
         if (ce.Rigid || ce.Dim == null || ce.Dim[0] == 1 || ce.Y == null) return 0;
@@ -71,7 +72,7 @@ public partial class DuctsToPluto
         if (double.IsNaN(d[1]) || double.IsNaN(d[2])) return 0;
         double[] ab = DuctMath.Sub3(P[ce.B], P[ce.A]); double L = Math.Sqrt(DuctMath.Dot3(ab, ab));
         if (L < 1e-9 || Math.Abs(ab[2]) / L > sinH) return 0;
-        double[] ax = DuctMath.Unit(ab), u = WidthDir(ce, P);
+        double[] ax = DuctMath.Unit(ab), u = DuctGeom.WidthDir(ce, P);
         if (u == null) return 0;
         int st = DuctOrient.State(ax, u, d[1], d[2], OrientTolIn);
         if (ce.DimB == null) return st;

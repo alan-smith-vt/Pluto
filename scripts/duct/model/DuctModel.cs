@@ -54,8 +54,8 @@ public class RvEl
     public List<int[]> Segs = new List<int[]>();   // SAP frames: { node i, node j, connector whose size it takes (-1 = the element's) }
     public List<string> Flags = new List<string>(), Detail = new List<string>();
     public double[] C, P;     // centre: Revit internal / Navisworks frame (feet)
-    public string Kind = "";  // DuctsRunGraph: straight / bend / transition / branch / end / equipment
-    public int Run = -1, Seg = -1;   // DuctsRunGraph run and segment ids (-1 = none)
+    public string Kind = "";  // DuctRunGraph: straight / bend / transition / branch / end / equipment
+    public int Run = -1, Seg = -1;   // DuctRunGraph run and segment ids (-1 = none)
     public int Sys = -1; public string SysName = "";   // DuctsSystems: connected component and its name
     public double Thk = double.NaN;   // wall thickness (in) from its Navisworks row's WallThk_in; NaN = not stated
     public double[] Voted;    // the segment's voted size { round 1/0, big side or dia, small side } (null = none)
@@ -80,6 +80,8 @@ public class CEdge
     public List<RvEl> Src = new List<RvEl>(); public HashSet<string> Flags = new HashSet<string>(StringComparer.Ordinal);
     public string Source = "revit"; public string NavisId = ""; public bool Dead;
     public double Thk = double.NaN;   // wall thickness (in) from Navisworks; NaN = not stated (frames.csv: 0.06 default)
-    public string Span = "";        // unsupported span id US<n> (DuctsCleanSupports.cs), frames.csv Span
+    public string Span = "";        // unsupported span id US<n> (SupportPlacer.cs), frames.csv Span
+    public bool Hanger;             // a Navisworks-only row of a hanger category (rod hangers): frames.csv SystemRole "hanger", never a SAP frame
+    public string SysName = "";     // system of a frame without Revit source parts (a gap bridge: its neighbour's); see DuctGeom.SystemOf
     public int Sys { get { return Src.Count > 0 ? Src[0].Sys : -1; } }
 }

@@ -414,6 +414,21 @@ def build_ducts():
     rtr.straight(3)
     rtr.transition(Size(28, 16))
     rtr.straight(4)
+    # gap bridging: a Navisworks-only straight in a gap of the Revit duct (no Revit part there). Two-sided: Revit
+    # 20x12 | 6 in | Navisworks-only, stated 18x12 | 6 in | Revit 16x12 (a size change across the bridge). One-sided:
+    # Revit 14x10 | 6 in | Navisworks-only 14x10 with a free far end. In ROOM-03, south of the rack, clear of the steel.
+    rbr = Runner("SYSA", (1142.0, 503.5, 120.0), X, Size(20, 12), "fab", S, 0.0625)
+    rbr.straight(4)
+    rbr.gap(6)
+    rbr.size = Size(18, 12)
+    rbr.straight(4, revit=False)
+    rbr.gap(6)
+    rbr.size = Size(16, 12)
+    rbr.straight(4)
+    rb1 = Runner("SYSA", (1142.0, 501.0, 120.0), X, Size(14, 10), "fab", S, 0.0625)
+    rb1.straight(4)
+    rb1.gap(6)
+    rb1.straight(3, revit=False)
     rng = main_rng
     return drop_ids
 

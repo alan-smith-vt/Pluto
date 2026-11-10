@@ -2,7 +2,7 @@
 #   powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\duct\tests\Test-DuctOrient.ps1
 # The run propagation and the flags are covered by the duct fixture (orientation case of the demo data).
 $ErrorActionPreference = 'Stop'
-$src = Get-Content -Raw (Join-Path (Split-Path $PSScriptRoot -Parent) 'model\DuctsCleanOrient.cs')
+$src = Get-Content -Raw (Join-Path (Split-Path $PSScriptRoot -Parent) 'model\Orienter.cs')
 $cls = $src.Substring($src.IndexOf('public static class DuctOrient'))
 Add-Type -TypeDefinition ("using System;`r`n" + $cls)
 $fail = 0
