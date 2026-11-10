@@ -132,3 +132,12 @@
 #glyphLegend .gl-row { cursor: pointer; border-radius: 3px; padding: 0 3px; margin: 0 -3px; }
 #glyphLegend .gl-row:hover { background: rgba(255, 255, 255, 0.06); }
 #glyphLegend .gl-row.gl-on { background: rgba(255, 255, 255, 0.12); }
+/* show / hide: an eye per row and per section header; a hidden row stays listed, greyed, with its count */
+#glyphLegend .gl-eye { cursor: pointer; width: 14px; text-align: center; color: #c8ccd6; font-size: 13px; line-height: 1; flex: none; }
+#glyphLegend .gl-eye:hover { color: #ffffff; }
+#glyphLegend .gl-sec { display: flex; align-items: center; gap: 7px; cursor: pointer; user-select: none; }
+#glyphLegend .gl-sec:hover { color: #c8ccd6; }
+#glyphLegend .gl-fold { width: 9px; flex: none; margin-left: -3px; }
+#glyphLegend .gl-sec .gl-sub { text-transform: none; letter-spacing: 0; color: #6c717c; }
+#glyphLegend .gl-row.gl-off .gl-name, #glyphLegend .gl-row.gl-off .gl-n { color: #6c717c; }
+#glyphLegend .gl-row.gl-off img { opacity: 0.3; }

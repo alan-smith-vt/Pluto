@@ -31,6 +31,14 @@ public class SteelModel
     public class Settings
     {
         public double SnapIn = 6, NearIn = 24, CollinearDeg = 5, SlopePinnedDeg = 45, VerticalDeg = 10;
+        // SnapMode "centreline" (default): an end within SnapIn of another member's placement line connects.
+        // "contact" (prototype 2026-11-10): an end connects when its section touches the other member's solid:
+        // the end's centroid lies within ContactIn of the other member's section box (depth x flange width around
+        // its centroid line, along its length), less the end's own half-depth. The joint still goes where the
+        // placement point projects (top-of-steel elevations kept). Beams cut back to a column face and
+        // cardinal-point offsets connect without widening a radius.
+        public string SnapMode = "centreline";
+        public double ContactIn = 2;
         public double MergeIn = 1;   // joints landing on one member within this distance along it are one joint
     }
 
@@ -91,6 +99,8 @@ public class SteelModel
         for (int i = 0; i < n; i++) { A[i] = In(Members[i].P0); B[i] = In(Members[i].P1); }
         Func<int, double[]> endPos = e => (e & 1) == 0 ? A[e >> 1] : B[e >> 1];
         _par = new int[2 * n]; for (int i = 0; i < 2 * n; i++) _par[i] = i;
+        contact = string.Equals(S.SnapMode, "contact", StringComparison.OrdinalIgnoreCase);
+        PrepareBoxes(A, B);
 
         // 1. each end: nearest other centreline within SnapIn
         var onSide = new Dictionary<int, KeyValuePair<int, double>>();   // end -> (member, t) landing inside it
@@ -102,9 +112,10 @@ public class SteelModel
             {
                 if (j == mi) continue;
                 double t, d; Proj(A[j], B[j], p, out t, out d);
+                if (contact) d = ContactGap(e, j);
                 if (d < bestD) { bestD = d; best = j; bestT = t; }
             }
-            if (best < 0 || bestD > S.SnapIn) continue;
+            if (best < 0 || bestD > (contact ? S.ContactIn : S.SnapIn)) continue;
             Snapped++;
             double L = Dist(A[best], B[best]);
             if (bestT * L <= S.SnapIn) Union(e, 2 * best);
@@ -219,7 +230,15 @@ public class SteelModel
             SetEnd(endFrame[e], jt.Condition, "");
             Open++;
             double near = double.MaxValue, t, d; double[] p = { jt.X, jt.Y, jt.Z };
-            for (int j = 0; j < A.Length; j++) { if (j == m) continue; Proj(A[j], B[j], p, out t, out d); near = Math.Min(near, d); }
+            double gap = double.MaxValue;
+            for (int j = 0; j < A.Length; j++)
+            {
+                if (j == m) continue;
+                Proj(A[j], B[j], p, out t, out d); near = Math.Min(near, d);
+                gap = Math.Min(gap, ContactGap(e, j));
+            }
+            // open-end gap histogram (surface to surface, 1 in bins 0..NearIn): what a contact tolerance would catch
+            if (gap <= S.NearIn) { int bin = (int)Math.Floor(gap); GapHist[bin] = (GapHist.ContainsKey(bin) ? GapHist[bin] : 0) + 1; }
             if (near <= S.NearIn) { jt.Flags.Add("OPEN_NEAR"); OpenNear++; }
             return;
         }
@@ -274,6 +293,55 @@ public class SteelModel
         return ends.OrderByDescending(e => IsVertical(A, B, e) ? 1 : 0)
                    .ThenByDescending(e => double.IsNaN(Members[e >> 1].D) ? 0 : Members[e >> 1].D)
                    .ThenByDescending(e => Dist(A[e >> 1], B[e >> 1])).ThenBy(e => e).First();
+    }
+
+    // ---------- section boxes (contact snap, gap histogram) ----------
+    bool contact;
+    public readonly SortedDictionary<int, int> GapHist = new SortedDictionary<int, int>();   // open ends per 1 in gap bin
+    double[][] _ca, _cb, _ax, _ly, _w; double[] _len, _hb, _hd;
+
+    void PrepareBoxes(double[][] A, double[][] B)
+    {
+        int n = A.Length;
+        _ca = new double[n][]; _cb = new double[n][]; _ax = new double[n][]; _ly = new double[n][]; _w = new double[n][];
+        _len = new double[n]; _hb = new double[n]; _hd = new double[n];
+        for (int i = 0; i < n; i++)
+        {
+            SteelMember b = Members[i]; int dummy = 0;
+            double[] w = SteelGeom.WebDir(b, ref dummy), ly = SteelGeom.ResolveLocalY(b, ref dummy);
+            double oy, oz; SteelGeom.MemberOffsets(b, InPerM, out oy, out oz);
+            double[] o = { ly[0] * oy + w[0] * oz, ly[1] * oy + w[1] * oz, ly[2] * oy + w[2] * oz };
+            _ca[i] = new[] { A[i][0] + o[0], A[i][1] + o[1], A[i][2] + o[2] };
+            _cb[i] = new[] { B[i][0] + o[0], B[i][1] + o[1], B[i][2] + o[2] };
+            _len[i] = Dist(A[i], B[i]);
+            _ax[i] = new[] { (B[i][0] - A[i][0]) / _len[i], (B[i][1] - A[i][1]) / _len[i], (B[i][2] - A[i][2]) / _len[i] };
+            _ly[i] = ly; _w[i] = w;
+            bool sized = SteelGeom.Sized(b);
+            _hb[i] = (sized ? b.Bf : SteelGeom.UBf) * InPerM / 2;
+            _hd[i] = (sized ? b.D : SteelGeom.UD) * InPerM / 2;
+        }
+    }
+
+    // surface-to-surface gap (in) between end e's section (a depth x width rectangle at its centroid) and member j's
+    // solid (its section box along its length); 0 = touching or overlapping
+    double ContactGap(int e, int j)
+    {
+        int m = e >> 1;
+        double[] pc = (e & 1) == 0 ? _ca[m] : _cb[m];
+        double[] r = { pc[0] - _ca[j][0], pc[1] - _ca[j][1], pc[2] - _ca[j][2] };
+        double s = Dot(r, _ax[j]), y = Dot(r, _ly[j]), z = Dot(r, _w[j]);
+        double sa = Math.Max(0, Math.Max(-s, s - _len[j]));
+        double ey = Math.Max(0, Math.Abs(y) - _hb[j]), ez = Math.Max(0, Math.Abs(z) - _hd[j]);
+        double dist = Math.Sqrt(sa * sa + ey * ey + ez * ez);
+        if (dist < 1e-9) return 0;
+        // closest box point -> the end's centroid, unit; the end's own section reaches r_e toward it
+        double[] q = new double[3];
+        double sc = Math.Min(Math.Max(s, 0), _len[j]), yc = Math.Max(-_hb[j], Math.Min(_hb[j], y)), zc = Math.Max(-_hd[j], Math.Min(_hd[j], z));
+        for (int k = 0; k < 3; k++) q[k] = pc[k] - (_ca[j][k] + _ax[j][k] * sc + _ly[j][k] * yc + _w[j][k] * zc);
+        double ql = Math.Sqrt(Dot(q, q)); if (ql < 1e-9) return 0;
+        for (int k = 0; k < 3; k++) q[k] /= ql;
+        double re = _hb[m] * Math.Abs(Dot(q, _ly[m])) + _hd[m] * Math.Abs(Dot(q, _w[m]));
+        return Math.Max(0, dist - re);
     }
 
     static void SetEnd(KeyValuePair<Frame, bool> fe, string cond, string release)
@@ -356,6 +424,16 @@ public class SteelModel
             "stability: column bases {11}, all-hinged joints with one member kept {12}, lone members with torsion held {13}",
             Members.Count, Frames.Count, Joints.Count, string.Join(", ", c), Snapped, OnSide, Open, OpenNear, S.NearIn, rel, ZeroLength,
             ColumnBases, KeptMoments, TorsionHeld);
+    }
+
+    // snap rule and the open-end gap histogram (surface to surface, in): one line for match.txt / run.log
+    public string GapSummary()
+    {
+        string rule = contact ? string.Format(Inv, "contact (section touches within {0} in)", S.ContactIn)
+                              : string.Format(Inv, "centreline (within {0} in)", S.SnapIn);
+        var bins = GapHist.Select(kv => string.Format(Inv, "{0}-{1}:{2}", kv.Key, kv.Key + 1, kv.Value)).ToArray();
+        return "steel snap: " + rule + "; open ends by gap to the nearest steel surface (in, 1 in bins to " +
+               S.NearIn.ToString("0.#", Inv) + "): " + (bins.Length > 0 ? string.Join(" ", bins) : "none");
     }
 
     // ---------- files (inches) ----------

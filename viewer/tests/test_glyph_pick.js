@@ -34,6 +34,13 @@ const items = [
   { name: 'E', look: { glyph: 'warn', tier: 'exception', label: 'E' }, anchors: [{ domain: 'nodes', id: 4 }] }
 ];
 FEAGlyphs.update(ctx, items, { shell: view, beam: null }, () => false);
+// checks (exception tier) start hidden in the legend; a hidden one is never picked
+{
+  scene.updateMatrixWorld(true); FEAGlyphs.setOccluder(() => null);
+  const v = new THREE.Vector3(0, 1, 0).project(camera), h = FEAGlyphs.pick((v.x + 1) * 400, (1 - v.y) * 300);
+  assert(!h || h.label !== 'E', 'a check hidden by default is not picked');
+}
+FEAGlyphs.setShown(['A', 'E'], true);
 scene.updateMatrixWorld(true);
 const px = p => { const v = new THREE.Vector3(...p).project(camera); return [(v.x + 1) * 400, (1 - v.y) * 300]; };
 const [ax, ay] = px([0, 0, 0]), [ex, ey] = px([0, 1, 0]);
