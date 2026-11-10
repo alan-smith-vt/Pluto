@@ -51,6 +51,9 @@ function Get-DuctSettings {
     if (-not $Steel) { $Steel = $Data.DuctSteel }
     if ($Data.DuctSteelSnapIn) { $ds.SteelSettings.SnapIn = [double]$Data.DuctSteelSnapIn }
     if ($Data.DuctSteelNearIn) { $ds.SteelSettings.NearIn = [double]$Data.DuctSteelNearIn }
+    # DuctSteelSnap = centreline (default) | contact (prototype: the end section touches the other member, within DuctSteelContactIn)
+    if ($Data.DuctSteelSnap) { $ds.SteelSettings.SnapMode = [string]$Data.DuctSteelSnap }
+    if ($Data.DuctSteelContactIn) { $ds.SteelSettings.ContactIn = [double]$Data.DuctSteelContactIn }
     # duct-to-steel supports (duct\model\SupportPlacer.cs): DuctSupportGapIn = largest duct bottom -> steel top gap that is a
     # support (in), DuctSpanFt = unsupported span limit (ft); the gap histogram in match.txt helps choose the gap
     if ($Data.DuctSupportGapIn) { $ds.Supports.GapMaxIn = [double]$Data.DuctSupportGapIn }

@@ -62,7 +62,8 @@ var FEAGlyphs = (function () {
     // ---- collect: groups -> flat glyph arrays (no THREE, no DOM) -------
     // items: features groups; views: { shell, beam } (elems records are
     // [count, n0, n1, ...] into that view's nodes); hiddenOf(g) -> bool.
-    function collect(items, views, hiddenOf) {
+    // offOf(g, row) -> bool: glyphs switched off in the legend (the row stays, with its count).
+    function collect(items, views, hiddenOf, offOf) {
         var pos = [], along = [], dir = [], col = [], gly = [], tier = [], inset = [], scale = [], meta = [], legend = [];
         var maps = {};
         function mapFor(fam) {
@@ -100,9 +101,10 @@ var FEAGlyphs = (function () {
             var ins = typeof look.insetPx === 'number' ? look.insetPx : 10;
             var row = { gi: gi, glyph: NAMES[gIdx], color: g.color || (look.glyph === 'warn' ? ALARM : NEUTRAL),
                         label: look.label || g.name || '', section: look.section || '', tier: isExc ? 'exception' : 'detail',
-                        n: 0, missing: 0, hidden: !!hiddenOf(g) };
+                        name: g.name || '', n: 0, missing: 0, hidden: !!(hiddenOf && hiddenOf(g)), off: false };
             legend.push(row);
             if (row.hidden) return;
+            row.off = !!(offOf && offOf(g, row));
             var anchors = Array.isArray(g.anchors) ? g.anchors : null;
             if (!anchors) {                    // one glyph per member, at its centroid / node
                 anchors = [];
@@ -111,6 +113,7 @@ var FEAGlyphs = (function () {
                     (m.ids || []).forEach(function (id) { anchors.push({ domain: m.domain, id: id }); });
                 });
             }
+            if (row.off) { row.n = anchors.length; return; }   // count kept so a hidden check still shows how many
             anchors.forEach(function (an, ai) {
                 var fam = domainFamily(an.domain);
                 var at = place(fam, an.id, fam === 'beam' ? an.t : null);
@@ -312,7 +315,38 @@ var FEAGlyphs = (function () {
         u.orthoDepth.value = camera.isOrthographicCamera ? (camera.top - camera.bottom) / camera.zoom * 1.07 : 0;
     }
 
-    var layers = [];   // { ctx, points, data, items, span }
+    var layers = [];   // { ctx, points, data, items, views, hiddenOf, span }
+
+    // ---- show / hide per legend row ------------------------------------------
+    // Checks (exception tier, no own section) start hidden: a model with hundreds of
+    // flags would otherwise cover everything. Member ends (open-end supports), supports
+    // and symbols start shown (user 2026-11-10). The user's
+    // choice is kept per group name (localStorage), for every model.
+    var STORE_KEY = 'pluto.glyphShow';
+    var shown = {};
+    try { shown = JSON.parse((typeof localStorage !== 'undefined' && localStorage.getItem(STORE_KEY)) || '{}') || {}; } catch (e) { shown = {}; }
+    function isOff(g, row) {
+        var k = row.name || row.label;
+        if (Object.prototype.hasOwnProperty.call(shown, k)) return !shown[k];
+        return row.tier === 'exception' && !row.section;   // the Checks section; open-end supports (Member ends) shown
+    }
+    function saveShown() { try { localStorage.setItem(STORE_KEY, JSON.stringify(shown)); } catch (e) { } }
+    function setShown(keys, on) {
+        keys.forEach(function (k) { shown[k] = !!on; });
+        saveShown();
+        if (focus && !on) focus = null;
+        layers.slice().forEach(function (L) { if (L.items) update(L.ctx, L.items, L.views, L.hiddenOf); });
+        if (!layers.length) drawLegend();
+    }
+    // folded legend sections (header click): only the header line stays, with its eye and count
+    var FOLD_KEY = 'pluto.glyphFold';
+    var folded = {};
+    try { folded = JSON.parse((typeof localStorage !== 'undefined' && localStorage.getItem(FOLD_KEY)) || '{}') || {}; } catch (e) { folded = {}; }
+    function toggleFold(sec) {
+        folded[sec] = !folded[sec];
+        try { localStorage.setItem(FOLD_KEY, JSON.stringify(folded)); } catch (e) { }
+        drawLegend();
+    }
 
     // features.js calls this after every resolve of a model's groups
     function update(ctx, items, views, hiddenOf) {
@@ -320,7 +354,8 @@ var FEAGlyphs = (function () {
         var L = layers.filter(function (l) { return l.ctx === ctx; })[0];
         if (!L) { L = { ctx: ctx, points: null }; layers.push(L); }
         if (L.points) { if (L.points.parent) L.points.parent.remove(L.points); L.points.geometry.dispose(); L.points = null; }
-        var data = collect(items, views, hiddenOf);
+        L.views = views; L.hiddenOf = hiddenOf;
+        var data = collect(items, views, hiddenOf, isOff);
         L.data = data; L.items = items; L.span = spanOf(views.shell);
         if (data.n > 0) {
             var geo = new THREE.BufferGeometry();
@@ -347,6 +382,7 @@ var FEAGlyphs = (function () {
             var parent = ctx.markerParent && ctx.markerParent();
             if (parent) parent.add(pts);
         }
+        if (focus && focus.L === L) setDim();
         drawLegend();
         bindHover();
         if (typeof needsRender !== 'undefined') needsRender = true;
@@ -509,8 +545,29 @@ var FEAGlyphs = (function () {
         if (!el) {
             el = document.createElement('div'); el.id = 'glyphLegend'; document.body.appendChild(el);
             el.addEventListener('click', function (e) {
+                if (!el._rows) return;
+                var eye = e.target.closest('.gl-eye');
+                if (eye) {                       // eye on a row or a section header: show / hide its glyphs
+                    var sec = eye.getAttribute('data-sec');
+                    var sel = sec !== null ? el._rows.filter(function (x) { return x.head === sec; })
+                                           : [el._rows[+eye.getAttribute('data-i')]];
+                    var anyOn = sel.some(function (x) { return !x.r.off; });
+                    setShown(sel.map(function (x) { return x.r.name || x.r.label; }), !anyOn);
+                    return;
+                }
+                var fold = e.target.closest('.gl-sec');
+                if (fold) { toggleFold(fold.getAttribute('data-sec')); return; }
                 var row = e.target.closest('.gl-row');
-                if (row && el._rows) { var x = el._rows[+row.getAttribute('data-i')]; focusGroup(x.L, x.r.gi); }
+                if (!row) return;
+                var x = el._rows[+row.getAttribute('data-i')];
+                if (x.r.off) {                   // highlighting a hidden check shows it first
+                    var key = x.r.name || x.r.label, gi = x.r.gi, ctx = x.L.ctx;
+                    setShown([key], true);
+                    var L = layers.filter(function (l) { return l.ctx === ctx; })[0];
+                    if (L) { focus = null; focusGroup(L, gi); }
+                    return;
+                }
+                focusGroup(x.L, x.r.gi);
             });
             bindKeys();
         }
@@ -519,16 +576,32 @@ var FEAGlyphs = (function () {
             var ta = a.x.r.tier === 'exception' ? 0 : 1, tb = b.x.r.tier === 'exception' ? 0 : 1;
             return ta - tb || (a.x.r.section < b.x.r.section ? -1 : a.x.r.section > b.x.r.section ? 1 : a.i - b.i);
         }).map(function (y) { return y.x; });
+        rows.forEach(function (x) {
+            var r = x.r;
+            x.head = r.tier === 'exception' ? (r.section || 'Checks') : (r.section || 'Symbols');
+        });
         el._rows = rows;
         var html = '', sec = null;
+        var EYE_ON = '&#9673;', EYE_OFF = '&#9675;';     // filled / empty circle
         rows.forEach(function (x, i) {
             var r = x.r, on = focus && focus.L === x.L && focus.gi === r.gi;
-            var head = r.tier === 'exception' ? 'Checks' : (r.section || 'Symbols');
-            if (r.tier === 'exception' && r.section) head = r.section;
-            if (head !== sec) { sec = head; html += '<div class="gl-sec">' + esc(head) + '</div>'; }
-            html += '<div class="gl-row' + (r.tier === 'detail' ? ' gl-detail' : '') + (on ? ' gl-on' : '') + '" data-i="' + i + '" title="' +
-                (on ? 'click (or Esc) to clear' : 'click to highlight all of these') + ' · ' + (r.tier === 'detail' ? 'shown when zoomed in' : 'always shown') +
+            if (x.head !== sec) {
+                sec = x.head;
+                var inSec = rows.filter(function (y) { return y.head === sec; });
+                var nOn = inSec.filter(function (y) { return !y.r.off; }).length;
+                var isFold = !!folded[sec];
+                html += '<div class="gl-sec" data-sec="' + esc(sec) + '" title="click to ' + (isFold ? 'expand' : 'collapse') + '">' +
+                    '<span class="gl-eye" data-sec="' + esc(sec) + '" title="' +
+                    (nOn ? 'hide all ' : 'show all ') + esc(sec.toLowerCase()) + '">' + (nOn ? EYE_ON : EYE_OFF) + '</span>' +
+                    '<span class="gl-fold">' + (isFold ? '&#9656;' : '&#9662;') + '</span>' + esc(sec) +
+                    (nOn < inSec.length ? ' <span class="gl-sub">' + nOn + ' of ' + inSec.length + ' shown</span>' : '') + '</div>';
+            }
+            if (folded[sec]) return;
+            html += '<div class="gl-row' + (r.tier === 'detail' ? ' gl-detail' : '') + (on ? ' gl-on' : '') + (r.off ? ' gl-off' : '') + '" data-i="' + i + '" title="' +
+                (r.off ? 'hidden · click to show and highlight' : on ? 'click (or Esc) to clear' : 'click to highlight all of these') +
+                ' · ' + (r.tier === 'detail' ? 'shown when zoomed in' : 'always shown') +
                 (r.missing ? ' · ' + r.missing + ' anchor(s) not in the model' : '') + '">' +
+                '<span class="gl-eye" data-i="' + i + '" title="' + (r.off ? 'show' : 'hide') + '">' + (r.off ? EYE_OFF : EYE_ON) + '</span>' +
                 '<img src="' + glyphSrc(r.glyph, r.color) + '" width="18" height="18"><span class="gl-name">' + esc(r.label) +
                 '</span><span class="gl-n">' + r.n + '</span></div>';
         });
@@ -541,6 +614,7 @@ var FEAGlyphs = (function () {
         setOccluder: function (fn) { occluder = fn; },     // tests: (cssX, cssY) -> world point | null
         names: function () { return NAMES.slice(); }, glyphSrc: glyphSrc,
         focusGroup: function (L, gi) { focusGroup(L, gi); },
+        setShown: setShown, isOff: isOff,
         _focus: function () { return focus; },
         _layers: function () { return layers; }
     };

@@ -70,7 +70,7 @@ public partial class DuctsToPluto
             clean.Count, clean.Count(x => x.Rigid), cm.Edges.Count(x => x.Src.Count > 0 || x.Source != "revit"), cm.RawLen, cleanLen, cm.OverlapMerged, cm.OverlapFt, cm.OverlapConflict, dev.Count,
             dev.Count > 0 ? " (worst: " + string.Join(", ", dev.Take(5).Select(x => x.Value + " " + x.Key.ToString("0.#", Inv) + " in").ToArray()) + ")" : "", cm.GapsClosed)
             + (cutNote != "" ? "\n" + cutNote : "")
-            + (sm != null ? "\n" + sm.Summary() + " (<out>.steel_joints.csv, <out>.steel_frames.csv)" : "")
+            + (sm != null ? "\n" + sm.Summary() + " (<out>.steel_joints.csv, <out>.steel_frames.csv)\n" + sm.GapSummary() : "")
             + "\n" + bridgeNote
             + "\n" + orientNote
             + (sr != null ? "\n" + sr.Note : "");

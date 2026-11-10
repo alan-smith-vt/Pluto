@@ -151,5 +151,28 @@ $sm.Members[0].Cp = 0
 Check "12c centred: top = line + D/2" ([math]::Abs($sm.TopAt($f, 1.0)[2] - 126.1) -lt 1e-6)
 Check "12d split near an end returns the end" ($sm.SplitAt($f, 0.001, "").Id -eq $f.I)
 
+# 13 snap rule "contact" (prototype): the end's section touches the other member's solid
+function ModelMode([object[]]$ms, $mode) {
+    $l = New-Object 'System.Collections.Generic.List[SteelMember]'
+    foreach ($m in $ms) { $l.Add($m) }
+    $s = New-Object 'SteelModel+Settings'; $s.SnapMode = $mode
+    [SteelModel]::Build($l, $s)
+}
+# a beam sitting on a girder: centroids one depth (12.2 in) apart, the end over the girder's middle
+$stack = @((M "G" 0 (-120) 120 0 120 120), (M "B" 0 0 132.2 (-120) 0 132.2))
+$sm = ModelMode $stack "centreline"; $e = Ends $sm "B"
+Check "13a centreline: a beam on a girder stays open (12.2 in > 6)" ($e.I -like "open-*" -and $e.JI.Flags -contains "OPEN_NEAR")
+$sm = ModelMode $stack "contact"; $e = Ends $sm "B"; $g = Ends $sm "G"
+Check "13b contact: the beam on the girder connects (framed, girder split)" ($e.I -eq "framed" -and $e.RI -eq "M2M3" -and $g.N -eq 2)
+Check "13c contact: the joint stays at the placement point projected on the girder line" ($e.JI.X -eq 0 -and $e.JI.Y -eq 0 -and $e.JI.Z -eq 120)
+# a beam ending 9 in from a girder's centreline: 5.8 in of air to its flange, not a contact
+$air = @((M "G" 0 (-120) 120 0 120 120), (M "B" 9 0 120 129 0 120))
+$sm = ModelMode $air "contact"; $e = Ends $sm "B"
+Check "13d contact: 5.8 in of air stays open, flagged OPEN_NEAR" ($e.I -like "open-*" -and $e.JI.Flags -contains "OPEN_NEAR")
+Check "13e gap histogram: that end in the 5-6 in bin" ($sm.GapHist.ContainsKey(5) -and $sm.GapSummary() -match "contact")
+# the cases that already connect still connect: a beam end on a column side, ends meeting
+$sm = ModelMode @((M "C" 0 0 0 0 0 144), (M "B" 0 0 120 120 0 120)) "contact"; $e = Ends $sm "B"
+Check "13f contact: a beam on a column still connects" ($e.I -ne "" -and $e.I -notlike "open-*")
+
 Write-Output ("{0} passed, {1} failed" -f $script:pass, $script:fail)
 exit $(if ($script:fail) { 1 } else { 0 })
