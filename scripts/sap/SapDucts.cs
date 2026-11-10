@@ -15,6 +15,9 @@ public partial class SapDucts
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
     // Mat: PLACEHOLDER (2026-10-17, user: material is a major open TODO): galvanized-steel values under a name that
     // says so; replace with the engineers' material before the model goes out
+    // wall thickness where none is stated: the same deliberately unrealistic value as DuctGeom.ThkPlaceholder (0.001 in),
+    // so a section carrying it is unmistakable and must be fixed in SAP (user 2026-11-10)
+    public const double ThkPlaceholder = 0.001;
     public const string Mat = "DUCT_MAT_TBD", NoSize = "DUCT_NOSIZE", Stub = "TAP_STUB", StubMat = "RIGID_STUB";
 
     public SapSurvey S;
@@ -38,7 +41,7 @@ public partial class SapDucts
         Check(M.PropMaterial.SetMaterial(Mat, eMatType.Steel, -1, "", ""), "SetMaterial");
         Check(M.PropMaterial.SetMPIsotropic(Mat, 29000, 0.3, 6.5e-6, 0), "SetMPIsotropic");
         Check(M.PropMaterial.SetWeightAndMass(Mat, 1, 2.836e-4, 0), "SetWeightAndMass");
-        Check(M.PropFrame.SetTube(NoSize, Mat, 12, 12, 0.06, 0.06, -1, "", ""), "SetTube " + NoSize);
+        Check(M.PropFrame.SetTube(NoSize, Mat, 12, 12, ThkPlaceholder, ThkPlaceholder, -1, "", ""), "SetTube " + NoSize);
 
         var sections = new HashSet<string>(StringComparer.Ordinal);
         var joints = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -111,11 +114,11 @@ public partial class SapDucts
         var spans = groups.Where(g => g.Key.StartsWith("SPAN_")).ToList();
         string spanNote = spans.Count == 0 ? "" : F("\nNEW unsupported spans: {0} spans ({1} frames), groups SPAN_<id>", spans.Count, spans.Sum(g => g.Value.Count));
         int defThk = rows.Count(r => r["Shape"] != "rigid" && (r.ContainsKey("ThkSource") ? r["ThkSource"] : "default") == "default");
-        return F("NEW kept: " + filterNote + "\nNEW SAP model {0}: {1} frames, {2} joints, {3} sections{4}; material {5} (PLACEHOLDER)\nNEW orientation: {6} rect frames oriented, {7} without a width direction (FLAG_NO_ORIENTATION); thickness default 0.06 in on {8} frames\nNEW flag groups (frames): {9}{10}",
+        return F("NEW kept: " + filterNote + "\nNEW SAP model {0}: {1} frames, {2} joints, {3} sections{4}; material {5} (PLACEHOLDER)\nNEW orientation: {6} rect frames oriented, {7} without a width direction (FLAG_NO_ORIENTATION); thickness PLACEHOLDER {11} in (none stated) on {8} frames\nNEW flag groups (frames): {9}{10}",
             Path.GetFileName(savePath), groups["DUCT_ALL"].Count, joints.Count, sections.Count + 1,
             skipped > 0 ? F(", {0} zero-length rows skipped ({1})", skipped, string.Join(" ", zeroRows.Take(10).ToArray()) + (zeroRows.Count > 10 ? " ..." : "")) : "",
             Mat, oriented, noDir, defThk, parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "none",
-            failed.Count > 0 ? F("\nNEW SAP refused {0} frames (not in the model): {1}", failed.Count, string.Join("; ", failed.Take(10).ToArray()) + (failed.Count > 10 ? " ..." : "")) : "")
+            failed.Count > 0 ? F("\nNEW SAP refused {0} frames (not in the model): {1}", failed.Count, string.Join("; ", failed.Take(10).ToArray()) + (failed.Count > 10 ? " ..." : "")) : "", ThkPlaceholder)
             + spanNote + (steelNote != "" ? "\n" + steelNote : "");
     }
 
@@ -221,7 +224,7 @@ public partial class SapDucts
             return Stub;
         }
         double w = Num(r, "W_in"), h = Num(r, "H_in"), d = Num(r, "Dia_in"), t = Num(r, "Thk_in");
-        if (double.IsNaN(t) || t <= 0) t = 0.06;
+        if (double.IsNaN(t) || t <= 0) t = ThkPlaceholder;
         bool round = r["Shape"] == "round" && !double.IsNaN(d);
         if (!round && (double.IsNaN(w) || double.IsNaN(h))) return NoSize;
         string name = round ? F("DUCT_{0:0.##}dia_t{1:0.###}", d, t) : F("DUCT_{0:0.##}x{1:0.##}_t{2:0.###}", w, h, t);

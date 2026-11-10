@@ -534,7 +534,7 @@ public partial class DuctsToPluto
         foreach (RvEl e in scope)
         {
             int nr = DuctGeom.NavRow(e, rowsOf(e)); DuctRow r = nr >= 0 ? rows[nr] : null;
-            double t = r != null && !double.IsNaN(r.T) && r.T > 0 ? r.T : 0.06;
+            double t = r != null && !double.IsNaN(r.T) && r.T > 0 ? r.T : DuctGeom.ThkPlaceholder;
             e.Thk = r != null && !double.IsNaN(r.T) && r.T > 0 ? r.T : double.NaN;
             var connOf = new Dictionary<string, int>(StringComparer.Ordinal);
             foreach (int[] g in e.Segs) if (g[2] >= 0) { connOf[g[0] + "-" + g[1]] = g[2]; connOf[g[1] + "-" + g[0]] = g[2]; }
@@ -569,7 +569,7 @@ public partial class DuctsToPluto
         {
             DuctRow r = rows[kv.Value]; string shape; double w, h, d;
             if (DuctGeom.NavSize(r, out shape, out w, out h, out d))
-                beams[kv.Key].SectionIndex = sec(shape, w, h, d, !double.IsNaN(r.T) && r.T > 0 ? r.T : 0.06);
+                beams[kv.Key].SectionIndex = sec(shape, w, h, d, !double.IsNaN(r.T) && r.T > 0 ? r.T : DuctGeom.ThkPlaceholder);
         }
 
         // systems (duct/model/DuctSystems.cs): flood fill over connections, touching ends, near / side links and the drawn
@@ -930,7 +930,7 @@ public partial class DuctsToPluto
     // frames (the gap stays open, flagged). Size: the Navisworks stated size of the matched row, else Revit's
     // connector; branch pieces take their own connector's size. Navisworks-only rows: their axis (X1..Z2, else
     // the bbox's long axis) between joints of their own (not connected). Elements with one connector (caps,
-    // terminals) have no frame. Thickness: the row's WallThk_in, else 0.06 in (ThkSource "default").
+    // terminals) have no frame. Thickness: the row's WallThk_in, else DuctGeom.ThkPlaceholder (ThkSource "default").
     static string WriteFramesCsv(string path, List<RvEl> scope, List<DuctRow> rows, Func<RvEl, List<int>> rowsOf, List<int> navOnly,
         Dictionary<int, Node> nodes, double[] off, double scale)
     {
@@ -949,7 +949,8 @@ public partial class DuctsToPluto
         {
             if (e.Segs.Count == 0) { noFrame++; continue; }
             List<int> pr = rowsOf(e); int nr = DuctGeom.NavRow(e, pr); DuctRow r = nr >= 0 ? rows[nr] : null;
-            double t = r != null && !double.IsNaN(r.T) && r.T > 0 ? r.T : 0.06;
+            bool stated = r != null && !double.IsNaN(r.T) && r.T > 0;
+            double t = stated ? r.T : DuctGeom.ThkPlaceholder;
             string flags = string.Join(" ", e.Flags.ToArray());
             foreach (int[] g in e.Segs)
             {
@@ -958,7 +959,7 @@ public partial class DuctsToPluto
                 if ((g[2] >= 0 && DuctGeom.IsTapPoint(e.Conns[g[2]])) || g[2] == -3) { shape = "rigid"; w = h = d = double.NaN; ssrc = "tap-stub"; nStub++; }
                 else SegSize(e, g[2], r, out shape, out w, out h, out d, out ssrc);
                 if (ssrc == "none") noSize++;
-                line("N" + g[0], "N" + g[1], at(g[0]), at(g[1]), shape, w, h, d, t, t == 0.06 ? "default" : "navisworks", ssrc, e.Only && e.LocRow < 0 ? "revit-only" : "revit",
+                line("N" + g[0], "N" + g[1], at(g[0]), at(g[1]), shape, w, h, d, t, stated ? "navisworks" : "default", ssrc, e.Only && e.LocRow < 0 ? "revit-only" : "revit",
                     e.Id, r != null ? r.NavisId : "", flags);
             }
         }
@@ -969,10 +970,11 @@ public partial class DuctsToPluto
             string shape; double w, h, d;
             string ssrc = DuctGeom.NavSize(r, out shape, out w, out h, out d) ? "navisworks" : "none";
             if (ssrc == "none") noSize++;
-            double t = !double.IsNaN(r.T) && r.T > 0 ? r.T : 0.06;
+            bool stated = !double.IsNaN(r.T) && r.T > 0;
+            double t = stated ? r.T : DuctGeom.ThkPlaceholder;
             nav++;
             line("V" + i + "a", "V" + i + "b", new[] { p[0] * 12, p[1] * 12, p[2] * 12 }, new[] { q[0] * 12, q[1] * 12, q[2] * 12 }, shape, w, h, d, t,
-                t == 0.06 ? "default" : "navisworks", ssrc, "navisworks-only", "", r.NavisId, "NAVIS_ONLY");
+                stated ? "navisworks" : "default", ssrc, "navisworks-only", "", r.NavisId, "NAVIS_ONLY");
         }
         File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));
         return string.Format(Inv, "SAP frames (<out>.frames.csv): {0} ({1} from Navisworks-only rows), Revit elements without a frame (1 connector) {2}, frames without a size {3}, rigid tap stubs {4}",

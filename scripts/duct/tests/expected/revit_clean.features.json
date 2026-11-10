@@ -1,7 +1,7 @@
 {
   "format": "pluto-features",
   "version": 1,
-  "model": {"modelId": "hvac/ducts/20261030-120000/revit/clean", "geometryHash": "sha256:b9fd0f788a28651848470cff475e37d4c39b8b1d84a5c2d451e56753adfcacd8", "units": {"length": "in", "worldOffset": "13080 6192 1428"}},
+  "model": {"modelId": "hvac/ducts/20261030-120000/revit/clean", "geometryHash": "sha256:eb567f9feebc18c18b3d80fff8245ed57a8b918f358d26dc066251650c38a2d7", "units": {"length": "in", "worldOffset": "13080 6192 1428"}},
   "groups": {"version": 1, "items": [
     {"id": "<ID>", "name": "Clean: SYSA", "color": "#4f8cff", "tags": ["duct", "clean", "system"], "members": [{"domain": "beams", "ids": [1,2,3,4,5,6,16,17,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,90,91]}]},
     {"id": "<ID>", "name": "Clean: SYSA fragments", "color": "#879dc5", "tags": ["duct", "clean", "system"], "members": [{"domain": "beams", "ids": [7,18,19,20,21,22]}]},

@@ -79,7 +79,7 @@ public class CEdge
     public int A, B; public bool Rigid; public double[] Dim, DimB, Y;   // Dim / DimB: { round 1/0, W, H, Dia } inches
     public List<RvEl> Src = new List<RvEl>(); public HashSet<string> Flags = new HashSet<string>(StringComparer.Ordinal);
     public string Source = "revit"; public string NavisId = ""; public bool Dead;
-    public double Thk = double.NaN;   // wall thickness (in) from Navisworks; NaN = not stated (frames.csv: 0.06 default)
+    public double Thk = double.NaN;   // wall thickness (in) from Navisworks; NaN = not stated (frames.csv: DuctGeom.ThkPlaceholder, ThkSource default)
     public string Span = "";        // unsupported span id US<n> (SupportPlacer.cs), frames.csv Span
     public bool Hanger;             // a Navisworks-only row of a hanger category (rod hangers): frames.csv SystemRole "hanger", never a SAP frame
     public string SysName = "";     // system of a frame without Revit source parts (a gap bridge: its neighbour's); see DuctGeom.SystemOf

@@ -6,6 +6,11 @@ using System.Collections.Generic;
 // partial). Tap points, openings and the through pair of a fitting, Navisworks row sizes, node coordinates, CSV cells.
 public static class DuctGeom
 {
+    // wall thickness (in) written where none is stated (ThkSource "default"). Deliberately unrealistic (user 2026-11-10):
+    // ~1/10 of the thinnest sheet gauge, so it never matches a real thickness and a SAP model with it must be fixed.
+    // SapDucts.cs keeps its own copy (separate compile): change both together.
+    public const double ThkPlaceholder = 0.001;
+
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
     public static bool IsTapPoint(RvConn k) { return string.Equals(k.Type, "Curve", StringComparison.OrdinalIgnoreCase); }
     // As a probe DuctOpening, to reuse ThroughPair / BranchJunction (round = "round", else A x B, A the larger).

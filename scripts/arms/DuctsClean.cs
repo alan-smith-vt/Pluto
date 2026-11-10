@@ -98,7 +98,7 @@ public partial class DuctsToPluto
                 bool round = d[0] == 1 && !double.IsNaN(d[3]), rect = d[0] == 0 && !double.IsNaN(d[1]) && !double.IsNaN(d[2]);
                 if (round || rect)
                 {
-                    double t = double.IsNaN(ce.Thk) ? 0.06 : ce.Thk;
+                    double t = double.IsNaN(ce.Thk) ? DuctGeom.ThkPlaceholder : ce.Thk;
                     string name = CleanModel.DimText(d) + string.Format(Inv, " t{0:0.###}", t);
                     if (!secIx.TryGetValue(name, out s))
                     {
@@ -153,7 +153,7 @@ public partial class DuctsToPluto
 
     // the SAP input: one frame per clean element, inches, Navisworks frame; W2 / H2 / Dia2 = a transition's other end;
     // WX / WY / WZ = the width direction (SapDucts sets the local axis angle from it); Thk_in = the parts' Navisworks
-    // wall thickness, else 0.06 (ThkSource "default")
+    // wall thickness, else DuctGeom.ThkPlaceholder (0.001 in, ThkSource "default")
     static void WriteCleanFrames(string path, List<CEdge> clean, Dictionary<int, double[]> P)
     {
         var s = new StringBuilder();
@@ -168,7 +168,7 @@ public partial class DuctsToPluto
                 DuctGeom.R3(a[0] * 12), DuctGeom.R3(a[1] * 12), DuctGeom.R3(a[2] * 12), DuctGeom.R3(b[0] * 12), DuctGeom.R3(b[1] * 12), DuctGeom.R3(b[2] * 12), shape,
                 ce.Rigid ? "" : DuctGeom.R3(d[1]), ce.Rigid ? "" : DuctGeom.R3(d[2]), ce.Rigid ? "" : DuctGeom.R3(d[3]),
                 d2 != null ? DuctGeom.R3(d2[1]) : "", d2 != null ? DuctGeom.R3(d2[2]) : "", d2 != null ? DuctGeom.R3(d2[3]) : "",
-                ce.Rigid ? "" : double.IsNaN(ce.Thk) ? "0.06" : DuctGeom.R3(ce.Thk), ce.Rigid ? "" : double.IsNaN(ce.Thk) ? "default" : "navisworks",
+                ce.Rigid ? "" : DuctGeom.R3(double.IsNaN(ce.Thk) ? DuctGeom.ThkPlaceholder : ce.Thk), ce.Rigid ? "" : double.IsNaN(ce.Thk) ? "default" : "navisworks",
                 ce.Rigid ? "rigid" : d2 != null ? "transition" : "revit", ce.Source,
                 string.Join(";", ce.Src.Select(x => x.Id).ToArray()), ce.NavisId,
                 string.Join(" ", ce.Flags.OrderBy(x => x, StringComparer.Ordinal).ToArray()),
