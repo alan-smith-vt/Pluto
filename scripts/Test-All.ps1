@@ -21,6 +21,7 @@ $suites = @(
     @("duct-supports",   "ps",     "scripts\duct\tests\Test-DuctSupports.ps1",       @(),                     $false),
     @("duct-bridge",     "ps",     "scripts\duct\tests\Test-NavBridge.ps1",          @(),                     $false),
     @("duct-settings",   "ps",     "scripts\duct\tests\Test-DuctSettings.ps1",       @(),                     $false),
+    @("duct-thickness",  "ps",     "scripts\duct\tests\Test-DuctThickness.ps1",      @(),                     $false),
     @("duct-dcr-chain",  "ps",     "scripts\duct\tests\Test-DuctDcrChain.ps1",   @(),                     $false),
     @("duct-fixture",    "ps",     "scripts\duct\tests\Test-DuctFixture.ps1",        @(),                     $false),
     @("demo",            "ps",     "scripts\duct\tests\Test-Demo.ps1",               @("-Root", $demoRoot, "-NoSap"), $false),

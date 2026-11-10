@@ -33,6 +33,11 @@
     DuctSteel = ''                    # e.g. 'C:\Temp\hvac\steel\steel.csv'
     DuctSteelSnapIn = 6
     DuctSteelNearIn = 24
+    # Wall thickness table (CSV, header Run,Size,Thk_in). When set it REPLACES the Navisworks thickness; a frame no row
+    # matches gets the 0.001 in placeholder (fix it in the table or in SAP). Run = the system name shown in the viewer
+    # (e.g. SYSA; its fragments match too). Size: WxH or ranges 13-24x0-60 (either orientation), D dia or 8-36 dia, * = any.
+    # Exact size beats a range beats *. '' = Navisworks thickness.
+    DuctThickness = ''                # e.g. 'C:\Temp\hvac\duct-thickness.csv'
     # Duct-to-steel supports: steel under a horizontal duct with a gap (duct bottom -> steel top) up to DuctSupportGapIn
     # is a support (TAP_STUB link, <out>.supports.csv); duct stretches longer than DuctSpanFt between supports get
     # UNSUPPORTED_SPAN. match.txt prints a gap histogram of every crossing to choose the gap.

@@ -54,6 +54,13 @@ function Get-DuctSettings {
     # DuctSteelSnap = centreline (default) | contact (prototype: the end section touches the other member, within DuctSteelContactIn)
     if ($Data.DuctSteelSnap) { $ds.SteelSettings.SnapMode = [string]$Data.DuctSteelSnap }
     if ($Data.DuctSteelContactIn) { $ds.SteelSettings.ContactIn = [double]$Data.DuctSteelContactIn }
+    # wall thickness table (duct\model\DuctThickness.cs): DuctThickness = CSV Run,Size,Thk_in. When set it is the only
+    # thickness source (Navisworks WallThk_in ignored); frames no row matches get the 0.001 in placeholder. '' = Navisworks
+    if ($Data.DuctThickness) {
+        if (-not (Test-Path $Data.DuctThickness)) { throw "thickness table not found: $($Data.DuctThickness) (DuctThickness in duct-config.psd1; '' = Navisworks thickness)" }
+        $ds.Thickness = New-Object DuctThickness ((Resolve-Path $Data.DuctThickness).Path)
+        $Notes.Add(("thickness table: {0} rows from {1} (Navisworks thickness not used)" -f $ds.Thickness.Rows.Count, $Data.DuctThickness))
+    }
     # duct-to-steel supports (duct\model\SupportPlacer.cs): DuctSupportGapIn = largest duct bottom -> steel top gap that is a
     # support (in), DuctSpanFt = unsupported span limit (ft); the gap histogram in match.txt helps choose the gap
     if ($Data.DuctSupportGapIn) { $ds.Supports.GapMaxIn = [double]$Data.DuctSupportGapIn }

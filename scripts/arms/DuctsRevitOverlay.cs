@@ -943,13 +943,13 @@ public partial class DuctsToPluto
             {
                 nf++;
                 s.AppendLine(string.Join(",", new[] { "F" + nf, ji, jj, DuctGeom.R3(p[0]), DuctGeom.R3(p[1]), DuctGeom.R3(p[2]), DuctGeom.R3(q[0]), DuctGeom.R3(q[1]), DuctGeom.R3(q[2]), shape,
-                    DuctGeom.R3(w), DuctGeom.R3(h), DuctGeom.R3(d), DuctGeom.R3(t), tsrc, ssrc, src, rid, nid, flags }.Select(DuctGeom.CsvCell).ToArray()));
+                    DuctGeom.R3(w), DuctGeom.R3(h), DuctGeom.R3(d), DuctGeom.R4(t), tsrc, ssrc, src, rid, nid, flags }.Select(DuctGeom.CsvCell).ToArray()));
             };
         foreach (RvEl e in scope)
         {
             if (e.Segs.Count == 0) { noFrame++; continue; }
             List<int> pr = rowsOf(e); int nr = DuctGeom.NavRow(e, pr); DuctRow r = nr >= 0 ? rows[nr] : null;
-            bool stated = r != null && !double.IsNaN(r.T) && r.T > 0;
+            bool stated = Cfg.Thickness == null && r != null && !double.IsNaN(r.T) && r.T > 0;   // a thickness table replaces Navisworks
             double t = stated ? r.T : DuctGeom.ThkPlaceholder;
             string flags = string.Join(" ", e.Flags.ToArray());
             foreach (int[] g in e.Segs)
@@ -959,7 +959,8 @@ public partial class DuctsToPluto
                 if ((g[2] >= 0 && DuctGeom.IsTapPoint(e.Conns[g[2]])) || g[2] == -3) { shape = "rigid"; w = h = d = double.NaN; ssrc = "tap-stub"; nStub++; }
                 else SegSize(e, g[2], r, out shape, out w, out h, out d, out ssrc);
                 if (ssrc == "none") noSize++;
-                line("N" + g[0], "N" + g[1], at(g[0]), at(g[1]), shape, w, h, d, t, stated ? "navisworks" : "default", ssrc, e.Only && e.LocRow < 0 ? "revit-only" : "revit",
+                double tc = Cfg.Thickness != null && shape != "rigid" ? Cfg.Thickness.Lookup(e.SysName, shape == "round", w, h, d) : double.NaN;
+                line("N" + g[0], "N" + g[1], at(g[0]), at(g[1]), shape, w, h, d, !double.IsNaN(tc) ? tc : t, !double.IsNaN(tc) ? "config" : stated ? "navisworks" : "default", ssrc, e.Only && e.LocRow < 0 ? "revit-only" : "revit",
                     e.Id, r != null ? r.NavisId : "", flags);
             }
         }
@@ -970,7 +971,7 @@ public partial class DuctsToPluto
             string shape; double w, h, d;
             string ssrc = DuctGeom.NavSize(r, out shape, out w, out h, out d) ? "navisworks" : "none";
             if (ssrc == "none") noSize++;
-            bool stated = !double.IsNaN(r.T) && r.T > 0;
+            bool stated = Cfg.Thickness == null && !double.IsNaN(r.T) && r.T > 0;   // a thickness table replaces Navisworks (no system here: placeholder)
             double t = stated ? r.T : DuctGeom.ThkPlaceholder;
             nav++;
             line("V" + i + "a", "V" + i + "b", new[] { p[0] * 12, p[1] * 12, p[2] * 12 }, new[] { q[0] * 12, q[1] * 12, q[2] * 12 }, shape, w, h, d, t,

@@ -103,6 +103,8 @@ public static class DuctGeom
         double[] yy = DuctMath.Unit(new[] { y[0] - dt * x[0], y[1] - dt * x[1], y[2] - dt * x[2] });
         return DuctMath.Dot3(yy, yy) > 0.5 ? yy : null;
     }
+    // wall thickness: 4 decimals (gauges are 0.0625, 0.0781 ...; 3 decimals rounded them)
+    public static string R4(double v) { return double.IsNaN(v) ? "" : v.ToString("0.####", Inv); }
     public static string R3(double v) { return double.IsNaN(v) ? "" : v.ToString("0.###", Inv); }
     // the system a clean frame belongs to: its first source part's, else its own (a gap bridge), else its source kind
     public static string SystemOf(CEdge ce) { return ce.Src.Count > 0 ? ce.Src[0].SysName : ce.SysName != "" ? ce.SysName : ce.Source; }

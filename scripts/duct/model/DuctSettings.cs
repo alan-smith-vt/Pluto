@@ -26,6 +26,8 @@ public class DuctSettings
     // utility rack steel [DuctSteel] and its connection settings [DuctSteelSnapIn, DuctSteelNearIn]
     public readonly List<SteelMember> Steel = new List<SteelMember>();
     public SteelModel.Settings SteelSettings = new SteelModel.Settings();
+    // wall thickness table [DuctThickness]: when set, the only thickness source (Navisworks ignored); null = Navisworks
+    public DuctThickness Thickness;
     // folder of the files shared with the add-ins (room boxes) [AddinDir]
     public const string AddinDefaultDir = @"C:\Temp\hvac";   // where the add-ins read them
     public string AddinDir = AddinDefaultDir;

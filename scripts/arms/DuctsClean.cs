@@ -27,6 +27,7 @@ public partial class DuctsToPluto
     {
         Func<int, double[]> pos0 = id => DuctGeom.NodeFt(nodes[id], off, scale);
         var cm = CleanModel.FromPieces(scope, beams, beamDim, pos0, navBeamRow, rows, sideNodes, nodeOf);
+        if (Cfg.Thickness != null) Cfg.Thickness.Apply(cm.Edges, false);   // table thickness before merging (merges keep one thickness)
         cm.MergeJoints(pos0, nearPairs, attach, nodeOf);
         cm.CloseGaps();
         cm.SplitAtLinks();
@@ -49,6 +50,9 @@ public partial class DuctsToPluto
             SupportPlacer.WriteSupportsCsv(outBase + ".supports.csv", sr, P);
         }
 
+        string thkNote = "";
+        if (Cfg.Thickness != null) { Cfg.Thickness.Apply(clean, true); thkNote = Cfg.Thickness.Note(); }   // final pass: bridges, splits, counts
+
         // checks: length, deviation of the original connectors from the clean centreline
         double cleanLen = clean.Where(x => !x.Rigid && x.Source != "navisworks-only").Sum(x => DuctMath.Len(P[x.A], P[x.B]));
         var dev = new List<KeyValuePair<double, string>>();
@@ -70,6 +74,7 @@ public partial class DuctsToPluto
             clean.Count, clean.Count(x => x.Rigid), cm.Edges.Count(x => x.Src.Count > 0 || x.Source != "revit"), cm.RawLen, cleanLen, cm.OverlapMerged, cm.OverlapFt, cm.OverlapConflict, dev.Count,
             dev.Count > 0 ? " (worst: " + string.Join(", ", dev.Take(5).Select(x => x.Value + " " + x.Key.ToString("0.#", Inv) + " in").ToArray()) + ")" : "", cm.GapsClosed)
             + (cutNote != "" ? "\n" + cutNote : "")
+            + (thkNote != "" ? "\n" + thkNote : "")
             + (sm != null ? "\n" + sm.Summary() + " (<out>.steel_joints.csv, <out>.steel_frames.csv)\n" + sm.GapSummary() : "")
             + "\n" + bridgeNote
             + "\n" + orientNote
@@ -99,7 +104,7 @@ public partial class DuctsToPluto
                 if (round || rect)
                 {
                     double t = double.IsNaN(ce.Thk) ? DuctGeom.ThkPlaceholder : ce.Thk;
-                    string name = CleanModel.DimText(d) + string.Format(Inv, " t{0:0.###}", t);
+                    string name = CleanModel.DimText(d) + string.Format(Inv, " t{0:0.####}", t);
                     if (!secIx.TryGetValue(name, out s))
                     {
                         sections.Add(round ? RawViewerWriter.SectionDef.Pipe(name, (float)(d[3] * ft), (float)(t * ft))
@@ -153,7 +158,8 @@ public partial class DuctsToPluto
 
     // the SAP input: one frame per clean element, inches, Navisworks frame; W2 / H2 / Dia2 = a transition's other end;
     // WX / WY / WZ = the width direction (SapDucts sets the local axis angle from it); Thk_in = the parts' Navisworks
-    // wall thickness, else DuctGeom.ThkPlaceholder (0.001 in, ThkSource "default")
+    // wall thickness (ThkSource navisworks) or, with a DuctThickness table, the table's (config; Navisworks
+    // ignored), else DuctGeom.ThkPlaceholder (0.001 in, ThkSource "default")
     static void WriteCleanFrames(string path, List<CEdge> clean, Dictionary<int, double[]> P)
     {
         var s = new StringBuilder();
@@ -168,7 +174,7 @@ public partial class DuctsToPluto
                 DuctGeom.R3(a[0] * 12), DuctGeom.R3(a[1] * 12), DuctGeom.R3(a[2] * 12), DuctGeom.R3(b[0] * 12), DuctGeom.R3(b[1] * 12), DuctGeom.R3(b[2] * 12), shape,
                 ce.Rigid ? "" : DuctGeom.R3(d[1]), ce.Rigid ? "" : DuctGeom.R3(d[2]), ce.Rigid ? "" : DuctGeom.R3(d[3]),
                 d2 != null ? DuctGeom.R3(d2[1]) : "", d2 != null ? DuctGeom.R3(d2[2]) : "", d2 != null ? DuctGeom.R3(d2[3]) : "",
-                ce.Rigid ? "" : DuctGeom.R3(double.IsNaN(ce.Thk) ? DuctGeom.ThkPlaceholder : ce.Thk), ce.Rigid ? "" : double.IsNaN(ce.Thk) ? "default" : "navisworks",
+                ce.Rigid ? "" : DuctGeom.R4(double.IsNaN(ce.Thk) ? DuctGeom.ThkPlaceholder : ce.Thk), ce.Rigid ? "" : double.IsNaN(ce.Thk) ? "default" : Cfg.Thickness != null ? "config" : "navisworks",
                 ce.Rigid ? "rigid" : d2 != null ? "transition" : "revit", ce.Source,
                 string.Join(";", ce.Src.Select(x => x.Id).ToArray()), ce.NavisId,
                 string.Join(" ", ce.Flags.OrderBy(x => x, StringComparer.Ordinal).ToArray()),

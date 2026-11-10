@@ -227,7 +227,7 @@ public partial class SapDucts
         if (double.IsNaN(t) || t <= 0) t = ThkPlaceholder;
         bool round = r["Shape"] == "round" && !double.IsNaN(d);
         if (!round && (double.IsNaN(w) || double.IsNaN(h))) return NoSize;
-        string name = round ? F("DUCT_{0:0.##}dia_t{1:0.###}", d, t) : F("DUCT_{0:0.##}x{1:0.##}_t{2:0.###}", w, h, t);
+        string name = round ? F("DUCT_{0:0.##}dia_t{1:0.####}", d, t) : F("DUCT_{0:0.##}x{1:0.##}_t{2:0.####}", w, h, t);
         if (made.Add(name))
         {
             if (round) Check(M.PropFrame.SetPipe(name, Mat, d, t, -1, "", ""), "SetPipe " + name);
