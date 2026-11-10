@@ -18,14 +18,16 @@ $frames = W "test.frames.csv" @(
     "Frame,JointI,JointJ,XI_in,YI_in,ZI_in,XJ_in,YJ_in,ZJ_in,Shape,W_in,H_in,Dia_in,Thk_in,WX,WY,WZ,Source,Flags,RevitElementId,Span",
     "D1,N1,N2,0,0,150,60,0,150,rect,24,12,,0.06,0,1,0,revit,,1,",
     "D2,N2,N3,60,0,150,420,0,150,rect,24,12,,0.06,0,1,0,revit,,2,US1",
-    "D3,N3,N4,420,0,150,480,0,150,rect,24,12,,0.06,0,1,0,revit,,3,")
+    "D3,N3,N4,420,0,150,480,0,150,rect,24,12,,0.06,0,1,0,revit,,3,",
+    "D9,N7,N8,700,0,150,760,0,150,rect,24,12,,0.06,0,1,0,revit,FLOATING,9,")
 # rack 1 at x 60: columns S1-S2, S3-S4, beam split at SS1 (the support joint); rack 2 at x 420: columns S5-S6,
 # S10-S8, beam S6-S8 whole (the support joint SS2 is new: auto-meshed); cantilever S6-S9 pinned at the wall
 $joints = W "test.steel_joints.csv" @(
-    "Joint,X_in,Y_in,Z_in,Restraint,Condition,Flags",
+    "Joint,X_in,Y_in,Z_in,Restraint,Condition,Flags,TAxisX,TAxisY,TAxisZ",
     "S1,60,-30,0,FIXED,open-fixed,", "S2,60,-30,132,,corner,", "S3,60,30,0,FIXED,open-fixed,", "S4,60,30,132,,corner,",
     "SS1,60,0,132,,,", "S5,420,-30,0,FIXED,open-fixed,", "S6,420,-30,132,,framed,", "S8,420,30,132,,corner,",
-    "S9,420,-90,132,PINNED,open-pinned,OPEN_NEAR", "S10,420,30,0,FIXED,open-fixed,")
+    "S9,420,-90,132,PINNED+T,open-pinned,OPEN_NEAR,0,-1,0", "S10,420,30,0,FIXED,open-fixed,",
+    "S11,500,0,0,PINNED+T,open-pinned,,0.57735027,0.57735027,0.57735027", "S12,560,60,60,PINNED,open-pinned,")
 $w12 = "W12X26,12.2,6.49,0.38,0.23"
 $steel = W "test.steel_frames.csv" @(
     "Frame,JointI,JointJ,XI_in,YI_in,ZI_in,XJ_in,YJ_in,ZJ_in,Section,D_in,Bf_in,Tf_in,Tw_in,WebX,WebY,WebZ,CP,OffY_in,OffZ_in,ReleaseI,ReleaseJ,EndI,EndJ,MemberOid,Flags",
@@ -36,7 +38,8 @@ $steel = W "test.steel_frames.csv" @(
     "SF5,S5,S6,420,-30,0,420,-30,132,$w12,1,0,0,,0,0,,,open-fixed,interior,M4,",
     "SF6,S10,S8,420,30,0,420,30,132,$w12,1,0,0,,0,0,,,open-fixed,corner,M5,",
     "SF7,S6,S8,420,-30,132,420,30,132,$w12,0,0,1,8,0,0,M2M3,M2M3,framed,corner,M6,",
-    "SF8,S6,S9,420,-30,132,420,-90,132,,,,,,0,0,1,,0,0,M2M3,,framed,open-pinned,M7,")
+    "SF8,S6,S9,420,-30,132,420,-90,132,,,,,,0,0,1,,0,0,M2M3,,framed,open-pinned,M7,",
+    "SF9,S11,S12,500,0,0,560,60,60,$w12,0,0,1,,0,0,,,open-pinned,open-pinned,M8,")
 $supports = W "test.supports.csv" @(
     "SupportId,Type,DuctJoint,DX,DY,DZ,SteelJoint,SX,SY,SZ,SteelMember,AxisX,AxisY,AxisZ,Gap_in,System,Flags",
     "1,guide,N2,60,0,150,SS1,60,0,132,SF3,1,0,0,12,SYS-A,",
@@ -66,20 +69,23 @@ function Expect([string]$what, $got, $want) {
     Write-Output ("{0} {1}: {2}{3}" -f $(if ($ok) { "ok  " } else { "FAIL" }), $what, $got, $(if ($ok) { "" } else { " (want $want)" }))
 }
 # 3 ducts + 8 steel objects (SF7 meshed in two at SS2) + 2 stubs
-Expect "frame elements" (Rows "CONNECTIVITY - FRAME").Count 14
-Expect "joints" (Rows "JOINT COORDINATES").Count 15
+Expect "frame elements (D9 FLOATING left out)" (Rows "CONNECTIVITY - FRAME").Count 15
+Expect "joints" (Rows "JOINT COORDINATES").Count 17
+Expect "no joint of the FLOATING frame (x 700 / 760)" @(Rows "JOINT COORDINATES" | Where-Object { $_ -match "XorR=(700|760)\s" }).Count 0
 # SF3 I, SF4 J, SF7 both (first / last element), SF8 I
 $rel = Rows "FRAME RELEASE ASSIGNMENTS 1 - GENERAL"
 Expect "frames with releases" $rel.Count 5
 Expect "releases are M2+M3 only" @($rel | Where-Object { $_ -match "PI=Yes|V2I=Yes|V3I=Yes|TI=Yes|PJ=Yes|V2J=Yes|V3J=Yes|TJ=Yes" }).Count 0
 $res = Rows "JOINT RESTRAINT ASSIGNMENTS"
-Expect "restrained joints" $res.Count 5
+Expect "restrained joints" $res.Count 7
 Expect "fixed joints" @($res | Where-Object { $_ -match "R1=Yes" -and $_ -match "R3=Yes" }).Count 4
-Expect "pinned joints" @($res | Where-Object { $_ -match "U3=Yes" -and $_ -match "R1=No" }).Count 1
+Expect "pinned joints (no R1)" @($res | Where-Object { $_ -match "U3=Yes" -and $_ -match "R1=No" }).Count 2
+Expect "PINNED+T: one rotation restrained (S9 global R2, S11 local R1)" @($res | Where-Object { @([regex]::Matches($_, "R[123]=Yes")).Count -eq 1 }).Count 2
+Expect "PINNED+T off-axis: joint local axes turned" (Rows "JOINT LOCAL AXES ASSIGNMENTS 1 - TYPICAL").Count 1
 Expect "insertion points (CP 8 on 3 beams = 4 elements)" (Rows "FRAME INSERTION POINT ASSIGNMENTS").Count 4
 Expect "SUPPORT_ALL frames" (InGroup "SUPPORT_ALL" "Frame") 2
 Expect "SUPPORT_GUIDE frames" (InGroup "SUPPORT_GUIDE" "Frame") 1
-Expect "STEEL_ALL frames" (InGroup "STEEL_ALL" "Frame") 9
+Expect "STEEL_ALL frames" (InGroup "STEEL_ALL" "Frame") 10
 Expect "STEEL_OPEN_FIXED joints" (InGroup "STEEL_OPEN_FIXED" "Joint") 4
 Expect "FLAG_OPEN_NEAR joints" (InGroup "FLAG_OPEN_NEAR" "Joint") 1
 Expect "FLAG_UNSUPPORTED_SPAN frames" (InGroup "FLAG_UNSUPPORTED_SPAN" "Frame") 1

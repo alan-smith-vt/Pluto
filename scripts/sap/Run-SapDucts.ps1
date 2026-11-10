@@ -4,7 +4,8 @@
 # frames' width direction, PLACEHOLDER material DUCT_MAT_TBD, DUCT_ALL / SRC_ / SYS_ / FLAG_ groups; no loads) and saves
 # it at -SavePath. If a model is open in SAP it is reopened afterwards so SAP is left where it was.
 # Only the primary systems (mains and pinned mains) go in by default; -Fragments, -Other (other systems) and
-# -NavisOnly (Navisworks rows with no Revit part) add those. Each frame's GUID field names its Revit / Navisworks ids.
+# -NavisOnly (Navisworks rows with no Revit part) add those. Frames flagged FLOATING (a duct piece with no support) are
+# left out (stability rule 1). Each frame's GUID field names its Revit / Navisworks ids.
 # Steel and supports (SapSteel.cs; each optional):
 #   -SteelFrames <out>.steel_frames.csv  W sections, M2+M3 releases, cardinal points; joints and restraints from
 #                -SteelJoints (default: the same name with steel_joints). Groups STEEL_ALL, STEEL_RELEASED, STEEL_<condition>

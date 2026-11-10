@@ -57,7 +57,7 @@ public partial class SapDucts
         Check(M.PropMaterial.SetMaterial(SteelMat, eMatType.Steel, -1, "", ""), "SetMaterial " + SteelMat);
         Check(M.PropMaterial.SetMPIsotropic(SteelMat, 29000, 0.3, 6.5e-6, 0), "SetMPIsotropic " + SteelMat);
         Check(M.PropMaterial.SetWeightAndMass(SteelMat, 1, 2.836e-4, 0), "SetWeightAndMass " + SteelMat);
-        int pinned = 0, fixd = 0;
+        int pinned = 0, fixd = 0, pinnedT = 0;
         string jointsCsv = string.IsNullOrEmpty(SteelJointsCsv) ? SteelFramesCsv.Replace("steel_frames", "steel_joints") : SteelJointsCsv;
         foreach (Dictionary<string, string> r in ReadCsv(jointsCsv))
         {
@@ -70,7 +70,8 @@ public partial class SapDucts
                 Check(M.PointObj.SetRestraint(pt, ref dof), "SetRestraint " + pt);
                 if (fx) fixd++; else pinned++;
             }
-            else if (kind != "") throw new Exception("Restraint '" + kind + "' at " + r["Joint"] + ": PINNED, FIXED or empty");
+            else if (kind == "PINNED+T") { PinTorsion(pt, r); pinnedT++; }
+            else if (kind != "") throw new Exception("Restraint '" + kind + "' at " + r["Joint"] + ": PINNED, PINNED+T, FIXED or empty");
             string cond = Val(r, "Condition");
             if (cond != "") AddPoint("STEEL_" + Clean(cond), pt);
             foreach (string f in Val(r, "Flags").Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)) AddPoint("FLAG_" + Clean(f), pt);
@@ -110,9 +111,9 @@ public partial class SapDucts
             if (sec == SteelNoSize) { addTo("FLAG_NO_SIZE", name); noSize++; }
             foreach (string f in Val(r, "Flags").Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)) addTo("FLAG_" + Clean(f), name);
         }
-        return F("NEW steel: {0} frames, {1} with releases ({2} hinged ends, M2+M3), restraints {3} pinned + {4} fixed, {5} without a size, {6} without a web direction{7}",
+        return F("NEW steel: {0} frames, {1} with releases ({2} hinged ends, M2+M3), restraints {3} pinned + {4} fixed + {8} pinned+T (torsion), {5} without a size, {6} without a web direction{7}",
             steelFrames.Count, released, ends, pinned, fixd, noSize, noWeb,
-            failed.Count > 0 ? F("; SAP refused {0} ({1})", failed.Count, string.Join(" ", failed.Take(10).ToArray())) : "");
+            failed.Count > 0 ? F("; SAP refused {0} ({1})", failed.Count, string.Join(" ", failed.Take(10).ToArray())) : "", pinnedT);
     }
 
     string AddSupports(List<Dictionary<string, string>> rows, Dictionary<string, string> joints, HashSet<string> sections, Action<string, string> addTo, Dictionary<string, string> steelFrames)
@@ -145,6 +146,28 @@ public partial class SapDucts
         return F("NEW supports: {0} TAP_STUB links ({1}), {2} steel frames meshed at new support joints{3}",
             byType.Values.Sum(), byType.Count == 0 ? "none" : string.Join(", ", byType.Select(kv => kv.Key + " " + kv.Value).ToArray()), meshed.Count,
             bad.Count > 0 ? F("; {0} problems: {1}", bad.Count, string.Join("; ", bad.Take(10).ToArray())) : "");
+    }
+
+    // PINNED+T (steel interface v2, stability rule 4, 2026-10-30): U1-U3 plus the rotation about the member's own axis
+    // (TAxisX..Z), bending free. Axis within 1 deg of a global axis: that global rotation. Otherwise the joint's local
+    // axes are turned so local 1 = the axis (SAP point angles a about 3, then b about the new 2: local 1 =
+    // (cos a cos b, sin a cos b, -sin b)) and local R1 is restrained (SAP restraints are in the joint's local axes).
+    void PinTorsion(string pt, Dictionary<string, string> r)
+    {
+        double[] u = Unit(new[] { Num(r, "TAxisX"), Num(r, "TAxisY"), Num(r, "TAxisZ") });
+        if (u == null || double.IsNaN(u[0]) || double.IsNaN(u[1]) || double.IsNaN(u[2])) throw new Exception("Restraint PINNED+T at " + r["Joint"] + " needs TAxisX/Y/Z");
+        bool[] dof = { true, true, true, false, false, false };
+        double cos1 = Math.Cos(Math.PI / 180);
+        int g = -1;
+        for (int k = 0; k < 3; k++) if (Math.Abs(u[k]) >= cos1) g = k;
+        if (g >= 0) dof[3 + g] = true;
+        else
+        {
+            double a = Math.Atan2(u[1], u[0]) * 180 / Math.PI, b = -Math.Asin(Math.Max(-1, Math.Min(1, u[2]))) * 180 / Math.PI;
+            Check(M.PointObj.SetLocalAxes(pt, a, b, 0), "SetLocalAxes " + pt);
+            dof[3] = true;
+        }
+        Check(M.PointObj.SetRestraint(pt, ref dof), "SetRestraint " + pt);
     }
 
     public static bool Hinged(string rel)
