@@ -67,7 +67,7 @@ public partial class DuctsToPluto
         dev.Sort((x, y) => y.Key.CompareTo(x.Key));
 
         if (sm != null) sm.WriteCsv(outBase);
-        WriteCleanViewer(outBase + "_clean", modelId + "/clean", lengthUnit, clean, P, off, scale, sm, sr, rows);
+        string wallNote = WriteCleanViewer(outBase + "_clean", modelId + "/clean", lengthUnit, clean, P, off, scale, sm, sr, rows);
         WriteCleanFrames(outBase + ".frames.csv", clean, P);
 
         return string.Format(Inv, "clean model (<out>_clean.bin, <out>.frames.csv): {0} elements ({1} rigid links) from {2} pieces; duct length {3:0.#} ft -> {4:0.#} ft, overlaps merged {5} ({6:0.#} ft), different-size overlaps {7} (OVERLAP_SIZE_CONFLICT), gaps closed {10}; connectors > 1 in from the clean line {8}{9}",
@@ -78,12 +78,13 @@ public partial class DuctsToPluto
             + (sm != null ? "\n" + sm.Summary() + " (<out>.steel_joints.csv, <out>.steel_frames.csv)\n" + sm.GapSummary() : "")
             + "\n" + bridgeNote
             + "\n" + orientNote
-            + (sr != null ? "\n" + sr.Note : "");
+            + (sr != null ? "\n" + sr.Note : "")
+            + (wallNote != "" ? "\n" + wallNote : "");
     }
 
 
 
-    static void WriteCleanViewer(string outBase, string modelId, string lengthUnit, List<CEdge> clean, Dictionary<int, double[]> P, double[] off, double scale, SteelModel sm, SupportRun sr, List<DuctRow> rows)
+    static string WriteCleanViewer(string outBase, string modelId, string lengthUnit, List<CEdge> clean, Dictionary<int, double[]> P, double[] off, double scale, SteelModel sm, SupportRun sr, List<DuctRow> rows)
     {
         var nodes = new Dictionary<int, Node>(); int next = 1; var map = new Dictionary<int, int>();
         Func<int, int> nd = n => { int id; if (!map.TryGetValue(n, out id)) { id = DuctGeom.MakeNode(nodes, ref next, P[n], off, scale); map[n] = id; } return id; };
@@ -133,10 +134,15 @@ public partial class DuctsToPluto
         }
         SteelViewWriter.View sv = sm != null ? SteelViewWriter.Add(sm, nodes, ref next, sections, beams, labels, ref nb, off, scale) : null;
         SupportView pv = SupportViewWriter.AddSupports(sr, P, nodes, ref next, sections, beams, labels, ref nb, off, scale);
-        if (beams.Count == 0) return;
+        if (beams.Count == 0) return "";
+        // walls: drawing only, shells beside the beams (WallViewWriter.cs); none given or none near = the file as before
+        WallViewWriter.View wv = WallViewWriter.Add(Cfg.Walls, Cfg.WallMarginFt, nodes, ref next, off, scale);
+        bool hasWalls = wv != null && wv.Elements.Count > 0;
         var comps = new List<RawViewerWriter.Component>(); comps.Add(new RawViewerWriter.Component("Axial N", "force", "kip"));
         var units = new Dictionary<string, string>(); units["length"] = lengthUnit;
-        var w = new RawViewerWriter(outBase + ".bin", nodes, null, null, null, beams, sections, comps, modelId, units);
+        var shellComps = new List<RawViewerWriter.Component>(); shellComps.Add(new RawViewerWriter.Component("F11", "force", "kip/" + lengthUnit));   // layout only
+        var w = new RawViewerWriter(outBase + ".bin", nodes, hasWalls ? wv.Elements : null, null, hasWalls ? shellComps : null, beams, sections, comps, modelId, units);
+        if (hasWalls) w.SetShellLabels(wv.Labels);
         w.SetBeamLabels(labels); w.Write(false);
         var sc = new FeaturesSidecar(); sc.ModelId = modelId; sc.GeometryHash = w.GeometryHash;
         sc.Units["length"] = lengthUnit; sc.Units["worldOffset"] = string.Format(Inv, "{0} {1} {2}", off[0] * scale, off[1] * scale, off[2] * scale);
@@ -152,7 +158,9 @@ public partial class DuctsToPluto
         SupportViewWriter.AddSpanGroup(sc, sr, clean, P, beamOf, gSpan);
         SupportViewWriter.AddFloatingGroup(sc, sr, clean, P, beamOf);   // stability rule 1
         SupportViewWriter.AddHangerGroups(sc, sr, clean, beamOf, rows, pv);   // the hanger checks
+        WallViewWriter.AddGroups(sc, wv);
         File.WriteAllText(outBase + ".features.json", sc.ToJson(), new UTF8Encoding(false));
+        return wv != null ? wv.Note : "";
     }
 
 

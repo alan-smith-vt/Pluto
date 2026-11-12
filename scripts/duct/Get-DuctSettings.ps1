@@ -1,11 +1,11 @@
 # Dot-source after the arms are loaded (scripts\arms\Import-Arms.ps1): builds the converter's DuctSettings
 # (scripts\duct\model\DuctSettings.cs) from the duct config data, read ONCE by the caller, plus the command-line
 # overrides. Same rules and error texts as before 2026-10-30 (none = off, a missing file throws naming its key).
-#   $ds = Get-DuctSettings -Data $dcfg -Mode Revit [-Systems s] [-Cuts csv] [-Drop files] [-Steel csv] [-Rooms codes] -Notes $notes
+#   $ds = Get-DuctSettings -Data $dcfg -Mode Revit [-Systems s] [-Cuts csv] [-Drop files] [-Steel csv] [-Walls csv] [-Rooms codes] -Notes $notes
 # -Mode Revit: everything; RevitMesh: RevitMeshNoRunExclude only; anything else: AddinDir only.
 # $notes (a List[string]) receives the console lines ("cut points: n from x", ...) in the order they used to print.
 function Get-DuctSettings {
-    param([hashtable]$Data, [string]$Mode, [string]$Systems, [string]$Cuts, [string]$Drop, [string]$Steel, [string]$Rooms,
+    param([hashtable]$Data, [string]$Mode, [string]$Systems, [string]$Cuts, [string]$Drop, [string]$Steel, [string]$Rooms, [string]$Walls,
           [System.Collections.Generic.List[string]]$Notes)
     if (-not $Data) { $Data = @{} }
     $ds = New-Object DuctSettings
@@ -78,6 +78,17 @@ function Get-DuctSettings {
         $ds.Steel.AddRange($sr.Build((Resolve-Path $Steel).Path, $Rooms))
         $scope = $(if ($Rooms) { "rooms " + (@($Rooms -split '[,;\s]+' | Where-Object { $_ }) -join ",") } else { "rooms: whole building" })
         $Notes.Add(("steel: {0} members from {1} ({2}) ({3})" -f $ds.Steel.Count, $Steel, $scope, ($sr.Summary() -replace "`n", "; ")))
+    }
+    # walls drawn in the clean model (duct\model\WallViewWriter.cs): DuctWalls = the Export-Walls.ps1 CSV (meters, the
+    # steel CSV's frame); -Walls overrides, -Walls none = off. Only walls within DuctWallMarginFt (default 10; negative =
+    # every wall) of the model are drawn
+    if (-not $Walls) { $Walls = $Data.DuctWalls }
+    if ($Data.ContainsKey('DuctWallMarginFt')) { $ds.WallMarginFt = [double]$Data.DuctWallMarginFt }
+    if ($Walls -and $Walls -ne "none") {
+        if (-not (Test-Path $Walls)) { throw "walls CSV not found: $Walls (DuctWalls in duct-config.psd1 or -Walls; -Walls none = off)" }
+        $ds.Walls.AddRange([WallViewWriter]::Read((Resolve-Path $Walls).Path))
+        $byShape = @([WallViewWriter]::Shapes | ForEach-Object { $s = $_; "$s " + @($ds.Walls | Where-Object { $_.Shape -eq $s }).Count }) -join ", "
+        $Notes.Add(("walls: {0} boxes from {1} ({2})" -f $ds.Walls.Count, $Walls, $byShape))
     }
     return $ds
 }

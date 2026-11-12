@@ -26,6 +26,9 @@ public class DuctSettings
     // utility rack steel [DuctSteel] and its connection settings [DuctSteelSnapIn, DuctSteelNearIn]
     public readonly List<SteelMember> Steel = new List<SteelMember>();
     public SteelModel.Settings SteelSettings = new SteelModel.Settings();
+    // walls drawn in the clean model [DuctWalls]: boxes within WallMarginFt of the model [DuctWallMarginFt; negative = all]
+    public readonly List<WallBox> Walls = new List<WallBox>();
+    public double WallMarginFt = 10;
     // wall thickness table [DuctThickness]: when set, the only thickness source (Navisworks ignored); null = Navisworks
     public DuctThickness Thickness;
     // folder of the files shared with the add-ins (room boxes) [AddinDir]

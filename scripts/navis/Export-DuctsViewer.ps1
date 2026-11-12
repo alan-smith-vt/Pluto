@@ -33,6 +33,9 @@
 #                        kept frames ending at a cut get CUT_END (viewer "Clean: cut ends", SAP FLAG_CUT_END)
 #                        [-Steel <csv>|none]: utility rack steel (default: DuctSteel in the duct config) drawn in the
 #                        clean model with its end conditions; <out>.steel_joints.csv / .steel_frames.csv (SAP input)
+#                        [-Walls <csv>|none]: walls (default: DuctWalls in the duct config), the CSV of
+#                        scripts\voyager\Export-Walls.ps1, drawn in the clean model as boxes in the groups
+#                        Walls: wall / slab / skew / small; only those within DuctWallMarginFt of the model
 #     [-Config <psd1>]   the duct config every setting above comes from (read once, printed first); default
 #                        scripts\duct\duct-config.psd1 (absent = defaults)
 #     [-Out <base>]      default <run>\ducts  ->  <run>\ducts.bin + <run>\ducts.features.json
@@ -65,6 +68,7 @@ param(
     [string]$Systems,
     [string]$Cuts,
     [string]$Steel,  # steel CSV for the clean model (default DuctSteel in the duct config); none = off
+    [string]$Walls,  # walls CSV for the clean model (default DuctWalls in the duct config); none = off
     [string]$Drop,  # add-on: hand-picked drop lists (viewer Cut picker), comma separated; default DuctDrop in the duct config; none = off
     [string]$Config # the duct config (.psd1); default scripts\duct\duct-config.psd1
 )
@@ -103,7 +107,7 @@ if (-not $ModelId) {
 # every setting the converter takes, in one object (scripts\duct\model\DuctSettings.cs), handed to the Export* call
 $notes = New-Object 'System.Collections.Generic.List[string]'
 $ds = Get-DuctSettings -Data $dcfg -Mode $(if ($Revit) { "Revit" } elseif ($RvMesh) { "RevitMesh" } else { "" }) `
-    -Systems $Systems -Cuts $Cuts -Drop $Drop -Steel $Steel -Rooms $Room -Notes $notes
+    -Systems $Systems -Cuts $Cuts -Drop $Drop -Steel $Steel -Walls $Walls -Rooms $Room -Notes $notes
 $addinDir = $ds.AddinDir
 $t0 = Get-Date
 if ($Box) {
