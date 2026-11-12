@@ -137,6 +137,20 @@ static class PipeWorkbookGui
         };
     }
 
+    internal static Col[] MaterialCols()
+    {
+        return new[]
+        {
+            L("Material", "key", "catalog", LMaterial, "The CAESAR material (106 - A106 Grade B ...), one row each.",
+              "Materials: for the SAP / STAAD check model only (Build-Frame.ps1 -In this workbook). CAESAR never reads them: it takes its own from its material database, so give the same values here. A material the job uses and this sheet does not list takes Pluto's default for its class, with a warning."),
+            C("E", "prop", "pos", "Cold elastic modulus: the SAP model's E (a Sections row's own E wins for its pipe, as in CAESAR)."),
+            C("Poisson", "prop", "nonneg", "Poisson's ratio."),
+            C("Density", "prop", "nonneg", "Pipe density: the SAP model's unit weight (a Sections row's own density wins for its pipe)."),
+            C("Alpha", "prop", "nonneg", "Mean thermal expansion coefficient per degree: the SAP model's temperature loads are each T1-T9 minus the ambient, times this. Take it at the operating temperature."),
+            C("Note", "text", "text", "Where the values came from. \"Pluto default: ...\" (amber) = never checked: compare with CAESAR's material database."),
+        };
+    }
+
     internal static Col[] ProcessCols()
     {
         var l = new List<Col> { C("Name", "key", "text", "A unique name; elements use it in their Process column.", "Name: what the Elements sheet's Process column says. Each name once.") };

@@ -169,6 +169,17 @@ public static class PipeModelJson
             }
             w.CloseArr();
         }
+        if (m.Materials.Count > 0)   // only when given: a model without them keeps its text (and its fingerprint)
+        {
+            w.Key("materials"); w.OpenArr();
+            foreach (var x in m.Materials)
+            {
+                w.Open();
+                w.Num("number", x.Number); w.Num("e", x.E); w.Num("poisson", x.Poisson); w.Num("density", x.Density); w.Num("alpha", x.Alpha); w.Str("note", x.Note);
+                w.Close();
+            }
+            w.CloseArr();
+        }
         w.Key("nodeLoads"); w.OpenArr();
         foreach (var d in m.NodeLoads)
         {
@@ -396,6 +407,11 @@ public static class PipeModelJson
             var f = Ds(o, "free") ?? new double[4];
             h.FreeNode1 = (int)f[0]; h.FreeNode2 = (int)f[1]; h.FreeCode1 = (int)f[2]; h.FreeCode2 = (int)f[3];
             m.Hangers.Add(h);
+        }
+        foreach (var xo in Arr(root, "materials"))
+        {
+            var o = (Dictionary<string, object>)xo;
+            m.Materials.Add(new PipeModelMaterial { Number = I(o, "number"), E = D(o, "e"), Poisson = D(o, "poisson"), Density = D(o, "density"), Alpha = D(o, "alpha"), Note = S(o, "note") ?? "" });
         }
         foreach (var no in Arr(root, "nodeLoads"))
         {

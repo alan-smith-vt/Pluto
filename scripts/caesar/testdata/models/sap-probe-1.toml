@@ -1,0 +1,190 @@
+# The SAP check model's probe, round 1 (2026-11-12): a made-up job with every element, load and support the check model
+# translates linearly (vault/format/pipe-to-frame.md). Run it in CAESAR II (Build-Pipe.ps1 -In this -Cii) and its seed in
+# SAP2000 (Build-Frame.ps1 -In this -S2k), then compare displacements, restraint loads and element forces per case.
+# Every support is two-way and gapless, so the two analyses are linear and must agree. The temperatures are thermal
+# strains (in/in, under CAESAR's alpha tolerance of 0.05): CAESAR takes them as given and the seed writes strain / alpha,
+# so both grow the pipe alike whatever alpha CAESAR's database holds (Pluto's check marks them amber, as it should).
+[model]
+title = "SAP check model probe 1"
+material = 106
+ambient = 70
+[defaults]
+section = "8in"
+temperature = [0.0018, 0.00085]
+pressure = 150
+bend = "LR"
+max_length = 5
+[sections.8in]
+nps = 8
+schedule = "40"
+insulation = 2
+insulation_density = 11.5
+fluid_sg = 1.0
+[sections.6in]
+nps = 6
+schedule = "40"
+insulation = 2
+insulation_density = 11.5
+fluid_sg = 1.0
+
+# the main line: an anchor, a valve, an SR corner, a skewed leg, a riser with a 3D bend, a moving end
+[[runs]]
+name = "main"
+start = [0, 0, 0]
+legs = [{ dir = "+X", length = 30, bend = "SR" }, ["+Z", 15], { dir = [1, 0, 1], length = 14.142, bend = "3D" }, ["+Y", 12], ["+X", 16]]
+
+# a branch with a reducer and an expansion joint between anchors (pressure thrust)
+[[runs]]
+name = "branch"
+from = { run = "main", at = 10 }
+legs = [["-Z", 18]]
+temperature = [0.0015, 0.0005]
+g_load = [0.2, 0, 0]
+
+# a weightless rigid trunnion off the riser, on a spring support
+[[runs]]
+name = "trunnion"
+from = { run = "main", at = 62 }
+legs = [["-X", 2]]
+
+# a drop to a vessel nozzle with custom stiffnesses
+[[runs]]
+name = "drop"
+from = { run = "main", at = 75 }
+legs = [["-Z", 6]]
+
+[[components]]
+type = "flanged_valve"
+name = "V-1"
+run = "main"
+at = 4
+length = 2
+weight = 450
+[[components]]
+type = "reducer"
+run = "branch"
+at = 3
+length = 1
+to_section = "6in"
+[[components]]
+type = "expansion_joint"
+name = "EJ-1"
+run = "branch"
+at = 9
+length = 1.5
+axial_stiffness = 1800
+transverse_stiffness = 4500
+torsion_stiffness = 1e6
+effective_id = 7.25
+[[components]]
+type = "rigid"
+name = "TRUNNION"
+run = "trunnion"
+at = 0
+length = 2
+weight = 0
+
+# supports: all two-way, no gaps, no friction
+[[supports]]
+run = "main"
+at = 0
+type = "ANC"
+[[supports]]
+run = "branch"
+at = "L"
+type = "ANC"
+[[supports]]
+run = "main"
+at = 14
+type = "Y"
+[[supports]]
+run = "main"
+at = 22
+type = ["Y", "GUI"]
+[[supports]]
+run = "main"
+at = 26
+type = "LIM"
+[[supports]]
+run = "main"
+at = 40
+type = "Y"
+stiffness = 20000
+[[supports]]
+run = "main"
+at = 52
+type = "X"
+direction = [1, 0, -1]
+[[supports]]
+run = "main"
+at = 52
+type = "Y"
+[[supports]]
+run = "trunnion"
+at = "L"
+type = "Y"
+stiffness = 50000
+[[supports]]
+run = "main"
+at = 68
+dofs = ["RZ"]
+stiffness = 2.5e6
+# a support that settles: a Y restraint to a connecting node that moves down
+[[supports]]
+run = "main"
+at = 33
+type = "Y"
+cnode = 9000
+[[displacements]]
+node = 9000
+vector = 1
+dx = 0
+dy = -0.25
+dz = 0
+rx = 0
+ry = 0
+rz = 0
+# the main line's far end moves with its equipment (an anchor that moves)
+[[displacements]]
+run = "main"
+at = "L"
+vector = 1
+dx = 0.5
+dy = 0.2
+dz = 0
+rx = 0
+ry = 0
+rz = 0
+
+[[hangers]]
+run = "main"
+at = 42
+rate = 1200
+cold_load = 2500
+tag = "SPR-1"
+[[hangers]]
+run = "main"
+at = 79
+constant = 900
+tag = "CS-1"
+
+[[nozzles]]
+run = "drop"
+at = "L"
+type = "custom"
+vessel_od = 72
+vessel_wall = 0.5
+vessel_axis = [0, 1, 0]
+vessel_material = 106
+axial_stiffness = 5e5
+inplane_stiffness = 2e7
+outplane_stiffness = 1.5e7
+torsional_stiffness = 3e7
+
+[[forces]]
+run = "main"
+at = 18
+vector = 1
+fx = 500
+fy = -1000
+mz = 20000

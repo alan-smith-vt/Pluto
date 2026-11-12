@@ -16,7 +16,7 @@ created: 2026-11-05
   in SAP through the one SAP controller (`scripts/sap/`, its own process) and saves the `.sdb`.
 - **The round-trip source is an `.s2k` exported from SAP.**
 - **Seeding the model from a CAESAR model is a later phase.** The frame model carries Kind, Line, Process and pipe
-  sizes so that mapping is direct.
+  sizes so that mapping is direct. Begun 2026-11-12: [[vault/decisions/2026-11-12-caesar-to-sap|2026-11-12-caesar-to-sap]].
 - **Units are the model's own**, SAP's unit set for the file. Workbook headers show them, and a header in another unit
   converts its column.
 - **The model is the `.s2k`, typed.** Every object owns the rows that describe it in every table keyed by its label,

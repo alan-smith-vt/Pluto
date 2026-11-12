@@ -69,6 +69,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > | Hangers | spring hanger (one per node) | Id, node, CNODE; Rate with Cold load (a spring as given) or Constant (a constant-effort support), both blank = CAESAR designs it; table, count, load variation, short range, max travel, space, rigid criteria, operating load, hardware weight, multi-load; anchors freed while it is designed (node + Y / XY / ZY / XYZ / all, two); tag. A workbook made before this sheet keeps its base's hangers |
 > | Nozzles | flexible nozzle | Id, node, vessel node (blank = a rigid vessel), type (WRC 297, API 650, PD 5500, Custom), then the values: nozzle OD / wall, vessel type, vessel OD / wall, pad, reinforcing, distances to stiffeners, nozzle and fluid heights, vessel centreline X Y Z, vessel temperature and material, displacement vector, fluid SG, tank alpha / ΔT / E, the four custom stiffnesses. A column the row's type does not use is red |
 > | Coords | COORDS entry | node, X Y Z |
+> | Materials | CAESAR material the job uses | material, E, Poisson, density, alpha (per degree), note. **For the SAP / STAAD check model only** ([[vault/format/pipe-to-frame|pipe-to-frame]]): CAESAR never reads it (it takes its own from its database), so give the same values. Rows start as Pluto's defaults by material class, noted "Pluto default: …" (amber) until a value is typed over. A Sections row's own E, Poisson or density wins for its pipe, as in CAESAR |
 > | Start | — | the landing page: how to use the workbook, links to the sheets with their row counts, the live checks, the colour key, a reference |
 > | 3D View | — | the model drawn live; its controls (view, highlight, labels, restraints), figures, key |
 > | Nodes, Carried | — | read-only: rebuilt on every export, never read |
@@ -76,6 +77,20 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >
 > - **Units are the job's.** Each header says which (`DX (in)`).
 > - **Sections and Processes** are named from what they hold (`8in STD ins2`, `T300 P150`).
+
+> [!info]- The Materials sheet (2026-11-12)
+> - **Why:** the SAP check model needs each material's E, Poisson, density and thermal expansion, and a `.cii` holds them
+>   only where the input overrides CAESAR's database (never the expansion).
+> - **Where it lives:** the workbook keeps the rows in the model (`PipeModel.Materials`, the model JSON's `materials`, only
+>   when there are any), never in the `.cii`. Every job's `.cii` is unchanged, written directly or through a workbook.
+> - **Base and fingerprint:** the base model holds the sheet's starting rows, so an unedited workbook gives its base exactly.
+> - **Where values come from:**
+>   - every material the elements use gets a row: the model's values, or Pluto's defaults for its class (carbon steel,
+>     chrome-moly, austenitic, aluminum …);
+>   - a default row says so in its Note (amber); typing over a value makes the row the user's;
+>   - a workbook from before the sheet reads as before; its materials take the defaults, and the check model warns.
+> - **Defaults:** typical room-temperature values, alpha the mean from 70 °F to about 250 °F. They are a starting point
+>   to check against CAESAR's database, never the job's values (`PipeMaterials.cs`).
 
 > [!info]- Ids (2026-11-05)
 > The Id column is each row's link to its object in the model, not a row counter.

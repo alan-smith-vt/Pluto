@@ -29,7 +29,10 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
   pattern, case or combination ([[vault/format/features-sidecar|features-sidecar]]).
 - 3: the workbook. **3a done 2026-11-05** (the sheets, reading, refresh, the runner's workbook switches, launchers);
   3b: `-Open` in SAP done (production check to do); the 3D View **done 2026-11-05** (below).
-- 4: the pipe-stress layer (support presets, contents, insulation, thermal, equipment).
+- 4: the pipe-stress layer (support presets, contents, insulation, thermal, equipment). **4a, 2026-11-12:**
+  - a CAESAR model seeds a frame model, `Build-Frame -In <job.cii | .toml | CAESAR workbook>`: the pipe's structural
+    check model ([[vault/format/pipe-to-frame|pipe-to-frame]]);
+  - phase 1 is linear; nonlinear supports are refused until phase 2.
 - 5: the review.
 - 6: unit changes.
 - 7: dry runs on complex models.

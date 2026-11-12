@@ -7,6 +7,13 @@
 #                         and every import checks that writing it back gives the source byte for byte, and says so
 #           .xlsx         a frame workbook (FrameWorkbook): its rows applied to the model it was written from
 #           .frame.json   a model saved with -Json
+#           .cii / .toml / .pipe.json / a CAESAR workbook .xlsx
+#                         a CAESAR II model: seeds the structural check model of the pipe (PipeToFrame;
+#                         vault/format/pipe-to-frame.md), the same pipe, loads and supports as frames, links and loads,
+#                         for member forces and support reactions. Outputs default to <name>_sap.*; edit the seeded
+#                         model in its frame workbook (-Xlsx). Materials come from the CAESAR workbook's Materials sheet
+#                         (Pluto's defaults otherwise, with a warning). What the check model cannot hold yet refuses it,
+#                         each item on a [refuse] line
 #   out   -S2k      <base>.s2k for SAP2000 (File > Import > SAP2000 .s2k). Never written over the input file. An
 #                   existing <base>.s2k is replaced only when this runner wrote it (the stamp, <base>.build.json, says
 #                   so), when it is the model's own source, or when nothing in it would change; else -Force.
@@ -84,6 +91,22 @@ function Full([string]$p) { return (Resolve-Path -LiteralPath $p).ProviderPath }
 function Fail([string]$msg) { Say "error" $msg; Write-Output ("RESULT {""error"":" + (Q $msg) + "}"); exit 1 }
 # every input is opened shared: Excel keeps an open workbook locked for writing, and a plain OpenRead / ReadAllBytes
 # asks for that lock too, so it fails while the workbook is open (the live preview's whole use)
+# a workbook's own kind: the format text its hidden _pluto sheet starts with, found in the package's XML parts
+function XlsxHas([string]$p, [string]$needle) {
+    Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
+    $fs = OpenShared $p
+    try {
+        $z = New-Object IO.Compression.ZipArchive($fs, [IO.Compression.ZipArchiveMode]::Read)
+        try {
+            foreach ($e in $z.Entries) {
+                if ($e.FullName -notlike "xl/*.xml" -and $e.FullName -notlike "xl/worksheets/*.xml") { continue }
+                $sr = New-Object IO.StreamReader($e.Open())
+                try { if ($sr.ReadToEnd().Contains($needle)) { return $true } } finally { $sr.Dispose() }
+            }
+            return $false
+        } finally { $z.Dispose() }
+    } catch { return $false } finally { $fs.Dispose() }
+}
 function OpenShared([string]$p) { return New-Object IO.FileStream($p, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)) }
 function FileSha([string]$p) { $fs = OpenShared $p; try { $h = [Security.Cryptography.SHA256]::Create(); try { return (($h.ComputeHash($fs) | ForEach-Object { $_.ToString("x2") }) -join "") } finally { $h.Dispose() } } finally { $fs.Dispose() } }
 function ReadShared([string]$p) { $fs = OpenShared $p; try { $ms = New-Object IO.MemoryStream; $fs.CopyTo($ms); return ,$ms.ToArray() } finally { $fs.Dispose() } }
@@ -104,7 +127,7 @@ function InRepo([string]$p) { return $p.Equals($repoRoot, [StringComparison]::Or
 $modes = @($In, $Probe, $StdProbe, $ProbeCheck) | Where-Object { $_ }
 if ($NewWorkbook) {
     if ($modes.Count -ne 0 -or -not $Out) { Fail "Build-Frame: -NewWorkbook takes -Out <name>.xlsx (and -Units, -SapVersion) only" }
-} elseif ($modes.Count -ne 1) { Fail "Build-Frame: give one of -In <.s2k | .xlsx | .frame.json>, -NewWorkbook -Out <name>.xlsx, -Probe <folder>, -StdProbe <folder>, -ProbeCheck <SAP's export .s2k>" }
+} elseif ($modes.Count -ne 1) { Fail "Build-Frame: give one of -In <.s2k | .xlsx | .frame.json | .cii | .toml | .pipe.json>, -NewWorkbook -Out <name>.xlsx, -Probe <folder>, -StdProbe <folder>, -ProbeCheck <SAP's export .s2k>" }
 if ($Probe) {
     $dir = [IO.Path]::GetFullPath($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Probe))
     if (InRepo $dir) { Fail ("Build-Frame: refusing to write the probe inside the Pluto repo ({0}); pass -Probe <project dir>\probe" -f $repoRoot) }
@@ -132,17 +155,19 @@ if ($In) {
     $inPath = Full $In
     $ext = [IO.Path]::GetExtension($inPath).ToLowerInvariant()
     if ($inPath.ToLowerInvariant().EndsWith(".frame.json")) { $kind = "json" }
+    elseif ($inPath.ToLowerInvariant().EndsWith(".pipe.json") -or $ext -eq ".cii" -or $ext -eq ".toml") { $kind = "pipe" }
     elseif ($ext -eq ".s2k" -or $ext -eq ".`$2k") { $kind = "s2k" }
-    elseif ($ext -eq ".xlsx") { $kind = "xlsx" }
-    else { Fail ("Build-Frame: {0}: give a SAP2000 .s2k (or .`$2k), a frame workbook .xlsx or a .frame.json model" -f $inPath) }
-    if ($Refresh -and $kind -ne "xlsx") { Fail "Build-Frame: -Refresh takes -In <workbook>.xlsx" }
-    if ($Watch -and $kind -ne "xlsx") { Fail "Build-Frame: -Watch follows a workbook: -In <name>.xlsx" }
+    elseif ($ext -eq ".xlsx") { $kind = $(if (XlsxHas $inPath "pluto-pipe-workbook") { "pipe" } else { "xlsx" }) }
+    else { Fail ("Build-Frame: {0}: give a SAP2000 .s2k (or .`$2k), a frame workbook .xlsx, a .frame.json model, or a CAESAR model (.cii, .toml, .pipe.json, its workbook) to seed one" -f $inPath) }
+    if ($Refresh -and $kind -ne "xlsx") { Fail "Build-Frame: -Refresh takes -In <frame workbook>.xlsx" }
+    if ($Watch -and $kind -ne "xlsx") { Fail "Build-Frame: -Watch follows a frame workbook: -In <name>.xlsx (a CAESAR model seeds once: -In <job> -Xlsx, then watch that workbook)" }
     if ($Watch -and -not ($S2k -or $Std -or $Json -or $Preview)) { $Preview = $true }
     if ($Open -and $Watch) { Fail "Build-Frame: -Open is not for -Watch (it would start SAP on every save)" }
     if ($Open) { $S2k = $true }
 }
 $jobName = $null
-if ($inPath) { $jobName = ([IO.Path]::GetFileName($inPath) -replace '\.frame\.json$', '' -replace '\.[^.]+$', '') -replace ' ', '_' }
+if ($inPath) { $jobName = ([IO.Path]::GetFileName($inPath) -replace '\.(frame|pipe)\.json$', '' -replace '\.[^.]+$', '') -replace ' ', '_' }
+if ($kind -eq "pipe") { $jobName = $jobName + "_sap" }   # the check model beside its CAESAR job, never over it
 if ($Out) {
     $outBase = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Out)
     if (($Out -match '[\\/]$') -or (Test-Path -LiteralPath $outBase -PathType Container)) { $outBase = [IO.Path]::Combine($outBase, $(if ($jobName) { $jobName } else { "frame" })) }
@@ -310,6 +335,23 @@ function Build-Once {
         $identical = [S2kDoc]::SameBytes($bytes, [FrameS2k]::ToBytes($model))
         if ($identical) { Say "read" ("{0}: read losslessly (written back byte for byte)" -f $inPath) }
         else { Say "warn" ("{0}: written back, it is NOT the same bytes; outputs keep the model, check them before use" -f $inPath) }
+    } elseif ($kind -eq "pipe") {
+        $script:step = "seeding the check model from " + [IO.Path]::GetFileName($inPath)
+        $rw = New-Object 'System.Collections.Generic.List[string]'
+        $pipe = [PipeToFrame]::LoadPipe($inPath, $rw)
+        foreach ($w in $rw) { Say "warn" $w; $warnings += $w }
+        Say "read" ("{0}: a CAESAR model, {1} elements, {2} restraints, {3} hangers" -f $inPath, $pipe.Elements.Count, $pipe.Restraints.Count, $pipe.Hangers.Count)
+        $sw2 = New-Object 'System.Collections.Generic.List[string]'; $sn2 = New-Object 'System.Collections.Generic.List[string]'
+        try { $model = [PipeToFrame]::Build($pipe, $(if ($SapVersion) { $SapVersion } else { "22.0.0" }), $sw2, $sn2) }
+        catch {
+            $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }
+            if ($e -isnot [PipeToFrameRefusal]) { throw }
+            foreach ($i in $e.Items) { Say "refuse" $i }
+            throw (New-Object InvalidOperationException(("the check model cannot hold the {0} item(s) above yet; nothing is written" -f $e.Items.Count)))
+        }
+        foreach ($w in $sw2) { Say "warn" ("check model: " + $w); $warnings += ("check model: " + $w) }
+        foreach ($n in $sn2) { Say "notice" ("check model: " + $n) }
+        Say "seed" ("the structural check model of the pipe (seeded once: edit it in its frame workbook, -Xlsx)")
     } elseif ($kind -eq "xlsx") {
         $wb = [FrameWorkbook]::Read($inPath)
         $model = $wb.Model
