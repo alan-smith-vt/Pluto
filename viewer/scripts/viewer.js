@@ -251,6 +251,10 @@ function makeControls(cam, keepTarget) {
     var orbitTimer = 0;
     c.addEventListener('start', function () { orbitTimer = setTimeout(function () { orbiting = true; }, 100); });
     c.addEventListener('end',   function () { clearTimeout(orbitTimer); orbiting = false; });
+    // The wheel and drag handlers call update() themselves, which consumes the "camera changed" result before
+    // animate() asks. In ortho a zoom moves nothing else (position and distance stay), so the frame was never
+    // redrawn until the next orbit. Every camera change announces itself here.
+    c.addEventListener('change', requestRender);
     return c;
 }
 
