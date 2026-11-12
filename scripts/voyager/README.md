@@ -4,6 +4,7 @@ Verified code copied from the Voyager repo (`D:\Repos\Voyager\code\`), which nev
 
 - `Import-SqlExplorer.ps1`, `SqlExplorer.cs`, `Atlas.cs` — the SQL harness (`Invoke-Sql`, `Invoke-Atlas`). Needs `config.json` on the box; never here.
 - `Export-DuctPorts.ps1` — routed SP3D ducts as (part, port xyz, hub, run) rows; `-Census` first. Draft, unverified.
+- `Export-ClassCensus.ps1` — find the classes behind a kind of object by table name (`-Like Wall,Slab`), bbox shape split per classid, sample oids for `Invoke-Atlas`; `-Series` lists a classid block. Read-only. Draft, not yet run.
 - `Export-CalcRuns.ps1`, `Join-CalcRooms.ps1`, `PdfText.cs` — calc PDFs → room map. Usage: `vault/arms/calc-room-map.md`.
 
 All PowerShell 5.1 / C# 5, no packages. CRLF.
