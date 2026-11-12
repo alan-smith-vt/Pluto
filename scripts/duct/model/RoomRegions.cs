@@ -13,6 +13,10 @@ using System.Text;
 //         its length to that wall's face; an end with nothing ahead is stretched GapFt / 2. A wall box has no
 //         door openings.
 //   Window: the model's box plus ReachFt, so the rooms at the model's edge are closed by walls beyond it.
+//   Cull (RoomRegions.Plan, 2026-11-12): only the regions a duct runs through are kept. The steel whose midpoint
+//          lies in a region without ducts is left out of the model (viewer and SAP steel); steel in no region
+//          stays. Walls and slabs are drawn only around the kept regions (WallViewWriter). When no region holds
+//          a duct nothing is culled.
 //   Names: every object with a room code votes for the region it lies in (Navisworks duct rows by their box
 //          centre, steel members by their midpoint; "A/B" gives half a vote to each). A region takes the code
 //          with the most votes; under MixedShare of the votes it is marked mixed; no votes = unnamed.
@@ -26,7 +30,8 @@ public class RoomRegion
     public string LevelName = "";
     public string Name = "";          // code, "code (2)", or "unnamed <n>"
     public bool Mixed, Named;
-    public double AreaSqFt, FloorFt;
+    public bool HasDucts;             // a duct centreline runs through it (RoomRegions.Plan)
+    public double AreaSqFt, FloorFt, CeilFt;   // CeilFt: the next floor, or the top of the walls in the highest band
     public double[] Lo = new double[2], Hi = new double[2];   // plan box, feet
     public List<double[]> Rects = new List<double[]>();       // x0, y0, x1, y1 feet
     public Dictionary<string, double> Votes = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
@@ -75,7 +80,7 @@ public static class RoomRegions
             double bandLo = k == 0 ? double.NegativeInfinity : floorsFt[k - 1], bandHi = k == n ? double.PositiveInfinity : floorsFt[k];
             double need = Math.Min(0.5 * (bandHi - bandLo), 6);
             var raw = new List<double[]>();  // blockers, plan boxes in feet, as modelled
-            double floorZ = double.MaxValue;
+            double floorZ = double.MaxValue, ceilZ = double.MinValue;
             foreach (WallBox w in walls)
             {
                 if (w.Shape != "wall" && w.Shape != "skew wall") continue;
@@ -85,6 +90,7 @@ public static class RoomRegions
                 if (x1 + gapFt < wx0 || x0 - gapFt > wx1 || y1 + gapFt < wy0 || y0 - gapFt > wy1) continue;
                 raw.Add(new[] { x0, y0, x1, y1 });
                 floorZ = Math.Min(floorZ, Math.Max(z0, bandLo));
+                ceilZ = Math.Max(ceilZ, Math.Min(z1, bandHi));
             }
             var bl = new List<double[]>();   // the same, each end stretched along the wall's length, clipped to the window
             foreach (double[] b in raw)
@@ -150,7 +156,7 @@ public static class RoomRegions
             {
                 if (open[lab - 1]) continue;
                 if (area[lab - 1] < MinAreaSqFt) { slivers++; continue; }
-                byLabel[lab] = new RoomRegion { Level = k, LevelName = levelName, AreaSqFt = area[lab - 1], FloorFt = floorZ, BandLo = bandLo, BandHi = bandHi,
+                byLabel[lab] = new RoomRegion { Level = k, LevelName = levelName, AreaSqFt = area[lab - 1], FloorFt = floorZ, CeilFt = k < n ? bandHi : ceilZ, BandLo = bandLo, BandHi = bandHi,
                     Lo = new[] { double.MaxValue, double.MaxValue }, Hi = new[] { double.MinValue, double.MinValue } };
             }
             for (int j = 0; j < ny; j++)
@@ -200,6 +206,108 @@ public static class RoomRegions
         int lo = 0, hi = a.Length - 1;
         while (lo < hi) { int mid = (lo + hi) / 2; if (a[mid] < x - 1e-6) lo = mid + 1; else hi = mid; }
         return lo;
+    }
+
+    public static RoomRegion At(List<RoomRegion> regions, double x, double y, double z)
+    {
+        foreach (RoomRegion r in regions) if (z >= r.BandLo && z < r.BandHi && r.Contains(x, y)) return r;
+        return null;
+    }
+
+    public class RoomPlan
+    {
+        public List<double> FloorsFt = new List<double>();
+        public List<RoomRegion> All = new List<RoomRegion>(), Kept = new List<RoomRegion>();
+        public List<SteelMember> Steel = new List<SteelMember>();   // the steel after the cull
+        public int SteelDropped, SteelNoRegion;
+        public bool Culled;          // regions with ducts were found: walls go by the kept regions, steel was culled if asked
+        public double PadFt;         // a wall this close to a kept region (plan) is drawn
+        public string Note = "";
+    }
+
+    // The regions and what survives: ducts = centreline segments (x0, y0, z0, x1, y1, z1 feet); steel in meters.
+    // Floors come from the walls within marginFt of the ducts' box; the search window covers ducts and steel.
+    public static RoomPlan Plan(List<WallBox> walls, List<double[]> ducts, List<SteelMember> steel, List<RoomVoter> voters,
+        double marginFt, double gapFt, bool cullSteel)
+    {
+        var plan = new RoomPlan { PadFt = gapFt + 0.5 };
+        if (steel != null) plan.Steel.AddRange(steel);
+        if (walls == null || walls.Count == 0 || ducts == null || ducts.Count == 0) { plan.Note = "rooms: no walls or no ducts, nothing culled"; return plan; }
+        double[] lo = { double.MaxValue, double.MaxValue, double.MaxValue }, hi = { double.MinValue, double.MinValue, double.MinValue };
+        foreach (double[] d in ducts)
+            for (int a = 0; a < 3; a++) { lo[a] = Math.Min(lo[a], Math.Min(d[a], d[a + 3])); hi[a] = Math.Max(hi[a], Math.Max(d[a], d[a + 3])); }
+        var near = new List<WallBox>();
+        foreach (WallBox w in walls)
+        {
+            bool ok = true;
+            for (int a = 0; a < 3; a++)
+            {
+                double a0 = w.Lo[a] / 0.3048, a1 = w.Hi[a] / 0.3048;
+                if (a1 - a0 <= 1e-6 || (marginFt >= 0 && (a1 < lo[a] - marginFt || a0 > hi[a] + marginFt))) ok = false;
+            }
+            if (ok) near.Add(w);
+        }
+        plan.FloorsFt = WallViewWriter.Floors(near);
+        // window: ducts and steel (the steel of rooms without ducts has to fall in a region to be culled)
+        double[] wlo = { lo[0], lo[1] }, whi = { hi[0], hi[1] };
+        if (steel != null)
+            foreach (SteelMember b in steel)
+            {
+                double mx = (b.P0.X + b.P1.X) / 2 / 0.3048, my = (b.P0.Y + b.P1.Y) / 2 / 0.3048;
+                wlo[0] = Math.Min(wlo[0], mx); whi[0] = Math.Max(whi[0], mx); wlo[1] = Math.Min(wlo[1], my); whi[1] = Math.Max(whi[1], my);
+            }
+        Result res = Find(walls, plan.FloorsFt, wlo, whi, gapFt, -1);
+        plan.All = res.Regions;
+        foreach (double[] d in ducts)
+        {
+            double len = Math.Sqrt((d[3] - d[0]) * (d[3] - d[0]) + (d[4] - d[1]) * (d[4] - d[1]) + (d[5] - d[2]) * (d[5] - d[2]));
+            int steps = Math.Max(1, (int)Math.Ceiling(len / 3));
+            for (int i = 0; i <= steps; i++)
+            {
+                double t = (double)i / steps;
+                RoomRegion r = At(plan.All, d[0] + t * (d[3] - d[0]), d[1] + t * (d[4] - d[1]), d[2] + t * (d[5] - d[2]));
+                if (r != null) r.HasDucts = true;
+            }
+        }
+        plan.Kept = plan.All.Where(r => r.HasDucts).ToList();
+        plan.Culled = plan.Kept.Count > 0;
+        string steelNote = "";
+        if (plan.Culled && steel != null && steel.Count > 0)
+        {
+            var keep = new List<SteelMember>();
+            foreach (SteelMember b in steel)
+            {
+                RoomRegion r = At(plan.All, (b.P0.X + b.P1.X) / 2 / 0.3048, (b.P0.Y + b.P1.Y) / 2 / 0.3048, (b.P0.Z + b.P1.Z) / 2 / 0.3048);
+                if (r == null) plan.SteelNoRegion++;
+                if (r != null && !r.HasDucts) { plan.SteelDropped++; if (cullSteel) continue; }
+                keep.Add(b);
+            }
+            plan.Steel = keep;
+            steelNote = string.Format(Inv, "; steel: {0} of {1} members in a region without ducts{2}, {3} in no region kept", plan.SteelDropped, steel.Count,
+                cullSteel ? " left out" : " (kept: DuctRoomCull off)", plan.SteelNoRegion);
+        }
+        string nameNote = plan.Kept.Count > 0 ? "\n" + Name(plan.Kept, voters ?? new List<RoomVoter>()) + " (<out>_clean.rooms.csv)" : "";
+        plan.Note = res.Note + "\n" + (plan.Culled
+            ? string.Format(Inv, "room cull: {0} of {1} regions hold ducts{2}", plan.Kept.Count, plan.All.Count, steelNote)
+            : string.Format(Inv, "room cull: none of {0} regions holds a duct: nothing culled, walls by the {1} ft margin", plan.All.Count, marginFt.ToString("0.#", Inv)))
+            + nameNote;
+        return plan;
+    }
+
+    // true when the box lies against a kept region: within padFt of one of its rectangles in plan, and in height a
+    // slab within 3 ft of its floor-to-ceiling range (its floor, its ceiling), anything else inside that range (a
+    // wall standing on the ceiling slab belongs to the level above)
+    public static bool NearKept(WallBox w, RoomPlan plan)
+    {
+        double x0 = w.Lo[0] / 0.3048, x1 = w.Hi[0] / 0.3048, y0 = w.Lo[1] / 0.3048, y1 = w.Hi[1] / 0.3048, z0 = w.Lo[2] / 0.3048, z1 = w.Hi[2] / 0.3048;
+        foreach (RoomRegion r in plan.Kept)
+        {
+            if (WallViewWriter.IsSlab(w) ? (z1 < r.FloorFt - 3 || z0 > r.CeilFt + 3) : (z1 < r.FloorFt + 0.1 || z0 > r.CeilFt - 0.1)) continue;
+            if (x1 < r.Lo[0] - plan.PadFt || x0 > r.Hi[0] + plan.PadFt || y1 < r.Lo[1] - plan.PadFt || y0 > r.Hi[1] + plan.PadFt) continue;
+            foreach (double[] q in r.Rects)
+                if (!(x1 < q[0] - plan.PadFt || x0 > q[2] + plan.PadFt || y1 < q[1] - plan.PadFt || y0 > q[3] + plan.PadFt)) return true;
+        }
+        return false;
     }
 
     // votes, then names; returns the summary line
@@ -273,9 +381,9 @@ public static class RoomRegions
     public static void WriteCsv(string path, List<RoomRegion> regions)
     {
         var s = new StringBuilder();
-        s.AppendLine("Level,Room,Named,Mixed,Area_sqft,Floor_ft,Xmin_ft,Ymin_ft,Xmax_ft,Ymax_ft,Rects,Votes");
+        s.AppendLine("Level,Room,Ducts,Named,Mixed,Area_sqft,Floor_ft,Xmin_ft,Ymin_ft,Xmax_ft,Ymax_ft,Rects,Votes");
         foreach (RoomRegion r in regions)
-            s.AppendLine(string.Join(",", new[] { r.LevelName, r.Name, r.Named ? "1" : "0", r.Mixed ? "1" : "0", r.AreaSqFt.ToString("0.#", Inv), r.FloorFt.ToString("0.##", Inv),
+            s.AppendLine(string.Join(",", new[] { r.LevelName, r.Name, r.HasDucts ? "1" : "0", r.Named ? "1" : "0", r.Mixed ? "1" : "0", r.AreaSqFt.ToString("0.#", Inv), r.FloorFt.ToString("0.##", Inv),
                 r.Lo[0].ToString("0.##", Inv), r.Lo[1].ToString("0.##", Inv), r.Hi[0].ToString("0.##", Inv), r.Hi[1].ToString("0.##", Inv),
                 r.Rects.Count.ToString(Inv), r.VoteText() }.Select(DuctGeom.CsvCell).ToArray()));
         File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));

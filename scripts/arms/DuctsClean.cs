@@ -40,7 +40,25 @@ public partial class DuctsToPluto
         string dropNote = CleanModel.ApplyManualDrop(clean, P, Cfg);   // add-on, the viewer's Cut picker
         if (dropNote != "") cutNote += (cutNote != "" ? "\n" : "") + dropNote;
         string orientNote = Orienter.Apply(clean, P, Cfg.RotateLargeVertical, out orientNewLine);   // before the supports (rotated depth)
-        SteelModel sm = Cfg.Steel.Count > 0 ? SteelModel.Build(Cfg.Steel, Cfg.SteelSettings) : null;   // SteelViewWriter.cs draws it; split by supports from here on
+        // room regions from the walls and the cull by room (RoomRegions.cs): regions without ducts drop out, with their steel
+        RoomRegions.RoomPlan plan = null;
+        List<SteelMember> steelIn = Cfg.Steel;
+        if (Cfg.Walls.Count > 0 && Cfg.RoomRegions)
+        {
+            var ductSegs = new List<double[]>();
+            foreach (CEdge ce in clean) { double[] a = P[ce.A], b = P[ce.B]; ductSegs.Add(new[] { a[0], a[1], a[2], b[0], b[1], b[2] }); }
+            var voters = new List<RoomVoter>();
+            if (rows != null)
+                foreach (DuctRow r in rows)
+                    if (r.Room != "" && r.Min != null && r.Max != null)
+                        voters.Add(new RoomVoter { X = (r.Min[0] + r.Max[0]) / 2, Y = (r.Min[1] + r.Max[1]) / 2, Z = (r.Min[2] + r.Max[2]) / 2, Room = r.Room });
+            foreach (SteelMember b in Cfg.Steel)
+                if (!string.IsNullOrEmpty(b.Room))
+                    voters.Add(new RoomVoter { X = (b.P0.X + b.P1.X) / 2 / 0.3048, Y = (b.P0.Y + b.P1.Y) / 2 / 0.3048, Z = (b.P0.Z + b.P1.Z) / 2 / 0.3048, Room = b.Room });
+            plan = RoomRegions.Plan(Cfg.Walls, ductSegs, Cfg.Steel, voters, Cfg.WallMarginFt, Cfg.RoomGapFt, Cfg.RoomCull);
+            steelIn = plan.Steel;
+        }
+        SteelModel sm = steelIn.Count > 0 ? SteelModel.Build(steelIn, Cfg.SteelSettings) : null;   // SteelViewWriter.cs draws it; split by supports from here on
         sr = null;
         if (sm != null)   // SupportPlacer: supports, spans, floating pieces, hangers; the steel splits are applied here
         {
@@ -67,7 +85,7 @@ public partial class DuctsToPluto
         dev.Sort((x, y) => y.Key.CompareTo(x.Key));
 
         if (sm != null) sm.WriteCsv(outBase);
-        string wallNote = WriteCleanViewer(outBase + "_clean", modelId + "/clean", lengthUnit, clean, P, off, scale, sm, sr, rows);
+        string wallNote = WriteCleanViewer(outBase + "_clean", modelId + "/clean", lengthUnit, clean, P, off, scale, sm, sr, rows, plan);
         WriteCleanFrames(outBase + ".frames.csv", clean, P);
 
         return string.Format(Inv, "clean model (<out>_clean.bin, <out>.frames.csv): {0} elements ({1} rigid links) from {2} pieces; duct length {3:0.#} ft -> {4:0.#} ft, overlaps merged {5} ({6:0.#} ft), different-size overlaps {7} (OVERLAP_SIZE_CONFLICT), gaps closed {10}; connectors > 1 in from the clean line {8}{9}",
@@ -84,7 +102,7 @@ public partial class DuctsToPluto
 
 
 
-    static string WriteCleanViewer(string outBase, string modelId, string lengthUnit, List<CEdge> clean, Dictionary<int, double[]> P, double[] off, double scale, SteelModel sm, SupportRun sr, List<DuctRow> rows)
+    static string WriteCleanViewer(string outBase, string modelId, string lengthUnit, List<CEdge> clean, Dictionary<int, double[]> P, double[] off, double scale, SteelModel sm, SupportRun sr, List<DuctRow> rows, RoomRegions.RoomPlan plan)
     {
         var nodes = new Dictionary<int, Node>(); int next = 1; var map = new Dictionary<int, int>();
         Func<int, int> nd = n => { int id; if (!map.TryGetValue(n, out id)) { id = DuctGeom.MakeNode(nodes, ref next, P[n], off, scale); map[n] = id; } return id; };
@@ -136,26 +154,14 @@ public partial class DuctsToPluto
         SupportView pv = SupportViewWriter.AddSupports(sr, P, nodes, ref next, sections, beams, labels, ref nb, off, scale);
         if (beams.Count == 0) return "";
         // walls: drawing only, shells beside the beams (WallViewWriter.cs); none given or none near = the file as before
-        WallViewWriter.View wv = WallViewWriter.Add(Cfg.Walls, Cfg.WallMarginFt, nodes, ref next, off, scale);
-        // room regions from the walls (RoomRegions.cs): floor patches in the same shells, named by the room codes on
-        // the Navisworks duct rows and the steel members
+        WallViewWriter.View wv = WallViewWriter.Add(Cfg.Walls, Cfg.WallMarginFt, nodes, ref next, off, scale, plan);
+        // room regions (RoomRegions.Plan, made in BuildClean): the floors of the regions with ducts, in the same shells
         string roomNote = "";
-        if (wv != null && wv.ModelLo != null && Cfg.RoomRegions)
+        if (plan != null)
         {
-            RoomRegions.Result rr = RoomRegions.Find(Cfg.Walls, wv.FloorsFt, wv.ModelLo, wv.ModelHi, Cfg.RoomGapFt, Cfg.WallMarginFt);
-            var voters = new List<RoomVoter>();
-            if (rows != null)
-                foreach (DuctRow r in rows)
-                    if (r.Room != "" && r.Min != null && r.Max != null)
-                        voters.Add(new RoomVoter { X = (r.Min[0] + r.Max[0]) / 2, Y = (r.Min[1] + r.Max[1]) / 2, Z = (r.Min[2] + r.Max[2]) / 2, Room = r.Room });
-            if (sm != null)
-                foreach (SteelMember b in sm.Members)
-                    if (!string.IsNullOrEmpty(b.Room))
-                        voters.Add(new RoomVoter { X = (b.P0.X + b.P1.X) / 2 / 0.3048, Y = (b.P0.Y + b.P1.Y) / 2 / 0.3048, Z = (b.P0.Z + b.P1.Z) / 2 / 0.3048, Room = b.Room });
-            string nameNote = RoomRegions.Name(rr.Regions, voters);
-            RoomRegions.AddToView(wv, rr.Regions, nodes, ref next, off, scale);
-            RoomRegions.WriteCsv(outBase + ".rooms.csv", rr.Regions);
-            roomNote = "\n" + rr.Note + (rr.Regions.Count > 0 ? "\n" + nameNote + " (<out>_clean.rooms.csv)" : "");
+            if (wv != null) RoomRegions.AddToView(wv, plan.Kept, nodes, ref next, off, scale);
+            RoomRegions.WriteCsv(outBase + ".rooms.csv", plan.All);
+            roomNote = "\n" + plan.Note;
         }
         bool hasWalls = wv != null && wv.Elements.Count > 0;
         var comps = new List<RawViewerWriter.Component>(); comps.Add(new RawViewerWriter.Component("Axial N", "force", "kip"));

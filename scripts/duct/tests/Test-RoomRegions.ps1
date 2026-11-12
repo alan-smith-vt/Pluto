@@ -109,5 +109,41 @@ $rowsCsv = @(Import-Csv $csv)
 Check "25 rooms.csv" ($rowsCsv.Count -eq 2 -and $rowsCsv[0].Room -eq "R101" -and $rowsCsv[0].Level -eq "above 0 ft" -and $rowsCsv[0].Area_sqft -eq "812" -and $rowsCsv[0].Votes -eq "R101 1" -and $rowsCsv[1].Named -eq "0")
 Remove-Item $csv -ErrorAction SilentlyContinue
 
+# ---- the cull by room (RoomRegions.Plan) ----
+# west and east rooms + the far box; a duct in the west room only; steel (meters): west, east, far box, and one in no region
+function Steel([double]$x, [double]$y, [double]$z, [string]$id) {
+    $m = New-Object SteelMember; $m.MemberOid = $id; $m.Room = ""
+    $m.P0 = New-Object Vec3 (($x - 1) * $ft), ($y * $ft), ($z * $ft); $m.P1 = New-Object Vec3 (($x + 1) * $ft), ($y * $ft), ($z * $ft)
+    return $m
+}
+function SteelList($list) { $l = New-Object 'System.Collections.Generic.List[SteelMember]'; foreach ($m in $list) { $l.Add($m) }; return ,$l }
+function Segs($list) { $l = New-Object 'System.Collections.Generic.List[double[]]'; foreach ($s in $list) { $l.Add([double[]]$s) }; return ,$l }
+$upperWall = Box 10 1 11 29 13 25      # stands on the ceiling slab: the level above
+$ceiling = Box 0 0 60 30 12 13
+$all = Walls ($plan + $slab + $farBox + $ceiling + $upperWall)
+$steel = SteelList @((Steel 15 20 5 "west"), (Steel 50 5 5 "east"), (Steel 135 15 5 "far"), (Steel 300 300 5 "none"))
+$ducts = Segs @(,@(10, 10, 5, 20, 10, 5))
+$pl = [RoomRegions]::Plan($all, $ducts, $steel, (Voters @(,@(10, 10, 5, "R101"))), 10, 4, $true)
+Check "c1 three regions on the duct level, one holds the duct" (@($pl.All | Where-Object { $_.Level -eq 1 }).Count -eq 3 -and $pl.Kept.Count -eq 1 -and $pl.Kept[0].Contains(15, 15) -and $pl.Culled)
+Check "c2 steel of the rooms without ducts is left out; steel in no region stays" ((@($pl.Steel | ForEach-Object { $_.MemberOid }) -join " ") -eq "west none" -and $pl.SteelDropped -eq 2 -and $pl.SteelNoRegion -eq 1)
+Check "c3 the kept region is named; floors from the walls near the ducts" ($pl.Kept[0].Name -eq "R101" -and ($pl.FloorsFt -join ",") -eq "0,13")
+Check "c4 ceiling of the kept region = the next floor" ((Near $pl.Kept[0].CeilFt 13 0.01) -and (Near $pl.Kept[0].FloorFt 0 0.01))
+Check "c5 note" ($pl.Note -like "rooms (walls, gaps up to 4 ft closed): level 0 to 13 ft: 3 regions from 10 walls*`nroom cull: 1 of 3 regions hold ducts; steel: 2 of 4 members in a region without ducts left out, 1 in no region kept`nroom names: 1 regions named by 1 votes (0 mixed), 0 unnamed (<out>_clean.rooms.csv)")
+$off0 = [RoomRegions]::Plan($all, $ducts, $steel, (Voters @(,@(10, 10, 5, "R101"))), 10, 4, $false)
+Check "c6 DuctRoomCull off: the steel stays, the regions are still culled" ($off0.Steel.Count -eq 4 -and $off0.SteelDropped -eq 2 -and $off0.Kept.Count -eq 1 -and $off0.Note -like "*without ducts (kept: DuctRoomCull off)*")
+$none = [RoomRegions]::Plan($all, (Segs @(,@(300, 300, 5, 310, 300, 5))), $steel, (Voters @()), -1, 4, $true)
+Check "c7 no region holds a duct: nothing culled" (-not $none.Culled -and $none.Steel.Count -eq 4 -and $none.Kept.Count -eq 0 -and $none.Note -like "*`nroom cull: none of * regions holds a duct: nothing culled*")
+# walls against the kept (west) room: its four sides, a wall butting its partition from the far side (within the pad),
+# floor and ceiling slabs; not the east wall, the far box, the level above
+$nearNames = @(); $names = @("south", "north", "west", "east", "part", "stub", "floor", "f1", "f2", "f3", "f4", "ceiling", "upper"); $i = 0
+foreach ($w in $all) { if ([RoomRegions]::NearKept($w, $pl)) { $nearNames += $names[$i] }; $i++ }
+Check "c8 walls and slabs against the kept room" (($nearNames -join " ") -eq "south north west part stub floor ceiling")
+$nodes = New-Object 'System.Collections.Generic.Dictionary[int,Node]'; $next = 1
+$null = [DuctGeom]::MakeNode($nodes, [ref]$next, [double[]](10, 10, 5), $off, 12); $null = [DuctGeom]::MakeNode($nodes, [ref]$next, [double[]](300, 300, 5), $off, 12)
+$v = [WallViewWriter]::Add($all, 10, $nodes, [ref]$next, $off, 12, $pl)
+Check "c9 the view draws those boxes only, levels from the plan" ($v.Drawn -eq 7 -and $v.Note -like "walls: 7 of 13 drawn (around the rooms with ducts): wall 5, slab 2,*" -and ($v.FloorsFt -join ",") -eq "0,13")
+$v2 = [WallViewWriter]::Add($all, 10, $nodes, [ref]$next, $off, 12, $none)
+Check "c10 no kept region: the margin rule" ($v2.Note -like "walls: * drawn (within 10 ft of the model)*")
+
 Write-Output ("{0} passed, {1} failed" -f $script:pass, $script:fail)
 if ($script:fail) { exit 1 }

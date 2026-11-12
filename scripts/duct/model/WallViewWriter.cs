@@ -9,8 +9,9 @@ using System.Linq;
 // object (WallOid, Xmin..Zmax in meters, the frame of the steel CSV).
 // Drawing only: nothing here reaches frames.csv or the SAP model. Each box is six quad shells on eight nodes
 // (the clean file's shell domain; ducts, steel and supports stay beams).
-// Scope: a wall is drawn when its box comes within DuctWallMarginFt of the model's box (ducts, steel, supports);
-// a negative margin draws every wall.
+// Scope: with room regions that hold ducts (RoomRegions.Plan), the walls and slabs against those regions. Otherwise
+// a wall is drawn when its box comes within DuctWallMarginFt of the model's box (ducts, steel, supports); a
+// negative margin draws every wall.
 // Shape, from the box alone (ShapeOf; the CSV's Shape column is not used, so an older CSV follows the same rule):
 //   wall        tall (over ThinM) and thin in plan (a plan side under ThinM)
 //   slab        flat: not tall, or its height under a quarter of its smaller plan side (a thick slab stays a slab)
@@ -110,7 +111,7 @@ public static class WallViewWriter
         return c;
     }
 
-    static bool IsSlab(WallBox w) { return w.Shape == "slab" || w.Shape == "skew slab"; }
+    public static bool IsSlab(WallBox w) { return w.Shape == "slab" || w.Shape == "skew slab"; }
 
     // floor elevations (ft, top of slab) from the slabs among the boxes: tops within FloorTolFt of the cluster's
     // lowest are one elevation (area-weighted mean); kept when the area reaches FloorAreaShare of the largest
@@ -154,6 +155,14 @@ public static class WallViewWriter
     // boxes as shells, after the ducts, steel and supports (their nodes give the model's box); null = no walls given
     public static View Add(List<WallBox> walls, double marginFt, Dictionary<int, Node> nodes, ref int next, double[] off, double scale)
     {
+        return Add(walls, marginFt, nodes, ref next, off, scale, null);
+    }
+
+    // plan (RoomRegions.Plan) with kept regions: the walls and slabs against those regions are drawn, and the levels
+    // are the plan's floors; otherwise the margin rule
+    public static View Add(List<WallBox> walls, double marginFt, Dictionary<int, Node> nodes, ref int next, double[] off, double scale, RoomRegions.RoomPlan plan)
+    {
+        bool byRooms = plan != null && plan.Culled;
         if (walls == null || walls.Count == 0) return null;
         var v = new View { Total = walls.Count };
         // the model's box, feet, from the nodes placed so far
@@ -176,12 +185,13 @@ public static class WallViewWriter
                 if (!all && (a1 < lo[a] - marginFt || a0 > hi[a] + marginFt)) near = false;
                 if (a1 - a0 <= 1e-6) zero = true;
             }
+            if (byRooms) near = RoomRegions.NearKept(w, plan);
             if (!near) continue;
             if (zero) { flat++; continue; }
             kept.Add(w);
         }
 
-        v.FloorsFt = Floors(kept);
+        v.FloorsFt = byRooms ? plan.FloorsFt : Floors(kept);
         if (v.FloorsFt.Count > 0)
             for (int k = 0; k <= v.FloorsFt.Count; k++) { v.Levels.Add(LevelName(k, v.FloorsFt)); v.ByLevel.Add(new List<uint>()); v.LevelBoxes.Add(0); }
 
@@ -212,7 +222,7 @@ public static class WallViewWriter
             v.Drawn++;
         }
         v.Note = string.Format(Inv, "walls: {0} of {1} drawn ({2}): {3}{4}", v.Drawn, v.Total,
-            all ? "every wall" : string.Format(Inv, "within {0:0.#} ft of the model", marginFt),
+            byRooms ? "around the rooms with ducts" : all ? "every wall" : string.Format(Inv, "within {0:0.#} ft of the model", marginFt),
             string.Join(", ", Shapes.Select(x => x + " " + (v.ByShape.ContainsKey(x) ? v.ByShape[x].Count / 6 : 0)).ToArray()),
             flat > 0 ? "; " + flat + " with a zero extent left out" : "")
             + "\n" + (v.FloorsFt.Count == 0 ? "wall levels: no slab found, no level groups"
