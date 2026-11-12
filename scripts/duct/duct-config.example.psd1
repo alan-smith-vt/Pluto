@@ -39,6 +39,12 @@
     # within DuctWallMarginFt of the model (ducts, steel, supports) are drawn; a negative margin draws every wall. '' = none.
     DuctWalls = ''                    # e.g. 'C:\Temp\walls.csv'
     DuctWallMarginFt = 10
+    # Room regions from the walls (drawing only): per level, the floor area closed in by walls is a region, drawn as a
+    # coloured floor patch (groups Room: <name>) and listed in <out>_clean.rooms.csv. Named by the room codes on the
+    # ducts and steel inside it (most votes; 'mixed' under 60 %; 'unnamed' with none). Walls that stop up to
+    # DuctRoomGapFt short of each other still close a room. $false = no regions.
+    DuctRoomRegions = $true
+    DuctRoomGapFt = 4
     # Wall thickness table (CSV, header Run,Size,Thk_in). When set it REPLACES the Navisworks thickness; a frame no row
     # matches gets the 0.001 in placeholder (fix it in the table or in SAP). Run = the system name shown in the viewer
     # (e.g. SYSA; its fragments match too). Size: WxH or ranges 13-24x0-60 (either orientation), D dia or 8-36 dia, * = any.

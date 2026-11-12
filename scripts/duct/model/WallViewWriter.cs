@@ -57,6 +57,8 @@ public static class WallViewWriter
         public List<int> LevelBoxes = new List<int>();
         public int Total, Drawn;
         public string Note = "";
+        public double[] ModelLo, ModelHi;                                  // the model's box (ft) before the walls; null = no model nodes
+        public List<KeyValuePair<string, List<uint>>> RoomGroups = new List<KeyValuePair<string, List<uint>>>();   // RoomRegions.cs
     }
 
     // extents in meters
@@ -162,6 +164,7 @@ public static class WallViewWriter
             for (int a = 0; a < 3; a++) { lo[a] = Math.Min(lo[a], p[a]); hi[a] = Math.Max(hi[a], p[a]); }
         }
         bool all = marginFt < 0 || nodes.Count == 0;
+        if (nodes.Count > 0) { v.ModelLo = lo; v.ModelHi = hi; }
         int flat = 0, nextElem = 1;
         var kept = new List<WallBox>();
         foreach (WallBox w in walls)

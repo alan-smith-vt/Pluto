@@ -137,6 +137,26 @@ public partial class DuctsToPluto
         if (beams.Count == 0) return "";
         // walls: drawing only, shells beside the beams (WallViewWriter.cs); none given or none near = the file as before
         WallViewWriter.View wv = WallViewWriter.Add(Cfg.Walls, Cfg.WallMarginFt, nodes, ref next, off, scale);
+        // room regions from the walls (RoomRegions.cs): floor patches in the same shells, named by the room codes on
+        // the Navisworks duct rows and the steel members
+        string roomNote = "";
+        if (wv != null && wv.ModelLo != null && Cfg.RoomRegions)
+        {
+            RoomRegions.Result rr = RoomRegions.Find(Cfg.Walls, wv.FloorsFt, wv.ModelLo, wv.ModelHi, Cfg.RoomGapFt, Cfg.WallMarginFt);
+            var voters = new List<RoomVoter>();
+            if (rows != null)
+                foreach (DuctRow r in rows)
+                    if (r.Room != "" && r.Min != null && r.Max != null)
+                        voters.Add(new RoomVoter { X = (r.Min[0] + r.Max[0]) / 2, Y = (r.Min[1] + r.Max[1]) / 2, Z = (r.Min[2] + r.Max[2]) / 2, Room = r.Room });
+            if (sm != null)
+                foreach (SteelMember b in sm.Members)
+                    if (!string.IsNullOrEmpty(b.Room))
+                        voters.Add(new RoomVoter { X = (b.P0.X + b.P1.X) / 2 / 0.3048, Y = (b.P0.Y + b.P1.Y) / 2 / 0.3048, Z = (b.P0.Z + b.P1.Z) / 2 / 0.3048, Room = b.Room });
+            string nameNote = RoomRegions.Name(rr.Regions, voters);
+            RoomRegions.AddToView(wv, rr.Regions, nodes, ref next, off, scale);
+            RoomRegions.WriteCsv(outBase + ".rooms.csv", rr.Regions);
+            roomNote = "\n" + rr.Note + (rr.Regions.Count > 0 ? "\n" + nameNote + " (<out>_clean.rooms.csv)" : "");
+        }
         bool hasWalls = wv != null && wv.Elements.Count > 0;
         var comps = new List<RawViewerWriter.Component>(); comps.Add(new RawViewerWriter.Component("Axial N", "force", "kip"));
         var units = new Dictionary<string, string>(); units["length"] = lengthUnit;
@@ -159,8 +179,9 @@ public partial class DuctsToPluto
         SupportViewWriter.AddFloatingGroup(sc, sr, clean, P, beamOf);   // stability rule 1
         SupportViewWriter.AddHangerGroups(sc, sr, clean, beamOf, rows, pv);   // the hanger checks
         WallViewWriter.AddGroups(sc, wv);
+        RoomRegions.AddGroups(sc, wv);
         File.WriteAllText(outBase + ".features.json", sc.ToJson(), new UTF8Encoding(false));
-        return wv != null ? wv.Note : "";
+        return wv != null ? wv.Note + roomNote : "";
     }
 
 

@@ -84,6 +84,10 @@ function Get-DuctSettings {
     # every wall) of the model are drawn
     if (-not $Walls) { $Walls = $Data.DuctWalls }
     if ($Data.ContainsKey('DuctWallMarginFt')) { $ds.WallMarginFt = [double]$Data.DuctWallMarginFt }
+    # room regions from the walls (duct\model\RoomRegions.cs): on unless DuctRoomRegions = $false; walls that stop up to
+    # DuctRoomGapFt (default 4) short of each other still close a room
+    if ($Data.ContainsKey('DuctRoomRegions')) { $ds.RoomRegions = [bool]$Data.DuctRoomRegions }
+    if ($Data.ContainsKey('DuctRoomGapFt')) { $ds.RoomGapFt = [double]$Data.DuctRoomGapFt }
     if ($Walls -and $Walls -ne "none") {
         if (-not (Test-Path $Walls)) { throw "walls CSV not found: $Walls (DuctWalls in duct-config.psd1 or -Walls; -Walls none = off)" }
         $ds.Walls.AddRange([WallViewWriter]::Read((Resolve-Path $Walls).Path))

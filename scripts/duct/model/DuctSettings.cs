@@ -29,6 +29,9 @@ public class DuctSettings
     // walls drawn in the clean model [DuctWalls]: boxes within WallMarginFt of the model [DuctWallMarginFt; negative = all]
     public readonly List<WallBox> Walls = new List<WallBox>();
     public double WallMarginFt = 10;
+    // room regions from the walls [DuctRoomRegions], walls up to RoomGapFt short of each other still close a room [DuctRoomGapFt]
+    public bool RoomRegions = true;
+    public double RoomGapFt = 4;
     // wall thickness table [DuctThickness]: when set, the only thickness source (Navisworks ignored); null = Navisworks
     public DuctThickness Thickness;
     // folder of the files shared with the add-ins (room boxes) [AddinDir]
