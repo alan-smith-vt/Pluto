@@ -112,7 +112,7 @@ $sc = New-Object FeaturesSidecar
 $names = @($sc.Groups | ForEach-Object { $_.Name }) -join "|"
 Check "23 shape groups then level groups" ($names -eq "Walls: wall|Walls: slab|Walls: skew wall|Walls: skew slab|Walls: small|Walls level: below 13.4 ft|Walls level: 13.4 to 32.2 ft|Walls level: above 32.2 ft")
 $shapeG = @($sc.Groups | Where-Object { $_.Name -notlike "Walls level:*" }); $levelG = @($sc.Groups | Where-Object { $_.Name -like "Walls level:*" })
-Check "24 shape groups painted, level groups not" (@($shapeG | Where-Object { $_.Hidden -ne $false -or -not $_.Color }).Count -eq 0 -and @($levelG | Where-Object { $_.Hidden -ne $null -or $_.Color }).Count -eq 0)
+Check "24 shape groups painted, level groups not" (@($shapeG | Where-Object { $_.Hidden -ne $false -or -not $_.Color }).Count -eq 0 -and @($levelG | Where-Object { $_.Hidden -ne $true }).Count -eq 0)
 Check "25 every shell in one shape group and one level group" ((($shapeG | ForEach-Object { $_.Members[0].Ids.Count } | Measure-Object -Sum).Sum -eq 48) -and (($levelG | ForEach-Object { $_.Members[0].Ids.Count } | Measure-Object -Sum).Sum -eq 48) -and
     @($sc.Groups | Where-Object { $_.Members[0].Domain -ne "shells" }).Count -eq 0)
 

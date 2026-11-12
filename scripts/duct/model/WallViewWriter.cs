@@ -220,7 +220,7 @@ public static class WallViewWriter
     }
 
     // shape groups: plain painted groups (not context: each shape keeps its own legend row and eye);
-    // level groups: no colour, not painted, there for their eye (low to high; empty bands left out)
+    // level groups: unticked so they never paint, there for their eye (low to high; empty bands left out)
     public static void AddGroups(FeaturesSidecar sc, View v)
     {
         if (v == null) return;
@@ -232,6 +232,11 @@ public static class WallViewWriter
             g.Hidden = false;
         }
         for (int i = 0; i < v.Levels.Count; i++)
-            if (v.ByLevel[i].Count > 0) sc.AddGroup("Walls level: " + v.Levels[i], null, "shells", v.ByLevel[i], new[] { "wall", "level" }, null);
+            if (v.ByLevel[i].Count > 0)
+            {
+                // unticked (a ticked group paints, and a later group paints over the shape colours); the eye still hides it
+                FeaturesSidecar.Group g = sc.AddGroup("Walls level: " + v.Levels[i], "#8b919c", "shells", v.ByLevel[i], new[] { "wall", "level" }, null);
+                g.Hidden = true;
+            }
     }
 }
