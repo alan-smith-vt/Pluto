@@ -84,6 +84,9 @@ function Get-DuctSettings {
     # every wall) of the model are drawn
     if (-not $Walls) { $Walls = $Data.DuctWalls }
     if ($Data.ContainsKey('DuctWallMarginFt')) { $ds.WallMarginFt = [double]$Data.DuctWallMarginFt }
+    # penetrations (duct\model\DuctPenetrations.cs): a joint where a duct passes through a wall or slab, on unless
+    # DuctPenetrations = $false
+    if ($Data.ContainsKey('DuctPenetrations')) { $ds.Penetrations = [bool]$Data.DuctPenetrations }
     # room regions from the walls (duct\model\RoomRegions.cs): on unless DuctRoomRegions = $false; walls that stop up to
     # DuctRoomGapFt (default 4) short of each other still close a room
     if ($Data.ContainsKey('DuctRoomRegions')) { $ds.RoomRegions = [bool]$Data.DuctRoomRegions }

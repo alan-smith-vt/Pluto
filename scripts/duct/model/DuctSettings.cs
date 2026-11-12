@@ -29,6 +29,8 @@ public class DuctSettings
     // walls drawn in the clean model [DuctWalls]: boxes within WallMarginFt of the model [DuctWallMarginFt; negative = all]
     public readonly List<WallBox> Walls = new List<WallBox>();
     public double WallMarginFt = 10;
+    // a joint where a duct passes through a wall or slab of the walls CSV [DuctPenetrations]
+    public bool Penetrations = true;
     // room regions from the walls [DuctRoomRegions], walls up to RoomGapFt short of each other still close a room [DuctRoomGapFt]
     public bool RoomRegions = true;
     // steel outside the rooms with ducts is left out of the model [DuctRoomCull]

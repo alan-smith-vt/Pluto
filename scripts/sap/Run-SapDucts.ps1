@@ -11,6 +11,7 @@
 #                -SteelJoints (default: the same name with steel_joints). Groups STEEL_ALL, STEEL_RELEASED, STEEL_<condition>
 #   -Supports    <base>.supports.csv: TAP_STUB frames duct joint -> steel joint, groups SUPPORT_ALL, SUPPORT_<type>
 #   -Flags       csv Frame,Flag: extra FLAG_ groups (FLAG_UNSUPPORTED_SPAN)
+#   -Penetrations <base>.penetrations.csv: joints where a duct passes through a wall or slab, point groups PEN_WALL / PEN_SLAB
 #   -PlantRotZ   plant axes: coordinate system PLANT turned this many degrees about Z (opt-in, e.g. 90; default none)
 param(
     [Parameter(Mandatory = $true)][string]$Frames,
@@ -22,13 +23,14 @@ param(
     [string]$SteelJoints,
     [string]$Supports,
     [string]$Flags,
+    [string]$Penetrations,
     [string]$PlantRotZ = "none",
     [string]$SapDir = $env:PLUTO_SAP_DIR
 )
 $include = @($(if ($Fragments) { "fragment" }), $(if ($Other) { "other" }), $(if ($NavisOnly) { "navisworks-only" })) -join ","
 $ErrorActionPreference = "Stop"
 $Frames = [IO.Path]::GetFullPath($Frames); $SavePath = [IO.Path]::GetFullPath($SavePath)
-foreach ($p in @($Frames, $SteelFrames, $SteelJoints, $Supports, $Flags)) { if ($p -and -not (Test-Path $p)) { throw "No $p" } }
+foreach ($p in @($Frames, $SteelFrames, $SteelJoints, $Supports, $Flags, $Penetrations)) { if ($p -and -not (Test-Path $p)) { throw "No $p" } }
 . (Join-Path $PSScriptRoot "Import-SapApi.ps1")   # SAP classes, $SapDir, $SapExe
 $null = New-Item -ItemType Directory -Force (Split-Path $SavePath)
 $sap = [SapSurvey]::AttachOrStart($SapExe, $false)
@@ -37,6 +39,7 @@ if ($SteelFrames) { $d.SteelFramesCsv = [IO.Path]::GetFullPath($SteelFrames) }
 if ($SteelJoints) { $d.SteelJointsCsv = [IO.Path]::GetFullPath($SteelJoints) }
 if ($Supports) { $d.SupportsCsv = [IO.Path]::GetFullPath($Supports) }
 if ($Flags) { $d.FlagsCsv = [IO.Path]::GetFullPath($Flags) }
+if ($Penetrations) { $d.PenetrationsCsv = [IO.Path]::GetFullPath($Penetrations) }
 $d.PlantRotZ = $(if ($PlantRotZ -eq "none") { [double]::NaN } else { [double]::Parse($PlantRotZ, [Globalization.CultureInfo]::InvariantCulture) })
 $original = $null
 try { $original = $d.ModelPath() } catch { }   # PowerShell cannot call the COM model directly

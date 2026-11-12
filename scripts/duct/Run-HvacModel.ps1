@@ -90,6 +90,7 @@ if ($i0 -le 1 -and $i1 -ge 1) {
     $a = @("-Frames", "$base.frames.csv", "-SavePath", $sdb)
     if (Test-Path "$base.steel_frames.csv") { $a += @("-SteelFrames", "$base.steel_frames.csv") }
     if (Test-Path "$base.supports.csv") { $a += @("-Supports", "$base.supports.csv") }
+    if (Test-Path "$base.penetrations.csv") { $a += @("-Penetrations", "$base.penetrations.csv") }
     if ($Fragments) { $a += "-Fragments" }; if ($Other) { $a += "-Other" }; if ($NavisOnly) { $a += "-NavisOnly" }
     Step 2 "sap" (Join-Path $scripts "sap\Run-SapDucts.ps1") $a
     $sl = Get-Content (Join-Path $Out "logs\2-sap.log") -ErrorAction SilentlyContinue

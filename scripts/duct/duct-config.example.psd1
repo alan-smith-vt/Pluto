@@ -39,6 +39,10 @@
     # within DuctWallMarginFt of the model (ducts, steel, supports) are drawn; a negative margin draws every wall. '' = none.
     DuctWalls = ''                    # e.g. 'C:\Temp\walls.csv'
     DuctWallMarginFt = 10
+    # Penetrations: a joint where a duct passes through a wall or slab of the walls CSV (the duct is split there), so a
+    # support can be added downstream. No guide or anchor is placed. <out>.penetrations.csv, viewer node groups
+    # Penetration: wall / slab, SAP point groups PEN_WALL / PEN_SLAB. $false = off.
+    DuctPenetrations = $true
     # Room regions from the walls (drawing only): per level, the floor area closed in by walls is a region, drawn as a
     # coloured floor patch (groups Room: <name>) and listed in <out>_clean.rooms.csv. Named by the room codes on the
     # ducts and steel inside it (most votes; 'mixed' under 60 %; 'unnamed' with none). Walls that stop up to

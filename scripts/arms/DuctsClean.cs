@@ -40,6 +40,8 @@ public partial class DuctsToPluto
         string dropNote = CleanModel.ApplyManualDrop(clean, P, Cfg);   // add-on, the viewer's Cut picker
         if (dropNote != "") cutNote += (cutNote != "" ? "\n" : "") + dropNote;
         string orientNote = Orienter.Apply(clean, P, Cfg.RotateLargeVertical, out orientNewLine);   // before the supports (rotated depth)
+        // a joint where a duct passes through a wall or slab (DuctPenetrations.cs): splits elements, so before the supports
+        DuctPenetrations.Result pen = Cfg.Walls.Count > 0 && Cfg.Penetrations ? DuctPenetrations.Apply(clean, P, Cfg.Walls) : null;
         // room regions from the walls and the cull by room (RoomRegions.cs): regions without ducts drop out, with their steel
         RoomRegions.RoomPlan plan = null;
         List<SteelMember> steelIn = Cfg.Steel;
@@ -93,8 +95,9 @@ public partial class DuctsToPluto
         dev.Sort((x, y) => y.Key.CompareTo(x.Key));
 
         if (sm != null) sm.WriteCsv(outBase);
-        string wallNote = WriteCleanViewer(outBase + "_clean", modelId + "/clean", lengthUnit, clean, P, off, scale, sm, sr, rows, plan);
+        string wallNote = WriteCleanViewer(outBase + "_clean", modelId + "/clean", lengthUnit, clean, P, off, scale, sm, sr, rows, plan, pen);
         WriteCleanFrames(outBase + ".frames.csv", clean, P);
+        if (pen != null) DuctPenetrations.WriteCsv(outBase + ".penetrations.csv", pen, P);
 
         return string.Format(Inv, "clean model (<out>_clean.bin, <out>.frames.csv): {0} elements ({1} rigid links) from {2} pieces; duct length {3:0.#} ft -> {4:0.#} ft, overlaps merged {5} ({6:0.#} ft), different-size overlaps {7} (OVERLAP_SIZE_CONFLICT), gaps closed {10}; connectors > 1 in from the clean line {8}{9}",
             clean.Count, clean.Count(x => x.Rigid), cm.Edges.Count(x => x.Src.Count > 0 || x.Source != "revit"), cm.RawLen, cleanLen, cm.OverlapMerged, cm.OverlapFt, cm.OverlapConflict, dev.Count,
@@ -104,13 +107,14 @@ public partial class DuctsToPluto
             + (sm != null ? "\n" + sm.Summary() + " (<out>.steel_joints.csv, <out>.steel_frames.csv)\n" + sm.GapSummary() : "")
             + "\n" + bridgeNote
             + "\n" + orientNote
+            + (pen != null ? "\n" + pen.Note : "")
             + (sr != null ? "\n" + sr.Note : "")
             + (wallNote != "" ? "\n" + wallNote : "");
     }
 
 
 
-    static string WriteCleanViewer(string outBase, string modelId, string lengthUnit, List<CEdge> clean, Dictionary<int, double[]> P, double[] off, double scale, SteelModel sm, SupportRun sr, List<DuctRow> rows, RoomRegions.RoomPlan plan)
+    static string WriteCleanViewer(string outBase, string modelId, string lengthUnit, List<CEdge> clean, Dictionary<int, double[]> P, double[] off, double scale, SteelModel sm, SupportRun sr, List<DuctRow> rows, RoomRegions.RoomPlan plan, DuctPenetrations.Result pen)
     {
         var nodes = new Dictionary<int, Node>(); int next = 1; var map = new Dictionary<int, int>();
         Func<int, int> nd = n => { int id; if (!map.TryGetValue(n, out id)) { id = DuctGeom.MakeNode(nodes, ref next, P[n], off, scale); map[n] = id; } return id; };
@@ -194,6 +198,7 @@ public partial class DuctsToPluto
         SupportViewWriter.AddHangerGroups(sc, sr, clean, beamOf, rows, pv);   // the hanger checks
         WallViewWriter.AddGroups(sc, wv);
         RoomRegions.AddGroups(sc, wv);
+        DuctPenetrations.AddGroups(sc, pen, n => { int id; return map.TryGetValue(n, out id) ? id : 0; });
         File.WriteAllText(outBase + ".features.json", sc.ToJson(), new UTF8Encoding(false));
         return wv != null ? wv.Note + roomNote : "";
     }

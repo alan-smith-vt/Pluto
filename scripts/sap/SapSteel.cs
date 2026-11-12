@@ -1,5 +1,5 @@
 // HVAC duct model, part 2: the utility rack steel and the duct-to-steel supports (vault handoff Pluto 2026-10-30).
-// C# 5, Add-Type under PS 5.1. Called from SapDucts.Build when SteelFramesCsv / SupportsCsv / FlagsCsv are set.
+// C# 5, Add-Type under PS 5.1. Called from SapDucts.Build when SteelFramesCsv / SupportsCsv / FlagsCsv / PenetrationsCsv are set.
 // Inputs (inches, the frames.csv frame; vault/arms/sap-controller.md):
 //   steel joints  <out>.steel_joints.csv (SteelModel.cs): Joint, X_in, Y_in, Z_in, Restraint (PINNED = U1-3,
 //                 FIXED = all 6, empty), Condition (open-pinned | open-fixed | framed | corner | collinear | empty), Flags
@@ -19,7 +19,7 @@ using SAP2000v1;
 public partial class SapDucts
 {
     public const string SteelMat = "STEEL_A992", SteelNoSize = "STEEL_NOSIZE", PlantSys = "PLANT";
-    public string SteelFramesCsv, SteelJointsCsv, SupportsCsv, FlagsCsv;
+    public string SteelFramesCsv, SteelJointsCsv, SupportsCsv, FlagsCsv, PenetrationsCsv;
     // plant axes: a coordinate system turned about global Z (2026-10-22: the old model is turned 90 deg); NaN = none (default, 2026-10-30 user: opt-in)
     public double PlantRotZ = double.NaN;
 
@@ -47,6 +47,20 @@ public partial class SapDucts
                 else missing.Add(fr);
             }
             notes.Add(F("NEW flags csv: {0} assigned{1}", n, missing.Count > 0 ? F(", {0} frames not in the model ({1})", missing.Count, string.Join(" ", missing.Take(10).ToArray())) : ""));
+        }
+        // penetrations (duct\model\DuctPenetrations.cs): the joints where a duct passes through a wall or slab, as point
+        // groups PEN_WALL / PEN_SLAB. No restraint is set. A joint whose frames were left out of the model is skipped.
+        if (!string.IsNullOrEmpty(PenetrationsCsv))
+        {
+            int n = 0, missing = 0; var done = new HashSet<string>(StringComparer.Ordinal);
+            foreach (Dictionary<string, string> r in ReadCsv(PenetrationsCsv))
+            {
+                string pt, g = "PEN_" + Clean(Val(r, "Kind")).ToUpperInvariant();
+                if (!joints.TryGetValue(Val(r, "Joint"), out pt)) { missing++; continue; }
+                if (!done.Add(g + "|" + pt)) continue;
+                AddPoint(g, pt); n++;
+            }
+            notes.Add(F("NEW penetrations: {0} joints in PEN_ groups{1}", n, missing > 0 ? F(", {0} rows on joints not in the model", missing) : ""));
         }
         return string.Join("\n", notes.ToArray());
     }
