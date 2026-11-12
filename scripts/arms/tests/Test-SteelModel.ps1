@@ -174,5 +174,46 @@ Check "13e gap histogram: that end in the 5-6 in bin" ($sm.GapHist.ContainsKey(5
 $sm = ModelMode @((M "C" 0 0 0 0 0 144), (M "B" 0 0 120 120 0 120)) "contact"; $e = Ends $sm "B"
 Check "13f contact: a beam on a column still connects" ($e.I -ne "" -and $e.I -notlike "open-*")
 
+# 14 members are never moved (2026-11-12): the joint may sit elsewhere, the member end stays, with a joint offset
+function Fr($sm, $oid) { @($sm.Frames | Where-Object { $sm.Members[$_.Source].MemberOid -eq $oid }) }
+function V3($p, $x, $y, $z) { [math]::Abs($p[0] - $x) -lt 1e-6 -and [math]::Abs($p[1] - $y) -lt 1e-6 -and [math]::Abs($p[2] - $z) -lt 1e-6 }
+$sm = Model @((M "COL" 0 0 0 0 0 240), (M "BM" 3 0 120 120 0 120))
+$bf = (Fr $sm "BM")[0]
+Check "14a beam into a column: joint on the column line, the beam end where it was (offset 3 in)" ((V3 $sm.JointPos($bf.I) 0 0 120) -and (V3 $sm.EndPos($bf, $true) 3 0 120) -and (V3 $bf.OffI 3 0 0) -and (V3 $bf.OffJ 0 0 0))
+Check "14a the column is not moved and has no offsets" (@(Fr $sm "COL" | Where-Object { [SteelModel]::OffLen($_.OffI) -gt 0 -or [SteelModel]::OffLen($_.OffJ) -gt 0 }).Count -eq 0 -and (V3 $sm.EndPos((Fr $sm "COL")[0], $true) 0 0 0) -and (V3 $sm.EndPos((Fr $sm "COL")[-1], $false) 0 0 240))
+Check "14a summary counts the offset end" ($sm.Summary() -like "*members not moved: 1 ends offset from their joint (largest 3 in); 0 ends left open*")
+Check "14a top of steel follows the real line" ([math]::Abs($sm.TopAt($bf, 0)[0] - 3) -lt 1e-6)
+$tmp14 = Join-Path ([IO.Path]::GetTempPath()) ("pluto-steel-" + [Guid]::NewGuid().ToString("N").Substring(0, 8))
+$sm.WriteCsv($tmp14)
+$row = @(Import-Csv "$tmp14.steel_frames.csv" | Where-Object { $_.MemberOid -eq "BM" })[0]
+Check "14a steel_frames.csv: joint coordinates and the joint offset columns" ($row.XI_in -eq "0" -and $row.OffIX_in -eq "3" -and $row.OffIY_in -eq "0" -and $row.OffJX_in -eq "0")
+Remove-Item "$tmp14.steel_frames.csv", "$tmp14.steel_joints.csv" -ErrorAction SilentlyContinue
+# a split (duct support) on a member with an end offset: along the real line; the offset stays with its end
+$tt = 0.0; $dd = 0.0
+$nf = $sm.NearestFrame([double[]]@(60, 0, 125), [ref]$tt, [ref]$dd)
+$j = $sm.SplitAt($nf, $tt, "SUPPORT")
+$parts = Fr $sm "BM"
+Check "14b split on the real line; the first part keeps the end offset, the new joint has none" ($nf.Source -eq $bf.Source -and [math]::Abs($j.X - 60) -lt 1e-6 -and $parts.Count -eq 2 -and (V3 $parts[0].OffI 3 0 0) -and (V3 $parts[0].OffJ 0 0 0) -and (V3 $parts[1].OffI 0 0 0))
+# two ends meeting 2 in apart still join; the second keeps its position
+$sm = Model @((M "A" 0 0 120 120 0 120), (M "B" 120 2 120 120 120 120))
+$fa = (Fr $sm "A")[0]; $fb = (Fr $sm "B")[0]
+Check "14c corner 2 in apart: one joint, both members where they were" ($fa.J -eq $fb.I -and (V3 $sm.EndPos($fa, $false) 120 0 120) -and (V3 $sm.EndPos($fb, $true) 120 2 120) -and ([SteelModel]::OffLen($fa.OffJ) + [SteelModel]::OffLen($fb.OffI)) -eq 2)
+# a column missing from the data: two beams cut back to it, 5 in apart in line. Not tied to each other: open, flagged
+$sm = Model @((M "A" 0 0 120 120 0 120), (M "B" 125 0 120 245 0 120))
+$a = Ends $sm "A"; $b = Ends $sm "B"
+Check "14d in line, 5 in apart: both ends open and OPEN_NEAR, not joined" ($a.J -like "open-*" -and $b.I -like "open-*" -and $a.JJ.Id -ne $b.JI.Id -and ($a.JJ.Flags -contains "OPEN_NEAR") -and $sm.EndGapSkipped -eq 2)
+Check "14d nothing moved, no offsets" ((V3 $sm.EndPos((Fr $sm "A")[0], $false) 120 0 120) -and (V3 $sm.EndPos((Fr $sm "B")[0], $true) 125 0 120) -and $sm.Summary() -like "*members not moved: 0 ends offset from their joint (largest 0 in); 2 ends left open, the other member's end over 2 in away")
+# the same at a corner: beams from two sides of the missing column, ends 5.7 in apart
+$sm = Model @((M "A" 0 0 120 116 0 120), (M "B" 120 4 120 120 124 120))
+Check "14e square to each other, 5.7 in apart: open, not joined" ((Ends $sm "A").J -like "open-*" -and (Ends $sm "B").I -like "open-*")
+# with the column there, both beams connect to it and neither is moved
+$sm = Model @((M "COL" 120 0 0 120 0 240), (M "A" 0 0 120 116 0 120), (M "B" 120 4 120 120 124 120))
+Check "14f with the column: both framed into it, ends kept" ((Ends $sm "A").J -eq "framed" -and (Ends $sm "B").I -eq "framed" -and (V3 $sm.EndPos((Fr $sm "A")[-1], $false) 116 0 120) -and (V3 $sm.EndPos((Fr $sm "B")[0], $true) 120 4 120))
+# EndJoinIn is a setting
+$l = New-Object 'System.Collections.Generic.List[SteelMember]'; $l.Add((M "A" 0 0 120 120 0 120)); $l.Add((M "B" 125 0 120 245 0 120))
+$st = New-Object 'SteelModel+Settings'; $st.EndJoinIn = 6
+$sm = [SteelModel]::Build($l, $st)
+Check "14g EndJoinIn 6: the 5 in gap joins (one joint), B keeps its position by an offset" ((Ends $sm "A").JJ.Id -eq (Ends $sm "B").JI.Id -and (V3 $sm.EndPos((Fr $sm "B")[0], $true) 125 0 120))
+
 Write-Output ("{0} passed, {1} failed" -f $script:pass, $script:fail)
 exit $(if ($script:fail) { 1 } else { 0 })

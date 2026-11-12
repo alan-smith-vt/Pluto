@@ -5,7 +5,8 @@
 //                 FIXED = all 6, empty), Condition (open-pinned | open-fixed | framed | corner | collinear | empty), Flags
 //   steel frames  <out>.steel_frames.csv: Frame, JointI, JointJ, XI_in..ZJ_in, Section, D_in, Bf_in, Tf_in, Tw_in,
 //                 WebX..WebZ (local 2), CP (SAP cardinal point; empty / 5 = centred), ReleaseI / ReleaseJ (M2M3 or
-//                 empty), MemberOid, Flags
+//                 empty), MemberOid, Flags, OffIX_in..OffJZ_in (joint -> the member's real end, global: SAP joint
+//                 offsets; the steel is never moved, group STEEL_JOINT_OFFSET)
 //   supports      <base>.supports.csv (duct supports): SupportId, Type, DuctJoint, DX..DZ, SteelJoint, SX..SZ,
 //                 SteelMember, Gap_in, System, Flags
 //   flags         Frame, Flag: extra FLAG_ groups on duct or steel frames (e.g. UNSUPPORTED_SPAN)
@@ -90,7 +91,7 @@ public partial class SapDucts
             if (cond != "") AddPoint("STEEL_" + Clean(cond), pt);
             foreach (string f in Val(r, "Flags").Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)) AddPoint("FLAG_" + Clean(f), pt);
         }
-        int released = 0, ends = 0, noSize = 0, noWeb = 0; var failed = new List<string>();
+        int released = 0, ends = 0, noSize = 0, noWeb = 0, offsetFrames = 0; var failed = new List<string>();
         foreach (Dictionary<string, string> r in ReadCsv(SteelFramesCsv))
         {
             string ji, jj;
@@ -100,16 +101,23 @@ public partial class SapDucts
             steelFrames[r["Frame"]] = name;
             // web = local 2, so local 3 = local 1 x web
             double xi = Num(r, "XI_in"), yi = Num(r, "YI_in"), zi = Num(r, "ZI_in"), xj = Num(r, "XJ_in"), yj = Num(r, "YJ_in"), zj = Num(r, "ZJ_in");
+            // joint offsets (steel model 2026-11-12: members are not moved; joint -> the member's real end, global inches).
+            // The member's axis and its web angle are those of the real line.
+            double[] o1 = { Off(r, "OffIX_in"), Off(r, "OffIY_in"), Off(r, "OffIZ_in") }, o2 = { Off(r, "OffJX_in"), Off(r, "OffJY_in"), Off(r, "OffJZ_in") };
+            bool hasOff = Math.Abs(o1[0]) + Math.Abs(o1[1]) + Math.Abs(o1[2]) + Math.Abs(o2[0]) + Math.Abs(o2[1]) + Math.Abs(o2[2]) > 1e-6;
+            xi += o1[0]; yi += o1[1]; zi += o1[2]; xj += o2[0]; yj += o2[1]; zj += o2[2];
             double wx = Num(r, "WebX"), wy = Num(r, "WebY"), wz = Num(r, "WebZ"), ex = xj - xi, ey = yj - yi, ez = zj - zi, ang;
             if (LocalAngle(xi, yi, zi, xj, yj, zj, ey * wz - ez * wy, ez * wx - ex * wz, ex * wy - ey * wx, out ang))
             { if (Math.Abs(ang) > 1e-6) Check(M.FrameObj.SetLocalAxes(name, ang), "SetLocalAxes " + name); }
             else { noWeb++; addTo("FLAG_NO_ORIENTATION", name); }
             // cardinal point: the steel model's CP numbering is SAP's (8 = top centre); empty = centroid
             double cp = Num(r, "CP");
-            if (!double.IsNaN(cp) && cp >= 1 && cp <= 11 && cp != 10)
+            bool cpSet = !double.IsNaN(cp) && cp >= 1 && cp <= 11 && cp != 10;
+            if (cpSet || hasOff)
             {
-                double[] o1 = new double[3], o2 = new double[3];
-                Check(M.FrameObj.SetInsertionPoint(name, (int)cp, false, true, ref o1, ref o2, "Local"), "SetInsertionPoint " + name);
+                // offsets in global directions, stiffness transformed (the offset is rigid); 10 = centroid when no CP is given
+                Check(M.FrameObj.SetInsertionPoint(name, cpSet ? (int)cp : 10, false, true, ref o1, ref o2, "Global"), "SetInsertionPoint " + name);
+                if (hasOff) { offsetFrames++; addTo("STEEL_JOINT_OFFSET", name); }
             }
             bool hi = Hinged(Val(r, "ReleaseI")), hj = Hinged(Val(r, "ReleaseJ"));
             if (hi || hj)
@@ -125,9 +133,9 @@ public partial class SapDucts
             if (sec == SteelNoSize) { addTo("FLAG_NO_SIZE", name); noSize++; }
             foreach (string f in Val(r, "Flags").Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)) addTo("FLAG_" + Clean(f), name);
         }
-        return F("NEW steel: {0} frames, {1} with releases ({2} hinged ends, M2+M3), restraints {3} pinned + {4} fixed + {8} pinned+T (torsion), {5} without a size, {6} without a web direction{7}",
+        return F("NEW steel: {0} frames, {1} with releases ({2} hinged ends, M2+M3), restraints {3} pinned + {4} fixed + {8} pinned+T (torsion), {5} without a size, {6} without a web direction, {9} with joint offsets (STEEL_JOINT_OFFSET){7}",
             steelFrames.Count, released, ends, pinned, fixd, noSize, noWeb,
-            failed.Count > 0 ? F("; SAP refused {0} ({1})", failed.Count, string.Join(" ", failed.Take(10).ToArray())) : "", pinnedT);
+            failed.Count > 0 ? F("; SAP refused {0} ({1})", failed.Count, string.Join(" ", failed.Take(10).ToArray())) : "", pinnedT, offsetFrames);
     }
 
     string AddSupports(List<Dictionary<string, string>> rows, Dictionary<string, string> joints, HashSet<string> sections, Action<string, string> addTo, Dictionary<string, string> steelFrames)
@@ -190,6 +198,13 @@ public partial class SapDucts
         if (s == "") return false;
         if (s == "M2M3") return true;
         throw new Exception("release '" + rel + "': M2M3 (hinged) or empty (continuous)");
+    }
+
+    // a joint offset column of steel_frames.csv; absent (older files) or empty = 0
+    static double Off(Dictionary<string, string> r, string col)
+    {
+        string v; double d;
+        return r.TryGetValue(col, out v) && double.TryParse(v, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out d) ? d : 0;
     }
 
     void AddPoint(string g, string pt)

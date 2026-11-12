@@ -20,6 +20,7 @@ $frames = W "test.frames.csv" @(
     "D2,N2,N3,60,0,150,420,0,150,rect,24,12,,0.06,0,1,0,revit,,2,US1",
     "D3,N3,N4,420,0,150,480,0,150,rect,24,12,,0.06,0,1,0,revit,,3,",
     "D9,N7,N8,700,0,150,760,0,150,rect,24,12,,0.06,0,1,0,revit,FLOATING,9,")
+# SF9 carries a joint offset (2 in at its I end): the steel model never moves a member, the joint may sit elsewhere
 # rack 1 at x 60: columns S1-S2, S3-S4, beam split at SS1 (the support joint); rack 2 at x 420: columns S5-S6,
 # S10-S8, beam S6-S8 whole (the support joint SS2 is new: auto-meshed); cantilever S6-S9 pinned at the wall
 $joints = W "test.steel_joints.csv" @(
@@ -30,16 +31,16 @@ $joints = W "test.steel_joints.csv" @(
     "S11,500,0,0,PINNED+T,open-pinned,,0.57735027,0.57735027,0.57735027", "S12,560,60,60,PINNED,open-pinned,")
 $w12 = "W12X26,12.2,6.49,0.38,0.23"
 $steel = W "test.steel_frames.csv" @(
-    "Frame,JointI,JointJ,XI_in,YI_in,ZI_in,XJ_in,YJ_in,ZJ_in,Section,D_in,Bf_in,Tf_in,Tw_in,WebX,WebY,WebZ,CP,OffY_in,OffZ_in,ReleaseI,ReleaseJ,EndI,EndJ,MemberOid,Flags",
-    "SF1,S1,S2,60,-30,0,60,-30,132,$w12,0,1,0,,0,0,,,open-fixed,corner,M1,",
-    "SF2,S3,S4,60,30,0,60,30,132,$w12,1,0,0,,0,0,,,open-fixed,corner,M2,",
-    "SF3,S2,SS1,60,-30,132,60,0,132,$w12,0,0,1,8,0,0,M2M3,,corner,interior,M3,",
-    "SF4,SS1,S4,60,0,132,60,30,132,$w12,0,0,1,8,0,0,,M2M3,interior,corner,M3,",
-    "SF5,S5,S6,420,-30,0,420,-30,132,$w12,1,0,0,,0,0,,,open-fixed,interior,M4,",
-    "SF6,S10,S8,420,30,0,420,30,132,$w12,1,0,0,,0,0,,,open-fixed,corner,M5,",
-    "SF7,S6,S8,420,-30,132,420,30,132,$w12,0,0,1,8,0,0,M2M3,M2M3,framed,corner,M6,",
-    "SF8,S6,S9,420,-30,132,420,-90,132,,,,,,0,0,1,,0,0,M2M3,,framed,open-pinned,M7,",
-    "SF9,S11,S12,500,0,0,560,60,60,$w12,0,0,1,,0,0,,,open-pinned,open-pinned,M8,")
+    "Frame,JointI,JointJ,XI_in,YI_in,ZI_in,XJ_in,YJ_in,ZJ_in,Section,D_in,Bf_in,Tf_in,Tw_in,WebX,WebY,WebZ,CP,OffY_in,OffZ_in,ReleaseI,ReleaseJ,EndI,EndJ,MemberOid,Flags,OffIX_in,OffIY_in,OffIZ_in,OffJX_in,OffJY_in,OffJZ_in",
+    "SF1,S1,S2,60,-30,0,60,-30,132,$w12,0,1,0,,0,0,,,open-fixed,corner,M1,,0,0,0,0,0,0",
+    "SF2,S3,S4,60,30,0,60,30,132,$w12,1,0,0,,0,0,,,open-fixed,corner,M2,,0,0,0,0,0,0",
+    "SF3,S2,SS1,60,-30,132,60,0,132,$w12,0,0,1,8,0,0,M2M3,,corner,interior,M3,,0,0,0,0,0,0",
+    "SF4,SS1,S4,60,0,132,60,30,132,$w12,0,0,1,8,0,0,,M2M3,interior,corner,M3,,0,0,0,0,0,0",
+    "SF5,S5,S6,420,-30,0,420,-30,132,$w12,1,0,0,,0,0,,,open-fixed,interior,M4,,0,0,0,0,0,0",
+    "SF6,S10,S8,420,30,0,420,30,132,$w12,1,0,0,,0,0,,,open-fixed,corner,M5,,0,0,0,0,0,0",
+    "SF7,S6,S8,420,-30,132,420,30,132,$w12,0,0,1,8,0,0,M2M3,M2M3,framed,corner,M6,,0,0,0,0,0,0",
+    "SF8,S6,S9,420,-30,132,420,-90,132,,,,,,0,0,1,,0,0,M2M3,,framed,open-pinned,M7,,0,0,0,0,0,0",
+    "SF9,S11,S12,500,0,0,560,60,60,$w12,0,0,1,,0,0,,,open-pinned,open-pinned,M8,,2,0,0,0,0,0")
 $supports = W "test.supports.csv" @(
     "SupportId,Type,DuctJoint,DX,DY,DZ,SteelJoint,SX,SY,SZ,SteelMember,AxisX,AxisY,AxisZ,Gap_in,System,Flags",
     "1,guide,N2,60,0,150,SS1,60,0,132,SF3,1,0,0,12,SYS-A,",
@@ -82,7 +83,11 @@ Expect "fixed joints" @($res | Where-Object { $_ -match "R1=Yes" -and $_ -match 
 Expect "pinned joints (no R1)" @($res | Where-Object { $_ -match "U3=Yes" -and $_ -match "R1=No" }).Count 2
 Expect "PINNED+T: one rotation restrained (S9 global R2, S11 local R1)" @($res | Where-Object { @([regex]::Matches($_, "R[123]=Yes")).Count -eq 1 }).Count 2
 Expect "PINNED+T off-axis: joint local axes turned" (Rows "JOINT LOCAL AXES ASSIGNMENTS 1 - TYPICAL").Count 1
-Expect "insertion points (CP 8 on 3 beams = 4 elements)" (Rows "FRAME INSERTION POINT ASSIGNMENTS").Count 4
+Expect "insertion points (CP 8 on 3 beams = 4 elements, + SF9 for its joint offset)" (Rows "FRAME INSERTION POINT ASSIGNMENTS").Count 5
+$ipo = @(Rows "FRAME INSERTION POINT ASSIGNMENTS" | Where-Object { $_ -match "XI=2\s" })   # the exported table names frames by number
+Write-Output ("     SF9 insertion point row: " + ($ipo -join " | "))
+Expect "SF9: centroid cardinal point, I end offset 2 in along global X" ($ipo.Count -eq 1 -and $ipo[0] -match "CardinalPt=10\s" -and $ipo[0] -match "CoordSys=GLOBAL\s" -and $ipo[0] -match "StiffTransform=Yes" -and $ipo[0] -match "YI=0\s+ZI=0\s+XJ=0") $true
+Expect "STEEL_JOINT_OFFSET frames" (InGroup "STEEL_JOINT_OFFSET" "Frame") 1
 Expect "SUPPORT_ALL frames" (InGroup "SUPPORT_ALL" "Frame") 2
 Expect "SUPPORT_GUIDE frames" (InGroup "SUPPORT_GUIDE" "Frame") 1
 Expect "STEEL_ALL frames" (InGroup "STEEL_ALL" "Frame") 10

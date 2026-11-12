@@ -240,7 +240,7 @@ public partial class DuctsToPluto
         foreach (SteelModel.Frame f in sm.Frames)
         {
             SteelMember b = sm.Members[f.Source];
-            steel.Add(new DuctSupports.Steel { I = sm.JointPos(f.I), J = sm.JointPos(f.J), TopI = sm.TopAt(f, 0)[2], TopJ = sm.TopAt(f, 1)[2],
+            steel.Add(new DuctSupports.Steel { I = sm.EndPos(f, true), J = sm.EndPos(f, false), TopI = sm.TopAt(f, 0)[2], TopJ = sm.TopAt(f, 1)[2],
                 Name = f.Name, Section = string.IsNullOrEmpty(b.SectionName) ? "UNNAMED" : b.SectionName });
             frames.Add(f);
         }

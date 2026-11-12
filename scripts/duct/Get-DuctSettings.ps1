@@ -54,6 +54,8 @@ function Get-DuctSettings {
     # DuctSteelSnap = centreline (default) | contact (prototype: the end section touches the other member, within DuctSteelContactIn)
     if ($Data.DuctSteelSnap) { $ds.SteelSettings.SnapMode = [string]$Data.DuctSteelSnap }
     if ($Data.DuctSteelContactIn) { $ds.SteelSettings.ContactIn = [double]$Data.DuctSteelContactIn }
+    # an end lying beyond another member's end joins it only when the two end points are within DuctSteelEndJoinIn (2 in)
+    if ($Data.ContainsKey('DuctSteelEndJoinIn')) { $ds.SteelSettings.EndJoinIn = [double]$Data.DuctSteelEndJoinIn }
     # wall thickness table (duct\model\DuctThickness.cs): DuctThickness = CSV Run,Size,Thk_in. When set it is the only
     # thickness source (Navisworks WallThk_in ignored); frames no row matches get the 0.001 in placeholder. '' = Navisworks
     if ($Data.DuctThickness) {

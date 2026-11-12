@@ -33,6 +33,14 @@
     DuctSteel = ''                    # e.g. 'C:\Temp\hvac\steel\steel.csv'
     DuctSteelSnapIn = 6
     DuctSteelNearIn = 24
+    # Steel is never moved: the snap only decides which ends connect. A connected end that is not at its joint keeps its
+    # position and gets a joint offset (viewer: drawn where it is; SAP: frame joint offsets, no rigid links).
+    # DuctSteelSnap: 'centreline' (an end within DuctSteelSnapIn of a member's line) or 'contact' (the end's section
+    # touches the other member within DuctSteelContactIn). An end lying beyond another member's end (two beams cut back
+    # to a column that is not in the data) joins it only when the end points are within DuctSteelEndJoinIn.
+    DuctSteelSnap = 'centreline'
+    DuctSteelContactIn = 2
+    DuctSteelEndJoinIn = 2
     # Walls drawn in the clean model (drawing only, never in SAP): the CSV of scripts\voyager\Export-Walls.ps1
     # (one box per wall, meters, the steel CSV's frame). Groups by shape (Walls: wall / slab / skew wall / skew slab /
     # small) and by level (Walls level: <band>: the bands between the big slabs; hide a level with its eye). Only walls
