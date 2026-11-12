@@ -152,6 +152,19 @@ Check "c8e the slabs are cut to the room's floor area" ($got["floor"].Count -eq 
 $both = [RoomRegions]::Plan($all, (Segs @(@(10, 10, 5, 20, 10, 5), @(50, 5, 5, 55, 5, 5))), $steel, (Voters @()), 10, 4, $true)
 $cut2 = [RoomRegions]::CutWalls($all, $both)
 Check "c8f two kept rooms: one piece of the south wall along both, the stub and the east wall kept" ($both.Kept.Count -eq 2 -and $cut2[$all[0]].Count -eq 1 -and (Near $cut2[$all[0]][0].Hi[0] 60 0.01) -and $cut2.ContainsKey($all[5]) -and $cut2.ContainsKey($all[3]) -and -not $cut2.ContainsKey($all[7]))
+# ---- steel by position: the whole CSV near the ducts, whatever its room code ----
+function SteelR([double]$x, [double]$y, [double]$z, [string]$id, [string]$room) { $m = Steel $x $y $z $id; $m.Room = $room; return $m }
+$csvAll = SteelList @((SteelR 15 20 5 "labelled" "R101"), (SteelR 16 20 5 "no code" ""), (SteelR 17 20 5 "wrong code" "R900"), (SteelR 18 20 5 "variant" "R101A"),
+    (SteelR 50 5 5 "next room" "R102"), (SteelR 900 900 5 "far away" "R101"))
+$dsg = Segs @(,@(10, 10, 5, 20, 10, 5))
+$cand = [RoomRegions]::CropSteel($csvAll, $dsg, 40)
+Check "p1 candidates: the CSV within the margin of the ducts, whatever the room code" ((@($cand | ForEach-Object { $_.MemberOid }) -join "|") -eq "labelled|no code|wrong code|variant|next room")
+$pp = [RoomRegions]::Plan($all, $dsg, $cand, (Voters @()), 10, 4, $true, -1)
+Check "p2 kept by position: everything standing in the room with ducts, labelled or not" ((@($pp.Steel | ForEach-Object { $_.MemberOid }) -join "|") -eq "labelled|no code|wrong code|variant")
+Check "p3 the audit line: what the room list would have lost" ([RoomRegions]::PositionNote($pp.Steel, $cand.Count, $csvAll.Count, "R101", 3) -eq
+    "steel by position: 4 members kept (their midpoint in a room with ducts) of 5 near the ducts, 6 in the steel CSV; 1 of them have no room code, 1 a room code not on the room list (R900 1); the room list alone gave 3 members")
+Check "p4 no room list (whole building): no code counts as off the list" ([RoomRegions]::PositionNote($pp.Steel, 5, 6, "", 6) -like "*1 of them have no room code, 0 a room code not on the room list; the room list alone gave 6 members")
+
 # ---- the box cull: kept regions trimmed to the drawn ducts' plan box + pad ----
 # east room x 31..59, y 1..29 (two bays joined past the stub wall); a duct in its south bay only: (50,5) to (55,5).
 # box + 5 ft = x 45..60, y 0..10: the room is trimmed to x 45..59, y 1..10; the steel in its north bay goes

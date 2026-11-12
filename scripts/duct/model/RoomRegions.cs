@@ -215,6 +215,44 @@ public static class RoomRegions
         return lo;
     }
 
+    // steel by position: the members of the whole CSV whose midpoint lies in the plan box of the ducts + marginFt
+    // (the candidates for the room cull; the plant is not modelled)
+    public static List<SteelMember> CropSteel(List<SteelMember> all, List<double[]> ducts, double marginFt)
+    {
+        var res = new List<SteelMember>();
+        if (all == null || ducts == null || ducts.Count == 0) return res;
+        double x0 = double.MaxValue, y0 = double.MaxValue, x1 = double.MinValue, y1 = double.MinValue;
+        foreach (double[] d in ducts)
+        {
+            x0 = Math.Min(x0, Math.Min(d[0], d[3])); x1 = Math.Max(x1, Math.Max(d[0], d[3]));
+            y0 = Math.Min(y0, Math.Min(d[1], d[4])); y1 = Math.Max(y1, Math.Max(d[1], d[4]));
+        }
+        foreach (SteelMember b in all)
+        {
+            double mx = (b.P0.X + b.P1.X) / 2 / 0.3048, my = (b.P0.Y + b.P1.Y) / 2 / 0.3048;
+            if (mx >= x0 - marginFt && mx <= x1 + marginFt && my >= y0 - marginFt && my <= y1 + marginFt) res.Add(b);
+        }
+        return res;
+    }
+
+    // what the room list would have lost: of the steel kept by position, the members with no room code and those
+    // whose code is not on the list (rooms: the duct room list, each code with its variants; "" = whole building)
+    public static string PositionNote(List<SteelMember> kept, int candidates, int inCsv, string rooms, int byRoomList)
+    {
+        int noCode = 0, other = 0; var codes = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (SteelMember b in kept)
+        {
+            string r = (b.Room ?? "").Trim();
+            if (r == "") { noCode++; continue; }
+            if (string.IsNullOrEmpty(rooms) || PipeCsvReader.RoomPrefixMatch(r, rooms)) continue;
+            other++; int c; codes.TryGetValue(r, out c); codes[r] = c + 1;
+        }
+        string list = string.Join(", ", codes.OrderByDescending(k => k.Value).ThenBy(k => k.Key, StringComparer.OrdinalIgnoreCase).Take(6).Select(k => k.Key + " " + k.Value).ToArray());
+        return string.Format(Inv, "steel by position: {0} members kept (their midpoint in a room with ducts) of {1} near the ducts, {2} in the steel CSV; " +
+            "{3} of them have no room code, {4} a room code not on the room list{5}; the room list alone gave {6} members",
+            kept.Count, candidates, inCsv, noCode, other, list != "" ? " (" + list + (codes.Count > 6 ? ", ..." : "") + ")" : "", byRoomList);
+    }
+
     public static RoomRegion At(List<RoomRegion> regions, double x, double y, double z)
     {
         foreach (RoomRegion r in regions) if (z >= r.BandLo && z < r.BandHi && r.Contains(x, y)) return r;
@@ -276,17 +314,19 @@ public static class RoomRegions
         foreach (double[] d in ducts)
         {
             double len = Math.Sqrt((d[3] - d[0]) * (d[3] - d[0]) + (d[4] - d[1]) * (d[4] - d[1]) + (d[5] - d[2]) * (d[5] - d[2]));
-            int steps = Math.Max(1, (int)Math.Ceiling(len / 3));
-            var hit = new RoomRegion[steps + 1];
-            for (int i = 0; i <= steps; i++)
+            // half-foot pieces tested at their middles, so the length outside is a length (an element split at a wall
+            // has its end joints inside the wall)
+            int steps = Math.Max(1, (int)Math.Ceiling(len / 0.5));
+            var hit = new RoomRegion[steps];
+            for (int i = 0; i < steps; i++)
             {
-                double t = (double)i / steps;
+                double t = (i + 0.5) / steps;
                 RoomRegion r = At(plan.All, d[0] + t * (d[3] - d[0]), d[1] + t * (d[4] - d[1]), d[2] + t * (d[5] - d[2]));
                 if (r != null) r.HasDucts = true;
                 hit[i] = r;
             }
             int none = 0; foreach (RoomRegion r in hit) if (r == null) none++;
-            plan.DuctOutsideFt += len * none / (steps + 1);
+            plan.DuctOutsideFt += len * none / steps;
         }
         plan.Kept = plan.All.Where(r => r.HasDucts).ToList();
         plan.Culled = plan.Kept.Count > 0;

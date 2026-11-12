@@ -48,6 +48,10 @@ $d = Get-DuctSettings -Data @{ DuctSteel = $steel } -Mode Revit -Rooms "R101,R10
 $kept = @($d.Steel | ForEach-Object { $_.MemberOid }) -join " "
 Check 'steel rooms R101,R103: R101 and its variant R101A kept; R102/R103, R200, no room dropped (duct rule)' ($kept -eq "M1 M2")
 Check 'steel note names the room scope' ($notes[0] -like 'steel: 2 members from *(rooms R101,R103)*')
+Check 'steel by position: the whole CSV is kept beside the room list' ($d.SteelAll.Count -eq 5 -and $d.SteelRooms -eq 'R101,R103' -and $d.SteelByPosition)
+$dOff = Get-DuctSettings -Data @{ DuctSteel = $steel; DuctSteelByPosition = $false } -Mode Revit -Rooms "R101,R103" -Notes $notes
+Check 'DuctSteelByPosition off: only the room list' ($dOff.SteelAll.Count -eq 0 -and $dOff.Steel.Count -eq 2 -and -not $dOff.SteelByPosition)
+$notes.Clear()
 $notes.Clear()
 $d = Get-DuctSettings -Data @{ DuctSteel = $steel } -Mode Revit -Rooms "R102" -Notes $notes
 Check "steel rooms R102: 'R102/R103' kept through its start" ((@($d.Steel | ForEach-Object { $_.MemberOid }) -join " ") -eq "M3")

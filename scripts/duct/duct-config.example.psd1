@@ -61,6 +61,10 @@
     # those rooms. Steel whose midpoint is not in a kept room (a room without ducts, or no room) is left out of the
     # model (viewer and SAP steel). Ducts are never removed. $false = keep all the steel (walls are still cut).
     DuctRoomCull = $true
+    # Steel by position: with the room cull on, the steel is chosen by where it is (its midpoint in a room with ducts),
+    # not by its room code, so steel with no room code or the wrong one is kept when it stands in such a room. The
+    # room list (DuctRooms) still chooses the ducts, and the steel when no room holds ducts. $false = the room list.
+    DuctSteelByPosition = $true
     # Box cull, on top of the rooms: the kept rooms are trimmed to the plan (top down) bounding box of the drawn ducts
     # plus this pad in ft, and steel, walls, slabs and room floors follow. It cuts the hallways that open onto a room
     # where the ducts end. Negative = no box.

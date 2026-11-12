@@ -25,6 +25,11 @@ public class DuctSettings
     public double HangerMatchIn = 24;
     // utility rack steel [DuctSteel] and its connection settings [DuctSteelSnapIn, DuctSteelNearIn]
     public readonly List<SteelMember> Steel = new List<SteelMember>();
+    // steel by position [DuctSteelByPosition]: the whole steel CSV, no room filter. With the room cull on, the steel is
+    // chosen by where it is (in a room with ducts), not by its room code; Steel (the room list) is the fallback.
+    public readonly List<SteelMember> SteelAll = new List<SteelMember>();
+    public string SteelRooms = "";   // the room list Steel was filtered by ("" = whole building)
+    public bool SteelByPosition = true;
     public SteelModel.Settings SteelSettings = new SteelModel.Settings();
     // walls drawn in the clean model [DuctWalls]: boxes within WallMarginFt of the model [DuctWallMarginFt; negative = all]
     public readonly List<WallBox> Walls = new List<WallBox>();

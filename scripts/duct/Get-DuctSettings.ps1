@@ -78,6 +78,14 @@ function Get-DuctSettings {
         # with the duct rule: each code also keeps its variants (values that start with it)
         $sr = New-Object SteelToPluto; $sr.Progress = $false; $sr.RoomPrefix = $true
         $ds.Steel.AddRange($sr.Build((Resolve-Path $Steel).Path, $Rooms))
+        # steel by position (DuctSteelByPosition, default on): the whole CSV too, for the room cull to choose from by
+        # where the steel is; unlabelled or mislabelled steel in a room with ducts is then kept (RoomRegions.cs)
+        if ($Data.ContainsKey('DuctSteelByPosition')) { $ds.SteelByPosition = [bool]$Data.DuctSteelByPosition }
+        $ds.SteelRooms = "$Rooms"
+        if ($ds.SteelByPosition) {
+            if ($Rooms) { $sa = New-Object SteelToPluto; $sa.Progress = $false; $ds.SteelAll.AddRange($sa.Build((Resolve-Path $Steel).Path, $null)) }
+            else { $ds.SteelAll.AddRange($ds.Steel) }
+        }
         $scope = $(if ($Rooms) { "rooms " + (@($Rooms -split '[,;\s]+' | Where-Object { $_ }) -join ",") } else { "rooms: whole building" })
         $Notes.Add(("steel: {0} members from {1} ({2}) ({3})" -f $ds.Steel.Count, $Steel, $scope, ($sr.Summary() -replace "`n", "; ")))
     }

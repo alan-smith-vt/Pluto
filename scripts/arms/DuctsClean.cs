@@ -62,11 +62,23 @@ public partial class DuctsToPluto
                 foreach (DuctRow r in rows)
                     if (r.Room != "" && r.Min != null && r.Max != null)
                         voters.Add(new RoomVoter { X = (r.Min[0] + r.Max[0]) / 2, Y = (r.Min[1] + r.Max[1]) / 2, Z = (r.Min[2] + r.Max[2]) / 2, Room = r.Room });
-            foreach (SteelMember b in Cfg.Steel)
+            // steel by position (user, 2026-11-12: steel with no room code, or the wrong one, was filtered out before it
+            // reached the model): the candidates are the whole CSV near the ducts, and the room cull keeps what stands in
+            // a room with ducts. The room list is the fallback when no room holds ducts.
+            bool byPos = Cfg.SteelByPosition && Cfg.RoomCull && Cfg.SteelAll.Count > 0 && ductSegs.Count > 0;
+            List<SteelMember> cand = byPos
+                ? RoomRegions.CropSteel(Cfg.SteelAll, ductSegs, Cfg.RoomBoxPadFt >= 0 ? Cfg.RoomBoxPadFt + 5 : RoomRegions.ReachFt)
+                : Cfg.Steel;
+            foreach (SteelMember b in cand)
                 if (!string.IsNullOrEmpty(b.Room))
                     voters.Add(new RoomVoter { X = (b.P0.X + b.P1.X) / 2 / 0.3048, Y = (b.P0.Y + b.P1.Y) / 2 / 0.3048, Z = (b.P0.Z + b.P1.Z) / 2 / 0.3048, Room = b.Room });
-            plan = RoomRegions.Plan(Cfg.Walls, ductSegs, Cfg.Steel, voters, Cfg.WallMarginFt, Cfg.RoomGapFt, Cfg.RoomCull, Cfg.RoomBoxPadFt);
-            steelIn = plan.Steel;
+            plan = RoomRegions.Plan(Cfg.Walls, ductSegs, cand, voters, Cfg.WallMarginFt, Cfg.RoomGapFt, Cfg.RoomCull, Cfg.RoomBoxPadFt);
+            if (byPos && !plan.Culled) plan.Note += "\nsteel by position: no room holds ducts, so the room list chooses the steel (" + Cfg.Steel.Count + " members)";
+            else
+            {
+                steelIn = plan.Steel;
+                if (byPos) plan.Note += "\n" + RoomRegions.PositionNote(plan.Steel, cand.Count, Cfg.SteelAll.Count, Cfg.SteelRooms, Cfg.Steel.Count);
+            }
         }
         SteelModel sm = steelIn.Count > 0 ? SteelModel.Build(steelIn, Cfg.SteelSettings) : null;   // SteelViewWriter.cs draws it; split by supports from here on
         sr = null;
