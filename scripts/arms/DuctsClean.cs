@@ -63,7 +63,7 @@ public partial class DuctsToPluto
             foreach (SteelMember b in Cfg.Steel)
                 if (!string.IsNullOrEmpty(b.Room))
                     voters.Add(new RoomVoter { X = (b.P0.X + b.P1.X) / 2 / 0.3048, Y = (b.P0.Y + b.P1.Y) / 2 / 0.3048, Z = (b.P0.Z + b.P1.Z) / 2 / 0.3048, Room = b.Room });
-            plan = RoomRegions.Plan(Cfg.Walls, ductSegs, Cfg.Steel, voters, Cfg.WallMarginFt, Cfg.RoomGapFt, Cfg.RoomCull);
+            plan = RoomRegions.Plan(Cfg.Walls, ductSegs, Cfg.Steel, voters, Cfg.WallMarginFt, Cfg.RoomGapFt, Cfg.RoomCull, Cfg.RoomBoxPadFt);
             steelIn = plan.Steel;
         }
         SteelModel sm = steelIn.Count > 0 ? SteelModel.Build(steelIn, Cfg.SteelSettings) : null;   // SteelViewWriter.cs draws it; split by supports from here on

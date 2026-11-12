@@ -21,6 +21,9 @@ using System.Text;
 //          kept region's floor; the rest is not drawn. Ducts are never removed: the length of drawn duct outside
 //          every kept region is reported (a leaking room shows there). When no region holds a duct nothing is
 //          culled.
+//   Box (user, 2026-11-12: hallways open onto the rooms, so one region runs through the building): the kept
+//          regions are trimmed to the plan bounding box of the drawn ducts plus boxPadFt [DuctRoomBoxPadFt]. Steel,
+//          walls, slabs and the room floors follow the trimmed regions. A negative pad = no box.
 //   Names: every object with a room code votes for the region it lies in (Navisworks duct rows by their box
 //          centre, steel members by their midpoint; "A/B" gives half a vote to each). A region takes the code
 //          with the most votes; under MixedShare of the votes it is marked mixed; no votes = unnamed.
@@ -235,6 +238,12 @@ public static class RoomRegions
     public static RoomPlan Plan(List<WallBox> walls, List<double[]> ducts, List<SteelMember> steel, List<RoomVoter> voters,
         double marginFt, double gapFt, bool cullSteel)
     {
+        return Plan(walls, ducts, steel, voters, marginFt, gapFt, cullSteel, -1);
+    }
+
+    public static RoomPlan Plan(List<WallBox> walls, List<double[]> ducts, List<SteelMember> steel, List<RoomVoter> voters,
+        double marginFt, double gapFt, bool cullSteel, double boxPadFt)
+    {
         var plan = new RoomPlan { PadFt = gapFt + 0.5 };
         var outside = new List<double[]>();   // per duct: length, samples, samples in no kept region (filled below)
         if (steel != null) plan.Steel.AddRange(steel);
@@ -281,6 +290,32 @@ public static class RoomRegions
         }
         plan.Kept = plan.All.Where(r => r.HasDucts).ToList();
         plan.Culled = plan.Kept.Count > 0;
+        // the box: every kept region trimmed to the drawn ducts' plan box + pad
+        string boxNote = "";
+        if (plan.Culled && boxPadFt >= 0)
+        {
+            double bx0 = lo[0] - boxPadFt, by0 = lo[1] - boxPadFt, bx1 = hi[0] + boxPadFt, by1 = hi[1] + boxPadFt;
+            double before = 0, after = 0; int trimmed = 0;
+            foreach (RoomRegion r in plan.Kept)
+            {
+                before += r.AreaSqFt;
+                var rects = new List<double[]>(); double area = 0;
+                double[] nlo = { double.MaxValue, double.MaxValue }, nhi = { double.MinValue, double.MinValue };
+                foreach (double[] q in r.Rects)
+                {
+                    double x0 = Math.Max(q[0], bx0), y0 = Math.Max(q[1], by0), x1 = Math.Min(q[2], bx1), y1 = Math.Min(q[3], by1);
+                    if (x1 - x0 <= 1e-6 || y1 - y0 <= 1e-6) continue;
+                    rects.Add(new[] { x0, y0, x1, y1 }); area += (x1 - x0) * (y1 - y0);
+                    nlo[0] = Math.Min(nlo[0], x0); nlo[1] = Math.Min(nlo[1], y0); nhi[0] = Math.Max(nhi[0], x1); nhi[1] = Math.Max(nhi[1], y1);
+                }
+                if (area < r.AreaSqFt - 0.5) trimmed++;
+                r.Rects = rects; r.AreaSqFt = area; r.Lo = nlo; r.Hi = nhi;
+                after += area;
+            }
+            plan.Kept = plan.Kept.Where(r => r.Rects.Count > 0).ToList();
+            boxNote = string.Format(Inv, "\nroom box: the drawn ducts' plan box + {0:0.#} ft ({1:0} x {2:0} ft): {3} of {4} kept regions trimmed, floor kept {5:0} of {6:0} sq ft",
+                boxPadFt, bx1 - bx0, by1 - by0, trimmed, plan.Kept.Count, after, before);
+        }
         string steelNote = "";
         if (plan.Culled && steel != null && steel.Count > 0)
         {
@@ -301,7 +336,7 @@ public static class RoomRegions
         plan.Note = res.Note + "\n" + (plan.Culled
             ? string.Format(Inv, "room cull: {0} of {1} regions hold drawn ducts (areas {2} sq ft){3}; drawn duct outside every room: {4:0.#} ft", plan.Kept.Count, plan.All.Count,
                 string.Join(", ", plan.Kept.OrderByDescending(r => r.AreaSqFt).Take(8).Select(r => r.AreaSqFt.ToString("0", Inv)).ToArray()) + (plan.Kept.Count > 8 ? ", ..." : ""),
-                steelNote, plan.DuctOutsideFt)
+                steelNote, plan.DuctOutsideFt) + boxNote
             : string.Format(Inv, "room cull: none of {0} regions holds a duct: nothing culled, walls by the {1} ft margin", plan.All.Count, marginFt.ToString("0.#", Inv)))
             + nameNote;
         return plan;

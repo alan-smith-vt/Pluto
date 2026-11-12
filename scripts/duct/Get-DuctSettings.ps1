@@ -90,6 +90,9 @@ function Get-DuctSettings {
     if ($Data.ContainsKey('DuctRoomGapFt')) { $ds.RoomGapFt = [double]$Data.DuctRoomGapFt }
     # cull by room: steel outside the rooms with ducts is left out of the model unless DuctRoomCull = $false
     if ($Data.ContainsKey('DuctRoomCull')) { $ds.RoomCull = [bool]$Data.DuctRoomCull }
+    # box cull: the kept rooms are trimmed to the plan bounding box of the drawn ducts + DuctRoomBoxPadFt (default 5;
+    # negative = no box), so a hallway that opens onto a room is cut where the ducts end
+    if ($Data.ContainsKey('DuctRoomBoxPadFt')) { $ds.RoomBoxPadFt = [double]$Data.DuctRoomBoxPadFt }
     if ($Walls -and $Walls -ne "none") {
         if (-not (Test-Path $Walls)) { throw "walls CSV not found: $Walls (DuctWalls in duct-config.psd1 or -Walls; -Walls none = off)" }
         $ds.Walls.AddRange([WallViewWriter]::Read((Resolve-Path $Walls).Path))

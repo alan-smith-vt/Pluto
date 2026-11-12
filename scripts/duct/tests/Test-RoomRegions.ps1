@@ -152,8 +152,21 @@ Check "c8e the slabs are cut to the room's floor area" ($got["floor"].Count -eq 
 $both = [RoomRegions]::Plan($all, (Segs @(@(10, 10, 5, 20, 10, 5), @(50, 5, 5, 55, 5, 5))), $steel, (Voters @()), 10, 4, $true)
 $cut2 = [RoomRegions]::CutWalls($all, $both)
 Check "c8f two kept rooms: one piece of the south wall along both, the stub and the east wall kept" ($both.Kept.Count -eq 2 -and $cut2[$all[0]].Count -eq 1 -and (Near $cut2[$all[0]][0].Hi[0] 60 0.01) -and $cut2.ContainsKey($all[5]) -and $cut2.ContainsKey($all[3]) -and -not $cut2.ContainsKey($all[7]))
-$nodes = New-Object 'System.Collections.Generic.Dictionary[int,Node]'; $next = 1
-$null = [DuctGeom]::MakeNode($nodes, [ref]$next, [double[]](10, 10, 5), $off, 12); $null = [DuctGeom]::MakeNode($nodes, [ref]$next, [double[]](300, 300, 5), $off, 12)
+# ---- the box cull: kept regions trimmed to the drawn ducts' plan box + pad ----
+# east room x 31..59, y 1..29 (two bays joined past the stub wall); a duct in its south bay only: (50,5) to (55,5).
+# box + 5 ft = x 45..60, y 0..10: the room is trimmed to x 45..59, y 1..10; the steel in its north bay goes
+$steelE = SteelList @((Steel 50 6 5 "south bay"), (Steel 50 20 5 "north bay"), (Steel 35 5 5 "same room, west of the box"))
+$bx = [RoomRegions]::Plan($all, (Segs @(,@(50, 5, 5, 55, 5, 5))), $steelE, (Voters @()), 10, 4, $true, 5)
+$er = $bx.Kept[0]
+Check "b1 the kept room is trimmed to the box" ($bx.Kept.Count -eq 1 -and (Near $er.Lo[0] 45 0.01) -and (Near $er.Hi[0] 59 0.01) -and (Near $er.Lo[1] 1 0.01) -and (Near $er.Hi[1] 10 0.01) -and (Near $er.AreaSqFt (14 * 9) 0.5))
+Check "b2 steel outside the box goes, though it is in the same room" ((@($bx.Steel | ForEach-Object { $_.MemberOid }) -join "|") -eq "south bay")
+Check "b3 note" ($bx.Note -like "*`nroom box: the drawn ducts' plan box + 5 ft (15 x 10 ft): 1 of 1 kept regions trimmed, floor kept 126 of 768 sq ft*")
+$cutB = [RoomRegions]::CutWalls($all, $bx)
+$eastW = $cutB[$all[3]][0]; $southW = $cutB[$all[0]][0]
+Check "b4 walls are cut at the box: the east wall to y 10, the south wall from x 45" ((Near $eastW.Hi[1] 10 0.01) -and (Near $eastW.Lo[1] 0 0.01) -and (Near $southW.Lo[0] 45 0.01) -and (Near $southW.Hi[0] 60 0.01) -and -not $cutB.ContainsKey($all[1]) -and -not $cutB.ContainsKey($all[4]))
+Check "b5 the slab is cut to the trimmed room" ((Near $cutB[$all[6]][0].Lo[0] 45 0.01) -and (Near $cutB[$all[6]][0].Hi[1] 10 0.01))
+$nb = [RoomRegions]::Plan($all, (Segs @(,@(50, 5, 5, 55, 5, 5))), $steelE, (Voters @()), 10, 4, $true, -1)
+Check "b6 a negative pad = no box" ((Near $nb.Kept[0].AreaSqFt 768 1) -and $nb.Steel.Count -eq 3 -and $nb.Note -notlike "*room box*")
 $nodes = New-Object 'System.Collections.Generic.Dictionary[int,Node]'; $next = 1
 $null = [DuctGeom]::MakeNode($nodes, [ref]$next, [double[]](10, 10, 5), $off, 12); $null = [DuctGeom]::MakeNode($nodes, [ref]$next, [double[]](300, 300, 5), $off, 12)
 $v = [WallViewWriter]::Add($all, 10, $nodes, [ref]$next, $off, 12, $pl)

@@ -49,6 +49,10 @@
     # those rooms. Steel whose midpoint is not in a kept room (a room without ducts, or no room) is left out of the
     # model (viewer and SAP steel). Ducts are never removed. $false = keep all the steel (walls are still cut).
     DuctRoomCull = $true
+    # Box cull, on top of the rooms: the kept rooms are trimmed to the plan (top down) bounding box of the drawn ducts
+    # plus this pad in ft, and steel, walls, slabs and room floors follow. It cuts the hallways that open onto a room
+    # where the ducts end. Negative = no box.
+    DuctRoomBoxPadFt = 5
     # Wall thickness table (CSV, header Run,Size,Thk_in). When set it REPLACES the Navisworks thickness; a frame no row
     # matches gets the 0.001 in placeholder (fix it in the table or in SAP). Run = the system name shown in the viewer
     # (e.g. SYSA; its fragments match too). Size: WxH or ranges 13-24x0-60 (either orientation), D dia or 8-36 dia, * = any.

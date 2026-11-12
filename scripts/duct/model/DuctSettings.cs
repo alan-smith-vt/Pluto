@@ -33,6 +33,8 @@ public class DuctSettings
     public bool RoomRegions = true;
     // steel outside the rooms with ducts is left out of the model [DuctRoomCull]
     public bool RoomCull = true;
+    // the kept rooms are trimmed to the drawn ducts' plan box + this pad (ft; negative = no box) [DuctRoomBoxPadFt]
+    public double RoomBoxPadFt = 5;
     public double RoomGapFt = 4;
     // wall thickness table [DuctThickness]: when set, the only thickness source (Navisworks ignored); null = Navisworks
     public DuctThickness Thickness;
