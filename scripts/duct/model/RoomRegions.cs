@@ -13,10 +13,14 @@ using System.Text;
 //         its length to that wall's face; an end with nothing ahead is stretched GapFt / 2. A wall box has no
 //         door openings.
 //   Window: the model's box plus ReachFt, so the rooms at the model's edge are closed by walls beyond it.
-//   Cull (RoomRegions.Plan, 2026-11-12): only the regions a duct runs through are kept. The steel whose midpoint
-//          lies in a region without ducts is left out of the model (viewer and SAP steel); steel in no region
-//          stays. Walls and slabs are drawn only around the kept regions (WallViewWriter). When no region holds
-//          a duct nothing is culled.
+//   Cull (RoomRegions.Plan, 2026-11-12; user rule: keep the rooms with ducts, remove everything else):
+//          a region is kept when a duct the viewer draws runs through it (the caller passes those only).
+//          Steel stays when its midpoint lies in a kept region; steel in a region without ducts or in no region
+//          is left out of the model (viewer and SAP steel). Walls and slabs are CUT to the kept regions
+//          (CutWalls): a wall keeps the stretch that bounds or stands in a kept region, a slab the part over a
+//          kept region's floor; the rest is not drawn. Ducts are never removed: the length of drawn duct outside
+//          every kept region is reported (a leaking room shows there). When no region holds a duct nothing is
+//          culled.
 //   Names: every object with a room code votes for the region it lies in (Navisworks duct rows by their box
 //          centre, steel members by their midpoint; "A/B" gives half a vote to each). A region takes the code
 //          with the most votes; under MixedShare of the votes it is marked mixed; no votes = unnamed.
@@ -219,7 +223,8 @@ public static class RoomRegions
         public List<double> FloorsFt = new List<double>();
         public List<RoomRegion> All = new List<RoomRegion>(), Kept = new List<RoomRegion>();
         public List<SteelMember> Steel = new List<SteelMember>();   // the steel after the cull
-        public int SteelDropped, SteelNoRegion;
+        public int SteelDropped, SteelNoRegion;   // in a region without ducts / in no region
+        public double DuctOutsideFt;              // drawn duct length outside every kept region
         public bool Culled;          // regions with ducts were found: walls go by the kept regions, steel was culled if asked
         public double PadFt;         // a wall this close to a kept region (plan) is drawn
         public string Note = "";
@@ -231,6 +236,7 @@ public static class RoomRegions
         double marginFt, double gapFt, bool cullSteel)
     {
         var plan = new RoomPlan { PadFt = gapFt + 0.5 };
+        var outside = new List<double[]>();   // per duct: length, samples, samples in no kept region (filled below)
         if (steel != null) plan.Steel.AddRange(steel);
         if (walls == null || walls.Count == 0 || ducts == null || ducts.Count == 0) { plan.Note = "rooms: no walls or no ducts, nothing culled"; return plan; }
         double[] lo = { double.MaxValue, double.MaxValue, double.MaxValue }, hi = { double.MinValue, double.MinValue, double.MinValue };
@@ -262,12 +268,16 @@ public static class RoomRegions
         {
             double len = Math.Sqrt((d[3] - d[0]) * (d[3] - d[0]) + (d[4] - d[1]) * (d[4] - d[1]) + (d[5] - d[2]) * (d[5] - d[2]));
             int steps = Math.Max(1, (int)Math.Ceiling(len / 3));
+            var hit = new RoomRegion[steps + 1];
             for (int i = 0; i <= steps; i++)
             {
                 double t = (double)i / steps;
                 RoomRegion r = At(plan.All, d[0] + t * (d[3] - d[0]), d[1] + t * (d[4] - d[1]), d[2] + t * (d[5] - d[2]));
                 if (r != null) r.HasDucts = true;
+                hit[i] = r;
             }
+            int none = 0; foreach (RoomRegion r in hit) if (r == null) none++;
+            plan.DuctOutsideFt += len * none / (steps + 1);
         }
         plan.Kept = plan.All.Where(r => r.HasDucts).ToList();
         plan.Culled = plan.Kept.Count > 0;
@@ -275,39 +285,129 @@ public static class RoomRegions
         if (plan.Culled && steel != null && steel.Count > 0)
         {
             var keep = new List<SteelMember>();
+            int inRoom = 0;
             foreach (SteelMember b in steel)
             {
                 RoomRegion r = At(plan.All, (b.P0.X + b.P1.X) / 2 / 0.3048, (b.P0.Y + b.P1.Y) / 2 / 0.3048, (b.P0.Z + b.P1.Z) / 2 / 0.3048);
-                if (r == null) plan.SteelNoRegion++;
-                if (r != null && !r.HasDucts) { plan.SteelDropped++; if (cullSteel) continue; }
-                keep.Add(b);
+                if (r != null && r.HasDucts) { keep.Add(b); inRoom++; continue; }
+                if (r == null) plan.SteelNoRegion++; else plan.SteelDropped++;
+                if (!cullSteel) keep.Add(b);
             }
             plan.Steel = keep;
-            steelNote = string.Format(Inv, "; steel: {0} of {1} members in a region without ducts{2}, {3} in no region kept", plan.SteelDropped, steel.Count,
-                cullSteel ? " left out" : " (kept: DuctRoomCull off)", plan.SteelNoRegion);
+            steelNote = string.Format(Inv, "; steel: {0} of {1} members in a room with ducts kept, {2} in a room without ducts and {3} in no room {4}", inRoom, steel.Count,
+                plan.SteelDropped, plan.SteelNoRegion, cullSteel ? "left out" : "kept (DuctRoomCull off)");
         }
         string nameNote = plan.Kept.Count > 0 ? "\n" + Name(plan.Kept, voters ?? new List<RoomVoter>()) + " (<out>_clean.rooms.csv)" : "";
         plan.Note = res.Note + "\n" + (plan.Culled
-            ? string.Format(Inv, "room cull: {0} of {1} regions hold ducts{2}", plan.Kept.Count, plan.All.Count, steelNote)
+            ? string.Format(Inv, "room cull: {0} of {1} regions hold drawn ducts (areas {2} sq ft){3}; drawn duct outside every room: {4:0.#} ft", plan.Kept.Count, plan.All.Count,
+                string.Join(", ", plan.Kept.OrderByDescending(r => r.AreaSqFt).Take(8).Select(r => r.AreaSqFt.ToString("0", Inv)).ToArray()) + (plan.Kept.Count > 8 ? ", ..." : ""),
+                steelNote, plan.DuctOutsideFt)
             : string.Format(Inv, "room cull: none of {0} regions holds a duct: nothing culled, walls by the {1} ft margin", plan.All.Count, marginFt.ToString("0.#", Inv)))
             + nameNote;
         return plan;
     }
 
-    // true when the box lies against a kept region: within padFt of one of its rectangles in plan, and in height a
-    // slab within 3 ft of its floor-to-ceiling range (its floor, its ceiling), anything else inside that range (a
-    // wall standing on the ceiling slab belongs to the level above)
-    public static bool NearKept(WallBox w, RoomPlan plan)
+    public class WallPiece { public double[] Lo = new double[3], Hi = new double[3]; public int Level = -1; }   // feet; Level: the band it was cut for (-1: by the box)
+
+    // The walls cut to the kept regions. A wall without an entry is not drawn.
+    //   slab / skew slab: the part over each rectangle of a kept region whose floor-to-ceiling range it comes within
+    //     3 ft of (its floor, its ceiling);
+    //   anything else, per level: the stretches of its length that have a kept region beside or under them (a
+    //     bounding wall: the region touches its face; a low wall or curb: it stands in the region), at full
+    //     thickness, between the region's floor and ceiling. A stretch is extended over the thickness of a kept
+    //     wall that meets it at its end (a corner), never past the wall's own end.
+    public static Dictionary<WallBox, List<WallPiece>> CutWalls(List<WallBox> walls, RoomPlan plan)
     {
-        double x0 = w.Lo[0] / 0.3048, x1 = w.Hi[0] / 0.3048, y0 = w.Lo[1] / 0.3048, y1 = w.Hi[1] / 0.3048, z0 = w.Lo[2] / 0.3048, z1 = w.Hi[2] / 0.3048;
-        foreach (RoomRegion r in plan.Kept)
+        const double tol = 0.1, corner = 0.5;
+        var res = new Dictionary<WallBox, List<WallPiece>>();
+        var box = new Dictionary<WallBox, double[]>();                          // x0, y0, z0, x1, y1, z1 feet
+        var raw = new Dictionary<WallBox, Dictionary<int, List<double[]>>>();   // level -> stretches { lo, hi, z0, z1 } along the length
+        foreach (WallBox w in walls)
         {
-            if (WallViewWriter.IsSlab(w) ? (z1 < r.FloorFt - 3 || z0 > r.CeilFt + 3) : (z1 < r.FloorFt + 0.1 || z0 > r.CeilFt - 0.1)) continue;
-            if (x1 < r.Lo[0] - plan.PadFt || x0 > r.Hi[0] + plan.PadFt || y1 < r.Lo[1] - plan.PadFt || y0 > r.Hi[1] + plan.PadFt) continue;
-            foreach (double[] q in r.Rects)
-                if (!(x1 < q[0] - plan.PadFt || x0 > q[2] + plan.PadFt || y1 < q[1] - plan.PadFt || y0 > q[3] + plan.PadFt)) return true;
+            double[] b = { w.Lo[0] / 0.3048, w.Lo[1] / 0.3048, w.Lo[2] / 0.3048, w.Hi[0] / 0.3048, w.Hi[1] / 0.3048, w.Hi[2] / 0.3048 };
+            if (b[3] - b[0] <= 1e-6 || b[4] - b[1] <= 1e-6 || b[5] - b[2] <= 1e-6) continue;
+            box[w] = b;
+            if (WallViewWriter.IsSlab(w))
+            {
+                var pcs = new List<WallPiece>(); var seen = new HashSet<string>(StringComparer.Ordinal);
+                foreach (RoomRegion r in plan.Kept)
+                {
+                    if (b[5] < r.FloorFt - 3 || b[2] > r.CeilFt + 3) continue;
+                    foreach (double[] q in r.Rects)
+                    {
+                        double x0 = Math.Max(b[0], q[0]), y0 = Math.Max(b[1], q[1]), x1 = Math.Min(b[3], q[2]), y1 = Math.Min(b[4], q[3]);
+                        if (x1 - x0 <= 1e-6 || y1 - y0 <= 1e-6) continue;
+                        if (!seen.Add(string.Format(Inv, "{0:0.###}|{1:0.###}|{2:0.###}|{3:0.###}", x0, y0, x1, y1))) continue;   // floor of one room, ceiling of the one below
+                        pcs.Add(new WallPiece { Lo = new[] { x0, y0, b[2] }, Hi = new[] { x1, y1, b[5] } });
+                    }
+                }
+                if (pcs.Count > 0) res[w] = pcs;
+                continue;
+            }
+            int a = b[3] - b[0] >= b[4] - b[1] ? 0 : 1, c = 1 - a;   // along, across
+            var byLevel = new Dictionary<int, List<double[]>>();
+            foreach (RoomRegion r in plan.Kept)
+            {
+                if (b[5] < r.FloorFt + tol || b[2] > r.CeilFt - tol) continue;   // not in this room's height (a wall on the ceiling slab is the level above)
+                foreach (double[] q in r.Rects)
+                {
+                    if (q[c + 2] < b[c] - tol || q[c] > b[c + 3] + tol) continue;   // the region is not beside (or under) the wall
+                    double lo = Math.Max(q[a], b[a]), hi = Math.Min(q[a + 2], b[a + 3]);
+                    if (hi - lo <= 1e-6) continue;
+                    List<double[]> l; if (!byLevel.TryGetValue(r.Level, out l)) { l = new List<double[]>(); byLevel[r.Level] = l; }
+                    l.Add(new[] { lo, hi, Math.Max(b[2], r.FloorFt), Math.Min(b[5], r.CeilFt) });
+                }
+            }
+            if (byLevel.Count == 0) continue;
+            foreach (int k in byLevel.Keys.ToList()) byLevel[k] = Merge(byLevel[k]);
+            raw[w] = byLevel;
         }
-        return false;
+        // corners: a stretch ending where a kept wall crosses its line runs on over that wall's thickness
+        foreach (KeyValuePair<WallBox, Dictionary<int, List<double[]>>> kv in raw)
+        {
+            double[] b = box[kv.Key]; int a = b[3] - b[0] >= b[4] - b[1] ? 0 : 1, c = 1 - a;
+            foreach (KeyValuePair<int, List<double[]>> lv in kv.Value)
+                foreach (double[] iv in lv.Value)
+                    foreach (KeyValuePair<WallBox, Dictionary<int, List<double[]>>> o in raw)
+                    {
+                        if (o.Key == kv.Key) continue;
+                        double[] b2 = box[o.Key]; int a2 = b2[3] - b2[0] >= b2[4] - b2[1] ? 0 : 1;
+                        List<double[]> its;
+                        if (a2 == a || !o.Value.TryGetValue(lv.Key, out its)) continue;
+                        if (b2[c] > b[c + 3] + corner || b2[c + 3] < b[c] - corner) continue;                       // does not reach this wall
+                        if (!its.Any(i2 => i2[0] <= b[c + 3] + corner && i2[1] >= b[c] - corner)) continue;      // its kept stretch does not
+                        if (b2[a] <= iv[1] + corner && b2[a + 3] > iv[1]) iv[1] = Math.Min(b[a + 3], Math.Max(iv[1], b2[a + 3]));
+                        if (b2[a + 3] >= iv[0] - corner && b2[a] < iv[0]) iv[0] = Math.Max(b[a], Math.Min(iv[0], b2[a]));
+                    }
+        }
+        foreach (KeyValuePair<WallBox, Dictionary<int, List<double[]>>> kv in raw)
+        {
+            double[] b = box[kv.Key]; int a = b[3] - b[0] >= b[4] - b[1] ? 0 : 1, c = 1 - a;
+            var pcs = new List<WallPiece>();
+            foreach (KeyValuePair<int, List<double[]>> lv in kv.Value.OrderBy(x => x.Key))
+                foreach (double[] iv in Merge(lv.Value))
+                {
+                    if (iv[1] - iv[0] < 0.05 || iv[3] - iv[2] < 0.05) continue;
+                    var pc = new WallPiece { Level = lv.Key };
+                    pc.Lo[a] = iv[0]; pc.Hi[a] = iv[1]; pc.Lo[c] = b[c]; pc.Hi[c] = b[c + 3]; pc.Lo[2] = iv[2]; pc.Hi[2] = iv[3];
+                    pcs.Add(pc);
+                }
+            if (pcs.Count > 0) res[kv.Key] = pcs;
+        }
+        return res;
+    }
+
+    // stretches { lo, hi, z0, z1 } merged where they touch or overlap (the height range widens)
+    static List<double[]> Merge(List<double[]> ivs)
+    {
+        var res = new List<double[]>();
+        foreach (double[] iv in ivs.OrderBy(x => x[0]))
+        {
+            double[] last = res.Count > 0 ? res[res.Count - 1] : null;
+            if (last != null && iv[0] <= last[1] + 0.01) { last[1] = Math.Max(last[1], iv[1]); last[2] = Math.Min(last[2], iv[2]); last[3] = Math.Max(last[3], iv[3]); }
+            else res.Add((double[])iv.Clone());
+        }
+        return res;
     }
 
     // votes, then names; returns the summary line

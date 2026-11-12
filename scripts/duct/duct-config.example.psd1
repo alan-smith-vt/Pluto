@@ -45,9 +45,9 @@
     # DuctRoomGapFt short of each other still close a room. $false = no regions.
     DuctRoomRegions = $true
     DuctRoomGapFt = 4
-    # Cull by room: only the regions a duct runs through are kept; walls and slabs are drawn around those regions only,
-    # and steel whose midpoint lies in a region without ducts is left out of the model (viewer and SAP steel). Steel in
-    # no region stays. $false = keep that steel (the walls still follow the kept regions).
+    # Cull by room: the rooms a drawn duct runs through are kept and everything else goes. Walls and slabs are cut to
+    # those rooms. Steel whose midpoint is not in a kept room (a room without ducts, or no room) is left out of the
+    # model (viewer and SAP steel). Ducts are never removed. $false = keep all the steel (walls are still cut).
     DuctRoomCull = $true
     # Wall thickness table (CSV, header Run,Size,Thk_in). When set it REPLACES the Navisworks thickness; a frame no row
     # matches gets the 0.001 in placeholder (fix it in the table or in SAP). Run = the system name shown in the viewer

@@ -31,7 +31,7 @@ public class DuctSettings
     public double WallMarginFt = 10;
     // room regions from the walls [DuctRoomRegions], walls up to RoomGapFt short of each other still close a room [DuctRoomGapFt]
     public bool RoomRegions = true;
-    // steel in a region without ducts is left out of the model [DuctRoomCull]
+    // steel outside the rooms with ducts is left out of the model [DuctRoomCull]
     public bool RoomCull = true;
     public double RoomGapFt = 4;
     // wall thickness table [DuctThickness]: when set, the only thickness source (Navisworks ignored); null = Navisworks

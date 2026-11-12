@@ -46,7 +46,15 @@ public partial class DuctsToPluto
         if (Cfg.Walls.Count > 0 && Cfg.RoomRegions)
         {
             var ductSegs = new List<double[]>();
-            foreach (CEdge ce in clean) { double[] a = P[ce.A], b = P[ce.B]; ductSegs.Add(new[] { a[0], a[1], a[2], b[0], b[1], b[2] }); }
+            // the ducts that count are the ones the viewer draws: with primary systems configured, the systems and their
+            // fragments ("other: <name>", Navisworks-only pieces and unnamed ones are hidden by default, DuctSystems.ApplySystemView)
+            var dsys = new DuctSystems(Cfg);
+            foreach (CEdge ce in clean)
+            {
+                string sys = ce.Src.Count > 0 || ce.SysName != "" ? DuctGeom.SystemOf(ce) : (ce.Source == "navisworks-only" ? "navisworks-only" : "?");
+                if (dsys.SystemRole(sys) == "other") continue;
+                double[] a = P[ce.A], b = P[ce.B]; ductSegs.Add(new[] { a[0], a[1], a[2], b[0], b[1], b[2] });
+            }
             var voters = new List<RoomVoter>();
             if (rows != null)
                 foreach (DuctRow r in rows)

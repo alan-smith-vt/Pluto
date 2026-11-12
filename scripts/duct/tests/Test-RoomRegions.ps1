@@ -125,23 +125,41 @@ $steel = SteelList @((Steel 15 20 5 "west"), (Steel 50 5 5 "east"), (Steel 135 1
 $ducts = Segs @(,@(10, 10, 5, 20, 10, 5))
 $pl = [RoomRegions]::Plan($all, $ducts, $steel, (Voters @(,@(10, 10, 5, "R101"))), 10, 4, $true)
 Check "c1 three regions on the duct level, one holds the duct" (@($pl.All | Where-Object { $_.Level -eq 1 }).Count -eq 3 -and $pl.Kept.Count -eq 1 -and $pl.Kept[0].Contains(15, 15) -and $pl.Culled)
-Check "c2 steel of the rooms without ducts is left out; steel in no region stays" ((@($pl.Steel | ForEach-Object { $_.MemberOid }) -join " ") -eq "west none" -and $pl.SteelDropped -eq 2 -and $pl.SteelNoRegion -eq 1)
+Check "c2 only the steel in a room with ducts stays" ((@($pl.Steel | ForEach-Object { $_.MemberOid }) -join " ") -eq "west" -and $pl.SteelDropped -eq 2 -and $pl.SteelNoRegion -eq 1)
 Check "c3 the kept region is named; floors from the walls near the ducts" ($pl.Kept[0].Name -eq "R101" -and ($pl.FloorsFt -join ",") -eq "0,13")
 Check "c4 ceiling of the kept region = the next floor" ((Near $pl.Kept[0].CeilFt 13 0.01) -and (Near $pl.Kept[0].FloorFt 0 0.01))
-Check "c5 note" ($pl.Note -like "rooms (walls, gaps up to 4 ft closed): level 0 to 13 ft: 3 regions from 10 walls*`nroom cull: 1 of 3 regions hold ducts; steel: 2 of 4 members in a region without ducts left out, 1 in no region kept`nroom names: 1 regions named by 1 votes (0 mixed), 0 unnamed (<out>_clean.rooms.csv)")
+Check "c5 note" ($pl.Note -like "rooms (walls, gaps up to 4 ft closed): level 0 to 13 ft: 3 regions from 10 walls*`nroom cull: 1 of 3 regions hold drawn ducts (areas 812 sq ft); steel: 1 of 4 members in a room with ducts kept, 2 in a room without ducts and 1 in no room left out; drawn duct outside every room: 0 ft`nroom names: 1 regions named by 1 votes (0 mixed), 0 unnamed (<out>_clean.rooms.csv)")
 $off0 = [RoomRegions]::Plan($all, $ducts, $steel, (Voters @(,@(10, 10, 5, "R101"))), 10, 4, $false)
-Check "c6 DuctRoomCull off: the steel stays, the regions are still culled" ($off0.Steel.Count -eq 4 -and $off0.SteelDropped -eq 2 -and $off0.Kept.Count -eq 1 -and $off0.Note -like "*without ducts (kept: DuctRoomCull off)*")
+Check "c6 DuctRoomCull off: the steel stays, the regions are still culled" ($off0.Steel.Count -eq 4 -and $off0.SteelDropped -eq 2 -and $off0.Kept.Count -eq 1 -and $off0.Note -like "*in no room kept (DuctRoomCull off)*")
 $none = [RoomRegions]::Plan($all, (Segs @(,@(300, 300, 5, 310, 300, 5))), $steel, (Voters @()), -1, 4, $true)
 Check "c7 no region holds a duct: nothing culled" (-not $none.Culled -and $none.Steel.Count -eq 4 -and $none.Kept.Count -eq 0 -and $none.Note -like "*`nroom cull: none of * regions holds a duct: nothing culled*")
-# walls against the kept (west) room: its four sides, a wall butting its partition from the far side (within the pad),
-# floor and ceiling slabs; not the east wall, the far box, the level above
-$nearNames = @(); $names = @("south", "north", "west", "east", "part", "stub", "floor", "f1", "f2", "f3", "f4", "ceiling", "upper"); $i = 0
-foreach ($w in $all) { if ([RoomRegions]::NearKept($w, $pl)) { $nearNames += $names[$i] }; $i++ }
-Check "c8 walls and slabs against the kept room" (($nearNames -join " ") -eq "south north west part stub floor ceiling")
+# a duct partly outside every room: its outside length is reported, the duct is not removed
+$half = [RoomRegions]::Plan($all, (Segs @(,@(10, 10, 5, 10, -50, 5))), $steel, (Voters @()), 10, 4, $true)
+Check "c7b drawn duct outside every room is measured" ($half.Kept.Count -eq 1 -and $half.DuctOutsideFt -gt 40 -and $half.DuctOutsideFt -lt 56 -and $half.Note -like "*; drawn duct outside every room: * ft*")
+# walls cut to the kept (west) room, x 1..30, y 1..29, floor 0, ceiling 13
+$names = @("south", "north", "west", "east", "part", "stub", "floor", "f1", "f2", "f3", "f4", "ceiling", "upper")
+$cut = [RoomRegions]::CutWalls($all, $pl)
+$got = @{}; $i = 0
+foreach ($w in $all) { if ($cut.ContainsKey($w)) { $got[$names[$i]] = $cut[$w] }; $i++ }
+Check "c8 the room's four walls and its floor and ceiling slabs are kept; nothing else" ((($names | Where-Object { $got.ContainsKey($_) }) -join " ") -eq "south north west part floor ceiling")
+$s = $got["south"][0]; $n = $got["north"][0]; $wp = $got["west"][0]; $pt = $got["part"][0]
+Check "c8b the south wall is cut at the partition (over its thickness: the corner), full thickness, floor to its top" ($got["south"].Count -eq 1 -and (Near $s.Lo[0] 0 0.01) -and (Near $s.Hi[0] 31 0.01) -and (Near $s.Lo[1] 0 0.01) -and (Near $s.Hi[1] 1 0.01) -and (Near $s.Lo[2] 0 0.01) -and (Near $s.Hi[2] 12 0.01))
+Check "c8c the north wall is cut at the room's edge (the partition stops short of it)" ((Near $n.Lo[0] 0 0.01) -and (Near $n.Hi[0] 30 0.01))
+Check "c8d the west wall and the partition keep their length" ((Near $wp.Lo[1] 0 0.01) -and (Near $wp.Hi[1] 30 0.01) -and (Near $pt.Lo[1] 1 0.01) -and (Near $pt.Hi[1] 26 0.01) -and $pt.Level -eq 1)
+$fl = $got["floor"][0]
+Check "c8e the slabs are cut to the room's floor area" ($got["floor"].Count -eq 1 -and (Near $fl.Lo[0] 1 0.01) -and (Near $fl.Hi[0] 30 0.01) -and (Near $fl.Lo[1] 1 0.01) -and (Near $fl.Hi[1] 29 0.01) -and (Near $fl.Lo[2] -1 0.01) -and (Near $got["ceiling"][0].Hi[2] 13 0.01))
+# both rooms kept: the south wall runs on to the east wall; the stub wall stands in the east room and is kept whole
+$both = [RoomRegions]::Plan($all, (Segs @(@(10, 10, 5, 20, 10, 5), @(50, 5, 5, 55, 5, 5))), $steel, (Voters @()), 10, 4, $true)
+$cut2 = [RoomRegions]::CutWalls($all, $both)
+Check "c8f two kept rooms: one piece of the south wall along both, the stub and the east wall kept" ($both.Kept.Count -eq 2 -and $cut2[$all[0]].Count -eq 1 -and (Near $cut2[$all[0]][0].Hi[0] 60 0.01) -and $cut2.ContainsKey($all[5]) -and $cut2.ContainsKey($all[3]) -and -not $cut2.ContainsKey($all[7]))
+$nodes = New-Object 'System.Collections.Generic.Dictionary[int,Node]'; $next = 1
+$null = [DuctGeom]::MakeNode($nodes, [ref]$next, [double[]](10, 10, 5), $off, 12); $null = [DuctGeom]::MakeNode($nodes, [ref]$next, [double[]](300, 300, 5), $off, 12)
 $nodes = New-Object 'System.Collections.Generic.Dictionary[int,Node]'; $next = 1
 $null = [DuctGeom]::MakeNode($nodes, [ref]$next, [double[]](10, 10, 5), $off, 12); $null = [DuctGeom]::MakeNode($nodes, [ref]$next, [double[]](300, 300, 5), $off, 12)
 $v = [WallViewWriter]::Add($all, 10, $nodes, [ref]$next, $off, 12, $pl)
-Check "c9 the view draws those boxes only, levels from the plan" ($v.Drawn -eq 7 -and $v.Note -like "walls: 7 of 13 drawn (around the rooms with ducts): wall 5, slab 2,*" -and ($v.FloorsFt -join ",") -eq "0,13")
+Check "c9 the view draws the cut pieces only, levels from the plan" ($v.Drawn -eq 6 -and $v.Pieces -eq 6 -and $v.Elements.Count -eq 36 -and $v.Note -like "walls: 6 of 13 drawn (cut to the rooms with ducts, 6 pieces): wall 4, slab 2,*" -and ($v.FloorsFt -join ",") -eq "0,13")
+$lab = @($v.Labels.Values | Where-Object { $_ -like "wall | wall | thk 12 in | 31 x 1 x 12 ft*" })[0]
+Check "c9b a cut piece says so and names its level" ($lab -like "* | level 0 to 13 ft | cut to the room*")
 $v2 = [WallViewWriter]::Add($all, 10, $nodes, [ref]$next, $off, 12, $none)
 Check "c10 no kept region: the margin rule" ($v2.Note -like "walls: * drawn (within 10 ft of the model)*")
 

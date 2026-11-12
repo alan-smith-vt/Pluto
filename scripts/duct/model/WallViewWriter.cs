@@ -9,9 +9,9 @@ using System.Linq;
 // object (WallOid, Xmin..Zmax in meters, the frame of the steel CSV).
 // Drawing only: nothing here reaches frames.csv or the SAP model. Each box is six quad shells on eight nodes
 // (the clean file's shell domain; ducts, steel and supports stay beams).
-// Scope: with room regions that hold ducts (RoomRegions.Plan), the walls and slabs against those regions. Otherwise
-// a wall is drawn when its box comes within DuctWallMarginFt of the model's box (ducts, steel, supports); a
-// negative margin draws every wall.
+// Scope: with room regions that hold ducts (RoomRegions.Plan), each wall and slab is cut to those regions
+// (RoomRegions.CutWalls) and only the cut pieces are drawn. Otherwise a wall is drawn whole when its box comes
+// within DuctWallMarginFt of the model's box (ducts, steel, supports); a negative margin draws every wall.
 // Shape, from the box alone (ShapeOf; the CSV's Shape column is not used, so an older CSV follows the same rule):
 //   wall        tall (over ThinM) and thin in plan (a plan side under ThinM)
 //   slab        flat: not tall, or its height under a quarter of its smaller plan side (a thick slab stays a slab)
@@ -56,7 +56,8 @@ public static class WallViewWriter
         public List<string> Levels = new List<string>();                   // band names, low to high (empty = no floors found)
         public List<List<uint>> ByLevel = new List<List<uint>>();
         public List<int> LevelBoxes = new List<int>();
-        public int Total, Drawn;
+        public int Total, Drawn, Pieces;
+        public Dictionary<string, int> ShapeWalls = new Dictionary<string, int>(StringComparer.Ordinal);
         public string Note = "";
         public double[] ModelLo, ModelHi;                                  // the model's box (ft) before the walls; null = no model nodes
         public List<KeyValuePair<string, List<uint>>> RoomGroups = new List<KeyValuePair<string, List<uint>>>();   // RoomRegions.cs
@@ -163,6 +164,7 @@ public static class WallViewWriter
     public static View Add(List<WallBox> walls, double marginFt, Dictionary<int, Node> nodes, ref int next, double[] off, double scale, RoomRegions.RoomPlan plan)
     {
         bool byRooms = plan != null && plan.Culled;
+        Dictionary<WallBox, List<RoomRegions.WallPiece>> cut = byRooms ? RoomRegions.CutWalls(walls, plan) : null;
         if (walls == null || walls.Count == 0) return null;
         var v = new View { Total = walls.Count };
         // the model's box, feet, from the nodes placed so far
@@ -185,7 +187,7 @@ public static class WallViewWriter
                 if (!all && (a1 < lo[a] - marginFt || a0 > hi[a] + marginFt)) near = false;
                 if (a1 - a0 <= 1e-6) zero = true;
             }
-            if (byRooms) near = RoomRegions.NearKept(w, plan);
+            if (byRooms) { if (cut.ContainsKey(w)) kept.Add(w); continue; }   // cut to the kept rooms: the margin plays no part
             if (!near) continue;
             if (zero) { flat++; continue; }
             kept.Add(w);
@@ -197,33 +199,47 @@ public static class WallViewWriter
 
         foreach (WallBox w in kept)
         {
-            double[] a0 = new double[3], a1 = new double[3];   // feet
-            for (int a = 0; a < 3; a++) { a0[a] = w.Lo[a] / 0.3048; a1[a] = w.Hi[a] / 0.3048; }
-            double dx = a1[0] - a0[0], dy = a1[1] - a0[1], dz = a1[2] - a0[2];
-            var corner = new Node[8];
-            for (int k = 0; k < 8; k++)
+            // the boxes to draw, feet: the wall itself, or its cut pieces
+            var boxes = new List<RoomRegions.WallPiece>();
+            if (byRooms) boxes.AddRange(cut[w]);
+            else
             {
-                double[] p = { (k & 1) != 0 ? a1[0] : a0[0], (k & 2) != 0 ? a1[1] : a0[1], (k & 4) != 0 ? a1[2] : a0[2] };
-                corner[k] = nodes[DuctGeom.MakeNode(nodes, ref next, p, off, scale)];
+                var whole = new RoomRegions.WallPiece();
+                for (int a = 0; a < 3; a++) { whole.Lo[a] = w.Lo[a] / 0.3048; whole.Hi[a] = w.Hi[a] / 0.3048; }
+                boxes.Add(whole);
             }
-            int lv = v.FloorsFt.Count > 0 ? LevelOf(w, v.FloorsFt) : -1;
-            double thk = IsSlab(w) ? dz : Math.Min(dx, dy);
-            string label = string.Format(Inv, "wall | {0} | thk {1:0.#} in | {2:0.#} x {3:0.#} x {4:0.#} ft | z {5:0.#} to {6:0.#} ft{7}{8}", w.Shape, thk * 12, dx, dy, dz, a0[2], a1[2],
-                lv >= 0 ? " | level " + v.Levels[lv] : "", string.IsNullOrEmpty(w.Oid) ? "" : " | " + w.Oid);
+            double wdx = (w.Hi[0] - w.Lo[0]) / 0.3048, wdy = (w.Hi[1] - w.Lo[1]) / 0.3048, wdz = (w.Hi[2] - w.Lo[2]) / 0.3048;
+            double thk = IsSlab(w) ? wdz : Math.Min(wdx, wdy);
             List<uint> l; if (!v.ByShape.TryGetValue(w.Shape, out l)) { l = new List<uint>(); v.ByShape[w.Shape] = l; }
-            foreach (int[] f in Faces)
+            int sw; v.ShapeWalls.TryGetValue(w.Shape, out sw); v.ShapeWalls[w.Shape] = sw + 1;
+            foreach (RoomRegions.WallPiece pc in boxes)
             {
-                var el = new Element(); el.id = nextElem++; el.nNodes = 4; el.n = new Node[4];
-                for (int c = 0; c < 4; c++) el.n[c] = corner[f[c]];
-                v.Elements[el.id] = el; v.Labels[el.id] = label; l.Add((uint)el.id);
-                if (lv >= 0) v.ByLevel[lv].Add((uint)el.id);
+                double[] a0 = pc.Lo, a1 = pc.Hi;
+                double dx = a1[0] - a0[0], dy = a1[1] - a0[1], dz = a1[2] - a0[2];
+                var corner = new Node[8];
+                for (int k = 0; k < 8; k++)
+                {
+                    double[] p = { (k & 1) != 0 ? a1[0] : a0[0], (k & 2) != 0 ? a1[1] : a0[1], (k & 4) != 0 ? a1[2] : a0[2] };
+                    corner[k] = nodes[DuctGeom.MakeNode(nodes, ref next, p, off, scale)];
+                }
+                int lv = v.FloorsFt.Count == 0 ? -1 : pc.Level >= 0 && pc.Level < v.Levels.Count ? pc.Level : LevelOf(w, v.FloorsFt);
+                string label = string.Format(Inv, "wall | {0} | thk {1:0.#} in | {2:0.#} x {3:0.#} x {4:0.#} ft | z {5:0.#} to {6:0.#} ft{7}{8}{9}", w.Shape, thk * 12, dx, dy, dz, a0[2], a1[2],
+                    lv >= 0 ? " | level " + v.Levels[lv] : "", byRooms ? " | cut to the room" : "", string.IsNullOrEmpty(w.Oid) ? "" : " | " + w.Oid);
+                foreach (int[] f in Faces)
+                {
+                    var el = new Element(); el.id = nextElem++; el.nNodes = 4; el.n = new Node[4];
+                    for (int c = 0; c < 4; c++) el.n[c] = corner[f[c]];
+                    v.Elements[el.id] = el; v.Labels[el.id] = label; l.Add((uint)el.id);
+                    if (lv >= 0) v.ByLevel[lv].Add((uint)el.id);
+                }
+                if (lv >= 0) v.LevelBoxes[lv]++;
+                v.Pieces++;
             }
-            if (lv >= 0) v.LevelBoxes[lv]++;
             v.Drawn++;
         }
         v.Note = string.Format(Inv, "walls: {0} of {1} drawn ({2}): {3}{4}", v.Drawn, v.Total,
-            byRooms ? "around the rooms with ducts" : all ? "every wall" : string.Format(Inv, "within {0:0.#} ft of the model", marginFt),
-            string.Join(", ", Shapes.Select(x => x + " " + (v.ByShape.ContainsKey(x) ? v.ByShape[x].Count / 6 : 0)).ToArray()),
+            byRooms ? "cut to the rooms with ducts, " + v.Pieces + " pieces" : all ? "every wall" : string.Format(Inv, "within {0:0.#} ft of the model", marginFt),
+            string.Join(", ", Shapes.Select(x => x + " " + (v.ShapeWalls.ContainsKey(x) ? v.ShapeWalls[x] : 0)).ToArray()),
             flat > 0 ? "; " + flat + " with a zero extent left out" : "")
             + "\n" + (v.FloorsFt.Count == 0 ? "wall levels: no slab found, no level groups"
                 : string.Format(Inv, "wall levels: {0} floor{1} (top of slab) at {2} ft; boxes per level: {3}", v.FloorsFt.Count, v.FloorsFt.Count == 1 ? "" : "s",

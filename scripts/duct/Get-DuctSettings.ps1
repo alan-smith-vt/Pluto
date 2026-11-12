@@ -88,7 +88,7 @@ function Get-DuctSettings {
     # DuctRoomGapFt (default 4) short of each other still close a room
     if ($Data.ContainsKey('DuctRoomRegions')) { $ds.RoomRegions = [bool]$Data.DuctRoomRegions }
     if ($Data.ContainsKey('DuctRoomGapFt')) { $ds.RoomGapFt = [double]$Data.DuctRoomGapFt }
-    # cull by room: steel in a region without ducts is left out of the model unless DuctRoomCull = $false
+    # cull by room: steel outside the rooms with ducts is left out of the model unless DuctRoomCull = $false
     if ($Data.ContainsKey('DuctRoomCull')) { $ds.RoomCull = [bool]$Data.DuctRoomCull }
     if ($Walls -and $Walls -ne "none") {
         if (-not (Test-Path $Walls)) { throw "walls CSV not found: $Walls (DuctWalls in duct-config.psd1 or -Walls; -Walls none = off)" }
