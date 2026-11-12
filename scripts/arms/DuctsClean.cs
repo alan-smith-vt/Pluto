@@ -80,6 +80,16 @@ public partial class DuctsToPluto
                 if (byPos) plan.Note += "\n" + RoomRegions.PositionNote(plan.Steel, cand.Count, Cfg.SteelAll.Count, Cfg.SteelRooms, Cfg.Steel.Count);
             }
         }
+        // slab filter for the fixed ends: the slabs of the walls CSV (whole boxes), inches
+        Cfg.SteelSettings.Slabs = null;
+        if (Cfg.SteelFixedNeedsSlab && Cfg.Walls.Count > 0)
+        {
+            Cfg.SteelSettings.Slabs = new List<double[]>();
+            const double inPerM = 1 / 0.0254;
+            foreach (WallBox w in Cfg.Walls)
+                if (WallViewWriter.IsSlab(w))
+                    Cfg.SteelSettings.Slabs.Add(new[] { w.Lo[0] * inPerM, w.Lo[1] * inPerM, w.Lo[2] * inPerM, w.Hi[0] * inPerM, w.Hi[1] * inPerM, w.Hi[2] * inPerM });
+        }
         SteelModel sm = steelIn.Count > 0 ? SteelModel.Build(steelIn, Cfg.SteelSettings) : null;   // SteelViewWriter.cs draws it; split by supports from here on
         sr = null;
         if (sm != null)   // SupportPlacer: supports, spans, floating pieces, hangers; the steel splits are applied here

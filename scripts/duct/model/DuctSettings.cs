@@ -31,6 +31,8 @@ public class DuctSettings
     public string SteelRooms = "";   // the room list Steel was filtered by ("" = whole building)
     public bool SteelByPosition = true;
     public SteelModel.Settings SteelSettings = new SteelModel.Settings();
+    // fixed ends of vertical steel only in or near a slab of the walls CSV [DuctSteelFixedNeedsSlab, DuctSteelSlabNearIn]
+    public bool SteelFixedNeedsSlab = true;
     // walls drawn in the clean model [DuctWalls]: boxes within WallMarginFt of the model [DuctWallMarginFt; negative = all]
     public readonly List<WallBox> Walls = new List<WallBox>();
     public double WallMarginFt = 10;

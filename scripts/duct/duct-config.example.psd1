@@ -41,6 +41,11 @@
     DuctSteelSnap = 'centreline'
     DuctSteelContactIn = 2
     DuctSteelEndJoinIn = 2
+    # Slab filter (needs DuctWalls): the open end of a vertical steel member is fixed only when it is in or within
+    # DuctSteelSlabNearIn of a slab (floor or ceiling alike). Elsewhere the restraint is removed (end 'open-free',
+    # flag NO_SLAB). It only removes restraints: nothing is fixed that was not. $false = every such end fixed.
+    DuctSteelFixedNeedsSlab = $true
+    DuctSteelSlabNearIn = 12
     # Walls drawn in the clean model (drawing only, never in SAP): the CSV of scripts\voyager\Export-Walls.ps1
     # (one box per wall, meters, the steel CSV's frame). Groups by shape (Walls: wall / slab / skew wall / skew slab /
     # small) and by level (Walls level: <band>: the bands between the big slabs; hide a level with its eye). Only walls

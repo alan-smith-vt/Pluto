@@ -215,5 +215,42 @@ $st = New-Object 'SteelModel+Settings'; $st.EndJoinIn = 6
 $sm = [SteelModel]::Build($l, $st)
 Check "14g EndJoinIn 6: the 5 in gap joins (one joint), B keeps its position by an offset" ((Ends $sm "A").JJ.Id -eq (Ends $sm "B").JI.Id -and (V3 $sm.EndPos((Fr $sm "B")[0], $true) 125 0 120))
 
+# 15 slab filter (2026-11-12): a vertical open end is fixed only in or near a slab; it only removes restraints
+function ModelSlabs([object[]]$ms, $slabs, $near = 12) {
+    $l = New-Object 'System.Collections.Generic.List[SteelMember]'; foreach ($m in $ms) { $l.Add($m) }
+    $s = New-Object 'SteelModel+Settings'; $s.SlabNearIn = $near
+    if ($null -ne $slabs) { $s.Slabs = New-Object 'System.Collections.Generic.List[double[]]'; foreach ($b in $slabs) { $s.Slabs.Add([double[]]$b) } }
+    [SteelModel]::Build($l, $s)
+}
+$ceiling = ,@(-100, -100, 240, 100, 100, 252)     # a slab over the hanger's top
+$sm = ModelSlabs @((M "H" 0 0 120 0 0 240)) $ceiling; $e = Ends $sm "H"
+Check "15a hanger: top at the slab stays fixed, bottom in the air is not fixed" ($e.J -eq "open-fixed" -and $e.JJ.Restraint -eq "FIXED" -and $e.I -eq "open-free" -and $e.JI.Restraint -eq "" -and ($e.JI.Flags -contains "NO_SLAB") -and -not ($e.JJ.Flags -contains "NO_SLAB"))
+Check "15a counted, and in the summary" ($sm.FixedKept -eq 1 -and $sm.FixedRemoved -eq 1 -and $sm.Summary() -like "*; slab filter: 1 fixed ends kept (in or within 12 in of a slab), 1 not fixed (no slab near: open-free, NO_SLAB)")
+Check "15a the free end has no end marker" ($null -eq [SteelModel]::EndGroup($e.I, $e.RI, $false))
+$floor = ,@(-100, -100, 108, 100, 100, 120)
+$e = Ends (ModelSlabs @((M "P" 0 0 120 0 0 240)) $floor) "P"
+Check "15b a post on a floor: the bottom stays fixed, the top is free (floor or ceiling alike)" ($e.I -eq "open-fixed" -and $e.J -eq "open-free")
+$e = Ends (ModelSlabs @((M "H" 0 0 120 0 0 230)) $ceiling) "H"
+Check "15c 10 in under the slab: within 12 in, fixed" ($e.J -eq "open-fixed")
+$e = Ends (ModelSlabs @((M "H" 0 0 120 0 0 226)) $ceiling) "H"
+Check "15c 14 in under the slab: not fixed" ($e.J -eq "open-free")
+$e = Ends (ModelSlabs @((M "H" 0 0 120 0 0 226)) $ceiling 20) "H"
+Check "15c the distance is a setting" ($e.J -eq "open-fixed")
+$e = Ends (ModelSlabs @((M "H" 150 0 120 150 0 240)) $ceiling) "H"
+Check "15d beside the slab in plan (50 in off its edge): not fixed" ($e.J -eq "open-free")
+$sm = ModelSlabs @((M "H" 0 0 120 0 0 240)) $null; $e = Ends $sm "H"
+Check "15e no slabs given: every vertical open end fixed, as before" ($e.I -eq "open-fixed" -and $e.J -eq "open-fixed" -and $sm.Summary() -notlike "*slab filter*")
+$e = Ends (ModelSlabs @((M "H" 0 0 120 0 0 240)) @()) "H"
+Check "15e an empty slab list: the same (no filter)" ($e.I -eq "open-fixed" -and $e.J -eq "open-fixed")
+# it only removes: a horizontal open end at a slab stays pinned, a connected end stays as it is
+$sm = ModelSlabs @((M "B" 0 0 240 90 0 240), (M "COL" 0 0 120 0 0 240)) $ceiling
+Check "15f a horizontal open end by the slab stays pinned; nothing new is fixed" ((Ends $sm "B").J -eq "open-pinned" -and @($sm.Joints | Where-Object { $_.Restraint -eq "FIXED" }).Count -eq 0)
+# column base (a brace landing on the column foot): fixed only with a slab there
+$base = @((M "COL" 0 0 0 0 0 240), (M "BR" 0 0 0 60 0 60))
+$sm = ModelSlabs $base (,@(-100, -100, -12, 100, 100, 0)); $c = Ends $sm "COL"
+Check "15g column base on a slab: FIXED column-base" ($c.JI.Restraint -eq "FIXED" -and $c.JI.Condition -eq "column-base")
+$sm = ModelSlabs $base $ceiling; $c = Ends $sm "COL"; $br = Ends $sm "BR"
+Check "15g column base with no slab: not fixed, the brace still hinged, the column top (at the slab) fixed" ($c.JI.Restraint -eq "" -and $c.JI.Condition -eq "open-free" -and ($c.JI.Flags -contains "NO_SLAB") -and $c.I -eq "open-free" -and $br.RI -eq "M2M3" -and $c.J -eq "open-fixed")
+
 Write-Output ("{0} passed, {1} failed" -f $script:pass, $script:fail)
 exit $(if ($script:fail) { 1 } else { 0 })

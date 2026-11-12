@@ -21,6 +21,10 @@ using System.Text;
 // within EndJoinIn: two beams cut back to a column that is missing from the data are a column width apart and
 // stay open (OPEN_NEAR) instead of being tied to each other.
 // Boundary conditions (rules agreed with the user; vault: steel model):
+//   slab filter   (user, 2026-11-12) with slabs given (Settings.Slabs), a FIXED end stays fixed only when it is in
+//                 or within SlabNearIn of a slab; otherwise the restraint is removed: condition open-free, flag
+//                 NO_SLAB. Applies to the fixed open ends and to the column bases. It only removes: an end near a
+//                 slab that was not fixed stays as it was, and pinned ends are not touched.
 //   open end      member below SlopePinnedDeg from horizontal -> PINNED (U1-3), else FIXED (all 6); farther than
 //                 within NearIn of other steel (but beyond SnapIn) -> flag OPEN_NEAR, a probably missed connection
 //   framed        an end landing on a continuous member -> M2M3 released (torsion kept)
@@ -49,6 +53,9 @@ public class SteelModel
         public double ContactIn = 2;
         public double MergeIn = 1;   // joints landing on one member within this distance along it are one joint
         public double EndJoinIn = 2; // an end beyond another member's end joins it only when the end points are this close
+        // slab boxes { x0, y0, z0, x1, y1, z1 } in inches; null or empty = no slab filter (every vertical open end fixed)
+        public List<double[]> Slabs;
+        public double SlabNearIn = 12;   // a fixed end keeps its restraint within this of a slab box
     }
 
     public class Joint
@@ -75,6 +82,7 @@ public class SteelModel
     public readonly List<Joint> Joints = new List<Joint>();
     public readonly List<Frame> Frames = new List<Frame>();
     public int Snapped, OnSide, Open, OpenNear, ZeroLength, ColumnBases, KeptMoments, TorsionHeld;
+    public int FixedKept, FixedRemoved;   // slab filter: fixed ends in / near a slab, and those whose restraint was removed
     public int EndGapSkipped;   // connections not made: the end lies beyond the other member's end, farther than EndJoinIn
 
     public SteelModel(Settings s) { S = s ?? new Settings(); }
@@ -245,6 +253,7 @@ public class SteelModel
             bool pinned = SlopeDeg(A[m], B[m]) < S.SlopePinnedDeg;
             jt.Condition = pinned ? "open-pinned" : "open-fixed";
             jt.Restraint = pinned ? "PINNED" : "FIXED";
+            if (!pinned && !KeepFixed(jt)) { jt.Condition = "open-free"; jt.Restraint = ""; jt.Flags.Add("NO_SLAB"); }
             SetEnd(endFrame[e], jt.Condition, "");
             Open++;
             double near = double.MaxValue, t, d; double[] p = { jt.X, jt.Y, jt.Z };
@@ -267,8 +276,10 @@ public class SteelModel
         if (ends.All(e => OtherEnd(A, B, e)[2] > z + S.SnapIn) && ends.Any(e => IsVertical(A, B, e)))
         {
             int col = KeepOne(ends.Where(e => IsVertical(A, B, e)).ToList(), A, B);
-            jt.Condition = "column-base"; jt.Restraint = "FIXED"; ColumnBases++;
-            foreach (int e in ends) SetEnd(endFrame[e], e == col ? "column-base" : "corner", e == col ? "" : "M2M3");
+            bool slab = KeepFixed(jt);
+            jt.Condition = slab ? "column-base" : "open-free"; jt.Restraint = slab ? "FIXED" : ""; ColumnBases++;
+            if (!slab) jt.Flags.Add("NO_SLAB");
+            foreach (int e in ends) SetEnd(endFrame[e], e == col ? jt.Condition : "corner", e == col ? "" : "M2M3");
             return;
         }
         string cond = "corner";
@@ -299,6 +310,17 @@ public class SteelModel
             ji.Restraint = "PINNED+T"; ji.TAxis = new[] { (b[0] - a[0]) / L, (b[1] - a[1]) / L, (b[2] - a[2]) / L };
             TorsionHeld++;
         }
+    }
+
+    // the slab filter for a joint about to be FIXED: true = keep it (no slabs given, or the joint is in / near one)
+    bool KeepFixed(Joint jt)
+    {
+        if (S.Slabs == null || S.Slabs.Count == 0) return true;
+        double t = S.SlabNearIn;
+        foreach (double[] b in S.Slabs)
+            if (jt.X >= b[0] - t && jt.X <= b[3] + t && jt.Y >= b[1] - t && jt.Y <= b[4] + t && jt.Z >= b[2] - t && jt.Z <= b[5] + t) { FixedKept++; return true; }
+        FixedRemoved++;
+        return false;
     }
 
     bool IsVertical(double[][] A, double[][] B, int e) { return SlopeDeg(A[e >> 1], B[e >> 1]) >= 90 - S.VerticalDeg; }
@@ -452,7 +474,10 @@ public class SteelModel
             Members.Count, Frames.Count, Joints.Count, string.Join(", ", c), Snapped, OnSide, Open, OpenNear, S.NearIn, rel, ZeroLength,
             ColumnBases, KeptMoments, TorsionHeld,
             Frames.Count(f => OffLen(f.OffI) > 1e-6) + Frames.Count(f => OffLen(f.OffJ) > 1e-6),
-            Frames.Count == 0 ? 0 : Frames.Max(f => Math.Max(OffLen(f.OffI), OffLen(f.OffJ))), EndGapSkipped, S.EndJoinIn);
+            Frames.Count == 0 ? 0 : Frames.Max(f => Math.Max(OffLen(f.OffI), OffLen(f.OffJ))), EndGapSkipped, S.EndJoinIn)
+            + (S.Slabs != null && S.Slabs.Count > 0
+                ? string.Format(Inv, "; slab filter: {0} fixed ends kept (in or within {1:0.#} in of a slab), {2} not fixed (no slab near: open-free, NO_SLAB)", FixedKept, S.SlabNearIn, FixedRemoved)
+                : "");
     }
 
     // snap rule and the open-end gap histogram (surface to surface, in): one line for match.txt / run.log

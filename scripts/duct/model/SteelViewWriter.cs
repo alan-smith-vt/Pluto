@@ -31,6 +31,8 @@ public static class SteelViewWriter
         public Dictionary<string, List<uint>> ByEndBeams = new Dictionary<string, List<uint>>(StringComparer.Ordinal);
         public List<FeaturesSidecar.Anchor> OpenNear = new List<FeaturesSidecar.Anchor>();
         public List<uint> OpenNearNodes = new List<uint>();
+        public List<FeaturesSidecar.Anchor> NoSlab = new List<FeaturesSidecar.Anchor>();   // vertical open ends not fixed: no slab near
+        public List<uint> NoSlabNodes = new List<uint>();
     }
 
     // frames into the clean model's tables; joints in inches -> the clean model's feet
@@ -84,6 +86,12 @@ public static class SteelViewWriter
             nb++;
         }
         foreach (SteelModel.Joint j in sm.Joints)
+            if (j.Flags.Contains("NO_SLAB"))
+            {
+                v.NoSlabNodes.Add((uint)jointNode[j.Id]);
+                v.NoSlab.Add(new FeaturesSidecar.Anchor { Domain = "nodes", Id = (uint)jointNode[j.Id], Label = j.Name + " " + j.Condition });
+            }
+        foreach (SteelModel.Joint j in sm.Joints)
             if (j.Flags.Contains("OPEN_NEAR"))
             {
                 v.OpenNearNodes.Add((uint)jointNode[j.Id]);
@@ -110,6 +118,12 @@ public static class SteelViewWriter
             FeaturesSidecar.Group g = sc.AddGroup("End: " + e[0], null, "beams", v.ByEndBeams[e[0]], new[] { "steel", "end" }, null);
             g.Look = new FeaturesSidecar.Look { Glyph = e[1], Tier = e[2], Label = e[3], Section = "Member ends" };
             g.Anchors.AddRange(a);
+        }
+        if (v.NoSlab.Count > 0)
+        {
+            FeaturesSidecar.Group g = sc.AddNodeGroup("Flag: NO_SLAB", null, v.NoSlabNodes, new[] { "steel", "flag" }, "FLAG_NO_SLAB");
+            g.Look = new FeaturesSidecar.Look { Glyph = "warn", Tier = "exception", Label = "Vertical steel end not fixed (no slab near)", Section = "Checks" };
+            g.Anchors.AddRange(v.NoSlab);
         }
         if (v.OpenNear.Count > 0)
         {

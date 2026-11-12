@@ -56,6 +56,10 @@ function Get-DuctSettings {
     if ($Data.DuctSteelContactIn) { $ds.SteelSettings.ContactIn = [double]$Data.DuctSteelContactIn }
     # an end lying beyond another member's end joins it only when the two end points are within DuctSteelEndJoinIn (2 in)
     if ($Data.ContainsKey('DuctSteelEndJoinIn')) { $ds.SteelSettings.EndJoinIn = [double]$Data.DuctSteelEndJoinIn }
+    # slab filter: with walls given, a vertical steel end is fixed only when it is in or within DuctSteelSlabNearIn (12 in)
+    # of a slab; DuctSteelFixedNeedsSlab = $false = every vertical open end fixed, as before
+    if ($Data.ContainsKey('DuctSteelFixedNeedsSlab')) { $ds.SteelFixedNeedsSlab = [bool]$Data.DuctSteelFixedNeedsSlab }
+    if ($Data.ContainsKey('DuctSteelSlabNearIn')) { $ds.SteelSettings.SlabNearIn = [double]$Data.DuctSteelSlabNearIn }
     # wall thickness table (duct\model\DuctThickness.cs): DuctThickness = CSV Run,Size,Thk_in. When set it is the only
     # thickness source (Navisworks WallThk_in ignored); frames no row matches get the 0.001 in placeholder. '' = Navisworks
     if ($Data.DuctThickness) {
