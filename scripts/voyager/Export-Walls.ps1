@@ -6,10 +6,15 @@
 .DESCRIPTION
   A wall object holds both faces, so its bbox (CoreSpatialIndex, meters, plant frame) is the wall solid
   including its thickness, as long as the wall runs along X or Y. Each row gets a shape:
-      wall   taller than -ThinM and thin in plan (min of dx, dy under -ThinM): the box is the wall
-      slab   dz under -ThinM, both plan extents over it (a floor or roof stored in the same class)
-      skew   taller than -ThinM and NOT thin in plan: a wall off the axes, or an L / U shape; the box is too fat
-      small  everything else (short pieces, curbs)
+      wall       taller than -ThinM and thin in plan (min of dx, dy under -ThinM): the box is the wall
+      slab       flat: both plan extents over -ThinM and dz under -ThinM, or under a quarter of the smaller plan
+                 extent (a thick slab stays a slab)
+      skew slab  taller than -ThinM, not thin in plan, lower than its smaller plan extent: a sloped or stepped
+                 slab, or a wall far off the axes (the box cannot tell these apart)
+      skew wall  taller than -ThinM, not thin in plan, at least as high as its smaller plan extent: a wall off
+                 the axes, an L shape, a shaft
+      small      everything else (short pieces, curbs)
+  The viewer export (duct\model\WallViewWriter.cs) applies the same rule to the boxes; it does not read Shape.
   Thk_m = the thin plan extent of a wall (dz of a slab); Axis = the direction a wall runs along (X or Y).
 
   Report (console and -Report): counts per shape, wall thickness histogram (5 cm bins), the most common
@@ -54,10 +59,12 @@ FROM ${m}CoreBaseClass b
 JOIN ${m}CoreSpatialIndex s ON s.oid = b.oid
 WHERE b.classid = $Class AND b.persistentFlag & 1024 = 0
 "@
-$shape = "CASE WHEN w.dz > $thin AND (w.dx < $thin OR w.dy < $thin) THEN 'wall' " +
-         "WHEN w.dz <= $thin AND w.dx > $thin AND w.dy > $thin THEN 'slab' " +
-         "WHEN w.dz > $thin THEN 'skew' ELSE 'small' END"
-$thk = "CASE WHEN w.dz <= $thin AND w.dx > $thin AND w.dy > $thin THEN w.dz WHEN w.dx < w.dy THEN w.dx ELSE w.dy END"
+$plan = "(CASE WHEN w.dx < w.dy THEN w.dx ELSE w.dy END)"
+$shape = "CASE WHEN w.dz > $thin AND $plan < $thin THEN 'wall' " +
+         "WHEN $plan > $thin AND (w.dz <= $thin OR w.dz < $plan / 4) THEN 'slab' " +
+         "WHEN w.dz > $thin AND w.dz < $plan THEN 'skew slab' " +
+         "WHEN w.dz > $thin THEN 'skew wall' ELSE 'small' END"
+$thk = "CASE WHEN $plan > $thin AND w.dz < $plan THEN w.dz ELSE $plan END"   # a slab or skew slab: its depth
 $axis = "CASE WHEN w.dx >= w.dy THEN 'X' ELSE 'Y' END"
 $rowsSql = "SELECT w.WallOid, w.Xmin, w.Xmax, w.Ymin, w.Ymax, w.Zmin, w.Zmax, $shape AS Shape, $thk AS Thk_m, $axis AS Axis FROM ($inner) w"
 
@@ -68,9 +75,9 @@ $all = @(Rows ("SELECT COUNT(*) AS N, SUM(CASE WHEN b.persistentFlag & 1024 = 0 
 Say ("classid {0}: {1} rows, {2} live, {3} live with a bbox" -f $Class, $all[0].N, $all[0].Live, $all[0].WithBbox)
 
 $byShape = Rows ("SELECT q.Shape, COUNT(*) AS N FROM ($rowsSql) q GROUP BY q.Shape ORDER BY N DESC")
-$cnt = @{ wall = 0; slab = 0; skew = 0; small = 0 }
+$cnt = @{ 'wall' = 0; 'slab' = 0; 'skew wall' = 0; 'skew slab' = 0; 'small' = 0 }
 foreach ($x in $byShape) { $cnt[[string]$x.Shape] = [int]$x.N }
-Say ("shape (thin = under {0} m): wall {1}, slab {2}, skew {3}, small {4}" -f $thin, $cnt.wall, $cnt.slab, $cnt.skew, $cnt.small)
+Say ("shape (thin = under {0} m): wall {1}, slab {2}, skew wall {3}, skew slab {4}, small {5}" -f $thin, $cnt['wall'], $cnt['slab'], $cnt['skew wall'], $cnt['skew slab'], $cnt['small'])
 
 # ---- wall thickness histogram, 5 cm bins -------------------------------------------------------------------
 Say ""
@@ -117,10 +124,10 @@ Say ""
 Say ("{0} rows -> {1}" -f $rows.Count, $Out)
 
 Say ""
-Say ("NEW walls: {0} live with bbox; wall {1} slab {2} skew {3} small {4}" -f $all[0].WithBbox, $cnt.wall, $cnt.slab, $cnt.skew, $cnt.small)
+Say ("NEW walls: {0} live with bbox; wall {1} slab {2} skew wall {3} skew slab {4} small {5}" -f $all[0].WithBbox, $cnt['wall'], $cnt['slab'], $cnt['skew wall'], $cnt['skew slab'], $cnt['small'])
 if ($top1 -ne $null) {
     $lo = [double]$top1.Bin * 0.05
-    Say ("NEW thickness: most common {0:0.00}-{1:0.00} m ({2} of {3} walls), {4} bins" -f $lo, ($lo + 0.05), $top1.N, $cnt.wall, $h.Count)
+    Say ("NEW thickness: most common {0:0.00}-{1:0.00} m ({2} of {3} walls), {4} bins" -f $lo, ($lo + 0.05), $top1.N, $cnt['wall'], $h.Count)
 }
 Say ("[done] {0:0}s" -f ((Get-Date) - $t0).TotalSeconds)
 Set-Content -Path $Report -Value $log -Encoding ASCII

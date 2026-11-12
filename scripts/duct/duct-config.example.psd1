@@ -34,8 +34,9 @@
     DuctSteelSnapIn = 6
     DuctSteelNearIn = 24
     # Walls drawn in the clean model (drawing only, never in SAP): the CSV of scripts\voyager\Export-Walls.ps1
-    # (one box per wall, meters, the steel CSV's frame). Groups Walls: wall / slab / skew / small. Only walls within
-    # DuctWallMarginFt of the model (ducts, steel, supports) are drawn; a negative margin draws every wall. '' = no walls.
+    # (one box per wall, meters, the steel CSV's frame). Groups by shape (Walls: wall / slab / skew wall / skew slab /
+    # small) and by level (Walls level: <band>: the bands between the big slabs; hide a level with its eye). Only walls
+    # within DuctWallMarginFt of the model (ducts, steel, supports) are drawn; a negative margin draws every wall. '' = none.
     DuctWalls = ''                    # e.g. 'C:\Temp\walls.csv'
     DuctWallMarginFt = 10
     # Wall thickness table (CSV, header Run,Size,Thk_in). When set it REPLACES the Navisworks thickness; a frame no row

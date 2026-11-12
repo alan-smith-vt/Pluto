@@ -35,7 +35,8 @@
 #                        clean model with its end conditions; <out>.steel_joints.csv / .steel_frames.csv (SAP input)
 #                        [-Walls <csv>|none]: walls (default: DuctWalls in the duct config), the CSV of
 #                        scripts\voyager\Export-Walls.ps1, drawn in the clean model as boxes in the groups
-#                        Walls: wall / slab / skew / small; only those within DuctWallMarginFt of the model
+#                        Walls: wall / slab / skew wall / skew slab / small, and by level (Walls level: <band>,
+#                        the bands between the big slabs); only those within DuctWallMarginFt of the model
 #     [-Config <psd1>]   the duct config every setting above comes from (read once, printed first); default
 #                        scripts\duct\duct-config.psd1 (absent = defaults)
 #     [-Out <base>]      default <run>\ducts  ->  <run>\ducts.bin + <run>\ducts.features.json
