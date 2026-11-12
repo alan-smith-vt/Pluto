@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
   Find the SP3D classes behind a kind of object (walls, slabs, openings ...) by table name, and say whether
-  their bounding boxes look like that kind of object. Read-only census. Draft v1 (2026-11-12), not yet run.
+  their bounding boxes look like that kind of object. Read-only census. Draft v1 (2026-11-12), run on a synthetic database only.
 
 .DESCRIPTION
   The piping tables hold one classid per table and the table name names the class. This applies the same
