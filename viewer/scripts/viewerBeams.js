@@ -68,6 +68,7 @@ var FEABeams = (function () {
         beamMesh = new THREE.Mesh(build.geometry, material);
         beamMesh.visible = visible;
         scene.add(beamMesh);
+        applyEdges();
 
         // UI
         elSection.style.display = '';
@@ -88,7 +89,47 @@ var FEABeams = (function () {
             (view.domain.fields ? '' : ' (geometry only)') + '.');
     }
 
+    // ---- edges ----------------------------------------------------------
+    // Wireframe of the primary's beams (2026-11-12): each end's section outline + lengthwise lines, the overlay
+    // builder (FEAModelMesh.beamEdges). A child of the beam mesh, so it hides with it; follows elemVis (group
+    // eyes, section-cut isolate). The lines carry no displacement, so they are hidden while a deformed shape
+    // is drawn. Built on first use.
+    var edges = null, edgesOn = !!(document.getElementById('feaEdges') || { checked: true }).checked, dispNow = 0;
+    var EDGE_VERTEX = [
+        'attribute float elemVis;',
+        'varying float vVis;',
+        'void main() {',
+        '  vVis = elemVis;',
+        '  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);',
+        '}'
+    ].join('\n');
+    function edgeVisSync() {
+        if (!edges || !build) return;
+        var src = build.geometry.getAttribute('elemVis').array;
+        var attr = edges.geometry.getAttribute('elemVis'), a = attr.array, el = edges.userData.elem;
+        for (var i = 0; i < a.length; i++) a[i] = src[build.vertStart[el[i]]];
+        attr.needsUpdate = true;
+    }
+    function applyEdges() {
+        if (!beamMesh || !build) return;
+        if (edgesOn && !edges && window.FEAModelMesh && FEAModelMesh.beamEdges) {
+            var e = FEAModelMesh.beamEdges(build);
+            var geo = new THREE.BufferGeometry();
+            geo.setAttribute('position', new THREE.BufferAttribute(e.pos, 3));
+            geo.setAttribute('elemVis', new THREE.BufferAttribute(new Float32Array(e.pos.length / 3), 1));
+            edges = new THREE.LineSegments(geo, new THREE.ShaderMaterial({
+                uniforms: { uColor: { value: new THREE.Vector3(0, 0, 0) }, uOpacity: { value: 0.45 } },
+                vertexShader: EDGE_VERTEX, fragmentShader: FEAShaders.edgeFragment, transparent: true, depthWrite: false }));
+            edges.renderOrder = 1; edges.userData.elem = e.elem;
+            beamMesh.add(edges);
+            edgeVisSync();
+        }
+        if (edges) edges.visible = edgesOn && dispNow === 0;
+        needsRender = true;
+    }
+
     function onModelCleared() {
+        if (edges) { edges.geometry.dispose(); edges.material.dispose(); edges = null; }
         if (beamMesh) {
             scene.remove(beamMesh);
             beamMesh.geometry.dispose();
@@ -154,6 +195,8 @@ var FEABeams = (function () {
 
     function setDispScale(v) {
         if (material) material.uniforms.dispScale.value = v;
+        dispNow = v || 0;
+        if (edges) edges.visible = edgesOn && dispNow === 0;
     }
 
     // Returns peak |disp| among beam ends (0 when unavailable).
@@ -203,6 +246,7 @@ var FEABeams = (function () {
             arr.fill(vis, build.vertStart[e], build.vertStart[e] + build.vertCount[e]);
         }
         attr.needsUpdate = true;
+        edgeVisSync();
     }
     // Rewrite with the last isolate state (the group eyes changed).
     function reapplyVis() { writeVis(lastKeep, lastBox); }
@@ -286,6 +330,8 @@ var FEABeams = (function () {
         fillReadout: fillReadout,
         // x-ray of the primary's beams: set from the model rail (models.js primary.setXray)
         setXray: function (on) { xray = !!on; applyXray(); },
+        // edge lines of the primary's beams: the Edges checkbox / the rail's edges box (models.js primary.setEdges)
+        setEdges: function (on) { edgesOn = !!on; applyEdges(); },
         // The coloured beam field ({name, unit, min, max}), or null when beams draw neutral.
         legend: function () {
             if (!material || material.uniforms.uNeutral.value) return null;

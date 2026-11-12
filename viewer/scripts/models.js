@@ -60,7 +60,7 @@ var FEAModels = (function () {
         id: 'primary',
         kind: 'primary',
         feat: {},
-        look: { visible: true, xray: false, color: '#9ea3ad' },
+        look: { visible: true, xray: false, color: '#9ea3ad', edges: !!(document.getElementById('feaEdges') || { checked: true }).checked },
         name: function () { return window.feaPrimaryName || 'model'; },
         shellModel: function () { return g('feaModel'); },
         beamView: function () { return beams() && beams().view ? beams().view() : null; },
@@ -101,6 +101,12 @@ var FEAModels = (function () {
             if (beams() && beams().setXray) beams().setXray(on);
             redraw();
         },
+        // edges: one state for the shells' element edges and the beams' outlines, shared with the Field panel's
+        // Edges checkbox (its change handler in viewer.js does the work and refreshes the rail)
+        setEdges: function (on) {
+            var cb = document.getElementById('feaEdges');
+            if (cb) { cb.checked = !!on; cb.dispatchEvent(new Event('change')); }
+        },
         // the primary keeps its field colouring when group painting is off: no flat model colour
         setColor: null
     };
@@ -126,6 +132,7 @@ var FEAModels = (function () {
         primary: function () { return primary; },
         isPrimaryActive: function () { return active === primary; },
         onChange: function (fn) { listeners.push(fn); },
+        notify: function () { emit('look'); },   // a look changed outside the rail: redraw its rows
         xrayMaterial: xrayMaterial,
         // the primary is always registered first (it exists from page load; it may hold no model yet)
         _init: function () { register(primary); }

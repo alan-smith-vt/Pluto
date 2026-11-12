@@ -2251,8 +2251,12 @@ function applyManualRange() {
 elMin.addEventListener('change', applyManualRange);
 elMax.addEventListener('change', applyManualRange);
 
+// Edges: the shells' element edges and the beams' outlines (FEABeams), one state; the model rail's edges box on
+// the primary row is the same switch.
 elEdges.addEventListener('change', function () {
     if (feaEdges) feaEdges.visible = this.checked;
+    if (window.FEABeams && FEABeams.setEdges) FEABeams.setEdges(this.checked);
+    if (window.FEAModels) { FEAModels.primary().look.edges = this.checked; FEAModels.notify(); }
     needsRender = true;
 });
 
