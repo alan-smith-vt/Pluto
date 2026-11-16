@@ -13,7 +13,8 @@
 #                         for member forces and support reactions. Outputs default to <name>_sap.*; edit the seeded
 #                         model in its frame workbook (-Xlsx). Materials come from the CAESAR workbook's Materials sheet
 #                         (Pluto's defaults otherwise, with a warning). What the check model cannot hold yet refuses it,
-#                         each item on a [refuse] line
+#                         each item on a [refuse] line. Bends take B31J's flexibility (1.3 / h), as CAESAR does for
+#                         B31.1-2020 and later; -AppendixD takes the older codes' 1.65 / h (CAESAR with B31J off)
 #   out   -S2k      <base>.s2k for SAP2000 (File > Import > SAP2000 .s2k). Never written over the input file. An
 #                   existing <base>.s2k is replaced only when this runner wrote it (the stamp, <base>.build.json, says
 #                   so), when it is the model's own source, or when nothing in it would change; else -Force.
@@ -79,6 +80,7 @@ param(
     [string]$SapVersion,
     [string]$ModelId,
     [switch]$Force,
+    [switch]$AppendixD,
     [string]$Probe,
     [string]$StdProbe,
     [string]$ProbeCheck,
@@ -342,6 +344,7 @@ function Build-Once {
         foreach ($w in $rw) { Say "warn" $w; $warnings += $w }
         Say "read" ("{0}: a CAESAR model, {1} elements, {2} restraints, {3} hangers" -f $inPath, $pipe.Elements.Count, $pipe.Restraints.Count, $pipe.Hangers.Count)
         $sw2 = New-Object 'System.Collections.Generic.List[string]'; $sn2 = New-Object 'System.Collections.Generic.List[string]'
+        [PipeToFrame]::AppendixD = [bool]$AppendixD
         try { $model = [PipeToFrame]::Build($pipe, $(if ($SapVersion) { $SapVersion } else { "22.0.0" }), $sw2, $sn2) }
         catch {
             $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }

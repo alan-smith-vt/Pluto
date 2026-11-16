@@ -10,13 +10,14 @@ using System.Text;
 // The model is written as SAP's own .s2k text and read back (FrameS2k), so every Build-Frame output follows: the .s2k,
 // the frame workbook, the preview, the STAAD .std. Seeded once: edits go on in the frame workbook.
 //
-// Mapping (phase 1, the linear model; a nonlinear support refuses the model, every one named):
+// Mapping (phases 1 and 2; what the model cannot hold refuses it, every item named):
 //   geometry   CaesarGeometry on the model's own .cii text (CAESAR's rules: bends to the tangent intersection, CNODE
 //              placement). A Y-up job is turned to SAP's Z up: (x, y, z) -> (x, -z, y). Joints are CAESAR's node numbers;
 //              bend points <to>N / <to>F / <to>A1.., reducer steps <to>R1.. Zero-length pieces join their ends.
 //   pipe       a frame per piece, SAP's Pipe section (OD x wall) of the element's material; bends as chords of at most
 //              ChordDeg through every bend node, I22 / I33 divided by the bend's flexibility factor k (CAESAR's k when
-//              given, else 1.65 / h with the flanged-end factor h^(1/6) or h^(1/3), at least 1), weight scaled from the
+//              given, else B31J's 1.3 / h -- AppendixD: 1.65 / h -- with the flanged-end factor h^(1/6) or h^(1/3), at
+//              least 1; the probe, 2026-11-16: CAESAR 15.01 under B31.1-2024 applies B31J), weight scaled from the
 //              chords to the arc; reducers as ReducerSteps stepped frames; rigids with the wall RigidWallFactor times
 //              (the bore kept), weightless sections, their weight as loads; a finite expansion joint as a General
 //              section giving its axial, bending and torsion stiffness (bending from the transverse as L^2 / 12, as for
@@ -32,10 +33,16 @@ using System.Text;
 //   loads      Fn joint forces, Dn ground displacements (the DOF held in every case), Un distributed loads (or g's of
 //              the frame's weight), H the hangers' installed loads. Wind is CAESAR's load-case data: not written.
 //   supports   rigid two-way restraints as joint restraints (in joint local axes when skewed); stiffnesses as joint
-//              springs; to a CNODE a linear link; spring hangers as springs with their installed load in H, constant
+//              springs; to a CNODE a linear link (rigid DOFs at CAESAR's 1e12, not SAP's Fixed, which SAP 24.2 gave a
+//              ground displacement through wrongly); spring hangers as springs with their installed load in H, constant
 //              ones as the load; custom nozzles as springs along the nozzle. Snubbers act in dynamic cases only.
-//   cases      CAESAR's recommended set: OPE (W + Tn + Dn + Pn + F1 + H) per thermal set, SUS (W + P1 + F1 + H), EXP =
-//              OPE - SUS as a Linear Add combination.
+//              Nonlinear (phase 2): each side of a one-way, gapped or friction restraint a two-joint link from a support
+//              point to the node along the side it acts on: SAP's gap (opening = CAESAR's gap), or its friction
+//              isolator (mu, CAESAR's friction stiffness), a gap and a friction isolator in series where both.
+//              B31J's branch flexibility at tees is not modelled (rigid joints), with a notice.
+//   cases      CAESAR 15.01's recommended set: OPE (W + Dn + Tn + Pn + H) per thermal set, SUS (W + P1 + H), EXP = each
+//              OPE - SUS and each OPE - a later OPE as Linear Add combinations; nonlinear static from zero when any
+//              support is nonlinear.
 // C# 5, one global batch (prefix Frame / Pipe).
 
 public sealed class PipeToFrameRefusal : Exception
@@ -54,6 +61,11 @@ public static class PipeToFrame
     public const double RigidInsulation = 1.75;   // CAESAR's rigid: 1.75 times the insulation of the same pipe
     public const double AlphaTolerance = 0.05;    // CAESAR's: a temperature under it is a thermal expansion (length / length)
     public const double RigidStiffness = 1e11;    // English lb/in (in.lb/deg): at or above it a CAESAR stiffness is rigid
+    public const double RigidK = 1e12;            // CAESAR's own rigid restraint stiffness (lb/in, in.lb/deg): ties and nonlinear supports get it
+    public const double FrictionK = 1e6;          // CAESAR's friction stiffness (lb/in): a friction support before it slides
+    // CAESAR's bend flexibility: B31J's 1.3 / h, what CAESAR applies for B31.1-2020 and later codes (and recommends for every
+    // metallic code); AppendixD: the older codes' 1.65 / h (CAESAR with B31J off)
+    public static bool AppendixD;
     const double G = 386.0885826771654;           // in/s^2
 
     // the frame model (its source the generated .s2k text); warnings: what the user must check (default materials ...);
@@ -114,6 +126,8 @@ public static class PipeToFrame
         public readonly Dictionary<string, double> Gravity = new Dictionary<string, double>();   // pattern -> lb/in down
     }
 
+    sealed class LinkPropSpec { public string Name, Type; public readonly List<string> Rows = new List<string>(); }   // rows: the fields after Link=
+
     sealed class MatSpec { public string Name; public int Number; public double E, Nu, Rho, Alpha; }   // psi, -, lb/in^3, /F
 
     sealed class Seed
@@ -121,7 +135,6 @@ public static class PipeToFrame
         readonly PipeModel M;
         readonly List<string> Warnings, Notes;
         readonly List<string> Refusals = new List<string>();
-        readonly Dictionary<string, List<string>> Nonlinear = new Dictionary<string, List<string>>();
         CaesarModel Cm;
         CaesarPipeGraph Gr;
         List<PipeModelElement> Order;
@@ -149,7 +162,12 @@ public static class PipeToFrame
         readonly Dictionary<string, LinkSpec> Links = new Dictionary<string, LinkSpec>();
         readonly List<string> LinkOrder = new List<string>();
         readonly List<string[]> LinkRows = new List<string[]>();          // {label, I, J, prop, angle}
-        readonly List<KeyValuePair<string, List<string[]>>> LinkProps = new List<KeyValuePair<string, List<string[]>>>();   // name -> DOF rows {dof, fixed, k}
+        readonly List<LinkPropSpec> LinkProps = new List<LinkPropSpec>();
+        readonly Dictionary<string, string> PropBySig = new Dictionary<string, string>();
+        readonly Dictionary<string, bool[]> ExtraRestraints = new Dictionary<string, bool[]>();      // support / intermediate joints the seed adds
+        readonly Dictionary<string, double[][]> ExtraAxes = new Dictionary<string, double[][]>();
+        readonly List<string> ExtraOrder = new List<string>();
+        int NlCount;
         readonly List<string> RestraintRows = new List<string>(), AxesRows = new List<string>(), SpringRows = new List<string>();
         readonly List<string> GroundRows = new List<string>(), DistRows = new List<string>(), TempRows = new List<string>();
         readonly HashSet<string> PatternsUsed = new HashSet<string>();
@@ -180,7 +198,6 @@ public static class PipeToFrame
         void Refuse(string s) { if (!Refusals.Contains(s)) Refusals.Add(s); }
         void Note(string s) { if (!Notes.Contains(s)) Notes.Add(s); }
         void Warn(string s) { if (!Warnings.Contains(s)) Warnings.Add(s); }
-        void NonLin(string kind, string who) { List<string> l; if (!Nonlinear.TryGetValue(kind, out l)) { l = new List<string>(); Nonlinear[kind] = l; } l.Add(who); }
         void Group(string g, string type, string label)
         {
             List<string[]> l;
@@ -223,9 +240,7 @@ public static class PipeToFrame
             Nozzles();
             NodeLoads();
             Supports();
-            if (Nonlinear.Count > 0)
-                foreach (var kv in Nonlinear)
-                    Refuse("nonlinear supports, for phase 2 of the check model -- " + kv.Key + " (" + I(kv.Value.Count) + "): " + string.Join(", ", kv.Value.Take(12).ToArray()) + (kv.Value.Count > 12 ? " ..." : ""));
+            TeesNote();
             if (Refusals.Count > 0) throw new PipeToFrameRefusal(Refusals);
             Note("no code checks: SIFs, allowables and code stresses stay in CAESAR");
             return Emit(version);
@@ -516,7 +531,7 @@ public static class PipeToFrame
             double od = e.Od / fDia, t = (e.Bend.FittingThickness > 0 ? e.Bend.FittingThickness : e.Wall) / fWall, rad = bg.Radius / fLen;
             double r2 = (od - t) / 2;
             if (r2 <= 0 || t <= 0 || rad <= 0) return 1;
-            double h = t * rad / (r2 * r2), k = 1.65 / h;
+            double h = t * rad / (r2 * r2), k = (AppendixD ? 1.65 : 1.3) / h;
             if (e.Bend.Type == 1) k *= Math.Pow(h, 1.0 / 6);
             else if (e.Bend.Type == 2) k *= Math.Pow(h, 1.0 / 3);
             return Math.Max(1, k);
@@ -633,9 +648,7 @@ public static class PipeToFrame
                 if (bare.EndsWith("ROD", StringComparison.Ordinal) || bare.EndsWith("SPR", StringComparison.Ordinal) || bare.EndsWith("2", StringComparison.Ordinal) || !r.Confirmed)
                 { Refuse(who + ": a type the check model does not hold (rods, bilinear and spring restraints, codes outside CAESAR's table)"); continue; }
                 bool rot = CaesarRestraint.IsRotationName(t);
-                if (sign != 0) { NonLin("one-way", I(r.Node) + " " + t); continue; }
-                if (r.Gap != 0) { NonLin("with a gap", I(r.Node) + " " + t + " gap " + N(r.Gap)); continue; }
-                if (r.Friction != 0) { NonLin("with friction", I(r.Node) + " " + t + " mu " + N(r.Friction)); continue; }
+                bool nonlinear = sign != 0 || r.Gap != 0 || r.Friction != 0;
                 bool rigid = r.IsRigid;
                 double kT = r.Stiffness / fTK, kR = r.Stiffness / fRK * 180 / Math.PI;
                 var dirs = new List<double[]>();
@@ -662,6 +675,21 @@ public static class PipeToFrame
                 string a = JointOfNode(r.Node, 0, who);
                 string b = r.CNode > 0 ? JointOfNode(r.CNode, r.Node, who) : null;
                 if (b != null && b == a) { Note(who + ": the node and its CNode are one joint here (zero-length elements between them): left out"); continue; }
+                if (nonlinear)
+                {
+                    if (anc) { Refuse(who + ": an anchor with a gap or friction"); continue; }
+                    double gap = rot ? r.Gap * Math.PI / 180 : r.Gap / fLen;
+                    double k = rigid ? (rot ? RigidK * 180 / Math.PI : RigidK) : (rot ? kR : kT);
+                    foreach (var dc in dirs)
+                    {
+                        var d = Unit(R(dc));
+                        // a one-way restraint acts on one side (CAESAR's +Y: the node may move +Y, not -Y); a two-way one with a gap or
+                        // friction is one on each side
+                        if (sign != 0) AddNonlinear(a, b, Scale(d, sign), rot, gap, r.Friction, k, r.Node, who);
+                        else { AddNonlinear(a, b, d, rot, gap, r.Friction, k, r.Node, who); AddNonlinear(a, b, Scale(d, -1), rot, gap, r.Friction, k, r.Node, who); }
+                    }
+                    continue;
+                }
                 var list = new List<Dof>();
                 foreach (var dc in dirs)
                 {
@@ -861,8 +889,6 @@ public static class PipeToFrame
                 if (k.Any(x => x != 0))
                     SpringRows.Add("Joint=" + Q(j) + "   CoordSys=" + (frame != null ? "Local" : "GLOBAL") + string.Concat(Enumerable.Range(0, 6).Select(i => "   " + FrameJoint.Dofs[i] + "=" + N(i < 3 ? OKT(k[i]) : OKR(k[i]))).ToArray()));
             }
-            int nProp = 0;
-            var propByKey = new Dictionary<string, string>();
             foreach (string key in LinkOrder)
             {
                 var ls = Links[key];
@@ -899,23 +925,137 @@ public static class PipeToFrame
                                                         : "a tie to a node away from it, acting other than along the line between them"));
                     continue;
                 }
-                for (int i = 0; i < 6; i++) if (fixd[i]) k[i] = 0;
-                var rows = new List<string[]>();
+                // rigid as CAESAR's own stiffness, not SAP's Fixed: SAP 24.2 gave a ground displacement through a Fixed link DOF as a
+                // load held at the pipe's next joints (the probe's settling support, 2026-11-16), a stiffness takes it as CAESAR does
+                for (int i = 0; i < 6; i++) if (fixd[i]) k[i] = i < 3 ? RigidK : RigidK * 180 / Math.PI;
+                var rows = new List<string>();
                 for (int i = 0; i < 6; i++)
-                    if (fixd[i] || k[i] != 0) rows.Add(new[] { FrameJoint.Dofs[i], fixd[i] ? "Yes" : "No", N(i < 3 ? OKT(k[i]) : OKR(k[i])) });
+                    if (k[i] != 0) rows.Add("DOF=" + FrameJoint.Dofs[i] + "   Fixed=No   " + (i < 3 ? "TransKE=" + N(OKT(k[i])) + "   TransCE=0" : "RotKE=" + N(OKR(k[i])) + "   RotCE=0"));
                 if (rows.Count == 0) { Note(ls.Why + ": no stiffness: left out"); continue; }
-                string sig = string.Join(";", rows.Select(r => string.Join(",", r)).ToArray());
-                string prop;
-                if (!propByKey.TryGetValue(sig, out prop))
-                {
-                    prop = (ej ? "EJ_P" : "TIE") + I(++nProp);
-                    propByKey[sig] = prop;
-                    LinkProps.Add(new KeyValuePair<string, List<string[]>>(prop, rows));
-                }
+                string prop = Prop("Linear", ej ? "EJ_P" : "TIE", rows);
                 string label = (ej ? "EJ" : "C") + ls.I + "-" + ls.J;
                 LinkRows.Add(new[] { label, ls.I, ls.J, prop, N(Math.Round(angle, 9)) });
                 if (!ej) Group("CAESAR_TIES", "Link", label);
             }
+            // the joints the nonlinear supports stand on: held, an intermediate one free along its support only
+            foreach (string j in ExtraOrder)
+            {
+                var res = ExtraRestraints[j];
+                double[][] fr;
+                if (ExtraAxes.TryGetValue(j, out fr) && fr != null)
+                {
+                    var abc = AnglesOf(fr);
+                    AxesRows.Add("Joint=" + Q(j) + "   AngleA=" + N(abc[0]) + "   AngleB=" + N(abc[1]) + "   AngleC=" + N(abc[2]) + "   AdvanceAxes=No");
+                }
+                RestraintRows.Add("Joint=" + Q(j) + string.Concat(Enumerable.Range(0, 6).Select(i => "   " + FrameJoint.Dofs[i] + "=" + (res[i] ? "Yes" : "No")).ToArray()));
+            }
+        }
+
+        // a link property of these DOF rows: one per distinct set, named <stem><n>
+        string Prop(string type, string stem, List<string> rows)
+        {
+            string sig = type + "|" + string.Join(";", rows.ToArray());
+            string name;
+            if (PropBySig.TryGetValue(sig, out name)) return name;
+            int n = LinkProps.Count(x => x.Name.StartsWith(stem, StringComparison.Ordinal)) + 1;
+            name = stem + I(n);
+            while (LinkProps.Any(x => x.Name == name)) name = stem + I(++n);
+            var lp = new LinkPropSpec { Name = name, Type = type };
+            lp.Rows.AddRange(rows);
+            LinkProps.Add(lp); PropBySig[sig] = name;
+            return name;
+        }
+
+        // ---------------- nonlinear supports (phase 2): one side of a restraint, acting along e, the direction the node may move
+        // freely (CAESAR's +Y: e = +Y, the pipe rests on it). A two-joint link from a support point behind the node (I, on the
+        // -e side) to the node (J): its local 1 is +e, so moving +e opens it and moving -e closes it after the gap, SAP's
+        // compression-only gap. Friction: SAP's friction isolator, its U1 the same gap without an opening, U2 / U3 sliding
+        // with mu after CAESAR's friction stiffness; with a gap too, a gap and a friction isolator in series through a
+        // joint free along e only. Rotations: the same on R1 about e. The support point is held (to ground), or tied rigidly
+        // to the CNODE
+        void AddNonlinear(string a, string b, double[] e, bool rot, double gap, double mu, double k, int node, string who)
+        {
+            NlCount++;
+            if (rot && mu != 0) { Refuse(who + ": friction on a rotation"); return; }
+            if (b != null && mu != 0 && gap != 0) { Refuse(who + ": a gap with friction on a tie to a CNODE (the intermediate joint has nothing to hold it)"); return; }
+            double len = b != null ? 0.01 : Math.Max(1, OdAt(node) / 2);
+            double[] p = JointPos[a];
+            Func<double, double[]> at = f => new[] { p[0] - f * e[0], p[1] - f * e[1], p[2] - f * e[2] };
+            int nseg = mu != 0 && gap != 0 ? 2 : 1;
+            string support;
+            if (b == null)
+            {
+                support = Unique(a + "S" + I(NlCount));
+                AddJoint(support, at(len * nseg));
+                ExtraRestraints[support] = new[] { true, true, true, true, true, true }; ExtraOrder.Add(support);
+            }
+            else
+            {
+                // the support point, rigidly on the CNODE: a short stiff link from the CNODE joint
+                support = Unique(a + "Q" + I(NlCount));
+                AddJoint(support, at(len));
+                var rows6 = Enumerable.Range(0, 6).Select(i => "DOF=" + FrameJoint.Dofs[i] + "   Fixed=No   " + (i < 3 ? "TransKE=" + N(OKT(RigidK)) + "   TransCE=0" : "RotKE=" + N(OKR(RigidK * 180 / Math.PI)) + "   RotCE=0")).ToList();
+                string rp = Prop("Linear", "TIE", rows6);
+                LinkRows.Add(new[] { "C" + support + "-" + b, b, support, rp, "0" });
+                Group("CAESAR_TIES", "Link", "C" + support + "-" + b);
+            }
+            string dof = rot ? "R1" : "U1";
+            string gapRow = "DOF=" + dof + "   Fixed=No   NonLinear=Yes   " + (rot ? "RotKE=0   RotCE=0   RotK=" + N(OKR(k)) + "   RotOpen=" + N(gap) : "TransKE=0   TransCE=0   TransK=" + N(OKT(k)) + "   TransOpen=" + N(OL(gap)));
+            if (rot) Note("rotational gaps and one-way rotations: SAP's RotK / RotOpen, to be confirmed by the probe");
+            if (mu == 0)
+            {
+                string gp = Prop("Gap", "GAP", new List<string> { gapRow });
+                AddNlLink(support, a, gp, who);
+                return;
+            }
+            string from = support;
+            if (gap != 0)
+            {
+                // the gap first, to a joint that moves along e only
+                string mid = Unique(a + "M" + I(NlCount));
+                AddJoint(mid, at(len));
+                var fr = FrameOf(new List<double[]> { e });
+                int ie = Array.FindIndex(fr, x => Parallel(x, e));
+                var res = new[] { true, true, true, true, true, true }; res[ie] = false;
+                ExtraRestraints[mid] = res; ExtraAxes[mid] = Axes.Any(x => Parallel(x, e)) ? null : fr; ExtraOrder.Add(mid);
+                if (ExtraAxes[mid] == null) { res[ie] = true; res[Array.FindIndex(Axes, x => Parallel(x, e))] = false; }
+                AddNlLink(support, mid, Prop("Gap", "GAP", new List<string> { gapRow }), who);
+                from = mid;
+            }
+            var fi = new List<string>
+            {
+                "DOF=U1   Fixed=No   NonLinear=Yes   TransKE=0   TransCE=0   TransK=" + N(OKT(k)) + "   TransC=0",
+                "DOF=U2   Fixed=No   NonLinear=Yes   TransKE=0   TransCE=0   DJ=0   TransK=" + N(OKT(FrictionK)) + "   Slow=" + N(mu) + "   Fast=" + N(mu) + "   Rate=0   Radius=0",
+                "DOF=U3   Fixed=No   NonLinear=Yes   TransKE=0   TransCE=0   DJ=0   TransK=" + N(OKT(FrictionK)) + "   Slow=" + N(mu) + "   Fast=" + N(mu) + "   Rate=0   Radius=0"
+            };
+            AddNlLink(from, a, Prop("Friction Isolator", "FRIC", fi), who);
+            Note("friction: SAP's friction isolator, sliding at mu times its compression after CAESAR's friction stiffness (" + N(FrictionK) + " lb/in), flat");
+        }
+
+        void AddNlLink(string i, string j, string prop, string who)
+        {
+            string label = Unique("N" + j + "_" + I(NlCount));
+            Labels.Add(label);
+            LinkRows.Add(new[] { label, i, j, prop, "0" });
+            Group("CAESAR_SUPPORTS", "Link", label);
+        }
+
+        // the pipe's OD at a CAESAR node (in), for the length of a support link
+        double OdAt(int node)
+        {
+            List<int> ps;
+            if (Gr.NodePieces.TryGetValue(node, out ps) && ps.Count > 0) return Gr.Pieces[ps[0]].OdA / fLen;
+            return 2;
+        }
+
+        // B31J's tee flexibility is not modelled yet: the branch connections are rigid joints here
+        void TeesNote()
+        {
+            var tees = Cm.SifTees.Where(t => t.TypeCode >= 1 && t.TypeCode <= 6).Select(t => t.Node).Distinct().OrderBy(n => n).ToList();
+            if (tees.Count == 0 || AppendixD) return;
+            Note("tees: B31J gives branch connections a flexibility CAESAR applies for B31.1-2020 and later; the check model holds them as rigid joints for now (" +
+                 I(tees.Count) + " at node(s) " + string.Join(", ", tees.Take(12).Select(I).ToArray()) + (tees.Count > 12 ? " ..." : "") +
+                 "): loads near a tee come out stiffer than CAESAR's (the probe: up to about 15%)");
         }
 
         // an orthonormal frame holding every direction (each along one of its axes), or null; the vertical as local 3
@@ -969,6 +1109,11 @@ public static class PipeToFrame
         List<string> CaseOrder = new List<string>();
         List<string[]> ComboRows = new List<string[]>();      // {combo, case, sf}
 
+        // CAESAR 15.01's recommended set, as it gave it for the probe (2026-11-16): an OPE per thermal set, W + Dn + Tn + Pn (P1 without
+        // its own) + H; the SUS, W + P1 + H; the EXP ranges, each OPE - SUS and each OPE - a later OPE. Force vectors and uniform loads
+        // are in none of them
+        bool Nonlinear { get { return LinkProps.Any(x => x.Type != "Linear"); } }
+
         void Cases()
         {
             var w = new[] { "W_PIPE", "W_FLUID", "W_INSUL" }.Where(PatternsUsed.Contains).ToList();
@@ -982,23 +1127,38 @@ public static class PipeToFrame
             {
                 string c = "L" + I(++n) + "_OPE";
                 var pats = new List<string>(w);
-                foreach (string p in new[] { "D" + I(k), "T" + I(k), has("P" + I(k)) ? "P" + I(k) : "P1", "F1", "H" }) if (has(p) && !pats.Contains(p)) pats.Add(p);
+                foreach (string p in new[] { "D" + I(k), "T" + I(k), has("P" + I(k)) ? "P" + I(k) : "P1", "H" }) if (has(p) && !pats.Contains(p)) pats.Add(p);
                 foreach (string p in pats) CaseRows.Add(new[] { c, p });
                 CaseOrder.Add(c); opeNames.Add(c);
             }
             string sus = "L" + I(++n) + "_SUS";
-            foreach (string p in w.Concat(new[] { "P1", "F1", "H" }.Where(has))) CaseRows.Add(new[] { sus, p });
+            foreach (string p in w.Concat(new[] { "P1", "H" }.Where(has))) CaseRows.Add(new[] { sus, p });
             CaseOrder.Add(sus);
             foreach (string o in opeNames)
             {
                 string c = "L" + I(++n) + "_EXP";
                 ComboRows.Add(new[] { c, o, "1" }); ComboRows.Add(new[] { c, sus, "-1" });
             }
-            // a pattern no case takes (U1 g's, F2 ...): a case of its own, so SAP runs it and the occasional cases can use it
+            for (int i = 0; i < opeNames.Count; i++)
+                for (int j = i + 1; j < opeNames.Count; j++)
+                {
+                    string c = "L" + I(++n) + "_EXP";
+                    ComboRows.Add(new[] { c, opeNames[i], "1" }); ComboRows.Add(new[] { c, opeNames[j], "-1" });
+                }
             var rest = PatternsUsed.Where(p => !CaseRows.Any(r => r[1] == p) && !p.StartsWith("W", StringComparison.Ordinal)).OrderBy(p => p, StringComparer.Ordinal).ToList();
-            foreach (string p in rest) { CaseRows.Add(new[] { p, p }); CaseOrder.Add(p); }
-            Note("cases: CAESAR's recommended set (OPE per thermal set with its displacements and pressure, SUS, EXP = OPE - SUS; F1 and H in OPE and SUS)" +
-                 (rest.Count > 0 ? "; " + string.Join(", ", rest.ToArray()) + " alone as cases of their own (in no recommended case): build the occasional cases you need from them" : ""));
+            string what = "cases: CAESAR's recommended set (OPE per thermal set: W + Dn + Tn + Pn + H; SUS: W + P1 + H; EXP: each OPE - SUS, and each OPE - a later OPE)";
+            if (Nonlinear)
+            {
+                what += ", nonlinear static from zero as CAESAR solves them (the supports' gaps, one-ways and friction), EXP as combinations of them";
+                if (rest.Count > 0) what += "; " + string.Join(", ", rest.ToArray()) + " are in no case: with nonlinear supports a load alone is no case, so build the occasional cases you need with W (and P1, H) in them";
+            }
+            else if (rest.Count > 0)
+            {
+                // a pattern no case takes (F1, U1 g's ...): a case of its own, so SAP runs it and the occasional cases can use it
+                foreach (string p in rest) { CaseRows.Add(new[] { p, p }); CaseOrder.Add(p); }
+                what += "; " + string.Join(", ", rest.ToArray()) + " alone as cases of their own (in no recommended case): build the occasional cases you need from them";
+            }
+            Note(what);
         }
 
         // ---------------- the .s2k text
@@ -1042,9 +1202,9 @@ public static class PipeToFrame
             table("FRAME PROPERTY MODIFIERS", Frames.Where(f => f.Mods != null).Select(f =>
                 "Frame=" + Q(f.Label) + string.Concat(Enumerable.Range(0, 8).Select(i => "   " + FrameMember.ModifierKeys[i] + "=" + N(Math.Round(f.Mods[i], 12))).ToArray())));
             string gen = "   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   Color=Magenta";
-            table("LINK PROPERTY DEFINITIONS 01 - GENERAL", LinkProps.Select(p => "Link=" + Q(p.Key) + "   LinkType=Linear" + gen));
-            table("LINK PROPERTY DEFINITIONS 02 - LINEAR", LinkProps.SelectMany(p => p.Value.Select(r =>
-                "Link=" + Q(p.Key) + "   DOF=" + r[0] + (r[1] == "Yes" ? "   Fixed=Yes" : "   Fixed=No   " + (r[0].StartsWith("R", StringComparison.Ordinal) ? "RotKE=" + r[2] + "   RotCE=0" : "TransKE=" + r[2] + "   TransCE=0")))));
+            table("LINK PROPERTY DEFINITIONS 01 - GENERAL", LinkProps.Select(p => "Link=" + Q(p.Name) + "   LinkType=" + Q(p.Type) + gen));
+            foreach (var tt in new[] { new[] { "Linear", "LINK PROPERTY DEFINITIONS 02 - LINEAR" }, new[] { "Gap", "LINK PROPERTY DEFINITIONS 05 - GAP" }, new[] { "Friction Isolator", "LINK PROPERTY DEFINITIONS 08 - SLIDING ISOLATOR" } })
+                table(tt[1], LinkProps.Where(p => p.Type == tt[0]).SelectMany(p => p.Rows.Select(r => "Link=" + Q(p.Name) + "   " + r)));
             table("CONNECTIVITY - LINK", LinkRows.Select(r => "Link=" + Q(r[0]) + "   JointI=" + Q(r[1]) + "   JointJ=" + Q(r[2])));
             table("LINK PROPERTY ASSIGNMENTS", LinkRows.Select(r => "Link=" + Q(r[0]) + "   LinkProp=" + Q(r[3]) + "   LinkFDProp=None"));
             table("LINK LOCAL AXES ASSIGNMENTS 1 - TYPICAL", LinkRows.Where(r => r[4] != "0").Select(r => "Link=" + Q(r[0]) + "   Angle=" + r[4] + "   AdvanceAxes=No"));
@@ -1072,15 +1232,20 @@ public static class PipeToFrame
             table("JOINT LOADS - GROUND DISPLACEMENT", GroundRows);
             table("FRAME LOADS - DISTRIBUTED", DistRows);
             table("FRAME LOADS - TEMPERATURE", TempRows);
-            table("LOAD CASE DEFINITIONS", CaseOrder.Select(c => "Case=" + c + "   Type=LinStatic   InitialCond=Zero"));
+            bool nl = Nonlinear;
+            table("LOAD CASE DEFINITIONS", CaseOrder.Select(c => "Case=" + c + "   Type=" + (nl ? "NonStatic" : "LinStatic") + "   InitialCond=Zero"));
             table("CASE - STATIC 1 - LOAD ASSIGNMENTS", CaseRows.Select(r => "Case=" + r[0] + "   LoadType=\"Load pattern\"   LoadName=" + r[1] + "   LoadSF=1"));
+            // SAP's own nonlinear parameters (its export, the STAAD probe), with no geometric nonlinearity: CAESAR's is small-displacement
+            string nlp = "   ResultsSave=\"Final State\"   SolScheme=\"Iterative Events\"   MaxTotal=200   MaxNull=50   EvLumpTol=0.01   MaxEvPerStp=24   MaxIterCS=10   MaxIterNR=40   ItConvTol=0.0001   TFMaxIter=10   TFTol=0.01   TFAccelFact=1   TFNoStop=No";
+            if (nl) table("CASE - STATIC 4 - NONLINEAR PARAMETERS", CaseOrder.Select(c => "Case=" + c + "   GeoNonLin=None" + nlp));
+            string ctype = nl ? "\"NonLin Static\"" : "\"Linear Static\"";
             var combos = new List<string>();
             string prevC = null;
             foreach (var r in ComboRows)
             {
                 if (r[0] != prevC)
-                    combos.Add("ComboName=" + r[0] + "   ComboType=\"Linear Add\"   AutoDesign=No   CaseType=\"Linear Static\"   CaseName=" + r[1] + "   ScaleFactor=" + r[2] + "   SteelDesign=None   ConcDesign=None   AlumDesign=None   ColdDesign=None");
-                else combos.Add("ComboName=" + r[0] + "   CaseType=\"Linear Static\"   CaseName=" + r[1] + "   ScaleFactor=" + r[2]);
+                    combos.Add("ComboName=" + r[0] + "   ComboType=\"Linear Add\"   AutoDesign=No   CaseType=" + ctype + "   CaseName=" + r[1] + "   ScaleFactor=" + r[2] + "   SteelDesign=None   ConcDesign=None   AlumDesign=None   ColdDesign=None");
+                else combos.Add("ComboName=" + r[0] + "   CaseType=" + ctype + "   CaseName=" + r[1] + "   ScaleFactor=" + r[2]);
                 prevC = r[0];
             }
             table("COMBINATION DEFINITIONS", combos);

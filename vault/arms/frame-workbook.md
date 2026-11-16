@@ -32,7 +32,8 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 - 4: the pipe-stress layer (support presets, contents, insulation, thermal, equipment). **4a, 2026-11-12:**
   - a CAESAR model seeds a frame model, `Build-Frame -In <job.cii | .toml | CAESAR workbook>`: the pipe's structural
     check model ([[vault/format/pipe-to-frame|pipe-to-frame]]);
-  - phase 1 is linear; nonlinear supports are refused until phase 2.
+  - phase 1 linear (2026-11-12); phase 2, nonlinear supports as SAP's gap and friction-isolator links with nonlinear
+    cases (2026-11-16).
 - 5: the review.
 - 6: unit changes.
 - 7: dry runs on complex models.

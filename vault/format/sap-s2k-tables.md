@@ -128,3 +128,19 @@ the confirmed tables; new rows anywhere else carry an `s2k-unconfirmed` notice.
 > - So they come from SAP's own default list of tables saved after analysis, which names tables this install does not
 >   have. They change nothing in the model; the fix, if one is wanted, is on SAP's side (CSI, or a repair install).
 
+
+> [!info]- A ground displacement through a `Fixed` link DOF (the CAESAR probe, SAP 24.2.0, 2026-11-16)
+> The CAESAR check model's probe tied a pipe joint to a joint below it by a zero-length link with U1 `Fixed`. The joint
+> below was restrained and moved down 0.25 in (`JOINT LOADS - GROUND DISPLACEMENT`). SAP moved the pipe joint the full
+> 0.25 in, but the pipe's next joints stayed put. The supported joint reported 238 kip, where CAESAR has 2.2 kip.
+> - The link's own forces read 0.
+> - The frames' joint forces at the next joints did not balance: 172 kip and 66 kip, the same as the reaction.
+> - In every case without the ground displacement they balanced.
+>
+> So SAP turned the displacement into loads on those joints and never solved for their response. The same DOF as a
+> stiffness (`Fixed=No`, KE = 1e12 lb/in, CAESAR's rigid value) takes the displacement as any spring would: a solver of
+> the same model gives CAESAR's 2,199 lb. The CAESAR check model writes rigid link DOFs that way
+> ([[vault/format/pipe-to-frame|pipe-to-frame]]).
+>
+> The same round confirmed a zero-length two-joint link's default axes: local 1 = +Z, 2 = +X, 3 = +Y, as for a
+> one-joint link.

@@ -21,7 +21,8 @@ The mapping is in [[vault/format/pipe-to-frame|pipe-to-frame]]. The choices made
 | Material data (the `.cii` has no E, density or alpha for a database material) | **A Materials table in the CAESAR workbook**, filled in by the user. A model with none (a `.cii` read directly, a TOML build) takes Pluto's default set by material class, with a warning. |
 | Thermal | **A temperature load Tn − ambient**, with one alpha per material. |
 | Seeding | **Once.** Edits go on in the frame workbook. |
-| Order | **Phase 1, the linear model.** Nonlinear supports are refused, each named. **Phase 2** adds one-way supports, gaps and friction as SAP's nonlinear links. Each phase ends with a probe round: one job in CAESAR and SAP, compared in the session. |
+| Order | **Phase 1, the linear model**, then **phase 2**: one-way supports, gaps and friction as SAP's nonlinear links. Each phase ends with a probe round: one job in CAESAR and SAP, compared in the session. |
+| Bend flexibility | **B31J's 1.3 / h**, what CAESAR applies for current codes (round 1 showed it); `-AppendixD` for a job run with B31J off. |
 
 > [!info]- Why
 > - **One model, two programs.** The frame model already writes SAP's `.s2k`, the frame workbook, the preview and STAAD.
@@ -40,6 +41,14 @@ The mapping is in [[vault/format/pipe-to-frame|pipe-to-frame]]. The choices made
 
 ## History
 
+- **2026-11-16, round 1 and phase 2:**
+  - CAESAR's results for the probe confirm the mapping (weights, thermal force, supports, hangers, thrust).
+  - Three corrections: B31J's 1.3 / h for bends, as CAESAR applies it under B31.1-2024 (`-AppendixD` keeps 1.65 / h);
+    rigid link DOFs as CAESAR's 1e12 stiffness (SAP mishandles a ground displacement through a `Fixed` one); CAESAR's
+    actual recommended cases.
+  - B31J's tee flexibility is left as a notice until its formulas are in hand.
+  - Phase 2: one-way supports, gaps and friction as SAP's gap and friction-isolator links, cases nonlinear static from
+    zero. Probe round 2: `sap-probe-2.toml`.
 - **2026-11-12, phase 1:**
   - the Materials sheet;
   - the linear seed;
