@@ -67,6 +67,7 @@ Every rule is summarised in our own words.
 > | A user SIF at a bend: used only when the configuration allows user SIFs at bends | `sif-at-bend` | — |
 > | Expansion joints: the torsion stiffness given; on a joint with length, one of transverse / bending blank (CAESAR computes it) | `expansion-joint-stiffness` | EJ columns amber; Start |
 > | Pluto's own: a node on a bend within 5 deg of its near end. The configuration's limit names both ends, but 15.01 let a node at 3 deg pass on the bend whose 88 deg node it stopped on | `bend-node-near` | Bend nodes amber; Start |
+> | A restraint, hanger or nozzle whose node and CNODE (vessel node) the pipe puts more than 1 in apart. CAESAR connects geometry through CNODEs: a CNODE is the same point as its node, so it moved one onto the other and stopped on the mismatch (44E on the next element, 144 in: the SAP probe's control-rod tie, CAESAR 15.01, 2026-11-16). Pluto's walk follows a CNODE only when the elements run out, so it used to miss this. Tie points apart through a stub (a weightless rigid from one to beside the other, its end the CNODE) | `cnode-apart`, error | — |
 > | Pluto's own: a CNODE tied to nothing, a bend with no room, a straight shorter than the bend before it needs | `cnode-off-model`, `bend-room`, `piece-backward`, `bend-corner`, `bend-code` | — |
 > | Pluto's own: a reinforced fabricated tee without its pad thickness | `sif-pad` | SIFs, Pad amber |
 > | Pluto's own, nozzles: a WRC 297 or PD 5500 nozzle without a vessel material | `nozzle-material` | Nozzles, Vessel material amber; Start |

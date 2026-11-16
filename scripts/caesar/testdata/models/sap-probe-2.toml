@@ -1,6 +1,6 @@
 # The SAP check model's probe, round 2 (2026-11-16): a made-up job with the nonlinear supports the check model translates
 # (vault/format/pipe-to-frame.md): one-way rests, friction, guides and limit stops with gaps, a hold-down, a two-way gap, a
-# vertical guide, a coupling with gaps and control rods. Run it in CAESAR II (Build-Pipe.ps1 -In this -Cii) and its seed in
+# vertical guide, a coupling with gaps, a rest with a gap on a frame node that settles. Run it in CAESAR II (Build-Pipe.ps1 -In this -Cii) and its seed in
 # SAP2000 (Build-Frame.ps1 -In this -S2k), both with their own nonlinear solutions, then compare displacements, restraint
 # loads and element forces per case. No tees: B31J's branch flexibility is not in the check model yet. The temperatures
 # are thermal strains (in/in, under CAESAR's alpha tolerance), so both grow the pipe alike whatever alpha CAESAR holds.
@@ -87,19 +87,29 @@ run = "main"
 at = 77
 type = "GUI"
 gap = 0.125
-# the last run: a rest, a one-way tie along the pipe with free play (control-rod style), then the coupling (apart from the tie:
-# a coupling is CNODE restraints only, and a tie across it would place its far side)
+# the last run: a rest with friction; a rest with a gap on a frame node that settles (a one-way restraint to a CNODE, the
+# CNODE moved down in D1: CAESAR's way to move a support); then the coupling. A CNODE is the same point as its node to
+# CAESAR (it connects geometry through CNODEs): a tie between points the pipe puts apart stops it (44E)
 [[supports]]
 run = "main"
 at = 90
 type = "+Y"
 mu = 0.3
-[[ties]]
-node = { run = "main", at = 86 }
-cnode = { run = "main", at = 98 }
-type = "-X"
-gap = 0.1
-tag = "RODS"
+[[supports]]
+run = "main"
+at = 86
+type = "+Y"
+gap = 0.05
+cnode = 9000
+[[displacements]]
+node = 9000
+vector = 1
+dx = 0
+dy = -0.2
+dz = 0
+rx = 0
+ry = 0
+rz = 0
 [[supports]]
 run = "main"
 at = 106

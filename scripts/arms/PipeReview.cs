@@ -21,6 +21,9 @@ using System.Text;
 //   element-twice   two elements between the same two nodes
 //   off-model       a restraint, SIF, force or imposed displacement at a node on no element
 //   cnode-off-model a restraint whose CNODE is on no element (the connection goes nowhere)
+//   cnode-apart     a restraint, hanger or nozzle whose node and CNODE (vessel node) the elements place more than CAESAR's
+//                   loop closure tolerance (1 in) apart: CAESAR connects geometry through CNODEs, puts the two together and
+//                   stops on the mismatch (44E; a probe's control-rod tie, CAESAR 15.01, 2026-11-16)
 //   bend-corner     a bend drawn as a corner (CAESAR's geometry rules leave no room, or no radius)
 //   bend-room       a bend's tangent reaches past the start of its element (it overlaps the run before it)
 //   bend-next       a bend not followed in the input by the element leaving it, which the writer cannot move up (CAESAR's 8E)
@@ -243,6 +246,35 @@ public static class PipeReview
                 "the restraint" + (at.Count == 1 ? "" : "s") + " at node " + string.Join(", ", at.Select(n => n.ToString(ci)).ToArray()) + " connect" + (at.Count == 1 ? "s" : "") +
                 " to node " + r.Key + ", which is on no element and has no restraint of its own: a CNODE tied to nothing else holds nothing, so check it is meant (e.g. a support to be modelled later)")
                 .WithNodes(at));
+        }
+
+        // a CNODE is the same point as its node to CAESAR: two the elements place apart stop it (44E)
+        if (g != null)
+        {
+            var tied = new Dictionary<string, List<string>>();
+            Action<int, int, string> tie = (a, b, what) =>
+            {
+                if (a <= 0 || b <= 0 || !onElement.Contains(a) || !onElement.Contains(b) || g.AttachedNodes.ContainsKey(a) || g.AttachedNodes.ContainsKey(b)) return;
+                string k = Math.Min(a, b).ToString(ci) + "|" + Math.Max(a, b).ToString(ci);
+                List<string> l;
+                if (!tied.TryGetValue(k, out l)) tied[k] = l = new List<string>();
+                if (!l.Contains(what)) l.Add(what);
+            };
+            foreach (var r in restraints) tie(r.Node, r.CNode, r.Joint > 0 ? "a joint" : "a restraint " + r.Type);
+            foreach (var h in m.Hangers) tie(h.Node, h.CNode, "a hanger");
+            foreach (var z in m.Nozzles) tie(z.Node, z.VesselNode, "a nozzle's vessel node");
+            double inch = Math.Abs(m.Factor(0)) > 1e-12 ? Math.Abs(m.Factor(0)) : 1;
+            foreach (var kv in tied)
+            {
+                var ab = kv.Key.Split('|').Select(x => int.Parse(x, ci)).ToArray();
+                double[] pa = g.Position(ab[0]), pb = g.Position(ab[1]);
+                if (pa == null || pb == null) continue;
+                double d = Math.Sqrt((pa[0] - pb[0]) * (pa[0] - pb[0]) + (pa[1] - pb[1]) * (pa[1] - pb[1]) + (pa[2] - pb[2]) * (pa[2] - pb[2])) / inch;
+                if (d <= 1.0) continue;
+                items.Add(new PipeReviewItem("error", "cnode-apart", string.Format(ci,
+                    "nodes {0} and {1} are tied by {2} but the pipe puts them {3:0.##} in apart: CAESAR connects geometry through CNODEs (a CNODE is the same point as its node), so it moves one onto the other and stops on the coordinate mismatch (44E). Tie points apart through a stub: a weightless rigid from one to beside the other, its end the CNODE",
+                    ab[0], ab[1], string.Join(", ", kv.Value.ToArray()), d)).WithNodes(ab));
+            }
         }
 
         // bends

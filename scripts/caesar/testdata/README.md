@@ -45,7 +45,7 @@ two at a location), `e8-loops` (a control-valve bypass that closes on the header
 `e10-big` (1,345 elements), `e11-edges` (nodes near 8,000,000, a hanger off another line, Z up), `e12-nozzles` (WRC 297,
 API 650, custom), `e13-tees` (every SIF / tee type CAESAR 15.01 has), `sap-probe-1` (the SAP check model's probe: every
 element, load and support it translates linearly, all supports two-way, temperatures as thermal strains), `sap-probe-2`
-(its round 2: one-way rests, friction, guides and limit stops with gaps, a hold-down, a coupling with gaps, a one-way tie;
-no tees). `probe-final.toml` is the base of the combined CAESAR probe job
+(its round 2: one-way rests, friction, guides and limit stops with gaps, a hold-down, a coupling with gaps, a rest with a gap on a
+frame node that settles; no tees). `probe-final.toml` is the base of the combined CAESAR probe job
 (2026-10-24); the probe program adds one small piece per CAESAR rule to it. The job sent also had SIF types 14-17 and socket
 weld fillets, which CAESAR 15.01 showed it does not have where they were written: they are gone from both files.
