@@ -151,3 +151,14 @@ the confirmed tables; new rows anywhere else carry an `s2k-unconfirmed` notice.
 > points on the pipe's axis beside the node. SAP joined them to the pipe and held the pipe through them: the stop's gap
 > was gone and the anchored leg took 395 kip instead of CAESAR's 234. The CAESAR check model writes `AutoMesh=No
 > AtJoints=No AtFrames=No NumSegments=0 MaxLength=0 MaxDegrees=0` (SAP's own field order) for every frame it seeds.
+
+> [!info]- A link shorter than the merge tolerance is zero-length (the CAESAR probe, SAP 24.2.0, 2026-11-16)
+> The CAESAR check model's coupling had six gap links 0.01 in long, each from a support point to the node along the side
+> it acts on. SAP reported one deformation for all six, in a zero-length link's axes (local 1 = +Z, 2 = +X, 3 = +Y). So
+> every gap acted vertically and the coupling's axial gap never closed. SAP takes a two-joint link shorter than its
+> merge tolerance as zero-length, whatever the line between its joints (taken as the threshold: the probe shows only
+> that 0.01 in is under it). SAP 24.2's export gives the tolerance as `PREFERENCES - DIMENSIONAL ... MergeTol=0.1`, in
+> the export's units (in). It rejects `MergeTol` in `PROGRAM CONTROL`.
+>
+> The CAESAR check model keeps every link either zero-length or longer than 1 in, and takes a tie under 0.1 in as
+> zero-length ([[vault/format/pipe-to-frame|pipe-to-frame]], round 2c).

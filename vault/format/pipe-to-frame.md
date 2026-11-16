@@ -43,7 +43,7 @@ How the seed is written and used:
 > | Rigid two-way support | ANC, X … RZ, GUI and LIM become joint restraints:<br>• a skewed one goes in joint local axes (local 3 vertical where one is);<br>• GUI and LIM directions come from the pipe at the node, as CAESAR does (a vertical pipe's guide holds both horizontals). |
 > | Support with stiffness | A joint spring, in the same axes. A flexible anchor's stiffness goes in all six DOFs. |
 > | To a CNODE | A linear link, rigid DOFs at CAESAR's own 1e12 lb/in (1e12 in·lb/deg), not SAP's `Fixed` (round 1, below):<br>• **coincident:** zero length, along SAP's default axes (1 = +Z, 2 = +X, 3 = +Y, confirmed by round 1) turned about Z;<br>• **apart:** along the line between the joints only. |
-> | One-way, gap, friction (phase 2) | Each side a restraint acts on is a two-joint link from a support point to the node, along the side the node may move freely (CAESAR's +Y: the pipe rests on it):<br>• **one-way:** SAP's gap, its opening CAESAR's gap, stiffness CAESAR's when given; when rigid 1e9 lb/in (1e9 in·lb/deg), not CAESAR's 1e12, which stalled SAP's nonlinear solution (round 2b; under 0.1% on the probe's forces);<br>• **two-way with a gap:** a gap each side;<br>• **friction:** SAP's friction isolator (its U1 the compression-only contact, U2 / U3 sliding at mu after CAESAR's friction stiffness, 1e6 lb/in, flat); with a gap too, a gap and an isolator in series through a joint free along the support only;<br>• **rotations:** the same on R1 about the axis;<br>• **support point:** held (to ground, half the pipe's OD behind it, so the viewer draws the stub), or tied rigidly to the CNODE;<br>• **a gap and an isolator in series:** the joint between them gets a token 1 lb/in spring along its free DOF, so it is held when both are open. |
+> | One-way, gap, friction (phase 2) | Each side a restraint acts on is a two-joint link from a support point to the node, along the side the node may move freely (CAESAR's +Y: the pipe rests on it):<br>• **one-way:** SAP's gap, its opening CAESAR's gap, stiffness CAESAR's when given; when rigid 1e9 lb/in (1e9 in·lb/deg), not CAESAR's 1e12, which stalled SAP's nonlinear solution (round 2b; under 0.1% on the probe's forces);<br>• **two-way with a gap:** a gap each side;<br>• **friction:** SAP's friction isolator (its U1 the compression-only contact, U2 / U3 sliding at mu after CAESAR's friction stiffness, 1e6 lb/in, flat); with a gap too, a gap and an isolator in series through a joint free along the support only;<br>• **rotations:** the same on R1 about the axis;<br>• **support point:** half the pipe's OD behind the node, at least 1 in (the viewer draws the stub), held to ground or tied rigidly to the CNODE. SAP takes a link shorter than its merge tolerance (0.1 in) as zero-length, its local 1 +Z, so none is that short (round 2c);<br>• **a gap and an isolator in series:** the joint between them gets a token 1 lb/in spring along its free DOF, so it is held when both are open. |
 | Frames' auto mesh | `AutoMesh=No` on every frame. CAESAR's elements meet only at their ends, and SAP's default would join a frame to any joint on its span, such as a limit stop's support point on the pipe's axis (round 2, below). |
 > | Hanger | **Spring:** KE plus its installed load up in H (down on the CNODE). **Constant:** the load in H. **Count:** rate and load times the count. |
 > | Nozzle | **Custom:** springs along the nozzle: axial, torsion, in-plane bending about the normal to nozzle and vessel axes, out-of-plane bending about the vessel axis; a blank stiffness is rigid. |
@@ -76,8 +76,8 @@ How the seed is written and used:
 >
 > **Open:**
 > - **B31J's tee flexibility**: its formulas (B31J Table 1-1) and where CAESAR applies it.
-> - **Round 2c:** SAP's nonlinear solution of the thermal cases, with the lower support stiffness and raised limits
->   (and a variant on SAP's iterative-only scheme).
+> - **Round 2d:** L2's convergence in SAP, with the OPE cases continuing from the SUS case's end state (two diagnostic
+>   cases beside CAESAR's from-zero ones), and L1 / L4 on the corrected coupling.
 > - **Not exercised by round 1:** reducer stepping, a finite expansion joint's weight, k with flanged ends, the hanger
 >   count.
 
@@ -166,3 +166,29 @@ How the seed is written and used:
 >   - SAP's limits raised: 2,000 steps, 1,000 null steps, 200 events a step, 40 / 100 iterations.
 >
 >   A variant on SAP's `Iterative Only` scheme was sent alongside, so one round shows which SAP needs.
+
+> [!info]- Round 2c (2026-11-16): SAP2000 24.2 on both solution schemes
+> SAP ran the round-2b seed on its `Iterative Events` scheme and the variant on `Iterative Only`. The two agree to within
+> a few pounds.
+> - **L3 agrees again:** 14 of 14 within 3%.
+> - **L1 converged but differed** at the end anchor 290 (FX 0 against CAESAR's 871 lb; MZ −4,924 against −5,934 ft·lb)
+>   and at the riser guide 200 (75 against −784 lb). The run up to the coupling sat 0.46 in further along X than in
+>   CAESAR.
+>   - **The cause: the coupling's six gap links were 0.01 in long.** SAP takes a two-joint link shorter than its merge
+>     tolerance (0.1 in in SAP 24.2's preferences) as zero-length: its local 1 is +Z, whatever the line between its
+>     joints.
+>   - **The evidence:** all six reported one deformation. The axial gap acted vertically, where the coupling's tie
+>     already held it. The coupling opened 0.711 in axially against its 0.25 in gap, and 0.711 − 0.25 is the 0.46 in.
+>   - **Confirmed:** the session solver given SAP's rule reproduces SAP's L1: 290 MZ −4,924, 290 FX 0, 200 FX 68.
+>   - **The seed now** puts a CNODE's support point half an OD from the node, as for a grounded one, and takes a tie as
+>     zero-length under the same tolerance ([[vault/format/sap-s2k-tables|sap-s2k-tables]]). Solved in the session it
+>     matches CAESAR as in round 2 (L1 22 of 24, L4 16 of 16 within 3%).
+> - **L2 did not converge on either scheme.** SAP's log names the null-step limit (Iterative Events) and the total-step
+>   limit (Iterative Only, after 25 minutes). L5 and L6 are built on it.
+>   - **The stall is at the start of loading.** It stopped at about 0.2% of the load, where no gap with an opening is
+>     near closing. Only the zero-opening contacts are in play.
+>   - The session solver converges on the same seed.
+>   - **The suspect: friction from zero.** An isolator's friction is mu times its compression, zero when loading starts.
+>     SAP's usual way with friction isolators is a weight case first, the other cases starting from its end state.
+>   - **Round 2d** runs the corrected seed with two extra cases, `L1_FROM_SUS` and `L2_FROM_SUS`. They continue from
+>     L3's end state with only D1 + T1, and T2.

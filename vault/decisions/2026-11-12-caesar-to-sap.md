@@ -41,6 +41,9 @@ The mapping is in [[vault/format/pipe-to-frame|pipe-to-frame]]. The choices made
 
 ## History
 
+- **2026-11-16, round 2c:** L1 converged in SAP but its coupling held nothing axially: its gap links were 0.01 in long,
+  which SAP takes as zero-length (local 1 vertical). Every support point is now half an OD from its node. L2 stalled at
+  0.2% of its load on both of SAP's schemes; round 2d tries the thermal cases continuing from the weight case's end state.
 - **2026-11-16, round 2b:** in SAP itself the weight case matches CAESAR (14 of 14 within 3%); the thermal cases did not
   converge with CAESAR's 1e12 support stiffness and SAP's default limits. Rigid nonlinear supports are now 1e9 lb/in, the
   limits raised.

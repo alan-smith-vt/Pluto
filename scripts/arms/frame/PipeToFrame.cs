@@ -68,6 +68,10 @@ public static class PipeToFrame
     // a rigid nonlinear support's stiffness (lb/in, in.lb/deg): CAESAR's 1e12 stalled SAP 24.2's nonlinear solution of the
     // probe's thermal cases (round 2b, 2026-11-16); 1e9 gives 0.0002 in under 234 kip, under 0.1% of the probe's forces
     public const double RigidKNonlinear = 1e9;
+    // SAP's merge tolerance (in), as SAP 24.2 exports it (PREFERENCES - DIMENSIONAL, MergeTol=0.1 in): SAP took two-joint
+    // links 0.01 in long as zero-length, local 1 +Z whatever the line between their joints (round 2c, 2026-11-16). Ties
+    // under it are written to those axes, and no support point is that close to its node
+    public const double SapMergeTol = 0.1;
     // CAESAR's bend flexibility: B31J's 1.3 / h, what CAESAR applies for B31.1-2020 and later codes (and recommends for every
     // metallic code); AppendixD: the older codes' 1.65 / h (CAESAR with B31J off)
     public static bool AppendixD;
@@ -903,7 +907,7 @@ public static class PipeToFrame
                 double dist = Len(Sub(pb, pa));
                 double[][] ax;
                 double angle = 0;
-                if (dist < 1e-4)
+                if (dist < SapMergeTol)
                 {
                     // a zero-length link's axes: 1 = +Z, 2 and 3 turned about it by the link's angle
                     var h = ls.Dofs.Select(d => d.Dir).FirstOrDefault(d => Math.Abs(d[2]) < 1 - 1e-6);
@@ -921,13 +925,13 @@ public static class PipeToFrame
                 foreach (var d in ls.Dofs)
                 {
                     int i = Array.FindIndex(ax, a => Parallel(a, d.Dir));
-                    if (i < 0 || dist >= 1e-4 && (i != 0 || d.Rot)) { ok = false; break; }
+                    if (i < 0 || dist >= SapMergeTol && (i != 0 || d.Rot)) { ok = false; break; }
                     i += d.Rot ? 3 : 0;
                     if (d.Rigid) fixd[i] = true; else k[i] += d.K;
                 }
                 if (!ok)
                 {
-                    Refuse(ls.Why + ": " + (dist < 1e-4 ? "a tie in a direction neither vertical nor horizontal (SAP's link needs advanced local axes, which the check model does not write yet)"
+                    Refuse(ls.Why + ": " + (dist < SapMergeTol ? "a tie in a direction neither vertical nor horizontal (SAP's link needs advanced local axes, which the check model does not write yet)"
                                                         : "a tie to a node away from it, acting other than along the line between them"));
                     continue;
                 }
@@ -987,7 +991,9 @@ public static class PipeToFrame
             NlCount++;
             if (rot && mu != 0) { Refuse(who + ": friction on a rotation"); return; }
             if (b != null && mu != 0 && gap != 0) { Refuse(who + ": a gap with friction on a tie to a CNODE (the intermediate joint has nothing to hold it)"); return; }
-            double len = b != null ? 0.01 : Math.Max(1, OdAt(node) / 2);
+            // the support point half an OD behind the node (at least 1 in), on a CNODE as on ground: a coupling's gaps 0.01 in long
+            // were zero-length to SAP (SapMergeTol) and all acted vertically (round 2c)
+            double len = Math.Max(1, OdAt(node) / 2);
             double[] p = JointPos[a];
             Func<double, double[]> at = f => new[] { p[0] - f * e[0], p[1] - f * e[1], p[2] - f * e[2] };
             int nseg = mu != 0 && gap != 0 ? 2 : 1;
