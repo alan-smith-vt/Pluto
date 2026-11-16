@@ -43,11 +43,11 @@ How the seed is written and used:
 > | Rigid two-way support | ANC, X … RZ, GUI and LIM become joint restraints:<br>• a skewed one goes in joint local axes (local 3 vertical where one is);<br>• GUI and LIM directions come from the pipe at the node, as CAESAR does (a vertical pipe's guide holds both horizontals). |
 > | Support with stiffness | A joint spring, in the same axes. A flexible anchor's stiffness goes in all six DOFs. |
 > | To a CNODE | A linear link, rigid DOFs at CAESAR's own 1e12 lb/in (1e12 in·lb/deg), not SAP's `Fixed` (round 1, below):<br>• **coincident:** zero length, along SAP's default axes (1 = +Z, 2 = +X, 3 = +Y, confirmed by round 1) turned about Z;<br>• **apart:** along the line between the joints only. |
-> | One-way, gap, friction (phase 2) | Each side a restraint acts on is a two-joint link from a support point to the node, along the side the node may move freely (CAESAR's +Y: the pipe rests on it):<br>• **one-way:** SAP's gap, its opening CAESAR's gap, stiffness CAESAR's (1e12 when rigid);<br>• **two-way with a gap:** a gap each side;<br>• **friction:** SAP's friction isolator (its U1 the compression-only contact, U2 / U3 sliding at mu after CAESAR's friction stiffness, 1e6 lb/in, flat); with a gap too, a gap and an isolator in series through a joint free along the support only;<br>• **rotations:** the same on R1 about the axis;<br>• **support point:** held (to ground, half the pipe's OD behind it, so the viewer draws the stub), or tied rigidly to the CNODE;<br>• **a gap and an isolator in series:** the joint between them gets a token 1 lb/in spring along its free DOF, so it is held when both are open. |
+> | One-way, gap, friction (phase 2) | Each side a restraint acts on is a two-joint link from a support point to the node, along the side the node may move freely (CAESAR's +Y: the pipe rests on it):<br>• **one-way:** SAP's gap, its opening CAESAR's gap, stiffness CAESAR's when given; when rigid 1e9 lb/in (1e9 in·lb/deg), not CAESAR's 1e12, which stalled SAP's nonlinear solution (round 2b; under 0.1% on the probe's forces);<br>• **two-way with a gap:** a gap each side;<br>• **friction:** SAP's friction isolator (its U1 the compression-only contact, U2 / U3 sliding at mu after CAESAR's friction stiffness, 1e6 lb/in, flat); with a gap too, a gap and an isolator in series through a joint free along the support only;<br>• **rotations:** the same on R1 about the axis;<br>• **support point:** held (to ground, half the pipe's OD behind it, so the viewer draws the stub), or tied rigidly to the CNODE;<br>• **a gap and an isolator in series:** the joint between them gets a token 1 lb/in spring along its free DOF, so it is held when both are open. |
 | Frames' auto mesh | `AutoMesh=No` on every frame. CAESAR's elements meet only at their ends, and SAP's default would join a frame to any joint on its span, such as a limit stop's support point on the pipe's axis (round 2, below). |
 > | Hanger | **Spring:** KE plus its installed load up in H (down on the CNODE). **Constant:** the load in H. **Count:** rate and load times the count. |
 > | Nozzle | **Custom:** springs along the nozzle: axial, torsion, in-plane bending about the normal to nozzle and vessel axes, out-of-plane bending about the vessel axis; a blank stiffness is rigid. |
-> | Load cases | CAESAR 15.01's recommended set (both probe jobs and the sample job's own output show it):<br>• OPE per thermal set: W + Dn + Tn + Pn (or P1) + H;<br>• SUS: W + P1 + H;<br>• EXP: each OPE − SUS, and each OPE − a later OPE (L6 = L1 − L2), Linear Add combinations.<br>Force vectors and uniform loads are in none: in a linear model each is a case of its own. With any nonlinear support every case is nonlinear static from zero, as CAESAR solves them. |
+> | Load cases | CAESAR 15.01's recommended set (both probe jobs and the sample job's own output show it):<br>• OPE per thermal set: W + Dn + Tn + Pn (or P1) + H;<br>• SUS: W + P1 + H;<br>• EXP: each OPE − SUS, and each OPE − a later OPE (L6 = L1 − L2), Linear Add combinations.<br>Force vectors and uniform loads are in none: in a linear model each is a case of its own. With any nonlinear support every case is nonlinear static from zero, as CAESAR solves them, with SAP's step and event limits raised (2,000 steps, 200 events a step, 100 iterations). |
 > | Groups | `PL_KIND_PIPE`, `PL_LINE_<line>`, `CAESAR_BENDS`, `CAESAR_RIGIDS`, `CAESAR_REDUCERS`, `CAESAR_EXPJOINTS`, `CAESAR_TIES`, `CAESAR_SUPPORTS`. |
 > | Tees | Rigid joints. B31J gives branch connections a flexibility of their own, which CAESAR applies for B31.1-2020 and later: not modelled yet, listed in a notice (round 1, below). |
 >
@@ -76,8 +76,8 @@ How the seed is written and used:
 >
 > **Open:**
 > - **B31J's tee flexibility**: its formulas (B31J Table 1-1) and where CAESAR applies it.
-> - **Round 2b:** SAP on the corrected probe 2 (auto mesh off, the token spring). The session solver already matches
->   CAESAR (below).
+> - **Round 2c:** SAP's nonlinear solution of the thermal cases, with the lower support stiffness and raised limits
+>   (and a variant on SAP's iterative-only scheme).
 > - **Not exercised by round 1:** reducer stepping, a finite expansion joint's weight, k with flanged ends, the hanger
 >   count.
 
@@ -153,3 +153,16 @@ How the seed is written and used:
 >
 > The solver also showed a singular stiffness. A gap and an isolator in series leave the joint between them free when
 > both are open; the token spring holds it.
+
+> [!info]- Round 2b (2026-11-16): SAP2000 24.2 on the corrected probe 2
+> - **L3 (weight, no thermal) agrees in SAP itself:** all 14 restraint loads within 3%, most within 0.1%. The rests, the
+>   hold-down, the gaps, friction under weight and the settling support are right in SAP too.
+> - **L1 and L2 stopped short.** L1 is at about 30% of its load: the limit stop at 90 moved 0.133 in of its 0.25 in gap
+>   and never closed, and the anchor shows 75 lb against CAESAR's 234 kip. L2 is at about 0.1%. SAP's nonlinear solution
+>   did not converge and kept its last converged step.
+> - **The solver's settings, not the model:** the session solver converges on the same seed and matches CAESAR.
+> - **The seed now:**
+>   - rigid nonlinear supports at 1e9 lb/in instead of CAESAR's 1e12 (the session solver: under 0.1% change);
+>   - SAP's limits raised: 2,000 steps, 1,000 null steps, 200 events a step, 40 / 100 iterations.
+>
+>   A variant on SAP's `Iterative Only` scheme was sent alongside, so one round shows which SAP needs.

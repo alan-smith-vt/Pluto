@@ -65,6 +65,9 @@ public static class PipeToFrame
     public const double RigidStiffness = 1e11;    // English lb/in (in.lb/deg): at or above it a CAESAR stiffness is rigid
     public const double RigidK = 1e12;            // CAESAR's own rigid restraint stiffness (lb/in, in.lb/deg): ties and nonlinear supports get it
     public const double FrictionK = 1e6;          // CAESAR's friction stiffness (lb/in): a friction support before it slides
+    // a rigid nonlinear support's stiffness (lb/in, in.lb/deg): CAESAR's 1e12 stalled SAP 24.2's nonlinear solution of the
+    // probe's thermal cases (round 2b, 2026-11-16); 1e9 gives 0.0002 in under 234 kip, under 0.1% of the probe's forces
+    public const double RigidKNonlinear = 1e9;
     // CAESAR's bend flexibility: B31J's 1.3 / h, what CAESAR applies for B31.1-2020 and later codes (and recommends for every
     // metallic code); AppendixD: the older codes' 1.65 / h (CAESAR with B31J off)
     public static bool AppendixD;
@@ -682,7 +685,7 @@ public static class PipeToFrame
                 {
                     if (anc) { Refuse(who + ": an anchor with a gap or friction"); continue; }
                     double gap = rot ? r.Gap * Math.PI / 180 : r.Gap / fLen;
-                    double k = rigid ? (rot ? RigidK * 180 / Math.PI : RigidK) : (rot ? kR : kT);
+                    double k = rigid ? (rot ? RigidKNonlinear * 180 / Math.PI : RigidKNonlinear) : (rot ? kR : kT);
                     foreach (var dc in dirs)
                     {
                         var d = Unit(R(dc));
@@ -1249,7 +1252,9 @@ public static class PipeToFrame
             table("LOAD CASE DEFINITIONS", CaseOrder.Select(c => "Case=" + c + "   Type=" + (nl ? "NonStatic" : "LinStatic") + "   InitialCond=Zero"));
             table("CASE - STATIC 1 - LOAD ASSIGNMENTS", CaseRows.Select(r => "Case=" + r[0] + "   LoadType=\"Load pattern\"   LoadName=" + r[1] + "   LoadSF=1"));
             // SAP's own nonlinear parameters (its export, the STAAD probe), with no geometric nonlinearity: CAESAR's is small-displacement
-            string nlp = "   ResultsSave=\"Final State\"   SolScheme=\"Iterative Events\"   MaxTotal=200   MaxNull=50   EvLumpTol=0.01   MaxEvPerStp=24   MaxIterCS=10   MaxIterNR=40   ItConvTol=0.0001   TFMaxIter=10   TFTol=0.01   TFAccelFact=1   TFNoStop=No";
+            // SAP's defaults (200 steps, 24 events a step, 40 iterations) let the probe's thermal cases stop short: friction
+            // supports slipping one after another are many events; the limits are raised
+            string nlp = "   ResultsSave=\"Final State\"   SolScheme=\"Iterative Events\"   MaxTotal=2000   MaxNull=1000   EvLumpTol=0.01   MaxEvPerStp=200   MaxIterCS=40   MaxIterNR=100   ItConvTol=0.0001   TFMaxIter=10   TFTol=0.01   TFAccelFact=1   TFNoStop=No";
             if (nl) table("CASE - STATIC 4 - NONLINEAR PARAMETERS", CaseOrder.Select(c => "Case=" + c + "   GeoNonLin=None" + nlp));
             string ctype = nl ? "\"NonLin Static\"" : "\"Linear Static\"";
             var combos = new List<string>();

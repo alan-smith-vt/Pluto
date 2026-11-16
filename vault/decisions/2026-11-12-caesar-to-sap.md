@@ -41,6 +41,9 @@ The mapping is in [[vault/format/pipe-to-frame|pipe-to-frame]]. The choices made
 
 ## History
 
+- **2026-11-16, round 2b:** in SAP itself the weight case matches CAESAR (14 of 14 within 3%); the thermal cases did not
+  converge with CAESAR's 1e12 support stiffness and SAP's default limits. Rigid nonlinear supports are now 1e9 lb/in, the
+  limits raised.
 - **2026-11-16, round 2:** the nonlinear translation matches CAESAR (solved in the session). SAP's own run was spoiled by
   its auto mesh joining the pipe to support points on its axis; the seed now turns auto mesh off. CNODE ties between
   points apart are now a review error (CAESAR's 44E); e3 and the pipe-patterns example tie their control rods on stubs.
