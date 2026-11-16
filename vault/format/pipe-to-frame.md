@@ -107,3 +107,14 @@ How the seed is written and used:
 >
 > **Still different: the tees.** Within 4–15% next to the probe's three tees (the branch anchor, the riser's end,
 > the nozzle), SAP being the stiffer. That fits B31J's branch flexibility, which the check model does not have yet.
+
+> [!info]- Round 1b (2026-11-16): SAP2000 24.2 on the corrected seed
+> SAP ran the corrected probe 1. Its cases are now CAESAR's own: L1–L3, and L4 = L1−L3, L5 = L2−L3, L6 = L1−L2.
+> Compared with round 1's CAESAR results:
+> - **The settling support** agrees in SAP itself, now that its tie is a stiffness.
+> - **Away from the tees,** every restraint-load component over 200 lb / 200 ft·lb is within 5% in L3–L6 and within 8%
+>   in L1–L2. The largest differences are tens of pounds: the guide at 70, the skewed support, the spring.
+> - **At the tees:** under the branch's pressure thrust, CAESAR's run is about 10% softer at tee 40 (15,350 vs
+>   16,970 lb/in); under thermal load, 1.7%. So the branch and tee sit 0.032 in further along the branch in every
+>   weight case, and the branch anchor's axial load differs by the expansion joint's 1,800 lb/in times that. This is
+>   local flexibility at the tee: B31J's again. Softening the run at the tee in a session solver closed most of it.

@@ -41,6 +41,8 @@ The mapping is in [[vault/format/pipe-to-frame|pipe-to-frame]]. The choices made
 
 ## History
 
+- **2026-11-16, round 1b:** SAP on the corrected seed agrees with CAESAR within 5% away from tees (L3–L6). B31J's
+  tee flexibility is the one systematic difference left.
 - **2026-11-16, round 1 and phase 2:**
   - CAESAR's results for the probe confirm the mapping (weights, thermal force, supports, hangers, thrust).
   - Three corrections: B31J's 1.3 / h for bends, as CAESAR applies it under B31.1-2024 (`-AppendixD` keeps 1.65 / h);
