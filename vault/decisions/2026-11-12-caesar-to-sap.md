@@ -41,6 +41,9 @@ The mapping is in [[vault/format/pipe-to-frame|pipe-to-frame]]. The choices made
 
 ## History
 
+- **2026-11-16, round 2:** the nonlinear translation matches CAESAR (solved in the session). SAP's own run was spoiled by
+  its auto mesh joining the pipe to support points on its axis; the seed now turns auto mesh off. CNODE ties between
+  points apart are now a review error (CAESAR's 44E); e3 and the pipe-patterns example tie their control rods on stubs.
 - **2026-11-16, round 1b:** SAP on the corrected seed agrees with CAESAR within 5% away from tees (L3–L6). B31J's
   tee flexibility is the one systematic difference left.
 - **2026-11-16, round 1 and phase 2:**

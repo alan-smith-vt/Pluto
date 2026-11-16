@@ -144,3 +144,10 @@ the confirmed tables; new rows anywhere else carry an `s2k-unconfirmed` notice.
 >
 > The same round confirmed a zero-length two-joint link's default axes: local 1 = +Z, 2 = +X, 3 = +Y, as for a
 > one-joint link.
+
+> [!info]- Frames join joints on their span (the CAESAR probe, SAP 24.2.0, 2026-11-16)
+> SAP exports `FRAME AUTO MESH ASSIGNMENTS` with `AutoMesh=Yes AtJoints=Yes` for every frame, and an import without the
+> table takes the same: a frame is joined to any joint lying on its span. The CAESAR probe's limit stop had its support
+> points on the pipe's axis beside the node. SAP joined them to the pipe and held the pipe through them: the stop's gap
+> was gone and the anchored leg took 395 kip instead of CAESAR's 234. The CAESAR check model writes `AutoMesh=No
+> AtJoints=No AtFrames=No NumSegments=0 MaxLength=0 MaxDegrees=0` (SAP's own field order) for every frame it seeds.

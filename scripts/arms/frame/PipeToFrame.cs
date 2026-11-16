@@ -38,7 +38,9 @@ using System.Text;
 //              ones as the load; custom nozzles as springs along the nozzle. Snubbers act in dynamic cases only.
 //              Nonlinear (phase 2): each side of a one-way, gapped or friction restraint a two-joint link from a support
 //              point to the node along the side it acts on: SAP's gap (opening = CAESAR's gap), or its friction
-//              isolator (mu, CAESAR's friction stiffness), a gap and a friction isolator in series where both.
+//              isolator (mu, CAESAR's friction stiffness), a gap and a friction isolator in series where both (the
+//              joint between them on a token 1 lb/in spring, held when both are open). Frames' auto mesh off: CAESAR's
+//              elements meet only at their ends, and SAP would join a frame to a support point on its span.
 //              B31J's branch flexibility at tees is not modelled (rigid joints), with a notice.
 //   cases      CAESAR 15.01's recommended set: OPE (W + Dn + Tn + Pn + H) per thermal set, SUS (W + P1 + H), EXP = each
 //              OPE - SUS and each OPE - a later OPE as Linear Add combinations; nonlinear static from zero when any
@@ -167,6 +169,7 @@ public static class PipeToFrame
         readonly Dictionary<string, bool[]> ExtraRestraints = new Dictionary<string, bool[]>();      // support / intermediate joints the seed adds
         readonly Dictionary<string, double[][]> ExtraAxes = new Dictionary<string, double[][]>();
         readonly List<string> ExtraOrder = new List<string>();
+        readonly Dictionary<string, int> ExtraSpring = new Dictionary<string, int>();               // intermediate joint -> its free DOF
         int NlCount;
         readonly List<string> RestraintRows = new List<string>(), AxesRows = new List<string>(), SpringRows = new List<string>();
         readonly List<string> GroundRows = new List<string>(), DistRows = new List<string>(), TempRows = new List<string>();
@@ -948,6 +951,9 @@ public static class PipeToFrame
                     AxesRows.Add("Joint=" + Q(j) + "   AngleA=" + N(abc[0]) + "   AngleB=" + N(abc[1]) + "   AngleC=" + N(abc[2]) + "   AdvanceAxes=No");
                 }
                 RestraintRows.Add("Joint=" + Q(j) + string.Concat(Enumerable.Range(0, 6).Select(i => "   " + FrameJoint.Dofs[i] + "=" + (res[i] ? "Yes" : "No")).ToArray()));
+                int sd;
+                if (ExtraSpring.TryGetValue(j, out sd))
+                    SpringRows.Add("Joint=" + Q(j) + "   CoordSys=" + (fr != null ? "Local" : "GLOBAL") + string.Concat(Enumerable.Range(0, 6).Select(i => "   " + FrameJoint.Dofs[i] + "=" + (i == sd ? N(OKT(1)) : "0")).ToArray()));
             }
         }
 
@@ -1018,7 +1024,10 @@ public static class PipeToFrame
                 int ie = Array.FindIndex(fr, x => Parallel(x, e));
                 var res = new[] { true, true, true, true, true, true }; res[ie] = false;
                 ExtraRestraints[mid] = res; ExtraAxes[mid] = Axes.Any(x => Parallel(x, e)) ? null : fr; ExtraOrder.Add(mid);
-                if (ExtraAxes[mid] == null) { res[ie] = true; res[Array.FindIndex(Axes, x => Parallel(x, e))] = false; }
+                if (ExtraAxes[mid] == null) { res[ie] = true; ie = Array.FindIndex(Axes, x => Parallel(x, e)); res[ie] = false; }
+                // a token spring along its free DOF: with its gap and its isolator both open nothing else holds it, and the
+                // solution would have no stiffness there (at most 1 lb/in times the opening)
+                ExtraSpring[mid] = ie;
                 AddNlLink(support, mid, Prop("Gap", "GAP", new List<string> { gapRow }), who);
                 from = mid;
             }
@@ -1199,6 +1208,10 @@ public static class PipeToFrame
             table("JOINT SPRING ASSIGNMENTS 1 - UNCOUPLED", SpringRows);
             table("CONNECTIVITY - FRAME", Frames.Select(f => "Frame=" + Q(f.Label) + "   JointI=" + Q(f.I) + "   JointJ=" + Q(f.J) + "   IsCurved=No"));
             table("FRAME SECTION ASSIGNMENTS", Frames.Select(f => "Frame=" + Q(f.Label) + "   SectionType=" + f.SectionType + "   AutoSelect=N.A.   AnalSect=" + Q(f.Section) + "   DesignSect=" + Q(f.Section) + "   MatProp=Default"));
+            // CAESAR's elements meet only at their ends: SAP's default auto mesh at intermediate joints would join a frame to any
+            // joint on its span -- a support point on the pipe's axis (a limit stop's, a coupling's axial gap), which SAP then
+            // held as a restraint on the pipe (the probe's round 2, 2026-11-16)
+            table("FRAME AUTO MESH ASSIGNMENTS", Frames.Select(f => "Frame=" + Q(f.Label) + "   AutoMesh=No   AtJoints=No   AtFrames=No   NumSegments=0   MaxLength=0   MaxDegrees=0"));
             table("FRAME PROPERTY MODIFIERS", Frames.Where(f => f.Mods != null).Select(f =>
                 "Frame=" + Q(f.Label) + string.Concat(Enumerable.Range(0, 8).Select(i => "   " + FrameMember.ModifierKeys[i] + "=" + N(Math.Round(f.Mods[i], 12))).ToArray())));
             string gen = "   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   Color=Magenta";

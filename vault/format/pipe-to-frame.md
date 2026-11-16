@@ -43,7 +43,8 @@ How the seed is written and used:
 > | Rigid two-way support | ANC, X … RZ, GUI and LIM become joint restraints:<br>• a skewed one goes in joint local axes (local 3 vertical where one is);<br>• GUI and LIM directions come from the pipe at the node, as CAESAR does (a vertical pipe's guide holds both horizontals). |
 > | Support with stiffness | A joint spring, in the same axes. A flexible anchor's stiffness goes in all six DOFs. |
 > | To a CNODE | A linear link, rigid DOFs at CAESAR's own 1e12 lb/in (1e12 in·lb/deg), not SAP's `Fixed` (round 1, below):<br>• **coincident:** zero length, along SAP's default axes (1 = +Z, 2 = +X, 3 = +Y, confirmed by round 1) turned about Z;<br>• **apart:** along the line between the joints only. |
-> | One-way, gap, friction (phase 2) | Each side a restraint acts on is a two-joint link from a support point to the node, along the side the node may move freely (CAESAR's +Y: the pipe rests on it):<br>• **one-way:** SAP's gap, its opening CAESAR's gap, stiffness CAESAR's (1e12 when rigid);<br>• **two-way with a gap:** a gap each side;<br>• **friction:** SAP's friction isolator (its U1 the compression-only contact, U2 / U3 sliding at mu after CAESAR's friction stiffness, 1e6 lb/in, flat); with a gap too, a gap and an isolator in series through a joint free along the support only;<br>• **rotations:** the same on R1 about the axis;<br>• **support point:** held (to ground, half the pipe's OD behind it, so the viewer draws the stub), or tied rigidly to the CNODE. |
+> | One-way, gap, friction (phase 2) | Each side a restraint acts on is a two-joint link from a support point to the node, along the side the node may move freely (CAESAR's +Y: the pipe rests on it):<br>• **one-way:** SAP's gap, its opening CAESAR's gap, stiffness CAESAR's (1e12 when rigid);<br>• **two-way with a gap:** a gap each side;<br>• **friction:** SAP's friction isolator (its U1 the compression-only contact, U2 / U3 sliding at mu after CAESAR's friction stiffness, 1e6 lb/in, flat); with a gap too, a gap and an isolator in series through a joint free along the support only;<br>• **rotations:** the same on R1 about the axis;<br>• **support point:** held (to ground, half the pipe's OD behind it, so the viewer draws the stub), or tied rigidly to the CNODE;<br>• **a gap and an isolator in series:** the joint between them gets a token 1 lb/in spring along its free DOF, so it is held when both are open. |
+| Frames' auto mesh | `AutoMesh=No` on every frame. CAESAR's elements meet only at their ends, and SAP's default would join a frame to any joint on its span, such as a limit stop's support point on the pipe's axis (round 2, below). |
 > | Hanger | **Spring:** KE plus its installed load up in H (down on the CNODE). **Constant:** the load in H. **Count:** rate and load times the count. |
 > | Nozzle | **Custom:** springs along the nozzle: axial, torsion, in-plane bending about the normal to nozzle and vessel axes, out-of-plane bending about the vessel axis; a blank stiffness is rigid. |
 > | Load cases | CAESAR 15.01's recommended set (both probe jobs and the sample job's own output show it):<br>• OPE per thermal set: W + Dn + Tn + Pn (or P1) + H;<br>• SUS: W + P1 + H;<br>• EXP: each OPE − SUS, and each OPE − a later OPE (L6 = L1 − L2), Linear Add combinations.<br>Force vectors and uniform loads are in none: in a linear model each is a case of its own. With any nonlinear support every case is nonlinear static from zero, as CAESAR solves them. |
@@ -75,8 +76,8 @@ How the seed is written and used:
 >
 > **Open:**
 > - **B31J's tee flexibility**: its formulas (B31J Table 1-1) and where CAESAR applies it.
-> - **Round 2** (`sap-probe-2.toml`): the nonlinear supports in SAP against CAESAR. This includes whether SAP's
->   nonlinear solution converges with CAESAR's 1e12 stiffness, and the rotational gap's `RotK` / `RotOpen`.
+> - **Round 2b:** SAP on the corrected probe 2 (auto mesh off, the token spring). The session solver already matches
+>   CAESAR (below).
 > - **Not exercised by round 1:** reducer stepping, a finite expansion joint's weight, k with flanged ends, the hanger
 >   count.
 
@@ -118,3 +119,37 @@ How the seed is written and used:
 >   16,970 lb/in); under thermal load, 1.7%. So the branch and tee sit 0.032 in further along the branch in every
 >   weight case, and the branch anchor's axial load differs by the expansion joint's 1,800 lb/in times that. This is
 >   local flexibility at the tee: B31J's again. Softening the run at the tee in a session solver closed most of it.
+
+> [!info]- Round 2 (2026-11-16): CAESAR II 15.01 and SAP2000 24.2 on sap-probe-2 (nonlinear supports)
+> Both ran CAESAR's recommended cases. A first version of the probe tied two pipe nodes 12 ft apart by a CNODE. CAESAR
+> stopped on it (44E): a CNODE is the same point as its node to CAESAR. The probe now rests on a settling frame node, and
+> the review flags such ties (`cnode-apart`, [[vault/arms/caesar-checks|caesar-checks]]).
+>
+> **SAP's run was not the model.** The limit stop at node 90 (0.25 in each way) carried nothing, yet node 90 did not move
+> axially. The anchored leg took the full EA × ε, 395 kip, against CAESAR's 234 kip, which is that force after the gap
+> closes.
+> - The cause: the stop's two support points lie on the pipe's axis, 4.3 in either side of the node. SAP's default auto
+>   mesh at intermediate joints joined the pipe frames to them, so two fully held joints sat on the pipe.
+> - The coupling's axial-gap support points (0.01 in along the axis) were joined the same way.
+> - The seed now writes `AutoMesh=No` on every frame ([[vault/format/sap-s2k-tables|sap-s2k-tables]]).
+>
+> **Against CAESAR,** the seed was solved by the session's frame solver. Its contact and friction are iterated from zero
+> as CAESAR does (it reproduces SAP's linear results to four digits). Restraint loads of 100 lb or 100 ft·lb and more:
+>
+> | Case | Within 3% | Within 5% |
+> |---|---|---|
+> | L1 | 22 of 24 | — |
+> | L2 | 16 of 20 | 18 of 20 |
+> | L3 | 14 of 14 | — |
+> | L4 | 16 of 16 | — |
+> | L5 | 9 of 13 | 11 of 13 |
+> | L6 | 11 of 11 | — |
+>
+> - The limit stop: 36,453 lb vs CAESAR's 36,462.
+> - The rests, the hold-down, the two-way gap, the vertical guide, the coupling's gaps and the settling rest land where
+>   CAESAR puts them.
+> - The largest differences are friction forces of about 100 lb, up to 13%, and an end-anchor moment of about
+>   120 ft·lb.
+>
+> The solver also showed a singular stiffness. A gap and an isolator in series leave the joint between them free when
+> both are open; the token spring holds it.
