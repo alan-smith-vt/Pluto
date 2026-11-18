@@ -4,9 +4,9 @@ status: current
 created: 2026-09-11
 ---
 
-# Calc PDFs → room map — usage
-
 *↑ [[vault/Pluto Home|Home]] › [[vault/arms/Arms map|Arms map]]*
+
+# Calc PDFs → room map — usage
 
 Which pipe-stress calc PDFs are relevant to each room. Chain: calc PDF → run names listed under "Lines covered in this system:" → room(s) of each run from the v4.2 pipe CSV → room → calcs. Not a viewer arm: CSV in, CSV out. Design and verification record live in the Voyager vault (`40-join-paths/Calc to Room Map.md`); the code ships here because Voyager never leaves the D: machine.
 

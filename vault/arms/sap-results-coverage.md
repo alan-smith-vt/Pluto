@@ -79,9 +79,10 @@ the viewer has its own section cuts on the sidecar).
   principals and von Mises, membrane and face stresses, global displacements, frame end
   forces and moments, frame fibre stresses, station envelopes. The component dropdown
   filters by kind (Force / Moment / Stress / Envelope / Displacement).
-- **Still missing**: link forces and gap openings (the bearing and lift-off picture);
+- **Still missing**: link forces in the viewer (they reach `results.s2k` since 2026-10-02, but
+  `SapToPluto` does not read them) and gap openings (the bearing and lift-off picture);
   reactions; true multi-station beam fields (the envelope stands in). Each is a single
-  OAPI call plus a viewer component, except the stations, which are a format change.
-- **Next**, in order of value: (1) `LinkForce` + `LinkDeformation` into `results.s2k`
-  and a link component in the viewer; (2) `BaseReact` printed by `run_sap.py` as the
+  OAPI call or table plus a viewer component, except the stations, which are a format change.
+- **Next**, in order of value: (1) `LinkDeformation` into `results.s2k`, and a link component
+  in the viewer from both tables; (2) `BaseReact` printed by `run_sap.py` as the
   equilibrium check; (3) `nStations` > 2 through writer, reader and beam geometry.
