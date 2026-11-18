@@ -1,5 +1,5 @@
 # The frame model runner (SAP2000 frame models: piping, ducting and steel as frames, with links, loads and cases).
-# Windows PowerShell 5.1; no Python, no SAP2000 needed (except -Open, later, which runs scripts\sap\Run-Sap.ps1 in a
+# Windows PowerShell 5.1; no Python, no SAP2000 needed (except -Open, which runs scripts\sap\Run-Sap.ps1 in a
 # process of its own). vault/arms/frame-workbook.md.
 #   in    -In <file>:
 #           .s2k / .$2k   a SAP2000 text file (File > Export > SAP2000 .s2k). Read losslessly (FrameS2k): everything
@@ -61,6 +61,7 @@
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.xlsx" -Preview -Watch
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.xlsx" -S2k -Preview
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.xlsx" -Std
+#   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -In "<project dir>\job.xlsx" -Xlsx -S2k -Preview   (a CAESAR workbook: job_sap.*)
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -NewWorkbook -Out "<project dir>\duct.xlsx" -Units "lb, in, F"
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -Probe "<project dir>\probe"
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -ProbeCheck "<project dir>\probe\probe.sap-export.s2k"

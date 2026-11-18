@@ -1,5 +1,5 @@
 ---
-title: Frame workbook (SAP2000 frame models from Excel; in progress)
+title: Frame workbook (SAP2000 frame models from Excel)
 status: draft
 created: 2026-11-05
 ---
@@ -17,6 +17,8 @@ the CAESAR [[vault/arms/pipe-workbook|pipe-workbook]]:
 - an existing SAP model round-trips through it.
 
 The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decisions/2026-11-05-frame-model|2026-11-05-frame-model]].
+The whole picture, CAESAR and STAAD included, with the commands for each job:
+[[vault/arms/pipe-and-frame-workflow|pipe-and-frame-workflow]].
 
 **Built in phases on branch `pipestress`:**
 - 0a: the SAP probe.
@@ -27,16 +29,17 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
   text labels, local axis angles, explicit offsets and end releases ([[vault/arms/sap-s2k-to-viewer|sap-s2k-to-viewer]]);
   the viewer shows releases (`releases.js`), links (`links.js`), springs / hooks / friction supports, and loads by
   pattern, case or combination ([[vault/format/features-sidecar|features-sidecar]]).
-- 3: the workbook. **3a done 2026-11-05** (the sheets, reading, refresh, the runner's workbook switches, launchers);
-  3b: `-Open` in SAP done (production check to do); the 3D View **done 2026-11-05** (below).
-- 4: the pipe-stress layer (support presets, contents, insulation, thermal, equipment). **4a, 2026-11-12:**
-  - a CAESAR model seeds a frame model, `Build-Frame -In <job.cii | .toml | CAESAR workbook>`: the pipe's structural
-    check model ([[vault/format/pipe-to-frame|pipe-to-frame]]);
-  - phase 1 linear (2026-11-12); phase 2, nonlinear supports as SAP's gap and friction-isolator links with nonlinear
-    cases (2026-11-16).
-- 5: the review.
-- 6: unit changes.
-- 7: dry runs on complex models.
+- 3: the workbook. **Done 2026-11-05:**
+  - 3a: the sheets, reading, refresh, the runner's workbook switches and launchers;
+  - 3b: `-Open` in SAP, first run on the production machine's SAP 24.2 the same day (below);
+  - the 3D View (below).
+- 4: the pipe-stress layer. **4a, the check model, done:** a CAESAR model seeds a frame model,
+  `Build-Frame -In <job.cii | .toml | .pipe.json | CAESAR workbook>` ([[vault/format/pipe-to-frame|pipe-to-frame]]).
+  - Phase 1 linear (2026-11-12) and phase 2, nonlinear supports as SAP's gap and friction-isolator links (2026-11-16).
+  - Both verified against CAESAR 15.01 and SAP 24.2 by probe rounds 1–2d (2026-11-18).
+  - The rest of phase 4 (support presets, contents, insulation, thermal, equipment for frame models drawn in the
+    workbook) is not started.
+- 5 the review, 6 unit changes, 7 dry runs on complex models: not started.
 
 > [!info]- The workbook (`FrameWorkbook`, `scripts/arms/frame/FrameWorkbook.cs`)
 > One sheet per kind of object, in the model's units (headers show them):
@@ -57,6 +60,7 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 > | Load cases | Case, Type, Initial (Zero, or a NonStatic case: SAP continues only from one; a loop is refused), then one row per load (Load type, Load name, SF); Geometric nonlinearity on a NonStatic case's first row (None, P-Delta, P-Delta plus Large Displacements: `CASE - STATIC 4`) |
 > | Combinations | Combination, Type, then one row per item (a case or a combination, SF; SAP's case type is worked out) |
 > | Groups | SAP's groups, one row per member; the `PL_KIND_` / `PL_LINE_` groups are Frames' Kind and Line |
+> | Settings | The SAP version stamped on the `.s2k`'s PROGRAM CONTROL line (editable: SAP imports nothing from a file stamped for another version; Help > About in SAP shows yours), the units, where the model came from |
 > | Carried | Read-only: each table no object owns, with its row count, and each table objects keep that no sheet shows (offsets along the length, nonlinear case parameters, auto mesh, design data …): they ride along unchanged and follow renames and deletions |
 >
 > **Reading rules:**
@@ -262,9 +266,14 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 > - the `.bak` name.
 
 > [!info]- The runner: `scripts/frame/Build-Frame.ps1`
-> - `-In <x.s2k | x.$2k | x.xlsx | x.frame.json>`
+> - `-In <x.s2k | x.$2k | x.xlsx | x.frame.json>`, or a CAESAR model:
 >   - An `.s2k` is read losslessly and checked: written back, it must be the source byte for byte. The report says so.
 >   - An `.xlsx` is a frame workbook, applied to the model it was written from.
+>   - A `.cii`, `.toml`, `.pipe.json` or CAESAR workbook `.xlsx` seeds the check model of that pipe
+>     ([[vault/format/pipe-to-frame|pipe-to-frame]]). Outputs default to `<job>_sap.*`. What the check model cannot
+>     hold refuses it, each item on a `[refuse]` line. `-AppendixD` takes 1.65 / h for bends instead of B31J's
+>     1.3 / h. `-SapVersion` sets the stamp (default 22.0.0). A CAESAR input does not take `-Watch`: seed once with
+>     `-Xlsx`, then watch that workbook.
 >   - Prints the model's counts and units, and the writer's notices.
 > - `-S2k`: writes `<base>.s2k`. It never writes over the input. An existing file is replaced only when this runner
 >   wrote it (its stamp, `<base>.build.json`), when it is the model's own source, or when nothing would change;
@@ -273,7 +282,9 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 >   refused, every refusal on a `[refuse]` line; notices on `[notice] std:` lines. An existing `.std` is replaced only
 >   when this runner wrote it (the stamp's `std` part) or nothing would change; STAAD saves its own edits into the
 >   `.std`, so anything else needs `-Force`.
-> - `-Xlsx`: writes `<base>.xlsx` and its launchers:
+> - `-Xlsx`: writes `<base>.xlsx` and its launchers. **An existing `<base>.xlsx` is replaced without a check:**
+>   writing a model's workbook again, or seeding a CAESAR job again, loses the edits in the old one. Keep working in
+>   the workbook you have (`-In` it).
 >   - `<base> - preview.cmd` (`-Preview -Watch`);
 >   - `<base> - s2k.cmd` (`-S2k -Preview`);
 >   - `<base> - open in SAP.cmd` (`-S2k -Preview -Open`);
@@ -282,22 +293,25 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 >   The Start sheet links them and gives each command.
 > - `-Json`: writes `<base>.frame.json`.
 > - `-Preview`: writes `<base>.bin` and `<base>.features.json` for the viewer, drawn from the very document `-S2k`
->   writes (`SapToPluto.Export(S2kDoc, …, FramePreview)`). The build's notes and the workbook's warnings go to the
+>   writes (`SapToPluto.Export(S2kDoc, …, FramePreview)`). Section outlines come from `<input>.outlines.txt` when
+>   one sits beside the input. The build's notes and the workbook's warnings go to the
 >   Checks panel; `model.source` names the input and the model hash. `-ModelId` names the model (default `sap/<name>`).
 > - `-Open` (production machine; implies `-S2k`; not with `-Watch`): imports the `.s2k` in a SAP2000 of its own,
 >   through the SAP controller in a separate PowerShell (`Run-Sap.ps1 -Open <s2k> -Stamp -NewInstance -KeepOpen`):
 >   stamped for that SAP's version (`SapSession.OpenStamped`), saved beside it as `.sdb`. SAP's joint, frame and link
->   counts are compared with the model's; a difference is a warning (a table SAP did not read).
+>   counts are compared with the model's; a difference is a warning (a table SAP did not read). It imports only: run
+>   the cases in SAP (or `Run-Sap.ps1 -Open <s2k> -Stamp -Run -Results <file>`, [[vault/arms/sap-controller|sap-controller]]).
 > - `-Watch` (with an `.xlsx`): every save rebuilds the outputs (`-Preview` when none is given). A save that does not
 >   build leaves the last good outputs. Every input is opened shared: Excel keeps an open workbook locked for writing,
 >   and the first production run's live preview failed on it ("being used by another process", 2026-11-05) because
 >   the input's fingerprint used a plain `OpenRead`.
 > - `-NewWorkbook -Out <name>.xlsx [-Units "Kip, in, F"] [-SapVersion 22.0.0]`: an empty model's workbook and launchers.
+>   An existing file needs `-Force`.
 > - `-Refresh -In <x>.xlsx`: the workbook in this version's layout over itself, edits kept; the previous file is
 >   `<x>.xlsx.bak`.
 > - `-Out <base>`: as in `Build-Pipe.ps1`. A workbook beside an `.s2k` of its name that this runner did not write (the
 >   SAP export it came from) writes `<name>_edit.*`. Outputs inside the repo are refused.
-> - `-Probe <folder>` and `-ProbeCheck <export>`: see the SAP probe below. `-StdProbe <folder>`: the STAAD probe
+> - `-Probe <folder>` and `-ProbeCheck <export> [-ProbeFile <probe>]`: see the SAP probe below. `-StdProbe <folder>`: the STAAD probe
 >   ([[vault/format/frame-to-staad|frame-to-staad]]).
 > - The last line is `RESULT {json}`.
 > - **Development only:** `PLUTO_DLL=<a prebuilt pluto.dll>` loads that assembly instead of compiling. This is how the
@@ -318,8 +332,9 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 > - Refresh: the same model after, for the rack, the tank and an edited, unbuilt workbook.
 > - `-S2k` guard (a hand-edited `.s2k` refused with its differing line; `-Force`), `-Preview` from the workbook (the
 >   same geometry hash as from the `.s2k`), `-Watch` (a save rebuilt the `.s2k`).
-> - Still to do on the production machine: the PS 5.1 compile; Excel opening the workbook clean; `-Watch` with Excel's
->   own saves; the sidecar merge (.NET Framework's serializer).
+> - Since run on the production machine (2026-11-05): Excel opening the workbook, `-Watch` with Excel's own saves (after
+>   the shared-open fix), and `-Open` into SAP 24.2.
+> - Still to do there: the PS 5.1 compile probe, and the sidecar merge under .NET Framework's serializer.
 
 > [!info]- The SAP probe (Phase 0a)
 > SAP silently ignores a table or field name it does not know, so Pluto writes a field only once SAP has exported it
@@ -342,7 +357,8 @@ The model: [[vault/format/frame-model|frame-model]]. The decision: [[vault/decis
 > 2. Import the one for your SAP (File > Import > SAP2000 .s2k). If Help > About shows another version, set the
 >    `Version` on the PROGRAM CONTROL line to it.
 > 3. Export it again with every table (File > Export > SAP2000 .s2k) as `probe.sap-export.s2k`.
-> 4. `Build-Frame.ps1 -ProbeCheck <that export>` writes a field-by-field report: kept, changed, dropped, what SAP adds,
+> 4. `Build-Frame.ps1 -ProbeCheck <that export>` writes a field-by-field report. It compares with `probe-v22.s2k`
+>    beside the export; give `-ProbeFile <probe-v26.s2k>` if you imported that one. The report lists: kept, changed, dropped, what SAP adds,
 >    the tables it writes that the probe did not, and SAP's own field order.
 >
 > Where a link-type table name is a guess, the export still shows the right one: the type comes from the general
