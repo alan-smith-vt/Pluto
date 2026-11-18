@@ -37,8 +37,19 @@ The mapping is in [[vault/format/pipe-to-frame|pipe-to-frame]]. The choices made
 > - **Alpha per temperature** (a strain load per frame, exact for any alpha(T)): the user chose temperatures, Tn − ambient,
 >   with one alpha per material. A thermal strain given in CAESAR's own form (a T under its alpha tolerance) stays
 >   exact: it is written as strain / alpha.
-> - **Re-seeding that keeps SAP-side additions** (support steel added after the seed): not now. Seed once.
 > - **Pluto computing WRC 297 / API 650 nozzle flexibilities, or designing hangers:** CAESAR's numbers go in instead.
+
+> [!info]- Possible later: SAP back to CAESAR (2026-11-18, left out for now)
+> The pipeline runs one way, CAESAR to SAP. Ways back, none planned:
+> - **Results by CAESAR node and element.** SAP's reactions and element forces read from its export and listed as
+>   CAESAR lists them: support points (the S / M / Q joints) folded back onto their CAESAR node, hanger preloads added,
+>   in CAESAR's axes and sign. The round-2 comparison scripts already do this; it is the smallest step.
+> - **Support steel's stiffness into CAESAR.** The steel modelled in SAP gives each support's stiffness, written to the
+>   CAESAR model's restraints. It is the usual reason to go this way, and it would close the loop.
+> - **Re-seeding that keeps SAP-side additions.** When the pipe changes in CAESAR, update the SAP model without losing
+>   what the frame workbook added after the seed, such as support steel. Today: seed once.
+> - **A seeded SAP model written back as a CAESAR job.** It is possible only for a model Pluto seeded, by reading its own
+>   conventions back (bend chords, support-link groups, labels). A general SAP model has no bends, SIFs or restraint types.
 
 ## History
 
