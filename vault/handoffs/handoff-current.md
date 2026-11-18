@@ -38,6 +38,17 @@ created: 2026-11-18
   - the hanger count.
 - **Element forces** have not been compared with CAESAR's yet. Only restraint loads and displacements have.
 
+**Code issues found by the vault audit (2026-11-18), not fixed:**
+- `Build-Frame -Xlsx` replaces an existing workbook without a check (no stamp, no `-Force`, no `.bak`): re-seeding a
+  CAESAR job loses the edits made in its frame workbook.
+- Frames and nonlinear cases added in the frame workbook to a seed lack the seed's SAP settings (`AutoMesh=No`, the
+  raised step limits): `FrameModel`'s templates have neither.
+- `viewer/index.html` gives the Auto-reload and Auto range checkboxes the same id (`feaAuto`): Auto range does
+  nothing, and unticking Auto-reload switches the colour range to manual.
+- The viewer's Find searches shell ids only; `FEAFeatures.worldOffset()` reads a top-level `units`, not
+  `model.units` ([[vault/viewer/model-rail|model-rail]]).
+- A personal Windows path is in the pushed history (fixed in the file on 2026-11-18): purging it is the user's call.
+
 **Waiting on the production machine:** the PS 5.1 compile probe (`Config.ps1`) for the session's C#.
 
 **Next:**
