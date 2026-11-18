@@ -10,6 +10,8 @@ created: 2026-10-07
 
 A pipe-stress model described parametrically in a TOML config becomes a CAESAR II neutral file (`.cii`) that CAESAR II imports. It runs on the production machine: Windows PowerShell 5.1, C# 5 through `Config.ps1`, with no CAESAR II and no Python needed. This is branch `pipestress`.
 
+How it fits with the workbook, CAESAR, SAP and the viewer: [[vault/arms/pipe-and-frame-workflow|pipe-and-frame-workflow]] (start here).
+
 The config describes:
 - runs of pipe: legs, bends, and branches with welding tees;
 - sections;
@@ -31,12 +33,11 @@ The same runner takes an **existing CAESAR job** too: `-In job.cii` imports it l
   - a round trip of three configs: TOML → `.cii` → the CAESAR arm's own reader and geometry, compared field by field and node by node;
   - 32 failure cases;
   - the runner under pwsh;
-  - the viewer.
-- **Still to do:**
-  - the PS 5.1 compile on the production machine;
-  - the first import into CAESAR II.
+  - the viewer;
+  - imports into CAESAR 15.01: the probe jobs of 2026-10-24 and the combined probe of 2026-10-26 (below, and [[vault/arms/caesar-checks|caesar-checks]]).
+- **Still to do:** the PS 5.1 compile on the production machine.
 
-Same model, other solver: a SAP2000 `.s2k` from the same `PipeModel`, as a check model of CAESAR's, comes after the workbook and the loads (see *Next*).
+Same model, other solver: `Build-Frame.ps1 -In <job>` seeds a SAP2000 check model of the pipe from any of these inputs ([[vault/format/pipe-to-frame|pipe-to-frame]]). A TOML holds no materials, so the check model takes Pluto's defaults for them, with a warning; a CAESAR workbook's Materials sheet gives the job's ([[vault/arms/pipe-workbook|pipe-workbook]]).
 
 ## Run
 
@@ -49,7 +50,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 
 - **`-In`** (alias `-Config`), one of:
   - a `.xlsx` workbook ([[vault/arms/pipe-workbook|pipe-workbook]]); the report lists its edits;
-  - a `.toml` config. Every key is shown, with its unit, in `scripts/caesar/examples/pipe-example.toml`; `pipe-patterns.toml` beside it shows the patterns beyond it (a control-valve station whose bypass closes on the header, a vessel nozzle with hangers, a tank nozzle, coupling gaps, control rods, design data);
+  - a `.toml` config. Most keys are shown, with their units, in `scripts/caesar/examples/pipe-example.toml`; `pipe-patterns.toml` beside it shows the patterns beyond it, with their keys (a control-valve station whose bypass closes on the header, a vessel nozzle with hangers, a tank nozzle, coupling gaps, control rods, design data). `[[hangers]]` and `[[nozzles]]` are only there;
   - a `.cii`, an existing CAESAR job. The report says whether writing it back gives the source identically;
   - a `.pipe.json`, a model saved with `-Json`.
 - **Outputs**, in any combination:
@@ -57,10 +58,10 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
   - **`-Xlsx`**: `<base>.xlsx`, the model as a workbook to edit.
   - **`-Json`**: `<base>.pipe.json`, the whole model, exactly.
   - **`-Preview`**: `<base>.bin` + `<base>.features.json`, built in memory from exactly the `.cii` that `-Cii` writes (what `Run-Caesar.ps1` would make of it).
-  - With none of them, a `.cii` or `.pipe.json` gives a report only.
-- **`-Compare <file>`**: the model against another `.cii`, `.toml` or `.pipe.json`, by meaning: elements, node positions, restraints, SIFs, carried blocks, settings. For example, against CAESAR's own re-export of the job.
+  - With none of them, a `.cii`, `.xlsx` or `.pipe.json` gives a report only.
+- **`-Compare <file>`**: the model against another `.cii`, `.toml`, `.xlsx` or `.pipe.json`, by meaning: elements, node positions, restraints, SIFs, hangers, nozzles, loads, carried blocks, settings. For example, against CAESAR's own re-export of the job.
 - **`-Seed <job.cii>`**: a `.toml` model (or `-NewWorkbook`) takes that job's VERSION lines, UNITS (English only), execution options and first allowables block.
-- **`-Watch`**, **`-NewWorkbook`**, **`-Force`** and the `-Cii` guard: [[vault/arms/pipe-workbook|pipe-workbook]].
+- **`-Watch`**, **`-NewWorkbook`**, **`-Refresh`**, **`-Force`** and the `-Cii` guard: [[vault/arms/pipe-workbook|pipe-workbook]].
 - **`-Out <base>`**:
   - Default: beside the input, same name.
   - An existing folder, or a path ending in `\` or `/`, means `<folder>\<name>`.
@@ -69,6 +70,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 - **`-ModelId`**: default `pipe/<name>`.
 - **Output:**
   - Progress lines start with `[step]`.
+  - `-Cii` adds `[notice ]` lines (a restraint code no CAESAR-written file has shown yet, and the writer's own changes to the file: `order-bend`, `coords-placing`), `[checks ]` lines (CAESAR's errors and warnings, [[vault/arms/caesar-checks|caesar-checks]]) and a `[review ]` line (whether it is the model you previewed).
   - The last line is `RESULT {json}`: paths, counts and warnings.
   - An input that does not build or import, or a file that cannot be written, prints `[error  ] <message>` and `RESULT {"error": …}`, and exits 1.
   - Every message names the config item it comes from, e.g. `run "header": support at 39.5 ft is inside the bend at corner 1 (its arc runs 39 ft .. 41 ft; …)`.
@@ -100,6 +102,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 > - `material` (required): the CAESAR material number, e.g. 102 = A53 Grade B. E, density and the allowables come from CAESAR's material database (the fixture's job does the same).
 > - `ambient`, default 70 °F: the installation temperature.
 > - `title`.
+> - `notes`: CAESAR's VERSION NOTES line (default: "built by Pluto Build-Pipe.ps1 from" the config's name).
 > - `length_unit`.
 > - `node_step`, default 10.
 > - `y_up`, default true; false = Z up.
@@ -123,7 +126,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 > - `material`, to override the model's;
 > - `mill_tolerance` (the minus mill tolerance, % of the wall: 12.5 for most seamless pipe), `mill_tolerance_plus`, `seam_weld = true`.
 
-> [!info]- [[runs]]: legs, bends, branches, temperatures
+> [!info]- `[[runs]]`: legs, bends, branches, temperatures
 > - **Start:** `start = [x, y, z]`, the first run's default being the origin. Or `from = { run = "header", at = 12 }`: a branch, starting at that position on an earlier run.
 >   - A branch gets a **welding tee** at the header node (SIF type 3, as CAESAR writes one). `tee` names another intersection: `reinforced` (with `tee_pad`, in), `unreinforced`, `sweepolet`, `weldolet`, `extruded` (`tee_crotch`, in, optional), by the number of CAESAR's list (confirmed by CAESAR 15.01's SIF listing). `bf_sweepolet`, `latrolet`, `insert_weldolet` and `full_encirclement` are refused: CAESAR 15.01 has no such types (its list ends at 13).
 >   - Opt out with `tee = "none"`. That is the default when the branch starts at the other run's end, which makes it a continuation.
@@ -146,7 +149,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 >   - `first_node`.
 > - A temperature of exactly 0 is CAESAR's "not used". A value under 1 in magnitude is read by CAESAR as an expansion coefficient. Both are warned.
 
-> [!info]- [[components]]: valves, flanges, rigids, reducers, expansion joints, couplings
+> [!info]- `[[components]]`: valves, flanges, rigids, reducers, expansion joints, couplings
 > All take `run`, `at` (where the component starts) and `length` (its own length), plus `name`.
 > - **`valve` `flange` `flange_pair` `flanged_valve` `rigid`:** `weight` (lb). These become a CAESAR rigid of type Valve / Flange / Flange Pair / Flange Valve / Unspecified.
 > - **`reducer`:** `to_section`, the section after it. Every element downstream takes it, and so do the bend radii (LR / SR) of the corners after it.
@@ -164,14 +167,14 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 >
 >   The fixture's CAESAR job holds the same pattern: a node tied to node + 1 in X Y Z RX RY RZ, with a rotational gap and user SIFs. On a skewed pipe the restraints carry cosines.
 
-> [!info]- [[supports]], [[ties]], [[hangers]], [[nozzles]], [[sifs]]
+> [!info]- `[[supports]]`, `[[ties]]`, `[[hangers]]`, `[[nozzles]]`, `[[sifs]]`
 > **`[[supports]]`:**
 > - **Where:** `node = n`, or `run` + `at = x | [x, …]`, or `run` + `every = d` (`from` = d and `to` = L unless given).
 > - **What:**
 >   - `type = "+Y"` or a list (`ANC X Y Z RX RY RZ GUI LIM +X +Y +Z -X -Y -Z +RX +RY +RZ -RX -RY -RZ +LIM -LIM XSNB YSNB ZSNB`, CAESAR's codes 1–26);
 >   - or `dofs = ["X", "RY", …]`: single degrees of freedom, e.g. an equipment nozzle as six DOFs with rotational stiffness.
 > - **Options:** `gap`, `stiffness` (0 = rigid) and `mu`, each a number for every type, or a table per type: `gap = { GUI = 0.0625 }`, `stiffness = { RX = 2.5e6 }`. A key that is not one of the support's types is an error.
-> - `direction = [x, y, z]` with one translational or rotational type: along a global axis it gives that axis' type; any other direction gives a skewed restraint, X or RX with the direction's cosines.
+> - `direction = [x, y, z]` with one type, `X`, `Y`, `Z`, `RX`, `RY` or `RZ` (not a one-way): along a global axis it gives that axis' type; any other direction gives a skewed restraint, X or RX with the direction's cosines.
 > - `cnode = n` and `tag`. The connecting node may be one no element has when a `[[displacements]]` entry names it: CAESAR's way to move a restraint (the displacement on the connecting node, not on the restrained one).
 >
 > **`[[ties]]`:** `node` and `cnode`, each a number or `{ run, at }`, plus the same `type` / `dofs` / `gap` / `stiffness` / `mu` / `direction` / `tag`. **A CNODE is the same point as its node to CAESAR** (it connects geometry through CNODEs): a tie between two points the pipe puts apart, such as control rods from one flange to another, stops CAESAR (44E, the SAP probe 2026-11-16), and the review flags it (`cnode-apart`). Tie points apart through a stub, as below; control rods are a lug and rod stub from one flange and a lug from the other, tied where they meet (`e3-ej-valves`, the example `pipe-patterns`). For example, a strut between two lines: `type = "Z"`, `gap = 0.125`. CAESAR draws a line tied on only by a CNODE at the node it is tied to (below), so two lines apart are tied through a stub: a weightless rigid from one line to beside the other's node, its end the CNODE (the example's `strut` run). The stub is CAESAR's way to say where the strut is, not only a picture: it is an element, carries the strut's force and takes no weight.
@@ -184,16 +187,18 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 >   - `constant` (lb): a **constant-effort support**.
 > - **Design data** (each optional): `table` (CAESAR's hanger table number; blank = the job's default), `count` (hangers at the location), `load_variation` (%, default 25), `short_range = false`, `max_travel` and `space` (in), `rigid_criteria`, `operating_load`, `hardware_weight`, `multi_load`, `tag`.
 > - **Anchors freed while it is designed:** `free_node = n` with `free_dofs = "Y" | "XY" | "ZY" | "XYZ" | "all"` (default all), and `free_node2` / `free_dofs2`.
+> - **The SAP check model** takes springs as given and constant supports; a hanger CAESAR designs refuses it until it has the rate and cold load CAESAR chose ([[vault/format/pipe-to-frame|pipe-to-frame]]).
 >
 > **`[[nozzles]]`:** flexible nozzles ([[vault/format/caesar-neutral-nozzles|caesar-neutral-nozzles]]), one per node: `node` or `run` + `at`, `type`, `vessel_node` (blank = a rigid vessel).
 > - `type = "WRC297"` or `"PD5500"` (a nozzle on a vessel): `vessel_od`, `vessel_wall`, `vessel_axis = [x, y, z]` (required), `pad`, `stiffener_distance`, `opposite_distance`, `vessel_temperature`, `vessel_material`; PD 5500 also `vessel_type = "cylinder" | "sphere"`.
 > - `type = "API650"` (a tank shell): `vessel_od`, `vessel_wall` (the tank's), `reinforcing = "shell" | "nozzle"`, `nozzle_height`, `fluid_height`, `displacement_vector`, `fluid_sg`, `tank_alpha`, `tank_delta_t`, `tank_e`.
 > - `type = "custom"`: `vessel_od`, `vessel_wall`, `vessel_axis`, `pad`, `vessel_material`, and `axial_stiffness` (lb/in), `inplane_stiffness`, `outplane_stiffness`, `torsional_stiffness` (in·lb/deg).
 > - `nozzle_od` and `nozzle_wall` default to the pipe's at the node. Lengths in inches. A key the type does not use is an error.
+> - **The SAP check model** takes a custom nozzle only: give a WRC 297, API 650 or PD 5500 nozzle the stiffnesses CAESAR computed, as a custom one ([[vault/format/pipe-to-frame|pipe-to-frame]]).
 >
-> **`[[sifs]]`:** `type` = a tee name as for a branch, or a joint: `butt_weld` / `tapered_transition` (with `weld_mismatch`, in), `socket_weld` / `socket_weld_as_welded`, `threaded`, `slip_on`, `lap_joint`; or `sif_in` / `sif_out` alone (user SIFs; `sif_out` defaults to `sif_in`), which a type may carry too. `pad`, `crotch_radius` as for a branch. `fillet` is refused: CAESAR 15.01 does not read a fillet leg where the guide puts it (give it in CAESAR). One SIF / tee entry per node: a branch's automatic tee counts. Give the branch `tee = "none"` to write your own.
+> **`[[sifs]]`:** where: `node`, or `run` + `at` / `every`, like a support. `type` = a tee name as for a branch, or a joint: `butt_weld` / `tapered_transition` (with `weld_mismatch`, in), `socket_weld` / `socket_weld_as_welded`, `threaded`, `slip_on`, `lap_joint`; or `sif_in` / `sif_out` alone (user SIFs; `sif_out` defaults to `sif_in`), which a type may carry too. `pad`, `crotch_radius` as for a branch. `fillet` is refused: CAESAR 15.01 does not read a fillet leg where the guide puts it (give it in CAESAR). One SIF / tee entry per node: a branch's automatic tee counts. Give the branch `tee = "none"` to write your own.
 
-> [!info]- [[forces]], [[displacements]], uniform loads and wind
+> [!info]- `[[forces]]`, `[[displacements]]`, uniform loads and wind
 > **`[[forces]]`:** forces and moments at nodes.
 > - **Where:** `node = n`, or `run` + `at` (or `every`), like a support. A position makes a node there.
 > - `vector` (1–9, default 1): CAESAR's load vector F1…F9.
@@ -254,7 +259,7 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 >   - node, type code, stiffness (1e12 = rigid), gap, friction, CNODE, cosines, tag;
 >   - **cosines as CAESAR writes them:** every type but ANC carries its axis (X 1 0 0, Y and +Y 0 1 0, …), and GUI / LIM a dummy 1 0 0, CAESAR taking the pipe axis;
 >   - up to 6 per element block, placed on an element that has the node.
-> - **SIF / tees:** type 3 (welding tee) or user SIFs in / out. Rigids: weight and type. Expansion joints: axial, transverse, bending, torsion, effective ID. Reducers: OD2 and wall2; α, R1 and R2 are left to CAESAR.
+> - **SIF / tees:** CAESAR's types 0–13 (0 user SIFs only, 1–6 tees, 7–13 joints), with SIF in / out, weld mismatch, pad, crotch radius and surface node ([[vault/format/pipe-model|pipe-model]]). Rigids: weight and type. Expansion joints: axial, transverse, bending, torsion, effective ID. Reducers: OD2 and wall2; α, R1 and R2 are left to CAESAR.
 > - **Allowables, options, units, COORDS:**
 >   - **ALLOWBLS:** the fixture's B31.1 block, values from the database, or a seed's block;
 >   - **MISCEL_1:** the material numbers and the fixture's execution options, with the ambient temperature in line 2;
@@ -287,9 +292,13 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 >   - wave data in WIND.
 >
 >   Details: [[vault/format/caesar-neutral-loads|caesar-neutral-loads]].
+> - **Confirmed by the combined probe (2026-10-26)**, CAESAR 15.01's lists and panels:
+>   - SIF / tee types 1–13, with the weld mismatch, the pad and the crotch radius ([[vault/format/pipe-model|pipe-model]]);
+>   - hangers and nozzles ([[vault/format/caesar-neutral-hangers|caesar-neutral-hangers]],
+>     [[vault/format/caesar-neutral-nozzles|caesar-neutral-nozzles]]).
 > - **From CAESAR's documentation only:** restraint codes beyond 26 (rods, bilinear supports, springs, one-way snubbers). The builder does not write them; a workbook row that names one gets a `[notice ]` line.
 > - **Not written:** load cases. CAESAR recommends cases on import.
-> - **Also not yet:** flanged-bend types and mitres, and tee types other than welding.
+> - **Not from the TOML:** flanged-bend types and mitres. The workbook's Elements sheet gives them (Bend type, Bend miter points), and the writer writes them.
 
 ## Verification (2026-10-07, Linux)
 
@@ -335,6 +344,6 @@ The plan, in stages ([[vault/decisions/2026-10-22-lossless-pipe-model|2026-10-22
 - **A, done (2026-10-22):** the lossless `.cii` import, the overlay-and-carry writer, the model JSON, compare, and `-In` / `-Json` / `-Compare` / `-Seed` ([[vault/format/pipe-model|pipe-model]]).
 - **B, done (2026-10-22): the Excel workbook** as the model's master, a `.cii`, `.toml` or template into a workbook and back with nothing lost; `-Watch`; Reload / Auto-reload in the viewer ([[vault/arms/pipe-workbook|pipe-workbook]]).
 - **C, done (2026-10-22): loads**, from CAESAR's documentation of the neutral file: forces and moments, imposed displacements, uniform and g-loads, wind, in the model, the importer, the writer, the TOML (`[[forces]]`, `[[displacements]]`, `uniform` / `g_load` / `wind_shape`), the model JSON and compare ([[vault/format/caesar-neutral-loads|caesar-neutral-loads]]).
-- **D: the viewer as the confirmation step:** loads drawn, element properties on hover, node numbers, temperature / pressure / material groups, and a list of build checks.
-- **E: a SAP2000 `.s2k`** as a check on CAESAR: the same pipe and loads, with equivalent fixities, supports, restraints and releases (gaps and one-ways as gap links; friction reported, as SAP cannot model it as CAESAR does). It runs through the one SAP controller, `Run-Sap.ps1 -Open x.s2k -Run` ([[vault/arms/sap-controller|sap-controller]]); no second driver.
+- **D, done (2026-10-23): the viewer as the confirmation step:** loads drawn, element properties on hover, node numbers, temperature / pressure / material groups, and a list of build checks ([[vault/decisions/2026-10-23-pipe-model-in-viewer|2026-10-23-pipe-model-in-viewer]]).
+- **E, done (2026-11-12 – 11-18): the SAP2000 check model.** `Build-Frame.ps1 -In <job.cii | .toml | .pipe.json | CAESAR workbook>` seeds it: the same pipe, loads and supports as frames, links and loads; one-ways, gaps and friction as SAP's gap and friction-isolator links. `-S2k -Open` imports it through the one SAP controller ([[vault/arms/sap-controller|sap-controller]]); no second driver. How it is written and what the probes found: [[vault/format/pipe-to-frame|pipe-to-frame]], [[vault/decisions/2026-11-12-caesar-to-sap|2026-11-12-caesar-to-sap]].
 - **On the production machine:** the first CAESAR import of the example, then a real line.

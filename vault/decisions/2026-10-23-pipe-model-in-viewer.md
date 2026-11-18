@@ -37,6 +37,8 @@ Format: [[vault/format/features-sidecar|features-sidecar]] (the pipe model secti
 - **Sidecar, not binary.** The binary holds geometry and results, written once. Loads and properties are input
   that changes with every save of the workbook, and other programs (the SAP check model, Stage E) will read
   them. That is what the sidecar is for.
+  - **Since (2026-11-12):** the SAP check model reads the pipe model itself (`PipeToFrame`), not the sidecar
+    ([[vault/format/pipe-to-frame|pipe-to-frame]]).
 - **Owned, not merged.** The groups and supports keep the user's colours and visibility across a re-export.
   The loads, properties and checks have nothing the user sets, and a stale copy would mislead.
 

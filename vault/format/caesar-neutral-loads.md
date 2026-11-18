@@ -29,7 +29,7 @@ How the `.cii` holds applied loads (forces and moments, imposed displacements, u
 - UNIFORM, WIND and CONTROL came out line for line as CAESAR wrote them.
 - FORCMNT held the same blocks, in element order. CAESAR had put the last element's block first; the pointers say which block is whose, so the order does not matter.
 
-Whatever no CAESAR file has shown yet is written with a `[notice ]` line from `Build-Pipe.ps1` (`CaesarNeutralWriter.Notices`). Since the probe jobs, that is only a restraint code beyond 26 (rods, bilinear supports, springs, one-way snubbers), which the builder never writes and a workbook row can name. Its first CAESAR import confirms it: re-export from CAESAR and run `-Compare`.
+Whatever no CAESAR file has shown yet is written with a `[notice ]` line from `Build-Pipe.ps1` (`CaesarNeutralWriter.Notices`). Since the probe jobs, that is only a restraint code beyond 26 (rods, bilinear supports, springs, one-way snubbers), which the builder never writes and a workbook row can name. Its first CAESAR import confirms it: re-export from CAESAR and run `-Compare`. The same `[notice ]` lines also say where the writer moves elements after a bend or adds a COORDS entry (`order-bend`, `coords-placing`, [[vault/arms/caesar-checks|caesar-checks]]); those are no layouts to confirm.
 
 **Load cases are not in the neutral file.** CAESAR builds them from the load vectors (W, T1, P1, F1, D1, U1, WIN1 …) and recommends a set on import.
 
@@ -124,7 +124,8 @@ CAESAR's table for the RESTRANT type field:
 | 57–62 | +XSNB, +YSNB, +ZSNB, −XSNB, −YSNB, −ZSNB |
 
 - **Which table to trust:** the guide's database-export table lists different names from 48 on (a duplicated +RX2 run, no springs). The neutral-file table above is the one for `.cii` files.
-- **What the builder and the workbook write:** the plain types, codes 1–26 (`PipeModelCodes.BuildTypes`), all confirmed by CAESAR. Rods, bilinear supports and springs need data the restraint record does not hold, so they are read and carried but not built.
+- **What the builder writes:** the plain types, codes 1–26 (`PipeModelCodes.BuildTypes`), all confirmed by CAESAR. Rods, bilinear supports and springs need data the restraint record does not hold, so they are read and carried but not built.
+- **A workbook row** may name any type in the table (its dropdown offers 1–26 and the job's own types). One past 26 is written with its code and a `[notice ]` line.
 - **Skewed restraints:** an axis type (X, +X, RX …) whose cosines give the direction. CAESAR shows the cosines beside the type and keeps the stiffness and gap.
 
 ## Bend radius codes

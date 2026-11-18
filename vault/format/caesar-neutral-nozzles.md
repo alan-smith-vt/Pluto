@@ -35,6 +35,8 @@ A flexible nozzle tells CAESAR to add the flexibility of a nozzle's connection t
 > - **A model file saved before 2026-10-26** (22 values per nozzle) reads into today's items (`PipeModelNozzle.SetFromOldValues`): a nozzle with lines by what CAESAR reads of them; a new one by the guide's numbering, PD 5500's OD and vessel type swapped and the custom stiffnesses moved to 17–20. A workbook from then reads back with no edits.
 > - **Compare** matches nozzles by node, vessel node, type and the values the type uses.
 > - **The viewer** draws a nozzle as a plate at its node (kind `nozzle`), tied to its vessel node. CAESAR draws the nozzle's pipe from its vessel node: a nozzle's pipe tied to the rest only by it sits there ([[vault/arms/caesar-to-viewer|caesar-to-viewer]]).
+> - **The SAP check model** holds a custom nozzle as springs along the nozzle. A WRC 297, API 650 or PD 5500 one
+>   refuses it: give the stiffnesses CAESAR computed as a custom nozzle ([[vault/format/pipe-to-frame|pipe-to-frame]]).
 
 > [!info]- Checks
 > CAESAR's message numbers are from its error checker on the combined probe (CAESAR 15.01; [[vault/arms/caesar-checks|caesar-checks]]).

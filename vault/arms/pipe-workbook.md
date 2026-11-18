@@ -17,6 +17,8 @@ A pipe-stress model as an Excel workbook you edit, built back into the model by 
 - **An unedited workbook gives back its source exactly.** For a CAESAR job, that is the `.cii` byte for byte: what the sheets do not show is carried as written ([[vault/format/pipe-model|pipe-model]]).
 - **Requirements:** Windows PowerShell 5.1 and C# 5 through `Config.ps1`. Excel is needed only to edit the workbook; nothing here opens Excel.
 
+How it fits with the TOML, CAESAR, SAP and the viewer: [[vault/arms/pipe-and-frame-workflow|pipe-and-frame-workflow]] (start here).
+
 The workbook is also the form you edit the model in:
 - **Guidance:** coloured headers by kind of column, a note on every header, a hint on every input cell, and dropdowns.
 - **Highlighting:** red where the build would stop, amber where a look is worth it.
@@ -53,12 +55,15 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
    - **Check what you are about to export** (Stage D): the **Loads** panel draws every force, moment, imposed displacement, uniform load and wind by vector; the **Checks** tab (✓) lists what the build found (an unsupported piece, a branch without a tee, a bend with no room, a load off the model, layouts to check in CAESAR) and flies to each; hovering a pipe shows its size, T1, P1, material; **Node numbers** labels the nodes; the Model panel names the workbook and when it was saved.
 2. **`-Cii` says where the model stands** (`[review ]`): it is the one you previewed, it changed since the preview, or no preview was made.
 3. **Every read lists what the workbook changed** against the model it was written from (a compare by meaning): elements, nodes moved, restraints, SIFs, loads.
+4. **The SAP check model, if wanted:** `Build-Frame.ps1 -In "<project dir>\job.xlsx" -Xlsx -S2k -Preview` seeds it
+   from this workbook (`job_sap.*`), its materials from the Materials sheet. The steps: [[vault/arms/pipe-and-frame-workflow|pipe-and-frame-workflow]]; what
+   it holds and refuses: [[vault/format/pipe-to-frame|pipe-to-frame]].
 
 > [!info]- The sheets
 > | Sheet | One row per | Columns |
 > |---|---|---|
 > | Settings | setting | title, notes, vertical axis (Y / Z), ambient; read-only: units, source, base fingerprint, node numbers (live and its step, or fixed and why) |
-> | Elements | element, in CAESAR's order | Id, From, To, DX DY DZ, Type, Section, Process, bend radius / nodes / type, rigid weight, reducer OD2 / wall2, expansion joint (axial, transverse, bending, torsion, effective ID), name, line; then a collapsed group (+) of one-element overrides: OD, wall, insulation, corrosion, densities, material, E, Poisson, T1–T9, P1–P9, fluid density, bend miter points, fitting thickness, K, hydro pressure, mill tolerance − / +, seam weld |
+> | Elements | element, in CAESAR's order | Id, From, To, DX DY DZ, Type, Section, Process, bend radius / nodes / type, rigid weight, reducer OD2 / wall2, expansion joint (axial, transverse, bending, torsion, effective ID), name, line; then a collapsed group (+) of one-element overrides: OD, wall, insulation, corrosion, densities, material, E, Poisson, T1–T9, P1–P9, fluid density, bend miter points, fitting thickness, K, hydro pressure, mill tolerance − / +, seam weld. The SAP check model needs a mitred bend's K |
 > | Sections | pipe size | name, OD, wall, insulation, corrosion, insulation density, material, E / Poisson / pipe density (blank = CAESAR's database), mill tolerance − / + (% of the wall), seam weld (yes / no) |
 > | Processes | operating condition | name, T1–T9, P1–P9, fluid density, hydro pressure (CAESAR's hydrotest case) |
 > | Restraints | restraint | Id, node, type (CAESAR's), CNODE, stiffness (blank = rigid), gap, friction, cosines (blank = the type's own axis), tag |
@@ -66,10 +71,10 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 > | Forces / Displacements | node and load vector | Id, node, vector (1–9), FX…MZ / DX…RZ. A blank displacement DOF is free; 0 holds it |
 > | Uniform / Wind | element, or a range of elements with the same values | Element (`E4`, a range `E3:E9`, or blank with From and To), vector, UX UY UZ, in g's / type, shape factor, wave data |
 > | Joints | joint | Id, node, CNODE, kind, frame (global / pipe), DOFs (`+Y; -Y gap=2; RX; RY; RZ`, `X; Y; Z; RX gap=1; RY; RZ`), SIF, tag. Couplings in a `.cii` or a TOML build come here (below); their CNODE restraints and SIF are off Restraints and SIFs |
-> | Hangers | spring hanger (one per node) | Id, node, CNODE; Rate with Cold load (a spring as given) or Constant (a constant-effort support), both blank = CAESAR designs it; table, count, load variation, short range, max travel, space, rigid criteria, operating load, hardware weight, multi-load; anchors freed while it is designed (node + Y / XY / ZY / XYZ / all, two); tag. A workbook made before this sheet keeps its base's hangers |
-> | Nozzles | flexible nozzle | Id, node, vessel node (blank = a rigid vessel), type (WRC 297, API 650, PD 5500, Custom), then the values: nozzle OD / wall, vessel type, vessel OD / wall, pad, reinforcing, distances to stiffeners, nozzle and fluid heights, vessel centreline X Y Z, vessel temperature and material, displacement vector, fluid SG, tank alpha / ΔT / E, the four custom stiffnesses. A column the row's type does not use is red |
+> | Hangers | spring hanger (one per node) | Id, node, CNODE; Rate with Cold load (a spring as given) or Constant (a constant-effort support), both blank = CAESAR designs it; table, count, load variation, short range, max travel, space, rigid criteria, operating load, hardware weight, multi-load; anchors freed while it is designed (node + Y / XY / ZY / XYZ / all, two); tag. A workbook made before this sheet keeps its base's hangers. The SAP check model needs Rate and Cold load, or Constant: a hanger CAESAR designs refuses it |
+> | Nozzles | flexible nozzle | Id, node, vessel node (blank = a rigid vessel), type (WRC 297, API 650, PD 5500, Custom), then the values: nozzle OD / wall, vessel type, vessel OD / wall, pad, reinforcing, distances to stiffeners, nozzle and fluid heights, vessel centreline X Y Z, vessel temperature and material, displacement vector, fluid SG, tank alpha / ΔT / E, the four custom stiffnesses. A column the row's type does not use is red. The SAP check model takes Custom rows only: give another type the stiffnesses CAESAR computed |
 > | Coords | COORDS entry | node, X Y Z |
-> | Materials | CAESAR material the job uses | material, E, Poisson, density, alpha (per degree), note. **For the SAP / STAAD check model only** ([[vault/format/pipe-to-frame|pipe-to-frame]]): CAESAR never reads it (it takes its own from its database), so give the same values. Rows start as Pluto's defaults by material class, noted "Pluto default: …" (amber) until a value is typed over. A Sections row's own E, Poisson or density wins for its pipe, as in CAESAR |
+> | Materials | CAESAR material the job uses | material, E, Poisson, density, alpha (per degree), note. **For the SAP / STAAD check model only** ([[vault/format/pipe-to-frame\|pipe-to-frame]]): CAESAR never reads it (it takes its own from its database), so give the same values. Rows start as Pluto's defaults by material class, noted "Pluto default: …" (amber) until a value is typed over. A Sections row's own E, Poisson or density wins for its pipe, as in CAESAR |
 > | Start | — | the landing page: how to use the workbook, links to the sheets with their row counts, the live checks, the colour key, a reference |
 > | 3D View | — | the model drawn live; its controls (view, highlight, labels, restraints), figures, key |
 > | Nodes, Carried | — | read-only: rebuilt on every export, never read |
