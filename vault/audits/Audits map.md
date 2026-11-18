@@ -4,9 +4,9 @@ status: current
 created: 2026-09-03
 ---
 
-# Audits map
-
 *↑ [[vault/Pluto Home|Home]]*
+
+# Audits map
 
 Hub for `vault/audits/` — read-only assessments made before a merge or port. The sanitized-lib
 audit and its raw agent output moved to the Notes vault (`Tools/Pluto Sanitized Audit`).

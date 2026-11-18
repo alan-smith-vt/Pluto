@@ -4,17 +4,20 @@ status: current
 created: 2026-09-10
 ---
 
-# Pluto Home
-
 *↑ [Pluto — tool note in the Notes vault](obsidian://open?vault=Notes&file=Tools%2FPluto)*
+
+# Pluto Home
 
 This stub exists so the repo works as a standalone vault. The full description of Pluto (what it solves, how to run it, limits, projects, code-folder descriptions, conventions) lives in the Notes vault's tool note; the link above opens it in that vault (it also works when this repo sits inside Notes, where the same note is `Tools/Pluto.md`). Read the current handoff first for the current state: [[vault/handoffs/handoff-current|handoff-current]].
 
 ## Maps
 
-- **[[vault/arms/Arms map|Arms map]]** — one usage note per import/export arm (pipe CSV, steel CSV, combined plant, SAP2000).
-- **[[vault/format/Format map|Format map]]** — the common model: v4 binary schema, the frozen v3 schema, the features sidecar, and the C# writer.
-- **[[vault/viewer/Viewer map|Viewer map]]** — viewer feature overview and the old-viewer merge plan.
+**Start here for pipe stress and frame models** (CAESAR II, SAP2000, STAAD.Pro):
+[[vault/arms/pipe-and-frame-workflow|pipe-and-frame-workflow]], the pipeline in diagrams and the commands for each job.
+
+- **[[vault/arms/Arms map|Arms map]]** — one usage note per arm: the plant exports (pipe CSV, steel CSV, combined), pipe stress (the CAESAR workbook and TOML builder, CAESAR's checks, CAESAR results), frame models (the frame workbook), and SAP2000 (the controller, exports, the tank).
+- **[[vault/format/Format map|Format map]]** — the common model (v4 binary schema, the frozen v3 schema, the features sidecar, the C# writer), and the engineering models and solver files: the pipe model, the frame model, CAESAR's neutral file, SAP's `.s2k` tables, STAAD's `.std`, the CAESAR → SAP check model.
+- **[[vault/viewer/Viewer map|Viewer map]]** — the viewer's features and tests, several models in one scene (the model rail), and the old-viewer merge plan.
 - **[[vault/audits/Audits map|Audits map]]** — read-only audits.
 - **[[vault/decisions/Decisions map|Decisions map]]** — design decisions, one dated note each.
 - **[[vault/handoffs/Handoffs map|Handoffs map]]** — the handoff log: the current state, and one dated record per session (from 2026-11-18).
