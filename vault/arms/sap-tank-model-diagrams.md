@@ -38,5 +38,5 @@ Bash mangles `--user-data-dir`):
 ```powershell
 & 'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe' --headless=new --disable-gpu `
   --hide-scrollbars --user-data-dir=$env:TEMP\edgeprof --window-size=900,560 `
-  --screenshot=$env:TEMPig.png file:///C:/Users/agsmith/Documents/_GitHub/Pluto/vault/arms/assets/tank-beam-nodes.svg
+  --screenshot=$env:TEMP\fig.png "file:///<repo dir>/vault/arms/assets/tank-beam-nodes.svg"
 ```
