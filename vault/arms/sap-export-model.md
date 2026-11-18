@@ -4,9 +4,9 @@ status: current
 created: 2026-09-15
 ---
 
-# SAP2000 open model → viewer — `export_model.py`
-
 *↑ [[vault/Pluto Home|Home]] › [[vault/arms/Arms map|Arms map]]*
+
+# SAP2000 open model → viewer — `export_model.py`
 
 Any model SAP2000 holds → `<outBase>.bin` + `<outBase>.features.json`, with no config and no
 manual `.s2k` export. The work is C#: `scripts/sap/Run-Sap.ps1 -Export <base>` (`SapExport.cs`,
@@ -20,12 +20,23 @@ python export_model.py                                    # model open in SAP ->
 python export_model.py -o D:\proj\viewer\Model            # output base, no extension
 python export_model.py "D:\proj\Model.sdb"                # open that file in the running SAP first
 python export_model.py "D:\proj\Model.sdb" --new-instance # ... in a second SAP; the first is untouched
-python export_model.py --run | --no-results | --cylindrical | --view | --keep-open
+python export_model.py --run | --no-results | --final-only | --cylindrical | --view [--port N] | --keep-open
 ```
+
+The same on the production machine, which has no Python (`export_model.py` passes these switches):
+
+```text
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\sap\Run-Sap.ps1 -Export "<out dir>" -RunOnCopy auto -RunIfNeeded
+powershell.exe ... -File scripts\sap\Run-Sap.ps1 -Open "<project dir>\Model.sdb" -NoSaveSdb -NewInstance -Export "<out dir>" -RunOnCopy auto -RunIfNeeded
+```
+
+`--run` drops `-RunIfNeeded`; `--no-results` drops both run switches and adds `-NoResults`; `--final-only`,
+`--cylindrical` and `--keep-open` are `-FinalOnly`, `-Cylindrical` and `-KeepOpen`. `-ModelId` names the viewer model
+(default `sap/<model name>`).
 
 ## What it does
 
-- **Attach.** `SapSession.attach_or_start`, or a second SAP with `--new-instance` (closed at the
+- **Attach.** `SapSession.AttachOrStart`, or a second SAP with `--new-instance` (closed at the
   end unless `--keep-open`). `GetActiveObject` only ever reaches the *first* SAP started, so with
   two open the attach goes to the older one; use `--new-instance` when the running SAP holds
   something else.
@@ -60,7 +71,7 @@ elements (19 876 tendon segments skipped). 8 linear cases in 65 s; the three sta
 the Ultimate licence (added the same day) and run in 250 s with 9 saved stages each, so the
 viewer lists 35 cases. `results.s2k` 3.5 GB, `.bin` 413 MB, mesh walk 8 s, readback passed.
 `DatabaseTables.GetTableForDisplayArray` on an empty table returns the *previous* table's
-buffer with `None` field names — guarded in `table_rows`.
+buffer with null field names — guarded in `SapSession.TableRows`.
 
 ## Not carried
 

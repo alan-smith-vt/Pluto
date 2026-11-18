@@ -8,7 +8,9 @@ created: 2026-11-05
 
 # Frame model → STAAD.Pro `.std`
 
-`Build-Frame.ps1 -Std` writes `<out>.std` from any frame input: a workbook, an `.s2k` or a `.frame.json`.
+`Build-Frame.ps1 -Std` writes `<out>.std` from any frame input: a workbook, an `.s2k`, a `.frame.json`, or a CAESAR
+model it seeds ([[vault/format/pipe-to-frame|pipe-to-frame]]). A seed is refused when it has a tie to a CNODE at its
+node or a zero-length expansion joint (zero-length links), or any nonlinear support (nonlinear links): see Links below.
 
 **Code:**
 - `FrameStd` is the writer.
@@ -234,7 +236,8 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > | 18 | a plate |
 >
 > Import the `.s2k` in SAP, run every case, and export joint displacements and reactions. Open and run the `.std`
-> in STAAD. The joint displacements and reactions should agree (the plate by its element only).
+> in STAAD. The joint displacements and reactions should agree (the plate by its element only). The `.s2k` is stamped
+> 22.0.0 unless `-SapVersion` gives another; if SAP asks, edit its Version to the one Help > About shows.
 >
 > **Checked in development:**
 > - every joint rotated back equals SAP's;
@@ -333,3 +336,11 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > **SAP read the workbook's gradient names as uniform temperatures.** `Type="Temp Gradient 2"` / `"3"` came back as
 > `Temperature`: the probe's cantilever grew by α × 21 × L (20 + 3 − 2) and did not bend. See
 > [[vault/format/sap-s2k-tables|sap-s2k-tables]]. Round 2's parts 22 – 25 try four spellings.
+
+> [!info]- STAAD round 3 (2026-11-07)
+> - **Gradients, the last open sign, agree.** Part 22 in SAP's own form (`Gradient2` 3, `Gradient3` −2 on a 100 in
+>   cantilever) moved its tip U2 −0.065, U3 −0.0975, R2 0.00195, R3 −0.0013 in both programs (the `TEMP` row
+>   above).
+> - **SAP read all four temperature rows** back as written ([[vault/format/sap-s2k-tables|sap-s2k-tables]]).
+> - **The ten "Table key … not found" import errors** came again with SAP's own `TABLES AUTOMATICALLY SAVED AFTER
+>   ANALYSIS` row in the file: they are SAP's, not the file's ([[vault/format/sap-s2k-tables|sap-s2k-tables]]).

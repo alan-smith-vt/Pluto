@@ -15,6 +15,10 @@ Any frame model (a workbook, an `.s2k`, a `.frame.json`) can be written as a STA
 - What it cannot hold exactly refuses the whole file. Every refusal is reported at once, each naming its objects.
 - What leaving out cannot change in the structure is listed as not written: modal cases, envelopes.
 
+**Since (2026-11-18):** a CAESAR model seeds a frame model too, the check model
+([[vault/decisions/2026-11-12-caesar-to-sap|2026-11-12-caesar-to-sap]]). The same rule refuses a seed with a tie to a
+CNODE at its node or a zero-length expansion joint (zero-length links), or with any nonlinear support.
+
 The mapping is in [[vault/format/frame-to-staad|frame-to-staad]]. The choices made with the user:
 
 | Question | Chosen |
@@ -68,3 +72,7 @@ The mapping is in [[vault/format/frame-to-staad|frame-to-staad]]. The choices ma
 >   wall's thrust was 18.5 kip in SAP and 21.9 in STAAD (one element: 2.1 vs 42.7).
 > - **Channels, tees and double angles:** SAP twists them about their shear center and STAAD does not. They are
 >   written centroidal, with a notice and an eye-catching banner at the member properties in the `.std`.
+>
+> **Since (2026-11-18):** round 3 (2026-11-07) confirmed the TEMP gradient signs, the last item above, so nothing in
+> this list is open. [[vault/format/frame-to-staad|frame-to-staad]] marks as unconfirmed only the STAAD table names of
+> other section families (HSS, pipes, angles, tees), which the writer does not use.

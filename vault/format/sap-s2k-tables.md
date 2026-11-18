@@ -13,6 +13,10 @@ has imported it and exported it again. The SAP probe (`FrameProbe`, `Build-Frame
 [[vault/arms/frame-workbook|frame-workbook]]) writes one of everything the frame model writes. `FrameS2kSchema` lists
 the confirmed tables; new rows anywhere else carry an `s2k-unconfirmed` notice.
 
+The CAESAR check model's seed also writes three tables the list does not hold: `ACTIVE DEGREES OF FREEDOM`,
+`FRAME AUTO MESH ASSIGNMENTS` and `TABLES AUTOMATICALLY SAVED AFTER ANALYSIS`. They are the seed's own rows, not new
+ones, so they carry no notice ([[vault/format/pipe-to-frame|pipe-to-frame]]).
+
 > [!info]- Round 1: SAP 24.2.0, 2026-11-05
 > The probe stamped 22.0.0 was imported as a new model in SAP 24.2.0, then exported with every table (1,318 tables).
 > The scrubbed export is the fixture `scripts/frame/testdata/probe.sap-export.s2k`: the path on its first line and the
@@ -77,7 +81,7 @@ the confirmed tables; new rows anywhere else carry an `s2k-unconfirmed` notice.
 > |---|---|
 > | `LINK PROPERTY DEFINITIONS 03 - MULTILINEAR` | `Link DOF Fixed NonLinear TransKE TransCE DJ Point Force Displ` on the first row, then one row per further point: `Link DOF Point Force Displ` |
 > | `LINK PROPERTY DEFINITIONS 04 - DAMPER` | `Link DOF Fixed NonLinear TransKE TransCE TransK TransC CExp FLDamper` |
-> | `LINK PROPERTY DEFINITIONS 08 - SLIDING ISOLATOR` | `Link DOF Fixed NonLinear TransKE TransCE DJ TransK Slow Fast Rate Radius` (U1 without the friction fields) |
+> | `LINK PROPERTY DEFINITIONS 08 - SLIDING ISOLATOR` | U2 / U3: `Link DOF Fixed NonLinear TransKE TransCE DJ TransK Slow Fast Rate Radius`; U1: `Link DOF Fixed NonLinear TransKE TransCE TransK TransC` |
 > | `FRAME INSERTION POINT ASSIGNMENTS` | `Frame CardinalPt CoordSys JtOffsetXI JtOffsetYI JtOffsetZI JtOffsetXJ JtOffsetYJ JtOffsetZJ Mirror2 Mirror3 Transform`; with `CoordSys=Local`, X Y Z are local 1 2 3; no offsets: no `CoordSys` and no `JtOffset` fields |
 >
 > **Findings:**
