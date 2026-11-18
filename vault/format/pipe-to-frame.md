@@ -47,7 +47,7 @@ How the seed is written and used:
 | Frames' auto mesh | `AutoMesh=No` on every frame. CAESAR's elements meet only at their ends, and SAP's default would join a frame to any joint on its span, such as a limit stop's support point on the pipe's axis (round 2, below). |
 > | Hanger | **Spring:** KE plus its installed load up in H (down on the CNODE). **Constant:** the load in H. **Count:** rate and load times the count. |
 > | Nozzle | **Custom:** springs along the nozzle: axial, torsion, in-plane bending about the normal to nozzle and vessel axes, out-of-plane bending about the vessel axis; a blank stiffness is rigid. |
-> | Load cases | CAESAR 15.01's recommended set (both probe jobs and the sample job's own output show it):<br>• OPE per thermal set: W + Dn + Tn + Pn (or P1) + H;<br>• SUS: W + P1 + H;<br>• EXP: each OPE − SUS, and each OPE − a later OPE (L6 = L1 − L2), Linear Add combinations.<br>Force vectors and uniform loads are in none: in a linear model each is a case of its own. With any nonlinear support every case is nonlinear static from zero, as CAESAR solves them, with SAP's step and event limits raised (2,000 steps, 200 events a step, 100 iterations). |
+> | Load cases | CAESAR 15.01's recommended set (both probe jobs and the sample job's own output show it):<br>• OPE per thermal set: W + Dn + Tn + Pn (or P1) + H;<br>• SUS: W + P1 + H;<br>• EXP: each OPE − SUS, and each OPE − a later OPE (L6 = L1 − L2), Linear Add combinations.<br>Force vectors and uniform loads are in none: in a linear model each is a case of its own. With any nonlinear support every case is nonlinear static, with SAP's step and event limits raised (2,000 steps, 200 events a step, 100 iterations). SUS runs from zero, and each OPE continues from SUS's end state with its own Dn, Tn and any Pn − P1: the weight is carried cold, then the pipe heats up. SAP did not converge the probe's second OPE from zero (round 2d). Friction then follows that load path where CAESAR's does not (round 2d, below). |
 > | Groups | `PL_KIND_PIPE`, `PL_LINE_<line>`, `CAESAR_BENDS`, `CAESAR_RIGIDS`, `CAESAR_REDUCERS`, `CAESAR_EXPJOINTS`, `CAESAR_TIES`, `CAESAR_SUPPORTS`. |
 > | Tees | Rigid joints. B31J gives branch connections a flexibility of their own, which CAESAR applies for B31.1-2020 and later: not modelled yet, listed in a notice (round 1, below). |
 >
@@ -76,8 +76,7 @@ How the seed is written and used:
 >
 > **Open:**
 > - **B31J's tee flexibility**: its formulas (B31J Table 1-1) and where CAESAR applies it.
-> - **Round 2d:** L2's convergence in SAP, with the OPE cases continuing from the SUS case's end state (two diagnostic
->   cases beside CAESAR's from-zero ones), and L1 / L4 on the corrected coupling.
+> - **An OPE with its own pressure set** (Pn − P1 on top of SUS): written, not yet run by a probe.
 > - **Not exercised by round 1:** reducer stepping, a finite expansion joint's weight, k with flanged ends, the hanger
 >   count.
 
@@ -192,3 +191,35 @@ How the seed is written and used:
 >     SAP's usual way with friction isolators is a weight case first, the other cases starting from its end state.
 >   - **Round 2d** runs the corrected seed with two extra cases, `L1_FROM_SUS` and `L2_FROM_SUS`. They continue from
 >     L3's end state with only D1 + T1, and T2.
+
+> [!info]- Round 2d (2026-11-18): SAP2000 24.2 on the corrected seed, with OPE continuing from SUS
+> SAP ran the corrected seed plus two diagnostic cases, `L1_FROM_SUS` and `L2_FROM_SUS`. They continue from L3's end
+> state with only D1 + T1, and T2.
+> - **The coupling holds.** L1 from zero now converges, anchor 10 taking 234,236 lb against CAESAR's 234,460, and the
+>   end anchor's axial load is gone from the differences.
+> - **L2 from zero stalled again** (the null-step limit). **L2 from SUS converged:** the limit stop 36,426 lb against
+>   36,462, the anchor 36,859 against 36,886. **The seed's OPE cases now continue from SUS**, as the diagnostic cases did.
+> - **Against CAESAR,** with OPE from SUS. Restraint loads of 100 lb or 100 ft·lb and more:
+>
+>   | Case | Within 3% | Within 5% |
+>   |---|---|---|
+>   | L1 | 14 of 24 | 16 of 24 |
+>   | L2 | 14 of 21 | 14 of 21 |
+>   | L3 | 14 of 14 | — |
+>   | L4 | 8 of 17 | 8 of 17 |
+>   | L5 | 6 of 13 | 6 of 13 |
+>   | L6 | 6 of 12 | 8 of 12 |
+>
+> - **Every difference over 5% is friction.** They sit on the first leg's friction supports (50, 70, 130), or on what
+>   balances them: anchor 10's lateral force and moment about the vertical, the end anchor's torsion and the riser
+>   guide's lateral load. The largest differences are about 150 lb and 410 ft·lb.
+>   - **The direction differs, not the size.** At rest 50, CAESAR's 155 lb friction points along the node's total
+>     movement, mostly axial. SAP's points across the pipe. Node 50 is between the anchor and the limit stop: once the
+>     stop closes it stops moving axially, while the leg keeps moving sideways. SAP's friction follows the load path, so
+>     it ends opposing the last slip. CAESAR solves the final state and points friction along the total movement.
+>   - **Confirmed in the session** by two solvers of the same seed that differ only there. The final-state one
+>     reproduces CAESAR (L1 22 of 24 within 3%). The load-stepping one, run from SUS as SAP was (friction elastic-plastic,
+>     its slip kept from step to step), reproduces SAP: displacements within 0.009 in, every rigid support's load within
+>     1% in L1 and within 3% in L2.
+>   - **So the translation is right.** What remains is SAP's path-following friction against CAESAR's final state. No
+>     SAP setting makes friction path-independent.

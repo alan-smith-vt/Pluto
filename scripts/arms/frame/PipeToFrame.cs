@@ -43,8 +43,8 @@ using System.Text;
 //              elements meet only at their ends, and SAP would join a frame to a support point on its span.
 //              B31J's branch flexibility at tees is not modelled (rigid joints), with a notice.
 //   cases      CAESAR 15.01's recommended set: OPE (W + Dn + Tn + Pn + H) per thermal set, SUS (W + P1 + H), EXP = each
-//              OPE - SUS and each OPE - a later OPE as Linear Add combinations; nonlinear static from zero when any
-//              support is nonlinear.
+//              OPE - SUS and each OPE - a later OPE as Linear Add combinations. When any support is nonlinear, nonlinear
+//              static: SUS from zero, each OPE continuing from SUS's end state with its own Dn, Tn (and Pn - P1).
 // C# 5, one global batch (prefix Frame / Pipe).
 
 public sealed class PipeToFrameRefusal : Exception
@@ -1123,8 +1123,9 @@ public static class PipeToFrame
         }
 
         // ---------------- the cases: CAESAR's recommended set
-        List<string[]> CaseRows = new List<string[]>();       // {case, pattern}
+        List<string[]> CaseRows = new List<string[]>();       // {case, pattern[, scale factor]}
         List<string> CaseOrder = new List<string>();
+        Dictionary<string, string> CaseInitial = new Dictionary<string, string>();   // a nonlinear case -> the case it continues from
         List<string[]> ComboRows = new List<string[]>();      // {combo, case, sf}
 
         // CAESAR 15.01's recommended set, as it gave it for the probe (2026-11-16): an OPE per thermal set, W + Dn + Tn + Pn (P1 without
@@ -1139,19 +1140,29 @@ public static class PipeToFrame
             var ope = new List<int>();
             for (int k = 1; k <= 9; k++) if (has("T" + I(k)) || has("D" + I(k))) ope.Add(k);
             if (ope.Count == 0) ope.Add(1);
-            int n = 0;
+            int n = ope.Count + 1;
+            string sus = "L" + I(n) + "_SUS";
+            var susPats = w.Concat(new[] { "P1", "H" }.Where(has)).ToList();
+            // with nonlinear supports SUS comes first and each OPE continues from its end state with its own loads only
+            // (Dn, Tn, Pn - P1): SAP's friction isolators carry no friction before they are loaded, and SAP 24.2 did not
+            // converge the probe's second OPE from zero, either scheme (round 2d, 2026-11-18). It is the pipe's own path, the
+            // weight carried cold and then heat-up; CAESAR solves each from zero, so friction can end pointing another way
+            // where a support's sliding turns during heat-up
+            if (Nonlinear) { foreach (string p in susPats) CaseRows.Add(new[] { sus, p }); CaseOrder.Add(sus); }
             var opeNames = new List<string>();
+            int num = 0;
             foreach (int k in ope)
             {
-                string c = "L" + I(++n) + "_OPE";
+                string c = "L" + I(++num) + "_OPE";
                 var pats = new List<string>(w);
                 foreach (string p in new[] { "D" + I(k), "T" + I(k), has("P" + I(k)) ? "P" + I(k) : "P1", "H" }) if (has(p) && !pats.Contains(p)) pats.Add(p);
-                foreach (string p in pats) CaseRows.Add(new[] { c, p });
+                var more = pats.Where(p => !susPats.Contains(p)).Select(p => new[] { c, p, "1" }).ToList();
+                if (more.Count > 0 && has("P1") && !pats.Contains("P1")) more.Add(new[] { c, "P1", "-1" });
+                if (Nonlinear && more.Count > 0) { CaseRows.AddRange(more); CaseInitial[c] = sus; }
+                else foreach (string p in pats) CaseRows.Add(new[] { c, p });
                 CaseOrder.Add(c); opeNames.Add(c);
             }
-            string sus = "L" + I(++n) + "_SUS";
-            foreach (string p in w.Concat(new[] { "P1", "H" }.Where(has))) CaseRows.Add(new[] { sus, p });
-            CaseOrder.Add(sus);
+            if (!Nonlinear) { foreach (string p in susPats) CaseRows.Add(new[] { sus, p }); CaseOrder.Add(sus); }
             foreach (string o in opeNames)
             {
                 string c = "L" + I(++n) + "_EXP";
@@ -1167,7 +1178,7 @@ public static class PipeToFrame
             string what = "cases: CAESAR's recommended set (OPE per thermal set: W + Dn + Tn + Pn + H; SUS: W + P1 + H; EXP: each OPE - SUS, and each OPE - a later OPE)";
             if (Nonlinear)
             {
-                what += ", nonlinear static from zero as CAESAR solves them (the supports' gaps, one-ways and friction), EXP as combinations of them";
+                what += ", nonlinear static (the supports' gaps, one-ways and friction): SUS from zero, each OPE continuing from SUS's end state with its own loads (the weight carried cold, then heat-up), EXP as combinations of them";
                 if (rest.Count > 0) what += "; " + string.Join(", ", rest.ToArray()) + " are in no case: with nonlinear supports a load alone is no case, so build the occasional cases you need with W (and P1, H) in them";
             }
             else if (rest.Count > 0)
@@ -1255,8 +1266,8 @@ public static class PipeToFrame
             table("FRAME LOADS - DISTRIBUTED", DistRows);
             table("FRAME LOADS - TEMPERATURE", TempRows);
             bool nl = Nonlinear;
-            table("LOAD CASE DEFINITIONS", CaseOrder.Select(c => "Case=" + c + "   Type=" + (nl ? "NonStatic" : "LinStatic") + "   InitialCond=Zero"));
-            table("CASE - STATIC 1 - LOAD ASSIGNMENTS", CaseRows.Select(r => "Case=" + r[0] + "   LoadType=\"Load pattern\"   LoadName=" + r[1] + "   LoadSF=1"));
+            table("LOAD CASE DEFINITIONS", CaseOrder.Select(c => "Case=" + c + "   Type=" + (nl ? "NonStatic" : "LinStatic") + "   InitialCond=" + (CaseInitial.ContainsKey(c) ? CaseInitial[c] : "Zero")));
+            table("CASE - STATIC 1 - LOAD ASSIGNMENTS", CaseRows.Select(r => "Case=" + r[0] + "   LoadType=\"Load pattern\"   LoadName=" + r[1] + "   LoadSF=" + (r.Length > 2 ? r[2] : "1")));
             // SAP's own nonlinear parameters (its export, the STAAD probe), with no geometric nonlinearity: CAESAR's is small-displacement
             // SAP's defaults (200 steps, 24 events a step, 40 iterations) let the probe's thermal cases stop short: friction
             // supports slipping one after another are many events; the limits are raised

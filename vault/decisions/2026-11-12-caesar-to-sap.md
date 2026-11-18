@@ -23,6 +23,7 @@ The mapping is in [[vault/format/pipe-to-frame|pipe-to-frame]]. The choices made
 | Seeding | **Once.** Edits go on in the frame workbook. |
 | Order | **Phase 1, the linear model**, then **phase 2**: one-way supports, gaps and friction as SAP's nonlinear links. Each phase ends with a probe round: one job in CAESAR and SAP, compared in the session. |
 | Bend flexibility | **B31J's 1.3 / h**, what CAESAR applies for current codes (round 1 showed it); `-AppendixD` for a job run with B31J off. |
+| Nonlinear cases | **SUS from zero, each OPE continuing from SUS's end state** (round 2d): SAP did not converge an OPE from zero, and it is the pipe's own path. Friction then follows the load path; CAESAR's points along the total movement, so the two can differ by up to μN in direction at a support whose sliding turns during heat-up. |
 
 > [!info]- Why
 > - **One model, two programs.** The frame model already writes SAP's `.s2k`, the frame workbook, the preview and STAAD.
@@ -41,6 +42,10 @@ The mapping is in [[vault/format/pipe-to-frame|pipe-to-frame]]. The choices made
 
 ## History
 
+- **2026-11-18, round 2d:** the coupling holds and L1 converges. L2 converges only continuing from SUS, so every OPE now
+  does. SAP then matches CAESAR except on friction-sized loads (at most about 150 lb and 410 ft·lb on the probe). There
+  SAP's friction follows the load path and CAESAR's the final state, as two session solvers that differ only there
+  confirm. Phase 2's translation is verified.
 - **2026-11-16, round 2c:** L1 converged in SAP but its coupling held nothing axially: its gap links were 0.01 in long,
   which SAP takes as zero-length (local 1 vertical). Every support point is now half an OD from its node. L2 stalled at
   0.2% of its load on both of SAP's schemes; round 2d tries the thermal cases continuing from the weight case's end state.
