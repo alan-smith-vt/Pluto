@@ -4,9 +4,9 @@ status: current
 created: 2026-08-25
 ---
 
-# RawViewerWriter — structure and usage
-
 *↑ [[vault/Pluto Home|Home]] › [[vault/format/Format map|Format map]]*
+
+# RawViewerWriter — structure and usage
 
 `scripts/lib/writers/RawViewerWriter.cs` is the **production writer** for the Pluto v4 binary
 ([[vault/format/v4-schema|v4-schema]]). It is called by the STAAD post-processing scripts
@@ -29,7 +29,7 @@ matches META, geometry-only export hashes identical to the full export.
 | `DsrRecord { LC, elemID, node, Values[] }` | per-corner DSR checks |
 | `StrRecord { elemID, node, Values[] }` | per-corner LC-independent design strengths |
 
-Types the writer **defines** (new in v4): `Component`, `BeamMember`, `SectionDef`, `BeamRecord`.
+Types the writer **defines** (new in v4): `Component`, `BeamMember`, `SectionDef`, `BeamRecord`, `CornerRecord`.
 
 ## Two-phase contract (unchanged)
 
@@ -40,7 +40,7 @@ w.AppendStresses(stresses);     // in-place seek + write through a memory map
 w.AppendDisplacements(disps);
 w.AppendDsr(dsrs);              // only if the layout has kind "dsr"
 w.AppendStr(strs);              // only if the layout has kind "str"
-```csharp
+```
 
 - `Write()` NaN-fills **every** field plane up front, so appends can arrive in any order
   and any subset; anything never written reads as no-data.
@@ -51,7 +51,6 @@ w.AppendStr(strs);              // only if the layout has kind "str"
   (`ComponentLayout` throws otherwise) because `Append*` writes a run at `Start(kind)`.
 - Records whose `node` is not a corner of `elemID` (element-centre results mixed in) are
   silently skipped, as before.
-```
 
 ## Beams (new)
 
@@ -95,6 +94,9 @@ w.AppendDisplacements(disps);             // ALSO fans node displacements onto b
   Out-of-range values throw with the beam id.
 - **Up axis** (2026-10-03): `w.UpAxis = "Y"` or `"Z"` adds `upAxis` to META (null = not emitted). Set it
   before `Write()`. META is not hashed, so the hash is unchanged.
+- **Releases** (2026-11-05): `BeamMember.ReleaseMask` (u32, 0 = none) is written as a bit pattern into BPRP
+  slot 7 ([[vault/format/v4-schema|v4-schema]] §4.3 has the bits). `SapToPluto` sets it from SAP's frame releases;
+  the viewer draws it (`releases.js`).
 
 ## Labels
 
@@ -124,9 +126,16 @@ End-to-end usage of the pipe arm (CSV → beams → files → viewer): [[vault/a
   Writes `<outBase>.bin` + `<outBase>.features.json`. Verified C# 5 build and JS read.
 - `SteelToPluto.cs` / `CombinedToPluto.cs` -- steel W-shape CSV, and pipes + steel in one
   file: [[vault/arms/steel-csv-to-viewer|steel-csv-to-viewer]].
-- `SapToPluto.cs` -- SAP2000 `.s2k` shells + results -> v4 + sidecar via the generic
+- `SapToPluto.cs` -- SAP2000 `.s2k` shells, frames + results -> v4 + sidecar via the generic
   `AppendShellValues(List<CornerRecord>, kind)` (raw values, no STAAD unit conversion;
-  added 2026-09-03): [[vault/arms/sap-s2k-to-viewer|sap-s2k-to-viewer]].
+  added 2026-09-03) and `AppendBeamForces` (force, moment, stress, envelope). Frames carry local
+  axes, insertion offsets and `ReleaseMask`; SAP's labels (text ones too) are the node, shell and
+  beam labels: [[vault/arms/sap-s2k-to-viewer|sap-s2k-to-viewer]]. The frame workbook's preview
+  (`Build-Frame.ps1 -Preview`) goes through it too.
+- `CaesarToPluto.cs` -- CAESAR II `.cii` (+ Excel results) -> beams with tapered reducers
+  (`SectionIndexB`), `UpAxis`, beam and node labels, and displacement, force, stress, code, SIF and
+  `restraint` components: [[vault/arms/caesar-to-viewer|caesar-to-viewer]]. `Build-Pipe.ps1 -Preview`
+  goes through it too.
 
 ## Profiles
 

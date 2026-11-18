@@ -4,9 +4,9 @@ status: current
 created: 2026-08-26
 ---
 
-# Viewer overview
-
 *↑ [[vault/Pluto Home|Home]] › [[vault/viewer/Viewer map|Viewer map]]*
+
+# Viewer overview
 
 ## What it is
 
@@ -53,7 +53,12 @@ the same strided math, and colored by the same shader. Beams are a second domain
 - **Navigation**: find element/node by real ID (moves the orbit focus
   and flashes the target on top of everything -- no zoom),
   orthographic projection + axis triad, load-case stepping (arrow
-  keys), persistent active-view caption.
+  keys), persistent active-view caption. Ctrl+click sets the focus (unless a predicate or cut tool is armed);
+  a double-click flies to the point. Find searches shell elements only (`viewer.js` `ensureIdMaps`): beam ids are
+  not found yet.
+- **Panels**: on the left, Model, Field, Display, then Beams, Releases, Links, Supports, Loads (each shown when the
+  file has that layer), Deformation and Status. On the right edge, the flyout tabs for Section cuts, Predicates,
+  Groups and Checks (shown for a pipe model or a sidecar with a `review`).
 
 ## Run
 
@@ -70,8 +75,9 @@ fields with a raw hex dump, the range-checked block layout, metadata
 tables, paged node/element/ID tables, and per-load-case field data
 (per-component min/max/mean stats plus a per-element corner × component
 matrix). It reuses the frozen `format/v3Reader.js`, so it can never disagree with the
-viewer about the file layout. Use **Download Sample .bin** to emit a
-test file from `sampleModel.js`, then open it back through the picker.
+viewer about the v3 layout. **It reads v3 files only** (`inspector.html` binds `FEABinary` to `FEAv3`); every arm
+writes v4, so v4 files are checked in the viewer or with the readback tests (below). Use **Download Sample .bin**
+to emit a v3 test file from `sampleModel.js`, then open it back through the picker.
 
 ## Layout (`viewer/scripts/`)
 
@@ -85,8 +91,8 @@ test file from `sampleModel.js`, then open it back through the picker.
 | `geometryBuilder.js` | duplicate-vertex shell mesh build, tri/quad triangulation |
 | `beamGeometry.js` | extruded cross-section beam mesh (parametric sections), axis param for picking |
 | `viewerBeams.js` | beam-domain display layered on viewer.js: own component/range, neutral in envelope views, pick readout; kind `restraint` stays out of its component list |
-| `loads.js` | applied loads from the sidecar `loads` (`FEALoads`, Loads panel): forces, moments, imposed displacements and rotations, uniform-load and wind rows as instanced arrows; type / vector filters, size, wind direction, labels; readout + pin card with every vector |
-| `pipe.js` | the pipe model (`FEAPipe`): Checks flyout from the sidecar `review` (click to fly to an item), the model's source line, the element property readout row and pin card from `properties`, node-number labels |
+| `loads.js` | applied loads from the sidecar `loads` (`FEALoads`, Loads panel): forces, moments, imposed displacements and rotations, uniform-load and wind rows as instanced arrows; type / vector filters, size, wind direction, labels; readout + pin card with every vector. Version 2 (SAP): the **Loads of** select (all patterns, a pattern, a case, a combination), point and distributed frame loads, temperature bands |
+| `pipe.js` | the pipe model (`FEAPipe`): Checks flyout from the sidecar `review` (click to fly to an item), the model's source line, the element property readout row and pin card from `properties`, node-number labels. SAP frame items too: section, shape, dimensions, material, angle, releases, modifiers; SAP's joint labels as node numbers |
 | `labels.js` | screen-space labels (`FEALabels`): node numbers and load values, placed after each render by priority with overlap culling |
 | `supports.js` | support symbols from the sidecar `supports` items (`FEASupports`, Supports panel): one instanced shape per restraint kind, coloured by node group / kind / restraint load, deflection lines, readout + pin card with the loads per load case |
 | `releases.js` | member end releases from the binary (BPRP slot 7, `FEAReleases`, Releases panel): rings, pins, collars, squares and slots a short way in from each released end, amber where partly fixed; follows the beams' visibility; the readout's Releases row; `FEAReleases.text(e)` |
@@ -97,14 +103,46 @@ test file from `sampleModel.js`, then open it back through the picker.
 | `sampleModel.js` | synthetic FEA binary generator + `.bin` download (demo / format reference) |
 | `viewer.js` | scene wiring, render loop, UI, hover/pin readout |
 | `features.js` | sidecar loader, Color by groups, legend, predicate hook |
+| `files.js` | the one way in and out (`FEAFiles`): Choose files… (File System Access API, else a file input), Save features (Ctrl+S), legacy JSON routing, Reload / Auto-reload |
+| `overlays.js` | the model rail (`FEAOverlays`): Add overlay…, other models at true coordinates with their own groups, ghost / remove, plan rotation ([[vault/viewer/model-rail\|model-rail]]) |
 | `predicates.js` | predicate flyout + engine (`FEAPredicates`) |
 | `sectionCut.js` | section cuts: named list (groups, visibility, adjust, delete, numeric centre), probe + plot + isolate on the selected cut (this wall / slab, or a **crop box** of the cut length by a width along a secondary axis, 2026-09-10), sidecar round trip, legacy import (2026-09-04) |
 | `viewCube.js` | orientation cube |
-| `inspector.html` / `inspector.js` | standalone field-by-field binary inspector |
+| `inspector.html` / `inspector.js` | standalone field-by-field binary inspector (v3 only) |
+| `heatmap.html` / `heatmapCore.js` | standalone pipe-weight heatmap over the steel plan ([[vault/arms/plant-combined-to-viewer\|plant-combined-to-viewer]] §6) |
+| `../tests/readback_caesar.js` / `readback_sap.js` | headless readback of a `CaesarToPluto` / `SapToPluto` export through the viewer's own reader |
 
 Three.js r128 and OrbitControls are vendored under `lib/`.
 
+## Tests
+
+Headless, in Node, with THREE loaded under `vm` and no DOM. From the repo root:
+
+```bash
+for t in viewer/tests/test_*.js; do node "$t"; done     # every test prints ok / FAIL lines and a verdict
+node viewer/tests/readback_sap.js <outBase>               # a SapToPluto export (<outBase>.bin + .features.json)
+node viewer/tests/readback_caesar.js <outBase> --expect <result.json>   # a CaesarToPluto export, against its counts
+```
+
 ## Recent additions (newest first)
+
+SAP frame models (2026-11-05, branch `pipestress`; the frame workbook's preview and any SAP export, `SapToPluto`):
+- **Releases panel** (`releases.js`): member end releases from BPRP slot 7, drawn a little in from the released end;
+  amber where partly fixed; the readout's Releases row.
+- **Links panel** (`links.js`): two-joint links from the sidecar `links`, a line and a symbol per type; zero-length
+  links at their joint; a faint ghost for links buried in their members; readout and pin card with the DOFs.
+- **Supports**: SAP's kinds join CAESAR's: coil for a spring (flat spiral for a rotational one), hook for tension
+  only, a hatched plate for friction, a diamond for any other link. Sizes come from the beam section where there is
+  no pipe. The export ticks its support groups, so every support shows on load.
+- **Loads of** select (Loads panel, sidecar `loads` version 2): every pattern, one pattern, a case or a combination;
+  a staged nonlinear case carries the loads it continues from; self weight is listed, not drawn. Remembered per model.
+- **Frame properties** (`pipe.js`): hover a frame for its section, length, angle, releases and line; pin it for a card
+  with geometry, section, modifiers and end releases. Node numbers show SAP's joint labels, text ones included.
+- **Checks** for SAP models: the export's notices and the frame workbook's build messages.
+- 2026-11-04: checks and properties highlight their own elements; the ortho view zooms smoothly and keeps the whole
+  model in front of the camera.
+- Tests: `test_releases.js`, `test_links.js`, `test_supports.js`, `test_loads.js`, `test_review.js`; `readback_sap.js`
+  checks the new sections.
 
 The pipe model as a confirmation step (2026-10-23, branch `pipestress`, Stage D; decision
 [[vault/decisions/2026-10-23-pipe-model-in-viewer|2026-10-23-pipe-model-in-viewer]]):
@@ -145,7 +183,7 @@ Support symbols (2026-10-04, branch `pipestress`, CAESAR II arm stage 2):
   - It is one InstancedMesh per primitive (cone, cylinder, box, ball), headlight-shaded,
     `frustumCulled = false`.
   - Sizes come from the drawn pipe radius at the node, with a floor from the model span.
-- **Supports panel** (under Beams): Show, Size, Colour. Colour is the node group, the restraint
+- **Supports panel** (after Links since 2026-11-05): Show, Size, Colour. Colour is the node group, the restraint
   kind, or a `restraint` load component in the current load case.
 - **Picking:** a symbol in front of the pipe wins the hover. The readout gives the support, its
   restraints, and `|F|` / `|M|` in this load case. A pin opens a card with the loads on the

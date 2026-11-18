@@ -5,11 +5,11 @@ created: 2026-08-25
 supersedes: "[[vault/format/v3-schema|v3-schema]]"
 ---
 
-# Binary format v4
-
 *↑ [[vault/Pluto Home|Home]] › [[vault/format/Format map|Format map]]*
 
-Goal: one file that carries **multiple element families** (shells today, beams next,
+# Binary format v4
+
+Goal: one file that carries **multiple element families** (shells and beams today,
 solids/springs later) behind a **block directory** so readers skip what they don't know
 and writers never need a header change to add data. v3 files keep loading through a
 legacy shim — see [[#9. Legacy shim (v ≤ 3)]].
@@ -51,6 +51,19 @@ Rules:
   just 8 bytes at offset 16 can point at a fresh directory.
 - Directory may live anywhere (typically end of file for streaming writers).
 
+How the blocks hang together (bracketed blocks are optional; `RawViewerWriter` puts the directory right after the
+header, [[vault/format/raw-viewer-writer|raw-viewer-writer]]):
+
+```mermaid
+flowchart LR
+  H["Header, 32 bytes<br/>magic, version, dirOffset"]
+  D["Block directory<br/>tag, domain, offset, length, count, flags"]
+  H --> D
+  D --> G["File-global<br/>META, NODE, NDID, [SECT], [LABL nodes]"]
+  D --> S["Domain 0: shells<br/>ELEM, ELID, [LABL], [FLDC], [FLDS]"]
+  D --> B["Domain 1: beams (0 when no shells)<br/>ELEM, ELID, BPRP, [LABL], [FLDS]"]
+```
+
 ## 3. Block tags
 
 | tag    | scope  | payload                                                                            |
@@ -64,7 +77,7 @@ Rules:
 | `FLDC` | domain | `f32[nElem][maxSlots][nCompConst]` LC-independent slot fields (was v3 `strengths`) |
 | `SECT` | global | section table (§6), binary                                                         |
 | `BPRP` | domain | beam properties (§4.3)                                                             |
-| `LABL` | both   | identity labels: `u32[n+1]` byte offsets + UTF-8 pool. Global = one label per node; domain d = one per element. Display-only (hover readout). Excluded from `geometryHash`. |
+| `LABL` | both   | identity labels: `u32[n+1]` byte offsets + UTF-8 pool. Global = one label per node; domain d = one per element. Display-only (readout; node labels also as Node numbers, §3.1). Excluded from `geometryHash`. |
 
 Field blocks never store per-node data; everything is per element-**slot**. A slot is a
 corner for shells and a result station for beams. Unused slots are NaN-padded (tri in a
@@ -74,7 +87,10 @@ renders as no-data, exactly as v3.
 ### 3.1 Labels vs. groups
 
 `LABL` carries **identity** — one string per node / element (the source system's oid,
-a member mark). It is never rendered as 3D text; the viewer shows it in the readout. Every
+a member mark). The viewer shows it in the readout. One exception: for a SAP frame model, the
+Node numbers toggle draws the node labels (SAP's joint labels) as screen labels (`pipe.js`).
+SAP labels may be text (joint `A1`, frame `B-12`): `SapLabels.cs` gives them numeric ids above
+the integer labels of their kind and keeps the text as the `LABL` (2026-11-05). Every
 *categorical* attribute (class, run, room, chord/star, unsized, …) is a **group** in the
 [[vault/format/features-sidecar|features sidecar]]: ID lists are cheap, colorable and
 STAAD-exportable, and don't bloat the binary. Rule: identity in the binary, categories in
@@ -182,8 +198,9 @@ minus the viewer's y. A pin (M2 and M3 released) is `0x30` at end A, `0xc00` at 
   order, each domain's blocks in domain order. Excludes `META` and all field blocks, so a
   geometry-only export and the full-results export of the same run hash identical. This is
   the key the [[vault/format/features-sidecar|features-sidecar]] binds to.
-- Element IDs are **per domain**: shell `101` and beam `101` may coexist. Find-by-ID
-  searches every domain and disambiguates when more than one hits.
+- Element IDs are **per domain**: shell `101` and beam `101` may coexist. Find-by-ID should
+  search every domain and disambiguate when more than one hits; the viewer's Find searches
+  the shell domain only so far (`viewer.js` `ensureIdMaps` / `doFind`), so beam ids are not found.
 
 ## 6. Sections
 
@@ -223,7 +240,7 @@ Same format, same reader; a profile is just which blocks are present.
 
 | profile         | blocks                                                | viewer behaviour                                              |
 |-----------------|-------------------------------------------------------|---------------------------------------------------------------|
-| geometry-only   | `META NODE NDID ELEM ELID [SECT BPRP]`                 | mesh in neutral material, no component dropdown; predicates, section cuts, supports editable |
+| geometry-only   | `META NODE NDID ELEM ELID [SECT BPRP]`                 | mesh in neutral material, no component dropdown; predicates and section cuts editable, sidecar layers (supports, links, loads) drawn |
 | results         | geometry-only + `FLDS` (+ `FLDC`)                     | full field display                                            |
 | append-in-progress | results with `APPEND` flag and partial planes     | loads the complete planes, logs the count                     |
 
@@ -257,29 +274,38 @@ emits the v4 in-memory model:
 | `meta.strengths`              | domain 0 `FLDC` + `constComponents`                  |
 | `meta.displacementVector`     | domain 0 `displacementVector`                        |
 
-Downstream code (`modelSet`, `attributeUpdaters`, `pointQuery`, envelopes, inspector)
-only ever sees the v4 model. v3 bugs get fixed by re-exporting, not by extending the shim.
+Downstream code (`modelSet`, `attributeUpdaters`, `pointQuery`, envelopes) only ever sees
+the v4 model. The inspector (`viewer/inspector.html`) is the exception: it is v3-only and reads
+`v3Reader.js` directly. v3 bugs get fixed by re-exporting, not by extending the shim.
 
 ## 10. In-memory model (reader output, both paths)
+
+`FEAv4.loadModel` (`v4Reader.js`) and `PlutoFormat.fromV3` (`pluto.js`) both return:
 
 ```js
 {
   version, file,
-  nNodes, nodes: Float32Array, nodeIds: Uint32Array,
+  nNodes, nodes: Float64Array, nodeIds: Uint32Array,
+  nodeLabels: { count, get(i) } | null,   // global LABL
   loadCases: [...],
   sections: [...],                        // decoded SECT
+  meta, modelId, geometryHash, units,     // META (v3: its JSON)
+  upAxis: 'Y' | 'Z' | null,               // META.upAxis
+  directory: [...] | null,                // block directory entries (v3: null)
   domains: [{
     name, family, maxSlots, components, constComponents, dispVector,
     nElem, elemRecordU32, elems: Uint32Array, elemIds: Uint32Array,
-    fields:      { offset, nLC, planeStride },   // readLC / readElementRecord
-    constFields: { offset } | null,
-    beamProps:   Float32Array | null
+    fields:      { offset, nLC, planeStride } | null,
+    constFields: { offset, nComp } | null,
+    beamProps:   Float32Array | null,
+    labels:      { count, get(i) } | null // domain LABL
   }]
 }
 ```
 
-`readLC(model, d, lc)` and `readElementRecord(model, d, lc, e)` are the v3 functions with
-a domain argument; `planeStride = nElem * maxSlots * nComp * 4`.
+Reads go through a domain **view** (`PlutoFormat.domainView(model, d)`, `shellView(model)`): a
+v3-shaped object whose `readLC(lc)` and `readElementRecord(lc, e)` read that domain's `FLDS`;
+`planeStride = nElem * maxSlots * nComp * 4`.
 
 ## Decisions log
 

@@ -4,18 +4,55 @@ status: draft
 created: 2026-08-25
 ---
 
-# Features sidecar (`*.features.json`)
-
 *↑ [[vault/Pluto Home|Home]] › [[vault/format/Format map|Format map]]*
 
-Everything a user **defines** in the viewer — predicates, section cuts, supports, springs,
-whatever comes next — lives in one JSON file beside the model, never in the binary
+# Features sidecar (`*.features.json`)
+
+Everything a user **defines** in the viewer — groups, predicates, section cuts, whatever
+comes next — lives in one JSON file beside the model, never in the binary
 ([[vault/format/v4-schema|v4-schema]]). The binary is results: large, write-once, solver-produced. Features are
 intent: small, hand-edited, iterated, consumed by other programs (the C# pre/post scripts).
 Opposite lifecycles → separate files.
 
-Theme: **define in viewer → export features → analysis script consumes.** Each feature
-type is a viewer tab that owns one section of the envelope.
+Theme: **define in viewer → export features → analysis script consumes.** Each user
+feature type is a viewer tab that owns one section of the envelope.
+
+Exporters also write sections the viewer only draws: `supports`, `links`, `loads`, `properties`, `review` and
+`model.source`. The exporter owns them and rewrites them on every export; the viewer never edits them. Exporters
+write groups too, and a re-export keeps the user's own (below).
+
+```mermaid
+flowchart LR
+  U["Viewer tabs<br/>Groups, Predicates, Section cuts"]
+  P["Plant exporters<br/>PipeToPluto, SteelToPluto, CombinedToPluto"]
+  C["CAESAR export<br/>CaesarToPluto + PipeSidecar"]
+  S["SAP export<br/>SapToPluto + FrameSidecar"]
+  G["groups"]
+  PC["predicates, sectionCuts"]
+  SU["supports"]
+  LK["links"]
+  LD["loads"]
+  PR["properties, review, model.source"]
+  V1["supports.js, links.js"]
+  V2["loads.js"]
+  V3["pipe.js<br/>Checks, readout, pin card"]
+  U <--> G
+  U <--> PC
+  P --> G
+  C --> G
+  S --> G
+  C --> SU
+  S --> SU
+  S --> LK
+  C --> LD
+  S --> LD
+  C --> PR
+  S --> PR
+  SU --> V1
+  LK --> V1
+  LD --> V2
+  PR --> V3
+```
 
 ## Envelope
 
@@ -55,6 +92,10 @@ Rules:
   scripts may refuse. Because the hash excludes field blocks, a features file authored on
   a geometry-only export binds to the full-results export of the same run.
 - Multi-model sessions (identical geometry verified at load) share one features file.
+- `model.units.worldOffset` (optional): the recentre an exporter subtracted from every node, a string `"x y z"` in
+  the file's length unit (`CaesarToPluto`, `PipeToPluto`, `CombinedToPluto`). World = file coordinates + offset.
+  Overlays are placed by it ([[vault/viewer/model-rail|model-rail]]). The main model's readout and predicates do not
+  use it yet: `FEAFeatures.worldOffset()` reads a top-level `units` (open, see model-rail).
 
 ## Addressing geometry
 
@@ -96,8 +137,10 @@ when IDs *are* written out.
 
 Display flag: `"hidden"` on a group item. **Absent or `true` = listed, not painted** (out
 of the precedence chain); only `"hidden": false` paints (2026-09-04: every group starts
-unticked, so a fresh sidecar shows the model uncoloured until you tick). Exporters never
-write it; the viewer's Groups tab writes it explicitly on every tick, and Export keeps it.
+unticked, so a fresh sidecar shows the model uncoloured until you tick). Exporters may set
+it: the CAESAR export ticks its size and support groups and leaves its line, SIF and property groups hidden, and the
+SAP export ticks its support node groups, so every support shows on load. A re-export keeps the user's value for an
+exporter group matched by name (below). The viewer's Groups tab writes it explicitly on every tick, and Export keeps it.
 
 Viewer behaviour (`viewer/scripts/features.js`, **Groups tab** on the right edge, 2026-09-03):
 - One switch, **Color by groups**: every element painted by its group's color through a
@@ -125,8 +168,8 @@ Viewer behaviour (`viewer/scripts/features.js`, **Groups tab** on the right edge
 - `color` omitted → auto palette. Hover/pick readout shows the winning group name.
 - Headless test: `node viewer/tests/test_groups.js`.
 
-Predicate-referenced members are accepted by `features.js` today (counted as unresolved
-until the predicate module is ported); the hook point is `resolveMember()`.
+Predicate-referenced members resolve through the predicate module (`features.js`
+`resolvePredicateMembers` → `FEAPredicates.resolveMembers`); without it they count as unresolved.
 
 C# side: `scripts/lib/sidecar/FeaturesSidecar.cs` — `AddGroup(...)`, `AddNodeGroup(...)`,
 `ComputeGeometryHash(blocks)`, `ToJson()`, `ToStaadGroupBlock()` (bridge to the existing
@@ -216,7 +259,7 @@ archived viewer's management layer) and round-trips them.
 - `groups[]` carries per-group visibility; collapsed/expanded is view state only.
 - Unknown keys on an item survive a round trip (kept on the runtime object's `_raw`).
 - The archived viewer's standalone `section_cuts.json` (`{version, groups, cuts:[{point
-  (inches), axis, length (inches)}]}`) imports through the panel's Import button; points
+  (inches), axis, length (inches)}]}`) imports through **Choose files…** (`files.js`, below); points
   convert to the model unit and the panel normal is found by probing.
 - `halfHeight` and `domains: ["beams"]` are reserved for the C# free-body cut; the viewer
   writes `domains: ["shells"]` and leaves `halfHeight` alone.
@@ -272,7 +315,7 @@ or by hand. Decision: [[vault/decisions/2026-10-03-imported-restraints|2026-10-0
 - **Loads are not here.** Results stay in the binary. CAESAR writes the loads on the supports as
   beam components of kind `restraint` (`Restraint FX … |M|`): node totals on every beam end at the
   support, NaN elsewhere ([[vault/format/v4-schema|v4-schema]] §4.1).
-- **Viewer** (`viewer/scripts/supports.js`, `FEASupports`; **Supports** panel under Beams):
+- **Viewer** (`viewer/scripts/supports.js`, `FEASupports`; **Supports** panel, after Links):
   - **Symbols** in CAESAR II's language: a plate for an anchor, slim arrows pointing at the pipe
     along the line of action for the rest. (A first set of cubes, collars, hoops and plates crowded
     busy nodes and was replaced the same day.)
@@ -338,7 +381,7 @@ A SAP model's two-joint link elements: gaps, hooks, springs, friction isolators,
 - **Member end releases are not here.** They are geometry in the binary (BPRP slot 7,
   [[vault/format/v4-schema|v4-schema]] §4.3), drawn by `viewer/scripts/releases.js` (the **Releases** panel).
 
-> [!info]- Viewer (`viewer/scripts/links.js`, `FEALinks`; the Links panel under Beams)
+> [!info]- Viewer (`viewer/scripts/links.js`, `FEALinks`; the Links panel, after Releases)
 > - **Symbols:** a thin line between the joints, and a symbol at its middle with local 1 along the link:
 >   - linear: a coil spring;
 >   - gap: two plates facing each other across a gap;
@@ -412,14 +455,15 @@ everything the model holds before CAESAR imports it. The CAESAR export (`CaesarT
   speed are in CAESAR's load cases too, so the viewer asks which way to draw it.
 - **`review`**: the build's checks, errors first (`error | warning | notice | info`), each with the nodes,
   elements and beams it is about. Codes: `unsupported`, `tee-no-sif`, `free-end`, `element-self`,
-  `element-zero`, `element-twice`, `off-model`, `cnode-off-model`, `bend-corner`, `bend-room`, `bend-code`,
-  `node-twice`, `uniform-mixed`; CAESAR's error checker (`PipeReview.CaesarRules`, [[vault/arms/caesar-checks|caesar-checks]]):
-  `node-range`, `corrosion-wall`, `temperature-alpha`, `displacement-restrained`, `loop-closure`, `bend-angle`,
+  `element-zero`, `element-twice`, `off-model`, `cnode-off-model`, `cnode-apart`, `bend-corner`, `bend-room`, `bend-code`,
+  `piece-backward`, `node-twice`, `uniform-mixed`; CAESAR's error checker (`PipeReview.CaesarRules`, [[vault/arms/caesar-checks|caesar-checks]]):
+  `node-range`, `corrosion-wall`, `temperature-alpha`, `displacement-restrained`, `loop-closure`, `gap`, `bend-next`, `bend-angle`,
   `bend-node-angle`, `bend-node-near`, `corner-no-bend`, `corner-unseen`, `intersection`, `sif-below-one`, `sif-at-bend`, `thin-wall`, `reducer-angle`,
   `b31j`, `expansion-joint`, `expansion-joint-stiffness`, `expansion-joint-thrust`, `wave-added-mass`, `rigid-weightless`, `uniform-repeated`, `hangers`,
   `hangers-given`, `hanger-twice`, `hanger-rate-only`, `hanger-free`, `hanger-restrained`, `nozzles`, `nozzle-restrained`, `nozzle-axis`, `nozzle-stiffener`,
-  `nozzle-material`, `nozzle-api-scope`, `nozzle-vector`, `nozzle-vessel-type`, `sif-pad` (`PipeReview.cs`); `restraint-code` (a code or a layout from CAESAR's documentation that no CAESAR file has shown yet:
-  `CaesarNeutralWriter.NoticeItems`); `build` (the builder's or the workbook reader's
+  `nozzle-material`, `nozzle-api-scope`, `nozzle-vector`, `nozzle-vessel-type`, `sif-pad` (`PipeReview.cs`); `restraint-code` (a code or a layout from CAESAR's documentation that no CAESAR file has shown yet), `order-bend` and
+  `coords-placing` (where the writer moves elements after a bend or adds a COORDS entry), all notices from
+  `CaesarNeutralWriter.NoticeItems`; `build` (the builder's or the workbook reader's
   warnings); `export` (this export's own warnings; how the model is drawn is `info`).
 - **The exporter owns these sections.** A re-export replaces them rather than passing the previous copy
   through (`FeaturesSidecar.Sections`), so they always match the model. The viewer never edits them; they
@@ -492,6 +536,34 @@ patterns, cases and combinations, and one item per load row. The CAESAR export k
     temperature items; `FEALoads.itemText(item)` is one line for any item, version 1 or 2
     (`P2 CONTENTS: point 0.85 kip Gravity at 0.4 (96 in)`).
   - Test: `viewer/tests/test_loads.js`.
+
+### SAP frame models: properties and model.source (live 2026-11-05)
+
+`SapToPluto` (`FrameSidecar.Properties`) writes one `properties` item per frame, in the file's units
+(`units`: `length`, `force`, `diameter`).
+
+```json
+"properties": { "version": 1, "units": { "length": "in", "force": "kip", "diameter": "in" },
+  "items": [ { "element": 12, "label": "P2", "from": 3, "to": 4, "fromLabel": "J3", "toLabel": "J4",
+               "kind": "PIPE", "name": "", "line": "L1", "members": [{ "domain": "beams", "ids": [12] }],
+               "values": { "section": "P6", "shape": "Pipe", "material": "A53", "dx": 0, "dy": 0, "dz": 96,
+                           "length": 96, "t3": 6.625, "tw": 0.28, "angle": 30, "releases": "I: fixed; J: M2 M3",
+                           "cardinal": 8, "modifiers": [1, 1, 1, 1, 0.5, 0.5, 1, 1] } } ] }
+```
+
+- **Ids:** `element`, `from` and `to` are the viewer's ids; `label`, `fromLabel` and `toLabel` are SAP's, and
+  may be text (`SapLabels.cs`).
+- **`kind` and `line`** come from the frame workbook's `PL_KIND_*` and `PL_LINE_*` groups; without one, `kind` is
+  the section's shape.
+- **`values`:** `section`, `shape`, `material`, the deltas and `length`, and the section's dimensions that are set
+  (`t3 t2 tf tw t2b tfb`). Written only when not the default: `angle` (local axis angle, deg), `releases`
+  (`I: …; J: …`, `~` after a partly fixed DOF, the same text as `FEAReleases.text`), `cardinal` (insertion point,
+  not 10) and `modifiers` (SAP's eight property modifiers, when any is not 1).
+- **`model.source`:** a plain SAP export names its `.s2k` (`kind` `s2k`); the frame workbook's preview
+  (`Build-Frame.ps1 -Preview`) names its input (`s2k | xlsx | json | pipe`).
+- **Viewer** (`pipe.js`): hovering a frame adds its section, length, angle, releases and line to the readout;
+  pinning it gives a card with geometry, section, modifiers and end releases, then the loads on it and the
+  checks about it. Node numbers show SAP's joint labels (the node `LABL`).
 
 ### springs (planned)
 Same envelope, one item per spring: `{ id, name, nodeIds, dof, stiffness }`. SAP's joint springs and linear one-joint

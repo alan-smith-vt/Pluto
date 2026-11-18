@@ -4,27 +4,26 @@ status: current
 created: 2026-09-01
 ---
 
-> **Decisions (user, 2026-09-01):** production dialect for the predicate schema;
-> Phase A end-to-end first, then review.
-> **Phase A implemented 2026-09-01** — `viewer/scripts/predicates.js` + panel
-> (`index.html`, `styles/predicates.css`), pointer routing + hooks in `viewer.js`,
-> `disarm` cross-wiring in `sectionCut.js`, `ensureEnvelope`/`refresh`/`fileName` +
-> predicate handoff in `features.js`, spec amended in
-> [[vault/format/features-sidecar|features-sidecar]]. 8 headless engine tests pass.
-> Awaiting user browser check; then Phase B.
-> Audit reconciliation (Phase C input): the sanitized-lib audit (Notes vault)
-> adds two port candidates this plan missed — the v3 `RawViewerWriter.cs` carries real
-> `StressNames`/`DispNames`/`BuildComponents` that the repo v4 writer stubs as TODO, and
-> the old exporter's symmetric-clip contract (absMax envelope appended as last LC).
+*↑ [[vault/Pluto Home|Home]] › [[vault/viewer/Viewer map|Viewer map]]*
 
 # Old viewer → new viewer merge plan
 
-*↑ [[vault/Pluto Home|Home]] › [[vault/viewer/Viewer map|Viewer map]]*
+> **Outcome.** Decisions (user, 2026-09-01): the production dialect for the predicate schema; Phase A end to end
+> first, then review.
+> - **Phase A, predicates: done 2026-09-01.** `viewer/scripts/predicates.js` + panel (`index.html`,
+>   `styles/predicates.css`), pointer routing and hooks in `viewer.js`, `disarm` cross-wiring in `sectionCut.js`,
+>   the predicate handoff in `features.js`, the spec amended in [[vault/format/features-sidecar|features-sidecar]].
+>   The 8 headless engine tests pass (`viewer/tests/test_predicates.js`).
+> - **Phase B, section-cut persistence: done 2026-09-04** (below).
+> - **Phase C, reconciliation: open.** Of the two port candidates the sanitized-lib audit (Notes vault) added, the v3
+>   writer's `StressNames` / `DispNames` / `BuildComponents` catalogs are in the v4 writer since 2026-09-03
+>   ([[vault/format/raw-viewer-writer|raw-viewer-writer]]). The old exporter's symmetric-clip contract (absMax
+>   envelope appended as the last LC) is still open, and so is undo / redo.
 
 Source: `archive/ViewerSource/` (the pre-Pluto
 viewer, transcribed 2026-09-01, no `// sanitized` markers — appears intact).
-Target: `viewer/` (the v4 viewer). Companion audit of the whole sanitized drop:
-see the audit note when it lands (workflow running 2026-09-01).
+Target: `viewer/` (the v4 viewer). Companion audit of the whole sanitized drop: the sanitized-lib audit, in the
+Notes vault (`Tools/Pluto Sanitized Audit`).
 
 ## What the old viewer contains
 
@@ -73,7 +72,7 @@ New IIFE module in the new viewer's house style (`FEAxxx`, DOM in `index.html`,
    `effectiveSet` (negation = universe minus), `buildPredAxes` (u/v from world axis +
    `angle_deg`). Near-mechanical; the math is sound.
 4. **`FEAPredicates.resolveMembers(predicateId, envelope)`** — the hook
-   `viewer/scripts/features.js:100` already calls. Returns `[{domain, ids}]` /
+   `viewer/scripts/features.js` already calls (`resolvePredicateMembers`). Returns `[{domain, ids}]` /
    `[{domain:'nodes', nodeIds}]` with **real IDs** (spec: never indices) — translate
    matched indices through `elemIds`/`nodeIds`. Groups referencing `predicateId` then
    color live, unlocking predicate → group → **Color by groups** in one session.
@@ -121,18 +120,20 @@ audit pending) consumes the definitions.
 
 ## Phase C — cross-check and polish
 
-When the sanitized-scripts audit lands: diff its ViewerSource feature inventory against
-this plan (anything missed), reconcile with `vault/viewer/Viewer overview.md`, update
-the current handoff (Notes vault, `Tools/Pluto Handoffs`). Candidates already visible: nothing else — shell features all
-have v4 equivalents.
+Open. The sanitized-lib audit is in (Notes vault, `Tools/Pluto Sanitized Audit`): diff its ViewerSource feature
+inventory against this plan (anything missed), reconcile with
+[[vault/viewer/Viewer overview|Viewer overview]], and record the outcome in
+[[vault/handoffs/handoff-current|handoff-current]]. Candidates already visible: the symmetric-clip contract and
+undo / redo (top); nothing else — shell features all have v4 equivalents.
 
 ## Verification
 
-- Headless Node recipe from the handoff (`three.min.js` under `vm`): build
+- Headless Node recipe (`three.min.js` under `vm`; now `viewer/tests/test_predicates.js`, run as in
+  [[vault/viewer/Viewer overview|Viewer overview]] › Tests): build
   `FEASample.buildSampleBlobV4()`, define predicate trees in code, assert matched
   real IDs per domain — including negation, AND/OR nesting, finite extents, angle.
 - Round-trip test: envelope → resolveMembers → export → re-import → identical.
-- Browser check by user (Chrome extension historically doesn't connect).
+- Browser check by user (the Chrome extension did not connect until 2026-09-04).
 
 ## Sequencing
 
