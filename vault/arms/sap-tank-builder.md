@@ -266,3 +266,7 @@ meant to be checked. Real project numbers live only in the gitignored `configs/*
 > SAP2000 table set without a sample file to copy; the first real `run_sap.py` import
 > of a model that has them is the test. If one is rejected, the field names are the
 > suspect, not the values.
+> Verified on SAP 26 (2026-11-19): `CASE - BUCKLING 1 - GENERAL`, `CASE - BUCKLING 2 - LOAD
+> ASSIGNMENTS`, `CASE - STATIC 4 - NONLINEAR PARAMETERS` (read back over the OAPI) and
+> `AREA LOADS - GRAVITY` (by base reaction: the DEAD_WALL pattern alone gives the wall weight,
+> 99.20 kip on TANK-A, against 2πR Σ(h t) γ = 99.2).
