@@ -93,7 +93,7 @@ def settlement_svg(model: TankModel, rows: list[dict], title: str) -> str:
     o.append(f'<rect x="0" y="0" width="{W}" height="{H}" fill="#ffffff"/>')
     o.append(f'<text x="16" y="24" font-size="13" font-weight="bold" fill="#1f2328">{_esc(title)}</text>')
     kind = s.settlement
-    desc = (f"{kind}: depth {s.settlement_depth:g} ft" + (f", width {s.settlement_width:g} ft" if kind == "trench" else " at the tank edge") + ", "
+    desc = (f"{kind}: depth {s.settlement_depth:g} ft" + (f", width {s.settlement_width:g} ft" if kind == "trench" else " at the low tank edge") + ", "
             f"direction {s.settlement_direction_deg:g} deg, offset {s.settlement_offset:g} ft; "
             f"{sum(1 for r in rows if r['dz'] != 0)} of {len(rows)} ground joints moved; "
             f"case NL_SETTLE after NL_HYDRO")
@@ -126,7 +126,7 @@ def settlement_svg(model: TankModel, rows: list[dict], title: str) -> str:
     o.append(f'<line x1="{px(0):.1f}" y1="{py(-L):.1f}" x2="{px(0):.1f}" y2="{py(L):.1f}" stroke="#c0c4c8" stroke-width=".6"/>')
     o.append(f'<text x="{px(L) + 4:.1f}" y="{py(0) + 4:.1f}" fill="#6b7380">+X</text>')
     o.append(f'<text x="{px(0) - 4:.1f}" y="{py(L) - 4:.1f}" fill="#6b7380" text-anchor="end">+Y</text>')
-    o.append(f'<text x="{plan_cx}" y="{plan_cy + plan_r + 26}" text-anchor="middle" fill="#6b7380">dashed: {"profile axis and edges" if kind == "trench" else "hinge line"}; ring wall shaded; R = {R:g} ft</text>')
+    o.append(f'<text x="{plan_cx}" y="{plan_cy + plan_r + 26}" text-anchor="middle" fill="#6b7380">dashed: {"profile axis and edges" if kind == "trench" else "tilt axis (dz = depth/2)" if kind == "tilt" else "hinge line"}; ring wall shaded; R = {R:g} ft</text>')
 
     # ---- colour bar ----
     steps = 24
