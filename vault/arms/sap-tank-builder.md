@@ -148,6 +148,17 @@ meant to be checked. Real project numbers live only in the gitignored `configs/*
 > same treatment. TANK-A at E = 1500 ksf / 2 in: 1.7 to 12 kip/ft per joint against 0.34
 > for the pad spring beside them (5 to 36 ×, was 2000 ×). Run as `TANK-A-cushion`
 > (overhang + cushion). Motivation and results: the Notes base support study.
+> **Bearing stiffness, hard contact** (`[ringwall] bearing_k`, 2026-11-19, option, not the default):
+> `"average"` (default, unchanged) gives every `GAP_BEARING` link one property, k = E_c × the
+> **mean** tributary area of the bearing joints / A. With an overhang that makes the tip ring
+> several times too stiff (TANK-A: 0.18 ft² own area against the 0.63 ft² mean, 3.4 ×) and the
+> inner rings 20 to 30 % too soft. `"tributary"` gives one property per plate ring
+> (`GAP_BEAR_Rnn`, the cushion's naming), k = E_c × that ring's own tributary area / A; the total
+> stiffness is the same. Known limit: the shell-line `GAP_CONTACT` is still sized on the full ring
+> wall column (width × arc), so it stays several times stiffer per area than its neighbours; a
+> consistent hard-contact set would size it by its own tributary area too, as the cushion does.
+> Refused together with a cushion (the cushion already gives each ring its own stiffness). It is a
+> consistency fix: the overhang-tip reaction is set by equilibrium, so it changes the toe force little.
 > **Ring wall subgrade** (`[ringwall] subgrade_modulus` kcf, 2026-09-10; 0 = the foundation
 > value): the soil gap link under the ring wall takes its own modulus, the pad springs keep
 > `[foundation] subgrade_modulus`. Motivation: the sensitivity runs (`-ks85`, `-ks42`) showed a

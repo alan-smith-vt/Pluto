@@ -816,11 +816,11 @@ class TankModel:
             if name not in self.link_prop.values():
                 del self.link_props[name]
         cushion = s.ringwall_cushion_modulus > 0.0
+        width = max(2, len(str(len(radii))))
         if cushion:
             # sand cushion: k per unit area = E / t, one property per plate ring (its own
             # tributary area), and the shell-line contact link sits on the same sand
             per_area = s.ringwall_cushion_modulus / s.ringwall_cushion_thickness
-            width = max(2, len(str(len(radii))))
             for pj, lid in zip(bearing, links):
                 k = ring_of[pj]
                 name = f"GAP_BEAR_R{k:0{width}d}"
@@ -832,6 +832,17 @@ class TankModel:
             self.ringwall_contact_k = per_area * rim_trib
             self.link_props["GAP_CONTACT"] = {"k": self.ringwall_contact_k, "ring": None,
                                               "tributary_area": rim_trib}
+        elif s.ringwall_bearing_k == "tributary":
+            # hard contact, one property per plate ring: k = E_c x that ring's tributary area / depth
+            # (the overhang tip ring no longer takes the average area)
+            per_area = self.concrete["E"] / s.ringwall_depth
+            for pj, lid in zip(bearing, links):
+                k = ring_of[pj]
+                name = f"GAP_BEAR_R{k:0{width}d}"
+                if name not in self.link_props:
+                    trib = self.baseplate_tributary_area(pj)
+                    self.link_props[name] = {"k": per_area * trib, "ring": k, "tributary_area": trib}
+                self.link_prop[lid] = name
         else:
             trib = sum(self.baseplate_tributary_area(j) for j in bearing) / len(bearing)
             self.link_props["GAP_BEARING"] = {

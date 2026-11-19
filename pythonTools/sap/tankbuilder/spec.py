@@ -136,6 +136,9 @@ class TankSpec:
                                             # concrete contact. With it, every plate joint over the ring wall (rim
                                             # included) bears through k = E / thickness x its tributary area
     ringwall_cushion_thickness: float = 0.0 # ft
+    ringwall_bearing_k: str = "average"   # 2026-11-19, hard contact only: "average" = one GAP_BEARING property,
+                                          # k = E_c x the average tributary area / depth (pre-2026-11-19);
+                                          # "tributary" = one property per plate ring (GAP_BEAR_Rnn), each joint's own area
     ringwall_transform: bool = False      # SAP "Transform" for the top-centre insertion: False = drawing
                                           # only (analysis on the wall-top joint line); True = rigid arms
                                           # joint -> centroid (a horizontal push at the top rolls the ring)
@@ -272,6 +275,10 @@ class TankSpec:
                 raise ValueError("ringwall.soil_links = 'faces' needs joints = 'elevations', plate_bearing = true and support = 'gap'")
             if self.ringwall_cushion_modulus < 0 or self.ringwall_cushion_thickness < 0:
                 raise ValueError("ringwall.cushion_modulus and cushion_thickness must be >= 0")
+            if self.ringwall_bearing_k not in ("average", "tributary"):
+                raise ValueError(f"ringwall.bearing_k {self.ringwall_bearing_k!r} not recognised (average | tributary)")
+            if self.ringwall_bearing_k == "tributary" and self.ringwall_cushion_modulus > 0:
+                raise ValueError("ringwall.bearing_k = 'tributary' is for hard contact; the cushion already sets each ring's k")
             if self.ringwall_cushion_modulus > 0:
                 if self.ringwall_cushion_thickness <= 0:
                     raise ValueError("ringwall.cushion_modulus needs a positive cushion_thickness")
@@ -384,6 +391,7 @@ CONFIG_MAP = {
         "plate_bearing": "ringwall_plate_bearing",
         "cushion_modulus": "ringwall_cushion_modulus",
         "cushion_thickness": "ringwall_cushion_thickness",
+        "bearing_k": "ringwall_bearing_k",
     },
     "dents": {"angle_deg": "angle_deg", "elevation": "elevation", "depth": "depth",
               "width": "width", "height": "height"},

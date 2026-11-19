@@ -982,6 +982,35 @@ def test_cushion_gives_each_ring_its_own_stiffness_and_softens_the_rim():
     assert "END TABLE DATA" in s2k_text(soft)
 
 
+def test_bearing_k_tributary_gives_each_ring_its_own_hard_stiffness():
+    kw = dict(radius=30.0, height=40.0, baseplate=True, baseplate_n_r=5, roof=True,
+              roof_crown_radius=48.0, foundation="gap", ringwall=True, ringwall_width=1.5,
+              ringwall_depth=3.0, edge_length=3.0, edge_size=0.25, edge_growth=1.5,
+              ringwall_plate_bearing=True, baseplate_overhang=0.125)
+    avg = TankModel(TankSpec(**kw))
+    assert s2k_text(TankModel(TankSpec(**kw, ringwall_bearing_k="average"))) == s2k_text(avg)   # default unchanged
+    trib = TankModel(TankSpec(**kw, ringwall_bearing_k="tributary"))
+    names = {trib.link_prop[l] for l, (i, j) in trib.links.items() if j in set(trib.bearing_joints)}
+    assert all(n.startswith("GAP_BEAR_R") for n in names) and len(names) == 3   # two inner rings + overhang
+    per_area = trib.concrete["E"] / 3.0
+    for n in names:
+        pr = trib.link_props[n]
+        assert abs(pr["k"] - per_area * pr["tributary_area"]) < 1e-6
+    # same total stiffness as the average property over the same joints
+    total = sum(trib.link_props[trib.link_prop[l]]["k"] for l, (i, j) in trib.links.items() if j in set(trib.bearing_joints))
+    assert abs(total - avg.link_props["GAP_BEARING"]["k"] * len(avg.bearing_joints)) < 1e-6 * total
+    # the overhang tip ring is softer than the average, the rim contact is untouched
+    tip = trib.link_props[trib.link_prop[next(l for l, (i, j) in trib.links.items() if j == trib.overhang_joints[0])]]
+    assert tip["k"] < avg.link_props["GAP_BEARING"]["k"]
+    assert trib.link_props["GAP_CONTACT"] == avg.link_props["GAP_CONTACT"]
+    assert "GAP_BEARING" not in trib.link_props and "END TABLE DATA" in s2k_text(trib)
+    with pytest.raises(ValueError, match="bearing_k"):
+        TankModel(TankSpec(**kw, ringwall_bearing_k="median"))
+    with pytest.raises(ValueError, match="hard contact"):
+        TankModel(TankSpec(**kw, ringwall_bearing_k="tributary", ringwall_cushion_modulus=1500.0,
+                           ringwall_cushion_thickness=1.0 / 6.0))
+
+
 @pytest.mark.parametrize("raw, msg", [
     ({"foundation": {"mode": "gap"}, "baseplate": {"enabled": True}, "ringwall": {"enabled": True, "cushion_modulus": 1500.0}},
      "positive cushion_thickness"),
