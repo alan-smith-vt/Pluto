@@ -41,6 +41,7 @@ This is the only route that runs on the production machine (SAP 22, no Python). 
 | shell local 1 axis in global | `AreaLocal1`, `WriteAreaLocal1` | `-AreaAxes <tsv>` | `run_sap.py` axes check |
 | input tables read back (display precision) | `TableRows`, `WriteTablesS2k` | `-Tables "a;b" -TablesOut <s2k>` | `offset_study.py` (insertion points, gap props) |
 | results at full precision: joints, shells (forces + face stresses), frames, links | `WriteResultsS2k` | `-Results <s2k>` | tank `results.s2k` |
+| buckling factors of the LinBuckling cases → csv `Case,Mode,Factor` (G17, sign as SAP gives it); mode shapes come with `-Results` / `-Export` as `<case>.<mode>` | `WriteBucklingFactors` | `-Buckling <csv>` | tank `buckling.csv` (`run_sap.py`, when the model has a LinBuckling case) |
 | model → viewer: mesh, model + results `.s2k`, `SapToPluto` | `SapExport` | `-Export <base\|folder> [-NoResults] [-FinalOnly] [-Cylindrical] [-NoViewerFile]` | `export_model.py` |
 | survey, candidates, forces by group, axis probe | `SapSurvey` | `Run-SapSurvey.ps1` | duct workflow |
 | link / direct release models, synthetic duct | `SapRelease` | `Run-SapRelease.ps1` | duct workflow |
@@ -52,7 +53,7 @@ This is the only route that runs on the production machine (SAP 22, no Python). 
 | self test: 20 ft beam, 10 kip midspan → 5 kip, 50 kip-ft | `WriteTestBeamS2k` | `-SelfTest <dir>` | install check |
 
 `Run-Sap.ps1` prints `[step]` progress lines and ends with `RESULT {json}` (version, counts,
-groups, units, cases, output paths). Steps run in a fixed order: attach → open → points → axes → run → tables → results → export.
+groups, units, cases, output paths). Steps run in a fixed order: attach → open → points → axes → run → tables → results → buckle → export.
 
 ## Facts the code relies on
 
@@ -81,3 +82,6 @@ Supports are rigid frames (`TAP_STUB`), like the duct tap stubs, not link object
 - Duct `Run-JointReleaseCheck.ps1 -TestModel`: see the handoff.
 
 Not yet run on SAP 22: the first production run of any runner is that check.
+Buckling (2026-11-19) uses `eLoadCaseType.Buckling`, `LoadCases.GetNameList(..., type)`,
+`Results.Setup.SetOptionBucklingMode` and `Results.BucklingFactor`: compiled against SAP 26 only.
+Every `Sap*.cs` compiles in one batch, so if SAP 22's interop lacks one, no runner loads there.

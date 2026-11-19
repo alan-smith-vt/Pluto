@@ -23,7 +23,7 @@ PS51 = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
 
 _SWITCHES = {"no_save_sdb", "new_instance", "keep_open", "run", "run_if_needed", "no_results",
              "final_only", "no_viewer_file", "cylindrical"}
-_VALUES = {"open", "area_axes", "run_on_copy", "tables", "tables_out", "results", "export", "model_id",
+_VALUES = {"open", "area_axes", "run_on_copy", "tables", "tables_out", "results", "buckling", "export", "model_id",
            "self_test", "sap_dir"}
 
 

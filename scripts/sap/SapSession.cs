@@ -320,9 +320,41 @@ public class SapSession
         cAnalysisResultsSetup setup = Model.Results.Setup;
         setup.DeselectAllCasesAndCombosForOutput();
         setup.SetOptionNLStatic(2);
+        setup.SetOptionBucklingMode(1, 1, true);   // every buckling mode, not SAP's default range
         string[] cases = LoadCases();
         foreach (string c in cases) setup.SetCaseSelectedForOutput(c);
         return cases;
+    }
+
+    // Names of the LinBuckling cases. Their steps are modes: always "<case>.<mode>", and only joint
+    // displacements are written for them (forces of a mode shape have an arbitrary amplitude).
+    public HashSet<string> BucklingCases()
+    {
+        int n = 0; string[] a = null;
+        Model.LoadCases.GetNameList(ref n, ref a, eLoadCaseType.Buckling);
+        return new HashSet<string>(a ?? new string[0]);
+    }
+
+    // Buckling factors of every LinBuckling case with results, as csv Case,Mode,Factor (G17). Factors
+    // are as SAP reports them: negative = buckling under the loads reversed. Returns the rows written.
+    public List<string> WriteBucklingFactors(string path)
+    {
+        SelectAllCases();
+        int n = 0; string[] cas = null, st = null; double[] sn = null, bf = null;
+        Check(Model.Results.BucklingFactor(ref n, ref cas, ref st, ref sn, ref bf), "BucklingFactor");
+        List<string> rows = new List<string>();
+        using (StreamWriter w = new StreamWriter(path, false, new UTF8Encoding(false)))
+        {
+            w.NewLine = "\r\n";
+            w.WriteLine("Case,Mode,Factor");
+            for (int i = 0; i < n; i++)
+            {
+                string row = cas[i] + "," + R(sn[i]) + "," + R(bf[i]);
+                w.WriteLine(row);
+                rows.Add(row);
+            }
+        }
+        return rows;
     }
 
     // Result tables as .s2k text at full precision, the tables SapToPluto reads plus ELEMENT FORCES -
@@ -332,6 +364,7 @@ public class SapSession
     public Dictionary<string, int> WriteResultsS2k(string path, IResultIds ids, bool finalOnly, string source)
     {
         SelectAllCases();
+        HashSet<string> buck = BucklingCases();
         Dictionary<string, int> counts = new Dictionary<string, int>();
         using (StreamWriter w = new StreamWriter(path, false, new UTF8Encoding(false)))
         {
@@ -345,7 +378,7 @@ public class SapSession
             {   // joints
                 int n = 0; string[] obj = null, elm = null, cas = null, st = null; double[] sn = null, u1 = null, u2 = null, u3 = null, r1 = null, r2 = null, r3 = null;
                 Check(Model.Results.JointDispl("ALL", all, ref n, ref obj, ref elm, ref cas, ref st, ref sn, ref u1, ref u2, ref u3, ref r1, ref r2, ref r3), "JointDispl");
-                Emit(w, counts, "JOINT DISPLACEMENTS", n, cas, sn, finalOnly, delegate(int i, string c)
+                Emit(w, counts, "JOINT DISPLACEMENTS", n, cas, sn, finalOnly, buck, true, delegate(int i, string c)
                 {
                     string j = ids == null ? obj[i] : ids.Point(elm[i]);
                     if (j == null) return null;
@@ -359,7 +392,7 @@ public class SapSession
                     m11 = null, m22 = null, m12 = null, mmax = null, mmin = null, mang = null, v13 = null, v23 = null, vmax = null, vang = null;
                 Check(Model.Results.AreaForceShell("ALL", all, ref n, ref obj, ref elm, ref pe, ref cas, ref st, ref sn, ref f11, ref f22, ref f12,
                     ref fmax, ref fmin, ref fang, ref fvm, ref m11, ref m22, ref m12, ref mmax, ref mmin, ref mang, ref v13, ref v23, ref vmax, ref vang), "AreaForceShell");
-                Emit(w, counts, "ELEMENT FORCES - AREA SHELLS", n, cas, sn, finalOnly, delegate(int i, string c)
+                Emit(w, counts, "ELEMENT FORCES - AREA SHELLS", n, cas, sn, finalOnly, buck, false, delegate(int i, string c)
                 {
                     string lead = ShellLead(ids, obj[i], elm[i], pe[i], c);
                     if (lead == null) return null;
@@ -371,7 +404,7 @@ public class SapSession
                     s11b = null, s22b = null, s12b = null, smaxb = null, sminb = null, sangb = null, svmb = null, s13 = null, s23 = null, smaxa = null, sanga = null;
                 Check(Model.Results.AreaStressShell("ALL", all, ref n, ref obj, ref elm, ref pe, ref cas, ref st, ref sn, ref s11t, ref s22t, ref s12t, ref smaxt,
                     ref smint, ref sangt, ref svmt, ref s11b, ref s22b, ref s12b, ref smaxb, ref sminb, ref sangb, ref svmb, ref s13, ref s23, ref smaxa, ref sanga), "AreaStressShell");
-                Emit(w, counts, "ELEMENT STRESSES - AREA SHELLS", n, cas, sn, finalOnly, delegate(int i, string c)
+                Emit(w, counts, "ELEMENT STRESSES - AREA SHELLS", n, cas, sn, finalOnly, buck, false, delegate(int i, string c)
                 {
                     string lead = ShellLead(ids, obj[i], elm[i], pe[i], c);
                     if (lead == null) return null;
@@ -385,7 +418,7 @@ public class SapSession
                 int n = 0; string[] obj = null, elm = null, cas = null, st = null; double[] osta = null, esta = null, sn = null, p = null, v2 = null, v3 = null, t = null, m2 = null, m3 = null;
                 Check(Model.Results.FrameForce("ALL", all, ref n, ref obj, ref osta, ref elm, ref esta, ref cas, ref st, ref sn, ref p, ref v2, ref v3, ref t, ref m2, ref m3), "FrameForce");
                 string[] names = { "P", "V2", "V3", "T", "M2", "M3" };
-                Emit(w, counts, "ELEMENT FORCES - FRAMES", n, cas, sn, finalOnly, delegate(int i, string c)
+                Emit(w, counts, "ELEMENT FORCES - FRAMES", n, cas, sn, finalOnly, buck, false, delegate(int i, string c)
                 {
                     if (ids == null)
                         return "Frame=" + obj[i] + "   Station=" + R(osta[i]) + "   OutputCase=" + Q(c) + "   CaseType=LinStatic" + (string.IsNullOrEmpty(st[i]) ? "" : "   StepType=" + Q(st[i]))
@@ -399,7 +432,7 @@ public class SapSession
             {
                 int n = 0; string[] obj = null, elm = null, pe = null, cas = null, st = null; double[] sn = null, p = null, v2 = null, v3 = null, t = null, m2 = null, m3 = null;
                 Check(Model.Results.LinkForce("ALL", all, ref n, ref obj, ref elm, ref pe, ref cas, ref st, ref sn, ref p, ref v2, ref v3, ref t, ref m2, ref m3), "LinkForce");
-                Emit(w, counts, "ELEMENT FORCES - LINKS", n, cas, sn, finalOnly, delegate(int i, string c)
+                Emit(w, counts, "ELEMENT FORCES - LINKS", n, cas, sn, finalOnly, buck, false, delegate(int i, string c)
                 {
                     string l = ids == null ? obj[i] : ids.Link(elm[i]);
                     string j = ids == null ? pe[i] : ids.Point(pe[i]);
@@ -423,7 +456,9 @@ public class SapSession
 
     // One table. Cases with several saved steps (staged construction) become "<case>.<step>" per
     // step, or only their last step under the bare name with finalOnly; single-step cases keep their name.
-    static void Emit(StreamWriter w, Dictionary<string, int> counts, string title, int n, string[] cases, double[] steps, bool finalOnly, RowFn row)
+    // Buckling cases (modes): always "<case>.<mode>", every mode, and only where keepModes is set.
+    static void Emit(StreamWriter w, Dictionary<string, int> counts, string title, int n, string[] cases, double[] steps, bool finalOnly,
+        HashSet<string> modes, bool keepModes, RowFn row)
     {
         if (n == 0) return;
         Dictionary<string, HashSet<double>> seen = new Dictionary<string, HashSet<double>>();
@@ -446,7 +481,12 @@ public class SapSession
         {
             string c = cases[i];
             double last;
-            if (multi.TryGetValue(c, out last))
+            if (modes.Contains(c))
+            {
+                if (!keepModes) continue;
+                c = c + "." + ((int)steps[i]).ToString(Inv);
+            }
+            else if (multi.TryGetValue(c, out last))
             {
                 if (finalOnly) { if (steps[i] != last) continue; }
                 else c = c + "." + ((int)steps[i]).ToString(Inv);

@@ -15,6 +15,8 @@
 #   tables   -Tables "<name>;<name>" -TablesOut <s2k>: input tables read back (display precision), to echo
 #            what an import produced
 #   results  -Results <s2k>: result tables at full precision, objects under their SAP names
+#   buckle   -Buckling <csv>: buckling factors of the LinBuckling cases, Case,Mode,Factor (G17; sign as
+#            SAP reports it). Mode shapes come with -Results / -Export as "<case>.<mode>" displacements
 #   export   -Export <base> (or an existing folder: <folder>\<model name>): analysis mesh -> <base>.model.s2k + <base>.labels.csv, results ->
 #            <base>.results.s2k (-NoResults: geometry only; -FinalOnly: staged cases' last step only),
 #            then SapToPluto -> <base>.bin + <base>.features.json (-NoViewerFile: stop at the .s2k;
@@ -37,6 +39,7 @@ param(
     [string]$Tables,
     [string]$TablesOut,
     [string]$Results,
+    [string]$Buckling,
     [string]$Export,
     [switch]$NoResults,
     [switch]$FinalOnly,
@@ -114,6 +117,16 @@ try {
         $counts = $sap.WriteResultsS2k((Full $Results), $null, [bool]$FinalOnly, "Run-Sap.ps1")
         Say "results" ("{0}  ({1})" -f $Results, (($counts.Keys | ForEach-Object { "$_ $($counts[$_])" }) -join ", "))
         $out.results = Full $Results
+    }
+    if ($Buckling) {
+        $rows = @($sap.WriteBucklingFactors((Full $Buckling)))
+        Say "buckle" ("{0}  ({1} modes: {2})" -f $Buckling, $rows.Count, (($rows | ForEach-Object { ($_ -split ",")[2] }) -join ", "))
+        $bc = @($sap.BucklingCases())
+        if ($rows.Count -eq 0) {
+            if ($bc.Count -gt 0) { Say "warn" ("buckling case(s) {0}: NO mode converged (see the model's .LOG); the csv is a header only" -f ($bc -join ", ")) }
+            else { Say "warn" "no LinBuckling case in the model; the csv is a header only" }
+        }
+        $out.buckling = @($rows | ForEach-Object { $p = $_ -split ","; [ordered]@{ case = $p[0]; mode = [double]::Parse($p[1], [Globalization.CultureInfo]::InvariantCulture); factor = [double]::Parse($p[2], [Globalization.CultureInfo]::InvariantCulture) } })
     }
     if ($Export) {
         $mesh = [SapExport]::BuildMesh($sap)

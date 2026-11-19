@@ -125,11 +125,19 @@ def step_sap(s2k: Path, run: bool, cfg: Path) -> Path:
     from tankbuilder.sap_cli import run_sap_ps
     res = s2k.parent / "results.s2k"
     axes = s2k.parent / "area-local1.tsv"
-    run_sap_ps(open=s2k if run else None, area_axes=axes if run else None, run=run,
-               results=res, keep_open=True, log=s2k.parent / "run-sap.log")
+    # A model with a LinBuckling case (config [buckling]) also gets buckling.csv.
+    spec, _ = load_config(cfg)
+    buck = s2k.parent / "buckling.csv" if spec.buckling else None
+    r = run_sap_ps(open=s2k if run else None, area_axes=axes if run else None, run=run,
+                   results=res, buckling=buck, keep_open=True, log=s2k.parent / "run-sap.log")
     if run:
         step_axes_check(axes, cfg)
     print(f"[results] {res}  ({res.stat().st_size // 1024} kB)")
+    if buck:
+        if r.get("buckling"):
+            print(f"[buckle]  {buck}  ({len(r['buckling'])} modes)")
+        else:
+            print(f"[buckle]  WARNING no buckling mode converged; {buck} is a header only (see the model's .LOG)")
     return res
 
 

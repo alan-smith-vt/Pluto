@@ -300,6 +300,12 @@ def load_tables(model: TankModel) -> list[tuple[str, list[str]]]:
         if settle:
             cases.append(_row(Case="NL_SETTLE", Type="NonStatic", InitialCond="NL_HYDRO"))
             assigns.append(_row(Case="NL_SETTLE", LoadType="Load pattern", LoadName="SETTLE", LoadSF=1))
+    nl_cases = ("NL_DEAD", "NL_HYDRO", "NL_SETTLE") if settle else ("NL_DEAD", "NL_HYDRO")
+    buckle = model.gap and s.buckling
+    if buckle:
+        # LinBuckling from the end state of a nonlinear case; only the listed
+        # patterns are scaled by the factor (field names read back from SAP 26).
+        cases.append(_row(Case="BUCKLE", Type="LinBuckling", InitialCond=s.buckling_initial))
     out += [
         ("LOAD CASE DEFINITIONS", cases),
         ("CASE - STATIC 1 - LOAD ASSIGNMENTS", assigns),
@@ -307,7 +313,20 @@ def load_tables(model: TankModel) -> list[tuple[str, list[str]]]:
     if model.gap:
         out.append(("CASE - STATIC 2 - NONLINEAR LOAD APPLICATION", [
             _row(Case=c, LoadApp="Full Load", MonitorDOF="U3", MonitorJt=model.base_joints[0])
-            for c in (("NL_DEAD", "NL_HYDRO", "NL_SETTLE") if settle else ("NL_DEAD", "NL_HYDRO"))]))
+            for c in nl_cases]))
+    if buckle:
+        if s.buckling_p_delta:
+            # The rest of the row is SAP's default, as it writes it back for these cases.
+            out.append(("CASE - STATIC 4 - NONLINEAR PARAMETERS", [
+                _row(Case=c, GeoNonLin="P-Delta", ResultsSave="Final State", SolScheme="Iterative Events",
+                     MaxTotal=200, MaxNull=50, EvLumpTol=0.01, MaxEvPerStp=24, MaxIterCS=10,
+                     MaxIterNR=40, ItConvTol=0.0001, TFMaxIter=10, TFTol=0.01)
+                for c in nl_cases]))
+        out.append(("CASE - BUCKLING 1 - GENERAL", [
+            _row(Case="BUCKLE", NumBuckMode=int(s.buckling_modes), EigenTol=float(s.buckling_tolerance))]))
+        out.append(("CASE - BUCKLING 2 - LOAD ASSIGNMENTS", [
+            _row(Case="BUCKLE", LoadType="Load pattern", LoadName=p, LoadSF=1)
+            for p in s.buckling_loads]))
     return out
 
 

@@ -157,6 +157,17 @@ class TankSpec:
     # results export and become sidecar groups in SapToPluto (Color by groups).
     groups: bool = True          # WALL (all shells), BASE_RING / TOP_RING (joints)
     course_groups: bool = True   # COURSE_01.. one per horizontal course of shells
+    # [buckling]  linear (eigen) buckling case BUCKLE: stiffness from the end of a
+    # nonlinear case (needs foundation "gap"), the listed patterns scaled by the factor.
+    # p_delta puts GeoNonLin = P-Delta on the NL_* cases, so that stiffness carries the
+    # geometric stiffness of their stresses (the hoop tension); off, K0 holds only the
+    # link states. Off by default: models without [buckling] are unchanged.
+    buckling: bool = False
+    buckling_initial: str = "NL_HYDRO"
+    buckling_modes: int = 6
+    buckling_loads: tuple[str, ...] = ("DEAD",)
+    buckling_p_delta: bool = True
+    buckling_tolerance: float = 1e-6   # relative eigen convergence (SAP EigenTol)
     # [material]
     mat_name: str = STEEL["name"]
     mat_e: float = STEEL["E"]
@@ -297,6 +308,22 @@ class TankSpec:
                 raise ValueError(f"dents[{k}]: depth must be non-zero")
             if not 0.0 <= d.elevation <= self.height:
                 raise ValueError(f"dents[{k}]: elevation {d.elevation:g} is off the wall (0 .. {self.height:g})")
+        if isinstance(self.buckling_loads, (list, str)):
+            self.buckling_loads = (self.buckling_loads,) if isinstance(self.buckling_loads, str) else tuple(self.buckling_loads)
+        if self.buckling:
+            if self.foundation != "gap":
+                raise ValueError("buckling needs foundation.mode = 'gap' (it starts from a nonlinear case)")
+            nl = ("NL_DEAD", "NL_HYDRO") + (("NL_SETTLE",) if self.settlement != "none" else ())
+            if self.buckling_initial not in nl:
+                raise ValueError(f"buckling.initial {self.buckling_initial!r} must be one of {', '.join(nl)}")
+            if int(self.buckling_modes) != self.buckling_modes or self.buckling_modes < 1:
+                raise ValueError("buckling.modes must be a positive integer")
+            if not 0.0 < self.buckling_tolerance < 1.0:
+                raise ValueError("buckling.tolerance must be between 0 and 1")
+            pats = ("DEAD", "HYDRO") + (("SETTLE",) if self.settlement != "none" else ())
+            bad = [p for p in self.buckling_loads if p not in pats]
+            if bad or not self.buckling_loads:
+                raise ValueError(f"buckling.loads {list(self.buckling_loads)!r}: patterns must be from {', '.join(pats)}")
         if not 0.0 <= self.fill_fraction <= 1.0:
             raise ValueError("fluid.fill_fraction must be between 0 and 1")
         if self.load_mode not in ("uniform", "joints"):
@@ -364,6 +391,14 @@ CONFIG_MAP = {
         "direction_deg": "settlement_direction_deg",
         "offset": "settlement_offset",
         "hinge_width": "settlement_hinge_width",
+    },
+    "buckling": {
+        "enabled": "buckling",
+        "initial": "buckling_initial",
+        "modes": "buckling_modes",
+        "loads": "buckling_loads",
+        "p_delta": "buckling_p_delta",
+        "tolerance": "buckling_tolerance",
     },
     "supports": {
         "base_local_axes": "base_local_axes",

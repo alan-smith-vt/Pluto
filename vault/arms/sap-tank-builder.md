@@ -224,6 +224,32 @@ meant to be checked. Real project numbers live only in the gitignored `configs/*
 > right tool: one click, one snippet, no round trip through the sidecar. (b) is right
 > for "dent everything the survey flagged". Neither is built; the sample dent is typed.
 
+> [!info]- Linear buckling (built 2026-11-19)
+> Config `[buckling]` (`enabled`, `initial` = NL_HYDRO | NL_DEAD | NL_SETTLE, `modes`,
+> `loads` = patterns scaled by the factor, default `["DEAD"]`, `p_delta`, `tolerance`);
+> needs `[foundation] mode = "gap"`. Writes case `BUCKLE` (`LinBuckling`, stiffness at the
+> end of `initial`), `CASE - BUCKLING 1 - GENERAL` (`NumBuckMode`, `EigenTol`) and
+> `CASE - BUCKLING 2 - LOAD ASSIGNMENTS`; field names read back from SAP 26.
+> **Why `p_delta`:** SAP's NL cases default to `GeoNonLin=None`, and then the stiffness a
+> LinBuckling case starts from holds the link states only, not the geometric stiffness of
+> the initial case's stresses (the hoop tension). With `p_delta = true` (the default when
+> buckling is on) the NL_* cases get `CASE - STATIC 4` rows with `GeoNonLin=P-Delta`; the
+> statics move by < 0.5 % on TANK-A. Off, nothing changes: models without
+> `[buckling]` are byte-identical.
+> **Loads:** keep the product out of `loads`: scaled by λ its hoop tension stiffens more as
+> λ grows (unconservative); it enters as the pre-stress of `initial`.
+> **Solver (open):** on TANK-A no mode converged at `tolerance` 1e-9 or 1e-6 (6 and 12
+> modes, 24 subspace vectors; SAP stopped after 41 iterations, the lowest estimates
+> clustered within 2 %). A setting that converges is not yet known; the runner warns when
+> a buckling case returns no mode.
+> **NL parameters:** the `CASE - STATIC 4` rows use SAP's read-back defaults (MaxTotal 200,
+> MaxNull 50, ...). If a model needs other values, they become `[buckling]` keys, not
+> edited constants.
+> **Output:** `run_sap.py` writes `buckling.csv` (`Run-Sap.ps1 -Buckling`); mode shapes are
+> the `BUCKLE.<n>` displacement cases in `results.s2k` and the viewer (amplitude
+> arbitrary). `buckling_modes.py <config>` prints, per mode, the part, location,
+> circumferential waves against the element arc, meridional half-waves and the dent share.
+
 > [!info]- Table families still unverified against the SAP2000 importer
 > Frame connectivity / section (incl. `General`), link property / gap / assignment,
 > nonlinear case rows, joint springs, concrete material. They were written from the

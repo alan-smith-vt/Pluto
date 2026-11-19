@@ -22,7 +22,7 @@ ROOT = HERE.parent
 sys.path.insert(0, str(ROOT))
 
 from tankbuilder import Course, Dent, TankModel, TankSpec, load_config, parse_s2k  # noqa: E402
-from tankbuilder.s2k import outlines_text, s2k_text  # noqa: E402
+from tankbuilder.s2k import load_tables, outlines_text, s2k_text  # noqa: E402
 from tankbuilder.section import polygon_properties, eave_ring_outline, eave_ring_section  # noqa: E402
 from tankbuilder.spec import spec_from_dict  # noqa: E402
 
@@ -1003,3 +1003,49 @@ def test_ringwall_subgrade_overrides_the_soil_link_only():
     with pytest.raises(ValueError, match="subgrade_modulus must be >= 0"):
         spec_from_dict({"foundation": {"mode": "gap"}, "baseplate": {"enabled": True},
                         "ringwall": {"enabled": True, "subgrade_modulus": -1}})
+
+
+def _tables(m):
+    return dict(load_tables(m))
+
+
+def test_buckling_off_writes_no_buckling_or_pdelta_rows():
+    t = _tables(gapped())
+    assert "CASE - BUCKLING 1 - GENERAL" not in t and "CASE - STATIC 4 - NONLINEAR PARAMETERS" not in t
+    assert not any("LinBuckling" in r for r in t["LOAD CASE DEFINITIONS"])
+
+
+def test_buckling_case_rows():
+    m = capped(foundation="gap", subgrade_modulus=100.0, buckling=True, buckling_modes=4)
+    t = _tables(m)
+    assert any("Case=BUCKLE" in r and "Type=LinBuckling" in r and "InitialCond=NL_HYDRO" in r
+               for r in t["LOAD CASE DEFINITIONS"])
+    assert t["CASE - BUCKLING 1 - GENERAL"] == ["   Case=BUCKLE   NumBuckMode=4   EigenTol=1e-06"]
+    assert t["CASE - BUCKLING 2 - LOAD ASSIGNMENTS"] == [
+        '   Case=BUCKLE   LoadType="Load pattern"   LoadName=DEAD   LoadSF=1']
+    nl = t["CASE - STATIC 4 - NONLINEAR PARAMETERS"]
+    assert [r.split()[0] for r in nl] == ["Case=NL_DEAD", "Case=NL_HYDRO"]
+    assert all("GeoNonLin=P-Delta" in r for r in nl)
+    # buckling factors are only scaled on the listed patterns; the static assignments are unchanged
+    assert not any("BUCKLE" in r for r in t["CASE - STATIC 1 - LOAD ASSIGNMENTS"])
+
+
+def test_buckling_p_delta_off_keeps_the_cases_linear_geometry():
+    t = _tables(capped(foundation="gap", subgrade_modulus=100.0, buckling=True, buckling_p_delta=False))
+    assert "CASE - STATIC 4 - NONLINEAR PARAMETERS" not in t
+    assert "CASE - BUCKLING 1 - GENERAL" in t
+
+
+@pytest.mark.parametrize("raw, msg", [
+    ({"buckling": {"enabled": True}}, "needs foundation.mode = 'gap'"),
+    ({"foundation": {"mode": "gap"}, "baseplate": {"enabled": True},
+      "buckling": {"enabled": True, "initial": "NL_SETTLE"}}, "buckling.initial"),
+    ({"foundation": {"mode": "gap"}, "baseplate": {"enabled": True},
+      "buckling": {"enabled": True, "loads": ["SETTLE"]}}, "buckling.loads"),
+    ({"foundation": {"mode": "gap"}, "baseplate": {"enabled": True},
+      "buckling": {"enabled": True, "modes": 0}}, "buckling.modes"),
+    ({"buckling": {"enable": True}}, "unknown key"),
+])
+def test_buckling_config_validation(raw, msg):
+    with pytest.raises(ValueError, match=msg):
+        spec_from_dict(raw)
