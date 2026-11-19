@@ -59,6 +59,18 @@ def report(cfg: Path) -> None:
         for row in csv.DictReader(fh):
             fac[int(float(row["Mode"]))] = float(row["Factor"])
     print("factors:", ", ".join(f"{k}: {v:.4g}" for k, v in sorted(fac.items())))
+    # Loads are gravity: a negative factor is buckling under the loads reversed (uplift), which
+    # cannot occur. The answer is the lowest positive factor; negatives are listed, labelled.
+    pos = {k: v for k, v in fac.items() if v > 0}
+    neg = {k: v for k, v in fac.items() if v < 0}
+    if pos:
+        k0 = min(pos, key=pos.get)
+        print(f"LOWEST POSITIVE factor {pos[k0]:.4g} (mode {k0}); {len(pos)} positive of {len(fac)}")
+    else:
+        print(f"NO POSITIVE factor among {len(fac)} modes: ask for more modes")
+    if neg:
+        print(f"negative (loads reversed = uplift, not a design case): {len(neg)} modes, "
+              f"{max(neg.values()):.4g} .. {min(neg.values()):.4g}")
     modes = mode_disp(folder / "results.s2k", "BUCKLE")
     wall = set(m._wall_joints)
     roof = {j for a in m.roof_areas for j in m.areas[a]} - wall
@@ -87,21 +99,44 @@ def report(cfg: Path) -> None:
         rr = math.hypot(x, y)
         peak = mag[jp]
         floor = 0.05 * peak
+        # A wall ring is one elevation (a dent moves its joints radially); roof / plate rings
+        # are one elevation and one radius.
         ring = sorted((j for j in (wall if part == "wall" else roof if part == "roof" else plate)
-                       if abs(m.joints[j][2] - z) < 1e-6 and abs(math.hypot(*m.joints[j][:2]) - rr) < 1e-6),
+                       if abs(m.joints[j][2] - z) < 1e-6
+                       and (part == "wall" or abs(math.hypot(*m.joints[j][:2]) - rr) < 1e-6)),
                       key=lambda j: math.atan2(m.joints[j][1], m.joints[j][0]))
         waves = sign_changes([normal(j) for j in ring], floor) / 2.0
         line = ""
+        # Elements per half-wave, around (ring joints / (2 x waves)) and along the meridian
+        # (elements spanned by the moving part of the meridian line / its half-waves). Under 4 the
+        # mesh cannot represent the mode: its factor is mesh-locked, not reportable.
+        circ_epw = len(ring) / (2.0 * waves) if waves > 0 else float("inf")
+        same_az = lambda j: abs(math.atan2(m.joints[j][1], m.joints[j][0]) - math.atan2(y, x)) < 1e-6
         if part == "wall":
-            col = sorted((j for j in wall if abs(math.atan2(m.joints[j][1], m.joints[j][0]) - math.atan2(y, x)) < 1e-6),
-                         key=lambda j: m.joints[j][2])
-            s = [normal(j) for j in col if abs(normal(j)) > floor]
-            half = 1 + sum(1 for a, b in zip(s, s[1:]) if (a > 0) != (b > 0)) if s else 0
+            col = sorted((j for j in wall if same_az(j)), key=lambda j: m.joints[j][2])
+        elif part == "roof":
+            col = sorted((j for j in roof if same_az(j)), key=lambda j: math.hypot(*m.joints[j][:2]))
+        else:
+            col = []
+        idx = [i for i, j in enumerate(col) if abs(normal(j)) > floor]
+        s = [normal(col[i]) for i in idx]
+        half = 1 + sum(1 for a, b in zip(s, s[1:]) if (a > 0) != (b > 0)) if s else 0
+        mer_epw = (idx[-1] - idx[0]) / half if half and len(idx) > 1 else float("inf")
+        if part == "wall":
             zs = [m.joints[j][2] for j in col if abs(normal(j)) > 0.5 * peak]
             line = f"  meridional half-waves {half}, |u|>50% over z {min(zs):.2f}..{max(zs):.2f} ft"
             where = f"az {az:7.2f}  z {z:6.2f} ft"
         else:
+            line = f"  meridional half-waves {half}" if col else ""
             where = f"az {az:7.2f}  r {rr:6.2f} ft  z {z:6.2f} ft"
+        # A local mode (a dent) has few sign changes round the ring: its own width is the count of
+        # ring joints above half the peak, one half-wave; that bounds the circumferential count too.
+        n50 = sum(1 for j in ring if abs(normal(j)) > 0.5 * peak)
+        if n50 and waves > 0:
+            circ_epw = min(circ_epw, float(n50))
+        epw = min(circ_epw, mer_epw)
+        line += (f"  elem/half-wave circ {circ_epw:.1f} mer {mer_epw:.1f} (ring joints >50% {n50})"
+                 + ("  UNRESOLVED" if epw < 4.0 else ""))
         share = ""
         if dent:
             tot = sum(mag.values())

@@ -41,7 +41,7 @@ This is the only route that runs on the production machine (SAP 22, no Python). 
 | shell local 1 axis in global | `AreaLocal1`, `WriteAreaLocal1` | `-AreaAxes <tsv>` | `run_sap.py` axes check |
 | input tables read back (display precision) | `TableRows`, `WriteTablesS2k` | `-Tables "a;b" -TablesOut <s2k>` | `offset_study.py` (insertion points, gap props) |
 | results at full precision: joints, shells (forces + face stresses), frames, links | `WriteResultsS2k` | `-Results <s2k>` | tank `results.s2k` |
-| buckling factors of the LinBuckling cases → csv `Case,Mode,Factor` (G17, sign as SAP gives it); mode shapes come with `-Results` / `-Export` as `<case>.<mode>` | `WriteBucklingFactors` | `-Buckling <csv>` | tank `buckling.csv` (`run_sap.py`, when the model has a LinBuckling case) |
+| buckling factors of the LinBuckling cases → csv `Case,Mode,Factor` (G17, sign as SAP gives it); mode shapes come with `-Results` / `-Export` as `<case>.<mode>` (SAP's mode numbers), joint displacements only, for the first N positive modes, read and written one mode at a time; results files are written as `<file>.partial` and renamed on success | `WriteBucklingFactors`, `WriteResultsS2k(..., bucklingModes)` | `-Buckling <csv>`, `-BucklingModes N` (default 6) | tank `buckling.csv` (`run_sap.py`, when the model has a LinBuckling case) |
 | model → viewer: mesh, model + results `.s2k`, `SapToPluto` | `SapExport` | `-Export <base\|folder> [-NoResults] [-FinalOnly] [-Cylindrical] [-NoViewerFile]` | `export_model.py` |
 | survey, candidates, forces by group, axis probe | `SapSurvey` | `Run-SapSurvey.ps1` | duct workflow |
 | link / direct release models, synthetic duct | `SapRelease` | `Run-SapRelease.ps1` | duct workflow |
@@ -53,12 +53,14 @@ This is the only route that runs on the production machine (SAP 22, no Python). 
 | self test: 20 ft beam, 10 kip midspan → 5 kip, 50 kip-ft | `WriteTestBeamS2k` | `-SelfTest <dir>` | install check |
 
 `Run-Sap.ps1` prints `[step]` progress lines and ends with `RESULT {json}` (version, counts,
-groups, units, cases, output paths). Steps run in a fixed order: attach → open → points → axes → run → tables → results → buckle → export.
+groups, units, cases, output paths). Steps run in a fixed order: attach → open → points → axes → run → tables → status → results → buckle → export.
 
 ## Facts the code relies on
 
 - Stamp generated `.s2k` with the attached SAP's `Version()`: SAP 26 imports nothing from a file stamped 22.0.0, and `OpenFile` still returns 0.
 - `RunAnalysis` needs a saved model and writes it. Use `RunOnCopy` when the opened file must stay untouched.
+- Observed once, cause not established (2026-11-19): `RunAnalysis` returned 0 after 139 s, `JointDispl` then returned 1, and SAP began a second full analysis of the same model 2 s after the client exited; its LOG replaced the first. No other job was attached to that SAP at the time (Tether `jobs`). The case status at the failed read was not recorded, so it is not known whether the check below would have caught it.
+- Before any results read (`-Results`, `-Buckling`, `-Export` with results) the runner checks `UnfinishedCases`: a case at status 2 or 3 fails the run, except LinBuckling cases, which only warn (a buckling case without modes adds nothing to the tables); status 1 (deliberately not run) is allowed. The LOG's BEGIN / COMPLETE times and its number of analyses go to `RESULT.analysis`. **This applies to every workflow:** a model with a failed case used to export whatever existed and now throws (duct runners and `export_model.py` included).
 - `Results.*` return full doubles. `DatabaseTables.GetTableForDisplayArray` is display-rounded, so use it for input tables only.
 - Numbers are written as `G17`. .NET Framework's `"R"` drops the last digit of some values, and its `double.Parse` is not correctly rounded either. With G17, a value read back in Python equals SAP's double exactly; checked against the retired Python writer on the example tank, where all 54k rows were identical.
 - Nonlinear static output is set to step-by-step (`SetOptionNLStatic(2)`). The default envelope rows zero the principals and von Mises.

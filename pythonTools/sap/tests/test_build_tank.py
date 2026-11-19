@@ -1020,7 +1020,7 @@ def test_buckling_case_rows():
     t = _tables(m)
     assert any("Case=BUCKLE" in r and "Type=LinBuckling" in r and "InitialCond=NL_HYDRO" in r
                for r in t["LOAD CASE DEFINITIONS"])
-    assert t["CASE - BUCKLING 1 - GENERAL"] == ["   Case=BUCKLE   NumBuckMode=4   EigenTol=1e-06"]
+    assert t["CASE - BUCKLING 1 - GENERAL"] == ["   Case=BUCKLE   NumBuckMode=4   EigenTol=0.0001"]
     assert t["CASE - BUCKLING 2 - LOAD ASSIGNMENTS"] == [
         '   Case=BUCKLE   LoadType="Load pattern"   LoadName=DEAD   LoadSF=1']
     nl = t["CASE - STATIC 4 - NONLINEAR PARAMETERS"]
@@ -1049,3 +1049,22 @@ def test_buckling_p_delta_off_keeps_the_cases_linear_geometry():
 def test_buckling_config_validation(raw, msg):
     with pytest.raises(ValueError, match=msg):
         spec_from_dict(raw)
+
+
+def test_dead_wall_pattern_only_when_buckling_asks_for_it():
+    t = _tables(capped(foundation="gap", subgrade_modulus=100.0, buckling=True))
+    assert not any("DEAD_WALL" in r for r in t["LOAD PATTERN DEFINITIONS"])
+    assert "AREA LOADS - GRAVITY" not in t
+
+
+def test_dead_wall_is_gravity_on_every_wall_shell_and_only_in_buckle():
+    m = capped(foundation="gap", subgrade_modulus=100.0, buckling=True, buckling_loads=["DEAD_WALL"])
+    t = _tables(m)
+    assert '   LoadPat=DEAD_WALL   DesignType=Dead   SelfWtMult=0' in t["LOAD PATTERN DEFINITIONS"]
+    rows = t["AREA LOADS - GRAVITY"]
+    wall = list(m.ids.block("area", "wall"))
+    assert [int(r.split()[0].split("=")[1]) for r in rows] == wall
+    assert all("MultiplierZ=-1" in r and "MultiplierX=0" in r for r in rows)
+    assert t["CASE - BUCKLING 2 - LOAD ASSIGNMENTS"] == [
+        '   Case=BUCKLE   LoadType="Load pattern"   LoadName=DEAD_WALL   LoadSF=1']
+    assert not any("DEAD_WALL" in r for r in t["CASE - STATIC 1 - LOAD ASSIGNMENTS"])

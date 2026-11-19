@@ -237,11 +237,21 @@ meant to be checked. Real project numbers live only in the gitignored `configs/*
 > statics move by < 0.5 % on TANK-A. Off, nothing changes: models without
 > `[buckling]` are byte-identical.
 > **Loads:** keep the product out of `loads`: scaled by λ its hoop tension stiffens more as
-> λ grows (unconservative); it enters as the pre-stress of `initial`.
-> **Solver (open):** on TANK-A no mode converged at `tolerance` 1e-9 or 1e-6 (6 and 12
-> modes, 24 subspace vectors; SAP stopped after 41 iterations, the lowest estimates
-> clustered within 2 %). A setting that converges is not yet known; the runner warns when
-> a buckling case returns no mode.
+> λ grows (unconservative); it enters as the pre-stress of `initial`. `loads = ["DEAD_WALL"]`
+> scales the wall shells' own weight only (pattern `DEAD_WALL`, `AREA LOADS - GRAVITY` on the
+> wall areas, in no static case): with `DEAD` the dome's weight reversed drives an eave
+> hoop-compression family of negative modes whose |λ| falls with every mesh refinement
+> (TANK-A: 76, 33, 26 at n_theta 72, 144, 288) and buries the positive modes. λ on
+> DEAD_WALL converts to a critical meridional stress, σcr(z) = λ × σ_wall(z), with σ_wall the
+> wall weight above z over t. Settlement goes into `initial` (NL_SETTLE), never into `loads`:
+> a LinBuckling case applies its loads with the gaps frozen, so a scaled ground drop would pull
+> closed gap links into tension instead of opening them.
+> **Solver:** on TANK-A, `tolerance` 1e-9 and 1e-6 with 6 or 12 modes converged nothing
+> (24 subspace vectors, SAP stops after 41 iterations; the lowest estimates sit within 2 %).
+> What converged: 24 modes at 1e-4 (m1, 90 iterations) and 100 modes at 1e-4 (m2, 230;
+> n_theta 288, 267); 1e-4 is therefore the default. The runner warns when a buckling case returns no mode. Remaining limit:
+> with `loads = ["DEAD"]` the negative eave family (above) fills the lowest modes on any
+> fine mesh; `DEAD_WALL` is the cure being checked.
 > **NL parameters:** the `CASE - STATIC 4` rows use SAP's read-back defaults (MaxTotal 200,
 > MaxNull 50, ...). If a model needs other values, they become `[buckling]` keys, not
 > edited constants.

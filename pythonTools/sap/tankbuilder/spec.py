@@ -167,7 +167,7 @@ class TankSpec:
     buckling_modes: int = 6
     buckling_loads: tuple[str, ...] = ("DEAD",)
     buckling_p_delta: bool = True
-    buckling_tolerance: float = 1e-6   # relative eigen convergence (SAP EigenTol)
+    buckling_tolerance: float = 1e-4   # relative eigen convergence (SAP EigenTol)
     # [material]
     mat_name: str = STEEL["name"]
     mat_e: float = STEEL["E"]
@@ -320,7 +320,10 @@ class TankSpec:
                 raise ValueError("buckling.modes must be a positive integer")
             if not 0.0 < self.buckling_tolerance < 1.0:
                 raise ValueError("buckling.tolerance must be between 0 and 1")
-            pats = ("DEAD", "HYDRO") + (("SETTLE",) if self.settlement != "none" else ())
+            if "SETTLE" in self.buckling_loads:
+                raise ValueError("buckling.loads: SETTLE is never a buckling load (the case applies it with the gaps "
+                                 "frozen closed, pulling them into tension); put the settlement in buckling.initial = NL_SETTLE")
+            pats = ("DEAD", "DEAD_WALL", "HYDRO")
             bad = [p for p in self.buckling_loads if p not in pats]
             if bad or not self.buckling_loads:
                 raise ValueError(f"buckling.loads {list(self.buckling_loads)!r}: patterns must be from {', '.join(pats)}")

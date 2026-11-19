@@ -14,9 +14,12 @@
 #            -RunIfNeeded: only when a case has no results (alone: on the held file; with -RunOnCopy: on the copy)
 #   tables   -Tables "<name>;<name>" -TablesOut <s2k>: input tables read back (display precision), to echo
 #            what an import produced
+#   status   before any results read: every started case must have finished (status 2/3 = throw);
+#            the analysis LOG's BEGIN / COMPLETE times go to RESULT.analysis
 #   results  -Results <s2k>: result tables at full precision, objects under their SAP names
 #   buckle   -Buckling <csv>: buckling factors of the LinBuckling cases, Case,Mode,Factor (G17; sign as
-#            SAP reports it). Mode shapes come with -Results / -Export as "<case>.<mode>" displacements
+#            SAP reports it). Mode shapes come with -Results / -Export as "<case>.<mode>" displacements,
+#            for the first -BucklingModes N positive modes of each buckling case (default 6; 0 = none)
 #   export   -Export <base> (or an existing folder: <folder>\<model name>): analysis mesh -> <base>.model.s2k + <base>.labels.csv, results ->
 #            <base>.results.s2k (-NoResults: geometry only; -FinalOnly: staged cases' last step only),
 #            then SapToPluto -> <base>.bin + <base>.features.json (-NoViewerFile: stop at the .s2k;
@@ -40,6 +43,7 @@ param(
     [string]$TablesOut,
     [string]$Results,
     [string]$Buckling,
+    [int]$BucklingModes = 6,
     [string]$Export,
     [switch]$NoResults,
     [switch]$FinalOnly,
@@ -108,13 +112,25 @@ try {
         else { $secs = $sap.Run(); Say "run" ("cases {0}  ({1:0.0}s)" -f ($sap.LoadCases() -join ", "), $secs) }
     }
     $out.cases = @($sap.LoadCases())
+    if ($Results -or $Buckling -or ($Export -and -not $NoResults)) {
+        # Read results only from a complete analysis: a started case without results fails the run
+        # (one analysis was seen to end without results and be re-run by SAP after the client left).
+        $lt = $sap.AnalysisLogTimes()
+        $out.analysis = [ordered]@{ begin = $lt[0]; complete = $lt[1]; analyses = [int]$lt[2] }
+        Say "status" ("analysis LOG: begin {0}, complete {1}, {2} analysis run(s) in the LOG" -f $lt[0], $lt[1], $lt[2])
+        $bad = @($sap.UnfinishedCases($false))
+        if ($bad.Count -gt 0) { throw ("cases without complete results: {0}; not reading results (see the model's .LOG)" -f ($bad -join ", ")) }
+        $badB = @($sap.UnfinishedCases($true))   # a buckling case without modes adds nothing to the tables
+        if ($badB.Count -gt 0) { Say "warn" ("buckling case(s) without complete results: {0}; reading the other cases" -f ($badB -join ", ")) }
+        if (-not $lt[1]) { Say "warn" "the analysis LOG has no COMPLETE line" }
+    }
     if ($Tables) {
         if (-not $TablesOut) { throw "-Tables needs -TablesOut <s2k>." }
         $counts = $sap.WriteTablesS2k((Full $TablesOut), ($Tables -split ";"))
         Say "tables" ("{0}  ({1})" -f $TablesOut, (($counts.Keys | ForEach-Object { "$_ $($counts[$_])" }) -join ", "))
     }
     if ($Results) {
-        $counts = $sap.WriteResultsS2k((Full $Results), $null, [bool]$FinalOnly, "Run-Sap.ps1")
+        $counts = $sap.WriteResultsS2k((Full $Results), $null, [bool]$FinalOnly, "Run-Sap.ps1", $BucklingModes)
         Say "results" ("{0}  ({1})" -f $Results, (($counts.Keys | ForEach-Object { "$_ $($counts[$_])" }) -join ", "))
         $out.results = Full $Results
     }
@@ -137,7 +153,7 @@ try {
         $resS2k = $null
         if (-not $NoResults) {
             $resS2k = "$base.results.s2k"
-            $counts = $sap.WriteResultsS2k($resS2k, $mesh, [bool]$FinalOnly, "Run-Sap.ps1 -Export")
+            $counts = $sap.WriteResultsS2k($resS2k, $mesh, [bool]$FinalOnly, "Run-Sap.ps1 -Export", $BucklingModes)
             Say "results" ((($counts.Keys | ForEach-Object { "$_ $($counts[$_])" }) -join ", ") + ("  ({0} MB)" -f [int]((Get-Item $resS2k).Length / 1MB)))
         }
         $out.model = $modelS2k; $out.resultsS2k = $resS2k

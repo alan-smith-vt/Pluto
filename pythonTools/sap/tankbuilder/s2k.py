@@ -237,11 +237,15 @@ def support_tables(model: TankModel) -> list[tuple[str, list[str]]]:
 def load_tables(model: TankModel) -> list[tuple[str, list[str]]]:
     s = model.spec
     settle = bool(model.settlements)
+    # DEAD_WALL: the wall shells' own weight only, a buckling load (never in a static case), so the
+    # factor does not scale the roof's weight and the dome-uplift modes at the eave do not appear.
+    dead_wall = model.gap and s.buckling and "DEAD_WALL" in s.buckling_loads
     out = [
         ("LOAD PATTERN DEFINITIONS", [
             _row(LoadPat="DEAD", DesignType="Dead", SelfWtMult=1),
             _row(LoadPat="HYDRO", DesignType="Live", SelfWtMult=0)] + (
-            [_row(LoadPat="SETTLE", DesignType="Other", SelfWtMult=0)] if settle else [])),
+            [_row(LoadPat="SETTLE", DesignType="Other", SelfWtMult=0)] if settle else []) + (
+            [_row(LoadPat="DEAD_WALL", DesignType="Dead", SelfWtMult=0)] if dead_wall else [])),
         ("JOINT PATTERN DEFINITIONS", [_row(Pattern="HYDRO")]),
         ("JOINT PATTERN ASSIGNMENTS", [
             _row(Joint=j, Pattern="HYDRO", Value=model.hydro_value(j))
@@ -281,6 +285,11 @@ def load_tables(model: TankModel) -> list[tuple[str, list[str]]]:
         out.append(("JOINT LOADS - GROUND DISPLACEMENT", [
             _row(Joint=j, LoadPat="SETTLE", CoordSys="GLOBAL", U1=0, U2=0, U3=dz, R1=0, R2=0, R3=0)
             for j, dz in sorted(model.settlements.items()) if dz != 0.0]))
+    if dead_wall:
+        # Gravity on the wall areas: SAP multiplies each shell's own weight (unit weight x thickness).
+        out.append(("AREA LOADS - GRAVITY", [
+            _row(Area=a, LoadPat="DEAD_WALL", CoordSys="GLOBAL", MultiplierX=0, MultiplierY=0, MultiplierZ=-1)
+            for a in model.ids.block("area", "wall")]))
     cases = [
         _row(Case="DEAD", Type="LinStatic", InitialCond="Zero"),
         _row(Case="HYDRO", Type="LinStatic", InitialCond="Zero")]
