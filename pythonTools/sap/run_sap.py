@@ -14,7 +14,7 @@ Steps (each skippable):
            Save the .sdb, read back the shell local axes, RunAnalysis
   results  same call: joint, shell, frame and link results (full precision) ->
            <models>/<name>/results.s2k
-  export   scripts/arms/SapToPluto.cs via Windows PowerShell 5.1 (Config.ps1)
+  export   scripts/arms/SapToPluto.cs via Windows PowerShell 5.1 (arms/Import-Arms.ps1)
            -> <name>.bin + <name>.features.json beside the model
   viewer   a local static server on the repo root + the default browser at
            viewer/index.html?bin=...&features=... (the viewer fetches both)
@@ -139,7 +139,7 @@ def step_export(s2k: Path, results: Path, model_id: str, cylindrical: bool) -> t
     cyl = "$true" if cylindrical else "$false"
     script.write_text(
         "$ErrorActionPreference = 'Stop'\n"
-        f". '{REPO / 'scripts' / 'lib' / 'Config.ps1'}'\n"
+        f". '{REPO / 'scripts' / 'arms' / 'Import-Arms.ps1'}'\n"
         f"$r = [SapToPluto]::Export('{s2k}', '{results}', '{out_base}', '{model_id}', {cyl})\n"
         "Write-Output $r.Summary()\n")
     r = subprocess.run([PS51, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
