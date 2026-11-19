@@ -655,6 +655,30 @@ def test_slope_settlement_half_plane():
     assert m.settlement_dz(0.0, R) == pytest.approx(-0.1)
 
 
+def test_slope_hinge_width_rounds_the_fold():
+    sharp = walled(settlement="slope", settlement_depth=0.1)
+    m = walled(settlement="slope", settlement_depth=0.1, settlement_hinge_width=4.0)
+    R, b = m.spec.radius, 4.0
+    w = lambda y: m.settlement_dz(0.0, y)
+    assert w(-b / 2) == 0.0 and w(-b / 2 - 1.0) == 0.0
+    assert w(b / 2) == pytest.approx(-0.1 * (b / 2) / R)
+    assert w(R) == pytest.approx(-0.1) and w(0.0) == pytest.approx(-0.1 * b / (8 * R))
+    h = 1e-6   # slope continuous: 0 at -b/2, -depth/R at +b/2
+    assert (w(-b / 2 + h) - w(-b / 2)) / h == pytest.approx(0.0, abs=1e-5)
+    assert (w(b / 2) - w(b / 2 - h)) / h == pytest.approx(-0.1 / R, rel=1e-4)
+    # outside the band identical to the sharp fold
+    for j, dz in m.settlements.items():
+        if abs(m.joints[j][1]) >= b / 2:
+            assert dz == sharp.settlements[j]
+    # b = 0 is the sharp fold, bit for bit
+    assert walled(settlement="slope", settlement_depth=0.1, settlement_hinge_width=0.0).settlements == sharp.settlements
+    for bad in (dict(settlement="tilt"), dict(settlement="trench", settlement_width=10.0)):
+        with pytest.raises(ValueError, match="hinge_width"):
+            walled(settlement_depth=0.1, settlement_hinge_width=2.0, **bad)
+    with pytest.raises(ValueError, match="hinge_width"):
+        walled(settlement="slope", settlement_depth=0.1, settlement_hinge_width=-1.0)
+
+
 def test_slope_and_tilt_must_point_down_a_spoke():
     walled(settlement="tilt", settlement_depth=0.1, settlement_direction_deg=45.0)   # 135 deg: spoke 3 of 8
     for prof in ("slope", "tilt"):

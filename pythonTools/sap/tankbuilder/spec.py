@@ -149,6 +149,7 @@ class TankSpec:
     settlement_width: float = 0.0         # ft, trench width (w = 0 at +/- width/2); unused by slope and tilt
     settlement_direction_deg: float = 0.0 # trench axis / slope hinge line / tilt axis direction in plan, from +X
     settlement_offset: float = 0.0        # ft, axis / hinge offset from the tank centre, +90 deg side
+    settlement_hinge_width: float = 0.0   # ft, slope only: fold rounded (parabola) over |d| < b/2; 0 = sharp fold
     # [supports]
     base_local_axes: bool = False
     release_radial: bool = False
@@ -274,6 +275,12 @@ class TankSpec:
                 raise ValueError("settlement.depth must be positive")
             if self.settlement == "trench" and self.settlement_width <= 0:
                 raise ValueError("settlement.width must be positive for a trench")
+            if self.settlement_hinge_width < 0:
+                raise ValueError("settlement.hinge_width must be >= 0")
+            if self.settlement_hinge_width > 0 and self.settlement != "slope":
+                raise ValueError("settlement.hinge_width applies to profile = 'slope' only")
+            if self.settlement_hinge_width >= 2 * self.radius:
+                raise ValueError("settlement.hinge_width must be less than the tank diameter")
             if self.settlement in ("slope", "tilt"):
                 # the downhill direction (direction + 90 deg) must lie on a baseplate spoke
                 step = 360.0 / self.n_theta
@@ -356,6 +363,7 @@ CONFIG_MAP = {
         "width": "settlement_width",
         "direction_deg": "settlement_direction_deg",
         "offset": "settlement_offset",
+        "hinge_width": "settlement_hinge_width",
     },
     "supports": {
         "base_local_axes": "base_local_axes",

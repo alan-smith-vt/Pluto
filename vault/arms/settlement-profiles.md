@@ -21,6 +21,7 @@ depth         = 0.5        # ft, down: trench centreline; slope / tilt at the lo
 width         = 10.0       # ft, zero at +/- width/2
 direction_deg = 0.0        # trench axis in plan, from +X
 offset        = 0.0        # ft, axis offset from the tank centre (+90 deg side)
+hinge_width   = 0.0        # ft, slope only: fold rounded over |d| < hinge_width/2; 0 = sharp
 ```
 
 d = signed distance from the line at `direction_deg` through the point at `offset`.
@@ -32,6 +33,10 @@ zero outside.
 w = −depth · d / R beyond it, so the full depth is reached at the tank edge and the ring
 wall just outside gets a little more. `width` unused. With `offset = 0` the hinge is a
 diameter: flat from one edge to the centre, linear from the centre to the opposite edge.
+`hinge_width` b (2026-11-19, default 0 = sharp fold) rounds the fold: w = −depth ·
+(d + b/2)² / (2bR) for |d| < b/2, so w and its slope are continuous; outside the band and
+at the edge nothing changes. `width` stays a trench-only key (old slope configs carry
+`width = 30` as a leftover; it is ignored).
 
 `tilt` (2026-11-19): rigid plane, w = −depth · (d + R) / (2R): zero at the high edge
 (d = −R), −depth at the low edge (d = R), −depth/2 on the line (the tilt axis), linear

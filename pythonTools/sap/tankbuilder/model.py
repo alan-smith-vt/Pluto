@@ -595,6 +595,9 @@ class TankModel:
         slope: half-plane linear settlement hinged on that line, zero for
         d <= 0 and w = -depth * d / R beyond it, so the full depth is reached
         at the tank edge (d = R; the ring wall just outside gets slightly more).
+        With hinge_width b > 0 the fold is rounded over |d| < b/2:
+        w = -depth (d + b/2)^2 / (2 b R), so w and dw/dd are continuous; b = 0
+        is the sharp fold.
         tilt: rigid plane, w = -depth (d + R) / (2 R): zero at the high edge
         (d = -R), -depth at the low edge (d = R), linear beyond (not clamped); the line is the tilt axis
         (w = -depth / 2 on it), downhill is direction + 90 deg."""
@@ -607,6 +610,9 @@ class TankModel:
             u = 2.0 * d / s.settlement_width
             return -s.settlement_depth * (1.0 - u * u) if abs(u) <= 1.0 else 0.0
         if s.settlement == "slope":
+            b = s.settlement_hinge_width
+            if b > 0.0 and abs(d) < b / 2.0:
+                return -s.settlement_depth * (d + b / 2.0) ** 2 / (2.0 * b * s.radius)
             return -s.settlement_depth * d / s.radius if d > 0.0 else 0.0
         if s.settlement == "tilt":
             return -s.settlement_depth * (d + s.radius) / (2.0 * s.radius)
