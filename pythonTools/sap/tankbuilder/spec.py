@@ -144,10 +144,10 @@ class TankSpec:
     # [settlement]  ground displacement on the ground joints (plate GROUND + RINGWALL_GROUND)
     # from a surface w(x, y); needs foundation "gap". Pattern SETTLE, nonlinear case
     # NL_SETTLE continuing from NL_HYDRO (the gaps open where the ground drops away).
-    settlement: str = "none"              # "none" | "trench" (parabolic) | "slope" (half-plane, linear)
-    settlement_depth: float = 0.0         # ft, positive = down: trench centreline / slope at the tank edge (d = R)
-    settlement_width: float = 0.0         # ft, trench width (w = 0 at +/- width/2); unused by slope
-    settlement_direction_deg: float = 0.0 # trench axis / slope hinge line direction in plan, from +X
+    settlement: str = "none"              # "none" | "trench" (parabolic) | "slope" (half-plane, linear) | "tilt" (rigid plane)
+    settlement_depth: float = 0.0         # ft, positive = down: trench centreline / slope and tilt at the low tank edge (d = R)
+    settlement_width: float = 0.0         # ft, trench width (w = 0 at +/- width/2); unused by slope and tilt
+    settlement_direction_deg: float = 0.0 # trench axis / slope hinge line / tilt axis direction in plan, from +X
     settlement_offset: float = 0.0        # ft, axis / hinge offset from the tank centre, +90 deg side
     # [supports]
     base_local_axes: bool = False
@@ -265,8 +265,8 @@ class TankSpec:
                     raise ValueError("ringwall.cushion_modulus needs a positive cushion_thickness")
                 if not self.ringwall_plate_bearing:
                     raise ValueError("ringwall.cushion_modulus needs ringwall.plate_bearing = true")
-        if self.settlement not in ("none", "trench", "slope"):
-            raise ValueError(f"settlement.profile {self.settlement!r} not recognised (none | trench | slope)")
+        if self.settlement not in ("none", "trench", "slope", "tilt"):
+            raise ValueError(f"settlement.profile {self.settlement!r} not recognised (none | trench | slope | tilt)")
         if self.settlement != "none":
             if self.foundation != "gap":
                 raise ValueError("settlement needs foundation.mode = 'gap' (it moves the ground joints)")
@@ -274,6 +274,15 @@ class TankSpec:
                 raise ValueError("settlement.depth must be positive")
             if self.settlement == "trench" and self.settlement_width <= 0:
                 raise ValueError("settlement.width must be positive for a trench")
+            if self.settlement in ("slope", "tilt"):
+                # the downhill direction (direction + 90 deg) must lie on a baseplate spoke
+                step = 360.0 / self.n_theta
+                k = (self.settlement_direction_deg + 90.0) / step
+                if abs(k - round(k)) > 1e-6:
+                    raise ValueError(
+                        f"settlement.direction_deg {self.settlement_direction_deg:g}: downhill "
+                        f"{self.settlement_direction_deg + 90.0:g} deg is not on a spoke "
+                        f"(every {step:g} deg); nearest direction_deg {round(k) * step - 90.0:g}")
         for k, d in enumerate(self.dents, 1):
             if d.width <= 0 or d.height <= 0:
                 raise ValueError(f"dents[{k}]: width and height must be positive")

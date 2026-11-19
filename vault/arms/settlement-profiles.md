@@ -16,8 +16,8 @@ Load path pictures: [[vault/arms/ring-wall-load-path|ring-wall-load-path]].
 
 ```toml
 [settlement]
-profile       = "trench"   # "none" | "trench" | "slope"
-depth         = 0.5        # ft at the centreline (down)
+profile       = "trench"   # "none" | "trench" | "slope" | "tilt"
+depth         = 0.5        # ft, down: trench centreline; slope / tilt at the low tank edge
 width         = 10.0       # ft, zero at +/- width/2
 direction_deg = 0.0        # trench axis in plan, from +X
 offset        = 0.0        # ft, axis offset from the tank centre (+90 deg side)
@@ -30,8 +30,21 @@ zero outside.
 
 `slope` (2026-09-04): half-plane linear settlement hinged on that line: w = 0 for d ≤ 0,
 w = −depth · d / R beyond it, so the full depth is reached at the tank edge and the ring
-wall just outside gets a little more. `width` unused. Planned next: plane tilt (the
-validation case, must give ~zero stress), parabolic dish.
+wall just outside gets a little more. `width` unused. With `offset = 0` the hinge is a
+diameter: flat from one edge to the centre, linear from the centre to the opposite edge.
+
+`tilt` (2026-11-19): rigid plane, w = −depth · (d + R) / (2R): zero at the high edge
+(d = −R), −depth at the low edge (d = R), −depth/2 on the line (the tilt axis), linear
+beyond it (not clamped: the ring wall face grounds just past the high edge rise a hair, which
+keeps the plane exact). The validation case: a rigid tilt
+should give near-zero stress change in `NL_SETTLE`.
+
+For `slope` and `tilt` the downhill direction, `direction_deg` + 90, must lie on a baseplate
+spoke (a multiple of 360 / `n_theta`); the spec refuses it otherwise and names the nearest
+`direction_deg`. That guarantees a spoke down the slope; with `offset` = 0 the hinge or
+tilt axis is then the diameter across it, with an offset it is a parallel chord. `depth` is the single magnitude to scale. It is not the same gradient in the two: tilt
+reaches it across the diameter (gradient depth / 2R), slope across one radius (depth / R),
+so tabulate them by gradient or say "across D" / "across R", not "edge settlement" alone. Planned next: parabolic dish.
 
 ## Audit record (generated, not hand-drawn)
 

@@ -633,6 +633,35 @@ def trenched(**kw):
     return walled(settlement="trench", settlement_depth=0.5, settlement_width=10.0, **kw)
 
 
+def test_tilt_settlement_is_a_plane():
+    m = walled(settlement="tilt", settlement_depth=0.1)
+    R = m.spec.radius
+    # direction 0: axis along X, downhill toward +Y (90 deg); 0 at the high edge, -depth at the low edge
+    assert m.settlement_dz(0.0, -R) == pytest.approx(0.0)
+    assert m.settlement_dz(0.0, R) == pytest.approx(-0.1)
+    assert m.settlement_dz(5.0, 0.0) == pytest.approx(-0.05)
+    # planar: dz = a + b y at every ground joint
+    for j, dz in m.settlements.items():
+        x, y, _ = m.joints[j]
+        assert dz == pytest.approx(-0.1 * (y + R) / (2 * R))
+    assert len(m.settlements) == len(m.all_ground_joints)
+
+
+def test_slope_settlement_half_plane():
+    m = walled(settlement="slope", settlement_depth=0.1)
+    R = m.spec.radius
+    assert m.settlement_dz(3.0, -R / 2) == 0.0 and m.settlement_dz(0.0, 0.0) == 0.0
+    assert m.settlement_dz(-4.0, R / 2) == pytest.approx(-0.05)
+    assert m.settlement_dz(0.0, R) == pytest.approx(-0.1)
+
+
+def test_slope_and_tilt_must_point_down_a_spoke():
+    walled(settlement="tilt", settlement_depth=0.1, settlement_direction_deg=45.0)   # 135 deg: spoke 3 of 8
+    for prof in ("slope", "tilt"):
+        with pytest.raises(ValueError, match="not on a spoke"):
+            walled(settlement=prof, settlement_depth=0.1, settlement_direction_deg=5.0)
+
+
 def test_trench_settlement_profile_and_tables():
     m = trenched()
     # parabola across the trench: full depth on the axis, zero at the edges, zero outside

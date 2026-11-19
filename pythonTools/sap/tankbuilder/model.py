@@ -594,7 +594,10 @@ class TankModel:
         w = -depth (1 - (2 d / W)^2) for |d| <= W/2, else 0.
         slope: half-plane linear settlement hinged on that line, zero for
         d <= 0 and w = -depth * d / R beyond it, so the full depth is reached
-        at the tank edge (d = R; the ring wall just outside gets slightly more)."""
+        at the tank edge (d = R; the ring wall just outside gets slightly more).
+        tilt: rigid plane, w = -depth (d + R) / (2 R): zero at the high edge
+        (d = -R), -depth at the low edge (d = R), linear beyond (not clamped); the line is the tilt axis
+        (w = -depth / 2 on it), downhill is direction + 90 deg."""
         s = self.spec
         if s.settlement == "none":
             return 0.0
@@ -605,6 +608,8 @@ class TankModel:
             return -s.settlement_depth * (1.0 - u * u) if abs(u) <= 1.0 else 0.0
         if s.settlement == "slope":
             return -s.settlement_depth * d / s.radius if d > 0.0 else 0.0
+        if s.settlement == "tilt":
+            return -s.settlement_depth * (d + s.radius) / (2.0 * s.radius)
         return 0.0
 
     def _build_settlement(self) -> None:
