@@ -881,9 +881,10 @@ var FEASectionCut = (function () {
     function dataRuns(c) {
         var half = c.length / 2;
         var sm = c.samples;
-        if (!sm || sm.hit.length !== N_SAMPLES + 1) return [[-half, half, true]];
+        if (!sm || !sm.t || sm.hit.length < 2) return [[-half, half, true]];
+        var n = sm.hit.length - 1;                // N_SAMPLES + the edge pairs refineStations adds
         var runs = [], s0 = -half, cur = sm.hit[0] && sm.hit[1];
-        for (var i = 1; i < N_SAMPLES; i++) {
+        for (var i = 1; i < n; i++) {
             var h = sm.hit[i] && sm.hit[i + 1];
             if (h !== cur) { runs.push([s0, sm.t[i], cur]); s0 = sm.t[i]; cur = h; }
         }
@@ -1143,6 +1144,48 @@ var FEASectionCut = (function () {
         sampleCut(c);
         samples = c.samples;
     }
+    // Stations along a straight cut. n + 1 even stations from s0 to s1, then every interval
+    // whose two ends are not in the same element (another element, or a hit and a miss) is
+    // refined recursively: probe the midpoint, refine both halves, until each piece lies in one
+    // element or is shorter than the tolerance. Every element edge the cut crosses, including
+    // elements narrower than the station spacing and the mesh boundary where the cut runs off
+    // the plate, then has a sample within the tolerance on each side, each element's own value
+    // there (on a hit / miss edge only the hit side has a value). With smoothing off the field
+    // is discontinuous at element edges and peaks at corners (a plate at a shell junction); even
+    // stations almost never land on an edge, so before this the plot read a point part-way
+    // down the gradient instead of the edge value (2026-11-19).
+    // probe(s) -> { elem: element index (-1 = miss), val: displayed value (NaN = none) }.
+    // Pure: no mesh, no THREE. Cost: about log2(1e6) = 20 extra probes per crossed edge.
+    // Area = trapezoids over consecutive hit samples at their own spacing (a pair straddling an
+    // edge is at most the tolerance apart, so it adds nothing measurable across the edge).
+    // Straight cuts only: the wrapped (marching) mode keeps its even stations (resampleWrapped).
+    function refineStations(probe, s0, s1, n) {
+        var tol = Math.abs(s1 - s0) * 1e-6;
+        var pts = [];
+        function at(s) { var p = probe(s); return { s: s, elem: p.elem, val: p.val }; }
+        function refine(a, z) {                  // pushes the samples strictly between a and z, in order
+            if (a.elem === z.elem || z.s - a.s <= tol) return;
+            var m = at(0.5 * (a.s + z.s));
+            refine(a, m); pts.push(m); refine(m, z);
+        }
+        var prev = null;
+        for (var i = 0; i <= n; i++) {
+            var cur = at(s0 + (s1 - s0) * i / n);
+            if (prev) refine(prev, cur);
+            pts.push(cur);
+            prev = cur;
+        }
+        var t = [], v = [], hit = [], area = 0, eff = 0;
+        for (var k = 0; k < pts.length; k++) {
+            t.push(pts[k].s); v.push(pts[k].val); hit.push(pts[k].val === pts[k].val);
+            if (k && hit[k] && hit[k - 1]) {
+                var dx = t[k] - t[k - 1];
+                area += 0.5 * (v[k] + v[k - 1]) * dx; eff += dx;
+            }
+        }
+        return { t: t, v: v, hit: hit, area: area, effLen: eff };
+    }
+
     function sampleCut(c) {
         c.samples = null;
         if (!c || !mesh || !feaModel || !(c.length > 0)) return;
@@ -1153,30 +1196,25 @@ var FEASectionCut = (function () {
         var origin = new THREE.Vector3();
         probeRay.near = 0;
         probeRay.far = eps * 2;
-        var t = [], v = [], hit = [];
-        for (var i = 0; i <= N_SAMPLES; i++) {
-            var s = -c.length / 2 + c.length * i / N_SAMPLES;
+        function probe(s) {
             origin.copy(c.center).addScaledVector(dir, s).addScaledVector(c.normal, eps);
             probeRay.set(origin, back);
             var hs = probeRay.intersectObject(mesh);
-            var val = NaN;
             for (var hI = 0; hI < hs.length; hI++) {
                 var fi = hs[hI].faceIndex;
                 if (fi == null) continue;
                 if (!faceUsable(c, fi)) continue;
-                val = queryValue(fi, hs[hI].point);
-                break;
+                return { elem: feaBuild.triToElem[fi], val: queryValue(fi, hs[hI].point) };
             }
-            t.push(s); v.push(val); hit.push(val === val);
+            return { elem: -1, val: NaN };
         }
-        var dx = c.length / N_SAMPLES, area = 0, eff = 0;
-        for (var k = 0; k < N_SAMPLES; k++) {
-            if (hit[k] && hit[k + 1]) { area += 0.5 * (v[k] + v[k + 1]) * dx; eff += dx; }
-        }
-        c.samples = { t: t, v: v, hit: hit, area: area, effLen: eff };
+        var r = refineStations(probe, -c.length / 2, c.length / 2, N_SAMPLES);
+        c.samples = { t: r.t, v: r.v, hit: r.hit, area: r.area, effLen: r.effLen };
         c.pts = null;
     }
     function resampleWrapped(c) {
+        // even marching stations only: the element-edge refinement (refineStations) is for
+        // straight cuts; a wrapped cut can still read a junction peak part-way down its gradient
         var st = march(c);
         var t = [], v = [], hit = [], pts = [];
         for (var i = 0; i < st.length; i++) {
@@ -1228,22 +1266,25 @@ var FEASectionCut = (function () {
         vmin = Math.min(vmin, 0); vmax = Math.max(vmax, 0);
         var pad = (vmax - vmin) * 0.06 || 1;
         vmin -= pad; vmax += pad;
-        var iFirst = 0, iLast = N_SAMPLES;
-        while (iFirst < N_SAMPLES && !samples.hit[iFirst]) iFirst++;
+        var nS = samples.hit.length - 1;          // N_SAMPLES + inserted element-edge pairs
+        var iFirst = 0, iLast = nS;
+        while (iFirst < nS && !samples.hit[iFirst]) iFirst++;
         while (iLast > iFirst && !samples.hit[iLast]) iLast--;
         var padL = 4, padR = 4, padT = 14, padB = 13;
         var pw = W - padL - padR, ph = H - padT - padB;
-        function px(i) { return iLast === iFirst ? padL + pw / 2 : padL + pw * (i - iFirst) / (iLast - iFirst); }
+        // x by distance along the cut, not by index: the stations are no longer evenly spaced
+        var tA = samples.t[iFirst], tB = samples.t[iLast];
+        function px(i) { return tB === tA ? padL + pw / 2 : padL + pw * (samples.t[i] - tA) / (tB - tA); }
         function py(val) { return padT + ph * (1 - (val - vmin) / (vmax - vmin)); }
         var y0 = py(0);
         ctx.strokeStyle = 'rgba(255,255,255,0.18)';
         ctx.beginPath(); ctx.moveTo(padL, y0); ctx.lineTo(W - padR, y0); ctx.stroke();
         var col = markerCss();
         ctx.fillStyle = hexA(col, 0.18);
-        for (var a = 0; a <= N_SAMPLES;) {
+        for (var a = 0; a <= nS;) {
             if (!samples.hit[a]) { a++; continue; }
             var b = a;
-            while (b + 1 <= N_SAMPLES && samples.hit[b + 1]) b++;
+            while (b + 1 <= nS && samples.hit[b + 1]) b++;
             ctx.beginPath(); ctx.moveTo(px(a), y0);
             for (var j = a; j <= b; j++) ctx.lineTo(px(j), py(samples.v[j]));
             ctx.lineTo(px(b), y0); ctx.closePath(); ctx.fill();
@@ -1450,6 +1491,7 @@ var FEASectionCut = (function () {
         _setSloped: setSloped,
         _setMode: setMode,
         _march: march,
+        _refineStations: refineStations,
         _dataRuns: dataRuns,
         _setSamples: function (s) { samples = s; var c = active(); if (c) c.samples = s; },
         _push: function (c) { cuts.push(c); activeId = c.id; afterMutation(c); }
