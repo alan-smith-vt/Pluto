@@ -1206,3 +1206,18 @@ def test_anchor_ties_report_their_spoke_angle():
     m = anchored()
     ang = sorted(round(math.degrees(m.thetas[m.links[l][1]]), 4) for l in m.anchor_links)
     assert ang[0] == 5.625 and ang[1] == 16.875
+
+
+def test_soil_face_reuses_an_arm_joint_on_a_rounding_boundary():
+    # r_in = 29.98177 - 1.166667 / 2 = 29.3984365 sits on a 6-decimal rounding boundary: matching
+    # face and arm radii by rounding made a second joint on top of the arm joint on 5 spokes
+    # (zero-length RINGWALL_ARM frames, rejected by SAP on import)
+    m = TankModel(TankSpec(radius=29.98177, height=40.0, n_theta=128, baseplate=True, baseplate_n_r=12,
+                           foundation="gap", ringwall=True, ringwall_width=1.166667, ringwall_depth=3.5,
+                           ringwall_plate_bearing=True, ringwall_soil_links="faces", baseplate_overhang=0.1016,
+                           edge_length=4.0, edge_size=0.25, edge_growth=1.5,
+                           refine_edges=("wall_base", "wall_top", "plate_rim", "concrete_edge")))
+    shortest = min(math.dist(m.joints[i], m.joints[j]) for i, j in m.frames.values())
+    assert shortest > 1e-6
+    arms = [f for f, sec in m.frame_section.items() if sec == m._arm_section()]
+    assert len(arms) == 4 * 128

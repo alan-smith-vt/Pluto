@@ -763,7 +763,11 @@ class TankModel:
         self.link_props["GAP_SOIL"]["k"] = self.ringwall_soil_k / 2.0
         self.link_props["GAP_SOIL"]["tributary_area"] /= 2.0
         r_arm = {j: math.hypot(*self.joints[j][:2]) for j in self.bearing_arm_joints}
-        at_face = {(round(self.thetas[j], 9), round(r_arm[j], 6)): j for j in self.bearing_arm_joints}
+        # arm joints by spoke; a face reuses one within 1e-6 ft (rounding both radii to a grid
+        # missed it when they straddled a rounding boundary: a zero-length arm SAP rejects)
+        arms_at: dict[float, list[int]] = {}
+        for j in self.bearing_arm_joints:
+            arms_at.setdefault(round(self.thetas[j], 9), []).append(j)
         by_theta = {round(self.thetas[j], 9): j for j in self.ringwall_joints}
         new_joints = self.ids.claim("joint", "soil_face", 2 * n)
         ground = self.ids.claim("joint", "soil_face_ground", 2 * n)
@@ -774,7 +778,7 @@ class TankModel:
             th = round(self.thetas[wj], 9)
             theta = self.thetas[wj]
             for r_face, outer in ((r_in, False), (r_out, True)):
-                fj = at_face.get((th, round(r_face, 6)))
+                fj = next((j for j in arms_at.get(th, []) if abs(r_arm[j] - r_face) < 1e-6), None)
                 if fj is None:
                     fj = next(nj)
                     self.joints[fj] = (r_face * math.cos(theta), r_face * math.sin(theta), -s.ringwall_depth / 2.0)
