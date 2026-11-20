@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from .section import eave_ring_outline, eave_ring_section
+from .section import channel_outline, channel_section, eave_ring_outline, eave_ring_section
 from .spec import TankSpec
 
 
@@ -127,6 +127,7 @@ class TankModel:
         self.ringwall_ground: list[int] = []
         self.ringwall_soil_k: float = 0.0
         self.ringwall_contact_k: float = 0.0
+        self.anchor_links: list[int] = []             # [anchors]: the rim links made two-way (ANCHOR_TIE)
         self.dent_joints: dict[int, dict[int, float]] = {}
         self.bearing_joints: list[int] = []           # plate joints over the ring wall width, on GAP_BEARING links
         self.overhang_joints: list[int] = []          # plate edge ring beyond the shell ([baseplate] overhang)
@@ -142,6 +143,8 @@ class TankModel:
             self._build_baseplate()
         if spec.roof:
             self._build_roof()
+        if spec.top_stiffener:
+            self._build_top_stiffener()
         if spec.foundation == "gap":
             self._build_foundation()
         if spec.ringwall:
@@ -437,14 +440,26 @@ class TankModel:
             # leg out (ring_bar adds a flat bar on that leg). Written as a General
             # section with the computed properties, anchored at the shell line; the
             # outline goes to the viewer via the .outlines.txt sidecar.
-            outline = eave_ring_outline(s.roof_ring_leg, s.roof_ring_thickness, s.roof_ring_bar)
-            self.frame_outlines["ROOF_RING"] = outline
-            self.frame_sections["ROOF_RING"] = eave_ring_section(s.roof_ring_leg, s.roof_ring_thickness, s.roof_ring_bar)
-            top = self.top_joints
-            frames = self.ids.claim("frame", "roof_ring", s.n_theta)
-            for k, fid in enumerate(frames):
-                self.frames[fid] = (top[k], top[(k + 1) % s.n_theta])
-                self.frame_section[fid] = "ROOF_RING"
+            self._build_top_frames("roof_ring", "ROOF_RING",
+                                   eave_ring_section(s.roof_ring_leg, s.roof_ring_thickness, s.roof_ring_bar),
+                                   eave_ring_outline(s.roof_ring_leg, s.roof_ring_thickness, s.roof_ring_bar))
+
+    def _build_top_frames(self, block: str, section: str, props: dict, outline) -> None:
+        """One frame per spoke around the wall top (eave ring or open-top stiffener)."""
+        n = self.spec.n_theta
+        self.frame_outlines[section] = outline
+        self.frame_sections[section] = props
+        top = self.top_joints
+        for k, fid in enumerate(self.ids.claim("frame", block, n)):
+            self.frames[fid] = (top[k], top[(k + 1) % n])
+            self.frame_section[fid] = section
+
+    def _build_top_stiffener(self) -> None:
+        """Open-top stiffener (2026-11-20): a channel ring on the wall top, outline anchored at
+        the shell line like the eave ring (drawing-only offset)."""
+        s = self.spec
+        dims = (s.top_stiffener_d, s.top_stiffener_bf, s.top_stiffener_tf, s.top_stiffener_tw, s.top_stiffener_toes)
+        self._build_top_frames("top_stiffener", "TOP_STIFFENER", channel_section(*dims), channel_outline(*dims))
 
     @property
     def baseplate_areas(self) -> list[int]:
@@ -694,6 +709,28 @@ class TankModel:
             self._build_plate_bearing()
         if s.ringwall_soil_links == "faces":
             self._build_soil_faces()
+        if s.anchors:
+            self._build_anchors()
+
+    def _build_anchors(self) -> None:
+        """Anchors as fixed points (2026-11-20): at each anchor spoke the rim's link to the
+        ring wall (GAP_CONTACT) takes ANCHOR_TIE, the same U1 stiffness with the gap made
+        linear, so it carries tension as well as compression. Vertical only; every other
+        link (rim elsewhere, plate bearing, overhang, soil) stays compression-only."""
+        s = self.spec
+        n = s.n_theta
+        step = n // s.anchors_count
+        first = round(s.anchors_start_deg / (360.0 / n)) % n
+        spokes = [(first + k * step) % n for k in range(s.anchors_count)]
+        rim_link = {j: lid for lid, (_, j) in self.links.items() if self.link_prop[lid] == "GAP_CONTACT"}
+        missing = [i for i in spokes if self.base_joints[i] not in rim_link]
+        if missing:
+            raise RuntimeError(f"anchors: no GAP_CONTACT rim link at spoke(s) {missing}; the rim link property was renamed?")
+        self.anchor_links = [rim_link[self.base_joints[i]] for i in spokes]
+        contact = self.link_props["GAP_CONTACT"]
+        self.link_props["ANCHOR_TIE"] = {**contact, "nonlinear": False}
+        for lid in self.anchor_links:
+            self.link_prop[lid] = "ANCHOR_TIE"
 
 
     def _arm_section(self) -> str:
@@ -895,6 +932,8 @@ class TankModel:
             out["ROOF"] = (self.roof_areas, [], [])
             if s.roof_ring:
                 out["ROOF_RING"] = ([], [], list(self.ids.block("frame", "roof_ring")))
+        if s.top_stiffener:
+            out["TOP_STIFFENER"] = ([], [], list(self.ids.block("frame", "top_stiffener")))
         if self.gap:
             out["GROUND"] = ([], self.plate_ground_joints, [])
         if s.ringwall:
@@ -912,6 +951,8 @@ class TankModel:
                 out["RINGWALL_ARM"] = ([], self.bearing_arm_joints, arm_frames)
             if self.soil_face_joints:
                 out["RINGWALL_SOIL_FACES"] = ([], self.soil_face_joints, [])
+            if self.anchor_links:
+                out["ANCHORS"] = ([], [self.links[l][1] for l in self.anchor_links], [])
         for n in range(len(s.dents)):
             out[f"DENT_{n + 1:02d}"] = (self.dent_areas(n), [], [])
         return out

@@ -208,6 +208,28 @@ meant to be checked. Real project numbers live only in the gitignored `configs/*
 > were overlapping collinear frames then and the user's GUI session held the instance —
 > the chained rebuild in a fresh instance imported cleanly, cause not isolated.
 
+> [!info]- Anchors and open-top stiffener (built 2026-11-20)
+> **Anchors as fixed points** (`[anchors] enabled, count, start_deg`; needs a ring wall). At
+> every anchor spoke the rim's `GAP_CONTACT` link to the ring wall takes `ANCHOR_TIE`: the same
+> Gap property with U1 `NonLinear=False`, so the same stiffness (the cushion's when one is set)
+> but two-way. The shell base rides with the ring wall and cannot lift there. Vertical only (bolts in
+> oversize holes); no chair eccentricity, bolt stretch or embedment, so it is **an upper bound on
+> hold-down**: report tie tensions against the bolt capacity. Every other link (rim between
+> anchors, plate bearing, overhang, `GAP_SOIL`) stays compression-only, so the plate either side
+> of an anchor can still lift, and a tied shell can lift the ring wall off its soil links (a load
+> path an unanchored tank does not have). Anchors must sit on spokes: `n_theta % count == 0`,
+> `start_deg` on a spoke (builder θ, from +X CCW). Group `ANCHORS` = the tied rim joints. Use an
+> `n_theta` with several free spokes between ties for settlement runs. To verify on the first
+> import: the ANCHOR_TIE row reads back with U1 linear (OAPI) and its local 1 = +Z like
+> `GAP_CONTACT`. Planned validation: tilt gives no stress change with ties unchanged; NL_HYDRO
+> without settlement equals anchors off; Σ tie tension + Σ bearing = weight.
+> **Open-top stiffener** (`[top_stiffener] d, bf, tf, tw, toes = "out" | "in"`, shape `channel`):
+> one frame per spoke on the wall top, General section from `section.channel_section` (square
+> flanges: A and I33 match a rolled channel within 1 %; I22 runs 25 % high, 3.50 against 2.81 in⁴ for a C10x20, because rolled flanges taper; I22 is the ring's stiffness against radial ovalling),
+> outline anchored at the shell line, top flush, offset drawing-only like the eave ring. Refused
+> with `[roof]` (use `roof.ring`). Group `TOP_STIFFENER` (`TOP_RING` stays the wall's top joints).
+> The eave ring now goes through the same helper; output unchanged (golden byte-identical).
+
 > [!info]- Ports (plan)
 > A nozzle is geometry: a hole in the shell, a reinforcing pad, a stub. The regular
 > cylindrical mesher cannot do it; it needs a local unstructured step: remove the shells

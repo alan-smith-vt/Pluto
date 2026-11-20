@@ -142,6 +142,24 @@ class TankSpec:
     ringwall_transform: bool = False      # SAP "Transform" for the top-centre insertion: False = drawing
                                           # only (analysis on the wall-top joint line); True = rigid arms
                                           # joint -> centroid (a horizontal push at the top rolls the ring)
+    # [anchors]  (2026-11-20) anchor bolts as fixed points: at each anchor spoke the rim's
+    # GAP_CONTACT link to the ring wall becomes ANCHOR_TIE, the same U1 stiffness but linear
+    # (two-way), so the shell base rides with the ring wall and cannot lift there. Vertical
+    # only (bolts in oversize holes); no chair, bolt stretch or embedment. An upper bound on
+    # hold-down. Needs a ring wall; every anchor must sit on a spoke.
+    anchors: bool = False
+    anchors_count: int = 0
+    anchors_start_deg: float = 0.0        # builder theta of the first anchor (deg from +X, CCW)
+    # [top_stiffener]  (2026-11-20) a ring of frames on the wall top for an open-top tank (no
+    # roof): a rolled channel against the outside of the shell, top flush with the shell top.
+    # Offset drawing-only, like the eave ring. Not with [roof] (use roof.ring there).
+    top_stiffener: bool = False
+    top_stiffener_shape: str = "channel"
+    top_stiffener_d: float = 0.0          # ft, channel depth
+    top_stiffener_bf: float = 0.0         # ft, flange width
+    top_stiffener_tf: float = 0.0         # ft, flange thickness
+    top_stiffener_tw: float = 0.0         # ft, web thickness
+    top_stiffener_toes: str = "out"       # "out": web on the shell, flanges point outward | "in": flange tips on the shell
     # [[dents]]  wall imperfections applied to the joint coordinates
     dents: tuple[Dent, ...] = ()
     # [settlement]  ground displacement on the ground joints (plate GROUND + RINGWALL_GROUND)
@@ -284,6 +302,29 @@ class TankSpec:
                     raise ValueError("ringwall.cushion_modulus needs a positive cushion_thickness")
                 if not self.ringwall_plate_bearing:
                     raise ValueError("ringwall.cushion_modulus needs ringwall.plate_bearing = true")
+        if self.anchors:
+            if not self.ringwall:
+                raise ValueError("anchors.enabled needs a ring wall (the anchors tie the rim to it)")
+            if int(self.anchors_count) != self.anchors_count or self.anchors_count < 1:
+                raise ValueError("anchors.count must be a positive integer")
+            if self.n_theta % int(self.anchors_count):
+                raise ValueError(f"anchors.count {self.anchors_count} does not divide mesh.n_theta {self.n_theta}: "
+                                 "every anchor must sit on a spoke")
+            step = 360.0 / self.n_theta
+            k = self.anchors_start_deg / step
+            if abs(k - round(k)) > 1e-6:
+                raise ValueError(f"anchors.start_deg {self.anchors_start_deg:g} is not on a spoke (every {step:g} deg)")
+        if self.top_stiffener:
+            if self.roof:
+                raise ValueError("top_stiffener is for an open top; with a roof use roof.ring")
+            if self.top_stiffener_shape != "channel":
+                raise ValueError(f"top_stiffener.shape {self.top_stiffener_shape!r} not recognised (channel)")
+            if self.top_stiffener_toes not in ("out", "in"):
+                raise ValueError(f"top_stiffener.toes {self.top_stiffener_toes!r} not recognised (out | in)")
+            d, bf, tf, tw = (self.top_stiffener_d, self.top_stiffener_bf,
+                             self.top_stiffener_tf, self.top_stiffener_tw)
+            if min(d, bf, tf, tw) <= 0 or 2 * tf >= d or tw >= bf:
+                raise ValueError("top_stiffener: d, bf, tf, tw must be positive with 2 tf < d and tw < bf")
         if self.settlement not in ("none", "trench", "slope", "tilt"):
             raise ValueError(f"settlement.profile {self.settlement!r} not recognised (none | trench | slope | tilt)")
         if self.settlement != "none":
@@ -392,6 +433,16 @@ CONFIG_MAP = {
         "cushion_modulus": "ringwall_cushion_modulus",
         "cushion_thickness": "ringwall_cushion_thickness",
         "bearing_k": "ringwall_bearing_k",
+    },
+    "anchors": {"enabled": "anchors", "count": "anchors_count", "start_deg": "anchors_start_deg"},
+    "top_stiffener": {
+        "enabled": "top_stiffener",
+        "shape": "top_stiffener_shape",
+        "d": "top_stiffener_d",
+        "bf": "top_stiffener_bf",
+        "tf": "top_stiffener_tf",
+        "tw": "top_stiffener_tw",
+        "toes": "top_stiffener_toes",
     },
     "dents": {"angle_deg": "angle_deg", "elevation": "elevation", "depth": "depth",
               "width": "width", "height": "height"},

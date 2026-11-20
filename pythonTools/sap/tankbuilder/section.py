@@ -73,6 +73,28 @@ def eave_ring_outline(leg: float, t: float, bar: bool = False) -> list[tuple[flo
     return [(0.0, t - L), (0.0, tp), (-L, tp), (-L, 0.0), (-t, 0.0), (-t, t - L)]
 
 
+def channel_outline(d: float, bf: float, tf: float, tw: float, toes: str = "out") -> list[tuple[float, float]]:
+    """Open-top stiffener: a channel on the outside of the shell, web vertical, top
+    flush with the top of the wall. Same viewer frame and anchoring as
+    eave_ring_outline (origin = shell line at the wall top, outward = -y).
+    toes "out": the web lies against the shell, flanges point outward;
+    "in": the flange tips touch the shell, the web is bf out. Counter-clockwise."""
+    if toes == "out":
+        return [(0.0, -d), (-bf, -d), (-bf, tf - d), (-tw, tf - d), (-tw, -tf),
+                (-bf, -tf), (-bf, 0.0), (0.0, 0.0)]
+    return [(0.0, 0.0), (0.0, -tf), (tw - bf, -tf), (tw - bf, tf - d), (0.0, tf - d),
+            (0.0, -d), (-bf, -d), (-bf, 0.0)]
+
+
+def channel_section(d: float, bf: float, tf: float, tw: float, toes: str = "out") -> dict:
+    """General-section fields for the channel stiffener: J = sum b t^3 / 3 (two flanges,
+    the web between them), AS2 = web (vertical shear), AS3 = both flanges. SAP axes
+    as eave_ring_section (local 3 = -viewer y)."""
+    j = (2.0 * bf * tf ** 3 + (d - 2.0 * tf) * tw ** 3) / 3.0
+    sap_axes = [(-y, z) for y, z in channel_outline(d, bf, tf, tw, toes)]
+    return general_section(sap_axes, j, d * tw, 2.0 * bf * tf)
+
+
 def general_section(pts: list[tuple[float, float]], j: float, as2: float, as3: float) -> dict:
     """SAP 'General' frame section fields from an outline, in the SAP frame
     local axes: local 2 = z (up), local 3 = y. I33 bends about the horizontal

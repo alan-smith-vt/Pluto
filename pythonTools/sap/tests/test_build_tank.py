@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT))
 
 from tankbuilder import Course, Dent, TankModel, TankSpec, load_config, parse_s2k  # noqa: E402
 from tankbuilder.s2k import load_tables, outlines_text, s2k_text  # noqa: E402
-from tankbuilder.section import polygon_properties, eave_ring_outline, eave_ring_section  # noqa: E402
+from tankbuilder.section import polygon_properties, eave_ring_outline, eave_ring_section, channel_outline, channel_section  # noqa: E402
 from tankbuilder.spec import spec_from_dict  # noqa: E402
 
 CONFIGS = ROOT / "configs"
@@ -1097,3 +1097,85 @@ def test_dead_wall_is_gravity_on_every_wall_shell_and_only_in_buckle():
     assert t["CASE - BUCKLING 2 - LOAD ASSIGNMENTS"] == [
         '   Case=BUCKLE   LoadType="Load pattern"   LoadName=DEAD_WALL   LoadSF=1']
     assert not any("DEAD_WALL" in r for r in t["CASE - STATIC 1 - LOAD ASSIGNMENTS"])
+
+
+# --- anchors and open-top stiffener (2026-11-20) --------------------------------
+
+def anchored(**extra):
+    kw = dict(radius=30.0, height=40.0, n_theta=64, baseplate=True, baseplate_n_r=4,
+              foundation="gap", ringwall=True, ringwall_width=1.25, ringwall_depth=3.5,
+              anchors=True, anchors_count=32, anchors_start_deg=5.625)
+    kw.update(extra)
+    return TankModel(TankSpec(**kw))
+
+
+def test_anchors_make_every_other_rim_link_a_two_way_tie():
+    m = anchored()
+    assert len(m.anchor_links) == 32
+    tied = {m.links[l][1] for l in m.anchor_links}
+    assert tied == {m.base_joints[i] for i in range(1, 64, 2)}          # 5.625 deg = spoke 1, then every second
+    for lid, (i, j) in m.links.items():
+        if j in set(m.base_joints):
+            assert m.link_prop[lid] == ("ANCHOR_TIE" if j in tied else "GAP_CONTACT")
+            assert i in set(m.ringwall_joints)                              # tied to the ring wall, not ground
+    tie, gap = m.link_props["ANCHOR_TIE"], m.link_props["GAP_CONTACT"]
+    assert tie["k"] == gap["k"] and tie["nonlinear"] is False
+    t = parse_s2k(s2k_text(m))
+    rows = {r["LINK"]: r for r in t["LINK PROPERTY DEFINITIONS 05 - GAP"]}
+    assert rows["ANCHOR_TIE"]["NONLINEAR"] == "No" and float(rows["ANCHOR_TIE"]["TRANSKE"]) == pytest.approx(gap["k"])
+    assert "OPEN" not in rows["ANCHOR_TIE"] and rows["GAP_CONTACT"]["NONLINEAR"] == "Yes"
+    assert sorted(m.groups()["ANCHORS"][1]) == sorted(tied)
+
+
+def test_anchors_off_change_nothing():
+    a = s2k_text(anchored(anchors=False))
+    b = s2k_text(TankModel(TankSpec(radius=30.0, height=40.0, n_theta=64, baseplate=True, baseplate_n_r=4,
+                                    foundation="gap", ringwall=True, ringwall_width=1.25, ringwall_depth=3.5)))
+    assert a == b
+
+
+def test_anchors_follow_the_cushion_stiffness():
+    m = anchored(edge_length=3.0, ringwall_plate_bearing=True, baseplate_overhang=0.1,
+                 ringwall_cushion_modulus=1500.0, ringwall_cushion_thickness=1.0 / 6.0)
+    assert m.link_props["ANCHOR_TIE"]["k"] == m.link_props["GAP_CONTACT"]["k"]
+    assert all(m.link_prop[l] != "ANCHOR_TIE" for l, (_, j) in m.links.items() if j in set(m.bearing_joints))
+
+
+def test_channel_section_matches_a_rolled_c10x20():
+    # AISC C10x20: A 5.87 in2, Ix 78.9 in4 (Iy is lower than a square-flange outline gives: tapered flanges)
+    for toes in ("out", "in"):
+        sec = channel_section(10.0, 2.739, 0.436, 0.379, toes)
+        assert sec["Area"] == pytest.approx(5.87, rel=0.01) and sec["I33"] == pytest.approx(78.9, rel=0.01)
+        assert sec["t3"] == pytest.approx(10.0) and sec["t2"] == pytest.approx(2.739)
+    out = channel_outline(10.0, 2.739, 0.436, 0.379, "out")
+    assert max(y for y, _ in out) == 0.0 and max(z for _, z in out) == 0.0     # on the shell line, flush with the top
+    assert polygon_properties(out)["cy"] > polygon_properties(channel_outline(10.0, 2.739, 0.436, 0.379, "in"))["cy"]
+
+
+def test_top_stiffener_rings_the_open_top():
+    m = TankModel(TankSpec(radius=30.0, height=40.0, top_stiffener=True, top_stiffener_d=10 / 12,
+                           top_stiffener_bf=2.739 / 12, top_stiffener_tf=0.436 / 12, top_stiffener_tw=0.379 / 12))
+    fr = [m.frames[f] for f in sorted(m.frames)]
+    assert [i for i, _ in fr] == m.top_joints and fr[-1][1] == m.top_joints[0]
+    assert set(m.frame_section.values()) == {"TOP_STIFFENER"} and "TOP_STIFFENER" in m.frame_outlines
+    g = m.groups()
+    assert g["TOP_STIFFENER"][2] == sorted(m.frames) and g["TOP_RING"][1] == m.top_joints
+    assert "TOP_STIFFENER" in outlines_text(m)
+
+
+@pytest.mark.parametrize("raw, msg", [
+    ({"anchors": {"enabled": True, "count": 4}}, "needs a ring wall"),
+    ({"anchors": {"enabled": True, "count": 32}, "mesh": {"n_theta": 72}, "baseplate": {"enabled": True},
+      "foundation": {"mode": "gap"}, "ringwall": {"enabled": True}}, "does not divide"),
+    ({"anchors": {"enabled": True, "count": 32, "start_deg": 5.0}, "mesh": {"n_theta": 64},
+      "baseplate": {"enabled": True}, "foundation": {"mode": "gap"}, "ringwall": {"enabled": True}}, "not on a spoke"),
+    ({"anchors": {"enabled": True, "count": 0}, "baseplate": {"enabled": True}, "foundation": {"mode": "gap"},
+      "ringwall": {"enabled": True}}, "positive integer"),
+    ({"top_stiffener": {"enabled": True, "d": 1, "bf": 0.2, "tf": 0.03, "tw": 0.03}, "roof": {"enabled": True}}, "open top"),
+    ({"top_stiffener": {"enabled": True, "d": 1, "bf": 0.2, "tf": 0.03, "tw": 0.03, "toes": "up"}}, "not recognised"),
+    ({"top_stiffener": {"enabled": True, "d": 1, "bf": 0.2, "tf": 0.6, "tw": 0.03}}, "2 tf < d"),
+    ({"top_stiffener": {"enabled": True, "bolt": 1}}, "unknown key"),
+])
+def test_anchor_and_stiffener_config_validation(raw, msg):
+    with pytest.raises(ValueError, match=msg):
+        spec_from_dict(raw)

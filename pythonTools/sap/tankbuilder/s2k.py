@@ -124,8 +124,11 @@ def link_tables(model: TankModel) -> list[tuple[str, list[str]]]:
                  Color="Magenta")
             for name in model.link_props]),
         ("LINK PROPERTY DEFINITIONS 05 - GAP", [
-            _row(Link=name, DOF="U1", Fixed=False, NonLinear=True, TransKE=p["k"],
-                 TransCE=0, TransK=p["k"], Open=0)
+            (_row(Link=name, DOF="U1", Fixed=False, NonLinear=True, TransKE=p["k"],
+                  TransCE=0, TransK=p["k"], Open=0) if p.get("nonlinear", True) else
+             # [anchors] ANCHOR_TIE: the same Gap property with U1 linear (two-way), the row
+             # form offset_study writes for its linear shear DOFs
+             _row(Link=name, DOF="U1", Fixed=False, NonLinear=False, TransKE=p["k"], TransCE=0))
             for name, p in model.link_props.items()]),
         ("CONNECTIVITY - LINK", [
             _row(Link=l, JointI=i, JointJ=j) for l, (i, j) in sorted(model.links.items())]),
