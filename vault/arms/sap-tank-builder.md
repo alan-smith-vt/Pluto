@@ -158,7 +158,7 @@ meant to be checked. Real project numbers live only in the gitignored `configs/*
 > wall column (width × arc), so it stays several times stiffer per area than its neighbours; a
 > consistent hard-contact set would size it by its own tributary area too, as the cushion does.
 > Refused together with a cushion (the cushion already gives each ring its own stiffness). It is a
-> consistency fix: the overhang-tip reaction is set by equilibrium, so it changes the toe force little.
+> consistency fix, expected to change the toe force little (the reaction is set by equilibrium); not yet run.
 > **Ring wall subgrade** (`[ringwall] subgrade_modulus` kcf, 2026-09-10; 0 = the foundation
 > value): the soil gap link under the ring wall takes its own modulus, the pad springs keep
 > `[foundation] subgrade_modulus`. Motivation: the sensitivity runs (`-ks85`, `-ks42`) showed a
