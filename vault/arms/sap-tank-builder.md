@@ -223,7 +223,19 @@ meant to be checked. Real project numbers live only in the gitignored `configs/*
 > import: the ANCHOR_TIE row reads back with U1 linear (OAPI) and its local 1 = +Z like
 > `GAP_CONTACT`. Planned validation: tilt gives no stress change with ties unchanged; NL_HYDRO
 > without settlement equals anchors off; Σ tie tension + Σ bearing = weight.
-> **Open-top stiffener** (`[top_stiffener] d, bf, tf, tw, toes = "out" | "in"`, shape `channel`):
+> **Tie report** (`run_sap.py`, 2026-11-20): with `[anchors]` on, the ANCHOR_TIE property is read
+> back over the OAPI after import (`readback.s2k`, checked against what was written) and
+> `anchors.csv` gets the tie force per case (J end, + = tension, streamed from `results.s2k`). The
+> optional `[anchors] bolt_area` (ft²) and `bolt_strength` (ksf) add the largest tension over
+> their product; give the basis (yield or ultimate) in the config, nothing bolt-specific is in the repo.
+> **Open-top stiffener** (`[top_stiffener] d, bf, tf, tw, toes = "out" | "in", web = "vertical" |
+> "horizontal", top`, shape `channel`). **Choosing `web`:** for a frame on the wall top SAP's local 2
+> is +Z and local 3 radial, so **I22 is the in-plan (ovalling) inertia** and I33 the vertical one.
+> `web = "vertical"` (default) puts the channel's weak axis in plan; `"horizontal"` (web flat across
+> the wall top projecting outward, both flanges turned down, one at the shell, one at the outer toe,
+> web top `top` ft above the shell top, drawing only) puts its strong axis there, about 25 × stiffer
+> for a C10. Shear areas swap with the web. Verify the axes on a first import from the ring's M2
+> against M3 under an ovalling load:
 > one frame per spoke on the wall top, General section from `section.channel_section` (square
 > flanges: A and I33 match a rolled channel within 1 %; I22 runs 25 % high, 3.50 against 2.81 in⁴ for a C10x20, because rolled flanges taper; I22 is the ring's stiffness against radial ovalling),
 > outline anchored at the shell line, top flush, offset drawing-only like the eave ring. Refused
