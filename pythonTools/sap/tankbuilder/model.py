@@ -458,7 +458,8 @@ class TankModel:
         """Open-top stiffener (2026-11-20): a channel ring on the wall top, outline anchored at
         the shell line like the eave ring (drawing-only offset)."""
         s = self.spec
-        dims = (s.top_stiffener_d, s.top_stiffener_bf, s.top_stiffener_tf, s.top_stiffener_tw, s.top_stiffener_toes)
+        dims = (s.top_stiffener_d, s.top_stiffener_bf, s.top_stiffener_tf, s.top_stiffener_tw, s.top_stiffener_toes,
+                s.top_stiffener_web, s.top_stiffener_top)
         self._build_top_frames("top_stiffener", "TOP_STIFFENER", channel_section(*dims), channel_outline(*dims))
 
     @property

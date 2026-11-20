@@ -150,6 +150,8 @@ class TankSpec:
     anchors: bool = False
     anchors_count: int = 0
     anchors_start_deg: float = 0.0        # builder theta of the first anchor (deg from +X, CCW)
+    anchors_bolt_area: float = 0.0        # ft^2, optional: bolt tensile-stress area, for the tie / capacity ratio
+    anchors_bolt_strength: float = 0.0    # kip/ft^2, optional: the stress the ratio is taken on (state which in the config)
     # [top_stiffener]  (2026-11-20) a ring of frames on the wall top for an open-top tank (no
     # roof): a rolled channel against the outside of the shell, top flush with the shell top.
     # Offset drawing-only, like the eave ring. Not with [roof] (use roof.ring there).
@@ -160,6 +162,8 @@ class TankSpec:
     top_stiffener_tf: float = 0.0         # ft, flange thickness
     top_stiffener_tw: float = 0.0         # ft, web thickness
     top_stiffener_toes: str = "out"       # "out": web on the shell, flanges point outward | "in": flange tips on the shell
+    top_stiffener_web: str = "vertical"   # "horizontal": web flat across the wall top, flanges down (strong axis in plan)
+    top_stiffener_top: float = 0.0        # ft, top of the horizontal web above the shell top (drawing only)
     # [[dents]]  wall imperfections applied to the joint coordinates
     dents: tuple[Dent, ...] = ()
     # [settlement]  ground displacement on the ground joints (plate GROUND + RINGWALL_GROUND)
@@ -314,6 +318,8 @@ class TankSpec:
             k = self.anchors_start_deg / step
             if abs(k - round(k)) > 1e-6:
                 raise ValueError(f"anchors.start_deg {self.anchors_start_deg:g} is not on a spoke (every {step:g} deg)")
+            if self.anchors_bolt_area < 0 or self.anchors_bolt_strength < 0:
+                raise ValueError("anchors.bolt_area and bolt_strength must be >= 0 (0 = not given)")
         if self.top_stiffener:
             if self.roof:
                 raise ValueError("top_stiffener is for an open top; with a roof use roof.ring")
@@ -321,6 +327,8 @@ class TankSpec:
                 raise ValueError(f"top_stiffener.shape {self.top_stiffener_shape!r} not recognised (channel)")
             if self.top_stiffener_toes not in ("out", "in"):
                 raise ValueError(f"top_stiffener.toes {self.top_stiffener_toes!r} not recognised (out | in)")
+            if self.top_stiffener_web not in ("vertical", "horizontal"):
+                raise ValueError(f"top_stiffener.web {self.top_stiffener_web!r} not recognised (vertical | horizontal)")
             d, bf, tf, tw = (self.top_stiffener_d, self.top_stiffener_bf,
                              self.top_stiffener_tf, self.top_stiffener_tw)
             if min(d, bf, tf, tw) <= 0 or 2 * tf >= d or tw >= bf:
@@ -434,7 +442,8 @@ CONFIG_MAP = {
         "cushion_thickness": "ringwall_cushion_thickness",
         "bearing_k": "ringwall_bearing_k",
     },
-    "anchors": {"enabled": "anchors", "count": "anchors_count", "start_deg": "anchors_start_deg"},
+    "anchors": {"enabled": "anchors", "count": "anchors_count", "start_deg": "anchors_start_deg",
+                "bolt_area": "anchors_bolt_area", "bolt_strength": "anchors_bolt_strength"},
     "top_stiffener": {
         "enabled": "top_stiffener",
         "shape": "top_stiffener_shape",
@@ -443,6 +452,8 @@ CONFIG_MAP = {
         "tf": "top_stiffener_tf",
         "tw": "top_stiffener_tw",
         "toes": "top_stiffener_toes",
+        "web": "top_stiffener_web",
+        "top": "top_stiffener_top",
     },
     "dents": {"angle_deg": "angle_deg", "elevation": "elevation", "depth": "depth",
               "width": "width", "height": "height"},
