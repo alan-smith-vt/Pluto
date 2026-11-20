@@ -73,12 +73,23 @@ def eave_ring_outline(leg: float, t: float, bar: bool = False) -> list[tuple[flo
     return [(0.0, t - L), (0.0, tp), (-L, tp), (-L, 0.0), (-t, 0.0), (-t, t - L)]
 
 
-def channel_outline(d: float, bf: float, tf: float, tw: float, toes: str = "out") -> list[tuple[float, float]]:
+def channel_outline(d: float, bf: float, tf: float, tw: float, toes: str = "out",
+                    web: str = "vertical", top: float = 0.0) -> list[tuple[float, float]]:
     """Open-top stiffener: a channel on the outside of the shell, web vertical, top
     flush with the top of the wall. Same viewer frame and anchoring as
     eave_ring_outline (origin = shell line at the wall top, outward = -y).
     toes "out": the web lies against the shell, flanges point outward;
-    "in": the flange tips touch the shell, the web is bf out. Counter-clockwise."""
+    "in": the flange tips touch the shell, the web is bf out. Counter-clockwise.
+
+    web "horizontal" (2026-11-20): the web lies flat across the wall top projecting
+    outward (d long, tw thick, its top `top` ft above the shell top), both flanges
+    (bf long, tf thick) turned down, one against the outside of the shell and the free
+    one at the outer toe. The strong axis is then about the vertical: in-plane ring
+    bending (ovalling) takes the channel's Ix. `toes` does not apply."""
+    if web == "horizontal":
+        t = top
+        return [(0.0, t), (0.0, t - bf), (-tf, t - bf), (-tf, t - tw), (tf - d, t - tw),
+                (tf - d, t - bf), (-d, t - bf), (-d, t)]
     if toes == "out":
         return [(0.0, -d), (-bf, -d), (-bf, tf - d), (-tw, tf - d), (-tw, -tf),
                 (-bf, -tf), (-bf, 0.0), (0.0, 0.0)]
@@ -86,12 +97,17 @@ def channel_outline(d: float, bf: float, tf: float, tw: float, toes: str = "out"
             (0.0, -d), (-bf, -d), (-bf, 0.0)]
 
 
-def channel_section(d: float, bf: float, tf: float, tw: float, toes: str = "out") -> dict:
+def channel_section(d: float, bf: float, tf: float, tw: float, toes: str = "out",
+                    web: str = "vertical", top: float = 0.0) -> dict:
     """General-section fields for the channel stiffener: J = sum b t^3 / 3 (two flanges,
     the web between them), AS2 = web (vertical shear), AS3 = both flanges. SAP axes
-    as eave_ring_section (local 3 = -viewer y)."""
+    as eave_ring_section (local 3 = -viewer y). For a frame on the wall top SAP's local 2
+    is +Z, so I22 (sum y^2 dA) is the in-plane (ovalling) inertia: the channel's Iy with
+    the web vertical, its Ix with the web horizontal. The shear areas swap with the web."""
     j = (2.0 * bf * tf ** 3 + (d - 2.0 * tf) * tw ** 3) / 3.0
-    sap_axes = [(-y, z) for y, z in channel_outline(d, bf, tf, tw, toes)]
+    sap_axes = [(-y, z) for y, z in channel_outline(d, bf, tf, tw, toes, web, top)]
+    if web == "horizontal":
+        return general_section(sap_axes, j, 2.0 * bf * tf, d * tw)
     return general_section(sap_axes, j, d * tw, 2.0 * bf * tf)
 
 

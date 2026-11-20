@@ -128,8 +128,13 @@ def step_sap(s2k: Path, run: bool, cfg: Path) -> Path:
     # A model with a LinBuckling case (config [buckling]) also gets buckling.csv.
     spec, _ = load_config(cfg)
     buck = s2k.parent / "buckling.csv" if spec.buckling else None
+    # [anchors]: read the tie property back from SAP after the import (OAPI tables)
+    extra = {}
+    if spec.anchors and run:
+        extra = dict(tables="Link Property Definitions 05 - Gap;Frame Section Properties 01 - General",
+                     tables_out=s2k.parent / "readback.s2k")
     r = run_sap_ps(open=s2k if run else None, area_axes=axes if run else None, run=run,
-                   results=res, buckling=buck, keep_open=True, log=s2k.parent / "run-sap.log")
+                   results=res, buckling=buck, keep_open=True, log=s2k.parent / "run-sap.log", **extra)
     if run:
         step_axes_check(axes, cfg)
     print(f"[results] {res}  ({res.stat().st_size // 1024} kB)")
@@ -139,6 +144,64 @@ def step_sap(s2k: Path, run: bool, cfg: Path) -> Path:
         else:
             print(f"[buckle]  WARNING no buckling mode converged; {buck} is a header only (see the model's .LOG)")
     return res
+
+
+def read_table(path: Path, table: str) -> list[dict[str, str]]:
+    """One table of a (large) .s2k, streamed: only that table's lines are kept, then parsed."""
+    from tankbuilder import parse_s2k
+    keep, inside = [], False
+    with path.open(encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            if line.startswith("TABLE:"):
+                if inside:
+                    break
+                inside = line.split(":", 1)[1].strip().strip('"') == table
+            if inside:
+                keep.append(line)
+    return parse_s2k("".join(keep)).get(table, []) if keep else []
+
+
+def step_anchors(cfg: Path, results: Path, readback: Path | None, fresh: bool = True) -> Path | None:
+    """[anchors]: anchors.csv beside the model, one row per tie and case (theta, U1 force,
+    + = tension), and per case the tie count in tension and the largest tension. With
+    [anchors] bolt_area and bolt_strength given, also the largest tension over
+    bolt_strength x bolt_area (the ties are an upper bound on hold-down). Prints the
+    read-back of the ANCHOR_TIE property when the import echo is there."""
+    import csv
+    import math
+    from tankbuilder import parse_s2k
+    spec, _ = load_config(cfg)
+    if not spec.anchors:
+        return None
+    model = TankModel(spec)
+    if readback and readback.exists():
+        if not fresh:
+            print(f"[anchors] read-back from an existing file (--no-run): {readback}")
+        rows = [r for r in parse_s2k(readback.read_text()).get("LINK PROPERTY DEFINITIONS 05 - GAP", [])
+                if r.get("LINK") == "ANCHOR_TIE"]
+        k = model.link_props["ANCHOR_TIE"]["k"]
+        if rows and rows[0].get("NONLINEAR") == "No" and math.isclose(float(rows[0]["TRANSKE"]), k, rel_tol=1e-4):
+            print(f"[anchors] read-back ANCHOR_TIE: U1 linear, k {float(rows[0]['TRANSKE']):.6g} (wrote {k:.6g})")
+        else:
+            print(f"[anchors] WARNING read-back ANCHOR_TIE does not match what was written: {rows}")
+    theta = {str(l): math.degrees(model.thetas.get(model.links[l][1], 0.0)) for l in model.anchor_links}
+    force = {}
+    for r in read_table(results, "ELEMENT FORCES - LINKS"):   # two rows per link (I, J end): keep J
+        if r["LINK"] in theta and r.get("JOINT") == str(model.links[int(r["LINK"])][1]):
+            force[(r["LINK"], r["OUTPUTCASE"])] = float(r["P"])
+    cap = spec.anchors_bolt_area * spec.anchors_bolt_strength
+    out = results.parent / "anchors.csv"
+    with out.open("w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["Case", "Link", "Theta_deg", "P_kip"])
+        for (lid, case), p in sorted(force.items(), key=lambda kv: (kv[0][1], theta[kv[0][0]])):
+            w.writerow([case, lid, f"{theta[lid]:.4f}", f"{p:.6g}"])
+    for case in dict.fromkeys(c for _, c in force):
+        ps = [p for (l, c), p in force.items() if c == case]
+        ratio = f" ({max(ps) / cap:.1%} of bolt_strength x bolt_area = {cap:.1f} kip)" if cap > 0 else ""
+        print(f"[anchors] {case}: {sum(p > 1e-6 for p in ps)}/{len(ps)} in tension, max {max(ps):.3f} kip{ratio}")
+    print(f"[anchors] {out}")
+    return out
 
 
 def step_export(s2k: Path, results: Path, model_id: str, cylindrical: bool) -> tuple[Path, Path]:
@@ -219,6 +282,7 @@ def main(argv=None) -> int:
         step_figures(a.config)
 
     results = step_sap(s2k, run=not a.no_run, cfg=a.config)
+    step_anchors(a.config, results, s2k.parent / "readback.s2k", fresh=not a.no_run)
     if a.no_export:
         return 0
     bin_path, features = step_export(s2k, results, model_id, cylindrical=not a.no_cylindrical)

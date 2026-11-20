@@ -1179,3 +1179,30 @@ def test_top_stiffener_rings_the_open_top():
 def test_anchor_and_stiffener_config_validation(raw, msg):
     with pytest.raises(ValueError, match=msg):
         spec_from_dict(raw)
+
+
+def test_web_horizontal_channel_puts_the_strong_axis_in_plan():
+    # C10x20 Ix 78.9 in4: with the web flat on the wall top it is I22 (about SAP local 2 = +Z on a
+    # horizontal frame), the ring's in-plane (ovalling) inertia; web vertical gives Iy there.
+    hor = channel_section(10.0, 2.739, 0.436, 0.379, web="horizontal", top=0.25)
+    ver = channel_section(10.0, 2.739, 0.436, 0.379)
+    assert hor["I22"] == pytest.approx(78.9, rel=0.01) and hor["I33"] == pytest.approx(ver["I22"])
+    assert hor["Area"] == pytest.approx(ver["Area"])
+    assert (hor["AS2"], hor["AS3"]) == (ver["AS3"], ver["AS2"])
+    pts = channel_outline(10.0, 2.739, 0.436, 0.379, web="horizontal", top=0.25)
+    assert max(z for _, z in pts) == 0.25 and max(y for y, _ in pts) == 0.0 and min(y for y, _ in pts) == -10.0
+    m = TankModel(TankSpec(radius=30.0, height=40.0, top_stiffener=True, top_stiffener_d=10 / 12,
+                           top_stiffener_bf=2.739 / 12, top_stiffener_tf=0.436 / 12, top_stiffener_tw=0.379 / 12,
+                           top_stiffener_web="horizontal"))
+    assert m.frame_sections["TOP_STIFFENER"]["I22"] > 10 * m.frame_sections["TOP_STIFFENER"]["I33"]
+
+
+def test_web_key_validation():
+    with pytest.raises(ValueError, match="not recognised"):
+        spec_from_dict({"top_stiffener": {"enabled": True, "d": 1, "bf": 0.2, "tf": 0.03, "tw": 0.03, "web": "diagonal"}})
+
+
+def test_anchor_ties_report_their_spoke_angle():
+    m = anchored()
+    ang = sorted(round(math.degrees(m.thetas[m.links[l][1]]), 4) for l in m.anchor_links)
+    assert ang[0] == 5.625 and ang[1] == 16.875
