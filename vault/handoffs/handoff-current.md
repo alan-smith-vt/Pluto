@@ -8,7 +8,7 @@ created: 2026-11-18
 
 # Pluto handoff: current state
 
-**Where it stands (2026-11-18).** Branch `pipestress` holds:
+**Where it stands (2026-11-21).** Branch `pipestress` holds:
 - **The pipe workflow.** An Excel workbook or a TOML becomes one pipe model, reviewed in the viewer with CAESAR's error
   checks, and written as a CAESAR II `.cii`. An imported job comes back byte for byte.
 - **The frame side.** A lossless SAP2000 `.s2k` model, edited in the frame workbook (3D View, live checks) and written
@@ -38,18 +38,13 @@ created: 2026-11-18
   - the hanger count.
 - **Element forces** have not been compared with CAESAR's yet. Only restraint loads and displacements have.
 
-**Code issues found by the vault audit (2026-11-18), not fixed:**
-- `Build-Frame -Xlsx` replaces an existing workbook without a check (no stamp, no `-Force`, no `.bak`): re-seeding a
-  CAESAR job loses the edits made in its frame workbook.
-- Frames and nonlinear cases added in the frame workbook to a seed lack the seed's SAP settings (`AutoMesh=No`, the
-  raised step limits): `FrameModel`'s templates have neither.
-- `viewer/index.html` gives the Auto-reload and Auto range checkboxes the same id (`feaAuto`): Auto range does
-  nothing, and unticking Auto-reload switches the colour range to manual.
-- The viewer's Find searches shell ids only; `FEAFeatures.worldOffset()` reads a top-level `units`, not
-  `model.units` ([[vault/viewer/model-rail|model-rail]]).
-- A personal Windows path is in the pushed history (fixed in the file on 2026-11-18): purging it is the user's call.
+**For the user to decide:** a personal Windows path is in the pushed history (fixed in the file on 2026-11-18).
+Purging it means rewriting the branch's history.
 
-**Waiting on the production machine:** the PS 5.1 compile probe (`Config.ps1`) for the session's C#.
+**Waiting on the production machine:**
+- the PS 5.1 compile probe (`Config.ps1`) for the session's C#;
+- the workbook question ("Overwrite the workbook?") in Windows PowerShell 5.1's console, run once by hand (checked
+  here under PowerShell 7 in a terminal).
 
 **Next:**
 1. **Round 3, the sample job, in SAP only.** CAESAR's outputs are already in `scripts/caesar/testdata`: restraint loads,
@@ -63,4 +58,4 @@ created: 2026-11-18
 CAESAR's restraints, re-seeding that keeps SAP-side additions, and writing a seeded model back as a `.cii`. See
 "Possible later" in [[vault/decisions/2026-11-12-caesar-to-sap|2026-11-12-caesar-to-sap]].
 
-Last session: [[vault/handoffs/handoff-2026-11-18|handoff-2026-11-18]].
+Last session: [[vault/handoffs/handoff-2026-11-21|handoff-2026-11-21]].
