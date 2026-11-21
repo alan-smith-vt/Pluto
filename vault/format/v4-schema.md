@@ -198,9 +198,9 @@ minus the viewer's y. A pin (M2 and M3 released) is `0x30` at end A, `0xc00` at 
   order, each domain's blocks in domain order. Excludes `META` and all field blocks, so a
   geometry-only export and the full-results export of the same run hash identical. This is
   the key the [[vault/format/features-sidecar|features-sidecar]] binds to.
-- Element IDs are **per domain**: shell `101` and beam `101` may coexist. Find-by-ID should
-  search every domain and disambiguate when more than one hits; the viewer's Find searches
-  the shell domain only so far (`viewer.js` `ensureIdMaps` / `doFind`), so beam ids are not found.
+- Element IDs are **per domain**: shell `101` and beam `101` may coexist. The viewer's Find
+  searches every domain (`viewer.js` `doFind`, 2026-11-21): when a shell and a beam share an ID it
+  shows the shell and says so, and `b101` / `s101` picks the domain. It also finds by `LABL`.
 
 ## 6. Sections
 

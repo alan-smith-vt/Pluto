@@ -94,8 +94,11 @@ Rules:
 - Multi-model sessions (identical geometry verified at load) share one features file.
 - `model.units.worldOffset` (optional): the recentre an exporter subtracted from every node, a string `"x y z"` in
   the file's length unit (`CaesarToPluto`, `PipeToPluto`, `CombinedToPluto`). World = file coordinates + offset.
-  Overlays are placed by it ([[vault/viewer/model-rail|model-rail]]). The main model's readout and predicates do not
-  use it yet: `FEAFeatures.worldOffset()` reads a top-level `units` (open, see model-rail).
+  Overlays are placed by it ([[vault/viewer/model-rail|model-rail]]), and since 2026-11-21 the main model's readout
+  and predicates too (`FEAFeatures.worldOffset()` read a top-level `units` before, which no exporter writes).
+- **`predicates.version` 2** (2026-11-21): points in true world coordinates, the offset included. A version-1 file
+  holds them without it; loading moves them by the offset, so each predicate selects what it did, and saving writes
+  version 2.
 
 ## Addressing geometry
 

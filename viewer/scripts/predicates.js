@@ -447,7 +447,8 @@ var FEAPredicates = (function () {
             env = FEAFeatures.ensureEnvelope ? FEAFeatures.ensureEnvelope() : null;
             if (!env) return;
         }
-        if (!env.predicates) env.predicates = { version: 1, items: [] };
+        if (!env.predicates) env.predicates = { version: 2, items: [] };
+        env.predicates.version = 2;     // points in true world coordinates (see migrationShift)
         if (FEAFeatures.markDirty) FEAFeatures.markDirty();
         env.predicates.items = items.map(function (it) {
             var raw = it._raw || {};
@@ -480,15 +481,38 @@ var FEAPredicates = (function () {
         refreshAll();
     }
 
+    // Predicates saved before 2026-11-21 (version 1) hold points without the exporter's
+    // recenter: FEAFeatures.worldOffset read a path no exporter writes, so the readout and
+    // the picks were in the exporter's local frame. Version 2 holds true world points. A
+    // version-1 predicate on a recentred model is moved by the offset as it loads, so it
+    // selects what it did before; saving writes it as version 2.
+    function migrationShift(env) {
+        var v = env && env.predicates && env.predicates.version;
+        if (v >= 2) return null;
+        var o = (window.FEAFeatures && FEAFeatures.worldOffset) ? FEAFeatures.worldOffset(env) : null;
+        return (o && (o[0] || o[1] || o[2])) ? o : null;
+    }
+    function shiftPoints(node, o) {
+        if (!node) return;
+        if (node.kind === 'leaf') {
+            node.point = [node.point[0] + o[0], node.point[1] + o[1], node.point[2] + o[2]];
+            buildPredAxes(node);
+        }
+        (node.children || []).forEach(function (c) { shiftPoints(c, o); });
+    }
+
     // ---- public hooks ---------------------------------------------------
     function onEnvelope(env) {
         items = [];
         selectedIds = [];
         var list = (env && env.predicates && Array.isArray(env.predicates.items))
             ? env.predicates.items : [];
+        var shift = migrationShift(env);
+        if (shift && list.length) say('Predicates: saved before the world offset was read; moved by ' + shift.join(' ') + ' so they select what they did.');
         list.forEach(function (raw) {
             var root = importNode(raw.tree);
             if (!root) return;
+            if (shift) shiftPoints(root, shift);
             var it = {
                 id: raw.id || newGuid('p-'),
                 name: raw.name || ('Predicate ' + (items.length + 1)),
@@ -1490,6 +1514,7 @@ var FEAPredicates = (function () {
             evaluateItem: evaluateItem,
             effectiveSet: effectiveSet,
             addItem: function (it) { items.push(it); return it; },
+            sync: function () { syncEnvelope(); },
             reset: function () { items = []; selectedIds = []; clearCaches(); }
         }
     };

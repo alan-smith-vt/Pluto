@@ -54,8 +54,9 @@ the same strided math, and colored by the same shader. Beams are a second domain
   and flashes the target on top of everything -- no zoom),
   orthographic projection + axis triad, load-case stepping (arrow
   keys), persistent active-view caption. Ctrl+click sets the focus (unless a predicate or cut tool is armed);
-  a double-click flies to the point. Find searches shell elements only (`viewer.js` `ensureIdMaps`): beam ids are
-  not found yet.
+  a double-click flies to the point. **Find** takes an ID or a label (a SAP text label such as `A1`, a CAESAR element
+  `10-20`): elements in both domains, shells and beams; when a shell and a beam share an ID the shell shows and the log
+  says so, and `b101` / `s101` picks the beam / shell (2026-11-21).
 - **Panels**: on the left, Model, Field, Display, then Beams, Releases, Links, Supports, Loads (each shown when the
   file has that layer), Deformation and Status. On the right edge, the flyout tabs for Section cuts, Predicates,
   Groups and Checks (shown for a pipe model or a sidecar with a `review`).
@@ -125,6 +126,14 @@ node viewer/tests/readback_caesar.js <outBase> --expect <result.json>   # a Caes
 ```
 
 ## Recent additions (newest first)
+
+Fixes found by the vault audit (2026-11-21):
+- **Find** searches beams as well as shells, and labels as well as IDs (Navigation, above). Pipe and frame models,
+  which have no shells, could find no element before.
+- **Auto range** works again: the Auto-reload checkbox had taken its id (`feaAuto`) on 2026-10-22, so Auto range did
+  nothing and unticking Auto-reload made the colour range manual. Auto-reload is `feaAutoReload` now.
+- **World coordinates:** the readout and predicates add the exporter's `model.units.worldOffset`; saved predicates are
+  moved once to keep their meaning ([[vault/viewer/model-rail|model-rail]]).
 
 SAP frame models (2026-11-05, branch `pipestress`; the frame workbook's preview and any SAP export, `SapToPluto`):
 - **Releases panel** (`releases.js`): member end releases from BPRP slot 7, drawn a little in from the released end;
