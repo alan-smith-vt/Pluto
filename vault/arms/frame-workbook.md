@@ -282,9 +282,10 @@ The whole picture, CAESAR and STAAD included, with the commands for each job:
 >   refused, every refusal on a `[refuse]` line; notices on `[notice] std:` lines. An existing `.std` is replaced only
 >   when this runner wrote it (the stamp's `std` part) or nothing would change; STAAD saves its own edits into the
 >   `.std`, so anything else needs `-Force`.
-> - `-Xlsx`: writes `<base>.xlsx` and its launchers. **An existing `<base>.xlsx` is replaced without a check:**
->   writing a model's workbook again, or seeding a CAESAR job again, loses the edits in the old one. Keep working in
->   the workbook you have (`-In` it).
+> - `-Xlsx`: writes `<base>.xlsx` and its launchers. **An existing `<base>.xlsx`** is replaced when this runner wrote
+>   it and nobody has saved it since (the stamp's `xlsx` part holds its fingerprint). One with edits asks first:
+>   "Overwrite the workbook?", Keep by default; Overwrite keeps the old one as `<base>.xlsx.bak`. A run with no one to
+>   ask (`-NonInteractive`) stops: `-Force` replaces it, with the `.bak`, and `-Out` writes elsewhere (2026-11-21).
 >   - `<base> - preview.cmd` (`-Preview -Watch`);
 >   - `<base> - s2k.cmd` (`-S2k -Preview`);
 >   - `<base> - open in SAP.cmd` (`-S2k -Preview -Open`);
@@ -306,7 +307,7 @@ The whole picture, CAESAR and STAAD included, with the commands for each job:
 >   and the first production run's live preview failed on it ("being used by another process", 2026-11-05) because
 >   the input's fingerprint used a plain `OpenRead`.
 > - `-NewWorkbook -Out <name>.xlsx [-Units "Kip, in, F"] [-SapVersion 22.0.0]`: an empty model's workbook and launchers.
->   An existing file needs `-Force`.
+>   An existing workbook as for `-Xlsx`.
 > - `-Refresh -In <x>.xlsx`: the workbook in this version's layout over itself, edits kept; the previous file is
 >   `<x>.xlsx.bak`.
 > - `-Out <base>`: as in `Build-Pipe.ps1`. A workbook beside an `.s2k` of its name that this runner did not write (the

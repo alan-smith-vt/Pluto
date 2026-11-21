@@ -21,8 +21,8 @@ How the seed is written and used:
   - `-Preview`;
   - `-Std`, which a tie to a CNODE at its node or a nonlinear support refuses (editing the seed, below).
 - **Outputs.** They default to `<job>_sap.*`, beside the job and never over it.
-- **Seeded once.** Edits then go on in the frame workbook. Re-seeding replaces the model and its workbook (editing the
-  seed, below).
+- **Seeded once.** Edits then go on in the frame workbook. Re-seeding replaces the model; it asks before replacing a
+  workbook with edits (editing the seed, below).
 - **Round trip.** The frame workbook made from a seed gives its `.s2k` back byte for byte.
 
 > [!info]- The mapping
@@ -92,13 +92,16 @@ How the seed is written and used:
 > The overall flow and its commands: [[vault/arms/pipe-and-frame-workflow|pipe-and-frame-workflow]]. What a seed adds:
 > - **Work in `job_sap.xlsx`** with its launchers (preview, s2k, open in SAP, std), as in any frame workbook
 >   ([[vault/arms/frame-workbook|frame-workbook]]).
-> - **Re-seeding loses the edits.** `-Xlsx` replaces an existing workbook without a check: no stamp, no `-Force`, no
->   `.bak`.
-> - **A frame added in the workbook** gets no `FRAME AUTO MESH ASSIGNMENTS` row. SAP's default auto mesh then joins it
->   to any joint on its span (round 2, below). The seeded frames keep `AutoMesh=No`.
-> - **A NonStatic case added in the workbook** gets only `GeoNonLin=None`, so SAP's default limits (200 steps, 24
->   events a step), which stalled round 2b. Give it the seed's limits in SAP: 2,000 steps, 1,000 null steps, 200
->   events a step, 40 / 100 iterations.
+> - **Re-seeding asks before it loses edits** (2026-11-21). `-Xlsx` replaces a workbook it wrote that nobody has
+>   saved since (its stamp records the file's fingerprint). One with edits asks "Overwrite the workbook?" (Keep by
+>   default) and keeps the old one as `job_sap.xlsx.bak`. A run with no one to ask (`-NonInteractive`) stops: `-Force`
+>   replaces it, with the `.bak`, and `-Out` writes elsewhere.
+> - **A frame added in the workbook** takes the auto mesh every other frame shares: `AutoMesh=No` in a seed, so SAP
+>   does not join it to the support points on its span (round 2, below). In a model whose frames differ, SAP's
+>   default (2026-11-21).
+> - **A NonStatic case added in the workbook** takes the nonlinear parameters every other nonlinear case shares: in a
+>   seed, its raised limits (2,000 steps, 1,000 null steps, 200 events a step, 40 / 100 iterations), without which
+>   round 2b stalled. Where the nonlinear cases differ, SAP's defaults (200 steps, 24 events a step) (2026-11-21).
 > - **The SAP version stamp** is 22.0.0 unless `-SapVersion` gives another; the workbook's Settings sheet
 >   (`SAP version`) changes it later. `-Open` re-stamps for the SAP it starts. A file imported by hand needs its SAP's
 >   version: SAP 26 imports nothing from a 22.0.0 stamp ([[vault/arms/sap-controller|sap-controller]]).

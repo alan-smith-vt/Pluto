@@ -35,7 +35,9 @@ flowchart LR
 ```
 
 Solid arrows are what the two runners build. Dotted ones bring a program's results to the viewer. Nothing goes from
-SAP back to CAESAR. The ways back are listed as later work in
+SAP back to CAESAR. STAAD.Pro is an output only: nothing reads a `.std` into a frame model. (The older STAAD
+post-processing lib in `scripts/lib` reads STAAD's `.anl` results for plate models, for section cuts and design
+spreadsheets. It is not part of this pipeline; see STAAD in the [[vault/arms/Arms map|Arms map]].) The ways back are listed as later work in
 [[vault/decisions/2026-11-12-caesar-to-sap|2026-11-12-caesar-to-sap]].
 
 > [!info]- The runners and what they take
@@ -96,8 +98,9 @@ SAP back to CAESAR. The ways back are listed as later work in
 >    be `job.cii`, a `.toml` or a `.pipe.json`. Outputs are `job_sap.*`. Anything the check model cannot hold exactly
 >    stops it, each item on a `[refuse]` line; fix those in the pipe model and seed again. Add `-AppendixD` for a job
 >    CAESAR runs with B31J off.
-> 3. **Edit in the frame workbook,** `job_sap.xlsx`: steel, extra supports, cases. The seed is made once; seeding again
->    starts over from the pipe.
+> 3. **Edit in the frame workbook,** `job_sap.xlsx`: steel, extra supports, cases. New frames and nonlinear cases take
+>    the seed's SAP settings. The seed is made once: seeding again starts over from the pipe, and asks before it
+>    replaces a workbook with edits (the old one kept as `.bak`).
 > 4. **To SAP:** the `open in SAP` launcher, or `-S2k -Open`, imports it on the production machine. Run every case:
 >    with nonlinear supports, SUS runs first and each OPE continues from its end state.
 >

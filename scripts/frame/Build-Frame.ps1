@@ -19,7 +19,11 @@
 #                   existing <base>.s2k is replaced only when this runner wrote it (the stamp, <base>.build.json, says
 #                   so), when it is the model's own source, or when nothing in it would change; else -Force.
 #         -Xlsx     <base>.xlsx, the frame workbook, and its launchers ("<base> - preview.cmd", "<base> - s2k.cmd",
-#                   "<base> - open in SAP.cmd", "<base> - std.cmd")
+#                   "<base> - open in SAP.cmd", "<base> - std.cmd").
+#                   An existing <base>.xlsx this runner wrote and nobody has saved since (the stamp says so) is
+#                   replaced; one with edits asks first ("Overwrite the workbook?", Keep by default), the old one kept
+#                   as <base>.xlsx.bak. With no one to ask (-NonInteractive), the run stops: -Force replaces it (with
+#                   the .bak), -Out writes elsewhere.
 #         -Std      <base>.std for STAAD.Pro (FrameStd; vault/format/frame-to-staad.md): Y up, a BETA per member, STAAD's
 #                   table for W shapes, exact properties for the rest, patterns as reference loads and cases as primary
 #                   loads. Exact or refused: what STAAD cannot hold exactly (a nonlinear link, a partly rigid end zone,
@@ -38,7 +42,8 @@
 #                   the model's. Not with -Watch.
 #   -Watch          with an .xlsx: every save rebuilds the outputs (-Preview when none is given); Ctrl+C stops
 #   -NewWorkbook    -Out <name>.xlsx: an empty workbook (-Units "Kip, in, F" by default, -SapVersion 22.0.0) and its
-#                   launchers
+#                   launchers; an existing workbook as for -Xlsx
+#   -Force          replace a .s2k, .std or workbook changed since this runner wrote it (see -S2k, -Std, -Xlsx)
 #   -Refresh        -In <x>.xlsx: the workbook in this version's layout, written over itself with every typed cell
 #                   kept (the previous file stays as <x>.xlsx.bak)
 #   -Out <base>     default beside the input, same name with spaces -> underscores ("<name>_edit" for a workbook beside
@@ -114,6 +119,42 @@ function OpenShared([string]$p) { return New-Object IO.FileStream($p, [IO.FileMo
 function FileSha([string]$p) { $fs = OpenShared $p; try { $h = [Security.Cryptography.SHA256]::Create(); try { return (($h.ComputeHash($fs) | ForEach-Object { $_.ToString("x2") }) -join "") } finally { $h.Dispose() } } finally { $fs.Dispose() } }
 function ReadShared([string]$p) { $fs = OpenShared $p; try { $ms = New-Object IO.MemoryStream; $fs.CopyTo($ms); return ,$ms.ToArray() } finally { $fs.Dispose() } }
 function ReadSharedText([string]$p) { $fs = OpenShared $p; try { $sr = New-Object IO.StreamReader($fs, $true); try { return $sr.ReadToEnd() } finally { $sr.Dispose() } } finally { $fs.Dispose() } }
+# an existing workbook may be replaced when this runner wrote it and nobody has saved it since (the stamp's xlsx part
+# holds its fingerprint); otherwise writing it again would lose the edits made in it, so ask first, the old one kept as
+# <name>.xlsx.bak. With no one to ask (-NonInteractive, input redirected), -Force replaces it and -Out writes elsewhere.
+# Returns "write", "backup" (keep the old one as .bak, then write), "force" (the same, by -Force: the caller says so,
+# with $script:workbookWhy) or "keep". It writes nothing to the output: a caller captures its value
+function Confirm-Workbook([string]$file, [string]$stamp) {
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return "write" }
+    $st = $null
+    if ($stamp -and (Test-Path -LiteralPath $stamp -PathType Leaf)) { try { $st = Get-Content -LiteralPath $stamp -Raw | ConvertFrom-Json } catch { } }
+    if ($st -and $st.xlsx -and $st.xlsx.sha256 -eq (FileSha $file)) { return "write" }
+    $saved = (Get-Item -LiteralPath $file).LastWriteTime.ToString("yyyy-MM-dd HH:mm")
+    $why = $(if ($st -and $st.xlsx) { "was saved after this runner wrote it" } else { "was not written by this runner" }) + " (last saved " + $saved + ")"
+    $bak = [IO.Path]::GetFileName($file) + ".bak"
+    if ($Force) { $script:workbookWhy = $why; return "force" }
+    $c = -1
+    if (-not [Console]::IsInputRedirected) {
+        $choices = [Management.Automation.Host.ChoiceDescription[]]@(
+            (New-Object Management.Automation.Host.ChoiceDescription "&Overwrite", ("Write the new workbook; the old one is kept as " + $bak)),
+            (New-Object Management.Automation.Host.ChoiceDescription "&Keep", "Keep the workbook as it is: nothing is written over it"))
+        $ask = "{0} {1}. Overwriting it loses the edits made in it; the old one is kept as {2}." -f $file, $why, $bak
+        try { $c = $Host.UI.PromptForChoice("Overwrite the workbook?", $ask, $choices, 1) } catch { $c = -1 }
+    }
+    if ($c -eq 0) { return "backup" }
+    if ($c -eq 1) { return "keep" }
+    throw ("{0} {1}: overwriting it would lose the edits made in it. Run without -NonInteractive to be asked, add -Force to replace it (the old one is kept as {2}), or write elsewhere with -Out." -f $file, $why, $bak)
+}
+
+# the stamp's xlsx part: the fingerprint of the workbook just written, so the next run knows whether anyone saved it since
+function Set-StampXlsx([string]$file, [string]$stamp, [string]$format, [string]$when) {
+    $o = $null
+    if (Test-Path -LiteralPath $stamp -PathType Leaf) { try { $o = Get-Content -LiteralPath $stamp -Raw | ConvertFrom-Json } catch { } }
+    if (-not $o) { $o = New-Object PSObject -Property @{ format = $format } }
+    $part = New-Object PSObject -Property @{ sha256 = (FileSha $file); written = $when }
+    if ($o.PSObject.Properties["xlsx"]) { $o.xlsx = $part } else { $o | Add-Member -NotePropertyName xlsx -NotePropertyValue $part }
+    [IO.File]::WriteAllText($stamp, (ConvertTo-Json -InputObject $o -Depth 6 -Compress), (New-Object Text.UTF8Encoding($false)))
+}
 function Innermost($err) { $e = $err.Exception; while ($e.InnerException) { $e = $e.InnerException }; return $e.Message }
 # a build's error with the step it came from when it is not one of Pluto's own (which name their sheet and cell)
 $script:step = ""
@@ -242,10 +283,14 @@ try {
 # ---- -NewWorkbook: an empty model's workbook, written once ----
 if ($NewWorkbook) {
     try {
-        if ((Test-Path -LiteralPath $xlsxFile) -and -not $Force) { throw ("{0} exists: pick another -Out, or -Force to replace it" -f $xlsxFile) }
+        $go = Confirm-Workbook $xlsxFile $stampFile
+        if ($go -eq "force") { Say "warn" ("-Force: replacing {0}, which {1}" -f $xlsxFile, $script:workbookWhy); $go = "backup" }
+        if ($go -eq "keep") { Say "keep" ("{0}: kept as it is; nothing written" -f $xlsxFile); Write-Output ("RESULT {""kind"":""new"",""xlsx"":null,""kept"":" + (Q $xlsxFile) + "}"); exit 0 }
+        if ($go -eq "backup") { [IO.File]::Copy($xlsxFile, $xlsxFile + ".bak", $true); Say "write" ("{0}.bak: the workbook as it was" -f $xlsxFile) }
         $model = [FrameWorkbook]::Template($Units, $SapVersion)
         $run = [FrameWorkbookRun]::For($xlsxFile, $repoRoot, $null)
         [FrameWorkbook]::Write($model, $xlsxFile, "a new model", $run)
+        Set-StampXlsx $xlsxFile $stampFile "pluto-frame-build" ([DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"))
         Say "write" ("{0}: an empty frame model ({1}) to edit in Excel; then Build-Frame.ps1 -In ""{0}"" -Preview" -f $xlsxFile, $model.Units)
         foreach ($l in $run.WriteLaunchers()) { Say "write" ("{0}: double-click it, or use the Start sheet's link" -f $l) }
         Write-Output ("RESULT {""kind"":""new"",""xlsx"":" + (Q $xlsxFile) + ",""units"":" + (Q $model.Units) + "}")
@@ -289,11 +334,12 @@ function Read-Stamp {
 
 function Write-Stamp($s2kPart, $previewPart, $stdPart) {
     $o = Read-Stamp
-    $sj = "null"; $pj = "null"; $tj = "null"
+    $sj = "null"; $pj = "null"; $tj = "null"; $xj = "null"
+    if ($o -and $o.xlsx) { $xj = (ConvertTo-Json -InputObject $o.xlsx -Compress) }
     if ($s2kPart) { $sj = $s2kPart } elseif ($o -and $o.s2k) { $sj = (ConvertTo-Json -InputObject $o.s2k -Compress) }
     if ($previewPart) { $pj = $previewPart } elseif ($o -and $o.preview) { $pj = (ConvertTo-Json -InputObject $o.preview -Compress) }
     if ($stdPart) { $tj = $stdPart } elseif ($o -and $o.std) { $tj = (ConvertTo-Json -InputObject $o.std -Compress) }
-    [IO.File]::WriteAllText($stampFile, "{""format"":""pluto-frame-build"",""s2k"":" + $sj + ",""preview"":" + $pj + ",""std"":" + $tj + "}", (New-Object Text.UTF8Encoding($false)))
+    [IO.File]::WriteAllText($stampFile, "{""format"":""pluto-frame-build"",""s2k"":" + $sj + ",""preview"":" + $pj + ",""std"":" + $tj + ",""xlsx"":" + $xj + "}", (New-Object Text.UTF8Encoding($false)))
 }
 
 # an existing .s2k may be replaced when this runner wrote it, when it is the model's own source, or when nothing in it
@@ -328,6 +374,9 @@ function Build-Once {
     $script:step = "reading " + [IO.Path]::GetFileName($inPath)
     $script:sw.Reset(); $script:sw.Start()
     $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
+    # the workbook question first, before any file is written
+    $xlsxGo = $(if ($Xlsx) { Confirm-Workbook ($outBase + ".xlsx") $stampFile } else { $null })
+    if ($xlsxGo -eq "force") { Say "warn" ("-Force: replacing {0}, which {1}" -f ($outBase + ".xlsx"), $script:workbookWhy); $xlsxGo = "backup" }
     $inSha = FileSha $inPath
     $identical = $null
     $warnings = @()
@@ -415,10 +464,13 @@ function Build-Once {
         if ($miss.Count -gt 0) { Say "warn" ("SAP2000 holds other counts than the model: {0}. A table SAP did not read? Check its import log." -f ($miss -join "; ")) }
         else { Say "open" ("SAP2000 {0} holds the model ({1} joints, {2} frames, {3} links): {4}" -f $sr.version, $want.joints, $want.frames, $want.links, $sr.held) }
     }
-    if ($Xlsx) {
+    if ($Xlsx -and $xlsxGo -eq "keep") { Say "keep" ("{0}: kept as it is; nothing written over it" -f ($outBase + ".xlsx")) }
+    elseif ($Xlsx) {
         $xf = $outBase + ".xlsx"
+        if ($xlsxGo -eq "backup") { [IO.File]::Copy($xf, $xf + ".bak", $true); Say "write" ("{0}.bak: the workbook as it was" -f $xf) }
         $run = [FrameWorkbookRun]::For($xf, $repoRoot, $inPath)
         [FrameWorkbook]::Write($model, $xf, [IO.Path]::GetFileName($inPath), $run)
+        Set-StampXlsx $xf $stampFile "pluto-frame-build" $now
         Say "write" ("{0}: the frame workbook" -f $xf)
         foreach ($l in $run.WriteLaunchers()) { Say "write" ("{0}: double-click it, or use the Start sheet's link" -f $l) }
     }
@@ -453,7 +505,7 @@ function Build-Once {
     }
     $res = "RESULT {""input"":" + (Q $inPath) + ",""kind"":" + (Q $kind) + ",""model"":" + (Q $hash)
     $res += ",""identical"":" + $(if ($identical -eq $null) { "null" } elseif ($identical) { "true" } else { "false" })
-    $res += ",""s2k"":" + $(if ($S2k) { Q $s2kFile } else { "null" }) + ",""std"":" + $(if ($Std) { Q $stdFile } else { "null" }) + ",""xlsx"":" + $(if ($Xlsx) { Q ($outBase + ".xlsx") } else { "null" }) + ",""json"":" + $(if ($Json) { Q $jsonFile } else { "null" })
+    $res += ",""s2k"":" + $(if ($S2k) { Q $s2kFile } else { "null" }) + ",""std"":" + $(if ($Std) { Q $stdFile } else { "null" }) + ",""xlsx"":" + $(if ($Xlsx -and $xlsxGo -ne "keep") { Q ($outBase + ".xlsx") } else { "null" }) + ",""json"":" + $(if ($Json) { Q $jsonFile } else { "null" })
     $res += ",""bin"":" + $(if ($Preview) { Q $binFile } else { "null" }) + ",""sidecar"":" + $(if ($Preview) { Q $scFile } else { "null" })
     $res += ",""notices"":" + ($notes.Count + $stdNotes.Count) + ",""counts"":" + (Q $counts) + "}"
     Write-Output $res

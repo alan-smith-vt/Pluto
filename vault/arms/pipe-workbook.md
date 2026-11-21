@@ -224,7 +224,12 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >   - Excel holds an open workbook: close it first. The Start sheet's run block carries the command.
 > - **`-NewWorkbook -Out <base>`:** writes the template (two legs, a bend, two anchors and a rest).
 >   - With `-Seed <job.cii>`, it takes the job's settings (English units only).
->   - An existing file needs `-Force`.
+>   - An existing workbook as for `-Xlsx` (below).
+> - **`-Xlsx` over an existing workbook** (2026-11-21): one this runner wrote and nobody has saved since is replaced
+>   (the stamp's `xlsx` part holds its fingerprint). One with edits asks first, "Overwrite the workbook?", Keep by
+>   default; Overwrite keeps the old one as `<base>.xlsx.bak`. A run with no one to ask (`-NonInteractive`) stops:
+>   `-Force` replaces it, with the `.bak`, and `-Out` writes elsewhere. So importing the `.cii` again cannot lose the
+>   edits made in its workbook.
 > - **`-Watch`:** rebuilds the chosen outputs (default `-Preview`) on every save. A save that does not build is reported, and the last good outputs stay. The preview is written to temporary names and moved into place, with the sidecar's own groups merged in, so a viewer reloading never sees half a file.
 > - **`-Cii` guards an existing `<base>.cii`.** It replaces the file only if one of these holds:
 >   - this runner wrote it;
