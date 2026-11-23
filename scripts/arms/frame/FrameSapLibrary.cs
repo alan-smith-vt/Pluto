@@ -14,8 +14,16 @@ using System.Text.RegularExpressions;
 // So before an .s2k is written every catalog row's file is checked: a path this machine has is kept, a file name SAP's
 // library has gets that full path, and anything else (or a shape the file does not hold) refuses the model.
 // A shape picked from STAAD's table (TABLE ST, no SAP row in the .std) is read from the library's AISC file (Row): an
-// entry is an element per shape (<STEEL_I_SECTION> <LABEL>W10X33</LABEL> <D>9.73</D> ...), its lengths in inches (SAP's
-// own W10X33 row in a Kip-in model gives the AISC15.xml entry's numbers, 2026-11-23).
+// entry is an element per shape, its kind as the tag (<STEEL_I_SECTION> <LABEL>W10X33</LABEL> <EDI_STD>W10X33</EDI_STD>
+// <D>9.73</D> ...), its lengths in inches (SAP's own W10X33 and W12X26 rows in a Kip-in model give the AISC15.xml
+// entries' numbers, 2026-11-23). The kinds' fields (the user's entries, 2026-11-23):
+//   STEEL_I_SECTION     D BF TF TW KDES A I33 Z33 AS3 I22 Z22 AS2 J S33POS S33NEG S22POS S22NEG R33 R22
+//   STEEL_CHANNEL       the same and X (the centroid from the back of the web)
+//   STEEL_TEE           the same and Y (the centroid from the flange's top)
+//   STEEL_BOX           HT B TF TW A I33 Z33 AS3 I22 Z22 AS2 J S33POS S33NEG S22POS S22NEG R33 R22 (TF, TW the design wall)
+//   STEEL_PIPE          OD TDES A I33 Z33 AS2 J S33POS S33NEG R33 (one axis: a circle)
+//   STEEL_ANGLE         D B TF TW KDES A I33 Z33 AS3 I22 Z22 AS2 J X Y S33POS S33NEG S22POS S22NEG R33 R22 (no I23)
+//   STEEL_DOUBLE_ANGLE  D B TF TW DIS A I33 ... J Y S33POS ... R22
 // C# 5 (prefix Frame).
 public static class FrameSapLibrary
 {
@@ -84,6 +92,7 @@ public static class FrameSapLibrary
         if (Entries.TryGetValue(file, out d)) return d;
         string text = File.ReadAllText(file);
         d = new Dictionary<string, KeyValuePair<string, Dictionary<string, string>>>(StringComparer.OrdinalIgnoreCase);
+        var alias = new List<KeyValuePair<string, KeyValuePair<string, Dictionary<string, string>>>>();
         int first = -1;
         foreach (Match e in Regex.Matches(text, @"<(\w+)>\s*<LABEL>\s*([^<]*?)\s*</LABEL>(.*?)</\1>", RegexOptions.Singleline))
         {
@@ -91,8 +100,14 @@ public static class FrameSapLibrary
             var f = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             foreach (Match x in Regex.Matches(e.Groups[3].Value, @"<(\w+)>\s*([^<]*?)\s*</\1>")) f[x.Groups[1].Value] = x.Groups[2].Value;
             string label = e.Groups[2].Value.ToUpperInvariant();
-            if (!d.ContainsKey(label)) d[label] = new KeyValuePair<string, Dictionary<string, string>>(e.Groups[1].Value, f);
+            f["LABEL"] = e.Groups[2].Value;
+            var entry = new KeyValuePair<string, Dictionary<string, string>>(e.Groups[1].Value, f);
+            if (!d.ContainsKey(label)) d[label] = entry;
+            // a shape is found by its label or its EDI name (HSS24X12X3/4, HSS24X12X.750): labels first
+            string edi;
+            if (f.TryGetValue("EDI_STD", out edi) && edi.Length > 0 && !d.ContainsKey(edi.ToUpperInvariant())) alias.Add(new KeyValuePair<string, KeyValuePair<string, Dictionary<string, string>>>(edi.ToUpperInvariant(), entry));
         }
+        foreach (var a in alias) if (!d.ContainsKey(a.Key)) d[a.Key] = a.Value;
         Header[file] = first < 0 ? text : text.Substring(0, first);
         return Entries[file] = d;
     }
@@ -114,12 +129,18 @@ public static class FrameSapLibrary
         { "in", 1 }, { "ft", 1.0 / 12 }, { "mm", 25.4 }, { "cm", 2.54 }, { "m", 0.0254 } };
 
     // a shape's SAP row (all but SectionName and Material) from SAP's library, as SAP writes a catalog section's: the
-    // entry of the newest AISC file that has it, FromFile=Yes, and the file by its full path. SAP rebuilds the section
-    // from the file (the catalog probe); the numbers are the model's, in its length unit (the file's text as it is in
-    // inches). I sections (W, M, S, HP): t3 D, t2 / t2b BF, tf / tfb TF, tw TW, FilletRadius KDES - TF, Area A, TorsConst J,
-    // I33 I22 AS2 AS3 Z33 Z22 R33 R22 as named, S33Top / S33Bot S33POS / S33NEG, S22Left / S22Right S22POS / S22NEG, Cw =
-    // TF BF^3 (D - TF)^2 / 24: SAP's own W10X33 row, to its 15 digits. null with why when no file has it, or Pluto does not
-    // read its kind
+    // entry of the newest AISC file that has it (by label or EDI name), FromFile=Yes, SectInFile its label, and the file by
+    // its full path. SAP builds the section from the file (the catalog probe); the numbers are for Pluto, in the model's
+    // length unit (the file's text as it is in inches). null with why when no file has it, or Pluto does not read its kind.
+    //   I sections (W M S HP): SAP's own row to its digits (W10X33, W12X26): t3 D, t2 / t2b BF, tf / tfb TF, tw TW,
+    //     FilletRadius KDES - TF, Area A, TorsConst J, I33 I22 AS2 AS3 Z33 Z22 R33 R22 as named, S33Top / S33Bot S33POS /
+    //     S33NEG, S22Left / S22Right S22POS / S22NEG, Cw = TF BF^3 (D - TF)^2 / 24
+    //   channels, tees, HSS boxes and pipes: SAP's dimensions (Channel / Tee / Box/Tube: t3 t2 tf tw; Pipe: t3 OD, tw the
+    //     wall) and the file's properties as named, I23 0 (each is symmetric about an axis); a pipe's one axis is both. What
+    //     SAP works out itself (fillet, Cw, shear center) and a channel's S22 (its two sides) are left to SAP, which reads
+    //     the file
+    //   angles: refused (SAP works out an angle's I23 about its legs, which the file does not give); double angles too
+    //     (STAAD's are TABLE LD / SD with a spacing, not TABLE ST)
     public static string Row(string folder, string shape, string lengthUnit, out string file, out string why)
     {
         file = null; why = null;
@@ -130,31 +151,84 @@ public static class FrameSapLibrary
         KeyValuePair<string, Dictionary<string, string>> e = default(KeyValuePair<string, Dictionary<string, string>>);
         foreach (string f in files) if (EntriesOf(f).TryGetValue(shape.Trim(), out e)) { file = f; break; }
         if (file == null) { why = "no " + shape + " in SAP's library (" + string.Join(", ", files.Select(f => Path.GetFileName(f)).ToArray()) + " in " + folder + ")"; return null; }
-        string other = OtherUnit(file);
-        if (other != null) { why = Path.GetFileName(file) + " gives its lengths in " + other + "; Pluto reads the AISC files' inches"; return null; }
-        string kind = e.Key;
+        string other = OtherUnit(file), fn = Path.GetFileName(file);
+        if (other != null) { why = fn + " gives its lengths in " + other + "; Pluto reads the AISC files' inches"; return null; }
+        string kind = e.Key.ToUpperInvariant(), label = e.Value["LABEL"];
         var v = e.Value;
-        if (!Is(kind, "STEEL_I_SECTION")) { why = shape + " is a " + kind + " in " + Path.GetFileName(file) + "; Pluto reads I sections (W, M, S, HP) from SAP's library: give it as PRIS"; return null; }
-        string[] need = { "D", "BF", "TF", "TW", "A", "J", "I33", "I22", "AS2", "AS3" };
-        var missing = need.Where(k => !v.ContainsKey(k) || !Dec(v[k]).HasValue).ToList();
-        if (missing.Count > 0) { why = shape + " in " + Path.GetFileName(file) + ": no " + string.Join(", ", missing.ToArray()); return null; }
-        if ((v.ContainsKey("BFB") && v["BFB"] != v["BF"]) || (v.ContainsKey("TFB") && v["TFB"] != v["TF"]))
-        { why = shape + " in " + Path.GetFileName(file) + ": flanges of two sizes; Pluto reads I sections of equal flanges"; return null; }
-        Func<string, int, string> L = (k, pow) => Len(Dec(v[k]).Value, per, pow);
-        var w = new List<string> { "Shape=\"I/Wide Flange\"", "t3=" + L("D", 1), "t2=" + L("BF", 1), "tf=" + L("TF", 1), "tw=" + L("TW", 1), "t2b=" + L("BF", 1), "tfb=" + L("TF", 1) };
-        decimal? kdes = v.ContainsKey("KDES") ? Dec(v["KDES"]) : null;
-        if (kdes.HasValue && kdes.Value > Dec(v["TF"]).Value) w.Add("FilletRadius=" + Len(kdes.Value - Dec(v["TF"]).Value, per, 1));
-        w.Add("Area=" + L("A", 2)); w.Add("TorsConst=" + L("J", 4)); w.Add("I33=" + L("I33", 4)); w.Add("I22=" + L("I22", 4)); w.Add("I23=0");
-        w.Add("AS2=" + L("AS2", 2)); w.Add("AS3=" + L("AS3", 2));
-        string[][] opt = { new[] { "S33Top", "S33POS", "3" }, new[] { "S33Bot", "S33NEG", "3" }, new[] { "S22Left", "S22POS", "3" }, new[] { "S22Right", "S22NEG", "3" },
-                           new[] { "Z33", "Z33", "3" }, new[] { "Z22", "Z22", "3" }, new[] { "R33", "R33", "1" }, new[] { "R22", "R22", "1" } };
-        foreach (var o in opt) if (v.ContainsKey(o[1]) && Dec(v[o[1]]).HasValue) w.Add(o[0] + "=" + L(o[1], int.Parse(o[2], CultureInfo.InvariantCulture)));
-        double tf = (double)Dec(v["TF"]).Value, bf = (double)Dec(v["BF"]).Value, d = (double)Dec(v["D"]).Value;
-        w.Add("CGOffset3=0"); w.Add("CGOffset2=0"); w.Add("EccV2=0"); w.Add("EccV3=0");
-        w.Add("Cw=" + (tf * bf * bf * bf * (d - tf) * (d - tf) / 24 * Math.Pow(per, 6)).ToString("R", CultureInfo.InvariantCulture));
-        w.Add("ConcCol=No"); w.Add("ConcBeam=No"); w.Add("FromFile=Yes");
+        Func<string, bool> has = k => v.ContainsKey(k) && Dec(v[k]).HasValue;
+        Func<string, decimal> num = k => Dec(v[k]).Value;
+        var w = new List<string>();
+        Action<string, string, int> put = (field, key, pow) => w.Add(field + "=" + Len(num(key), per, pow));
+        Action<string, string, int> opt = (field, key, pow) => { if (has(key)) put(field, key, pow); };
+        Func<string[], string> lacks = keys =>
+        {
+            var missing = keys.Where(k => !has(k)).ToList();
+            return missing.Count == 0 ? null : label + " in " + fn + ": no " + string.Join(", ", missing.ToArray());
+        };
+        Action props = () =>
+        {
+            put("Area", "A", 2); put("TorsConst", "J", 4); put("I33", "I33", 4); put("I22", "I22", 4); w.Add("I23=0"); put("AS2", "AS2", 2); put("AS3", "AS3", 2);
+        };
+        switch (kind)
+        {
+            case "STEEL_I_SECTION":
+            {
+                if ((why = lacks(new[] { "D", "BF", "TF", "TW", "A", "J", "I33", "I22", "AS2", "AS3" })) != null) return null;
+                if ((v.ContainsKey("BFB") && v["BFB"] != v["BF"]) || (v.ContainsKey("TFB") && v["TFB"] != v["TF"]))
+                { why = label + " in " + fn + ": flanges of two sizes; Pluto reads I sections of equal flanges"; return null; }
+                w.Add("Shape=\"I/Wide Flange\""); put("t3", "D", 1); put("t2", "BF", 1); put("tf", "TF", 1); put("tw", "TW", 1); put("t2b", "BF", 1); put("tfb", "TF", 1);
+                if (has("KDES") && num("KDES") > num("TF")) w.Add("FilletRadius=" + Len(num("KDES") - num("TF"), per, 1));
+                props();
+                opt("S33Top", "S33POS", 3); opt("S33Bot", "S33NEG", 3); opt("S22Left", "S22POS", 3); opt("S22Right", "S22NEG", 3);
+                opt("Z33", "Z33", 3); opt("Z22", "Z22", 3); opt("R33", "R33", 1); opt("R22", "R22", 1);
+                double tf = (double)num("TF"), bf = (double)num("BF"), d = (double)num("D");
+                w.Add("CGOffset3=0"); w.Add("CGOffset2=0"); w.Add("EccV2=0"); w.Add("EccV3=0");
+                w.Add("Cw=" + (tf * bf * bf * bf * (d - tf) * (d - tf) / 24 * Math.Pow(per, 6)).ToString("R", CultureInfo.InvariantCulture));
+                w.Add("ConcCol=No"); w.Add("ConcBeam=No");
+                break;
+            }
+            case "STEEL_CHANNEL":
+            case "STEEL_TEE":
+            {
+                if ((why = lacks(new[] { "D", "BF", "TF", "TW", "A", "J", "I33", "I22", "AS2", "AS3" })) != null) return null;
+                w.Add("Shape=" + (kind == "STEEL_TEE" ? "Tee" : "Channel")); put("t3", "D", 1); put("t2", "BF", 1); put("tf", "TF", 1); put("tw", "TW", 1);
+                props();
+                opt("S33Top", "S33POS", 3); opt("S33Bot", "S33NEG", 3);
+                if (kind == "STEEL_TEE") { opt("S22Left", "S22POS", 3); opt("S22Right", "S22NEG", 3); }
+                opt("Z33", "Z33", 3); opt("Z22", "Z22", 3); opt("R33", "R33", 1); opt("R22", "R22", 1);
+                break;
+            }
+            case "STEEL_BOX":
+            {
+                if ((why = lacks(new[] { "HT", "B", "TF", "TW", "A", "J", "I33", "I22", "AS2", "AS3" })) != null) return null;
+                w.Add("Shape=Box/Tube"); put("t3", "HT", 1); put("t2", "B", 1); put("tf", "TF", 1); put("tw", "TW", 1);
+                props();
+                opt("S33Top", "S33POS", 3); opt("S33Bot", "S33NEG", 3); opt("S22Left", "S22POS", 3); opt("S22Right", "S22NEG", 3);
+                opt("Z33", "Z33", 3); opt("Z22", "Z22", 3); opt("R33", "R33", 1); opt("R22", "R22", 1);
+                break;
+            }
+            case "STEEL_PIPE":
+            {
+                if ((why = lacks(new[] { "OD", "TDES", "A", "J", "I33", "AS2" })) != null) return null;
+                w.Add("Shape=Pipe"); put("t3", "OD", 1); put("tw", "TDES", 1);
+                put("Area", "A", 2); put("TorsConst", "J", 4); put("I33", "I33", 4); put("I22", "I33", 4); w.Add("I23=0"); put("AS2", "AS2", 2); put("AS3", "AS2", 2);
+                opt("S33Top", "S33POS", 3); opt("S33Bot", "S33NEG", 3); opt("S22Left", "S33POS", 3); opt("S22Right", "S33NEG", 3);
+                opt("Z33", "Z33", 3); opt("Z22", "Z33", 3); opt("R33", "R33", 1); opt("R22", "R33", 1);
+                break;
+            }
+            case "STEEL_ANGLE":
+                why = label + " is an angle in " + fn + ": SAP works out its I23 about its legs, which the file does not give, and STAAD's single-angle axes are not confirmed against SAP's";
+                return null;
+            case "STEEL_DOUBLE_ANGLE":
+                why = label + " is a double angle in " + fn + ": STAAD gives one as TABLE LD / SD with a spacing, which Pluto does not read yet";
+                return null;
+            default:
+                why = label + " is a " + e.Key + " in " + fn + ", a kind Pluto does not read from SAP's library: give it as PRIS";
+                return null;
+        }
+        w.Add("FromFile=Yes");
         foreach (string m in new[] { "AMod", "A2Mod", "A3Mod", "JMod", "I2Mod", "I3Mod", "MMod", "WMod" }) w.Add(m + "=1");
-        w.Add("SectInFile=" + shape.Trim().ToUpperInvariant()); w.Add("FileName=\"" + file + "\"");
+        w.Add("SectInFile=" + label); w.Add("FileName=\"" + file + "\"");
         return string.Join("   ", w.ToArray());
     }
 

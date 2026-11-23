@@ -798,7 +798,15 @@ public static class StdToFrame
             {
                 string file, why, row = FrameSapLibrary.Row(Library, shape, LenUnit, out file, out why);
                 r = new[] { row, why };
-                if (row != null) Note("TABLE ST " + shape + ": a catalog section from SAP's section library, " + file + " (no SAP row of it in the file)");
+                if (row != null)
+                {
+                    string kind = RowGet(row, "Shape"), inFile = RowGet(row, "SectInFile");
+                    Note("TABLE ST " + shape + ": a catalog section from SAP's section library, " + inFile + " (" + kind + ") in " + file + " (no SAP row of it in the file)");
+                    if (Is(kind, "Channel") || Is(kind, "Tee"))
+                        Note("TABLE ST " + shape + ": SAP2000 twists a " + kind.ToLowerInvariant() + " about its shear center; STAAD's member is centroidal (the probe: up to 0.03 in on a 70 in channel cantilever)");
+                    if (FrameStd.TableNameOf(kind, inFile) == null)
+                        Note("TABLE ST " + shape + ": -Std writes it back as PRIS, SAP's numbers (STAAD's table names are confirmed for W shapes and channels of a whole weight), so the read-back check lists it");
+                }
             }
             return LibRow[shape] = r;
         }

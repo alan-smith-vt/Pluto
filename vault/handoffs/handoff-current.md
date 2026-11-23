@@ -43,8 +43,12 @@ created: 2026-11-18
 Purging it means rewriting the branch's history.
 
 **Waiting on the production machine:**
-- nothing on the frame side: SAP's catalog sections go both ways through STAAD, the library check and the library
-  read both confirmed in SAP 24.2 (2026-11-23).
+- for the other steel families (channels, tees, HSS, pipes, angles), one probe of each program:
+  - SAP: import a model of one frame per kind, its rows referring to the library only, and export it. That gives
+    SAP's own row of each kind, an angle's I23 too;
+  - STAAD: assign the same shapes from its American table and save. That gives STAAD's names, so `-Std` can write them
+    as `TABLE ST` and a read comes back identical;
+  - W shapes are done both ways, confirmed in SAP 24.2.
 
 **Next:**
 1. **Round 3, the sample job, in SAP only.** CAESAR's outputs are already in `scripts/caesar/testdata`: restraint loads,

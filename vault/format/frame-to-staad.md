@@ -253,7 +253,7 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > | BETA | the frame's angle (SAP's local 2 / 3 are STAAD's y / z) |
 > | `PRIS AX IX IY IZ [AY AZ] YD ZD` | a General section (shear areas 0 when absent) |
 > | the same SAP section with other numbers | the first one's section, with frame modifiers (mass and weight with AMod) |
-> | `TABLE ST` | the SAP row in its comment; with none (a shape picked in STAAD), SAP's catalog section from its library: an I section of its newest AISC file, the row SAP itself writes (refused with no library, or another kind of shape) |
+> | `TABLE ST` | the SAP row in its comment; with none (a shape picked in STAAD), SAP's catalog section from its library: an I section, channel, tee, HSS box or pipe of its newest AISC file, by SAP's label or EDI name (refused with no library, for an angle, or for a name SAP's library does not have) |
 > | `ISOTROPIC` | a material, Steel with `TYPE STEEL`, else Other; G must agree with E and POISSON (SAP's isotropic rule) |
 > | `MEMBER OFFSET` | end lengths (rigid) along it; across it, equal at both ends, joint offsets (local) |
 > | `MEMBER RELEASE` | releases; `K…` partial fixity (rotations per degree back to per radian) |
@@ -339,6 +339,16 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >   picked in STAAD (with no comments, and under W10X33's old comment) read exactly. It imported into SAP as its AISC15
 >   catalog section with no error, warning or dialog. SAP's export of it equals Pluto's row in all 38 shared fields,
 >   Cw to its 15 digits. A channel was refused, named: the library's element for it is `STEEL_CHANNEL`.
+> - **Channels, tees, HSS boxes and pipes** now come from the library too (an entry of each kind from the user). STAAD
+>   names some families otherwise than SAP's labels (Bentley's STAAD.Pro help, not yet seen in STAAD):
+>   - angles `L505010` (L5 × 5 × 5/8);
+>   - tees `TABLE T <W shape>`, cut from the W;
+>   - pipes in the `PIPX20` style;
+>   - double angles `TABLE LD / SD … SP`.
+>
+>   A STAAD name SAP's library does not have is refused, named. `-Std` writes these kinds back as PRIS (STAAD's table
+>   names are confirmed for W shapes and channels of a whole weight only), so the read-back check lists them, with a
+>   notice saying why.
 
 > [!info]- The STAAD probe (`-StdProbe <folder>`)
 > `staad-probe.s2k` and `staad-probe.std`: one model, every part analysable, for SAP2000 and STAAD.Pro alike. Each

@@ -161,6 +161,17 @@ public static class FrameStd
 
     // ---------------- the writer
 
+    // STAAD's AISC table name for a SAP catalog shape (its SAP shape, its name in SAP's library), null when -Std writes it
+    // as numbers: W shapes and channels of a whole weight, the names confirmed in STAAD (StdToFrame says which shapes read
+    // from SAP's library come back as PRIS)
+    internal static string TableNameOf(string sapShape, string inFile)
+    {
+        string n = (inFile ?? "").Trim().ToUpperInvariant(), shape = (sapShape ?? "").ToLowerInvariant();
+        if (shape == "i/wide flange" && System.Text.RegularExpressions.Regex.IsMatch(n, @"^W\d+X\d+(\.\d+)?$")) return n;
+        if (shape == "channel" && System.Text.RegularExpressions.Regex.IsMatch(n, @"^C\d+X\d+$")) return n;
+        return null;
+    }
+
     sealed class FrameInfo
     {
         public FrameMember F; public int Id; public double L;
@@ -388,10 +399,7 @@ public static class FrameStd
         {
             if (!p.Catalog) return null;
             var r = s.Rec(FrameSection.General);
-            string n = ((r == null ? null : r.Get("SectInFile")) ?? s.Label).Trim().ToUpperInvariant(), shape = (s.Shape ?? "").ToLowerInvariant();
-            if (shape == "i/wide flange" && System.Text.RegularExpressions.Regex.IsMatch(n, @"^W\d+X\d+(\.\d+)?$")) return n;
-            if (shape == "channel" && System.Text.RegularExpressions.Regex.IsMatch(n, @"^C\d+X\d+$")) return n;
-            return null;
+            return TableNameOf(s.Shape, (r == null ? null : r.Get("SectInFile")) ?? s.Label);
         }
 
         // the STAAD material for a SAP material and a density factor (a frame's WeightMod / AMod)
