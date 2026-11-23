@@ -60,6 +60,18 @@ ones, so they carry no notice ([[vault/format/pipe-to-frame|pipe-to-frame]]).
 >   section not found", and SAP substituted a default General section. The workbook only carries catalog sections from
 >   SAP's own exports.
 >
+>   **Since (2026-11-23):** SAP 24.2's own export of a W10X33 from its library settles why.
+>   - **The library.** SAP 24's section libraries are `Property Libraries\Sections\*.xml` in its program folder. They
+>     are `AISC14.xml`, `AISC15.xml` and the metric `…M.xml`; there is no `AISC16.xml`, the file the probe named.
+>   - **SAP's own row.** It is `FromFile=Yes SectInFile=W10X33`, with `FileName` the full path to `aisc15.xml` (lower
+>     case, quoted). The row also carries the dimensions, `FilletRadius=0.5` (fillets: Area 9.71, not the 9.49 of the
+>     bare plates) and SAP's computed properties.
+>   - **SAP reads its own row back** without an error or a warning. A catalog section from a SAP export therefore
+>     survives the frame model's `.s2k`, which writes its row as read. A row whose `FileName` the importing machine
+>     does not have gets SAP's default section, with only a dialog to say so.
+>   - **Open:** which fields SAP needs to build the section from its library (the reference alone, or the whole row),
+>     and whether a bare file name finds the library. A catalog probe of five variants waits on SAP.
+>
 > **Defaults SAP filled** (warnings): `CASE - STATIC 4` SolScheme; `03A` stress-strain fields; the offset-along-length
 > Type. The log's errors 1–10 ("Table key Steel Design 2 - NMM Details - Eurocode 3-2005 not found") are SAP's own
 > design tables, not the file's.
