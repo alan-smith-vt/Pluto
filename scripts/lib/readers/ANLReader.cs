@@ -1831,6 +1831,7 @@ public sealed class StaadSpec
 	public List<int> Ids = new List<int>();
 	public bool All;                                  // CONSTANTS ... ALL
 	public string[] Spec = new string[0];
+	public string Table;                              // MEMBER PROPERTY's table, its block's (AMERICAN, 'US (AISC 2023).db3')
 	public string Text;                               // as written
 	public List<string> Comments = new List<string>();
 }
@@ -1941,9 +1942,15 @@ public sealed class StaadInput
 					break;
 				case "DEFINE MATERIAL START": s.MaterialsIn(rest); break;
 				case "MEMBER PROPERTY":
-					s.PropertyTable = head.Tokens.Length > 2 ? head.Tokens[2] : "";
+				{
+					// each block its own table: STAAD 2025 writes a block per database ('US (AISC 2023).db3')
+					string table = string.Join(" ", head.Tokens.Skip(2).ToArray());
+					if (s.PropertyTable == null) s.PropertyTable = table;
+					int from = s.MemberProperties.Count;
 					s.Specs(name, rest, s.MemberProperties);
+					for (int k = from; k < s.MemberProperties.Count; k++) s.MemberProperties[k].Table = table;
 					break;
+				}
 				case "ELEMENT PROPERTY": s.Specs(name, rest, s.ElementProperties); break;
 				case "CONSTANTS": s.ConstantsIn(rest); break;
 				case "MEMBER OFFSET": s.Specs(name, rest, s.Offsets); break;

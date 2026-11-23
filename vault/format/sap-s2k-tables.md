@@ -106,17 +106,20 @@ ones, so they carry no notice ([[vault/format/pipe-to-frame|pipe-to-frame]]).
 >   - **The other kinds** (one entry of each from the user, 2026-11-23). A shape is found by its `LABEL` or its
 >     `EDI_STD` name (`HSS24X12X3/4`, `HSS24X12X.750`); `SectInFile` is the label.
 >
->     | Element | Fields (inches) | Pluto's row |
+>     | Element | Fields (inches) | SAP's own row (the library probe) |
 >     |---|---|---|
->     | `STEEL_CHANNEL` | as an I section, and `X` (centroid from the web's back) | `Channel`: t3 t2 tf tw, the properties; S22 left out (its two sides) |
->     | `STEEL_TEE` | as an I section, and `Y` (centroid from the flange's top) | `Tee`: t3 t2 tf tw, the properties |
->     | `STEEL_BOX` | `HT B TF TW` (the design wall, 0.93 t) and the properties | `Box/Tube`: t3 = HT, t2 = B, tf, tw |
->     | `STEEL_PIPE` | `OD TDES A I33 Z33 AS2 J S33POS S33NEG R33` | `Pipe`: t3 = OD, tw = TDES; the one axis is both |
->     | `STEEL_ANGLE` | `D B TF TW KDES …`, `X Y`; **no I23** | refused: SAP works out an angle's I23 about its legs |
->     | `STEEL_DOUBLE_ANGLE` | `D B TF TW DIS …` | refused: STAAD gives one as `TABLE LD / SD` with a spacing |
+>     | `STEEL_CHANNEL` | as an I section, and `X` (centroid from the web's back) | `Channel`: t3 t2 tf tw; FilletRadius = KDES − TF; S22Left / S22Right = S22POS / S22NEG; CGOffset3 = t2 / 2 − X |
+>     | `STEEL_TEE` | as an I section, and `Y` (centroid from the flange's top) | `Tee`: the same; CGOffset2 = t3 / 2 − Y |
+>     | `STEEL_BOX` | `HT B TF TW` (the design wall, 0.93 t) and the properties | `Box/Tube`: t3 = HT, t2 = B, tf, tw; FilletRadius 0, Cw 0 |
+>     | `STEEL_PIPE` | `OD TDES A I33 Z33 AS2 J S33POS S33NEG R33` | `Pipe`: t3 = OD, tw = TDES; the one axis is both; Cw 0 |
+>     | `STEEL_DOUBLE_ANGLE` | `D B TF TW DIS …`, `Y` | `"Double Angle"`: t3 = D, t2 = B, SngAngWid = (B − DIS) / 2, tf, tw, dis; FilletRadius 0; CGOffset2 = t3 / 2 − Y |
+>     | `STEEL_ANGLE` | `D B TF TW KDES …`, `X Y`; **no I23** | `Angle`: SAP adds I23 0.424146744778473 for L3X2-1/2X3/16 (its legs as axes) |
 >
->     For these kinds the row carries only what the file gives. SAP builds the section from the file and works out
->     the rest itself: fillet, Cw, the shear center. Not yet compared with SAP's own rows for these kinds.
+>     Every row also takes the file's properties as named, S33Top / S33Bot = S33POS / S33NEG, ConcCol / ConcBeam No.
+>     SAP works out what the file lacks: the shear center (EccV2 / EccV3) and Cw of a channel, tee or double angle, and
+>     a single angle's I23. Pluto leaves those to SAP, which reads the file, and its rows equal SAP's in every field
+>     they write. A single angle is refused; STAAD's double angles come as `TABLE … LD / SD`
+>     ([[vault/format/frame-to-staad|frame-to-staad]]).
 >
 > **Defaults SAP filled** (warnings): `CASE - STATIC 4` SolScheme; `03A` stress-strain fields; the offset-along-length
 > Type. The log's errors 1–10 ("Table key Steel Design 2 - NMM Details - Eurocode 3-2005 not found") are SAP's own

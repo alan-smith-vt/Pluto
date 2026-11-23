@@ -87,8 +87,20 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >   Area 9.71 in its row) was 9.49 in² in SAP, while STAAD's table gave 9.71. Such a section is `PRIS` with the
 >   dimensions' values; its row's are used only where they agree with them (SAP's own export), and a row that
 >   disagrees gets a notice.
->   - Other families' STAAD names differ from SAP's and are not confirmed: HSS `HSST…`, pipes `PIPS` / `PIPX`, angles
->     `L40404` in sixteenths, tees by their parent W.
+>   - **Since (2026-11-23):** more families go by name, in the form STAAD.Pro 2025's own save writes them (the
+>     names probe). It writes a `MEMBER PROPERTY` block per database, and the database's own table names:
+>
+>     | SAP catalog section | STAAD 2025 |
+>     |---|---|
+>     | channel of a fractional weight `C15X33.9` | `MEMBER PROPERTY 'US (AISC 2023).db3'`, `TABLE 'Standard Channel' ST 'C15X33.9'` |
+>     | HSS box `HSS24X12X3/4` | the same database, `TABLE 'HSS Rectangle' ST 'HSS24X12X.750'` (the EDI name, from SAP's library file) |
+>     | HSS round `HSS5.500X0.375` | `TABLE 'HSS Round' ST 'HSS5.5X.375'` |
+>     | tee `WT22X131` | `TABLE 'W' T 'W44X262'`, the W it is cut from |
+>     | double angle `2L2-1/2X2-1/2X5/16`, equal legs, no spacing | `MEMBER PROPERTY 'US (AISC V16.0).db3'`, `TABLE 'Angle' LD 'L2-1/2X2-1/2X5/16'` |
+>
+>     W shapes and whole-weight channels stay in `MEMBER PROPERTY AMERICAN`. A single angle is refused (its I23).
+>     Unequal legs, a spacing, MC channels and pipes by another name are written as numbers: STAAD's form for them
+>     has not been seen. Bentley's help gives older names (`L505010`, `PIPX20`), which STAAD 2025's save does not use.
 >   - A table section with property modifiers is written as numbers instead, with a notice.
 > - **Numbers.** `PRIS AX IX IY IZ AY AZ YD ZD` [V], from:
 >   - SAP's own computed properties when the section row has them;
@@ -253,7 +265,9 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > | BETA | the frame's angle (SAP's local 2 / 3 are STAAD's y / z) |
 > | `PRIS AX IX IY IZ [AY AZ] YD ZD` | a General section (shear areas 0 when absent) |
 > | the same SAP section with other numbers | the first one's section, with frame modifiers (mass and weight with AMod) |
-> | `TABLE ST` | the SAP row in its comment; with none (a shape picked in STAAD), SAP's catalog section from its library: an I section, channel, tee, HSS box or pipe of its newest AISC file, by SAP's label or EDI name (refused with no library, for an angle, or for a name SAP's library does not have) |
+> | `TABLE ST`, or STAAD 2025's `TABLE '<table>' ST '<name>'` under `MEMBER PROPERTY '<database>'` | the SAP row in its comment when `-Std` writes this property from it; otherwise (a shape picked in STAAD) SAP's catalog section from its library, the newest AISC file's: an I section, channel, HSS box or round, by SAP's label or EDI name. A single angle is refused, and so is a name SAP's library does not have |
+> | `TABLE '<table>' T '<W>'` | the tee cut from it, SAP's WT of half its depth and weight (`W44X262` → `WT22X131`) |
+> | `TABLE '<table>' LD / SD '<angle>' [SP s]` | SAP's 2L of that angle whose vertical legs are the long (LD) or short (SD) ones and whose spacing is s; Pluto knows SAP's labels for no spacing only |
 > | `ISOTROPIC` | a material, Steel with `TYPE STEEL`, else Other; G must agree with E and POISSON (SAP's isotropic rule) |
 > | `MEMBER OFFSET` | end lengths (rigid) along it; across it, equal at both ends, joint offsets (local) |
 > | `MEMBER RELEASE` | releases; `K…` partial fixity (rotations per degree back to per radian) |
@@ -339,16 +353,28 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >   picked in STAAD (with no comments, and under W10X33's old comment) read exactly. It imported into SAP as its AISC15
 >   catalog section with no error, warning or dialog. SAP's export of it equals Pluto's row in all 38 shared fields,
 >   Cw to its 15 digits. A channel was refused, named: the library's element for it is `STEEL_CHANNEL`.
-> - **Channels, tees, HSS boxes and pipes** now come from the library too (an entry of each kind from the user). STAAD
->   names some families otherwise than SAP's labels (Bentley's STAAD.Pro help, not yet seen in STAAD):
->   - angles `L505010` (L5 × 5 × 5/8);
->   - tees `TABLE T <W shape>`, cut from the W;
->   - pipes in the `PIPX20` style;
->   - double angles `TABLE LD / SD … SP`.
+> - **The other steel families** (the same day: an entry of each kind from the user, then two probes).
+>   - **SAP's library probe:** SAP 24.2 imported a frame of each kind from its reference alone, and its export gives
+>     SAP's own row of each kind. Pluto's rows equal them in every field Pluto writes. SAP also works out a channel's,
+>     tee's and double angle's shear center and Cw, which Pluto leaves to it, and a single angle's I23 about its legs
+>     (0.4241 on L3X2-1/2X3/16).
+>   - **STAAD's names probe:** STAAD.Pro 2025 saved the same shapes in its database form. The names are AISC's: HSS
+>     by their EDI names, tees cut from a W, double angles as `LD` of the single angle.
+>     - `MEMBER PROPERTY 'US (AISC 2023).db3'`, `TABLE 'W' ST 'W12X26'`;
+>     - `TABLE 'Standard Channel' ST 'C15X33.9'`;
+>     - `TABLE 'HSS Rectangle' ST 'HSS24X12X.750'`, `TABLE 'HSS Round' ST 'HSS5.5X.375'`;
+>     - `TABLE 'W' T 'W44X262'`;
+>     - under `'US (AISC V16.0).db3'`, `TABLE 'Angle' ST 'L3X2-1/2X3/16'` and `TABLE 'Angle' LD 'L2-1/2X2-1/2X5/16'`.
 >
->   A STAAD name SAP's library does not have is refused, named. `-Std` writes these kinds back as PRIS (STAAD's table
->   names are confirmed for W shapes and channels of a whole weight only), so the read-back check lists them, with a
->   notice saying why.
+>     The reader had refused all of it: it read one table per file, and split quoted names.
+>   - **Now:**
+>     - the reader takes either form, a table per block;
+>     - `-Std` writes these families in STAAD's form (Sections and materials);
+>     - the read-back check compares a table section by its shape, whichever STAAD table it came from;
+>     - a material with no `G` counts as STAAD's E / 2 (1 + ν).
+>
+>     STAAD's save, its single angle aside, reads exactly. So does SAP's export written by `-Std` (its angle aside).
+>     A single angle stays refused: STAAD's angle axes against SAP's are not confirmed.
 
 > [!info]- The STAAD probe (`-StdProbe <folder>`)
 > `staad-probe.s2k` and `staad-probe.std`: one model, every part analysable, for SAP2000 and STAAD.Pro alike. Each

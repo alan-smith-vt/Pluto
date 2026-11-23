@@ -161,14 +161,55 @@ public static class FrameStd
 
     // ---------------- the writer
 
-    // STAAD's AISC table name for a SAP catalog shape (its SAP shape, its name in SAP's library), null when -Std writes it
-    // as numbers: W shapes and channels of a whole weight, the names confirmed in STAAD (StdToFrame says which shapes read
-    // from SAP's library come back as PRIS)
-    internal static string TableNameOf(string sapShape, string inFile)
+    // STAAD 2025's AISC databases, as its own save names them (the names probe, 2026-11-23)
+    internal const string Aisc2023 = "'US (AISC 2023).db3'", AiscV16 = "'US (AISC V16.0).db3'";
+
+    // STAAD's table property for a SAP catalog section (get: its row's fields, SectInFile its name in SAP's library):
+    // { the MEMBER PROPERTY table, the property }, null when -Std writes it as numbers.
+    //   W shapes, channels of a whole weight   AMERICAN, TABLE ST W10X33 (STAAD rounds 1-3)
+    //   STAAD 2025's database form, as its own save writes each (the names probe, 2026-11-23):
+    //     channels of a fractional weight   TABLE 'Standard Channel' ST 'C15X33.9'
+    //     HSS boxes and rounds              TABLE 'HSS Rectangle' / 'HSS Round' ST '<EDI name>' (HSS24X12X.750, from the
+    //                                       row's library file; numbers when the file is not here)
+    //     tees                              TABLE 'W' T 'W44X262', the W it is cut from (WT22X131)
+    //     double angles of equal legs, back to back with no spacing   TABLE 'Angle' LD 'L2-1/2X2-1/2X5/16'
+    // Single angles are not (their I23 refuses them); nor other spacings, unequal legs, MC channels or pipes by
+    // another name, whose STAAD forms are not seen
+    internal static string[] StaadTable(Func<string, string> get)
     {
-        string n = (inFile ?? "").Trim().ToUpperInvariant(), shape = (sapShape ?? "").ToLowerInvariant();
-        if (shape == "i/wide flange" && System.Text.RegularExpressions.Regex.IsMatch(n, @"^W\d+X\d+(\.\d+)?$")) return n;
-        if (shape == "channel" && System.Text.RegularExpressions.Regex.IsMatch(n, @"^C\d+X\d+$")) return n;
+        Func<string, string> g = k => (get(k) ?? "").Trim().Trim('"').Trim();
+        string n = g("SectInFile").ToUpperInvariant(), shape = g("Shape").ToLowerInvariant();
+        Func<string, bool> like = re => System.Text.RegularExpressions.Regex.IsMatch(n, re);
+        switch (shape)
+        {
+            case "i/wide flange":
+                return like(@"^W\d+X\d+(\.\d+)?$") ? new[] { "AMERICAN", "TABLE ST " + n } : null;
+            case "channel":
+                if (like(@"^C\d+X\d+$")) return new[] { "AMERICAN", "TABLE ST " + n };
+                return like(@"^C\d+X\d+\.\d+$") ? new[] { Aisc2023, "TABLE 'Standard Channel' ST '" + n + "'" } : null;
+            case "box/tube":
+            case "pipe":
+            {
+                if (!like(@"^HSS")) return null;
+                string edi = FrameSapLibrary.EdiName(g("FileName"), n);
+                return edi == null ? null : new[] { Aisc2023, "TABLE '" + (shape == "pipe" ? "HSS Round" : "HSS Rectangle") + "' ST '" + edi.ToUpperInvariant() + "'" };
+            }
+            case "tee":
+            {
+                var m = System.Text.RegularExpressions.Regex.Match(n, @"^WT(\d+(?:\.\d+)?)X(\d+(?:\.\d+)?)$");
+                if (!m.Success) return null;
+                Func<string, string> twice = x => { string t = (decimal.Parse(x, Inv) * 2).ToString(Inv); return t.IndexOf('.') >= 0 ? t.TrimEnd('0').TrimEnd('.') : t; };
+                return new[] { Aisc2023, "TABLE 'W' T 'W" + twice(m.Groups[1].Value) + "X" + twice(m.Groups[2].Value) + "'" };
+            }
+            case "double angle":
+            {
+                double dis, t2, t3;
+                if (!like(@"^2L[\d./-]+X[\d./-]+X[\d./-]+$")) return null;
+                if (!double.TryParse(g("dis") == "" ? "0" : g("dis"), System.Globalization.NumberStyles.Float, Inv, out dis) || dis != 0) return null;
+                if (!double.TryParse(g("t2"), System.Globalization.NumberStyles.Float, Inv, out t2) || !double.TryParse(g("t3"), System.Globalization.NumberStyles.Float, Inv, out t3) || t3 != t2 / 2) return null;
+                return new[] { AiscV16, "TABLE 'Angle' LD '" + n.Substring(1) + "'" };
+            }
+        }
         return null;
     }
 
@@ -177,7 +218,7 @@ public static class FrameStd
         public FrameMember F; public int Id; public double L;
         public double[][] Ax;                    // SAP local 1 2 3 in STAAD coordinates
         public double Beta;
-        public FrameSection S; public FrameSectionProps P; public string Table; public string Mat;
+        public FrameSection S; public FrameSectionProps P; public string[] Table; public string Mat;
         public double[] Mods;
         public double[] OffI, OffJ, Trans;       // STAAD offsets (global) and their common transverse part
         public double ZoneI, ZoneJ;              // end lengths (rigid, factor 1)
@@ -395,11 +436,12 @@ public static class FrameStd
         // STAAD's AISC table name for a section SAP took from its own database (FromFile=Yes, its SectInFile name): W
         // shapes, and channels of a whole weight (C10X30); every other family, and any section SAP builds from its
         // dimensions (no fillets: a hand-made W10X33 is 9.49 in2 in SAP, 9.71 in STAAD's table), is written as numbers
-        static string TableName(FrameSection s, FrameSectionProps p)
+        static string[] TableName(FrameSection s, FrameSectionProps p)
         {
             if (!p.Catalog) return null;
             var r = s.Rec(FrameSection.General);
-            return TableNameOf(s.Shape, (r == null ? null : r.Get("SectInFile")) ?? s.Label);
+            if (r == null) return null;
+            return StaadTable(k => k == "SectInFile" ? r.Get(k) ?? s.Label : k == "Shape" ? r.Get(k) ?? s.Shape : r.Get(k));
         }
 
         // the STAAD material for a SAP material and a density factor (a frame's WeightMod / AMod)
@@ -1267,16 +1309,20 @@ public static class FrameStd
                     o.Add("*************************************************************************");
                     Note("channels, tees and double angles (" + Few(Mono.Select(f => "frame " + f.F.Label + " (" + f.S.Shape + ")").ToList()) + "): SAP2000 twists them about their shear center; STAAD's members are centroidal, so STAAD shows no such twist (the probe: up to 0.03 in on a 70 in channel cantilever). Marked in the .std at MEMBER PROPERTY");
                 }
-                o.Add("MEMBER PROPERTY AMERICAN");
                 // a line per SAP section and property, the section's name in a comment above it (StdToFrame reads it back);
-                // a table section's comment holds its SAP row as well, which STAAD's table name cannot give SAP back
-                var props = Frames.Select(f => new { Sec = f.S, Prop = f.Table != null ? "TABLE ST " + f.Table : Pris(f), Id = f.Id })
-                                  .Concat(Trusses.Select(t => new { Sec = (FrameSection)null, Prop = "PRIS AX " + N(TrussAx[t[0]]), Id = t[0] })).ToList();
-                foreach (var g in props.GroupBy(x => (x.Sec == null ? "" : x.Sec.Label) + "\n" + x.Prop))
+                // a table section's comment holds its SAP row as well, which STAAD's table name cannot give SAP back. A block
+                // per table: AMERICAN, then STAAD 2025's databases for the families written in their form
+                var props = Frames.Select(f => new { Sec = f.S, Db = f.Table != null ? f.Table[0] : "AMERICAN", Prop = f.Table != null ? f.Table[1] : Pris(f), Id = f.Id })
+                                  .Concat(Trusses.Select(t => new { Sec = (FrameSection)null, Db = "AMERICAN", Prop = "PRIS AX " + N(TrussAx[t[0]]), Id = t[0] })).ToList();
+                foreach (var block in props.GroupBy(x => x.Db).OrderBy(b => b.Key == "AMERICAN" ? 0 : 1))
                 {
-                    var first = g.First();
-                    if (first.Sec != null) comment("SAP section " + first.Sec.Label + (first.Prop.StartsWith("TABLE ", StringComparison.Ordinal) ? ": " + SectionRow(first.Sec) : ""));
-                    line(Condense(g.Select(x => x.Id)) + " " + first.Prop);
+                    o.Add("MEMBER PROPERTY " + block.Key);
+                    foreach (var g in block.GroupBy(x => (x.Sec == null ? "" : x.Sec.Label) + "\n" + x.Prop))
+                    {
+                        var first = g.First();
+                        if (first.Sec != null) comment("SAP section " + first.Sec.Label + (first.Prop.StartsWith("TABLE ", StringComparison.Ordinal) ? ": " + SectionRow(first.Sec) : ""));
+                        line(Condense(g.Select(x => x.Id)) + " " + first.Prop);
+                    }
                 }
             }
             if (Plates.Count > 0)

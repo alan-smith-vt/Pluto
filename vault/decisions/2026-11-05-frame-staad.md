@@ -25,6 +25,11 @@ CNODE at its node or a zero-length expansion joint (zero-length links), or with 
 - the read checks that the model written back is the file's, object by object, to the file's digits (STAAD.Pro's own
   save keeps 6).
 
+**Since (2026-11-23), sections:** a shape picked in STAAD comes back as SAP's catalog section from SAP's own
+library. More families go to STAAD by name: fractional channels, HSS, tees and equal double angles. They are written
+in the form STAAD.Pro 2025's own save uses, a `MEMBER PROPERTY` block per AISC database
+([[vault/format/frame-to-staad|frame-to-staad]]). A single angle stays refused both ways.
+
 The user asked that the reading reuse the STAAD lib's `.anl` reader rather than add a second one. Its parsers were
 extended in place (`StaadInput`), and an `.anl` reads as before.
 

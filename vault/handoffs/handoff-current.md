@@ -43,12 +43,13 @@ created: 2026-11-18
 Purging it means rewriting the branch's history.
 
 **Waiting on the production machine:**
-- for the other steel families (channels, tees, HSS, pipes, angles), one probe of each program:
-  - SAP: import a model of one frame per kind, its rows referring to the library only, and export it. That gives
-    SAP's own row of each kind, an angle's I23 too;
-  - STAAD: assign the same shapes from its American table and save. That gives STAAD's names, so `-Std` can write them
-    as `TABLE ST` and a read comes back identical;
-  - W shapes are done both ways, confirmed in SAP 24.2.
+- STAAD's database form, both ways:
+  - the PS 5.1 compile probe;
+  - a `-Std` of SAP's library-probe export (its angle frame taken out), opened in STAAD.Pro 2025 to check it parses
+    the database forms Pluto now writes;
+  - the names probe's `.std` (its angle taken out) through `-In … -S2k`, imported into SAP.
+- single angles stay refused both ways until a probe settles STAAD's angle axes against SAP's (a cantilever of each
+  orientation, run in both).
 
 **Next:**
 1. **Round 3, the sample job, in SAP only.** CAESAR's outputs are already in `scripts/caesar/testdata`: restraint loads,

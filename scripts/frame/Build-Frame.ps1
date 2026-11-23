@@ -20,10 +20,11 @@
 #                         comments -Std writes give back SAP's labels and names. Exact or refused: a command the frame
 #                         model cannot hold, or one -Std does not write, refuses it, each on a [refuse] line. The read
 #                         checks that the model written back with -Std is the file's, object by object, to the digits
-#                         the file gives (STAAD.Pro's own save keeps 6), and says so. A TABLE ST shape picked in STAAD
-#                         (no SAP row in the comment above it) is read from SAP's section library (an I section of
-#                         its newest AISC file; -SapLibrary below) and comes back as SAP's catalog section. Outputs
-#                         default to <name>_std.*, never over the model it was written from
+#                         the file gives (STAAD.Pro's own save keeps 6), and says so. A table shape picked in STAAD
+#                         (no SAP row in the comment above it; TABLE ST, or STAAD 2025's TABLE 'HSS Rectangle' ST
+#                         'HSS24X12X.750', T from a W, LD / SD double angles) is read from SAP's section library (its
+#                         newest AISC file; -SapLibrary below) and comes back as SAP's catalog section; a single angle
+#                         is refused. Outputs default to <name>_std.*, never over the model it was written from
 #   out   -S2k      <base>.s2k for SAP2000 (File > Import > SAP2000 .s2k). Never written over the input file. An
 #                   existing <base>.s2k is replaced only when this runner wrote it (the stamp, <base>.build.json, says
 #                   so), when it is the model's own source, or when nothing in it would change; else -Force.

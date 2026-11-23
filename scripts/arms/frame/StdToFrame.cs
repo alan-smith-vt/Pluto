@@ -143,6 +143,41 @@ public static class StdToFrame
         { "KIP", "Kip" }, { "KIPS", "Kip" }, { "POUND", "lb" }, { "POUNDS", "lb" }, { "LB", "lb" }, { "LBS", "lb" }, { "KNS", "KN" }, { "KN", "KN" },
         { "NEWTON", "N" }, { "NEWTONS", "N" }, { "N", "N" }, { "KG", "Kgf" }, { "KGS", "Kgf" }, { "MTON", "Tonf" }, { "MTONS", "Tonf" } };
 
+    // a STAAD table property: { type (ST, T, LD, SD), name, spacing } from the legacy form (TABLE ST W10X33 under MEMBER
+    // PROPERTY AMERICAN) or STAAD 2025's database form (TABLE 'W' ST 'W12X26' under MEMBER PROPERTY 'US (AISC 2023).db3',
+    // the names probe); null with why when it is neither. table: the MEMBER PROPERTY block's
+    internal static string[] TableOf(string table, string spec, out string why)
+    {
+        why = null;
+        var q = Regex.Matches(spec ?? "", @"'[^']*'|\S+").Cast<Match>().Select(m => m.Value).ToList();
+        Func<string, string> unq = x => x.Length >= 2 && x[0] == '\'' && x[x.Length - 1] == '\'' ? x.Substring(1, x.Length - 2).Trim() : x;
+        if (q.Count < 3 || !Is(q[0], "TABLE")) { why = "not a table property"; return null; }
+        bool db = q[1].StartsWith("'", StringComparison.Ordinal);
+        int k = db ? 2 : 1;
+        string t = (table ?? "").Trim();
+        if (db && !t.StartsWith("'", StringComparison.Ordinal)) { why = "a database table under MEMBER PROPERTY " + t; return null; }
+        if (!db && !Is(t, "AMERICAN")) { why = "MEMBER PROPERTY " + t + " (FrameStd writes AMERICAN and STAAD 2025's AISC databases)"; return null; }
+        if (q.Count < k + 2) { why = "no shape"; return null; }
+        string type = q[k].ToUpperInvariant(), name = unq(q[k + 1]);
+        if (type != "ST" && type != "T" && type != "LD" && type != "SD") { why = "TABLE " + type + " (Pluto reads ST, T, LD and SD)"; return null; }
+        string sp = "0";
+        int r = k + 2;
+        if (r < q.Count)
+        {
+            double v;
+            if (r + 2 == q.Count && Is(q[r], "SP") && Num(q[r + 1], out v) && (type == "LD" || type == "SD")) sp = q[r + 1];
+            else { why = "TABLE ... " + string.Join(" ", q.Skip(r).ToArray()) + " (Pluto reads a spacing SP of a double angle only)"; return null; }
+        }
+        return new[] { type, name, sp };
+    }
+
+    static bool TryValue(StaadMaterial m, string key, out double v)
+    {
+        v = 0;
+        foreach (var kv in m.Values) if (Is(kv.Key, key)) { v = kv.Value; return true; }
+        return false;
+    }
+
     static FactSet Facts(StaadInput s)
     {
         var f = new FactSet();
@@ -165,6 +200,9 @@ public static class StdToFrame
             string h = "material " + m.Name.ToUpperInvariant();
             f.Add(h + " TYPE " + (m.Type ?? "").ToUpperInvariant());
             foreach (var kv in m.Values) f.Add(h + " " + kv.Key.ToUpperInvariant(), kv.Value);
+            // no G: STAAD's, E / 2 (1 + POISSON) (a material made in STAAD's GUI gives none; -Std writes it)
+            double e, nu;
+            if (!m.Values.Keys.Any(k => Is(k, "G")) && TryValue(m, "E", out e) && TryValue(m, "POISSON", out nu)) f.Add(h + " G", e / (2 * (1 + nu)));
             foreach (var kv in m.Strength) f.Add(h + " STRENGTH " + kv.Key.ToUpperInvariant(), kv.Value);
         }
         foreach (var p in s.MemberProperties)
@@ -172,9 +210,13 @@ public static class StdToFrame
             {
                 string h = "member " + I(id) + " property ";
                 double v;
+                string tw;
+                string[] t = p.Spec.Length > 0 && Is(p.Spec[0], "TABLE") ? TableOf(p.Table, string.Join(" ", p.Spec), out tw) : null;
                 if (p.Spec.Length % 2 == 1 && Is(p.Spec[0], "PRIS"))
                     for (int k = 1; k + 1 < p.Spec.Length; k += 2) { if (Num(p.Spec[k + 1], out v)) f.Add(h + "PRIS " + p.Spec[k].ToUpperInvariant(), v); else f.Add(h + string.Join(" ", p.Spec)); }
-                else { var n = new List<double>(); f.Add(h + Words(p.Spec, n), n.ToArray()); }
+                // a table section by its shape, in either form, from whichever STAAD table (AMERICAN or a database)
+                else if (t != null) { Num(t[2], out v); f.Add(h + "TABLE " + t[0] + " " + t[1].ToUpperInvariant() + " SP", v); }
+                else { var n = new List<double>(); f.Add(h + (p.Table ?? "") + " " + Words(p.Spec, n), n.ToArray()); }
             }
         foreach (var p in s.ElementProperties) foreach (int id in p.Ids) { var n = new List<double>(); f.Add("plate " + I(id) + " " + Words(p.Spec, n), n.ToArray()); }
         var all = s.Members.Select(m => m[0]).Concat(s.Plates.Select(p => p[0])).ToList();
@@ -719,8 +761,6 @@ public static class StdToFrame
                     if (PropOf.ContainsKey(id)) { Refuse("member " + I(id) + ": two member properties"); continue; }
                     PropOf[id] = p;
                 }
-            if (In.MemberProperties.Count > 0 && !Is(In.PropertyTable, "AMERICAN") && In.MemberProperties.Any(p => Is(p.Spec[0], "TABLE")))
-                Refuse("MEMBER PROPERTY " + In.PropertyTable + ": FrameStd writes AMERICAN");
             var byName = new Dictionary<string, List<Sec>>(StringComparer.OrdinalIgnoreCase);
             var bySpec = new Dictionary<string, Sec>(StringComparer.Ordinal);
             int unnamed = 0;
@@ -742,19 +782,24 @@ public static class StdToFrame
                     if (double.IsNaN(props[6]) || double.IsNaN(props[7]) || props[6] <= 0 || props[7] <= 0) { Refuse(who + ": PRIS without YD and ZD (SAP's general section needs its depth and width)"); continue; }
                     row = null;
                 }
-                else if (p.Spec.Length == 3 && Is(p.Spec[0], "TABLE") && Is(p.Spec[1], "ST"))
+                else if (Is(p.Spec[0], "TABLE"))
                 {
+                    string tw, what = string.Join(" ", p.Spec);
+                    var t = TableOf(p.Table, what, out tw);
+                    if (t == null) { Refuse(who + ": MEMBER PROPERTY " + what + ": " + tw); continue; }
                     string inFile = row == null ? null : RowGet(row, "SectInFile");
-                    if (row != null && (inFile == null || !Is(inFile, p.Spec[2])))
+                    // the comment's SAP row is this property's when -Std writes this property from it (the same shape; a
+                    // legacy TABLE ST also by its name)
+                    if (row != null && !Same(t, row) && !(t[0] == "ST" && inFile != null && Is(inFile, t[1])))
                     {
                         // the shape changed in STAAD under the comment of the one Pluto wrote: the comment is not its row
-                        Note("TABLE ST " + p.Spec[2] + " under the SAP row of " + (inFile ?? name ?? "another section") + ": taken from SAP's section library, named " + p.Spec[2]);
+                        Note(what + " under the SAP row of " + (inFile ?? name ?? "another section") + ": taken from SAP's section library");
                         row = null; name = null;
                     }
                     if (row == null)
                     {
-                        string[] lib = Catalog(p.Spec[2]);
-                        if (lib[0] == null) { Refuse(who + ": TABLE ST " + p.Spec[2] + ", a STAAD table section with no SAP row in the comment above it: " + lib[1]); continue; }
+                        string[] lib = Catalog(t, what);
+                        if (lib[0] == null) { Refuse(who + ": " + what + ", a STAAD table section with no SAP row in the comment above it: " + lib[1]); continue; }
                         row = lib[0]; name = null;
                     }
                     shape = RowGet(row, "Shape");
@@ -764,10 +809,10 @@ public static class StdToFrame
                     S2kRow.Tokenize(row, sr);
                     row = sr.Render().TrimStart();
                 }
-                else { Refuse(who + ": MEMBER PROPERTY " + string.Join(" ", p.Spec) + " (FrameStd writes PRIS and TABLE ST)"); continue; }
+                else { Refuse(who + ": MEMBER PROPERTY " + string.Join(" ", p.Spec) + " (FrameStd writes PRIS and TABLE)"); continue; }
                 m.Depth = props[6]; m.Width = props[7]; m.Ax = props[0];
                 string key = (name ?? "") + "\n" + string.Join(" ", p.Spec);
-                if (name == null && !bySpec.ContainsKey(key)) name = row != null ? p.Spec[2] : "PRIS" + I(++unnamed);
+                if (name == null && !bySpec.ContainsKey(key)) name = row != null ? RowGet(row, "SectInFile") ?? "TABLE" + I(++unnamed) : "PRIS" + I(++unnamed);
                 Sec s;
                 double[] mods;
                 if (bySpec.TryGetValue(key, out s)) { m.Section = s.Name; m.Mods = Factors(s, props, row != null, out mods) ? mods : null; continue; }
@@ -787,28 +832,50 @@ public static class StdToFrame
             if (modded.Count > 0) Note("frames whose property is their section's with factors take it as property modifiers (FrameStd folds a frame's modifiers into its PRIS): " + string.Join(", ", modded.Select(f => f.Label).Take(12).ToArray()) + (modded.Count > 12 ? " ..." : ""));
         }
 
-        // a STAAD table shape's SAP row from SAP's section library: { row, null } or { null, why }
-        string[] Catalog(string shape)
+        // a STAAD table shape's SAP row from SAP's section library: { row, null } or { null, why }. t: TableOf's
+        // { type, name, spacing }: ST the shape (by SAP's label or EDI name), T the tee cut from a W (SAP's WT), LD / SD the
+        // double angle of that angle (SAP's 2L)
+        string[] Catalog(string[] t, string what)
         {
             string[] r;
-            if (LibRow.TryGetValue(shape, out r)) return r;
+            string key = string.Join("|", t).ToUpperInvariant();
+            if (LibRow.TryGetValue(key, out r)) return r;
             if (Library == null) Library = FrameSapLibrary.Folder(!string.IsNullOrEmpty(SapVersion) ? SapVersion : HeadVersion) ?? "";
             if (Library.Length == 0) r = new[] { null, "SAP's section library is not on this machine (name its folder with -SapLibrary), or give the shape as PRIS" };
             else
             {
-                string file, why, row = FrameSapLibrary.Row(Library, shape, LenUnit, out file, out why);
+                string file, why, row;
+                double sp;
+                Num(t[2], out sp);
+                if (t[0] == "T") row = FrameSapLibrary.TeeRow(Library, t[1], LenUnit, out file, out why);
+                else if (t[0] == "LD" || t[0] == "SD") row = FrameSapLibrary.DoubleAngleRow(Library, t[1], t[0] == "LD", sp, LenUnit, out file, out why);
+                else row = FrameSapLibrary.Row(Library, t[1], LenUnit, out file, out why);
                 r = new[] { row, why };
                 if (row != null)
                 {
                     string kind = RowGet(row, "Shape"), inFile = RowGet(row, "SectInFile");
-                    Note("TABLE ST " + shape + ": a catalog section from SAP's section library, " + inFile + " (" + kind + ") in " + file + " (no SAP row of it in the file)");
-                    if (Is(kind, "Channel") || Is(kind, "Tee"))
-                        Note("TABLE ST " + shape + ": SAP2000 twists a " + kind.ToLowerInvariant() + " about its shear center; STAAD's member is centroidal (the probe: up to 0.03 in on a 70 in channel cantilever)");
-                    if (FrameStd.TableNameOf(kind, inFile) == null)
-                        Note("TABLE ST " + shape + ": -Std writes it back as PRIS, SAP's numbers (STAAD's table names are confirmed for W shapes and channels of a whole weight), so the read-back check lists it");
+                    Note(what + ": a catalog section from SAP's section library, " + inFile + " (" + kind + ") in " + file + " (no SAP row of it in the file)");
+                    if (Is(kind, "Channel") || Is(kind, "Tee") || Is(kind, "Double Angle"))
+                        Note(what + ": SAP2000 twists a " + kind.ToLowerInvariant() + " about its shear center; STAAD's member is centroidal (the probe: up to 0.03 in on a 70 in channel cantilever)");
+                    var back = FrameStd.StaadTable(k => RowGet(row, k));
+                    if (back == null)
+                        Note(what + ": -Std writes it back as PRIS, SAP's numbers (STAAD's form for it is not seen), so the read-back check lists it");
+                    else if (!Same(t, row))
+                        Note(what + ": -Std writes it back as " + back[1] + " (MEMBER PROPERTY " + back[0] + "), so the read-back check lists it");
                 }
             }
-            return LibRow[shape] = r;
+            return LibRow[key] = r;
+        }
+
+        // whether -Std writes this table property (TableOf's) from this SAP row: the same shape, by type and name
+        static bool Same(string[] t, string row)
+        {
+            var back = FrameStd.StaadTable(k => RowGet(row, k));
+            if (back == null) return false;
+            string why;
+            var b = TableOf(back[0], back[1], out why);
+            double x, y;
+            return b != null && b[0] == t[0] && Is(b[1], t[1]) && Num(b[2], out x) && Num(t[2], out y) && x == y;
         }
 
         // whether these numbers are the section's with factors: the property modifiers (AMod AS2Mod AS3Mod JMod I22Mod I33Mod
