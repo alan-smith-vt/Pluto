@@ -267,6 +267,14 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > A number worked out on the way back (a spring per radian, a modifier, a gradient) is the shortest that writes back
 > STAAD's digits: 1000, not 999.99999999752.
 >
+> **Numbers to the file's digits.** Pluto writes 12 significant digits; STAAD.Pro's own save keeps 6. Every check that
+> compares a number with one worked out allows half a unit in the last digit the file gives, never more than 1e-5 of
+> it. That covers:
+> - G against E and POISSON;
+> - a truss's EA / L from the header against its AX;
+> - the end zones' weight against the joint loads;
+> - offsets, and load positions on the clear length.
+>
 > **Exact or refused.** Any command the writer does not write is refused by name, with where it stood. That covers:
 > - another `UNIT` along the file;
 > - `CUT OFF`, `ELEMENT LOAD`, `LIN` member loads, `MP` releases, `CDAMP`;
@@ -274,8 +282,16 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >
 > `START JOB INFORMATION`, a record only, is passed over with a notice.
 >
-> **The check.** The model is written back with `-Std` and its commands compared with the file's (comments, layout and
-> spacing aside); the run says whether they are the same, or lists the first differences.
+> **The check.** The model is written back with `-Std`, and both files are read as STAAD reads them, then compared
+> object by object, numbers to the file's digits:
+> - each joint, member, plate, property, constant, offset, release, support and group by its id;
+> - each material by its name;
+> - each primary load through its reference loads and their factors;
+> - each combination by its number.
+>
+> Order, layout, keyword order, comments and prints do not count. A load given in a primary load itself comes back as a
+> reference load of its own, and counts as the same. The run says whether the models are the same, or lists the first
+> differences.
 >
 > **Tested here:**
 > - The models below come back with every command the same:
@@ -287,8 +303,18 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >   - a hand edit: a moved joint, an added load, a released support.
 > - The read model's workbook writes the same `.std`.
 >
-> **Not yet seen:** a `.std` that STAAD.Pro saves from its graphical editor. It may add or reorder commands; whatever
-> the reader does not take, it refuses by name.
+> **STAAD.Pro's own save** (STAAD.Pro 2025, on the production machine, 2026-11-23). A `.std` Pluto wrote, opened in
+> STAAD.Pro and saved from its graphical editor:
+> - keeps every comment in place, the SAP row above `TABLE ST` too;
+> - writes numbers to 6 significant digits (`G 11153.8`, `PRIS AX 3.51084`);
+> - reorders PRIS (`AX AY AZ IX IY IZ`), writes `LOAD COMB`, several joints and members a line, and id lists split
+>   over lines;
+> - rewords the prints and adds `START JOB INFORMATION`;
+> - puts a joint load added in a load case directly in its primary load.
+>
+> The first reader refused both files, holding G to 12 digits. Now an unedited save reads exactly. An edited one (a
+> moved joint, a support made fixed, a joint load added) reads with those three changes and nothing else. The probe,
+> rounded to 6 digits the same way, reads exactly as well, every converted number clean.
 
 > [!info]- The STAAD probe (`-StdProbe <folder>`)
 > `staad-probe.s2k` and `staad-probe.std`: one model, every part analysable, for SAP2000 and STAAD.Pro alike. Each

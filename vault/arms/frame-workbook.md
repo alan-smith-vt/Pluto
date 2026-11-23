@@ -272,7 +272,8 @@ The whole picture, CAESAR and STAAD included, with the commands for each job:
 >   - A `.std` this runner wrote with `-Std`, after edits in STAAD too, is read back into a frame model (`StdToFrame`,
 >     2026-11-23; "Reading a .std back" in [[vault/format/frame-to-staad|frame-to-staad]]). Outputs default to
 >     `<name>_std.*`. A command `-Std` does not write refuses it, each on a `[refuse]` line. The read checks that the
->     model written back with `-Std` gives the file's commands, and says so. `-Std` never writes over the input.
+>     model written back with `-Std` is the file's, object by object, to the file's digits (STAAD.Pro's own save keeps
+>     6), and says so. `-Std` never writes over the input.
 >   - A `.cii`, `.toml`, `.pipe.json` or CAESAR workbook `.xlsx` seeds the check model of that pipe
 >     ([[vault/format/pipe-to-frame|pipe-to-frame]]). Outputs default to `<job>_sap.*`. What the check model cannot
 >     hold refuses it, each item on a `[refuse]` line. `-AppendixD` takes 1.65 / h for bends instead of B31J's

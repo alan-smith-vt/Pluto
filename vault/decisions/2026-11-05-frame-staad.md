@@ -22,7 +22,8 @@ CNODE at its node or a zero-length expansion joint (zero-length links), or with 
 **Since (2026-11-23):** a `.std` the writer made comes back too, after edits in STAAD (`Build-Frame -In <x>.std`,
 `StdToFrame`), by the same rule:
 - any command the writer does not write refuses the file, named;
-- the read checks that writing the model back gives the file's commands.
+- the read checks that the model written back is the file's, object by object, to the file's digits (STAAD.Pro's own
+  save keeps 6).
 
 The user asked that the reading reuse the STAAD lib's `.anl` reader rather than add a second one. Its parsers were
 extended in place (`StaadInput`), and an `.anl` reads as before.

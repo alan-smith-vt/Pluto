@@ -19,8 +19,9 @@
 #                         model (StdToFrame; vault/format/frame-to-staad.md). STAAD's commands are the model; the
 #                         comments -Std writes give back SAP's labels and names. Exact or refused: a command the frame
 #                         model cannot hold, or one -Std does not write, refuses it, each on a [refuse] line. The read
-#                         checks that writing the model back with -Std gives the file's commands (comments and layout
-#                         aside), and says so. Outputs default to <name>_std.*, never over the model it was written from
+#                         checks that the model written back with -Std is the file's, object by object, to the digits
+#                         the file gives (STAAD.Pro's own save keeps 6), and says so. Outputs default to <name>_std.*,
+#                         never over the model it was written from
 #   out   -S2k      <base>.s2k for SAP2000 (File > Import > SAP2000 .s2k). Never written over the input file. An
 #                   existing <base>.s2k is replaced only when this runner wrote it (the stamp, <base>.build.json, says
 #                   so), when it is the model's own source, or when nothing in it would change; else -Force.
@@ -425,7 +426,7 @@ function Build-Once {
             throw (New-Object InvalidOperationException(("the frame model cannot hold the {0} item(s) above exactly; nothing is written" -f $e.Items.Count)))
         }
         foreach ($n in $rn) { Say "notice" ("std read: " + $n) }
-        # the check: the model written back as a .std gives the file's STAAD commands (comments and layout aside)
+        # the check: the model written back as a .std is the file's model, object by object, to the file's digits
         $back = $null
         try { $back = [FrameStd]::ToText($model, [IO.Path]::GetFileName($inPath), (New-Object 'System.Collections.Generic.List[string]')) }
         catch {
@@ -433,12 +434,12 @@ function Build-Once {
             if ($e -isnot [FrameStdRefusal]) { throw }
             Say "warn" ("written back as a .std, the model is refused: " + ($e.Items -join " | "))
         }
-        $diff = $(if ($null -ne $back) { [StdToFrame]::Differences((ReadSharedText $inPath), $back, 6) } else { $null })
+        $diff = $(if ($null -ne $back) { [StdToFrame]::Differences($inPath, $back, 6) } else { $null })
         $identical = ($null -ne $back) -and ($null -eq $diff)
-        if ($identical) { Say "read" ("{0}: read exactly (written back with -Std, the model gives the file's STAAD commands)" -f $inPath) }
+        if ($identical) { Say "read" ("{0}: read exactly (written back with -Std, the model is the file's, object by object, to its digits)" -f $inPath) }
         else {
             foreach ($d in @($diff)) { if ($d) { Say "warn" ("written back: " + $d) } }
-            Say "warn" ("{0}: written back with -Std, the model does NOT give the file's commands (the first differences are listed above); check the outputs before use" -f $inPath)
+            Say "warn" ("{0}: written back with -Std, the model is NOT the file's (the first differences are listed above); check the outputs before use" -f $inPath)
         }
     } elseif ($kind -eq "xlsx") {
         $wb = [FrameWorkbook]::Read($inPath)
@@ -520,7 +521,7 @@ function Build-Once {
         if (Test-Path -LiteralPath $scFile -PathType Leaf) { Copy-Item -LiteralPath $scFile -Destination ($tmp + ".features.json") -Force }
         $pv = New-Object FramePreview
         $pv.SourceJson = [PipeSidecar]::SourceOf($inPath, $kind, $hash)
-        if ($identical -eq $false -and $kind -eq "std") { $null = $pv.AddMessage("warning", "std-not-identical", "Written back with -Std, the model does not give the .std's commands: check the outputs before use") }
+        if ($identical -eq $false -and $kind -eq "std") { $null = $pv.AddMessage("warning", "std-not-identical", "Written back with -Std, the model is not the .std's: check the outputs before use") }
         elseif ($identical -eq $false) { $null = $pv.AddMessage("warning", "s2k-not-identical", "Written back, the .s2k is not the source byte for byte: check the outputs before use") }
         foreach ($w in $warnings) { $null = $pv.AddMessage("warning", "workbook", $w) }
         foreach ($n in $notes) { $null = $pv.AddMessage("notice", "s2k-write", $n) }

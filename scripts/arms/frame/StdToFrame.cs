@@ -53,54 +53,208 @@ public static class StdToFrame
         return new Reader(StaadInput.Read(path), sapVersion, notes ?? new List<string>()).Run();
     }
 
-    // the commands of two .std texts as STAAD reads them (comments, layout and STAAD's job information aside: continuation
-    // lines joined, ";" separating, spaces single): null when they are the same, in order; else the first differences,
-    // at most max
+    // whether a .std's model and the model written back are the same as STAAD reads them: each joint, member, plate,
+    // property, constant, offset, release, support and group by its id, each material by its name, each primary load
+    // through its reference loads and their factors (so loads given in a primary load itself, which come back as a
+    // reference load of their own, are the same), each combination by its number; numbers to the digits the file gives
+    // (STAAD.Pro's own save keeps 6 significant ones). Order, layout, comments, prints and STAAD's job information aside.
+    // Null when the same; else the first differences, at most max. file: the .std; back: the text written back
     public static List<string> Differences(string file, string back, int max)
     {
-        List<string> a = Commands(file), b = Commands(back);
-        if (a.SequenceEqual(b)) return null;
-        var o = new List<string>();
-        var left = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (var x in b) { int n; left.TryGetValue(x, out n); left[x] = n + 1; }
-        foreach (var x in a)
+        string tmp = System.IO.Path.GetTempFileName();
+        try
         {
-            int n; left.TryGetValue(x, out n);
-            if (n > 0) left[x] = n - 1;
-            else if (o.Count < max) o.Add("only in the file: " + x);
+            System.IO.File.WriteAllText(tmp, back);
+            FactSet a = Facts(StaadInput.Read(file)), b = Facts(StaadInput.Read(tmp));
+            var o = new List<string>();
+            foreach (string k in a.Order.Concat(b.Order.Where(x => !a.By.ContainsKey(x))))
+            {
+                List<double[]> la, lb;
+                a.By.TryGetValue(k, out la); b.By.TryGetValue(k, out lb);
+                var left = lb == null ? new List<double[]>() : new List<double[]>(lb);
+                var only = new List<double[]>();
+                foreach (var v in la ?? new List<double[]>())
+                {
+                    int j = left.FindIndex(w => w.Length == v.Length && Enumerable.Range(0, v.Length).All(i => Close(v[i], w[i])));
+                    if (j >= 0) left.RemoveAt(j); else only.Add(v);
+                }
+                for (int i = 0; i < Math.Max(only.Count, left.Count) && o.Count < max; i++)
+                {
+                    if (i < only.Count && i < left.Count) o.Add(k + ": " + Show(only[i]) + " in the file, " + Show(left[i]) + " written back");
+                    else if (i < only.Count) o.Add("only in the file: " + k + (only[i].Length > 0 ? " " + Show(only[i]) : ""));
+                    else o.Add("only written back: " + k + (left[i].Length > 0 ? " " + Show(left[i]) : ""));
+                }
+            }
+            return o.Count == 0 ? null : o;
         }
-        foreach (var x in b) { int n; if (left.TryGetValue(x, out n) && n > 0) { left[x] = n - 1; if (o.Count < max) o.Add("only written back: " + x); } }
-        if (o.Count == 0)
-        {
-            int k = 0;
-            while (k < a.Count && k < b.Count && a[k] == b[k]) k++;
-            o.Add("the same commands in another order, from: " + (k < a.Count ? a[k] : "(the end)"));
-        }
-        return o;
+        finally { try { System.IO.File.Delete(tmp); } catch (System.IO.IOException) { } }
     }
 
-    static List<string> Commands(string text)
+    static string Show(double[] v) { return string.Join(" ", v.Select(x => FrameStd.N(x)).ToArray()); }
+
+    sealed class FactSet
     {
-        var o = new List<string>();
-        var open = new StringBuilder();
-        bool job = false;
-        foreach (string raw in text.Replace("\r", "").Split('\n'))
+        public readonly Dictionary<string, List<double[]>> By = new Dictionary<string, List<double[]>>(StringComparer.Ordinal);
+        public readonly List<string> Order = new List<string>();
+        public void Add(string key, params double[] v)
         {
-            string line = raw.Trim();
-            if (line.Length == 0 || line[0] == '*') continue;
-            if (Is(line, "START JOB INFORMATION")) { job = true; continue; }
-            if (job) { if (Is(line, "END JOB INFORMATION")) job = false; continue; }
-            string[] parts = line.Split(';');
-            for (int k = 0; k < parts.Length; k++)
+            List<double[]> l;
+            if (!By.TryGetValue(key, out l)) { By[key] = l = new List<double[]>(); Order.Add(key); }
+            l.Add(v);
+        }
+    }
+
+    // words as a key ("UNI GY #") and their numbers
+    static string Words(IEnumerable<string> t, List<double> nums)
+    {
+        var w = new List<string>();
+        foreach (string x in t) { double v; if (Num(x, out v)) { nums.Add(v); w.Add("#"); } else w.Add(x.ToUpperInvariant()); }
+        return string.Join(" ", w.ToArray());
+    }
+
+    // a release or support list as a set: FX .. MZ, and KFX v .. KMZ v, in any order
+    static void ItemFacts(FactSet f, string key, string[] t, int from)
+    {
+        for (int k = from; k < t.Length; k++)
+        {
+            double v;
+            if (k + 1 < t.Length && t[k].StartsWith("K", StringComparison.OrdinalIgnoreCase) && Num(t[k + 1], out v)) { f.Add(key + " " + t[k].ToUpperInvariant(), v); k++; }
+            else f.Add(key + " " + t[k].ToUpperInvariant());
+        }
+    }
+
+    static FactSet Facts(StaadInput s)
+    {
+        var f = new FactSet();
+        foreach (string u in s.Unread) f.Add("not read: " + u);
+        foreach (var u in s.Units.Select(x => string.Join(" ", x).ToUpperInvariant()).Distinct()) f.Add("UNIT " + u);
+        foreach (int id in s.JointIds) f.Add("joint " + I(id), s.Joints[id]);
+        foreach (var m in s.Members) f.Add("member " + I(m[0]) + " from joint " + I(m[1]) + " to " + I(m[2]));
+        foreach (var p in s.Plates) f.Add("plate " + I(p[0]) + " on joints " + string.Join(" ", p.Skip(1).Select(I).ToArray()));
+        foreach (int id in s.PlaneStress) f.Add("plate " + I(id) + " plane stress");
+        foreach (int id in s.Truss) f.Add("member " + I(id) + " truss");
+        foreach (string g in s.GroupOrder)
+        {
+            string kind; s.GroupKinds.TryGetValue(g, out kind);
+            f.Add("group " + g.ToUpperInvariant() + " (" + (kind ?? "") + "): " + string.Join(" ", s.Groups[g].Distinct().OrderBy(x => x).Select(I).ToArray()));
+        }
+        foreach (var m in s.Materials)
+        {
+            string h = "material " + m.Name.ToUpperInvariant();
+            f.Add(h + " TYPE " + (m.Type ?? "").ToUpperInvariant());
+            foreach (var kv in m.Values) f.Add(h + " " + kv.Key.ToUpperInvariant(), kv.Value);
+            foreach (var kv in m.Strength) f.Add(h + " STRENGTH " + kv.Key.ToUpperInvariant(), kv.Value);
+        }
+        foreach (var p in s.MemberProperties)
+            foreach (int id in p.Ids)
             {
-                string p = parts[k].Trim();
-                if (k == parts.Length - 1 && p.EndsWith("-")) { open.Append(p.Substring(0, p.Length - 1)).Append(' '); continue; }
-                string c = Regex.Replace((open.ToString() + p).Trim(), @"\s+", " ");
-                open.Clear();
-                if (c.Length > 0) o.Add(c);
+                string h = "member " + I(id) + " property ";
+                double v;
+                if (p.Spec.Length % 2 == 1 && Is(p.Spec[0], "PRIS"))
+                    for (int k = 1; k + 1 < p.Spec.Length; k += 2) { if (Num(p.Spec[k + 1], out v)) f.Add(h + "PRIS " + p.Spec[k].ToUpperInvariant(), v); else f.Add(h + string.Join(" ", p.Spec)); }
+                else { var n = new List<double>(); f.Add(h + Words(p.Spec, n), n.ToArray()); }
+            }
+        foreach (var p in s.ElementProperties) foreach (int id in p.Ids) { var n = new List<double>(); f.Add("plate " + I(id) + " " + Words(p.Spec, n), n.ToArray()); }
+        var all = s.Members.Select(m => m[0]).Concat(s.Plates.Select(p => p[0])).ToList();
+        foreach (var c in s.Constants) foreach (int id in c.All ? all : c.Ids) { var n = new List<double>(); f.Add("member or plate " + I(id) + " " + Words(c.Spec, n), n.ToArray()); }
+        foreach (var o in s.Offsets) foreach (int id in o.Ids) { var n = new List<double>(); f.Add("member " + I(id) + " offset " + Words(o.Spec, n), n.ToArray()); }
+        foreach (var r in s.Releases)
+            foreach (int id in r.Ids)
+                foreach (string end in Is(r.Spec[0], "BOTH") ? new[] { "START", "END" } : new[] { r.Spec[0].ToUpperInvariant() })
+                    ItemFacts(f, "member " + I(id) + " released at its " + end, r.Spec, 1);
+        foreach (var sp in s.Supports)
+            foreach (int id in sp.Ids)
+            {
+                string h = "joint " + I(id) + " support";
+                var t = sp.Spec;
+                int k = 0;
+                if (Is(t[0], "INCLINED") && t.Length >= 5) { var n = new List<double>(); Words(t.Skip(1).Take(3), n); f.Add(h + " INCLINED", n.ToArray()); k = 4; }
+                if (k < t.Length) f.Add(h + " " + t[k].ToUpperInvariant());
+                if (k + 1 < t.Length && Is(t[k + 1], "BUT")) ItemFacts(f, h + " but", t, k + 2);
+                else if (k + 1 < t.Length) { var n = new List<double>(); f.Add(h + " " + Words(t.Skip(k + 1), n), n.ToArray()); }
+            }
+        // loads: each primary load through its reference loads, a factor with every item
+        var refs = new Dictionary<string, StaadLoad>(StringComparer.OrdinalIgnoreCase);
+        foreach (var l in s.Loads) if (l.Kind == "reference") refs[l.Id] = l;
+        foreach (var l in s.Loads)
+        {
+            if (l.Kind == "primary")
+            {
+                string h = "LOAD " + l.Id;
+                f.Add(h + " LOADTYPE " + Regex.Replace(l.LoadType.ToUpperInvariant(), @"\s+", " ") + " TITLE " + Regex.Replace(l.Title.ToUpperInvariant(), @"\s+", " "));
+                foreach (var b in l.Blocks)
+                {
+                    if (b.Name != "REFERENCE LOAD") { LoadFacts(f, h, b, 1); continue; }
+                    foreach (var line in b.Lines)
+                        for (int k = 0; k < line.Spec.Length; k += 2)
+                        {
+                            StaadLoad r; double factor;
+                            if (k + 1 < line.Spec.Length && refs.TryGetValue(line.Spec[k], out r) && Num(line.Spec[k + 1], out factor)) foreach (var rb in r.Blocks) LoadFacts(f, h, rb, factor);
+                            else f.Add(h + " REFERENCE LOAD " + string.Join(" ", line.Spec.Skip(k).Take(2).ToArray()));
+                        }
+                }
+            }
+            else if (l.Kind == "combination")
+            {
+                string h = "LOAD COMBINATION " + l.Id;
+                f.Add(h + " " + l.Method + " " + Regex.Replace(l.Title.ToUpperInvariant(), @"\s+", " "));
+                foreach (var b in l.Blocks)
+                    foreach (var line in b.Lines)
+                        for (int k = 0; k + 1 < line.Spec.Length; k += 2) { double v; if (Num(line.Spec[k + 1], out v)) f.Add(h + " load " + line.Spec[k], v); else f.Add(h + " " + string.Join(" ", line.Spec)); }
             }
         }
-        return o;
+        if (s.Analysis != null) f.Add(Regex.Replace(s.Analysis.ToUpperInvariant(), @"\s+", " "));
+        return f;
+    }
+
+    // a load block's items, each with the factor it is applied with; joint loads summed per joint and direction
+    static void LoadFacts(FactSet f, string h, StaadBlock b, double factor)
+    {
+        if (b.Name == "SELFWEIGHT") { var n = new List<double>(); f.Add(h + " SELFWEIGHT " + Words(b.Head, n), n.Concat(new[] { factor }).ToArray()); return; }
+        var sums = new SortedDictionary<string, double>(StringComparer.Ordinal);
+        foreach (var line in b.Lines)
+            foreach (int id in line.Ids)
+            {
+                if (b.Name == "JOINT LOAD" && line.Spec.Length % 2 == 0)
+                {
+                    for (int k = 0; k + 1 < line.Spec.Length; k += 2)
+                    {
+                        double v; string key = h + " JOINT LOAD joint " + I(id) + " " + line.Spec[k].ToUpperInvariant();
+                        if (!Num(line.Spec[k + 1], out v)) { f.Add(key + " " + line.Spec[k + 1]); continue; }
+                        double have; sums.TryGetValue(key, out have); sums[key] = have + v;
+                    }
+                    continue;
+                }
+                var n = new List<double>();
+                f.Add(h + " " + b.Name + " " + I(id) + " " + Words(line.Spec, n), n.Concat(new[] { factor }).ToArray());
+            }
+        foreach (var kv in sums) f.Add(kv.Key, kv.Value, factor);
+    }
+
+    // half a unit in the last digit a number is written with (0.05 for 11153.8): the file's own precision
+    static double HalfUnit(double v)
+    {
+        if (v == 0 || double.IsNaN(v) || double.IsInfinity(v)) return 0;
+        string t = Math.Abs(v).ToString("R", Inv);
+        int e = t.IndexOfAny(new[] { 'E', 'e' }), exp = 0;
+        if (e >= 0) { exp = int.Parse(t.Substring(e + 1), Inv); t = t.Substring(0, e); }
+        int dot = t.IndexOf('.');
+        return 0.5 * Math.Pow(10, exp - (dot < 0 ? 0 : t.Length - dot - 1));
+    }
+
+    // two numbers the same to the digits they are written with (Pluto writes 12 significant ones, STAAD.Pro's own save 6;
+    // never looser than 1e-5 of their size)
+    static bool Close(double a, double b)
+    {
+        double scale = Math.Max(Math.Abs(a), Math.Abs(b));
+        return Math.Abs(a - b) <= Math.Min(HalfUnit(a) + HalfUnit(b), 1e-5 * scale) + 1e-12 * scale + 1e-10;
+    }
+
+    // a number's relative precision as written: 0 for a whole number, at most 1e-5
+    static double RelHalf(double v)
+    {
+        if (v == 0 || (v == Math.Round(v) && Math.Abs(v) < 1e6)) return 0;
+        return Math.Min(HalfUnit(v) / Math.Abs(v), 1e-5);
     }
 
     // ---------------- vectors (STAAD coordinates unless named)
@@ -137,15 +291,14 @@ public static class StdToFrame
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
     static string F(double v) { return FrameModel.Fmt(v == 0 ? 0 : v); }
 
-    // the shortest number whose STAAD form (to, printed as FrameStd prints it) is the file's: SAP gets a spring of 1000 per
-    // radian, not the 999.99999999752 that STAAD's 17.4532925199 per degree multiplies out to; it writes back the same
+    // the shortest number whose STAAD form (to) is the file's, to its digits: SAP gets a spring of 1000 per radian, not
+    // the 999.99999999752 that STAAD's 17.4532925199 per degree multiplies out to; it writes back the same
     static double Shortest(double v, Func<double, double> to, double written)
     {
-        string w = FrameStd.N(written);
         for (int k = 1; k <= 15; k++)
         {
             double c = double.Parse(v.ToString("G" + k.ToString(Inv), Inv), Inv);
-            if (FrameStd.N(to(c)) == w) return c;
+            if (Close(to(c), written)) return c;
         }
         return v;
     }
@@ -471,7 +624,7 @@ public static class StdToFrame
                 if (!m.Values.TryGetValue("E", out e) || e <= 0) { Refuse(who + ": no E"); continue; }
                 bool hasNu = m.Values.TryGetValue("POISSON", out nu), hasG = m.Values.TryGetValue("G", out g);
                 if (!hasNu && hasG) nu = e / (2 * g) - 1;
-                if (hasG && Math.Abs(g - e / (2 * (1 + nu))) > 1e-6 * g) Refuse(who + ": G " + FrameStd.N(g) + " apart from E / (2 (1 + POISSON)) = " + FrameStd.N(e / (2 * (1 + nu))) + " (SAP's isotropic material takes G from E and Poisson's ratio)");
+                if (hasG && !Close(g, e / (2 * (1 + nu)))) Refuse(who + ": G " + FrameStd.N(g) + " apart from E / (2 (1 + POISSON)) = " + FrameStd.N(e / (2 * (1 + nu))) + " (SAP's isotropic material takes G from E and Poisson's ratio)");
                 if (nu < 0 || nu >= 0.5) Refuse(who + ": Poisson's ratio " + FrameStd.N(nu));
                 if (m.Values.ContainsKey("DAMP")) Note(who + ": its DAMP is not carried (static cases only)");
                 if (m.Type != null && !Is(m.Type, "STEEL")) Refuse(who + ": TYPE " + m.Type + " (FrameStd writes TYPE STEEL, or none)");
@@ -646,9 +799,11 @@ public static class StdToFrame
                 var oi = m.OffI ?? new double[3]; var oj = m.OffJ ?? new double[3];
                 double a = Dot(oi, m.X), b = -Dot(oj, m.X);
                 var ti = Sub(oi, Mul(m.X, a)); var tj = Add(oj, Mul(m.X, b));
-                if (Len(Sub(ti, tj)) > 1e-9 * m.L) { Refuse(who + ": offsets across it that differ at its ends (SAP's joint offsets are read for a member parallel to its joints' line)"); continue; }
-                if (Math.Abs(a) <= 1e-12 * m.L) a = 0;
-                if (Math.Abs(b) <= 1e-12 * m.L) b = 0;
+                // to the digits the offsets are written with (STAAD.Pro's own save keeps 6)
+                double tol = 1e-9 * m.L + 2 * oi.Concat(oj).Select(c => Math.Min(HalfUnit(c), 1e-5 * m.L)).Max();
+                if (Len(Sub(ti, tj)) > tol) { Refuse(who + ": offsets across it that differ at its ends (SAP's joint offsets are read for a member parallel to its joints' line)"); continue; }
+                if (Math.Abs(a) <= tol) a = 0;
+                if (Math.Abs(b) <= tol) b = 0;
                 if (a < 0 || b < 0 || a + b >= m.L) { Refuse(who + ": offsets along it of " + FrameStd.N(a) + " and " + FrameStd.N(b) + " (SAP's end lengths lie inside the member)"); continue; }
                 m.ZoneI = a; m.ZoneJ = b; m.Trans = ti;
             }
@@ -708,7 +863,7 @@ public static class StdToFrame
                 if (l < 1e-9) { Refuse(who + ": zero length"); continue; }
                 if (Val(mat, "DENSITY") != 0 && In.Loads.Any(x => x.Blocks.Any(b => b.Name == "SELFWEIGHT"))) Refuse(who + ": its material " + mat + " has a DENSITY under SELFWEIGHT (SAP's links carry no weight)");
                 double ke = e * pr[0] / l, hk;
-                if (HeadKe.TryGetValue(t[0], out hk) && Math.Abs(hk - ke) <= 1e-9 * Math.Abs(hk)) ke = hk;
+                if (HeadKe.TryGetValue(t[0], out hk) && Close(pr[0], hk * l / e)) ke = hk;
                 string kt = F(ke), name;
                 if (!props.TryGetValue(kt, out name)) { name = "TRUSS" + I(props.Count + 1); props[kt] = name; LinkProps.Add(new[] { name, kt }); }
                 string lab = Label("link", t[0]);
@@ -1046,15 +1201,17 @@ public static class StdToFrame
             if (p.SelfWeight == 0) return;
             foreach (var m in Frames)
             {
-                double q = Val(m.Mat, "DENSITY") * FrameStd.Printed(m.Ax) * p.SelfWeight;
+                double d = Val(m.Mat, "DENSITY"), ax = FrameStd.Printed(m.Ax), q = d * ax * p.SelfWeight;
                 if (q == 0) continue;
-                if (m.ZoneI > 0) Untransfer(m, p, m.ZoneI / 2, new[] { 0, -q * m.ZoneI, 0 }, true);
-                if (m.ZoneJ > 0) Untransfer(m, p, m.L - m.ZoneJ / 2, new[] { 0, -q * m.ZoneJ, 0 }, false);
+                // the weight's precision: its factors' as written (6 digits each in a file STAAD.Pro saved)
+                double rel = RelHalf(d) + RelHalf(ax) + RelHalf(p.SelfWeight) + 1e-12;
+                if (m.ZoneI > 0) Untransfer(m, p, m.ZoneI / 2, new[] { 0, -q * m.ZoneI, 0 }, true, rel);
+                if (m.ZoneJ > 0) Untransfer(m, p, m.L - m.ZoneJ / 2, new[] { 0, -q * m.ZoneJ, 0 }, false, rel);
             }
         }
 
         // a force FrameStd moved from inside an end zone (at s from joint I) to its joint, taken off that joint's load
-        void Untransfer(Mem m, Pat p, double s, double[] f, bool atI)
+        void Untransfer(Mem m, Pat p, double s, double[] f, bool atI, double rel)
         {
             int j = atI ? m.I : m.J;
             var r = Add(m.Trans, Mul(m.X, atI ? s : s - m.L));
@@ -1064,9 +1221,10 @@ public static class StdToFrame
             if (!p.Joint.TryGetValue(j, out have)) { Refuse("joint " + I(j) + ": " + p.Name + " has no joint load for the weight of member " + I(m.Id) + "'s rigid end zone (SAP's self weight loads end zones, STAAD's does not: FrameStd writes their weight as joint loads)"); return; }
             for (int i = 0; i < 6; i++)
             {
-                double before = have[i], v = before - take[i], scale = Math.Max(Math.Abs(before), Math.Abs(take[i]));
-                if (Math.Abs(v) <= 1e-9 * scale) v = 0;
-                else if (v != 0) v = double.Parse(v.ToString("G12", Inv), Inv);
+                // what is left once the zone's weight is off, to the digits the joint load is written with
+                double before = have[i], v = before - take[i], h = Math.Min(HalfUnit(before), 1e-5 * Math.Abs(before));
+                if (Math.Abs(v) <= h + rel * Math.Abs(take[i]) + 1e-10) v = 0;
+                else { if (h > 0) v = Math.Round(v / (2 * h)) * 2 * h; v = Round12(v); }
                 have[i] = v;
             }
             if (have.All(x => x == 0)) p.Joint.Remove(j);
@@ -1101,7 +1259,10 @@ public static class StdToFrame
             for (int k = 2; k < t.Length; k++) { double x; if (!Num(t[k], out x)) { Refuse(what); return; } v.Add(x); }
             if ((want == 4 && v.Count != 2) || (want == -1 && v.Count != 1 && v.Count != 3) || (want == -2 && v.Count != 2 && v.Count != 4)) { Refuse(what + " (its numbers)"); return; }
             double clear = m.L - m.ZoneI - m.ZoneJ;
-            Func<double, bool> inside = d => d >= -1e-9 * m.L && d <= clear * (1 + 1e-9) + 1e-12 * m.L;
+            // on the clear length, to the digits the distance is written with; a hair past its end taken as the end
+            Func<double, double> slack = d => 1e-9 * m.L + Math.Min(HalfUnit(d), 1e-5 * m.L);
+            Func<double, bool> inside = d => d >= -slack(d) && d <= clear + slack(d);
+            Func<double, double> onto = d => Math.Max(0, Math.Min(clear, d));
             double w1 = v[0], w2 = type == "TRAP" ? v[1] : v[0];
             string cs, dir; double sign;
             if (!Dir(t[1], point, moment, !moment && w1 <= 0 && w2 <= 0 && (w1 < 0 || w2 < 0), out cs, out dir, out sign)) { Refuse(what + " (direction " + t[1] + ")"); return; }
@@ -1110,6 +1271,7 @@ public static class StdToFrame
             {
                 double d = v[1];
                 if (!inside(d)) { Refuse(what + " (at " + FrameStd.N(d) + ", off its clear length " + FrameStd.N(clear) + ")"); return; }
+                d = onto(d);
                 double zi = m.ZoneI, s = zi == 0 ? d : Shortest(zi + d, x => x - zi, d);
                 p.Point.Add(head + "   RelDist=" + F(Round12(s / m.L)) + "   AbsDist=" + F(s) + "   " + (moment ? "Moment=" : "Force=") + F(v[0] * sign));
                 return;
@@ -1118,6 +1280,7 @@ public static class StdToFrame
             if (v.Count > 2 || (type == "TRAP" && v.Count == 4)) { d1 = type == "TRAP" ? v[2] : v[1]; d2 = type == "TRAP" ? v[3] : v[2]; }
             if (d2 < d1) { double x = d1; d1 = d2; d2 = x; x = w1; w1 = w2; w2 = x; }
             if (!inside(d1) || !inside(d2) || d2 - d1 <= 1e-12 * m.L) { Refuse(what + " (from " + FrameStd.N(d1) + " to " + FrameStd.N(d2) + ", off its clear length " + FrameStd.N(clear) + ")"); return; }
+            d1 = onto(d1); d2 = onto(d2);
             double z0 = m.ZoneI, a = z0 == 0 ? d1 : Shortest(z0 + d1, x => x - z0, d1), b = z0 == 0 ? d2 : Shortest(z0 + d2, x => x - z0, d2);
             string kA = moment ? "MOverLA" : "FOverLA", kB = moment ? "MOverLB" : "FOverLB";
             p.Dist.Add(head + "   RelDistA=" + F(Round12(a / m.L)) + "   RelDistB=" + F(Round12(b / m.L)) + "   AbsDistA=" + F(a) + "   AbsDistB=" + F(b) + "   " + kA + "=" + F(w1 * sign) + "   " + kB + "=" + F(w2 * sign));

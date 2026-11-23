@@ -124,7 +124,7 @@ reads it: its parsers now take a `.std`'s input as well ([[vault/format/frame-to
 >    refuses the file, every item named ([[vault/format/frame-to-staad|frame-to-staad]]).
 > 5. **Back from STAAD.** After edits in STAAD, `... Build-Frame.ps1 -In "<project dir>\rack.std" -Xlsx -S2k` reads the
 >    `.std` into a frame model again: `rack_std.xlsx` and `rack_std.s2k`, beside the model the `.std` came from, never
->    over it. The read says whether writing the model back gives the file's commands, and refuses (by name) any
+>    over it. The read says whether the model written back is the file's, and refuses (by name) any
 >    command `-Std` does not write.
 >
 > ```mermaid

@@ -8,7 +8,7 @@ created: 2026-11-18
 
 # Pluto handoff: current state
 
-**Where it stands (2026-11-23).** Branch `pipestress` holds:
+**Where it stands (2026-11-23, evening).** Branch `pipestress` holds:
 - **The pipe workflow.** An Excel workbook or a TOML becomes one pipe model, reviewed in the viewer with CAESAR's error
   checks, and written as a CAESAR II `.cii`. An imported job comes back byte for byte.
 - **The frame side.** A lossless SAP2000 `.s2k` model, edited in the frame workbook (3D View, live checks) and written
@@ -43,12 +43,9 @@ created: 2026-11-18
 Purging it means rewriting the branch's history.
 
 **Waiting on the production machine:**
-- the PS 5.1 compile probe (`Config.ps1`) for the session's C#, now with `StdToFrame` and the `.anl` reader's
-  extensions;
-- a `.std` that STAAD.Pro saves from its graphical editor, read back with `-In` (only Pluto's own files and hand
-  edits are tested);
-- the workbook question ("Overwrite the workbook?") in Windows PowerShell 5.1's console, run once by hand (checked
-  here under PowerShell 7 in a terminal).
+- the PS 5.1 compile probe for the fix to the `.std` reader (STAAD.Pro's 6-digit save); the reader itself passed it;
+- the two files STAAD.Pro saved, read again with that fix (they read exactly here);
+- SAP's import of the read-back `.s2k` files: the probe's, and the rack with a catalog W10X33.
 
 **Next:**
 1. **Round 3, the sample job, in SAP only.** CAESAR's outputs are already in `scripts/caesar/testdata`: restraint loads,
