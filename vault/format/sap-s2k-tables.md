@@ -69,8 +69,24 @@ ones, so they carry no notice ([[vault/format/pipe-to-frame|pipe-to-frame]]).
 >   - **SAP reads its own row back** without an error or a warning. A catalog section from a SAP export therefore
 >     survives the frame model's `.s2k`, which writes its row as read. A row whose `FileName` the importing machine
 >     does not have gets SAP's default section, with only a dialog to say so.
->   - **Open:** which fields SAP needs to build the section from its library (the reference alone, or the whole row),
->     and whether a bare file name finds the library. A catalog probe of five variants waits on SAP.
+>   - **The catalog probe** (five frames, the same day) settles what a row needs:
+>
+>     | The row | SAP 24.2 built |
+>     |---|---|
+>     | SAP's own, the full path | the catalog shape, no dialog |
+>     | the reference only (`FromFile=Yes SectInFile=W12X26`, the full path) | the whole shape from its library: dimensions, fillet, Area 7.65, I33 204; no dialog |
+>     | the reference, or the whole row, with the bare `AISC15.xml` | the catalog shape, after a dialog per section: "not found, reimported from" its own `Sections` folder |
+>     | a file it does not have (`aisc16.xml`) | **a General section with every property 1** (Area 1, I 1), after one dialog |
+>
+>     So a catalog row needs only its reference and a library file SAP has; a missing one is silently a section of all
+>     ones (the rack's soft columns). `Build-Frame -S2k` now checks every catalog row against SAP's library on the
+>     machine (`FrameSapLibrary`; `-SapLibrary <folder>` names it, else the installed SAP2000's for the model's
+>     version):
+>     - a path the machine has is kept;
+>     - a file name the library has gets its full path, so SAP shows no dialog;
+>     - a file or a shape it has not refuses the `.s2k`, each named.
+>
+>     With no SAP on the machine, the rows are written as they are, with a notice.
 >
 > **Defaults SAP filled** (warnings): `CASE - STATIC 4` SolScheme; `03A` stress-strain fields; the offset-along-length
 > Type. The log's errors 1–10 ("Table key Steel Design 2 - NMM Details - Eurocode 3-2005 not found") are SAP's own

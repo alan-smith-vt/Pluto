@@ -283,6 +283,11 @@ The whole picture, CAESAR and STAAD included, with the commands for each job:
 > - `-S2k`: writes `<base>.s2k`. It never writes over the input. An existing file is replaced only when this runner
 >   wrote it (its stamp, `<base>.build.json`), when it is the model's own source, or when nothing would change;
 >   otherwise its first differing lines are listed and `-Force` is needed.
+>   - Catalog sections (`FromFile=Yes`) are checked against SAP's section library on the machine. `-SapLibrary
+>     <folder>` names it; otherwise it is the installed SAP2000's `Property Libraries\Sections` for the model's
+>     version.
+>   - A file the library has gets its full path. A file or a shape it has not refuses the `.s2k`, each named: SAP
+>     would make the section a General one with every property 1 ([[vault/format/sap-s2k-tables|sap-s2k-tables]]).
 > - `-Std`: writes `<base>.std` for STAAD.Pro (`FrameStd`, [[vault/format/frame-to-staad|frame-to-staad]]): exact or
 >   refused, every refusal on a `[refuse]` line; notices on `[notice] std:` lines. An existing `.std` is replaced only
 >   when this runner wrote it (the stamp's `std` part) or nothing would change; STAAD saves its own edits into the

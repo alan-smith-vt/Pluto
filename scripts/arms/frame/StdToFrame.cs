@@ -723,7 +723,7 @@ public static class StdToFrame
                     string inFile = row == null ? null : RowGet(row, "SectInFile");
                     if (row == null || inFile == null || !Is(inFile, p.Spec[2]))
                     {
-                        Refuse(who + ": TABLE ST " + p.Spec[2] + ", a STAAD table section with no SAP row of it in the comment above (SAP cannot build it from the name; FrameStd writes the row): give it as PRIS");
+                        Refuse(who + ": TABLE ST " + p.Spec[2] + ", a STAAD table section with no SAP row of it in the comment above (Pluto does not read SAP's section library for its numbers yet): pick it in SAP, or give it as PRIS");
                         continue;
                     }
                     shape = RowGet(row, "Shape");

@@ -25,6 +25,10 @@
 #   out   -S2k      <base>.s2k for SAP2000 (File > Import > SAP2000 .s2k). Never written over the input file. An
 #                   existing <base>.s2k is replaced only when this runner wrote it (the stamp, <base>.build.json, says
 #                   so), when it is the model's own source, or when nothing in it would change; else -Force.
+#                   Catalog sections (FromFile=Yes) are checked against SAP's section library on this machine
+#                   (FrameSapLibrary; -SapLibrary <folder> names it, else <Program Files>\Computers and Structures\
+#                   SAP2000 <version>\Property Libraries\Sections): a file SAP's library has gets its full path here,
+#                   a file or shape it has not refuses the .s2k (SAP would make the section a General one of all ones).
 #         -Xlsx     <base>.xlsx, the frame workbook, and its launchers ("<base> - preview.cmd", "<base> - s2k.cmd",
 #                   "<base> - open in SAP.cmd", "<base> - std.cmd").
 #                   An existing <base>.xlsx this runner wrote and nobody has saved since (the stamp says so) is
@@ -92,6 +96,7 @@ param(
     [switch]$Refresh,
     [string]$Units,
     [string]$SapVersion,
+    [string]$SapLibrary,
     [string]$ModelId,
     [switch]$Force,
     [switch]$AppendixD,
@@ -454,8 +459,19 @@ function Build-Once {
         $model.Joints.Count, $model.Frames.Count, $model.Sections.Count, $model.Materials.Count, $model.LinkProps.Count, $model.Links.Count, $model.Groups.Count, `
         $model.Patterns.Count, $model.Loads.Count, $model.Cases.Count, $model.Combos.Count, $model.Units
     Say "model" $counts
-    $hash = [FrameModelJson]::Hash($model)
     $notes = New-Object 'System.Collections.Generic.List[string]'
+    if ($S2k) {
+        # catalog sections: their library files, as SAP will look for them (a missing one becomes a section of all ones)
+        $script:step = "checking catalog sections against SAP's section library"
+        $lib = $(if ($SapLibrary) { [IO.Path]::GetFullPath($SapLibrary) } else { [FrameSapLibrary]::Folder($model.Version) })
+        if ($SapLibrary -and -not (Test-Path -LiteralPath $lib -PathType Container)) { throw (New-Object InvalidOperationException(("-SapLibrary {0}: no such folder" -f $SapLibrary))) }
+        $libRefused = [FrameSapLibrary]::Check($model, $lib, $notes)
+        if ($libRefused.Count -gt 0) {
+            foreach ($i in $libRefused) { Say "refuse" $i }
+            throw (New-Object InvalidOperationException(("SAP: the {0} catalog section(s) above would not come into SAP as written; {1} is not written" -f $libRefused.Count, $s2kFile)))
+        }
+    }
+    $hash = [FrameModelJson]::Hash($model)
     $script:step = "writing the .s2k"
     $doc = [FrameS2k]::ToDoc($model, $notes)
     foreach ($n in $notes) { Say "notice" $n }

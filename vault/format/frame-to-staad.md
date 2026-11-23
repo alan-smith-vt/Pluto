@@ -322,11 +322,12 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >   it agrees with STAAD's run of the same `.std` at every joint, 480 displacements and 310 reactions; joints with
 >   local axes are compared in those axes, which SAP reports in. The channels agree too: read back they are General
 >   sections, which SAP does not twist about a shear center.
-> - **Catalog sections do not come back yet.** SAP 24.2 cannot rebuild a catalog section from the restored row
->   (`FromFile=Yes FileName=AISC16.xml`): "Unable to open property file or section not found, Default Section
->   substituted", as in the first SAP probe. The read-back rack's W10X33 members got SAP's default section; its columns
->   shortened eight times more than in STAAD. The pipes on it grew the same to every digit. How a `TABLE ST` member
->   should come back is the user's choice (open).
+> - **Catalog sections.** The read-back rack's W10X33 got SAP's default section, a General one with every property 1,
+>   and its columns shortened eight times more than in STAAD (the pipes on it grew the same to every digit). The cause
+>   was the row, a test variant naming `AISC16.xml`, which SAP 24 does not have; SAP's own export names its library
+>   file by full path, and reads back. A restored row's library file is now checked when the `.s2k` is written
+>   ([[vault/format/sap-s2k-tables|sap-s2k-tables]]). A `TABLE ST` shape picked in STAAD, with no SAP row in its
+>   comment, is still refused: Pluto does not read SAP's library for its numbers yet.
 
 > [!info]- The STAAD probe (`-StdProbe <folder>`)
 > `staad-probe.s2k` and `staad-probe.std`: one model, every part analysable, for SAP2000 and STAAD.Pro alike. Each
