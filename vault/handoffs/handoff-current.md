@@ -44,7 +44,8 @@ Purging it means rewriting the branch's history.
 
 **Waiting on the production machine:**
 - the PS 5.1 compile probe and a run of `-S2k` on a model with a catalog section, for the library check
-  (`FrameSapLibrary`); here it was tried on a stand-in library folder only;
+  (`FrameSapLibrary`); here it was tried on a stand-in library folder only. The test: a SAP-saved model with one
+  library W shape, `-Std`, then `-In <it>.std -S2k`, imported into SAP with no dialog;
 - one shape's entry from SAP's `AISC15.xml`, to read the library's numbers: then a `TABLE ST` shape picked in STAAD
   comes back as a SAP catalog section (refused for now).
 

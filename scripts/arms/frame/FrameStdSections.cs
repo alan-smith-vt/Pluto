@@ -50,6 +50,8 @@ public static class FrameStdSections
         {
             var q = new FrameSectionProps { Depth = Num(s, "t3"), Width = Num(s, "t2"), Catalog = catalog };
             q.A = Num(s, "Area"); q.J = Num(s, "TorsConst"); q.I33 = Num(s, "I33"); q.I22 = Num(s, "I22"); q.I23 = Num(s, "I23");
+            // SAP's own rows carry round-off as I23 (a W10X33 from its library: 2.8E-14); below 1e-9 of I33 + I22 it is 0, as Sum's
+            if (Math.Abs(q.I23) < 1e-9 * (Math.Abs(q.I33) + Math.Abs(q.I22))) q.I23 = 0;
             q.AS2 = Num(s, "AS2"); q.AS3 = Num(s, "AS3");
             if (!r.Has("AS2") && !r.Has("AS3")) { double as2, as3; Shear(shape, s, q.A, out as2, out as3); q.AS2 = as2; q.AS3 = as3; }
             return q;

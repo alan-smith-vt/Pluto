@@ -98,7 +98,8 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >   ignored, as in SAP). YD / ZD = t3 / t2 (temperature gradients need them).
 > - **Refused:**
 >   - a section with a product of inertia I23 (angles, and General sections that carry one). STAAD's prismatic
->     property has none.
+>     property has none. An I23 below 1e-9 of I33 + I22 is round-off and counts as 0: SAP's own row for a library
+>     W10X33 carries 2.8E-14 (2026-11-23).
 >   - a section with modifiers of its own (its row's `AMod` … `WMod` other than 1, 2026-11-23). SAP applies them as
 >     well as the frame's, and only the frame's are folded in. Give them to its frames instead.
 > - **Channels, tees and double angles are written centroidal, with a notice and a banner** (the user's choice,
