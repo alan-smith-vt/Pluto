@@ -335,8 +335,10 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >   refused SAP's own row for its `I23=2.8E-14`, round-off now counted as 0.
 > - **A shape picked in STAAD** now comes from SAP's library (`AISC15.xml`'s W10X33 entry, from the user). The row
 >   Pluto builds is SAP's own to every digit SAP writes, its noise aside
->   ([[vault/format/sap-s2k-tables|sap-s2k-tables]], "The library's entries"). Tried here on a stand-in library holding
->   that entry, not yet in SAP.
+>   ([[vault/format/sap-s2k-tables|sap-s2k-tables]], "The library's entries"). On the production machine, a W12X26
+>   picked in STAAD (with no comments, and under W10X33's old comment) read exactly. It imported into SAP as its AISC15
+>   catalog section with no error, warning or dialog. SAP's export of it equals Pluto's row in all 38 shared fields,
+>   Cw to its 15 digits. A channel was refused, named: the library's element for it is `STEEL_CHANNEL`.
 
 > [!info]- The STAAD probe (`-StdProbe <folder>`)
 > `staad-probe.s2k` and `staad-probe.std`: one model, every part analysable, for SAP2000 and STAAD.Pro alike. Each

@@ -43,10 +43,8 @@ created: 2026-11-18
 Purging it means rewriting the branch's history.
 
 **Waiting on the production machine:**
-- the PS 5.1 compile probe of the library read (`FrameSapLibrary.Row`), then a shape picked in STAAD, back in SAP:
-  - in a `.std` from `-Std`, change a `TABLE ST` line's shape to another W shape (or add a member with one);
-  - `-In <it>.std -S2k`, imported into SAP: the shape should be SAP's catalog section, with no dialog;
-  - the library check itself passed on the production machine (SAP's W10X33 model both ways; `AISC16.xml` refused).
+- nothing on the frame side: SAP's catalog sections go both ways through STAAD, the library check and the library
+  read both confirmed in SAP 24.2 (2026-11-23).
 
 **Next:**
 1. **Round 3, the sample job, in SAP only.** CAESAR's outputs are already in `scripts/caesar/testdata`: restraint loads,

@@ -100,6 +100,10 @@ ones, so they carry no notice ([[vault/format/pipe-to-frame|pipe-to-frame]]).
 >     HP) are read: another kind, a shape no file has, or no library refuses the `.std`, named. A file whose header
 >     gives its lengths in another unit is refused too.
 >
+>     Confirmed on a second shape (W12X26, the production machine): SAP 24.2 imported Pluto's row as the catalog
+>     section, and its own export of it equals that row in every field but SAP's round-off (I23, CGOffset), Color and
+>     Notes.
+>
 > **Defaults SAP filled** (warnings): `CASE - STATIC 4` SolScheme; `03A` stress-strain fields; the offset-along-length
 > Type. The log's errors 1–10 ("Table key Steel Design 2 - NMM Details - Eurocode 3-2005 not found") are SAP's own
 > design tables, not the file's.
