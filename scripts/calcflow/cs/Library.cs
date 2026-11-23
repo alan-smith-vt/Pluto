@@ -292,6 +292,7 @@ namespace CalcFlow
                 }
                 XOutSheet s = WorkbookTables.Sheet(t.Sheet, t.Name, t.Columns, r, t.Note);
                 Validations(s, t, r.Count);
+                Highlights(s, t.Name, t.Columns, r.Count);
                 sheets.Add(s);
             }
             XlsxWriter.Write(path, sheets, null);
@@ -335,13 +336,42 @@ namespace CalcFlow
             }
         }
 
+        // the kinds of an output, the roles of a harvested cell: told apart by colour
+        public static void Highlights(XOutSheet s, string table, string[] columns, int rows)
+        {
+            string last = (Math.Max(rows, 1) + 2 + 500).ToString(CultureInfo.InvariantCulture);
+            string t = table.Replace("tblHarvest", "tbl");
+            string kind = WorkbookTables.Col(columns, "Kind");
+            if (t == "tblOutputs" && kind.Length > 0)
+            {
+                string q = kind + "3:" + kind + last;
+                Palette.Highlight(s, q, "dcr", Palette.MidGreen, "FF000000");
+                Palette.Highlight(s, q, "health", Palette.MidOrange, "FF000000");
+                Palette.Highlight(s, q, "status", Palette.MidBlue, "FF000000");
+            }
+            string role = WorkbookTables.Col(columns, "Role");
+            if (t == "tblLayout" && role.Length > 0)
+            {
+                string q = role + "3:" + role + last;
+                Palette.Highlight(s, q, "input", Palette.MidYellow, "FF000000");
+                Palette.Highlight(s, q, "input (blank)", Palette.MidYellow, "FF000000");
+                Palette.Highlight(s, q, "output", Palette.MidGreen, "FF000000");
+                Palette.Highlight(s, q, "table", Palette.MidBlue, "FF000000");
+            }
+        }
+
         static XOutSheet GuideSheet()
         {
             var s = new XOutSheet("Guide");
-            var h = new XStyle(); h.Bold = true; h.Size = 13;
             var b = new XStyle(); b.Bold = true;
-            s.Add(new XCell("CalcFlow calc library", h));
+            s.Add(new XCell("CalcFlow calc library", Palette.Title()));
             s.Add("Edit the tables in Excel, save, then run: CalcFlow.ps1 library-export -Library <this folder>. The tool runs from the exported text (text\\*.csv) and refuses this workbook while it differs from its last export.");
+            s.Add();
+            s.Add(new XCell("Colours", b), new XCell("What a column holds", b));
+            s.Add(new XCell("Key", Palette.Header(ColumnKind.Key)), "what the row is (Template, Sheet, Cell; Type, Step): navy header, bold");
+            s.Add(new XCell("Your input", Palette.Header(ColumnKind.Input)), new XCell("what you fill in: dark gold header, pale yellow cells", Palette.Data(ColumnKind.Input)));
+            s.Add(new XCell("Found / reference", Palette.Header(ColumnKind.Reference)), new XCell("what harvest found or the tool shows for information (guards, examples, notes): teal header, grey text", Palette.Data(ColumnKind.Reference)));
+            s.Add(new XCell("Tool", Palette.Header(ColumnKind.Tool)), "what CalcFlow writes: charcoal header");
             s.Add();
             s.Add(new XCell("Binding (tblInputs)", b), new XCell("Value written into the cell", b));
             s.Add("const:<value>", "a literal, e.g. const:LRFD, const:0.75");
@@ -657,41 +687,79 @@ namespace CalcFlow
         }
     }
 
-    // a sheet holding one Excel table: a note row, a header row, the rows (all written as text). Headers of the columns
-    // a person fills in are blue; the columns the tool writes or harvest notes are grey.
+    // a sheet holding one Excel table: a note row, a header row, the rows (all written as text), each column styled by
+    // its kind (Palette: key, input in pale yellow, tool, reference). An empty table keeps one blank row, styled, to type in.
     public static class WorkbookTables
     {
-        static readonly HashSet<string> InfoColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Example", "Kind?", "List", "Description", "Found", "Formula" };
-
         public static XOutSheet Sheet(string sheetName, string tableName, string[] columns, List<Dictionary<string, string>> rows, string note)
         {
-            return Sheet(sheetName, tableName, columns, rows, note, c => !InfoColumns.Contains(c));
+            return Sheet(sheetName, tableName, columns, rows, note, c => Palette.KindOf(tableName, c));
         }
 
-        public static XOutSheet Sheet(string sheetName, string tableName, string[] columns, List<Dictionary<string, string>> rows, string note, Func<string, bool> isInput)
+        public static XOutSheet Sheet(string sheetName, string tableName, string[] columns, List<Dictionary<string, string>> rows, string note, Func<string, ColumnKind> kindOf)
         {
             var s = new XOutSheet(sheetName);
-            var noteStyle = new XStyle(); noteStyle.Italic = true; noteStyle.Color = "FF595959";
-            s.Add(new XCell(note ?? "", noteStyle));
+            s.Add(new XCell(note ?? "", Palette.Note()));
             var cols = new List<string>(columns);
             foreach (var r in rows)
                 foreach (string k in r.Keys)
                     if (k != "__row" && !cols.Any(c => string.Equals(c, k, StringComparison.OrdinalIgnoreCase))) cols.Add(k);
-            var blue = new XStyle(); blue.Bold = true; blue.Fill = "FFDDEBF7"; blue.Border = true;
-            var grey = new XStyle(); grey.Bold = true; grey.Fill = "FFE7E6E6"; grey.Border = true;
-            s.Add(cols.Select(c => (object)new XCell(c, isInput(c) ? blue : grey)).ToArray());
-            foreach (var r in rows)
+            var kinds = cols.Select(kindOf).ToArray();
+            var data = kinds.Select(Palette.Data).ToArray();
+            s.Add(cols.Select((c, i) => (object)new XCell(c, Palette.Header(kinds[i]))).ToArray());
+            s.RowHeights[1] = 30;
+            int n = Math.Max(rows.Count, 1);
+            for (int k = 0; k < n; k++)
             {
+                Dictionary<string, string> r = k < rows.Count ? rows[k] : null;
                 var cells = new object[cols.Count];
-                for (int i = 0; i < cols.Count; i++) { string v; cells[i] = r.TryGetValue(cols[i], out v) ? (v ?? "") : ""; }
+                for (int i = 0; i < cols.Count; i++)
+                {
+                    string v = "";
+                    if (r != null && r.TryGetValue(cols[i], out v)) v = v ?? "";
+                    cells[i] = data[i] == null ? (object)v : new XCell(v, data[i]);
+                }
                 s.Add(cells);
             }
             var t = new XOutTable();
-            t.Name = tableName; t.Top = 1; t.Left = 0; t.Right = cols.Count - 1; t.Bottom = 1 + Math.Max(rows.Count, 1);
+            t.Name = tableName; t.Top = 1; t.Left = 0; t.Right = cols.Count - 1; t.Bottom = 1 + n; t.Style = Palette.TableStyle;
             s.Tables.Add(t);
             s.FreezeRows = 2;
-            for (int i = 0; i < cols.Count; i++) s.Width(i, Math.Min(48, Math.Max(10, cols[i].Length + 4)));
+            s.Landscape = true; s.FitToWidth = true; s.PrintTitleFirstRow = 2; s.PrintTitleLastRow = 2;
+            for (int i = 0; i < cols.Count; i++)
+            {
+                int w = cols[i].Length + 4;
+                foreach (var r in rows.Take(500)) { string v; if (r.TryGetValue(cols[i], out v) && v != null && v.Length + 2 > w) w = v.Length + 2; }
+                s.Width(i, Math.Min(48, Math.Max(10, w)));
+            }
             return s;
+        }
+
+        // a column of a sheet written by Sheet held as numbers (text that reads as one), in the given number format;
+        // the column's own style is kept
+        public static void Numbers(XOutSheet s, int col, string numFmt)
+        {
+            if (col < 0) return;
+            for (int r = 2; r < s.Rows.Count; r++)
+            {
+                object[] row = s.Rows[r];
+                if (col >= row.Length) continue;
+                XCell x = row[col] as XCell;
+                string t = x != null ? x.Value as string : row[col] as string;
+                double d;
+                if (t == null || !double.TryParse(t, NumberStyles.Float, CultureInfo.InvariantCulture, out d)) continue;
+                XStyle st = x != null && x.Style != null ? x.Style.Copy() : new XStyle();
+                st.NumFmt = numFmt;
+                if (numFmt == "0") st.HAlign = "center";   // ids and counts, not quantities
+                row[col] = new XCell(d, st);
+            }
+        }
+
+        // the column letter of a column name in a sheet written by Sheet ("" when absent)
+        public static string Col(string[] columns, string name)
+        {
+            int k = Array.IndexOf(columns, name);
+            return k < 0 ? "" : Xlsx.ColName(k);
         }
     }
 }

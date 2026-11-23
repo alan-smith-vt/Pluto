@@ -1,5 +1,6 @@
 // Copied from pipe-review (src/cs/Xlsx.cs at d4b33aa, 2026-11-06) for CalcFlow; namespace PipeReview -> CalcFlow,
-// and the zip / XML helpers made internal for Template.cs; otherwise unchanged. The writer overlaps Pluto's XlsxBook (scripts/lib/writers/XlsxWriter.cs): to be merged later.
+// the zip / XML helpers made internal for Template.cs, Excel's sheet limits enforced (rows, columns, 32,767 characters
+// a cell) and numeric conditional formats added (2026-11-23); otherwise unchanged. The writer overlaps Pluto's XlsxBook (scripts/lib/writers/XlsxWriter.cs): to be merged later.
 // Xlsx.cs -- reads .xlsx / .csv / .txt without Excel and writes .xlsx workbooks (values and styles, no formulas).
 // C# 5 (Windows PowerShell 5.1 Add-Type, warnings are errors). The reader is a port of Pluto's CaesarWorkbook
 // (scripts/arms/CaesarResults.cs) extended with tables, defined names and cell types.
@@ -726,7 +727,9 @@ namespace CalcFlow
     public sealed class XCondFormat
     {
         public string Sqref = "";
-        public string EqualsText = "";         // cell value equals this text
+        public string EqualsText = "";         // cell value equals this text (when Operator is null)
+        public string Operator;                // or a number test: greaterThan | lessThan | greaterThanOrEqual | lessThanOrEqual
+        public double Value;                   // ... against this number
         public XStyle Style;                   // only Fill, Color, Bold are used
     }
 
@@ -828,6 +831,9 @@ namespace CalcFlow
             }
         }
 
+        // Excel's sheet limits: a workbook past them opens only after Excel "repairs" it by removing cells
+        public const int MaxRows = 1048576, MaxCols = 16384, MaxCellText = 32767;
+
         public static void Write(string path, IList<XOutSheet> sheets, IDictionary<string, string> names)
         {
             if (sheets == null || sheets.Count == 0) throw new Exception("XlsxWriter: no sheets");
@@ -837,6 +843,11 @@ namespace CalcFlow
                 if (string.IsNullOrEmpty(s.Name) || s.Name.Length > 31 || s.Name.IndexOfAny(new[] { ':', '\\', '/', '?', '*', '[', ']' }) >= 0)
                     throw new Exception("XlsxWriter: invalid sheet name '" + s.Name + "'");
                 if (!seen.Add(s.Name)) throw new Exception("XlsxWriter: duplicate sheet name '" + s.Name + "'");
+                int rows = s.Rows.Count, cols = 0;
+                foreach (object[] r in s.Rows) if (r != null) cols = Math.Max(cols, r.Length);
+                foreach (XOutTable t in s.Tables) { rows = Math.Max(rows, t.Bottom + 1); cols = Math.Max(cols, t.Right + 1); }
+                if (rows > MaxRows) throw new Exception("XlsxWriter: sheet '" + s.Name + "' has " + rows + " rows; Excel holds " + MaxRows + " (split it)");
+                if (cols > MaxCols) throw new Exception("XlsxWriter: sheet '" + s.Name + "' has " + cols + " columns; Excel holds " + MaxCols);
             }
             var styles = new Styles();
             var sst = new List<string>();
@@ -1141,7 +1152,7 @@ namespace CalcFlow
                     if (xf != 0) cells.Append(" s=\"").Append(xf).Append("\"");
                     if (o is string)
                     {
-                        string text = Clean((string)o);
+                        string text = CellText((string)o);
                         int idx;
                         if (!sstIndex.TryGetValue(text, out idx)) { idx = sst.Count; sst.Add(text); sstIndex[text] = idx; }
                         sstCount++;
@@ -1152,7 +1163,7 @@ namespace CalcFlow
                     else if (!(o is IConvertible))
                     {
                         // anything that is not a plain value (e.g. a PowerShell-wrapped object) is written as its text
-                        string text = Clean(o.ToString());
+                        string text = CellText(o.ToString());
                         int idx;
                         if (!sstIndex.TryGetValue(text, out idx)) { idx = sst.Count; sst.Add(text); sstIndex[text] = idx; }
                         sstCount++;
@@ -1183,6 +1194,13 @@ namespace CalcFlow
             foreach (XCondFormat cf in s.CondFormats)
             {
                 int dxf = styles.Dxf(cf.Style ?? new XStyle());
+                if (cf.Operator != null)
+                {
+                    if (cf.Operator != "greaterThan" && cf.Operator != "lessThan" && cf.Operator != "greaterThanOrEqual" && cf.Operator != "lessThanOrEqual")
+                        throw new Exception("XlsxWriter: unknown conditional format operator '" + cf.Operator + "'");
+                    sb.Append("<conditionalFormatting sqref=\"").Append(cf.Sqref).Append("\"><cfRule type=\"cellIs\" dxfId=\"").Append(dxf).Append("\" priority=\"").Append(prio++).Append("\" operator=\"").Append(cf.Operator).Append("\"><formula>").Append(Num(cf.Value)).Append("</formula></cfRule></conditionalFormatting>");
+                    continue;
+                }
                 sb.Append("<conditionalFormatting sqref=\"").Append(cf.Sqref).Append("\"><cfRule type=\"cellIs\" dxfId=\"").Append(dxf).Append("\" priority=\"").Append(prio++).Append("\" operator=\"equal\"><formula>\"").Append(Esc(cf.EqualsText.Replace("\"", "\"\""))).Append("\"</formula></cfRule></conditionalFormatting>");
             }
             if (s.Validations.Count > 0)
@@ -1264,6 +1282,17 @@ namespace CalcFlow
                 if (sb != null && ok) sb.Append(ch);
             }
             return sb == null ? s : sb.ToString();
+        }
+
+        // a cell's text: XML-safe and within Excel's 32,767 characters (a longer one is cut, and says so)
+        static string CellText(string s)
+        {
+            string t = Clean(s);
+            if (t.Length <= MaxCellText) return t;
+            string tail = "";
+            for (int i = 0; i < 2; i++)   // the marker's length depends on the count it shows: settle it
+                tail = " [... " + (t.Length - (MaxCellText - tail.Length)).ToString(CultureInfo.InvariantCulture) + " more characters]";
+            return t.Substring(0, MaxCellText - tail.Length) + tail;
         }
 
         static string Esc(string s)

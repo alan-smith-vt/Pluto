@@ -77,6 +77,24 @@ Test 'writer refuses NaN, duplicate sheets and bad table names' {
     Assert-Throws { [CalcFlow.XlsxWriter]::Write((Join-Path $dir 'tbl.xlsx'), [CalcFlow.XOutSheet[]]@($d), $null) } 'table name'
 }
 
+Test "writer keeps to Excel's limits: too many rows or columns refused before a byte is written, long text cut visibly" {
+    $r = New-Object CalcFlow.XOutSheet 'Rows'; $r.Set([CalcFlow.XlsxWriter]::MaxRows, 0, 'x')
+    $p = Join-Path $dir 'rows.xlsx'
+    Assert-Throws { [CalcFlow.XlsxWriter]::Write($p, [CalcFlow.XOutSheet[]]@($r), $null) } '1048577 rows; Excel holds 1048576'
+    Assert-True (-not (Test-Path -LiteralPath $p)) 'nothing written'
+    $c = New-Object CalcFlow.XOutSheet 'Cols'; $c.Set(0, [CalcFlow.XlsxWriter]::MaxCols, 'x')
+    Assert-Throws { [CalcFlow.XlsxWriter]::Write((Join-Path $dir 'cols.xlsx'), [CalcFlow.XOutSheet[]]@($c), $null) } '16385 columns'
+    $t = New-Object CalcFlow.XOutSheet 'Text'; $t.Add(('y' * 40000)); $t.Add('short')
+    $p = Join-Path $dir 'text.xlsx'
+    [CalcFlow.XlsxWriter]::Write($p, [CalcFlow.XOutSheet[]]@($t), $null)
+    $back = [CalcFlow.Xlsx]::Read($p).Sheet('Text')
+    Assert-Equal $back.Text(0, 0).Length 32767
+    Assert-Match $back.Text(0, 0) 'y \[\.\.\. 7\d{3} more characters\]$'
+    $cut = $back.Text(0, 0); $shown = $cut.IndexOf(' [', [StringComparison]::Ordinal)
+    Assert-Equal ($shown + [int]([regex]::Match($cut, '(\d+) more').Groups[1].Value)) 40000 'the count is exact'
+    Assert-Equal $back.Text(1, 0) 'short'
+}
+
 Test 'reads the generic CAESAR output workbook (Pluto test job)' {
     $wb = [CalcFlow.Xlsx]::Read((Join-Path (Join-Path (Join-Path (Join-Path $script:Repo 'scripts') 'caesar') 'testdata') 'Sample Caesar II ouputs.xlsx'))
     Assert-Equal $wb.Sheets.Count 21

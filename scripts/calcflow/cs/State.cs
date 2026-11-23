@@ -1,9 +1,8 @@
-// State.cs -- CalcFlow's own record files: CSV I/O, a natural sort for revision names, and the run state of each
-// calc (the input hash it last ran on). Everything is written invariant-culture, UTF-8 (with BOM, so Excel opens it
-// cleanly), CRLF.
-// Copied from pipe-review (src/cs/State.cs at d4b33aa, 2026-11-06): Csv and NaturalComparer unchanged; CalcState /
-// CalcStateStore with neutral column names (Calc, not Support Detail). The pipe-specific LoadArchive, DesignRev,
-// DesignRevRegistry and RunLog were left out (CAESAR rows and the support register); CalcFlow writes its own.
+// State.cs -- CalcFlow's own record files: CSV I/O and a natural sort for revision names. Everything is written
+// invariant-culture, UTF-8 (with BOM, so Excel opens it cleanly), CRLF. The run state of each calc is in Run.cs.
+// Copied from pipe-review (src/cs/State.cs at d4b33aa, 2026-11-06): Csv and NaturalComparer unchanged. Its CalcState /
+// CalcStateStore became Run.cs's state per (calc, step) (2026-11-23); the pipe-specific LoadArchive, DesignRev,
+// DesignRevRegistry and RunLog were left out (CAESAR rows and the support register).
 
 using System;
 using System.Collections.Generic;
@@ -145,55 +144,6 @@ namespace CalcFlow
             var l = items.ToList();
             l.Sort(Instance);
             return l.ToArray();
-        }
-    }
-
-
-    // data\calc-state.csv : the last run of each calc
-    public sealed class CalcState
-    {
-        public string Calc = "";
-        public string Tab = "";
-        public string Template = "";
-        public string InputHash = "";      // hash of exactly what the calc consumed when it last ran OK
-        public string TemplateStamp = "";  // size + time of the template after that run
-        public string LastRun = "";
-        public string Result = "";         // OK | FAILED | (blank = never run)
-        public string Seconds = "";
-        public string Message = "";
-    }
-
-    public sealed class CalcStateStore
-    {
-        public static readonly string[] Header = { "Calc", "Results Tab", "Template", "Input Hash", "Template Stamp", "Last Run", "Result", "Seconds", "Message" };
-        public readonly Dictionary<string, CalcState> ByTab = new Dictionary<string, CalcState>(StringComparer.OrdinalIgnoreCase);
-
-        public static CalcStateStore Load(string path)
-        {
-            var s = new CalcStateStore();
-            foreach (var d in Csv.ReadTable(path))
-            {
-                var c = new CalcState();
-                c.Calc = V(d, "Calc"); c.Tab = V(d, "Results Tab"); c.Template = V(d, "Template");
-                c.InputHash = V(d, "Input Hash"); c.TemplateStamp = V(d, "Template Stamp"); c.LastRun = V(d, "Last Run");
-                c.Result = V(d, "Result"); c.Seconds = V(d, "Seconds"); c.Message = V(d, "Message");
-                if (c.Tab.Length > 0) s.ByTab[c.Tab] = c;
-            }
-            return s;
-        }
-
-        static string V(Dictionary<string, string> d, string k) { string v; return d.TryGetValue(k, out v) ? (v ?? "").Trim() : ""; }
-
-        public CalcState Get(string tab)
-        {
-            CalcState c;
-            return ByTab.TryGetValue(tab, out c) ? c : null;
-        }
-
-        public void Save(string path)
-        {
-            Csv.Write(path, Header, ByTab.Values.OrderBy(c => c.Tab, StringComparer.OrdinalIgnoreCase)
-                .Select(c => new object[] { c.Calc, c.Tab, c.Template, c.InputHash, c.TemplateStamp, c.LastRun, c.Result, c.Seconds, c.Message }));
         }
     }
 }

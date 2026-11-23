@@ -24,14 +24,15 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 plan -Pac
 
 > [!info]- The register's tables
 > **`tblConnections`:** one row per member end at a joint, keyed by Node, Member and End; the id is `J<node>-M<member><end>` (`J3-M2B`).
-> - **Blue (yours):**
+> - **Yours (gold headers, pale yellow cells):**
 >   - **Type:** a library type; blank = no calc.
 >   - **Support:** the member it frames into, i.e. the type's `support` slot.
 >   - **Other:** more slots, as `brace=12:A; gusset=30`.
 >   - **Group:** connections sharing one calc, on the union of their demands.
 >   - **Disposition:** Excluded / Accepted / Attention / Hold.
 >   - **Comment.**
-> - **Grey (the tool's):** Role, Section, Status, Status Detail, Max DCR, Governing Check, Governing Combo, Calc, Design Rev. These are filled from Phase 3 on.
+> - **Found in the model (teal):** Role, Section.
+> - **The tool's (charcoal):** Status, Status Detail, Max DCR, Governing Check, Governing Combo, Calc, Design Rev. These are written through Excel in Phase 4; until then the DCRs are in the connection summary ([[vault/calcflow/calcflow-calc-stage|calcflow-calc-stage]]).
 >
 > **The other tables:**
 >
@@ -42,7 +43,7 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 plan -Pac
 > | `tblSettings` | DcrLimit, GoverningK, Package (information) |
 >
 > **`register-new`:**
-> - It seeds the register from a package, without Excel, and never overwrites a register that exists. Once saved, only Excel writes it; publishing grey columns through COM is Phase 4.
+> - It seeds the register from a package, without Excel, and never overwrites a register that exists. Once saved, only Excel writes it; publishing the charcoal columns through COM is Phase 4.
 > - It guesses each Support: for a beam or a brace, the column at the joint (else a beam); for a column, a beam. It prefers a member that runs through the joint and never takes the connection's own continuation.
 > - On the fixture, both beam ends get their columns, the brace gets the column, and a column base gets none.
 
@@ -63,7 +64,7 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 plan -Pac
 >    A member end without printed forces for a case in scope is an error.
 > 5. **Per-case inputs:** every demand row's `load:` / `case:` cells, in each cell's unit.
 >
-> **Written to `-Out`:**
+> **Written to `-Out`** (plus `plan-manifest.txt`: the package, library text and register the plan was made from, with their SHA-256s; `run` refuses the plan when one changes):
 >
 > | File | Columns |
 > |---|---|
@@ -73,7 +74,7 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 plan -Pac
 > | `calcs.csv` | Calc, Type, Group, Connections, Cells, Cases, Status (Ready / Gaps / Blocked), Problems |
 > | `problems.csv` | Severity, Calc, Code, Message |
 >
-> The Excel stage (Phase 3) takes these files as they are.
+> `run` takes these files as they are ([[vault/calcflow/calcflow-calc-stage|calcflow-calc-stage]]).
 
 > [!info]- The problems it names
 > **Errors:**
@@ -90,14 +91,13 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 plan -Pac
 > - `BASIS_NOT_SET`, `CHUNKS`, `NO_GUARD`, `NO_COMBOS`.
 > - The library's unconfirmed frames.
 
-> [!info]- The DCR summary (to come with the Excel stage: Phase 3 / 4)
-> The structure's connection DCRs will be summarised **per member end, with a joint rollup**, in a generated workbook (`reports\Connection_Summary_<date>.xlsx`, no Excel needed to write it):
-> - **Connections:** one row per register row with a Type.
->   - Columns: Connection, Joint, Member, End, Type, Group / Calc, Status.
->   - Then **one column per Check** (the library's `tblOutputs.Check` names: Weld, Base plate, …) with that check's largest DCR over the calc's cases.
->   - Then Max DCR, Governing Check, Governing Case and, for a group, the governing connection.
-> - **Joints:** one row per joint, with the worst connection there, its DCR, check and case, and how many connections are OK / over the limit / not run.
-> - **The same values go into the register's grey columns** (through Excel, Phase 4), and to the viewer as connection glyphs coloured by DCR (Phase 5).
+> [!info]- The DCR summary (built 2026-11-23)
+> `summary` (and every `run`) writes `reports\Connection_Summary_<date>.xlsx` without Excel:
+> - **Connections:** one row per member end with a Type, with its status, Max DCR, governing check and case, **one column per Check**, and its records. A group's connections each show their own demand rows' DCRs.
+> - **Joints:** the worst connection at each joint, and the counts per status.
+> - **Calcs** and **Problems.**
+>
+> The status ladder and the columns are in [[vault/calcflow/calcflow-calc-stage|calcflow-calc-stage]]. The same values go into the register's charcoal columns through Excel in Phase 4, and to the viewer as connection glyphs coloured by DCR in Phase 5.
 
 > [!info]- Verification (2026-11-06, Linux)
 > **The fixture project:**

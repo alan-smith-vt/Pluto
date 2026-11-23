@@ -122,7 +122,65 @@ Test 'CalcFlow.ps1 harvest writes harvest.xlsx with the drafts as tables in the 
     Assert-Equal (@($wb.TableRows('tblHarvestTemplates') | ForEach-Object { $_['Template'] }) -join ' ') 'Base_Plate_Anchorage Weld-Group-Design-Tool'
     $cols = $wb.Table('tblHarvestInputs').Columns
     for ($i = 0; $i -lt [CalcFlow.LibrarySchema]::InputColumns.Length; $i++) { Assert-Equal $cols[$i] ([CalcFlow.LibrarySchema]::InputColumns[$i]) }
-    Assert-True ($wb.TableRows('tblHarvestLayout').Count -gt 1000) 'layout rows'
+    $lay = @($wb.TableRows('tblHarvestLayouts'))
+    Assert-Equal (@($lay | ForEach-Object { $_['File'] }) -join ' ') 'harvest-layout/Base_Plate_Anchorage.xlsx harvest-layout/Weld-Group-Design-Tool.xlsx'
+    Assert-True ([int]$lay[1]['Cells'] -gt 1000) 'layout cells'
+    $wl = [CalcFlow.Xlsx]::Read((Join-Path $dir 'harvest-layout/Weld-Group-Design-Tool.xlsx'))
+    Assert-True ($wl.Sheet('Rect. Fillet Weld Group') -ne $null) 'one layout sheet per template sheet'
+    $cells = 0; foreach ($t in $wl.Tables) { $cells += $wl.TableRows($t.Name).Count }
+    Assert-Equal $cells ([int]$lay[1]['Cells']) 'the layout holds every cell the index counts'
+    Assert-Equal @($wb.Sheets | Where-Object { $_.Name -eq 'Layout' }).Count 0 'no Layout sheet in harvest.xlsx'
     $o = & $exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $script:CalcFlow 'CalcFlow.ps1') harvest -Templates $tdir -Out (Join-Path $script:Repo 'harvest.xlsx') 2>&1 | ForEach-Object { "$_" }
     Assert-Equal $LASTEXITCODE 2 'a harvest written into the repo is refused'
+}
+
+Test 'nested folders: a file name used twice takes its folder path as its id; an .xls is listed as skipped, not read' {
+    $root = Join-Path $dir 'nested'
+    $wg = Join-Path (Join-Path $root 'Welds') 'Group'; $pl = Join-Path $root 'Plates'
+    foreach ($sub in $wg, $pl) { New-Item -ItemType Directory -Force -Path $sub | Out-Null }
+    $a = Join-Path $wg 'mini.xlsx'; Copy-Item $mini $a
+    $b = Join-Path $pl 'mini.xlsx'; Copy-Item $mini $b
+    $old = Join-Path $root 'Legacy.xls'; [IO.File]::WriteAllBytes($old, [byte[]](0xD0, 0xCF, 0x11, 0xE0))
+    $h = [CalcFlow.Harvest]::Run([string[]]@($b, $a, $old), $root)
+    Assert-Equal (@($h.Templates | ForEach-Object { $_['Template'] }) -join ' ') 'Plates-mini Welds-Group-mini'
+    Assert-Equal $h.Skipped.Count 1
+    Assert-Equal $h.Skipped[0][0] 'Legacy.xls'
+    Assert-Match $h.Skipped[0][1] 'save it as \.xlsx'
+    Assert-Equal $h.Problems.Count 0
+    $out = Join-Path $root 'out/harvest.xlsx'
+    [CalcFlow.Harvest]::WriteWorkbook($h, $out) | Out-Null
+    Assert-Equal @([CalcFlow.Xlsx]::Read($out).TableRows('tblHarvestSkipped')).Count 1
+}
+
+Test 'a layout longer than a sheet holds is split into parts; a layout left from an earlier harvest is removed' {
+    $h = [CalcFlow.Harvest]::Run([string[]]@($mini), $dir)
+    $out = Join-Path $dir 'split/harvest.xlsx'
+    $keep = [CalcFlow.Harvest]::LayoutRowsPerSheet
+    try {
+        [CalcFlow.Harvest]::LayoutRowsPerSheet = 10
+        New-Item -ItemType Directory -Force -Path (Join-Path $dir 'split/harvest-layout') | Out-Null
+        $stale = Join-Path $dir 'split/harvest-layout/Gone.xlsx'; [IO.File]::WriteAllText($stale, 'x')
+        $written = [CalcFlow.Harvest]::WriteWorkbook($h, $out)
+    }
+    finally { [CalcFlow.Harvest]::LayoutRowsPerSheet = $keep }
+    Assert-Equal $written.Count 2
+    Assert-True (-not (Test-Path -LiteralPath $stale)) 'the stale layout is gone'
+    $wl = [CalcFlow.Xlsx]::Read($written[1])
+    $n = [int]@([CalcFlow.Xlsx]::Read($out).TableRows('tblHarvestLayouts'))[0]['Cells']
+    $parts = [int][Math]::Ceiling($n / 10.0)
+    Assert-Equal (@($wl.Sheets | ForEach-Object { $_.Name }) -join '|') ((@('Calc') + @(2..$parts | ForEach-Object { "Calc ($_)" })) -join '|')
+    $cells = 0; foreach ($t in $wl.Tables) { $c = $wl.TableRows($t.Name).Count; Assert-True ($c -le 10) $t.Name; $cells += $c }
+    Assert-Equal $cells $n
+}
+
+Test 'the Notes of a template with many notes stop after 20 and count the rest' {
+    $rows = '<sheetData>'
+    for ($i = 1; $i -le 25; $i++) { $rows += "<row r=`"$i`"><c r=`"A$i`"><f>Ext$i!A1*2</f></c></row>" }
+    $rows += '</sheetData>'
+    $many = Join-Path $dir 'many.xlsx'
+    New-MiniXlsx $many $rows ''
+    $notes = [CalcFlow.Harvest]::Run([string[]]@($many), $dir).Templates[0]['Notes']
+    Assert-Match $notes "sheet 'Ext20'"
+    Assert-True ($notes -notmatch "sheet 'Ext21'") 'the 21st note is not listed'
+    Assert-Match $notes 'and 5 more notes like these'
 }

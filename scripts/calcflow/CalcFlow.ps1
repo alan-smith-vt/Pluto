@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
-  CalcFlow: set up and plan the connection calcs from one STAAD analysis package (vault/calcflow/CalcFlow map.md).
+  CalcFlow: set up, plan and run the connection calcs from one STAAD analysis package (vault/calcflow/CalcFlow map.md).
 
 .DESCRIPTION
-  The verbs, in the order a project uses them (no Excel is needed for any of them):
+  The verbs, in the order a project uses them (only run calculates: with Excel where it is installed, else LibreOffice):
     harvest         learn each calc template's layout once: -Templates <folder or .xlsx files> [-Out harvest.xlsx]
                     -> harvest.xlsx with the drafted calc-library rows (Templates, Inputs, Outputs: inputs with their
                     guard labels and units, DCR / status / solver-check outputs) and every cell of every template
@@ -14,28 +14,46 @@
     register-new    a new connection register from a package: -Package <folder> -Library <folder> -Out <register.xlsx>
     plan            the dry run: -Package <folder> -Library <folder> -Register <register.xlsx> [-Templates <folder>]
                     -Out <folder>. Every cell of every calc resolved (plan.csv, cases.csv, demands.csv, calcs.csv) and
-                    every gap named (problems.csv)
+                    every gap named (problems.csv), and plan-manifest.txt (the sources it was made from)
+    run             calculates the plan's due calcs: -Plan <folder> [-Work <folder>] [-Rev R03] [-Engine auto|excel|
+                    libreoffice] [-All] [-Calc <ids>] [-Visible] [-KeepRun]. Due: never run, failed, inputs changed,
+                    a record missing, or a new revision (carried forward when its inputs are unchanged). Writes
+                    records\<rev>\<calc>\ (the calculated copy that governs each check, with its .calcflow.json),
+                    data\results\, data\calc-state.csv, then the summary. Refuses a plan whose sources changed.
+    summary         reports\Connection_Summary_<date>.xlsx from the plan and the last runs: -Plan <folder>
+                    [-Work <folder>] [-Register <register.xlsx>] [-Rev R03]
+  -Work defaults to the plan folder's parent, -Rev to the package folder's name.
   The package itself comes from Export-AnlFrame.ps1 (a STAAD .anl -> the package).
-  Exit code 0 = done with no errors; 1 = errors were listed (the files are still written so they can be read);
-  2 = bad arguments. Windows PowerShell 5.1 or PowerShell 7.
+  Exit code 0 = done with no errors; 1 = errors were listed, or a calc failed or was invalid (the files are still
+  written so they can be read); 2 = bad arguments. Windows PowerShell 5.1 or PowerShell 7.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 harvest -Templates "<templates folder>" -Out "<project dir>\calcflow\harvest.xlsx"
   powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 plan -Package "<project dir>\calcflow\package\MODEL-A\R03" -Library "<library folder>" -Register "<project dir>\Connection_Register.xlsx" -Out "<project dir>\calcflow\plan"
+  powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 run -Plan "<project dir>\calcflow\plan"
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory, Position = 0)][ValidateSet('harvest', 'library-new', 'library-export', 'register-new', 'plan')][string]$Verb,
+    [Parameter(Mandatory, Position = 0)][ValidateSet('harvest', 'library-new', 'library-export', 'register-new', 'plan', 'run', 'summary')][string]$Verb,
     [string[]]$Templates,
     [string]$Library,
     [string]$Harvest,
     [string]$Package,
     [string]$Register,
     [string]$Out,
-    [switch]$FromText
+    [switch]$FromText,
+    [string]$Plan,
+    [string]$Work,
+    [string]$Rev,
+    [ValidateSet('auto', 'excel', 'libreoffice')][string]$Engine = 'auto',
+    [switch]$All,
+    [string[]]$Calc,
+    [switch]$Visible,
+    [switch]$KeepRun
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Import-CalcFlow.ps1')
+. (Join-Path $PSScriptRoot 'Stage.ps1')
 Import-CalcFlowEngine
 
 function Get-CfFull([string]$Path) { return $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path) }
@@ -63,6 +81,61 @@ function Show-CfProblems($Problems, [string]$Indent = '') {
     }
 }
 
+# the plan, the library and the work folder of run / summary (the plan's manifest says where its sources are)
+function Open-CfPlan {
+    Need 'Plan' $Plan
+    $planDir = Get-CfFull $Plan
+    if (-not (Test-Path -LiteralPath (Join-Path $planDir 'calcs.csv'))) { Stop-CfArgs "Not a plan folder (no calcs.csv): $planDir" }
+    $set = [CalcFlow.PlanSet]::Load($planDir)
+    $workDir = if ($Work) { Get-CfFull $Work } else { Split-Path -Parent $planDir }
+    Assert-CfOutsideRepo $workDir
+    $libDir = $set.Source('library')
+    if (-not $libDir) { Stop-CfArgs "The plan has no plan-manifest.txt (made before CalcFlow ran calcs): run plan again." }
+    $lib = [CalcFlow.Library]::Load($libDir)
+    if ($lib.ErrorCount -gt 0) { Show-CfProblems $lib.Problems; Stop-CfArgs "The calc library has errors: fix them, run library-export, plan, then run." }
+    $r = if ($Rev) { $Rev } else { $set.DefaultRev }
+    return [pscustomobject]@{ Dir = $planDir; Set = $set; Work = $workDir; Library = $lib; Rev = $r }
+}
+
+function Write-CfSummary($P) {
+    $regPath = if ($Register) { Get-CfFull $Register } else { $P.Set.Source('register') }
+    if (-not $regPath -or -not (Test-Path -LiteralPath $regPath)) { Stop-CfArgs "No register to summarise against ($regPath): give -Register." }
+    $reg = [CalcFlow.Register]::Load($regPath)
+    $sum = [CalcFlow.Summary]::Build($P.Set, $P.Library, $reg, $P.Work, $P.Rev)
+    $path = [CalcFlow.Summary]::Write($sum, (Join-Path $P.Work 'reports'), $P.Dir)
+    Write-Host ("summary  {0}: {1} member ends -- {2} OK, {3} over the limit, {4} invalid, {5} failed, {6} not run, {7} gaps / blocked, {8} excluded" -f $path, $sum.Connections.Count,
+        $sum.Count('OK'), $sum.Count('Over limit'), $sum.Count('Invalid'), $sum.Count('Failed'), $sum.Count('Not run'), ($sum.Count('Gaps') + $sum.Count('Blocked')), $sum.Count('Excluded')) -ForegroundColor Green
+    return $sum
+}
+
+# the engine: Excel (through the Recalc-Workbooks stage, a Windows PowerShell 5.1 child) or LibreOffice
+function New-CfEngine([string]$WorkDir) {
+    $excel = $false
+    if (Test-CfWindows) { $excel = $null -ne [Type]::GetTypeFromProgID('Excel.Application') }
+    $why = ''
+    $pick = [CalcFlow.Engines]::Pick($Engine, $excel, [ref]$why)
+    if (-not $pick) { Stop-CfArgs $why }
+    $runDir = Join-Path $WorkDir 'run'
+    if ($pick -eq 'libreoffice') {
+        return New-Object CalcFlow.LibreOfficeEngine -ArgumentList @([CalcFlow.LibreOffice]::Find(), (Join-Path $runDir 'libreoffice-profile'))
+    }
+    $ver = ''
+    try { $ver = ((Get-ItemProperty -LiteralPath 'Registry::HKEY_CLASSES_ROOT\Excel.Application\CurVer').'(default)') -replace '^Excel\.Application\.', '' } catch { }
+    $script:StageDir = $runDir
+    $recalc = [Action[System.Collections.Generic.IList[string], string]] {
+        param($files, $outDir)
+        $r = Invoke-CfStage -Name 'Recalc-Workbooks' -Plan @{ Files = @($files); OutDir = $outDir; Visible = [bool]$Visible; SecondsPerFile = 300 } -WorkDir $script:StageDir -TimeoutSeconds 900
+        if ($r.Killed) { throw "Excel stopped answering while $($r.Step); it was stopped" }
+        if (-not $r.Result -or -not $r.Result.Ok) {
+            $msg = "exit code $($r.ExitCode)"
+            if ($r.Result -and $r.Result.Message) { $msg = $r.Result.Message }
+            throw "Excel could not calculate the batch: $msg"
+        }
+        foreach ($f in @($r.Result.Failed)) { if ($f) { Write-Host ("  [error] Excel: {0}: {1}" -f $f.File, $f.Message) -ForegroundColor Red } }
+    }
+    return New-Object CalcFlow.DelegateEngine -ArgumentList @('Excel', $ver, 50, $recalc)
+}
+
 switch ($Verb) {
     'harvest' {
         Need 'Templates' $Templates
@@ -72,7 +145,8 @@ switch ($Verb) {
             $full = Get-CfFull $t
             if (Test-Path -LiteralPath $full -PathType Container) {
                 if (-not $root) { $root = $full }
-                foreach ($f in Get-ChildItem -LiteralPath $full -Recurse -File -Include '*.xlsx', '*.xlsm' | Where-Object { $_.Name -notlike '~$*' } | Sort-Object FullName) { $files.Add($f.FullName) }
+                $patterns = '*.xlsx', '*.xlsm', '*.xltx', '*.xltm', '*.xls', '*.xlsb', '*.xlt'
+                foreach ($f in Get-ChildItem -LiteralPath $full -Recurse -File -Include $patterns | Where-Object { $_.Name -notlike '~$*' } | Sort-Object FullName) { $files.Add($f.FullName) }
             }
             elseif (Test-Path -LiteralPath $full -PathType Leaf) { $files.Add($full) }
             else { Stop-CfArgs "No such template file or folder: $t" }
@@ -82,9 +156,11 @@ switch ($Verb) {
         Assert-CfOutsideRepo $outPath
         $r = [CalcFlow.Harvest]::Run([string[]]$files.ToArray(), $root)
         foreach ($t in $r.Templates) { Write-Host ("template {0}  ({1})" -f $t['Template'], $t['File']); Write-Host ("         {0}" -f $t['Notes']) -ForegroundColor DarkGray }
+        foreach ($k in $r.Skipped) { Write-Host ("[skip ] {0}: {1}" -f $k[0], $k[1]) -ForegroundColor Yellow }
         foreach ($p in $r.Problems) { Write-Host "[error] $p" -ForegroundColor Red }
-        [CalcFlow.Harvest]::WriteWorkbook($r, $outPath)
-        Write-Host ("harvest  {0}: {1} inputs, {2} outputs, {3} layout cells" -f $outPath, $r.Inputs.Count, $r.Outputs.Count, $r.Layout.Count) -ForegroundColor Green
+        $written = [CalcFlow.Harvest]::WriteWorkbook($r, $outPath)
+        Write-Host ("harvest  {0}: {1} templates, {2} inputs, {3} outputs" -f $outPath, $r.Templates.Count, $r.Inputs.Count, $r.Outputs.Count) -ForegroundColor Green
+        Write-Host ("layouts  {0} cells in {1} workbook(s) in {2}" -f $r.Layout.Count, ($written.Count - 1), (Join-Path (Split-Path -Parent $outPath) 'harvest-layout'))
         if ($r.Problems.Count -gt 0) { exit 1 }
         exit 0
     }
@@ -154,6 +230,7 @@ switch ($Verb) {
         $sw = [Diagnostics.Stopwatch]::StartNew()
         $res = [CalcFlow.Planner]::Run($pkg, $lib, $reg, $tdir)
         $files = $res.Write($outPath)
+        [CalcFlow.PlanManifest]::Write($outPath, $pkg, $lib, $reg, $tdir)
         Write-Host ''
         Write-Host ("package  {0} ({1})" -f $pkg.Folder, $pkg.Source)
         Write-Host ("library  {0}: {1} templates, {2} types" -f $lib.Folder, $lib.Templates.Count, $lib.Types.Count)
@@ -163,6 +240,47 @@ switch ($Verb) {
         $color = if ($res.ErrorCount -gt 0) { 'Red' } else { 'Green' }
         Write-Host ("written  {0}: {1} errors, {2} warnings" -f $outPath, $res.ErrorCount, $res.WarningCount) -ForegroundColor $color
         if ($res.ErrorCount -gt 0) { exit 1 }
+        exit 0
+    }
+    'run' {
+        $P = Open-CfPlan
+        $stale = [CalcFlow.PlanManifest]::Stale($P.Dir)
+        if ($stale.Count -gt 0) {
+            foreach ($w in $stale) { Write-Host "[stale] $w" -ForegroundColor Red }
+            Stop-CfArgs 'The plan is out of date: run plan again, then run.'
+        }
+        $tdir = if ($Templates) { Get-CfFull $Templates[0] } else { $P.Set.Source('templates') }
+        $eng = New-CfEngine $P.Work
+        $jobs = [CalcFlow.CalcJob]::FromPlan($P.Set, $P.Library, $tdir)
+        $runner = New-Object CalcFlow.CalcRunner -ArgumentList @($P.Work, $P.Rev, $P.Set.Source('package'))
+        $runner.KeepRunFolder = [bool]$KeepRun
+        $runner.Log = [Action[string]] { param($m) Write-Host "  $m" }
+        $calcs = New-Object 'System.Collections.Generic.List[string]'
+        foreach ($c in @($Calc)) { if ($c) { $calcs.Add($c) } }
+        $due = $runner.Due($jobs, [bool]$All, $calcs)
+        Write-Host ''
+        Write-Host ("plan     {0}: {1} calc steps ready, {2} due (rev {3})" -f $P.Dir, $jobs.Count, $due.Count, $P.Rev)
+        foreach ($g in @($due | Group-Object Due)) { Write-Host ("         {0}: {1}" -f $g.Name, $g.Count) -ForegroundColor DarkGray }
+        Write-Host ("engine   {0} {1}" -f $eng.Name, $eng.Version)
+        $bad = 0
+        if ($due.Count -gt 0) {
+            $s = $runner.Run($eng, $due)
+            foreach ($m in $s.Messages) { Write-Host "  [error] $m" -ForegroundColor Red }
+            $color = if ($s.Failed -gt 0 -or $s.Invalid -gt 0) { 'Red' } else { 'Green' }
+            Write-Host ("run      {0} calc steps: {1} OK, {2} invalid, {3} failed, {4} carried forward; {5} cases in {6} workbooks ({7:0.0} s)" -f $s.Jobs, $s.Ok, $s.Invalid, $s.Failed, $s.Carried, $s.Cases, $s.Evaluations, $s.Seconds) -ForegroundColor $color
+            $bad = $s.Failed + $s.Invalid
+        }
+        else { Write-Host 'run      every calc step is up to date (-All runs them again)' -ForegroundColor Green }
+        [void](Write-CfSummary $P)
+        if ($bad -gt 0) { exit 1 }
+        exit 0
+    }
+    'summary' {
+        $P = Open-CfPlan
+        $stale = [CalcFlow.PlanManifest]::Stale($P.Dir)
+        foreach ($w in $stale) { Write-Host "[stale] $w (the summary shows the plan as it was)" -ForegroundColor Yellow }
+        $sum = Write-CfSummary $P
+        if (($sum.Count('Failed') + $sum.Count('Invalid')) -gt 0) { exit 1 }
         exit 0
     }
 }

@@ -29,7 +29,7 @@ The instinct is right: it should be a table, not code. But one workbook would mi
 | Layer | Changes when | Who edits it | Form |
 |---|---|---|---|
 | **Calc library** | a template is revised, or the company standard changes | the template owner, the lead engineer | `CalcFlow_Library.xlsx`, edited in Excel. `library export` writes the canonical text (one sorted CSV per table), which is what the tool runs from and what a review diffs. The tool refuses to run when the workbook differs from its last export. A project pins a copy. |
-| **Connection register** | every model revision | the project engineer | `Connection_Register.xlsx`, one row per connection, like pipe-review's support register. Blue columns are typed by the engineer; grey columns are written by the tool, through Excel. |
+| **Connection register** | every model revision | the project engineer | `Connection_Register.xlsx`, one row per connection, like pipe-review's support register. The engineer types into the pale yellow cells (gold headers); the tool writes the charcoal columns, through Excel. |
 | **Analysis package** | every STAAD run | nobody: it is generated | one folder per model and revision, written from the `.anl` (step 1) |
 | **Machine config** | rarely | the user | `calcflow.psd1`: paths and timeouts only. Engineering settings go on the register's Settings tab, where they are seen and hashed. |
 
@@ -74,7 +74,7 @@ From these, the tool works out:
 > 5. **Typical groups.** One calc runs on the envelope of a group of like connections, and the status is still kept per connection. The architect's estimate for 800 connections × 2.5 steps × 150 combinations is about 17 h with every combination through every calc, and about 25 min with concurrent envelopes on about 100 groups. The seconds per case are to be measured in Phase 3.
 > 6. **The `plan` dry run.** Every cell is resolved and every gap is named, with no Excel needed.
 > 7. **Rerun only what changed.** pipe-review's design revs (`R03`, `R03+1`), input hashes (exactly what the calc consumes), recheck rules and status ladder do this.
-> 8. **Rule-based typing.** A joint-index rule proposes a grey Suggested Type and the engineer confirms it. A **viewer overlay** shows the connections by status (sidecar glyphs at the member ends).
+> 8. **Rule-based typing.** A joint-index rule proposes a tool-written Suggested Type and the engineer confirms it. A **viewer overlay** shows the connections by status (sidecar glyphs at the member ends).
 
 > [!info]- Considered and not chosen
 > - **One flat configuration sheet.** The template maps, the company recipes and the project's assignments change at different times, and one sheet would make every edit a merge.
@@ -108,13 +108,15 @@ From these, the tool works out:
 
 > [!info]- The connection register (spec sketch, Phase 2)
 > - **`tblConnections`.**
->   - Blue: Conn Id, Node, Ends (`support=M-12:B; beam=M-40:A`), Type, Group, Disposition, Comment.
->   - Grey: Suggested Type, Suggested Group, Status, Status Detail, Max DCR, Governing Check, Combo, Design Rev, Records.
+>   - The engineer's: Conn Id, Node, Ends (`support=M-12:B; beam=M-40:A`), Type, Group, Disposition, Comment.
+>   - The tool's: Suggested Type, Suggested Group, Status, Status Detail, Max DCR, Governing Check, Combo, Design Rev, Records.
 > - **`tblOverrides`** is a long table (Conn Id, Param, Value, Note), checked against the type's parameters.
 > - **The other tables:** `tblGroups`, `tblCombos` (the combinations in scope, with their basis), `tblSettings` (DCR limit, tolerances), `tblDispositions`.
 > - **Instance key:** `Node|Member:End`, or `Node` alone for a base plate. A renumbered model is re-matched by position and direction, and reported as renumbered.
 
-> [!info]- Running a locked workbook (spec sketch, Phase 3)
+> [!info]- Running a locked workbook (the Phase 3 sketch; as built: [[vault/calcflow/calcflow-calc-stage|calcflow-calc-stage]])
+> **As built (2026-11-23)** the cells are written into copies at the XML level, and Excel or LibreOffice only recalculates and saves them. The record is the calculated copy the governing DCR was read from, one per check, in `records\<rev>\<calc>\` ([[vault/decisions/2026-11-23-calcflow-engines|2026-11-23-calcflow-engines]]). The sketch below was the starting point.
+>
 > **The case loop** runs in a child Windows PowerShell 5.1 (STA) process with heartbeats and deadlines (`scripts/calcflow/Stage.ps1`, from pipe-review). A hung Excel is stopped, never one the engineer has open.
 > 1. Check the template's hash and copy it.
 > 2. Open the copy with alerts, events and macros off, and calculation manual.
@@ -140,7 +142,7 @@ From these, the tool works out:
 | 0 | this note, the decision | done 2026-11-06 |
 | **1** | **the STAAD frame reader and the analysis package** ([[vault/calcflow/calcflow-staad-frame-reader|calcflow-staad-frame-reader]]) | built and tested on a made-up fixture (2026-11-06). Still to do: one real `.anl` on the production machine, with five end forces spot-checked against STAAD. |
 | **2** | **the calc library (Excel + text export), `harvest`, the register, `plan`** ([[vault/calcflow/calcflow-calc-library\|calcflow-calc-library]], [[vault/calcflow/calcflow-connection-register\|calcflow-connection-register]]) | **built 2026-11-06**: `plan` resolves every input of three connection types on the fixture project (4 calcs, 0 errors) and names every gap. Still to do: harvest the real templates on the production machine, and a 5.1 run |
-| 3 | the Excel stage (case loop, case tables, record copies), reading the plan as it is; the **DCR summary per member end with a joint rollup** | the loop's DCRs equal a fixture's closed form; the governing case reproduces; a hung Excel is stopped; seconds per case measured |
+| **3** | **the calc stage (`run`: Excel or LibreOffice, case tables, a record per check per revision) and the DCR summary per member end with a joint rollup (`summary`)** ([[vault/calcflow/calcflow-calc-stage\|calcflow-calc-stage]]) | **built 2026-11-23**: LibreOffice calculates the fixture project (5 steps OK, about 10 s), its base plate and rectangular weld records agree with EngCalc's Python references to about 1e-15, and the summary gives every status. Still to do: `Excel.Tests.ps1` on the production machine, one real template through both engines, seconds per case on a real model |
 | 4 | statuses, design revs, reports | a two-revision fixture (a load rise, a sign flip, a new joint) gives the expected status table |
 | 5 | typing rules, the viewer overlay | every fixture joint gets the expected suggestion; the sidecar keeps the user's groups |
 | 6 | groups, the combination pre-filter with its audit | `governing_set` reproduces `per_combo`'s governing DCR on a 200-combination fixture |

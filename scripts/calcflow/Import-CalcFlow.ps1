@@ -19,7 +19,7 @@ function Import-CalcFlowEngine {
     }
     else {
         Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem
-        $refs = @('System.IO.Compression', 'System.IO.Compression.FileSystem', 'System.Xml', 'System.Core')
+        $refs = @('System.IO.Compression', 'System.IO.Compression.FileSystem', 'System.Xml', 'System.Xml.Linq', 'System.Core')
         Add-Type -Path $files -ReferencedAssemblies $refs -ErrorAction Stop
     }
 }

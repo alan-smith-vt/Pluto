@@ -26,6 +26,7 @@ namespace CalcFlow
         public readonly List<Dictionary<string, string>> Outputs = new List<Dictionary<string, string>>();
         public readonly List<Dictionary<string, string>> Layout = new List<Dictionary<string, string>>();
         public readonly List<string> Problems = new List<string>();
+        public readonly List<string[]> Skipped = new List<string[]>();     // file, why (an .xls / .xlsb harvest cannot read)
     }
 
     public static class Harvest
@@ -37,20 +38,43 @@ namespace CalcFlow
         static readonly Regex StatusFormula = new Regex("(?i)\"\\s*(OK|PASS|N\\.?G\\.?|FAIL|NOT OK)\\s*\"");
 
         // templatesDir: the folder File is written relative to ("" = file names only)
+        // file formats harvest reads (Office Open XML workbooks and templates) and the old ones it lists as skipped
+        public static readonly string[] Readable = { ".xlsx", ".xlsm", ".xltx", ".xltm" };
+        public static readonly string[] Unreadable = { ".xls", ".xlsb", ".xlt" };
+
         public static HarvestResult Run(IEnumerable<string> paths, string templatesDir)
         {
             var res = new HarvestResult();
-            var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var list = new List<string>();
             foreach (string p in paths)
+            {
+                string ext = Path.GetExtension(p).ToLowerInvariant();
+                if (Unreadable.Contains(ext)) { res.Skipped.Add(new[] { Relative(Path.GetFullPath(p), templatesDir), "an " + ext + " workbook: save it as .xlsx (or .xlsm) beside it, then harvest again" }); continue; }
+                list.Add(p);
+            }
+            // a template's id is its file name; where file names repeat (nested folders), its path below the folder
+            var byName = list.GroupBy(p => IdOf(p), StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+            var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (string p in list)
             {
                 TemplateBook b;
                 try { b = TemplateBook.Open(p); }
                 catch (Exception ex) { res.Problems.Add(Path.GetFileName(p) + ": " + ex.Message); continue; }
-                string id = IdOf(p);
-                for (int n = 2; !ids.Add(id); n++) id = IdOf(p) + "-" + n.ToString(CultureInfo.InvariantCulture);
-                One(b, id, Relative(b.Path, templatesDir), res);
+                string rel = Relative(b.Path, templatesDir);
+                string id = byName[IdOf(p)] > 1 ? IdOfRelative(rel) : IdOf(p);
+                string first = id;
+                for (int n = 2; !ids.Add(id); n++) id = first + "-" + n.ToString(CultureInfo.InvariantCulture);
+                One(b, id, rel, res);
             }
             return res;
+        }
+
+        // "Welds/Group/WG-1.xlsx" -> "Welds-Group-WG-1"
+        public static string IdOfRelative(string rel)
+        {
+            string noExt = rel.Substring(0, rel.Length - Path.GetExtension(rel).Length);
+            string s = Regex.Replace(noExt.Replace('\\', '/').Replace('/', '-'), @"[^A-Za-z0-9_\-]+", "-").Trim('-');
+            return s.Length == 0 ? "template" : s;
         }
 
         public static string IdOf(string path)
@@ -161,7 +185,8 @@ namespace CalcFlow
             notes.Add(nIn + " inputs and " + nOut + " outputs drafted by harvest; fill in the bindings");
             if (protectedSheets.Count > 0) notes.Add("protected sheets: " + string.Join(", ", protectedSheets.ToArray()));
             if (b.Tables.Count > 0) notes.Add("tables: " + string.Join(", ", b.Tables.Select(t => t.Name).ToArray()) + " (a case table? set Shape and MaxCases)");
-            notes.AddRange(b.Notes);
+            notes.AddRange(b.Notes.Take(20));
+            if (b.Notes.Count > 20) notes.Add("and " + (b.Notes.Count - 20) + " more notes like these");
             tr["Notes"] = string.Join("; ", notes.ToArray());
             res.Templates.Add(tr);
         }
@@ -294,16 +319,90 @@ namespace CalcFlow
             return null;
         }
 
+        // a sheet of a layout workbook holds at most this many cells (Excel holds 1,048,576 rows; the rest are split off)
+        public static int LayoutRowsPerSheet = 1000000;
+
         // harvest.xlsx: the drafts as tables with the calc library's columns (paste them into the library, or start a
-        // library from them), and the whole layout
-        public static void WriteWorkbook(HarvestResult r, string path)
+        // library from them) and an index of the layouts; every template's layout in harvest-layout\<Template>.xlsx beside
+        // it, one sheet per template sheet (split when longer than a sheet holds). Returns the files written.
+        public static string[] WriteWorkbook(HarvestResult r, string path)
         {
-            var sheets = new List<XOutSheet>();
-            sheets.Add(WorkbookTables.Sheet("Templates", "tblHarvestTemplates", LibrarySchema.TemplateColumns, r.Templates, "templates found"));
-            sheets.Add(WorkbookTables.Sheet("Inputs", "tblHarvestInputs", LibrarySchema.InputColumns, r.Inputs, "fill in Binding for every input the calc needs; delete the rest"));
-            sheets.Add(WorkbookTables.Sheet("Outputs", "tblHarvestOutputs", LibrarySchema.OutputColumns, r.Outputs, "keep the DCRs and checks to read back; set Check and, for solver checks, Kind health and Expect"));
-            sheets.Add(WorkbookTables.Sheet("Layout", "tblHarvestLayout", LayoutColumns, r.Layout, "every cell of every template, as harvest read it"));
-            XlsxWriter.Write(path, sheets, null);
+            var written = new List<string>();
+            string layoutDir = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(path)), "harvest-layout");
+            var index = new List<Dictionary<string, string>>();
+            foreach (var t in r.Templates)
+            {
+                string id = t["Template"];
+                var rows = r.Layout.Where(x => x["Template"] == id).ToList();
+                var sheets = new List<XOutSheet>();
+                var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                int k = 0;
+                foreach (var g in rows.GroupBy(x => x["Sheet"]))
+                {
+                    var all = g.ToList();
+                    for (int part = 0; part * LayoutRowsPerSheet < all.Count || (part == 0 && all.Count == 0); part++)
+                    {
+                        var chunk = all.Skip(part * LayoutRowsPerSheet).Take(LayoutRowsPerSheet).ToList();
+                        string suffix = part == 0 ? "" : " (" + (part + 1).ToString(CultureInfo.InvariantCulture) + ")";
+                        string name = SheetName(g.Key, suffix, names);
+                        k++;
+                        XOutSheet s = WorkbookTables.Sheet(name, "tblLayout" + k.ToString(CultureInfo.InvariantCulture), LayoutColumns, chunk,
+                            "template " + id + ", sheet " + g.Key + (part > 0 ? " (part " + (part + 1) + ")" : "") + ": every cell as harvest read it",
+                            c => Palette.KindOf("tblLayout", c));
+                        Library.Highlights(s, "tblLayout", LayoutColumns, chunk.Count);
+                        sheets.Add(s);
+                    }
+                }
+                string file = Path.Combine(layoutDir, SafeFile(id) + ".xlsx");
+                var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                d["Template"] = id; d["File"] = "harvest-layout/" + SafeFile(id) + ".xlsx";
+                d["Sheets"] = string.Join(", ", rows.Select(x => x["Sheet"]).Distinct().ToArray());
+                d["Cells"] = rows.Count.ToString(CultureInfo.InvariantCulture);
+                d["Inputs"] = r.Inputs.Count(x => x["Template"] == id).ToString(CultureInfo.InvariantCulture);
+                d["Outputs"] = r.Outputs.Count(x => x["Template"] == id).ToString(CultureInfo.InvariantCulture);
+                index.Add(d);
+                if (sheets.Count == 0) continue;
+                Directory.CreateDirectory(layoutDir);
+                XlsxWriter.Write(file, sheets, null);
+                written.Add(file);
+            }
+            var book = new List<XOutSheet>();
+            book.Add(WorkbookTables.Sheet("Templates", "tblHarvestTemplates", LibrarySchema.TemplateColumns, r.Templates, "templates found"));
+            XOutSheet ins = WorkbookTables.Sheet("Inputs", "tblHarvestInputs", LibrarySchema.InputColumns, r.Inputs, "fill in Binding for every input the calc needs; delete the rest");
+            book.Add(ins);
+            XOutSheet outs = WorkbookTables.Sheet("Outputs", "tblHarvestOutputs", LibrarySchema.OutputColumns, r.Outputs, "keep the DCRs and checks to read back; set Check and, for solver checks, Kind health and Expect");
+            Library.Highlights(outs, "tblOutputs", LibrarySchema.OutputColumns, r.Outputs.Count);
+            book.Add(outs);
+            book.Add(WorkbookTables.Sheet("Layouts", "tblHarvestLayouts", new[] { "Template", "File", "Sheets", "Cells", "Inputs", "Outputs" }, index,
+                "each template's cells, one workbook per template beside this one (harvest-layout)"));
+            if (r.Skipped.Count > 0)
+            {
+                var sk = r.Skipped.Select(x => { var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); d["File"] = x[0]; d["Why"] = x[1]; return d; }).ToList();
+                book.Add(WorkbookTables.Sheet("Skipped", "tblHarvestSkipped", new[] { "File", "Why" }, sk, "files harvest could not read", c => c == "File" ? ColumnKind.Key : ColumnKind.Reference));
+            }
+            XlsxWriter.Write(path, book, null);
+            // a layout left from an earlier harvest of a template no longer there would read as current: it goes
+            if (Directory.Exists(layoutDir))
+                foreach (string old in Directory.GetFiles(layoutDir, "*.xlsx"))
+                    if (!written.Contains(old, StringComparer.OrdinalIgnoreCase)) File.Delete(old);
+            written.Insert(0, Path.GetFullPath(path));
+            return written.ToArray();
         }
+
+        // a sheet name Excel takes (31 characters, none of : \ / ? * [ ]), unique in the workbook
+        static string SheetName(string name, string suffix, HashSet<string> used)
+        {
+            string b = Regex.Replace(name ?? "", @"[:\\/?*\[\]]", "_").Trim();
+            if (b.Length == 0) b = "Sheet";
+            string n = (b.Length + suffix.Length > 31 ? b.Substring(0, 31 - suffix.Length) : b) + suffix;
+            for (int i = 2; !used.Add(n); i++)
+            {
+                string x = " " + i.ToString(CultureInfo.InvariantCulture);
+                n = (b.Length + suffix.Length + x.Length > 31 ? b.Substring(0, 31 - suffix.Length - x.Length) : b) + suffix + x;
+            }
+            return n;
+        }
+
+        static string SafeFile(string id) { return Regex.Replace(id, @"[^A-Za-z0-9_\-]+", "-"); }
     }
 }

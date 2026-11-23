@@ -46,7 +46,15 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 library-e
 >   - a named cell that reads as a solver check (converged, singular).
 > - **Guard:** each row's nearest text to the left (else just above). The unit is taken from the label's brackets (`wleg (in.)` → in).
 >
-> **What it writes:** `harvest.xlsx`, with its tables in the library's columns (so rows paste straight in, or `library-new -Harvest` starts a library from them), plus a **Layout** table of every cell for reading the template by eye.
+> **What it writes** (changed 2026-11-23, after Excel repaired the first real harvest: a single Layout sheet of every cell of every template can pass Excel's 1,048,576 rows):
+> - **`harvest.xlsx`:** Templates, Inputs and Outputs, with their tables in the library's columns (so rows paste straight in, or `library-new -Harvest` starts a library from them). Plus **Layouts**, an index of the layout workbooks, and **Skipped**, the files it could not read.
+> - **`harvest-layout\<Template>.xlsx`** beside it: every cell of one template, for reading it by eye. There is one sheet per template sheet, split into "Name (2)" and so on past 1,000,000 rows. A layout left from an earlier harvest of a template no longer there is removed.
+> - **The writer keeps to Excel's limits** (the copied pipe-review writer did not): more than 1,048,576 rows or 16,384 columns is refused before anything is written, and text over 32,767 characters is cut with "[... N more characters]". A template's Notes list its first 20 range notes and count the rest.
+>
+> **Templates in nested folders:** give the top folder (`-Templates "<templates folder>"`); harvest reads every `.xlsx`, `.xlsm`, `.xltx` and `.xltm` below it, and skips Excel's `~$` lock files.
+> - A file name used in two folders takes its folder path as its id (`Welds\Group\WG-1.xlsx` → `Welds-Group-WG-1`).
+> - An `.xls`, `.xlsb` or `.xlt` is listed as skipped: save it as `.xlsx` (or `.xlsm`) beside it and harvest again.
+> - A multi-tab tool is still one workbook; split it into one Template id per tab in the library.
 >
 > **On the generic templates:**
 > - the weld tool's rectangular tab gives exactly its 22 inputs (16 geometry and material cells, 6 loads) and its 3 DCRs;
@@ -72,7 +80,12 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 library-e
 > | `tblSections` | Section, Prop, Value, Unit, Notes | For `fn:prop(slot, prop)`. |
 >
 > **The round trip:**
-> - The workbook is edited in Excel (blue headers are filled in by a person; grey ones are harvest's notes). A Guide sheet lists the bindings, units, demand modes and the sign rules.
+> - The workbook is edited in Excel. A Guide sheet lists the bindings, units, demand modes, the sign rules and the colours.
+>   - **Gold headers over pale yellow cells** are filled in by a person.
+>   - **Navy headers** are the keys.
+>   - **Teal headers** are harvest's findings and notes.
+>   - **Charcoal headers** are the tool's.
+>   - An output's Kind is coloured too: dcr green, health orange, status blue.
 > - `library-export` writes one CSV per table (the schema's columns first, extras kept, rows sorted by key), plus `text\_source.txt` with the workbook's SHA-256.
 > - **The tool runs from the text and refuses a workbook that differs from its last export.**
 > - `library-new -FromText` rebuilds a workbook from the text. Tested: a round trip gives the text back byte for byte.

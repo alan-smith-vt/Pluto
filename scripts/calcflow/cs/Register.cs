@@ -1,8 +1,9 @@
 // Register.cs -- the connection register (Connection_Register.xlsx), the one workbook the engineer edits per project:
-//   tblConnections  one row per member end at a joint (the key: Node, Member, End). Blue: Type (the connection type
-//                   from the calc library; blank = no calc), Support (the member it frames into: the type's "support"
-//                   slot), Other (more slots, "brace=12:A; gusset=30"), Group (connections that share one calc, on
-//                   their envelope), Disposition, Comment. Grey: what the tool writes (role, section, status, DCRs).
+//   tblConnections  one row per member end at a joint (the key: Node, Member, End). The engineer's (gold headers,
+//                   pale yellow cells): Type (the connection type from the calc library; blank = no calc), Support (the
+//                   member it frames into: the type's "support" slot), Other (more slots, "brace=12:A; gusset=30"),
+//                   Group (connections that share one calc, on their envelope), Disposition, Comment. Teal: found in
+//                   the model (role, section). Charcoal: what the tool writes (status, DCRs).
 //   tblOverrides    Connection (or a Group), Step (blank = every step), Param, Value: a parameter for one connection
 //   tblCombos       the load cases in scope: Use Y / N, Basis LRFD / ASD (seeded from the package)
 //   tblSettings     DcrLimit, GoverningK ...
@@ -192,8 +193,8 @@ namespace CalcFlow
             if (File.Exists(path)) throw new IOException("The register " + path + " exists: it is the engineer's file and is never overwritten. Choose another name.");
             var sheets = new List<XOutSheet>();
             XOutSheet cs = WorkbookTables.Sheet("Connections", "tblConnections", RegisterSchema.ConnectionColumns, conns,
-                "one row per member end at a joint. Type: the connection type (blank = no calc). Support: the member it frames into. Group: connections that share one calc. Blue columns are yours; the tool writes the grey ones.",
-                c => RegisterSchema.ConnectionInputs.Contains(c));
+                "one row per member end at a joint. Type: the connection type (blank = no calc). Support: the member it frames into. Group: connections that share one calc. Gold headers over pale yellow cells are yours; teal ones are found in the model; the tool writes the charcoal ones.",
+                c => Palette.KindOf("tblConnections", c));
             int last = conns.Count + 2 + 1000;
             Action<XOutSheet, string[], string, string> list = (sh, cols, col, values) =>
             {
@@ -209,12 +210,12 @@ namespace CalcFlow
             cs.FreezeCols = 4;
             sheets.Add(cs);
             sheets.Add(WorkbookTables.Sheet("Overrides", "tblOverrides", RegisterSchema.OverrideColumns, overrides,
-                "a parameter for one connection or a Group (Step blank = every step); it wins over the type's default in the calc library", c => true));
+                "a parameter for one connection or a Group (Step blank = every step); it wins over the type's default in the calc library", c => ColumnKind.Input));
             XOutSheet cb = WorkbookTables.Sheet("Combos", "tblCombos", RegisterSchema.ComboColumns, combos,
-                "the load cases the calcs take: Use Y / N; Basis LRFD / ASD (a template with a Basis takes only its own)", c => RegisterSchema.ComboInputs.Contains(c));
+                "the load cases the calcs take: Use Y / N; Basis LRFD / ASD (a template with a Basis takes only its own)", c => Palette.KindOf("tblCombos", c));
             list(cb, RegisterSchema.ComboColumns, "Use", "\"Y,N\""); list(cb, RegisterSchema.ComboColumns, "Basis", "\"LRFD,ASD\"");
             sheets.Add(cb);
-            sheets.Add(WorkbookTables.Sheet("Settings", "tblSettings", RegisterSchema.SettingColumns, settings, "project settings", c => c != "Notes"));
+            sheets.Add(WorkbookTables.Sheet("Settings", "tblSettings", RegisterSchema.SettingColumns, settings, "project settings", c => Palette.KindOf("tblSettings", c)));
             XlsxWriter.Write(path, sheets, null);
         }
     }
