@@ -1,0 +1,1272 @@
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
+
+// StdToFrame  --  a STAAD.Pro input file Pluto wrote (Build-Frame -Std) read back as a frame model, for Build-Frame -In
+// <x>.std (2026-11-23; vault/format/frame-to-staad.md). The inverse of FrameStd, over the .anl reader's own STAAD input
+// parser (StaadInput, scripts/lib/readers/ANLReader.cs). STAAD's commands are the model, so an edit made in STAAD comes
+// back; the comments FrameStd writes give back what STAAD has no place for: SAP's labels, its section, material and group
+// names, a table section's SAP row, the SAP version and units. Exact or refused: a command the frame model cannot hold
+// exactly, or one FrameStd does not write, refuses the file, every item named. The model is written as .s2k text and read
+// by FrameS2k, as PipeToFrame's seed is.
+//   axes        STAAD (X, Y, Z) is SAP (X, -Z, Y); a member's BETA becomes its SAP local axis angle
+//   sections    PRIS: a General section with SAP's analysis properties (AY / AZ absent: shear areas 0); TABLE ST: the SAP
+//               row in the comment above it (SAP cannot rebuild a catalog section from its name). The same SAP section
+//               with other numbers (its frames' modifiers, which FrameStd folds in) gets them back as frame modifiers
+//   materials   each STAAD material a SAP material (Steel with TYPE STEEL, else Other); one FrameStd made for a weight
+//               modifier (NAME_W1) stays a material of its own, with its unit weight
+//   offsets     along the member: end lengths (rigid); across it, the same at both ends: joint offsets (local)
+//   supports    global: restraints and springs; INCLINED: the joint's local axes from STAAD's (its BETA-0 axes along the
+//               vector); ENFORCED: restraints (a support displacement needs them)
+//   trusses     linear two-joint links, U1 = E AX / L (the header's EA / L when it agrees)
+//   loads       reference loads -> load patterns (self weight on rigid end zones, which FrameStd adds as joint loads, taken
+//               off again: SAP's self weight covers them); primary loads -> linear static cases, P-Delta (nonlinear, from
+//               zero) under a PDELTA analysis; a primary load's own loads and support displacements -> a pattern of its
+//               own; combinations -> Linear Add, SRSS, Abs Add
+// C# 5 (prefix StdToFrame).
+
+public sealed class StdToFrameRefusal : Exception
+{
+    public readonly List<string> Items;
+    public StdToFrameRefusal(List<string> items) : base(Text(items)) { Items = items; }
+    static string Text(List<string> items)
+    {
+        return "the frame model cannot hold this .std exactly (" + items.Count.ToString(CultureInfo.InvariantCulture) + " item" + (items.Count == 1 ? "" : "s") + "): " +
+               string.Join(" | ", items.ToArray());
+    }
+}
+
+public static class StdToFrame
+{
+    // the frame model of a .std (its source the generated .s2k text); notes gets every notice; sapVersion (null: the
+    // header's, else 22.0.0) stamps it; throws StdToFrameRefusal with every refusal
+    public static FrameModel Read(string path, string sapVersion, List<string> notes)
+    {
+        return FrameS2k.Read(S2kDoc.ParseText(Text(path, sapVersion, notes)));
+    }
+
+    public static string Text(string path, string sapVersion, List<string> notes)
+    {
+        return new Reader(StaadInput.Read(path), sapVersion, notes ?? new List<string>()).Run();
+    }
+
+    // the commands of two .std texts as STAAD reads them (comments, layout and STAAD's job information aside: continuation
+    // lines joined, ";" separating, spaces single): null when they are the same, in order; else the first differences,
+    // at most max
+    public static List<string> Differences(string file, string back, int max)
+    {
+        List<string> a = Commands(file), b = Commands(back);
+        if (a.SequenceEqual(b)) return null;
+        var o = new List<string>();
+        var left = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var x in b) { int n; left.TryGetValue(x, out n); left[x] = n + 1; }
+        foreach (var x in a)
+        {
+            int n; left.TryGetValue(x, out n);
+            if (n > 0) left[x] = n - 1;
+            else if (o.Count < max) o.Add("only in the file: " + x);
+        }
+        foreach (var x in b) { int n; if (left.TryGetValue(x, out n) && n > 0) { left[x] = n - 1; if (o.Count < max) o.Add("only written back: " + x); } }
+        if (o.Count == 0)
+        {
+            int k = 0;
+            while (k < a.Count && k < b.Count && a[k] == b[k]) k++;
+            o.Add("the same commands in another order, from: " + (k < a.Count ? a[k] : "(the end)"));
+        }
+        return o;
+    }
+
+    static List<string> Commands(string text)
+    {
+        var o = new List<string>();
+        var open = new StringBuilder();
+        bool job = false;
+        foreach (string raw in text.Replace("\r", "").Split('\n'))
+        {
+            string line = raw.Trim();
+            if (line.Length == 0 || line[0] == '*') continue;
+            if (Is(line, "START JOB INFORMATION")) { job = true; continue; }
+            if (job) { if (Is(line, "END JOB INFORMATION")) job = false; continue; }
+            string[] parts = line.Split(';');
+            for (int k = 0; k < parts.Length; k++)
+            {
+                string p = parts[k].Trim();
+                if (k == parts.Length - 1 && p.EndsWith("-")) { open.Append(p.Substring(0, p.Length - 1)).Append(' '); continue; }
+                string c = Regex.Replace((open.ToString() + p).Trim(), @"\s+", " ");
+                open.Clear();
+                if (c.Length > 0) o.Add(c);
+            }
+        }
+        return o;
+    }
+
+    // ---------------- vectors (STAAD coordinates unless named)
+
+    static double[] Rinv(double[] v) { return new[] { v[0] + 0.0, -v[2] + 0.0, v[1] + 0.0 }; }   // STAAD global -> SAP global
+    static double[] Sub(double[] a, double[] b) { return new[] { a[0] - b[0], a[1] - b[1], a[2] - b[2] }; }
+    static double[] Add(double[] a, double[] b) { return new[] { a[0] + b[0], a[1] + b[1], a[2] + b[2] }; }
+    static double[] Mul(double[] a, double s) { return new[] { a[0] * s, a[1] * s, a[2] * s }; }
+    static double Dot(double[] a, double[] b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+    static double Len(double[] a) { return Math.Sqrt(Dot(a, a)); }
+    static double[] Unit(double[] a) { double l = Len(a); return l < 1e-300 ? new double[3] : Mul(a, 1 / l); }
+    static double[] Cross(double[] a, double[] b) { return new[] { a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0] }; }
+
+    // an angle in degrees: within 1e-7 of a whole degree snapped to it, in (-180, 180]
+    static double Snap(double deg)
+    {
+        double r = Math.Round(deg);
+        if (Math.Abs(deg - r) < 1e-7) deg = r;
+        if (deg <= -180 + 1e-9) deg += 360;
+        if (deg > 180 + 1e-9) deg -= 360;
+        return deg == 0 ? 0 : deg;
+    }
+
+    // SAP's joint angles A B C (local axes the columns of Rz(A) Ry(B) Rx(C)) for local axes a1 a2 a3 (SAP coordinates)
+    static double[] Euler(double[] a1, double[] a2, double[] a3)
+    {
+        double sb = Math.Max(-1, Math.Min(1, -a1[2]));
+        double b = Math.Asin(sb), cb = Math.Cos(b), a, c;
+        if (Math.Abs(cb) > 1e-9) { a = Math.Atan2(a1[1], a1[0]); c = Math.Atan2(a2[2], a3[2]); }
+        else { a = 0; c = Math.Atan2(sb * a2[0], a2[1]); }
+        return new[] { Snap(a * 180 / Math.PI), Snap(b * 180 / Math.PI), Snap(c * 180 / Math.PI) };
+    }
+
+    static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+    static string F(double v) { return FrameModel.Fmt(v == 0 ? 0 : v); }
+
+    // the shortest number whose STAAD form (to, printed as FrameStd prints it) is the file's: SAP gets a spring of 1000 per
+    // radian, not the 999.99999999752 that STAAD's 17.4532925199 per degree multiplies out to; it writes back the same
+    static double Shortest(double v, Func<double, double> to, double written)
+    {
+        string w = FrameStd.N(written);
+        for (int k = 1; k <= 15; k++)
+        {
+            double c = double.Parse(v.ToString("G" + k.ToString(Inv), Inv), Inv);
+            if (FrameStd.N(to(c)) == w) return c;
+        }
+        return v;
+    }
+    static double Round12(double v) { return double.Parse(v.ToString("G12", Inv), Inv); }
+    static string I(int v) { return v.ToString(Inv); }
+    static string Q(string v) { return v.IndexOfAny(new[] { ' ', '"', '\'', '(', ')', ',' }) >= 0 ? "\"" + v.Replace("\"", "'") + "\"" : v; }
+    static bool Is(string a, string b) { return string.Equals((a ?? "").Trim(), b, StringComparison.OrdinalIgnoreCase); }
+    static bool Num(string s, out double v) { return double.TryParse(s, NumberStyles.Float, Inv, out v); }
+
+    // ---------------- the reader
+
+    sealed class Mem
+    {
+        public int Id, I, J; public string Label; public double L;
+        public double[] X, Y, Z;                 // along it, SAP's local 2 and 3 (STAAD's y and z after BETA)
+        public double Beta, Angle;
+        public string Mat;                        // the STAAD material
+        public StaadSpec Prop;
+        public double ZoneI, ZoneJ;
+        public double[] Trans = new double[3];    // the offset across it
+        public double[] OffI, OffJ;
+        public string Section; public double[] Mods;
+        public double Depth, Width, Ax;           // the section's YD / ZD, and AX (the property as written)
+        public bool[] Rel = new bool[12]; public double[] Pf = new double[12]; public bool HasRel;
+    }
+
+    sealed class Sec { public string Name, Mat, Shape, Row; public double[] P; }   // P: AX IX IY IZ AY AZ YD ZD (a row: SAP's own)
+
+    sealed class Pat
+    {
+        public string Name, Type; public double SelfWeight;
+        public readonly SortedDictionary<int, double[]> Joint = new SortedDictionary<int, double[]>();     // SAP F1..M3
+        public readonly SortedDictionary<int, double[]> Ground = new SortedDictionary<int, double[]>();    // SAP U1..R3
+        public readonly List<string> Point = new List<string>(), Dist = new List<string>(), Temp = new List<string>();
+    }
+
+    sealed class Case { public int Number; public string Name, Type; public bool TypeNeeded; public readonly List<KeyValuePair<string, double>> Loads = new List<KeyValuePair<string, double>>(); }
+    sealed class Combo { public int Number; public string Name, Kind; public readonly List<KeyValuePair<int, double>> Items = new List<KeyValuePair<int, double>>(); }
+
+    sealed class Reader
+    {
+        readonly StaadInput In; readonly string SapVersion; readonly List<string> Notes;
+        readonly List<string> Refused = new List<string>();
+        string HeadVersion, HeadUnits, UnitsText;
+        double Gravity;
+        bool Pluto;
+        readonly Dictionary<string, Dictionary<int, string>> HeadLabel = new Dictionary<string, Dictionary<int, string>>();
+        readonly Dictionary<int, double> HeadKe = new Dictionary<int, double>();
+        readonly Dictionary<string, string> GroupLabel = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        readonly Dictionary<string, string> MatLabel = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        readonly Dictionary<int, string> CaseHead = new Dictionary<int, string>(), ComboHead = new Dictionary<int, string>();
+
+        readonly Dictionary<int, double[]> Pos = new Dictionary<int, double[]>();          // STAAD coordinates
+        readonly Dictionary<int, string> JointLabel = new Dictionary<int, string>();
+        readonly List<Mem> Frames = new List<Mem>();
+        readonly Dictionary<int, Mem> FrameOf = new Dictionary<int, Mem>();
+        readonly List<int[]> Trusses = new List<int[]>();
+        readonly Dictionary<int, string> TrussLabel = new Dictionary<int, string>();
+        readonly Dictionary<int, string> MatOf = new Dictionary<int, string>();             // member / plate -> STAAD material
+        readonly Dictionary<int, double> BetaOf = new Dictionary<int, double>();
+        readonly Dictionary<string, StaadMaterial> Mats = new Dictionary<string, StaadMaterial>(StringComparer.OrdinalIgnoreCase);
+        readonly List<string> MatOrder = new List<string>();                                // STAAD names written as SAP materials
+        readonly List<Sec> Secs = new List<Sec>();
+        readonly Dictionary<int, StaadSpec> PropOf = new Dictionary<int, StaadSpec>();
+        readonly List<string[]> Links = new List<string[]>();                               // label, i, j, prop
+        readonly List<string[]> LinkProps = new List<string[]>();                           // name, KE
+        readonly Dictionary<int, string> AreaLabel = new Dictionary<int, string>();
+        readonly List<string[]> Areas = new List<string[]>();                               // label, section, matprop, joints...
+        readonly List<string[]> AreaSecs = new List<string[]>();                            // name, material, type, thickness
+        readonly Dictionary<int, bool[]> Restraint = new Dictionary<int, bool[]>();
+        readonly Dictionary<int, double[]> Spring = new Dictionary<int, double[]>();
+        readonly Dictionary<int, double[]> JointAngles = new Dictionary<int, double[]>();
+        readonly HashSet<int> Enforced = new HashSet<int>();
+        readonly List<string[]> GroupRows = new List<string[]>();                           // group, type, label
+        readonly List<string> GroupOrder = new List<string>();
+        readonly List<Pat> Pats = new List<Pat>();
+        readonly List<Case> Cases = new List<Case>();
+        readonly List<Combo> Combos = new List<Combo>();
+        bool PDelta;
+        bool DistFirst;                                                                    // FrameStd's order: the distributed loads' table first
+
+        public Reader(StaadInput input, string sapVersion, List<string> notes) { In = input; SapVersion = sapVersion; Notes = notes; }
+
+        void Refuse(string s) { if (!Refused.Contains(s)) Refused.Add(s); }
+
+        // the refusals, those with the same reason as one ("<reason>: member 1, member 2 ..."), long lists cut
+        List<string> Grouped()
+        {
+            var order = new List<string>();
+            var by = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            foreach (string r in Refused)
+            {
+                var g = Regex.Match(r, @"^((?:joint|member|plate|group|material) [^:]+): (.*)$");
+                string who = g.Success ? g.Groups[1].Value : "", what = g.Success ? g.Groups[2].Value : r;
+                List<string> l;
+                if (!by.TryGetValue(what, out l)) { by[what] = l = new List<string>(); order.Add(what); }
+                l.Add(who);
+            }
+            return order.Select(w => by[w].Count == 1 ? (by[w][0] == "" ? w : by[w][0] + ": " + w) : w + ": " + string.Join(", ", by[w].Take(12).ToArray()) + (by[w].Count > 12 ? " and " + (by[w].Count - 12).ToString(Inv) + " more" : "")).ToList();
+        }
+        void Note(string s) { if (!Notes.Contains(s)) Notes.Add(s); }
+
+        public string Run()
+        {
+            Head();
+            Units();
+            foreach (var u in In.Unread) Refuse("not read (FrameStd does not write it): " + u);
+            JointsIn();
+            MembersIn();
+            ConstantsIn();
+            MaterialsIn();
+            PropertiesIn();
+            OffsetsIn();
+            ReleasesIn();
+            TrussesIn();
+            PlatesIn();
+            SupportsIn();
+            GroupsIn();
+            LoadsIn();
+            if (Refused.Count > 0) throw new StdToFrameRefusal(Grouped());
+            return Emit();
+        }
+
+        // ---------------- the head: STAAD SPACE, and the comments FrameStd writes
+
+        static List<string> Items(List<string> h, string title, string[] starts)
+        {
+            var o = new List<string>();
+            int k = h.IndexOf(title);
+            if (k < 0) return o;
+            var titles = new[] { "SAP labels and their STAAD numbers:", "Load cases:", "Notes:" };
+            for (k++; k < h.Count && !titles.Contains(h[k]); k++)
+            {
+                string line = h[k];
+                if (o.Count == 0 || starts.Any(s => line.StartsWith(s, StringComparison.Ordinal))) o.Add(line);
+                else o[o.Count - 1] += " " + line;
+            }
+            return o;
+        }
+
+        string Label(string kind, int id)
+        {
+            Dictionary<int, string> d; string s;
+            return HeadLabel.TryGetValue(kind, out d) && d.TryGetValue(id, out s) ? s : I(id);
+        }
+
+        void Head()
+        {
+            var pre = In.Preamble;
+            if (pre.Count == 0 || !pre[0].StartsWith("STAAD SPACE", StringComparison.OrdinalIgnoreCase))
+                Refuse("the file starts " + (pre.Count == 0 ? "with no STAAD command" : pre[0]) + ", not STAAD SPACE (a space frame)");
+            foreach (string p in pre.Skip(1)) if (!p.StartsWith("INPUT WIDTH", StringComparison.OrdinalIgnoreCase)) Refuse("not read (FrameStd does not write it): " + p);
+            if (In.JobInformation.Count > 0) Note("STAAD's job information is a record only, not carried (" + string.Join("; ", In.JobInformation.ToArray()) + ")");
+            var h = In.Header;
+            Pluto = h.Count > 0 && h[0].StartsWith("Written by Pluto", StringComparison.Ordinal);
+            if (!Pluto) { Note("the file has no Pluto header: labels are STAAD's numbers, names STAAD's, the SAP version " + (string.IsNullOrEmpty(SapVersion) ? "22.0.0" : SapVersion)); return; }
+            var first = new StringBuilder();
+            for (int k = 0; k < h.Count && !h[k].StartsWith("SAP's Z up", StringComparison.Ordinal); k++) first.Append(h[k]).Append(' ');
+            var m = Regex.Match(first.ToString().Trim(), @"SAP2000 (\S+), units (.+)\.$");
+            if (m.Success) { HeadVersion = m.Groups[1].Value; HeadUnits = m.Groups[2].Value; }
+            var pats = new[] {
+                new[] { "joint", @"^joint (.+) = (\d+)$" }, new[] { "frame", @"^frame (.+) = member (\d+)$" }, new[] { "area", @"^area (.+) = plate (\d+)$" },
+                new[] { "link", @"^link (.+) = member (\d+) \(truss, EA/L = ([^)]+)\)$" } };
+            foreach (string it in Items(h, "SAP labels and their STAAD numbers:", new[] { "joint ", "frame ", "area ", "link ", "group ", "material " }))
+            {
+                Match g = Regex.Match(it, @"^group (.+) = (_\S+)$");
+                if (g.Success) { GroupLabel[g.Groups[2].Value] = g.Groups[1].Value; continue; }
+                g = Regex.Match(it, @"^material (.+) = (\S+)$");
+                if (g.Success) { MatLabel[g.Groups[2].Value] = g.Groups[1].Value; continue; }
+                foreach (var p in pats)
+                {
+                    g = Regex.Match(it, p[1]);
+                    if (!g.Success) continue;
+                    int id = int.Parse(g.Groups[2].Value, Inv);
+                    Dictionary<int, string> d;
+                    if (!HeadLabel.TryGetValue(p[0], out d)) HeadLabel[p[0]] = d = new Dictionary<int, string>();
+                    d[id] = g.Groups[1].Value;
+                    double ke;
+                    if (p[0] == "link" && Num(g.Groups[3].Value, out ke)) HeadKe[id] = ke;
+                    break;
+                }
+            }
+            foreach (string it in Items(h, "Load cases:", new[] { "LOAD " }))
+            {
+                Match g = Regex.Match(it, @"^LOAD (\d+) = SAP case (.+?)( \(P-Delta\))?$");
+                if (g.Success) { CaseHead[int.Parse(g.Groups[1].Value, Inv)] = g.Groups[2].Value; continue; }
+                g = Regex.Match(it, @"^LOAD (\d+) = SAP combination (.+)$");
+                if (g.Success) ComboHead[int.Parse(g.Groups[1].Value, Inv)] = g.Groups[2].Value;
+            }
+        }
+
+        // the SAP units: the header's when it names STAAD's length and force, else made from UNIT
+        void Units()
+        {
+            var len = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+                { "INCHES", "in" }, { "INCH", "in" }, { "IN", "in" }, { "FEET", "ft" }, { "FOOT", "ft" }, { "FT", "ft" }, { "MMS", "mm" }, { "MM", "mm" },
+                { "CM", "cm" }, { "CMS", "cm" }, { "METER", "m" }, { "METERS", "m" }, { "METRE", "m" }, { "M", "m" } };
+            var force = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+                { "KIP", "Kip" }, { "KIPS", "Kip" }, { "POUND", "lb" }, { "POUNDS", "lb" }, { "LB", "lb" }, { "LBS", "lb" }, { "KNS", "KN" }, { "KN", "KN" },
+                { "NEWTON", "N" }, { "NEWTONS", "N" }, { "N", "N" }, { "KG", "Kgf" }, { "KGS", "Kgf" }, { "MTON", "Tonf" }, { "MTONS", "Tonf" } };
+            if (In.Units.Count == 0) { Refuse("no UNIT command"); UnitsText = "Kip, in, F"; Gravity = 386.08858267716535; return; }
+            var sets = In.Units.Select(u => string.Join(" ", u).ToUpperInvariant()).Distinct().ToList();
+            if (sets.Count > 1) Refuse("UNIT changes along the file (" + string.Join("; ", sets.ToArray()) + "); FrameStd writes one unit set");
+            string l = null, f = null;
+            foreach (string w in In.Units[0]) { string x; if (l == null && len.TryGetValue(w, out x)) l = x; else if (f == null && force.TryGetValue(w, out x)) f = x; }
+            if (l == null || f == null) { Refuse("UNIT " + string.Join(" ", In.Units[0]) + ": no " + (l == null ? "length" : "force") + " unit SAP has"); l = l ?? "in"; f = f ?? "Kip"; }
+            UnitsText = f + ", " + l + ", " + (l == "in" || l == "ft" ? "F" : "C");
+            if (HeadUnits != null)
+            {
+                string hf, hl, ht;
+                FrameUnits.Parse(HeadUnits, out hf, out hl, out ht);
+                if (Is(hf, f) && Is(hl, l)) UnitsText = HeadUnits;
+                else Note("the header's units (" + HeadUnits + ") are not the file's UNIT (" + string.Join(" ", In.Units[0]) + "): " + UnitsText);
+            }
+            var g = new Dictionary<string, double> { { "in", 386.08858267716535 }, { "ft", 32.17404855643045 }, { "mm", 9806.65 }, { "cm", 980.665 }, { "m", 9.80665 } };
+            Gravity = g[l];
+        }
+
+        // ---------------- geometry
+
+        void JointsIn()
+        {
+            var used = new HashSet<string>(StringComparer.Ordinal);
+            foreach (int id in In.JointIds)
+            {
+                Pos[id] = In.Joints[id];
+                string lab = Label("joint", id);
+                if (!used.Add(lab)) { Note("joint " + I(id) + ": the header's label " + lab + " is taken; it keeps its number"); lab = I(id); if (!used.Add(lab)) Refuse("joint " + I(id) + ": label " + lab + " twice"); }
+                JointLabel[id] = lab;
+            }
+        }
+
+        void MembersIn()
+        {
+            var truss = new HashSet<int>(In.Truss);
+            var ids = new HashSet<int>();
+            var used = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var mi in In.Members)
+            {
+                if (!ids.Add(mi[0])) { Refuse("member " + I(mi[0]) + ": defined twice"); continue; }
+                if (truss.Contains(mi[0])) { Trusses.Add(mi); continue; }
+                var m = new Mem { Id = mi[0], I = mi[1], J = mi[2] };
+                var d = Sub(Pos[m.J], Pos[m.I]);
+                m.L = Len(d);
+                if (m.L < 1e-9) { Refuse("member " + I(m.Id) + ": zero length"); continue; }
+                m.X = Unit(d);
+                m.Label = Label("frame", m.Id);
+                if (!used.Add(m.Label)) { Note("member " + I(m.Id) + ": the header's label " + m.Label + " is taken; it keeps its number"); m.Label = I(m.Id); if (!used.Add(m.Label)) Refuse("member " + I(m.Id) + ": label " + m.Label + " twice"); }
+                Frames.Add(m);
+                FrameOf[m.Id] = m;
+            }
+            foreach (int t in truss) if (!ids.Contains(t)) Refuse("MEMBER TRUSS: member " + I(t) + " is not in MEMBER INCIDENCES");
+            foreach (var p in In.Plates) if (!ids.Add(p[0])) Refuse("plate " + I(p[0]) + ": its number is a member's too");
+        }
+
+        // CONSTANTS: MATERIAL name MEMB ...; BETA b MEMB ...
+        void ConstantsIn()
+        {
+            var plates = new HashSet<int>(In.Plates.Select(p => p[0]));
+            var all = In.Members.Select(m => m[0]).Concat(plates).ToList();
+            foreach (var c in In.Constants)
+            {
+                var ids = c.All ? all : c.Ids;
+                double b;
+                if (c.Spec.Length == 2 && Is(c.Spec[0], "MATERIAL"))
+                    foreach (int id in ids)
+                    {
+                        if (MatOf.ContainsKey(id)) { Refuse((plates.Contains(id) ? "plate " : "member ") + I(id) + ": two materials"); continue; }
+                        MatOf[id] = c.Spec[1];
+                    }
+                else if (c.Spec.Length == 2 && Is(c.Spec[0], "BETA") && Num(c.Spec[1], out b))
+                    foreach (int id in ids)
+                    {
+                        if (!FrameOf.ContainsKey(id)) { if (!c.All) Refuse((plates.Contains(id) ? "plate " : "member ") + I(id) + ": a BETA " + (plates.Contains(id) ? "on a plate" : "on a truss member")); continue; }
+                        if (BetaOf.ContainsKey(id)) { Refuse("member " + I(id) + ": two BETAs"); continue; }
+                        BetaOf[id] = b;
+                    }
+                else Refuse("CONSTANTS: " + c.Text + " (FrameStd writes MATERIAL and BETA only)");
+            }
+            foreach (var m in Frames)
+            {
+                double b; BetaOf.TryGetValue(m.Id, out b);
+                m.Beta = b;
+                // STAAD's y after BETA, about x (right-handed): SAP's local 2; z its local 3
+                var ax = FrameStd.StaadAxes(m.X);
+                double r = b * Math.PI / 180;
+                m.Y = Add(Mul(ax[1], Math.Cos(r)), Mul(Cross(m.X, ax[1]), Math.Sin(r)));
+                m.Z = Cross(m.X, m.Y);
+                // SAP's angle: from its default local 2 to that, about local 1
+                var l2 = FrameStd.R(FrameSidecar.LocalAxes(Rinv(m.X), 0)[1]);
+                var dsap = Rinv(m.X); var mx = m.X;
+                m.Angle = Shortest(Snap(Math.Atan2(Dot(Cross(l2, m.Y), m.X), Dot(l2, m.Y)) * 180 / Math.PI), x => FrameStd.Beta(mx, FrameStd.R(FrameSidecar.LocalAxes(dsap, x)[1])), b);
+                string mat;
+                if (!MatOf.TryGetValue(m.Id, out mat)) Refuse("member " + I(m.Id) + ": no material (CONSTANTS MATERIAL)");
+                m.Mat = mat;
+            }
+        }
+
+        // ---------------- materials
+
+        void MaterialsIn()
+        {
+            foreach (var m in In.Materials)
+            {
+                if (Mats.ContainsKey(m.Name)) { Refuse("material " + m.Name + ": defined twice"); continue; }
+                Mats[m.Name] = m;
+            }
+            var trussIds = new HashSet<int>(Trusses.Select(t => t[0]));
+            var users = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
+            foreach (var kv in MatOf)
+            {
+                if (!Mats.ContainsKey(kv.Value)) { Refuse("member or plate " + I(kv.Key) + ": material " + kv.Value + " is not defined"); continue; }
+                List<int> l; if (!users.TryGetValue(kv.Value, out l)) users[kv.Value] = l = new List<int>(); l.Add(kv.Key);
+            }
+            foreach (var m in In.Materials)
+            {
+                List<int> l;
+                bool any = users.TryGetValue(m.Name, out l);
+                bool onlyTruss = any && l.All(trussIds.Contains);
+                if (!any || onlyTruss) { if (!onlyTruss) Note("material " + m.Name + ": no member or plate uses it (left out)"); continue; }
+                string who = "material " + m.Name;
+                double e, nu, g, v;
+                if (!m.Values.TryGetValue("E", out e) || e <= 0) { Refuse(who + ": no E"); continue; }
+                bool hasNu = m.Values.TryGetValue("POISSON", out nu), hasG = m.Values.TryGetValue("G", out g);
+                if (!hasNu && hasG) nu = e / (2 * g) - 1;
+                if (hasG && Math.Abs(g - e / (2 * (1 + nu))) > 1e-6 * g) Refuse(who + ": G " + FrameStd.N(g) + " apart from E / (2 (1 + POISSON)) = " + FrameStd.N(e / (2 * (1 + nu))) + " (SAP's isotropic material takes G from E and Poisson's ratio)");
+                if (nu < 0 || nu >= 0.5) Refuse(who + ": Poisson's ratio " + FrameStd.N(nu));
+                if (m.Values.ContainsKey("DAMP")) Note(who + ": its DAMP is not carried (static cases only)");
+                if (m.Type != null && !Is(m.Type, "STEEL")) Refuse(who + ": TYPE " + m.Type + " (FrameStd writes TYPE STEEL, or none)");
+                foreach (string k in m.Strength.Keys) if (!new[] { "FY", "FU", "RY", "RT" }.Any(x => Is(k, x))) Refuse(who + ": STRENGTH " + k + " (FrameStd writes FY FU RY RT)");
+                if (m.Strength.Count > 0 && m.Type == null) Refuse(who + ": a STRENGTH without TYPE STEEL");
+                if (m.Values.TryGetValue("DENSITY", out v) && v < 0) Refuse(who + ": a negative DENSITY");
+                MatOrder.Add(m.Name);
+            }
+        }
+
+        string SapMat(string staad) { string s; return MatLabel.TryGetValue(staad, out s) ? s : staad; }
+        double Val(string staad, string key) { StaadMaterial m; double v; return Mats.TryGetValue(staad, out m) && m.Values.TryGetValue(key, out v) ? v : 0; }
+
+        // ---------------- member properties: sections
+
+        static string SectionName(List<string> comments, string prefix, out string row)
+        {
+            row = null;
+            int k = comments.FindIndex(c => c.StartsWith(prefix, StringComparison.Ordinal));
+            if (k < 0) return null;
+            string text = string.Join(" ", comments.Skip(k).ToArray()).Substring(prefix.Length).Trim();
+            int colon = text.IndexOf(": ", StringComparison.Ordinal);
+            if (colon < 0) return text;
+            row = text.Substring(colon + 2).Trim();
+            return text.Substring(0, colon).Trim();
+        }
+
+        // PRIS AX .. IX .. IY .. IZ .. [AY ..] [AZ ..] [YD ..] [ZD ..] -> AX IX IY IZ AY AZ YD ZD (NaN: not given)
+        static double[] Pris(string[] spec, out string why)
+        {
+            why = null;
+            string[] keys = { "AX", "IX", "IY", "IZ", "AY", "AZ", "YD", "ZD" };
+            var p = Enumerable.Repeat(double.NaN, 8).ToArray();
+            if (spec.Length % 2 != 1) { why = "its numbers do not pair with their names"; return null; }
+            for (int k = 1; k + 1 < spec.Length; k += 2)
+            {
+                int i = Array.FindIndex(keys, x => Is(spec[k], x));
+                double v;
+                if (i < 0) { why = "PRIS " + spec[k] + " (FrameStd writes AX IX IY IZ AY AZ YD ZD)"; return null; }
+                if (!Num(spec[k + 1], out v) || !double.IsNaN(p[i])) { why = "PRIS " + spec[k] + " " + spec[k + 1]; return null; }
+                p[i] = v;
+            }
+            return p;
+        }
+
+        // a SAP row's analysis properties, as PRIS's (AX IX IY IZ AY AZ YD ZD)
+        static double[] RowProps(string row)
+        {
+            var r = new S2kRow();
+            S2kRow.Tokenize(row, r);
+            Func<string, double> get = k => { int i = r.Keys.FindIndex(x => Is(x, k)); double v; return i >= 0 && Num(r.Values[i], out v) ? v : 0; };
+            return new[] { get("Area"), get("TorsConst"), get("I22"), get("I33"), get("AS2"), get("AS3"), get("t3"), get("t2") };
+        }
+
+        static string RowGet(string row, string key)
+        {
+            var r = new S2kRow();
+            S2kRow.Tokenize(row, r);
+            int i = r.Keys.FindIndex(x => Is(x, key));
+            return i < 0 ? null : r.Values[i];
+        }
+
+        void PropertiesIn()
+        {
+            foreach (var p in In.MemberProperties)
+                foreach (int id in p.Ids)
+                {
+                    if (PropOf.ContainsKey(id)) { Refuse("member " + I(id) + ": two member properties"); continue; }
+                    PropOf[id] = p;
+                }
+            if (In.MemberProperties.Count > 0 && !Is(In.PropertyTable, "AMERICAN") && In.MemberProperties.Any(p => Is(p.Spec[0], "TABLE")))
+                Refuse("MEMBER PROPERTY " + In.PropertyTable + ": FrameStd writes AMERICAN");
+            var byName = new Dictionary<string, List<Sec>>(StringComparer.OrdinalIgnoreCase);
+            var bySpec = new Dictionary<string, Sec>(StringComparer.Ordinal);
+            int unnamed = 0;
+            // table sections first: a frame of one with modifiers (written PRIS) then reads as factors on it
+            foreach (var m in Frames.Where(f => PropOf.ContainsKey(f.Id) && Is(PropOf[f.Id].Spec[0], "TABLE")).Concat(Frames.Where(f => !PropOf.ContainsKey(f.Id) || !Is(PropOf[f.Id].Spec[0], "TABLE"))))
+            {
+                StaadSpec p;
+                string who = "member " + I(m.Id);
+                if (!PropOf.TryGetValue(m.Id, out p)) { Refuse(who + ": no MEMBER PROPERTY"); continue; }
+                m.Prop = p;
+                string row, name = SectionName(p.Comments, "SAP section ", out row), why;
+                double[] props;
+                string shape = "General";
+                if (Is(p.Spec[0], "PRIS"))
+                {
+                    props = Pris(p.Spec, out why);
+                    if (props == null) { Refuse(who + ": " + why); continue; }
+                    if (Enumerable.Range(0, 4).Any(i => double.IsNaN(props[i]) || props[i] <= 0)) { Refuse(who + ": PRIS needs AX IX IY IZ, each positive"); continue; }
+                    if (double.IsNaN(props[6]) || double.IsNaN(props[7]) || props[6] <= 0 || props[7] <= 0) { Refuse(who + ": PRIS without YD and ZD (SAP's general section needs its depth and width)"); continue; }
+                    row = null;
+                }
+                else if (p.Spec.Length == 3 && Is(p.Spec[0], "TABLE") && Is(p.Spec[1], "ST"))
+                {
+                    string inFile = row == null ? null : RowGet(row, "SectInFile");
+                    if (row == null || inFile == null || !Is(inFile, p.Spec[2]))
+                    {
+                        Refuse(who + ": TABLE ST " + p.Spec[2] + ", a STAAD table section with no SAP row of it in the comment above (SAP cannot build it from the name; FrameStd writes the row): give it as PRIS");
+                        continue;
+                    }
+                    shape = RowGet(row, "Shape");
+                    if (string.IsNullOrEmpty(shape)) { Refuse(who + ": the SAP row of " + p.Spec[2] + " has no Shape"); continue; }
+                    props = RowProps(row);
+                    var sr = new S2kRow();
+                    S2kRow.Tokenize(row, sr);
+                    row = sr.Render().TrimStart();
+                }
+                else { Refuse(who + ": MEMBER PROPERTY " + string.Join(" ", p.Spec) + " (FrameStd writes PRIS and TABLE ST)"); continue; }
+                m.Depth = props[6]; m.Width = props[7]; m.Ax = props[0];
+                string key = (name ?? "") + "\n" + string.Join(" ", p.Spec);
+                if (name == null && !bySpec.ContainsKey(key)) name = row != null ? p.Spec[2] : "PRIS" + I(++unnamed);
+                Sec s;
+                double[] mods;
+                if (bySpec.TryGetValue(key, out s)) { m.Section = s.Name; m.Mods = Factors(s, props, row != null, out mods) ? mods : null; continue; }
+                List<Sec> same;
+                if (!byName.TryGetValue(name, out same)) byName[name] = same = new List<Sec>();
+                // the same SAP section with other numbers: its frames' modifiers, when they read as factors on the first
+                Sec baseSec = same.Count > 0 ? same[0] : null;
+                if (baseSec != null && Factors(baseSec, props, row != null, out mods)) { bySpec[key] = baseSec; m.Section = baseSec.Name; m.Mods = mods; continue; }
+                string nm = name; int n = 2;
+                while (Secs.Any(x => Is(x.Name, nm))) nm = name + "_" + I(n++);
+                s = new Sec { Name = nm, Mat = m.Mat, Shape = shape, Row = row, P = props };
+                Secs.Add(s); same.Add(s); bySpec[key] = s;
+                m.Section = s.Name;
+                m.Mods = null;
+            }
+            var modded = Frames.Where(f => f.Mods != null).ToList();
+            if (modded.Count > 0) Note("frames whose property is their section's with factors take it as property modifiers (FrameStd folds a frame's modifiers into its PRIS): " + string.Join(", ", modded.Select(f => f.Label).Take(12).ToArray()) + (modded.Count > 12 ? " ..." : ""));
+        }
+
+        // whether these numbers are the section's with factors: the property modifiers (AMod AS2Mod AS3Mod JMod I22Mod I33Mod
+        // MassMod WeightMod; the weight and mass go with the area, as STAAD's DENSITY x AX does), mods null when all are 1.
+        // A table section's numbers are its own: no factors
+        static bool Factors(Sec s, double[] p, bool table, out double[] mods)
+        {
+            mods = null;
+            if (table) return s.Row != null && s.P.SequenceEqual(p);
+            var b = s.P;
+            Func<double, double> nz = x => double.IsNaN(x) ? 0 : x;
+            if (nz(p[6]) != nz(b[6]) || nz(p[7]) != nz(b[7])) return false;
+            if ((nz(p[4]) > 0) != (nz(b[4]) > 0) || (nz(p[5]) > 0) != (nz(b[5]) > 0)) return false;
+            Func<int, double> f = i => nz(b[i]) > 0 ? Shortest(nz(p[i]) / nz(b[i]), x => nz(b[i]) * x, nz(p[i])) : 1;
+            double a = f(0);
+            var o = new[] { a, f(4), f(5), f(1), f(2), f(3), a, a };
+            if (o.Any(x => !(x > 0))) return false;
+            if (!o.All(x => x == 1)) mods = o;
+            return true;
+        }
+
+        // ---------------- offsets, releases
+
+        void OffsetsIn()
+        {
+            foreach (var o in In.Offsets)
+                foreach (int id in o.Ids)
+                {
+                    Mem m;
+                    string who = "member " + I(id);
+                    if (!FrameOf.TryGetValue(id, out m)) { Refuse(who + ": a MEMBER OFFSET on " + (Trusses.Any(q => q[0] == id) ? "a truss member" : "no member")); continue; }
+                    double x, y, z;
+                    if (o.Spec.Length != 4 || !(Is(o.Spec[0], "START") || Is(o.Spec[0], "END")) || !Num(o.Spec[1], out x) || !Num(o.Spec[2], out y) || !Num(o.Spec[3], out z))
+                    { Refuse(who + ": MEMBER OFFSET " + string.Join(" ", o.Spec) + " (FrameStd writes START / END x y z, global)"); continue; }
+                    bool start = Is(o.Spec[0], "START");
+                    if ((start ? m.OffI : m.OffJ) != null) { Refuse(who + ": two " + o.Spec[0] + " offsets"); continue; }
+                    if (start) m.OffI = new[] { x, y, z }; else m.OffJ = new[] { x, y, z };
+                }
+            foreach (var m in Frames)
+            {
+                if (m.OffI == null && m.OffJ == null) continue;
+                string who = "member " + I(m.Id);
+                var oi = m.OffI ?? new double[3]; var oj = m.OffJ ?? new double[3];
+                double a = Dot(oi, m.X), b = -Dot(oj, m.X);
+                var ti = Sub(oi, Mul(m.X, a)); var tj = Add(oj, Mul(m.X, b));
+                if (Len(Sub(ti, tj)) > 1e-9 * m.L) { Refuse(who + ": offsets across it that differ at its ends (SAP's joint offsets are read for a member parallel to its joints' line)"); continue; }
+                if (Math.Abs(a) <= 1e-12 * m.L) a = 0;
+                if (Math.Abs(b) <= 1e-12 * m.L) b = 0;
+                if (a < 0 || b < 0 || a + b >= m.L) { Refuse(who + ": offsets along it of " + FrameStd.N(a) + " and " + FrameStd.N(b) + " (SAP's end lengths lie inside the member)"); continue; }
+                m.ZoneI = a; m.ZoneJ = b; m.Trans = ti;
+            }
+        }
+
+        void ReleasesIn()
+        {
+            string[] dof = { "FX", "FY", "FZ", "MX", "MY", "MZ" };
+            foreach (var r in In.Releases)
+                foreach (int id in r.Ids)
+                {
+                    Mem m;
+                    string who = "member " + I(id);
+                    if (!FrameOf.TryGetValue(id, out m)) { Refuse(who + ": a MEMBER RELEASE on " + (Trusses.Any(q => q[0] == id) ? "a truss member" : "no member")); continue; }
+                    var t = r.Spec;
+                    bool s = Is(t[0], "START") || Is(t[0], "BOTH"), e = Is(t[0], "END") || Is(t[0], "BOTH");
+                    if (!s && !e) { Refuse(who + ": MEMBER RELEASE " + string.Join(" ", t)); continue; }
+                    var rel = new bool[6]; var pf = new double[6];
+                    bool ok = t.Length > 1;
+                    for (int k = 1; ok && k < t.Length; k++)
+                    {
+                        int i = Array.FindIndex(dof, x => Is(t[k], x));
+                        if (i >= 0) { ok = !rel[i]; rel[i] = true; continue; }
+                        i = Array.FindIndex(dof, x => Is(t[k], "K" + x));
+                        double v;
+                        if (i < 0 || k + 1 >= t.Length || !Num(t[k + 1], out v) || v <= 0 || rel[i]) { ok = false; break; }
+                        rel[i] = true; pf[i] = i < 3 ? v : Shortest(v * 180 / Math.PI, x => x * Math.PI / 180, v);
+                        k++;
+                    }
+                    if (!ok) { Refuse(who + ": MEMBER RELEASE " + string.Join(" ", t) + " (FrameStd writes FX .. MZ and KFX v .. KMZ v)"); continue; }
+                    for (int end = 0; end < 2; end++)
+                    {
+                        if (end == 0 ? !s : !e) continue;
+                        if (Enumerable.Range(0, 6).Any(i => m.Rel[end * 6 + i])) { Refuse(who + ": released twice at its " + (end == 0 ? "start" : "end")); continue; }
+                        for (int i = 0; i < 6; i++) { m.Rel[end * 6 + i] = rel[i]; m.Pf[end * 6 + i] = pf[i]; }
+                        m.HasRel = true;
+                    }
+                }
+        }
+
+        // ---------------- trusses: linear axial links
+
+        void TrussesIn()
+        {
+            var used = new HashSet<string>(StringComparer.Ordinal);
+            var props = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var t in Trusses)
+            {
+                string who = "member " + I(t[0]) + " (truss)";
+                StaadSpec p; string mat;
+                if (!PropOf.TryGetValue(t[0], out p)) { Refuse(who + ": no MEMBER PROPERTY"); continue; }
+                string why;
+                double[] pr = Is(p.Spec[0], "PRIS") ? Pris(p.Spec, out why) : null;
+                if (pr == null || double.IsNaN(pr[0]) || pr[0] <= 0) { Refuse(who + ": a property other than PRIS AX (FrameStd writes the area only)"); continue; }
+                if (!MatOf.TryGetValue(t[0], out mat) || !Mats.ContainsKey(mat)) { Refuse(who + ": no material"); continue; }
+                double e = Val(mat, "E"), l = Len(Sub(Pos[t[2]], Pos[t[1]]));
+                if (l < 1e-9) { Refuse(who + ": zero length"); continue; }
+                if (Val(mat, "DENSITY") != 0 && In.Loads.Any(x => x.Blocks.Any(b => b.Name == "SELFWEIGHT"))) Refuse(who + ": its material " + mat + " has a DENSITY under SELFWEIGHT (SAP's links carry no weight)");
+                double ke = e * pr[0] / l, hk;
+                if (HeadKe.TryGetValue(t[0], out hk) && Math.Abs(hk - ke) <= 1e-9 * Math.Abs(hk)) ke = hk;
+                string kt = F(ke), name;
+                if (!props.TryGetValue(kt, out name)) { name = "TRUSS" + I(props.Count + 1); props[kt] = name; LinkProps.Add(new[] { name, kt }); }
+                string lab = Label("link", t[0]);
+                if (!used.Add(lab)) { lab = I(t[0]); if (!used.Add(lab)) { Refuse(who + ": label " + lab + " twice"); continue; } }
+                TrussLabel[t[0]] = lab;
+                Links.Add(new[] { lab, JointLabel[t[1]], JointLabel[t[2]], name });
+            }
+            if (Links.Count > 0) Note("truss members as SAP's linear links, U1 = E AX / L (" + Links.Count.ToString(Inv) + ")");
+        }
+
+        // ---------------- plates
+
+        void PlatesIn()
+        {
+            var plane = new HashSet<int>(In.PlaneStress);
+            var specOf = new Dictionary<int, StaadSpec>();
+            foreach (var p in In.ElementProperties)
+            {
+                double t;
+                if (p.Spec.Length != 2 || !Is(p.Spec[0], "THICKNESS") || !Num(p.Spec[1], out t)) { Refuse("ELEMENT PROPERTY: " + p.Text + " (FrameStd writes THICKNESS t)"); continue; }
+                foreach (int id in p.Ids) { if (specOf.ContainsKey(id)) Refuse("plate " + I(id) + ": two thicknesses"); specOf[id] = p; }
+            }
+            foreach (int id in plane) if (!In.Plates.Any(p => p[0] == id)) Refuse("ELEMENT PLANE STRESS: plate " + I(id) + " is not in ELEMENT INCIDENCES SHELL");
+            var secOf = new Dictionary<string, string>(StringComparer.Ordinal);
+            var used = new HashSet<string>(StringComparer.Ordinal);
+            int unnamed = 0;
+            foreach (var p in In.Plates)
+            {
+                int id = p[0];
+                string who = "plate " + I(id), mat;
+                StaadSpec ts;
+                double t;
+                if (!specOf.TryGetValue(id, out ts) || !In.Thickness.TryGetValue(id, out t) || t <= 0) { Refuse(who + ": no THICKNESS"); continue; }
+                if (!MatOf.TryGetValue(id, out mat) || !Mats.ContainsKey(mat)) { Refuse(who + ": no material"); continue; }
+                string row, name = SectionName(ts.Comments, "SAP area section ", out row) ?? ("PLATE" + I(++unnamed));
+                string type = plane.Contains(id) ? "Membrane" : "Shell-Thin";
+                string key = name + "\n" + FrameStd.N(t) + "\n" + type, sec;
+                if (!secOf.TryGetValue(key, out sec))
+                {
+                    sec = name; int n = 2;
+                    while (AreaSecs.Any(x => Is(x[0], sec))) sec = name + "_" + I(n++);
+                    secOf[key] = sec;
+                    AreaSecs.Add(new[] { sec, mat, type, F(t) });
+                }
+                string secMat = AreaSecs.First(x => x[0] == sec)[1];
+                string lab = Label("area", id);
+                if (!used.Add(lab)) { lab = I(id); if (!used.Add(lab)) { Refuse(who + ": label " + lab + " twice"); continue; } }
+                AreaLabel[id] = lab;
+                var row2 = new List<string> { lab, sec, Is(secMat, mat) ? "Default" : SapMat(mat) };
+                row2.AddRange(p.Skip(1).Select(j => JointLabel[j]));
+                Areas.Add(row2.ToArray());
+            }
+            if (Areas.Count > 0) Note("plates as SAP's areas: " + string.Join(", ", AreaSecs.Select(x => x[0] + " (" + x[2] + ", " + FrameStd.N(double.Parse(x[3], Inv)) + ")").ToArray()));
+        }
+
+        // ---------------- supports
+
+        void SupportsIn()
+        {
+            string[] dof = { "FX", "FY", "FZ", "MX", "MY", "MZ" };
+            int[] global = { 0, 2, 1, 3, 5, 4 };              // STAAD FX FY FZ MX MY MZ -> SAP U1 U3 U2 R1 R3 R2 (global)
+            foreach (var s in In.Supports)
+                foreach (int id in s.Ids)
+                {
+                    string who = "joint " + I(id);
+                    if (!Pos.ContainsKey(id)) { Refuse(who + ": a support on a joint not defined"); continue; }
+                    if (Restraint.ContainsKey(id) || Spring.ContainsKey(id)) { Refuse(who + ": two supports"); continue; }
+                    var t = s.Spec;
+                    int k = 0;
+                    double[][] axes = null;
+                    if (Is(t[0], "INCLINED"))
+                    {
+                        double a, b, c;
+                        if (t.Length < 5 || !Num(t[1], out a) || !Num(t[2], out b) || !Num(t[3], out c) || Len(new[] { a, b, c }) < 1e-12) { Refuse(who + ": SUPPORTS " + string.Join(" ", t)); continue; }
+                        axes = FrameStd.StaadAxes(Unit(new[] { a, b, c }));
+                        k = 4;
+                    }
+                    // fixed (true), free, or a spring in each STAAD DOF
+                    var fix = new bool[6]; var spr = new double[6];
+                    bool ok = true, enforced = false;
+                    string kind = t[k].ToUpperInvariant();
+                    if (kind == "FIXED" || kind == "ENFORCED") { for (int i = 0; i < 6; i++) fix[i] = true; enforced = kind == "ENFORCED"; }
+                    else if (kind == "PINNED") { for (int i = 0; i < 3; i++) fix[i] = true; }
+                    else ok = false;
+                    k++;
+                    if (ok && k < t.Length)
+                    {
+                        if (!Is(t[k], "BUT") || kind == "PINNED") ok = false;
+                        for (k++; ok && k < t.Length; k++)
+                        {
+                            int i = Array.FindIndex(dof, x => Is(t[k], x));
+                            if (i >= 0 && fix[i]) { fix[i] = false; continue; }
+                            i = Array.FindIndex(dof, x => Is(t[k], "K" + x));
+                            double v;
+                            if (enforced || i < 0 || !fix[i] || k + 1 >= t.Length || !Num(t[k + 1], out v) || v <= 0) { ok = false; break; }
+                            fix[i] = false; spr[i] = i < 3 ? v : Shortest(v * 180 / Math.PI, x => x * Math.PI / 180, v);
+                            k++;
+                        }
+                    }
+                    if (!ok) { Refuse(who + ": SUPPORTS " + string.Join(" ", t) + " (FrameStd writes FIXED, PINNED, ENFORCED, BUT with FX .. MZ and KFX v .. KMZ v, INCLINED)"); continue; }
+                    if (enforced && axes != null) { Refuse(who + ": an INCLINED ENFORCED support (FrameStd writes ENFORCED in global axes)"); continue; }
+                    var res = new bool[6]; var ks = new double[6];
+                    for (int i = 0; i < 6; i++) { int g = axes == null ? global[i] : i; res[g] = fix[i]; ks[g] = spr[i]; }
+                    if (res.Any(x => x)) Restraint[id] = res;
+                    if (ks.Any(x => x != 0)) Spring[id] = ks;
+                    if (axes != null) JointAngles[id] = Euler(Rinv(axes[0]), Rinv(axes[1]), Rinv(axes[2]));
+                    if (enforced) Enforced.Add(id);
+                }
+        }
+
+        // ---------------- groups
+
+        void GroupsIn()
+        {
+            var seqs = new Dictionary<string, List<string>>();
+            var members = new Dictionary<string, List<string[]>>(StringComparer.Ordinal);
+            foreach (string g in In.GroupOrder)
+            {
+                string kind; In.GroupKinds.TryGetValue(g, out kind);
+                string label = GroupLabel.ContainsKey(g) ? GroupLabel[g] : g.TrimStart('_');
+                if (label.Length == 0) label = g;
+                string who = "group " + g;
+                if (kind != "JOINT" && kind != "MEMBER" && kind != "ELEMENT") { Refuse(who + ": a " + (kind ?? "(no kind)") + " group (FrameStd writes JOINT, MEMBER and ELEMENT groups)"); continue; }
+                List<string[]> rows;
+                if (!members.TryGetValue(label, out rows)) members[label] = rows = new List<string[]>();
+                foreach (int id in In.Groups[g])
+                {
+                    Mem m; string l;
+                    if (kind == "JOINT" && JointLabel.TryGetValue(id, out l)) rows.Add(new[] { "Joint", l });
+                    else if (kind == "MEMBER" && FrameOf.TryGetValue(id, out m)) rows.Add(new[] { "Frame", m.Label });
+                    else if (kind == "MEMBER" && TrussLabel.TryGetValue(id, out l)) rows.Add(new[] { "Link", l });
+                    else if (kind == "ELEMENT" && AreaLabel.TryGetValue(id, out l)) rows.Add(new[] { "Area", l });
+                    else Refuse(who + ": " + kind.ToLowerInvariant() + " " + I(id) + " is not in the model");
+                }
+                List<string> seq;
+                if (!seqs.TryGetValue(kind, out seq)) seqs[kind] = seq = new List<string>();
+                if (!seq.Contains(label)) seq.Add(label);
+            }
+            // SAP's order: each kind's groups keep their order (FrameStd writes them by kind, each in SAP's order)
+            foreach (string kind in new[] { "JOINT", "MEMBER", "ELEMENT" })
+            {
+                List<string> seq;
+                if (!seqs.TryGetValue(kind, out seq)) continue;
+                for (int k = 0; k < seq.Count; k++)
+                {
+                    if (GroupOrder.Contains(seq[k])) continue;
+                    int at = GroupOrder.Count;
+                    for (int q = k + 1; q < seq.Count; q++) { int p = GroupOrder.IndexOf(seq[q]); if (p >= 0) { at = p; break; } }
+                    GroupOrder.Insert(at, seq[k]);
+                }
+            }
+            foreach (string g in GroupOrder) foreach (var r in members[g]) if (!GroupRows.Any(x => x[0] == g && x[1] == r[0] && x[2] == r[1])) GroupRows.Add(new[] { g, r[0], r[1] });
+        }
+
+        // ---------------- loads
+
+        static string DesignType(string loadType, out bool known)
+        {
+            known = true;
+            string t = (loadType ?? "").Replace(" ", "").ToUpperInvariant();
+            if (t == "DEAD") return "Dead";
+            if (t == "LIVE") return "Live";
+            if (t == "ROOFLIVE") return "Roof Live";
+            if (t == "SEISMIC-H") return "Quake";
+            if (t == "WIND") return "Wind";
+            if (t == "SNOW") return "Snow";
+            if (t == "TEMPERATURE") return "Temperature";
+            if (t == "NONE" || t == "") return "Other";
+            known = false;
+            return "Other";
+        }
+
+        Pat NewPattern(string name, string type)
+        {
+            var p = new Pat { Name = name, Type = type };
+            Pats.Add(p);
+            return p;
+        }
+
+        string Unique(string want, IEnumerable<string> taken)
+        {
+            var t = new HashSet<string>(taken, StringComparer.OrdinalIgnoreCase);
+            string s = want; int n = 2;
+            while (t.Contains(s)) s = want + "_" + I(n++);
+            return s;
+        }
+
+        void LoadsIn()
+        {
+            if (In.Analysis == null) { if (In.Loads.Count > 0) Note("no PERFORM ANALYSIS: the cases are read as linear"); }
+            else if (Regex.IsMatch(In.Analysis, @"^PDELTA\s+\d+\s+ANALYSIS(\s+SMALLDELTA)?$", RegexOptions.IgnoreCase)) { PDelta = true; Note("PDELTA: the cases are SAP's P-Delta, nonlinear static from zero (" + In.Analysis + ")"); }
+            else if (!Regex.IsMatch(In.Analysis, @"^PERFORM ANALYSIS$", RegexOptions.IgnoreCase)) Refuse(In.Analysis + " (FrameStd writes PERFORM ANALYSIS or PDELTA 30 ANALYSIS SMALLDELTA)");
+            var refs = new Dictionary<string, Pat>(StringComparer.OrdinalIgnoreCase);
+            var numbers = new Dictionary<int, Case>();
+            foreach (var l in In.Loads)
+            {
+                bool known;
+                if (l.Kind == "reference")
+                {
+                    string type = DesignType(l.LoadType, out known);
+                    if (!known) Note("LOAD " + l.Id + ": LOADTYPE " + l.LoadType + " read as Other");
+                    string name = l.Title.Length > 0 ? l.Title : l.Id;
+                    if (Pats.Any(x => Is(x.Name, name))) { Refuse("LOAD " + l.Id + ": a second reference load titled " + name); continue; }
+                    if (refs.ContainsKey(l.Id)) { Refuse("LOAD " + l.Id + ": defined twice"); continue; }
+                    var p = NewPattern(name, type);
+                    refs[l.Id] = p;
+                    foreach (var b in l.Blocks) Block(b, p, "LOAD " + l.Id);
+                    SelfWeightZones(p);
+                    continue;
+                }
+                if (l.Kind == "primary")
+                {
+                    int n = int.Parse(l.Id, Inv);
+                    if (numbers.ContainsKey(n) || Combos.Any(x => x.Number == n)) { Refuse("LOAD " + l.Id + ": the number twice"); continue; }
+                    string h, name = CaseHead.TryGetValue(n, out h) && FrameStd.Plain(h, 60) == l.Title ? h : l.Title.Length > 0 ? l.Title : "LOAD" + l.Id;
+                    if (Cases.Any(x => Is(x.Name, name))) { Refuse("LOAD " + l.Id + ": a second load case titled " + name); continue; }
+                    var c = new Case { Number = n, Name = name, Type = DesignType(l.LoadType, out known) };
+                    if (!known) Note("LOAD " + l.Id + ": LOADTYPE " + l.LoadType + " read as Other");
+                    Pat own = null, disp = null;
+                    foreach (var b in l.Blocks)
+                    {
+                        if (b.Name == "REFERENCE LOAD")
+                        {
+                            foreach (var line in b.Lines)
+                            {
+                                var t = line.Spec;
+                                for (int k = 0; k < t.Length; k += 2)
+                                {
+                                    Pat rp; double f;
+                                    if (k + 1 >= t.Length || !refs.TryGetValue(t[k], out rp) || !Num(t[k + 1], out f)) { Refuse("LOAD " + l.Id + ": REFERENCE LOAD " + line.Text + " (" + t[k] + ": no such reference load, or no factor)"); break; }
+                                    c.Loads.Add(new KeyValuePair<string, double>(rp.Name, f));
+                                }
+                            }
+                            continue;
+                        }
+                        if (b.Name == "SUPPORT DISPLACEMENT LOAD")
+                        {
+                            if (disp == null) disp = NewPattern(Unique(name + "_SD", Pats.Select(x => x.Name)), c.Type);
+                            SupportDisplacements(b, disp, "LOAD " + l.Id);
+                            continue;
+                        }
+                        // loads given in the primary load itself: a pattern of its own
+                        if (own == null) own = NewPattern(Unique(name, Pats.Select(x => x.Name)), c.Type);
+                        Block(b, own, "LOAD " + l.Id);
+                    }
+                    if (own != null) { SelfWeightZones(own); c.Loads.Insert(0, new KeyValuePair<string, double>(own.Name, 1)); Note("LOAD " + l.Id + " (" + name + "): its own loads as load pattern " + own.Name); }
+                    if (disp != null) c.Loads.Add(new KeyValuePair<string, double>(disp.Name, 1));
+                    // STAAD's LOADTYPE is the case's; FrameStd writes the first pattern's when the case names none
+                    var firstPat = Pats.Where(p => c.Loads.Any(x => x.Key == p.Name)).FirstOrDefault();
+                    c.TypeNeeded = firstPat == null || firstPat.Type != c.Type;
+                    Cases.Add(c);
+                    numbers[n] = c;
+                    continue;
+                }
+                // a combination of primary loads
+                int cn = int.Parse(l.Id, Inv);
+                if (numbers.ContainsKey(cn) || Combos.Any(x => x.Number == cn)) { Refuse("LOAD COMBINATION " + l.Id + ": the number twice"); continue; }
+                string ch, cname = ComboHead.TryGetValue(cn, out ch) && FrameStd.Plain(ch, 60) == l.Title ? ch : l.Title.Length > 0 ? l.Title : "COMB" + l.Id;
+                if (Cases.Any(x => Is(x.Name, cname)) || Combos.Any(x => Is(x.Name, cname))) { Refuse("LOAD COMBINATION " + l.Id + ": the name " + cname + " is a case's or another combination's"); continue; }
+                var co = new Combo { Number = cn, Name = cname, Kind = l.Method == "SRSS" ? "SRSS" : l.Method == "ABS" ? "Abs Add" : "Linear Add" };
+                foreach (var b in l.Blocks)
+                    foreach (var line in b.Lines)
+                    {
+                        var t = line.Spec;
+                        for (int k = 0; k < t.Length; k += 2)
+                        {
+                            int n; double f;
+                            if (k + 1 >= t.Length || !int.TryParse(t[k], NumberStyles.None, Inv, out n) || !Num(t[k + 1], out f)) { Refuse("LOAD COMBINATION " + l.Id + ": " + line.Text); break; }
+                            if (!numbers.ContainsKey(n)) { Refuse("LOAD COMBINATION " + l.Id + ": load " + t[k] + " is not a primary load before it (FrameStd combines primary loads)"); break; }
+                            co.Items.Add(new KeyValuePair<int, double>(n, f));
+                        }
+                    }
+                if (co.Items.Count == 0) Refuse("LOAD COMBINATION " + l.Id + ": no loads");
+                Combos.Add(co);
+            }
+            // a pattern's member loads come in its model's table order (point, then distributed, or the other way round)
+            DistFirst = In.Loads.SelectMany(x => x.Blocks).Where(b => b.Name == "MEMBER LOAD").Any(b =>
+            {
+                int firstPoint = b.Lines.FindIndex(x => x.Spec.Length > 0 && (Is(x.Spec[0], "CON") || Is(x.Spec[0], "CMOM")));
+                int firstDist = b.Lines.FindIndex(x => x.Spec.Length > 0 && !(Is(x.Spec[0], "CON") || Is(x.Spec[0], "CMOM")));
+                return firstDist >= 0 && firstPoint > firstDist;
+            });
+            int want = 1;
+            foreach (var c in Cases) { if (c.Number != want) { Note("load numbers written back as FrameStd numbers them (cases from 1, then the combinations): LOAD " + I(c.Number) + " becomes " + I(want)); break; } want++; }
+            foreach (var co in Combos) { if (co.Number != want) { Note("load numbers written back as FrameStd numbers them (cases from 1, then the combinations): LOAD " + I(co.Number) + " becomes " + I(want)); break; } want++; }
+            foreach (int j in Enforced) if (!Pats.Any(p => p.Ground.ContainsKey(j))) Note("joint " + JointLabel[j] + ": ENFORCED with no support displacement (written back as FIXED)");
+        }
+
+        void Block(StaadBlock b, Pat p, string who)
+        {
+            string[] k6 = { "FX", "FY", "FZ", "MX", "MY", "MZ" };
+            if (b.Name == "SELFWEIGHT")
+            {
+                double f;
+                if (b.Head.Length != 2 || !Is(b.Head[0], "Y") || !Num(b.Head[1], out f)) { Refuse(who + ": SELFWEIGHT " + string.Join(" ", b.Head) + " (FrameStd writes SELFWEIGHT Y -f)"); return; }
+                if (p.SelfWeight != 0) { Refuse(who + ": SELFWEIGHT twice"); return; }
+                p.SelfWeight = -f + 0.0;
+                return;
+            }
+            foreach (var line in b.Lines)
+            {
+                var t = line.Spec;
+                if (b.Name == "JOINT LOAD")
+                {
+                    var v = new double[6];
+                    bool ok = t.Length % 2 == 0;
+                    for (int k = 0; ok && k < t.Length; k += 2)
+                    {
+                        int i = Array.FindIndex(k6, x => Is(t[k], x));
+                        double x6;
+                        if (i < 0 || !Num(t[k + 1], out x6)) { ok = false; break; }
+                        v[i] += x6;
+                    }
+                    if (!ok) { Refuse(who + ": JOINT LOAD " + line.Text); continue; }
+                    foreach (int j in line.Ids)
+                    {
+                        if (!Pos.ContainsKey(j)) { Refuse(who + ": a joint load on joint " + I(j) + ", not defined"); continue; }
+                        double[] have;
+                        if (!p.Joint.TryGetValue(j, out have)) p.Joint[j] = have = new double[6];
+                        var f = Rinv(new[] { v[0], v[1], v[2] }); var m = Rinv(new[] { v[3], v[4], v[5] });
+                        for (int i = 0; i < 3; i++) { have[i] += f[i]; have[3 + i] += m[i]; }
+                    }
+                    continue;
+                }
+                if (b.Name == "MEMBER LOAD") { foreach (int id in line.Ids) MemberLoad(id, t, p, who, line.Text); continue; }
+                if (b.Name == "TEMPERATURE LOAD") { foreach (int id in line.Ids) TempLoad(id, t, p, who, line.Text); continue; }
+                Refuse(who + ": " + b.Name + " " + line.Text);
+            }
+        }
+
+        // FrameStd's self weight on the rigid end zones, as joint loads (STAAD's SELFWEIGHT loads the clear length only),
+        // taken off: SAP's own self weight covers the zones
+        void SelfWeightZones(Pat p)
+        {
+            if (p.SelfWeight == 0) return;
+            foreach (var m in Frames)
+            {
+                double q = Val(m.Mat, "DENSITY") * FrameStd.Printed(m.Ax) * p.SelfWeight;
+                if (q == 0) continue;
+                if (m.ZoneI > 0) Untransfer(m, p, m.ZoneI / 2, new[] { 0, -q * m.ZoneI, 0 }, true);
+                if (m.ZoneJ > 0) Untransfer(m, p, m.L - m.ZoneJ / 2, new[] { 0, -q * m.ZoneJ, 0 }, false);
+            }
+        }
+
+        // a force FrameStd moved from inside an end zone (at s from joint I) to its joint, taken off that joint's load
+        void Untransfer(Mem m, Pat p, double s, double[] f, bool atI)
+        {
+            int j = atI ? m.I : m.J;
+            var r = Add(m.Trans, Mul(m.X, atI ? s : s - m.L));
+            var mm = Cross(r, f);
+            var take = Rinv(f).Concat(Rinv(mm)).ToArray();
+            double[] have;
+            if (!p.Joint.TryGetValue(j, out have)) { Refuse("joint " + I(j) + ": " + p.Name + " has no joint load for the weight of member " + I(m.Id) + "'s rigid end zone (SAP's self weight loads end zones, STAAD's does not: FrameStd writes their weight as joint loads)"); return; }
+            for (int i = 0; i < 6; i++)
+            {
+                double before = have[i], v = before - take[i], scale = Math.Max(Math.Abs(before), Math.Abs(take[i]));
+                if (Math.Abs(v) <= 1e-9 * scale) v = 0;
+                else if (v != 0) v = double.Parse(v.ToString("G12", Inv), Inv);
+                have[i] = v;
+            }
+            if (have.All(x => x == 0)) p.Joint.Remove(j);
+        }
+
+        // a STAAD load direction as SAP's: CoordSys, Dir and the sign SAP's value takes
+        static bool Dir(string key, bool point, bool moment, bool negative, out string cs, out string dir, out double sign)
+        {
+            cs = "GLOBAL"; dir = null; sign = 1;
+            string k = key.ToUpperInvariant();
+            if (k == "X" || k == "Y" || k == "Z") { cs = "Local"; dir = (k[0] - 'X' + 1).ToString(Inv); return true; }
+            if (k.Length != 2 || (k[0] != 'G' && k[0] != 'P')) return false;
+            bool proj = k[0] == 'P';
+            if (proj && (point || moment)) return false;
+            string s = proj ? " Proj" : "";
+            if (k[1] == 'X') { dir = "X" + s; return true; }
+            if (k[1] == 'Y') { if (negative) { dir = "Gravity" + s; sign = -1; } else dir = "Z" + s; return true; }
+            if (k[1] == 'Z') { dir = "Y" + s; sign = -1; return true; }
+            return false;
+        }
+
+        void MemberLoad(int id, string[] t, Pat p, string who, string text)
+        {
+            Mem m;
+            string what = who + ": MEMBER LOAD " + I(id) + " " + string.Join(" ", t);
+            if (!FrameOf.TryGetValue(id, out m)) { Refuse(what + " (" + (Trusses.Any(q => q[0] == id) ? "a truss member" : "no such member") + ")"); return; }
+            string type = t[0].ToUpperInvariant();
+            bool point = type == "CON" || type == "CMOM", moment = type == "CMOM" || type == "UMOM";
+            int want = type == "CON" || type == "CMOM" ? 4 : type == "UNI" || type == "UMOM" ? -1 : type == "TRAP" ? -2 : 0;
+            if (want == 0 || t.Length < 3) { Refuse(what + " (FrameStd writes CON CMOM UNI UMOM TRAP)"); return; }
+            var v = new List<double>();
+            for (int k = 2; k < t.Length; k++) { double x; if (!Num(t[k], out x)) { Refuse(what); return; } v.Add(x); }
+            if ((want == 4 && v.Count != 2) || (want == -1 && v.Count != 1 && v.Count != 3) || (want == -2 && v.Count != 2 && v.Count != 4)) { Refuse(what + " (its numbers)"); return; }
+            double clear = m.L - m.ZoneI - m.ZoneJ;
+            Func<double, bool> inside = d => d >= -1e-9 * m.L && d <= clear * (1 + 1e-9) + 1e-12 * m.L;
+            double w1 = v[0], w2 = type == "TRAP" ? v[1] : v[0];
+            string cs, dir; double sign;
+            if (!Dir(t[1], point, moment, !moment && w1 <= 0 && w2 <= 0 && (w1 < 0 || w2 < 0), out cs, out dir, out sign)) { Refuse(what + " (direction " + t[1] + ")"); return; }
+            string head = "Frame=" + Q(m.Label) + "   LoadPat=" + Q(p.Name) + "   CoordSys=" + cs + "   Type=" + (moment ? "Moment" : "Force") + "   Dir=" + Q(dir) + "   DistType=AbsDist";
+            if (point)
+            {
+                double d = v[1];
+                if (!inside(d)) { Refuse(what + " (at " + FrameStd.N(d) + ", off its clear length " + FrameStd.N(clear) + ")"); return; }
+                double zi = m.ZoneI, s = zi == 0 ? d : Shortest(zi + d, x => x - zi, d);
+                p.Point.Add(head + "   RelDist=" + F(Round12(s / m.L)) + "   AbsDist=" + F(s) + "   " + (moment ? "Moment=" : "Force=") + F(v[0] * sign));
+                return;
+            }
+            double d1 = 0, d2 = clear;
+            if (v.Count > 2 || (type == "TRAP" && v.Count == 4)) { d1 = type == "TRAP" ? v[2] : v[1]; d2 = type == "TRAP" ? v[3] : v[2]; }
+            if (d2 < d1) { double x = d1; d1 = d2; d2 = x; x = w1; w1 = w2; w2 = x; }
+            if (!inside(d1) || !inside(d2) || d2 - d1 <= 1e-12 * m.L) { Refuse(what + " (from " + FrameStd.N(d1) + " to " + FrameStd.N(d2) + ", off its clear length " + FrameStd.N(clear) + ")"); return; }
+            double z0 = m.ZoneI, a = z0 == 0 ? d1 : Shortest(z0 + d1, x => x - z0, d1), b = z0 == 0 ? d2 : Shortest(z0 + d2, x => x - z0, d2);
+            string kA = moment ? "MOverLA" : "FOverLA", kB = moment ? "MOverLB" : "FOverLB";
+            p.Dist.Add(head + "   RelDistA=" + F(Round12(a / m.L)) + "   RelDistB=" + F(Round12(b / m.L)) + "   AbsDistA=" + F(a) + "   AbsDistB=" + F(b) + "   " + kA + "=" + F(w1 * sign) + "   " + kB + "=" + F(w2 * sign));
+        }
+
+        void TempLoad(int id, string[] t, Pat p, string who, string text)
+        {
+            Mem m;
+            string what = who + ": TEMPERATURE LOAD " + I(id) + " " + string.Join(" ", t);
+            if (!FrameOf.TryGetValue(id, out m)) { Refuse(what + " (" + (Trusses.Any(q => q[0] == id) ? "a truss member" : "no such member") + ")"); return; }
+            if (!Is(t[0], "TEMP") || t.Length < 2 || t.Length > 4) { Refuse(what + " (FrameStd writes TEMP a [b [c]])"); return; }
+            var v = new double[3];
+            for (int k = 1; k < t.Length; k++) if (!Num(t[k], out v[k - 1])) { Refuse(what); return; }
+            string head = "Frame=" + Q(m.Label) + "   LoadPat=" + Q(p.Name);
+            if (v[0] != 0) p.Temp.Add(head + "   Type=Temperature   Temp=" + F(v[0]));
+            // STAAD's differences top to bottom (along y) and side to side (along z), over the depth / width: SAP's gradients
+            double dep = m.Depth, wid = m.Width;
+            if (v[1] != 0) { if (dep > 0) p.Temp.Add(head + "   Type=Gradient2   TempGrad2=" + F(Shortest(v[1] / dep, x => x * dep, v[1]))); else Refuse(what + " (a gradient on a section with no depth)"); }
+            if (v[2] != 0) { if (wid > 0) p.Temp.Add(head + "   Type=Gradient3   TempGrad3=" + F(Shortest(v[2] / wid, x => x * wid, v[2]))); else Refuse(what + " (a gradient on a section with no width)"); }
+        }
+
+        void SupportDisplacements(StaadBlock b, Pat p, string who)
+        {
+            string[] k6 = { "FX", "FY", "FZ", "MX", "MY", "MZ" };
+            int[] global = { 0, 2, 1, 3, 5, 4 };
+            foreach (var line in b.Lines)
+            {
+                var t = line.Spec;
+                double v;
+                int i = t.Length == 2 ? Array.FindIndex(k6, x => Is(t[0], x)) : -1;
+                if (i < 0 || !Num(t[1], out v)) { Refuse(who + ": SUPPORT DISPLACEMENT LOAD " + line.Text + " (FrameStd writes joint DOF value)"); continue; }
+                foreach (int j in line.Ids)
+                {
+                    bool[] res;
+                    if (!Restraint.TryGetValue(j, out res) || !res[global[i]] || JointAngles.ContainsKey(j)) { Refuse(who + ": a support displacement " + k6[i] + " at joint " + I(j) + ", which its support does not hold in global axes"); continue; }
+                    double[] have;
+                    if (!p.Ground.TryGetValue(j, out have)) p.Ground[j] = have = new double[6];
+                    var s = new double[6];
+                    s[i] = i < 3 ? v : Shortest(v * Math.PI / 180, x => x * 180 / Math.PI, v);
+                    var u = Rinv(new[] { s[0], s[1], s[2] }); var r = Rinv(new[] { s[3], s[4], s[5] });
+                    for (int k = 0; k < 3; k++) { have[k] += u[k]; have[3 + k] += r[k]; }
+                }
+            }
+        }
+
+        // ---------------- the .s2k text
+
+        string Emit()
+        {
+            var w = new List<string>();
+            w.Add("File generated by Pluto StdToFrame.cs: a STAAD.Pro .std (" + System.IO.Path.GetFileName(In.Path) + ") read back as a frame model");
+            w.Add("");
+            Action<string, IEnumerable<string>> table = (name, rows) => { var l = rows.ToList(); if (l.Count == 0) return; w.Add("TABLE:  \"" + name + "\""); foreach (var r in l) w.Add("   " + r); w.Add(""); };
+            string version = !string.IsNullOrEmpty(SapVersion) ? SapVersion : HeadVersion ?? "22.0.0";
+            table("PROGRAM CONTROL", new[] { "ProgramName=SAP2000   Version=" + version + "   CurrUnits=\"" + UnitsText + "\"" });
+            table("TABLES AUTOMATICALLY SAVED AFTER ANALYSIS", new[] { "SaveFile=No" });
+            table("ACTIVE DEGREES OF FREEDOM", new[] { "UX=Yes   UY=Yes   UZ=Yes   RX=Yes   RY=Yes   RZ=Yes" });
+            table("MATERIAL PROPERTIES 01 - GENERAL", MatOrder.Select(n => "Material=" + Q(SapMat(n)) + "   Type=" + (Mats[n].Type != null ? "Steel" : "Other") + "   SymType=Isotropic   TempDepend=No   Color=Blue"));
+            table("MATERIAL PROPERTIES 02 - BASIC MECHANICAL PROPERTIES", MatOrder.Select(n =>
+            {
+                var m = Mats[n];
+                double e = m.Values["E"], nu, g, d = Val(n, "DENSITY");
+                bool hasNu = m.Values.TryGetValue("POISSON", out nu), hasG = m.Values.TryGetValue("G", out g);
+                if (!hasNu) nu = hasG ? e / (2 * g) - 1 : 0;
+                if (!hasG) g = e / (2 * (1 + nu));
+                return "Material=" + Q(SapMat(n)) + "   UnitWeight=" + F(d) + "   UnitMass=" + F(Round12(d / Gravity)) + "   E1=" + F(e) + "   G12=" + F(g) + "   U12=" + F(hasNu ? nu : double.Parse(nu.ToString("G12", Inv), Inv)) + "   A1=" + F(Val(n, "ALPHA"));
+            }));
+            table("MATERIAL PROPERTIES 03A - STEEL DATA", MatOrder.Where(n => Mats[n].Type != null && Mats[n].Strength.ContainsKey("FY") && Mats[n].Strength.ContainsKey("FU")).Select(n =>
+            {
+                var s = Mats[n].Strength;
+                double fy = s["FY"], fu = s["FU"], ry, rt;
+                if (!s.TryGetValue("RY", out ry)) ry = 1;
+                if (!s.TryGetValue("RT", out rt)) rt = 1;
+                return "Material=" + Q(SapMat(n)) + "   Fy=" + F(fy) + "   Fu=" + F(fu) + "   EffFy=" + F(Shortest(ry * fy, x => x / fy, ry)) + "   EffFu=" + F(Shortest(rt * fu, x => x / fu, rt)) +
+                       "   SSCurveOpt=Simple   SSHysType=Kinematic   SHard=0.015   SMax=0.11   SRup=0.17   FinalSlope=-0.1   CoupModType=\"Von Mises\"";
+            }));
+            table("FRAME SECTION PROPERTIES 01 - GENERAL", Secs.Select(s =>
+            {
+                string head = "SectionName=" + Q(s.Name) + "   Material=" + Q(SapMat(s.Mat)) + "   ";
+                if (s.Row != null) return head + s.Row;
+                var p = s.P;
+                Func<double, double> z = x => double.IsNaN(x) ? 0 : x;
+                return head + "Shape=General   t3=" + F(p[6]) + "   t2=" + F(p[7]) + "   Area=" + F(p[0]) + "   TorsConst=" + F(p[1]) + "   I33=" + F(p[3]) + "   I22=" + F(p[2]) +
+                       "   I23=0   AS2=" + F(z(p[4])) + "   AS3=" + F(z(p[5])) + "   Color=Green";
+            }));
+            table("AREA SECTION PROPERTIES", AreaSecs.Select(s => "Section=" + Q(s[0]) + "   Material=" + Q(SapMat(s[1])) + "   MatAngle=0   AreaType=Shell   Type=" + s[2] + "   Thickness=" + s[3] + "   BendThick=" + s[3] + "   Color=Gray8Dark"));
+            table("JOINT COORDINATES", In.JointIds.Select(id => { var p = Rinv(Pos[id]); return "Joint=" + Q(JointLabel[id]) + "   CoordSys=GLOBAL   CoordType=Cartesian   XorR=" + F(p[0]) + "   Y=" + F(p[1]) + "   Z=" + F(p[2]); }));
+            table("JOINT RESTRAINT ASSIGNMENTS", In.JointIds.Where(Restraint.ContainsKey).Select(id => "Joint=" + Q(JointLabel[id]) + string.Concat(Enumerable.Range(0, 6).Select(i => "   " + FrameJoint.Dofs[i] + "=" + (Restraint[id][i] ? "Yes" : "No")).ToArray())));
+            table("JOINT LOCAL AXES ASSIGNMENTS 1 - TYPICAL", In.JointIds.Where(JointAngles.ContainsKey).Select(id => "Joint=" + Q(JointLabel[id]) + "   AngleA=" + F(JointAngles[id][0]) + "   AngleB=" + F(JointAngles[id][1]) + "   AngleC=" + F(JointAngles[id][2]) + "   AdvanceAxes=No"));
+            table("JOINT SPRING ASSIGNMENTS 1 - UNCOUPLED", In.JointIds.Where(Spring.ContainsKey).Select(id => "Joint=" + Q(JointLabel[id]) + "   CoordSys=" + (JointAngles.ContainsKey(id) ? "Local" : "GLOBAL") +
+                string.Concat(Enumerable.Range(0, 6).Select(i => "   " + FrameJoint.Dofs[i] + "=" + F(Spring[id][i])).ToArray())));
+            var fr = Frames.Where(m => m.Section != null).ToList();
+            table("CONNECTIVITY - FRAME", fr.Select(m => "Frame=" + Q(m.Label) + "   JointI=" + Q(JointLabel[m.I]) + "   JointJ=" + Q(JointLabel[m.J]) + "   IsCurved=No"));
+            table("FRAME SECTION ASSIGNMENTS", fr.Select(m =>
+            {
+                var s = Secs.First(x => x.Name == m.Section);
+                return "Frame=" + Q(m.Label) + "   SectionType=" + Q(s.Shape) + "   AutoSelect=N.A.   AnalSect=" + Q(s.Name) + "   DesignSect=" + Q(s.Name) + "   MatProp=" + (Is(s.Mat, m.Mat) ? "Default" : Q(SapMat(m.Mat)));
+            }));
+            table("FRAME LOCAL AXES ASSIGNMENTS 1 - TYPICAL", fr.Where(m => m.Angle != 0).Select(m => "Frame=" + Q(m.Label) + "   Angle=" + F(m.Angle) + "   AdvanceAxes=No"));
+            table("FRAME RELEASE ASSIGNMENTS 1 - GENERAL", fr.Where(m => m.HasRel).Select(m => "Frame=" + Q(m.Label) + string.Concat(Enumerable.Range(0, 12).Select(i => "   " + FrameMember.ReleaseDofs[i] + "=" + (m.Rel[i] ? "Yes" : "No")).ToArray()) +
+                "   PartialFix=" + (m.Pf.Any(x => x != 0) ? "Yes" : "No")));
+            table("FRAME RELEASE ASSIGNMENTS 2 - PARTIAL FIXITY", fr.Where(m => m.Pf.Any(x => x != 0)).Select(m => "Frame=" + Q(m.Label) + string.Concat(Enumerable.Range(0, 12).Where(i => m.Pf[i] != 0).Select(i => "   " + FrameMember.ReleaseDofs[i] + "=" + F(m.Pf[i])).ToArray())));
+            table("FRAME INSERTION POINT ASSIGNMENTS", fr.Where(m => Len(m.Trans) > 0).Select(m =>
+            {
+                double y = Dot(m.Trans, m.Y), z = Dot(m.Trans, m.Z);
+                if (Math.Abs(y) <= 1e-12 * m.L) y = 0;
+                if (Math.Abs(z) <= 1e-12 * m.L) z = 0;
+                return "Frame=" + Q(m.Label) + "   CardinalPt=\"10 (centroid)\"   CoordSys=Local   JtOffsetXI=0   JtOffsetYI=" + F(y) + "   JtOffsetZI=" + F(z) + "   JtOffsetXJ=0   JtOffsetYJ=" + F(y) + "   JtOffsetZJ=" + F(z) + "   Mirror2=No   Mirror3=No   Transform=Yes";
+            }));
+            table("FRAME OFFSET ALONG LENGTH ASSIGNMENTS", fr.Where(m => m.ZoneI > 0 || m.ZoneJ > 0).Select(m => "Frame=" + Q(m.Label) + "   Type=User   LengthI=" + F(m.ZoneI) + "   LengthJ=" + F(m.ZoneJ) + "   RigidFactor=1"));
+            table("FRAME PROPERTY MODIFIERS", fr.Where(m => m.Mods != null).Select(m => "Frame=" + Q(m.Label) + string.Concat(Enumerable.Range(0, 8).Select(i => "   " + FrameMember.ModifierKeys[i] + "=" + F(m.Mods[i])).ToArray())));
+            // STAAD's members meet only at their ends: SAP's auto mesh off, as the frames were
+            table("FRAME AUTO MESH ASSIGNMENTS", fr.Select(m => "Frame=" + Q(m.Label) + "   AutoMesh=No   AtJoints=No   AtFrames=No   NumSegments=0   MaxLength=0   MaxDegrees=0"));
+            table("CONNECTIVITY - AREA", Areas.Select(a => "Area=" + Q(a[0]) + "   NumJoints=" + I(a.Length - 3) + string.Concat(Enumerable.Range(3, a.Length - 3).Select(k => "   Joint" + I(k - 2) + "=" + Q(a[k])).ToArray())));
+            table("AREA SECTION ASSIGNMENTS", Areas.Select(a => "Area=" + Q(a[0]) + "   Section=" + Q(a[1]) + "   MatProp=" + Q(a[2])));
+            string gen = "   Mass=0   Weight=0   RotInert1=0   RotInert2=0   RotInert3=0   DefLength=1   DefArea=1   PDM2I=0   PDM2J=0   PDM3I=0   PDM3J=0   Color=Magenta";
+            table("LINK PROPERTY DEFINITIONS 01 - GENERAL", LinkProps.Select(p => "Link=" + Q(p[0]) + "   LinkType=Linear" + gen));
+            table("LINK PROPERTY DEFINITIONS 02 - LINEAR", LinkProps.Select(p => "Link=" + Q(p[0]) + "   DOF=U1   Fixed=No   TransKE=" + p[1] + "   TransCE=0"));
+            table("CONNECTIVITY - LINK", Links.Select(l => "Link=" + Q(l[0]) + "   JointI=" + Q(l[1]) + "   JointJ=" + Q(l[2])));
+            table("LINK PROPERTY ASSIGNMENTS", Links.Select(l => "Link=" + Q(l[0]) + "   LinkProp=" + Q(l[3]) + "   LinkFDProp=None"));
+            string gflags = "   Selection=Yes   SectionCut=Yes   Steel=Yes   Concrete=Yes   Aluminum=Yes   ColdFormed=Yes   Stage=Yes   Bridge=Yes   AutoSeismic=No   AutoWind=No   SelDesSteel=No   SelDesAlum=No   SelDesCold=No   MassWeight=Yes   Color=Green";
+            table("GROUPS 1 - DEFINITIONS", GroupOrder.Select(g => "GroupName=" + Q(g) + gflags));
+            table("GROUPS 2 - ASSIGNMENTS", GroupRows.Select(r => "GroupName=" + Q(r[0]) + "   ObjectType=" + r[1] + "   ObjectLabel=" + Q(r[2])));
+            table("LOAD PATTERN DEFINITIONS", Pats.Select(p => "LoadPat=" + Q(p.Name) + "   DesignType=" + Q(p.Type) + "   SelfWtMult=" + F(p.SelfWeight)));
+            table("JOINT LOADS - FORCE", Pats.SelectMany(p => p.Joint.Where(kv => kv.Value.Any(x => x != 0)).Select(kv => "Joint=" + Q(JointLabel[kv.Key]) + "   LoadPat=" + Q(p.Name) + "   CoordSys=GLOBAL   F1=" + F(kv.Value[0]) + "   F2=" + F(kv.Value[1]) + "   F3=" + F(kv.Value[2]) +
+                "   M1=" + F(kv.Value[3]) + "   M2=" + F(kv.Value[4]) + "   M3=" + F(kv.Value[5]))));
+            table("JOINT LOADS - GROUND DISPLACEMENT", Pats.SelectMany(p => p.Ground.Select(kv => "Joint=" + Q(JointLabel[kv.Key]) + "   LoadPat=" + Q(p.Name) + "   CoordSys=GLOBAL" + string.Concat(Enumerable.Range(0, 6).Select(i => "   " + FrameJoint.Dofs[i] + "=" + F(kv.Value[i])).ToArray()))));
+            if (DistFirst) table("FRAME LOADS - DISTRIBUTED", Pats.SelectMany(p => p.Dist));
+            table("FRAME LOADS - POINT", Pats.SelectMany(p => p.Point));
+            if (!DistFirst) table("FRAME LOADS - DISTRIBUTED", Pats.SelectMany(p => p.Dist));
+            table("FRAME LOADS - TEMPERATURE", Pats.SelectMany(p => p.Temp));
+            string type = PDelta ? "NonStatic" : "LinStatic";
+            table("LOAD CASE DEFINITIONS", Cases.Select(c => "Case=" + Q(c.Name) + "   Type=" + type + "   InitialCond=Zero" + (c.TypeNeeded ? "   DesignType=" + Q(c.Type) : "")));
+            table("CASE - STATIC 1 - LOAD ASSIGNMENTS", Cases.SelectMany(c => c.Loads.Select(kv => "Case=" + Q(c.Name) + "   LoadType=\"Load pattern\"   LoadName=" + Q(kv.Key) + "   LoadSF=" + F(kv.Value))));
+            string nlp = "   ResultsSave=\"Final State\"   SolScheme=\"Iterative Events\"   MaxTotal=200   MaxNull=50   EvLumpTol=0.01   MaxEvPerStp=24   MaxIterCS=10   MaxIterNR=40   ItConvTol=0.0001   TFMaxIter=10   TFTol=0.01   TFAccelFact=1   TFNoStop=No";
+            if (PDelta) table("CASE - STATIC 4 - NONLINEAR PARAMETERS", Cases.Select(c => "Case=" + Q(c.Name) + "   GeoNonLin=P-Delta" + nlp));
+            var byNumber = Cases.ToDictionary(c => c.Number);
+            string ctype = PDelta ? "\"NonLin Static\"" : "\"Linear Static\"";
+            var combos = new List<string>();
+            foreach (var co in Combos)
+                for (int k = 0; k < co.Items.Count; k++)
+                {
+                    string item = "CaseType=" + ctype + "   CaseName=" + Q(byNumber[co.Items[k].Key].Name) + "   ScaleFactor=" + F(co.Items[k].Value);
+                    combos.Add("ComboName=" + Q(co.Name) + (k == 0 ? "   ComboType=" + Q(co.Kind) + "   AutoDesign=No   " + item + "   SteelDesign=None   ConcDesign=None   AlumDesign=None   ColdDesign=None" : "   " + item));
+                }
+            table("COMBINATION DEFINITIONS", combos);
+            w.Add("END TABLE DATA");
+            w.Add("");
+            return string.Join("\r\n", w.ToArray());
+        }
+    }
+}

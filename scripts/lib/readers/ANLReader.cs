@@ -63,6 +63,23 @@ public class AnlIndexer
 		"FINISH"
 	};
 
+	// The input commands a .std needs marked as well (StaadInput, 2026-11-23): each ends the section before it. An .anl is
+	// indexed as it always was, without them. Never "STAAD SPACE": every .anl page header starts with it.
+	public static readonly string[] StdMarkers = new string[]
+	{
+		"MEMBER TRUSS",
+		"ELEMENT PLANE STRESS",
+		"END GROUP DEFINITION",
+		"END DEFINE MATERIAL",
+		"DEFINE REFERENCE LOADS",
+		"END DEFINE REFERENCE LOADS",
+		"REFERENCE LOAD",
+		"SELFWEIGHT",
+		"TEMPERATURE LOAD",
+		"SUPPORT DISPLACEMENT LOAD",
+		"PDELTA"
+	};
+
 	private static readonly HashSet<byte> InterestingFirstBytes = BuildInterestingBytes();
 
 	private static HashSet<byte> BuildInterestingBytes()
@@ -84,13 +101,26 @@ public class AnlIndexer
 	// 	Streams the entire file, recording byte offsets of each section header
 	public static List<AnlSection> IndexFile(string path)
 	{
+		return IndexFile(path, true, null);
+	}
+
+	// progress false draws no progress bar (a small file); extraMarkers (StdMarkers) are matched before the .anl's own
+	public static List<AnlSection> IndexFile(string path, bool progress, string[] extraMarkers)
+	{
+		string[] markers = SectionMarkers;
+		HashSet<byte> interesting = InterestingFirstBytes;
+		if (extraMarkers != null && extraMarkers.Length > 0)
+		{
+			markers = extraMarkers.Concat(SectionMarkers).ToArray();
+			interesting = new HashSet<byte>(markers.Select(m => (byte)m[0]));
+		}
 		var sections = new List<AnlSection>();
 		AnlSection current = null;
 		long fileLength = new FileInfo(path).Length;
 		const long progressInterval = 10L * 1024 * 1024; // 10MB
 		int totalTicks = (int)(fileLength / progressInterval) + 1;
 		long nextProgressAt = 0;
-		ProgressBar pb = new ProgressBar(totalTicks, title: "ANL First Pass");
+		ProgressBar pb = progress ? new ProgressBar(totalTicks, title: "ANL First Pass") : null;
 
 		// 	Track position manually because StreamReader is not reliable for this
 		//	use case
@@ -108,7 +138,7 @@ public class AnlIndexer
 				// Progress update every ~10MB with progressBar
 				if (lineStartOffset >= nextProgressAt)
 				{
-					pb.Tick();
+					if (pb != null) pb.Tick();
 					nextProgressAt = lineStartOffset + progressInterval;
 				}
 
@@ -163,14 +193,14 @@ public class AnlIndexer
 					continue;
 
 				byte contentByte = lineBuf[contentStart];
-				if (!InterestingFirstBytes.Contains(contentByte))
+				if (!interesting.Contains(contentByte))
 					continue;
 
 				// Strings are expensive
 				string trimmed = Encoding.UTF8.GetString(lineBuf, contentStart, lineLen - contentStart);
 
 				// Check if this line is a known section
-				string matchedSection = MatchSectionHeader(trimmed);
+				string matchedSection = MatchSectionHeader(trimmed, markers);
 
 				//if (lineStartOffset > 822742L && lineStartOffset < 1040117L)
 				// Console.WriteLine("Testing");
@@ -194,17 +224,17 @@ public class AnlIndexer
 			if (current != null)
 				current.EndOffset = fs.Length;
 		}
-		pb.Finish();
+		if (pb != null) pb.Finish();
 		return sections;
 	}
 
-	private static string MatchSectionHeader(string trimmedLine)
+	private static string MatchSectionHeader(string trimmedLine, string[] markers)
 	{
 		string upper = trimmedLine.ToUpperInvariant();
-		for (int i = 0; i < SectionMarkers.Length; i++)
+		for (int i = 0; i < markers.Length; i++)
 		{
-			if (upper.StartsWith(SectionMarkers[i]))
-				return SectionMarkers[i];
+			if (upper.StartsWith(markers[i]))
+				return markers[i];
 		}
 		return null;
 	}
@@ -400,6 +430,7 @@ public abstract class AnlBlockParser
 	protected long _nextProgressAt;
 	protected long _progressInterval;
 	protected ProgressBar _pb;
+	public bool Quiet;                      // no progress bar and no console lines (a .std: StaadInput)
 
 	protected AnlBlockParser(string path) { _path = path; }
 
@@ -465,8 +496,48 @@ public abstract class AnlBlockParser
 		int count = 0;
 		int i = start;
 		int end = start + len;
+		int numStart, numLen;
 
-		while (i < end && count < output.Length)
+		while (count < output.Length && NextNumber(buf, ref i, end, out numStart, out numLen))
+		{
+			// TODO update this to do custom byte based string -> float parsing if slow
+			string numStr = Encoding.UTF8.GetString(buf, numStart, numLen);
+			float val;
+			if (float.TryParse(numStr, NumberStyles.Float,
+							CultureInfo.InvariantCulture, out val))
+			{
+				output[count++] = val; // Populate the output list (ref) with floats
+			}
+		}
+
+		return count; // return count of numbers found
+	}
+
+	// The same numbers as doubles, as written (a .std's coordinates: StaadInput)
+	public static int ExtractDoubles(byte[] buf, int start, int len, double[] output)
+	{
+		int count = 0;
+		int i = start;
+		int end = start + len;
+		int numStart, numLen;
+
+		while (count < output.Length && NextNumber(buf, ref i, end, out numStart, out numLen))
+		{
+			double val;
+			if (double.TryParse(Encoding.UTF8.GetString(buf, numStart, numLen), NumberStyles.Float,
+							CultureInfo.InvariantCulture, out val))
+				output[count++] = val;
+		}
+
+		return count;
+	}
+
+	// The next number token from i (both of the above): false at the end of the line
+	private static bool NextNumber(byte[] buf, ref int i, int end, out int numStart, out int numLen)
+	{
+		numStart = 0;
+		numLen = 0;
+		while (i < end)
 		{
 			// Skip whitespace
 			while (i < end && (buf[i] == (byte)' ' || buf[i] == (byte)'\t'))
@@ -489,7 +560,7 @@ public abstract class AnlBlockParser
 				continue;
 			}
 
-			int numStart = i;
+			numStart = i;
 			bool seenDigit = false;
 			bool seenE = false;
 
@@ -541,21 +612,14 @@ public abstract class AnlBlockParser
 				}
 			}
 
-			int numLen = i - numStart;
+			numLen = i - numStart;
 			if (numLen > 0 && seenDigit)
-			{
-				// TODO update this to do custom byte based string -> float parsing if slow
-				string numStr = Encoding.UTF8.GetString(buf, numStart, numLen);
-				float val;
-				if (float.TryParse(numStr, NumberStyles.Float,
-								CultureInfo.InvariantCulture, out val))
-				{
-					output[count++] = val; // Populate the output list (ref) with floats
-				}
-			}
+				return true;
 		}
 
-		return count; // return count of numbers found
+		numStart = 0;
+		numLen = 0;
+		return false;
 	}
 
 	public void CheckProgress()
@@ -994,6 +1058,9 @@ public class AnlNodeParser : AnlBlockParser
 {
 	// Results
 	public List<Node> Nodes = new List<Node>();
+	// set (StaadInput): each joint's coordinates as written as well, doubles in the file's units
+	public Dictionary<int, double[]> Exact;
+	private readonly double[] _doubleBuf = new double[20];
 	public AnlNodeParser(string path) : base(path) { }
 	private AnlSection _section;
 
@@ -1007,7 +1074,7 @@ public class AnlNodeParser : AnlBlockParser
 		int totalTicks = (int)(bytesToRead / _progressInterval) + 1;
 		string title = string.Format("Parsing section: {0} ({1:F2}MB)", section.Name, bytesMB);
 
-		_pb = new ProgressBar(totalTicks, title: title);
+		_pb = Quiet ? null : new ProgressBar(totalTicks, title: title);
 
 		using (_fs = new FileStream(_path, FileMode.Open, FileAccess.Read,
 									FileShare.Read, 1 << 20))
@@ -1020,7 +1087,7 @@ public class AnlNodeParser : AnlBlockParser
 			// Parse joint data
 			ParseNodeBlock(endOffset);
 
-			_pb.Finish();
+			if (_pb != null) _pb.Finish();
 		}
 	}
 
@@ -1068,6 +1135,11 @@ public class AnlNodeParser : AnlBlockParser
 				rec.xyz.Y = (float)UnitConvert.ToInch(rec.xyz.Y, _section.Length);
 				rec.xyz.Z = (float)UnitConvert.ToInch(rec.xyz.Z, _section.Length);
 				Nodes.Add(rec);
+				if (Exact != null)
+				{
+					ExtractDoubles(_lineBuf1, 0, len1, _doubleBuf);
+					Exact[rec.id] = new double[] { _doubleBuf[lineNumOffset + 1], _doubleBuf[lineNumOffset + 2], _doubleBuf[lineNumOffset + 3] };
+				}
 			}
 		}
 	}
@@ -1077,6 +1149,7 @@ public class AnlGeomParser : AnlBlockParser
 {
 	public List<Member> Members = new List<Member>();
 	public List<Element> Elements = new List<Element>();
+	public readonly List<int> NoThickness = new List<int>();     // Quiet: elements with no thickness, not printed
 	private Dictionary<int, Node> _nodes;
 	private Dictionary<int, float> _thickness;
 	private Dictionary<int, float[]> _memberSections;
@@ -1107,7 +1180,7 @@ public class AnlGeomParser : AnlBlockParser
 		_nextProgressAt = section.StartOffset + _progressInterval;
 		int totalTicks = (int)(bytesToRead / _progressInterval) + 1;
 		string title = string.Format("Parsing section: {0} ({1:F2}MB)", section.Name, bytesMB);
-		_pb = new ProgressBar(totalTicks, title: title);
+		_pb = Quiet ? null : new ProgressBar(totalTicks, title: title);
 
 		using (_fs = new FileStream(_path, FileMode.Open, FileAccess.Read,
 									FileShare.Read, 1 << 20))
@@ -1120,7 +1193,7 @@ public class AnlGeomParser : AnlBlockParser
 			// Parse element data
 			ParseElementBlock(endOffset);
 
-			_pb.Finish();
+			if (_pb != null) _pb.Finish();
 		}
 	}
 
@@ -1136,7 +1209,7 @@ public class AnlGeomParser : AnlBlockParser
 		_nextProgressAt = section.StartOffset + _progressInterval;
 		int totalTicks = (int)(bytesToRead / _progressInterval) + 1;
 		string title = string.Format("Parsing section: {0} ({1:F2}MB)", section.Name, bytesMB);
-		_pb = new ProgressBar(totalTicks, title: title);
+		_pb = Quiet ? null : new ProgressBar(totalTicks, title: title);
 
 		using (_fs = new FileStream(_path, FileMode.Open, FileAccess.Read,
 									FileShare.Read, 1 << 20))
@@ -1149,7 +1222,7 @@ public class AnlGeomParser : AnlBlockParser
 			// Parse member data
 			ParseMemberBlock(endOffset);
 
-			_pb.Finish();
+			if (_pb != null) _pb.Finish();
 		}
 	}
 
@@ -1187,7 +1260,8 @@ public class AnlGeomParser : AnlBlockParser
 				if (!_thickness.TryGetValue(rec.id, out t))
 				{
 					// throw new KeyNotFoundException(string.Format("Element {0} has no thickness in _thickness dictionary (which is of size {1}.)", rec.id, _thickness.Count));
-					Console.WriteLine(string.Format("Element {0} has no thickness in _thickness dictionary (which is of size {1}.)", rec.id, _thickness.Count));
+					if (Quiet) NoThickness.Add(rec.id);
+					else Console.WriteLine(string.Format("Element {0} has no thickness in _thickness dictionary (which is of size {1}.)", rec.id, _thickness.Count));
 					t = 0;
 				}
 				rec.t = t;
@@ -1275,6 +1349,9 @@ public class AnlGroupParser
 	public Dictionary<int, float> Thickness;
 	public Dictionary<int, float[]> MemberSections;
 	public Dictionary<int, string> LoadCaseNames = new Dictionary<int, string>();
+	public Dictionary<string, string> GroupKinds = new Dictionary<string, string>();   // group -> the kind line above it (JOINT, MEMBER, ELEMENT ...)
+	public List<string> GroupOrder = new List<string>();                              // groups as defined
+	public Dictionary<int, double> ThicknessExact = new Dictionary<int, double>();    // as written, in the file's units
 	private string _path;
 
 	public AnlGroupParser(string path)
@@ -1290,6 +1367,7 @@ public class AnlGroupParser
 		string[] tokens = Tokenize(ReadAndCleanSection(section));
 
 		int i = 0;
+		string kind = null;
 		while (i < tokens.Length)
 		{
 			if (tokens[i].StartsWith("_"))
@@ -1298,10 +1376,15 @@ public class AnlGroupParser
 				string name = tokens[i];
 				i++;
 				Groups[name] = ParseIdRange(tokens, ref i);
+				if (kind != null) GroupKinds[name] = kind;
+				if (!GroupOrder.Contains(name)) GroupOrder.Add(name);
 				// Console.WriteLine("Added {0} ids to group: {1}",Groups[name].Count,name);
 			}
 			else
 			{
+				string up = tokens[i].ToUpperInvariant();
+				if (up == "JOINT" || up == "MEMBER" || up == "ELEMENT" || up == "SOLID" || up == "GEOMETRY" || up == "FLOOR")
+					kind = up;
 				i++;
 			}
 		}
@@ -1321,11 +1404,17 @@ public class AnlGroupParser
 				float t;
 				float.TryParse(tokens[i], System.Globalization.NumberStyles.Float,
 								System.Globalization.CultureInfo.InvariantCulture, out t);
+				double exact;
+				double.TryParse(tokens[i], System.Globalization.NumberStyles.Float,
+								System.Globalization.CultureInfo.InvariantCulture, out exact);
 				// Convert to inches
 				t = (float)UnitConvert.ToInch(t, section.Length);
 				i++;
 				foreach (int id in pendingIds)
+				{
 					Thickness[id] = t;
+					ThicknessExact[id] = exact;
+				}
 
 				pendingIds.Clear();
 			}
@@ -1639,6 +1728,55 @@ public class AnlGroupParser
 							StringSplitOptions.RemoveEmptyEntries);
 	}
 
+	// A section as STAAD reads its commands (a .std; numbered: an .anl's echo of its input): one entry per command, its
+	// continuation lines (ending "-") joined, ";" separating commands, page breaks and warnings dropped; the comment lines
+	// ("*") just before a command are kept with it. The section's own command is the first entry.
+	public List<StaadCommand> Commands(AnlSection section, bool numbered)
+	{
+		long length = section.EndOffset - section.StartOffset;
+		byte[] buf = new byte[length];
+		using (var fs = new FileStream(_path, FileMode.Open, FileAccess.Read, FileShare.Read))
+		{
+			fs.Seek(section.StartOffset, SeekOrigin.Begin);
+			fs.Read(buf, 0, (int)length);
+		}
+		var o = new List<StaadCommand>();
+		var comments = new List<string>();
+		var open = new StringBuilder();
+		foreach (string raw in Encoding.UTF8.GetString(buf).Split('\n'))
+		{
+			if (raw.StartsWith(" \f") || raw.StartsWith("  **WARNING")) continue;
+			string line = raw.TrimEnd('\r');
+			if (numbered) line = LineNumber.Replace(line, "");
+			line = line.Trim();
+			if (line.Length == 0) continue;
+			if (line[0] == '*') { comments.Add(line.Substring(1).Trim()); continue; }
+			string[] parts = line.Split(';');
+			for (int k = 0; k < parts.Length; k++)
+			{
+				string p = parts[k].Trim();
+				if (k == parts.Length - 1 && p.EndsWith("-")) { open.Append(p.Substring(0, p.Length - 1)).Append(' '); continue; }
+				open.Append(p);
+				string text = open.ToString().Trim();
+				open.Clear();
+				if (text.Length == 0) continue;
+				var c = new StaadCommand(text);
+				c.Comments.AddRange(comments);
+				comments.Clear();
+				o.Add(c);
+			}
+		}
+		if (open.ToString().Trim().Length > 0)
+		{
+			var c = new StaadCommand(open.ToString().Trim());
+			c.Comments.AddRange(comments);
+			o.Add(c);
+		}
+		return o;
+	}
+
+	private static readonly System.Text.RegularExpressions.Regex LineNumber = new System.Text.RegularExpressions.Regex(@"^\s*\d+\.(?!\d)\s*");
+
 	private List<int> ParseIdRange(string[] tokens, ref int i)
 	{
 		var ids = new List<int>();
@@ -1668,6 +1806,414 @@ public class AnlGroupParser
 		return ids;
 	}
 
+}
+
+// ------ The input commands of a .std (2026-11-23) -------------
+
+// One STAAD command, as AnlGroupParser.Commands reads it
+public sealed class StaadCommand
+{
+	public readonly string Text;
+	public readonly string[] Tokens;
+	public readonly List<string> Comments = new List<string>();   // the comment lines just before it, "*" removed
+
+	public StaadCommand(string text)
+	{
+		Text = text;
+		Tokens = text.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+	}
+}
+
+// A command of the form most STAAD data takes: an id list, then what applies to it ("1 2 5 TO 9 PRIS AX 1 ...",
+// "101 FIXED BUT MX", "5 START 0 0 6"); CONSTANTS turn it round ("BETA 90 MEMB 3": Spec BETA 90, Ids 3)
+public sealed class StaadSpec
+{
+	public List<int> Ids = new List<int>();
+	public bool All;                                  // CONSTANTS ... ALL
+	public string[] Spec = new string[0];
+	public string Text;                               // as written
+	public List<string> Comments = new List<string>();
+}
+
+// DEFINE MATERIAL's ISOTROPIC name and its lines (E, POISSON, G, DENSITY, ALPHA, DAMP; TYPE; STRENGTH FY .. FU ..)
+public sealed class StaadMaterial
+{
+	public string Name;
+	public readonly Dictionary<string, double> Values = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+	public string Type;
+	public readonly Dictionary<string, double> Strength = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+}
+
+// A load: a reference load (LOAD R1 ...), a primary load (LOAD 1 ...) or a combination (LOAD COMBINATION [SRSS | ABS] n);
+// its blocks in order (SELFWEIGHT, JOINT LOAD, MEMBER LOAD, TEMPERATURE LOAD, REFERENCE LOAD, SUPPORT DISPLACEMENT LOAD;
+// a combination's factor lines as one COMBINATION block)
+public sealed class StaadLoad
+{
+	public string Kind;                               // reference, primary, combination
+	public string Id;                                 // R1, 1
+	public string LoadType = "";                      // LOADTYPE's words
+	public string Title = "";                         // TITLE's text (a combination: its name)
+	public string Method = "";                        // a combination's SRSS / ABS
+	public string Text;
+	public readonly List<StaadBlock> Blocks = new List<StaadBlock>();
+}
+
+public sealed class StaadBlock
+{
+	public string Name;                               // SELFWEIGHT, JOINT LOAD ...
+	public string[] Head = new string[0];             // the words after the block's own command (SELFWEIGHT Y -1: Y -1)
+	public readonly List<StaadSpec> Lines = new List<StaadSpec>();
+}
+
+// The input commands of a .std as data: what the .anl reader already reads -- the index (with the .std's own markers,
+// AnlIndexer.StdMarkers), units, joints, member and plate incidences, groups and plate thicknesses -- with its own parsers,
+// and text parsers for the commands an .anl never needed (materials, member properties, constants, offsets, releases,
+// trusses, supports, loads, the analysis). Syntax only, numbers as written: what a command means is the caller's
+// (StdToFrame, the frame model). A command it does not take is listed in Unread as written, never dropped.
+public sealed class StaadInput
+{
+	public string Path;
+	public List<AnlSection> Sections;
+	public readonly List<string> Header = new List<string>();          // comment lines before the first command, "*" removed
+	public readonly List<string> Preamble = new List<string>();        // the commands before UNIT (STAAD SPACE, INPUT WIDTH)
+	public readonly List<string> JobInformation = new List<string>();  // START JOB INFORMATION ... END JOB INFORMATION (STAAD's own, a record only)
+	public readonly List<string[]> Units = new List<string[]>();       // each UNIT command's words after UNIT
+	public readonly List<int> JointIds = new List<int>();              // as defined
+	public readonly Dictionary<int, double[]> Joints = new Dictionary<int, double[]>();   // STAAD X Y Z as written
+	public readonly List<int[]> Members = new List<int[]>();           // id, joint i, joint j
+	public readonly List<int[]> Plates = new List<int[]>();            // id, its joints
+	public readonly List<int> PlaneStress = new List<int>();
+	public readonly List<int> Truss = new List<int>();
+	public Dictionary<string, List<int>> Groups;
+	public Dictionary<string, string> GroupKinds;
+	public List<string> GroupOrder;
+	public Dictionary<int, double> Thickness;                            // plate -> its thickness as written
+	public readonly List<StaadMaterial> Materials = new List<StaadMaterial>();
+	public string PropertyTable;                                        // MEMBER PROPERTY's table (AMERICAN)
+	public readonly List<StaadSpec> MemberProperties = new List<StaadSpec>();
+	public readonly List<StaadSpec> ElementProperties = new List<StaadSpec>();
+	public readonly List<StaadSpec> Constants = new List<StaadSpec>();
+	public readonly List<StaadSpec> Offsets = new List<StaadSpec>();
+	public readonly List<StaadSpec> Releases = new List<StaadSpec>();
+	public readonly List<StaadSpec> Supports = new List<StaadSpec>();
+	public readonly List<StaadLoad> Loads = new List<StaadLoad>();
+	public string Analysis;                                             // PERFORM ANALYSIS, PDELTA 30 ANALYSIS SMALLDELTA ...
+	public bool Finished;                                               // FINISH
+	public readonly List<string> Unread = new List<string>();           // "<command>" or "<section>: <command>"
+
+	static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+	static bool Is(string a, string b) { return string.Equals(a, b, StringComparison.OrdinalIgnoreCase); }
+
+	public static StaadInput Read(string path)
+	{
+		var s = new StaadInput { Path = path };
+		s.Sections = AnlIndexer.IndexFile(path, false, AnlIndexer.StdMarkers);
+		AnlUnitStamper.StampUnits(path, s.Sections);
+		s.Head();
+		var grp = new AnlGroupParser(path);
+		// groups and thicknesses first: an id list may name a group, and plates take their thickness
+		foreach (var sec in s.Sections) if (sec.Name == "START GROUP DEFINITION") grp.ParseGroups(sec);
+		s.Groups = grp.Groups; s.GroupKinds = grp.GroupKinds; s.GroupOrder = grp.GroupOrder;
+		foreach (var sec in s.Sections) if (sec.Name == "ELEMENT PROPERTY") grp.ParseThickness(sec);
+		s.Thickness = grp.ThicknessExact;
+		Dictionary<int, Node> nodes = null;
+		StaadLoad load = null;
+		bool reference = false;
+		foreach (var sec in s.Sections)
+		{
+			var cmds = grp.Commands(sec, false);
+			if (cmds.Count == 0) continue;
+			var head = cmds[0];
+			var rest = cmds.Skip(1).ToList();
+			string name = sec.Name;
+			switch (name)
+			{
+				case "UNIT": s.Units.Add(head.Tokens.Skip(1).ToArray()); s.None(name, rest); break;
+				case "JOINT COORDINATES": nodes = s.JointsIn(sec, rest); break;
+				case "MEMBER INCIDENCES": s.Incidences(sec, rest, nodes, true); break;
+				case "ELEMENT INCIDENCES SHELL": s.Incidences(sec, rest, nodes, false); break;
+				case "ELEMENT PLANE STRESS": s.IdLines(name, rest, s.PlaneStress); break;
+				case "MEMBER TRUSS": s.IdLines(name, rest, s.Truss); break;
+				case "START GROUP DEFINITION":
+					foreach (var c in rest)
+						if (!(c.Tokens.Length == 1 && (Is(c.Text, "JOINT") || Is(c.Text, "MEMBER") || Is(c.Text, "ELEMENT"))) && !(c.Tokens[0].StartsWith("_") && s.AllIds(c.Tokens, 1)))
+							s.Unread.Add(name + ": " + c.Text);
+					break;
+				case "DEFINE MATERIAL START": s.MaterialsIn(rest); break;
+				case "MEMBER PROPERTY":
+					s.PropertyTable = head.Tokens.Length > 2 ? head.Tokens[2] : "";
+					s.Specs(name, rest, s.MemberProperties);
+					break;
+				case "ELEMENT PROPERTY": s.Specs(name, rest, s.ElementProperties); break;
+				case "CONSTANTS": s.ConstantsIn(rest); break;
+				case "MEMBER OFFSET": s.Specs(name, rest, s.Offsets); break;
+				case "MEMBER RELEASE": s.Specs(name, rest, s.Releases); break;
+				case "SUPPORTS": s.Specs(name, rest, s.Supports); break;
+				case "END GROUP DEFINITION": case "END DEFINE MATERIAL": s.None(name, rest); break;
+				case "DEFINE REFERENCE LOADS": reference = true; load = null; s.None(name, rest); break;
+				case "END DEFINE REFERENCE LOADS": reference = false; load = null; s.None(name, rest); break;
+				case "LOAD": load = s.LoadIn(head, rest, reference); break;
+				case "SELFWEIGHT": case "JOINT LOAD": case "MEMBER LOAD": case "TEMPERATURE LOAD": case "REFERENCE LOAD": case "SUPPORT DISPLACEMENT LOAD":
+					s.BlockIn(name, head, rest, load);
+					break;
+				case "PERFORM ANALYSIS": case "PDELTA":
+					if (s.Analysis != null) s.Unread.Add(head.Text + " (a second analysis)");
+					else s.Analysis = head.Text;
+					s.Prints(name, rest);
+					break;
+				case "FINISH": s.Finished = true; break;
+				default:
+					if (name.StartsWith("PRINT")) { s.Prints(name, rest); break; }
+					foreach (var c in cmds) s.Unread.Add(c.Text);
+					break;
+			}
+			if (s.Finished) break;
+		}
+		return s;
+	}
+
+	// the comments and commands before the first section
+	void Head()
+	{
+		long end = Sections.Count > 0 ? Sections[0].StartOffset : new FileInfo(Path).Length;
+		byte[] buf = new byte[end];
+		using (var fs = new FileStream(Path, FileMode.Open, FileAccess.Read, FileShare.Read)) fs.Read(buf, 0, (int)end);
+		bool job = false;
+		foreach (string raw in Encoding.UTF8.GetString(buf).Split('\n'))
+		{
+			string line = raw.Trim();
+			if (line.Length == 0) continue;
+			if (line[0] == '*') { Header.Add(line.Substring(1).Trim()); continue; }
+			if (Is(line, "START JOB INFORMATION")) { job = true; continue; }
+			if (job) { if (Is(line, "END JOB INFORMATION")) job = false; else JobInformation.Add(line); continue; }
+			foreach (string p in line.Split(';')) if (p.Trim().Length > 0) Preamble.Add(p.Trim());
+		}
+		if (job) Unread.Add("START JOB INFORMATION (no END JOB INFORMATION)");
+	}
+
+	void None(string section, List<StaadCommand> rest)
+	{
+		foreach (var c in rest) Unread.Add(section + ": " + c.Text);
+	}
+
+	void Prints(string section, List<StaadCommand> rest)
+	{
+		foreach (var c in rest) if (!c.Tokens[0].Equals("PRINT", StringComparison.OrdinalIgnoreCase)) Unread.Add(section + ": " + c.Text);
+	}
+
+	// an id list as STAAD writes one: numbers, "a TO b" (and "BY c"), group names; i stops at the first other token
+	public List<int> IdList(string[] t, ref int i)
+	{
+		var o = new List<int>();
+		while (i < t.Length)
+		{
+			List<int> g;
+			if (t[i].StartsWith("_") && Groups != null && (Groups.TryGetValue(t[i], out g) || Groups.TryGetValue(t[i].ToUpperInvariant(), out g))) { o.AddRange(g); i++; continue; }
+			int v, to, by;
+			if (!int.TryParse(t[i], NumberStyles.None, Inv, out v)) break;
+			i++;
+			if (i + 1 < t.Length && Is(t[i], "TO") && int.TryParse(t[i + 1], NumberStyles.None, Inv, out to))
+			{
+				i += 2;
+				by = 1;
+				if (i + 1 < t.Length && Is(t[i], "BY") && int.TryParse(t[i + 1], NumberStyles.None, Inv, out by) && by > 0) i += 2;
+				else by = 1;
+				for (int r = v; r <= to; r += by) o.Add(r);
+				continue;
+			}
+			o.Add(v);
+		}
+		return o;
+	}
+
+	bool AllIds(string[] t, int from)
+	{
+		int i = from;
+		IdList(t, ref i);
+		return i == t.Length;
+	}
+
+	static bool Number(string s, out double v) { return double.TryParse(s, NumberStyles.Float, Inv, out v); }
+
+	// JOINT COORDINATES: the .anl reader's joints, exact; every command "id x y z"
+	Dictionary<int, Node> JointsIn(AnlSection sec, List<StaadCommand> rest)
+	{
+		var anp = new AnlNodeParser(Path) { Quiet = true, Exact = new Dictionary<int, double[]>() };
+		anp.ParseSection(sec);
+		foreach (var c in rest)
+		{
+			int id;
+			bool ok = c.Tokens.Length == 4 && int.TryParse(c.Tokens[0], NumberStyles.None, Inv, out id) && c.Tokens.Skip(1).All(t => { double q; return Number(t, out q); });
+			if (!ok) { Unread.Add("JOINT COORDINATES: " + c.Text); continue; }
+			id = int.Parse(c.Tokens[0], Inv);
+			double[] p;
+			if (!anp.Exact.TryGetValue(id, out p)) { Unread.Add("JOINT COORDINATES: " + c.Text + " (across lines)"); continue; }
+			if (Joints.ContainsKey(id)) { Unread.Add("JOINT COORDINATES: " + c.Text + " (joint " + id.ToString(Inv) + " again)"); continue; }
+			Joints[id] = p;
+			JointIds.Add(id);
+		}
+		var d = new Dictionary<int, Node>();
+		foreach (var n in anp.Nodes) d[n.id] = n;
+		return d;
+	}
+
+	// MEMBER INCIDENCES ("id i j") or ELEMENT INCIDENCES SHELL ("id j1 j2 j3 [j4]"): the .anl reader's incidences, each
+	// command checked first (its joints defined)
+	void Incidences(AnlSection sec, List<StaadCommand> rest, Dictionary<int, Node> nodes, bool members)
+	{
+		string name = sec.Name;
+		bool ok = true;
+		foreach (var c in rest)
+		{
+			int n = c.Tokens.Length, v;
+			bool good = members ? n == 3 : n == 4 || n == 5;
+			var ids = new List<int>();
+			for (int k = 0; good && k < n; k++) { good = int.TryParse(c.Tokens[k], NumberStyles.None, Inv, out v); ids.Add(v); }
+			if (good && (nodes == null || ids.Skip(1).Any(j => !nodes.ContainsKey(j)))) { Unread.Add(name + ": " + c.Text + " (a joint not defined)"); ok = false; continue; }
+			if (!good) { Unread.Add(name + ": " + c.Text); ok = false; }
+		}
+		if (!ok) return;
+		var geo = new AnlGeomParser(Path) { Quiet = true };
+		if (members)
+		{
+			geo.ParseMemberSection(sec, nodes, new Dictionary<int, float[]>());
+			foreach (var m in geo.Members) Members.Add(new[] { m.id, m.n[0].id, m.n[1].id });
+		}
+		else
+		{
+			var t = new Dictionary<int, float>();
+			foreach (var kv in Thickness) t[kv.Key] = (float)kv.Value;
+			geo.ParseElementSection(sec, nodes, t);
+			foreach (var e in geo.Elements)
+			{
+				var p = new List<int> { e.id };
+				for (int k = 0; k < e.nNodes; k++) p.Add(e.n[k].id);
+				Plates.Add(p.ToArray());
+			}
+		}
+	}
+
+	void IdLines(string section, List<StaadCommand> rest, List<int> into)
+	{
+		foreach (var c in rest)
+		{
+			int i = 0;
+			var ids = IdList(c.Tokens, ref i);
+			if (i != c.Tokens.Length || ids.Count == 0) { Unread.Add(section + ": " + c.Text); continue; }
+			into.AddRange(ids);
+		}
+	}
+
+	// "ids spec": the id list, then the rest
+	void Specs(string section, List<StaadCommand> rest, List<StaadSpec> into)
+	{
+		foreach (var c in rest)
+		{
+			int i = 0;
+			var ids = IdList(c.Tokens, ref i);
+			if (ids.Count == 0 || i == c.Tokens.Length) { Unread.Add(section + ": " + c.Text); continue; }
+			into.Add(new StaadSpec { Ids = ids, Spec = c.Tokens.Skip(i).ToArray(), Text = c.Text, Comments = c.Comments });
+		}
+	}
+
+	// CONSTANTS: "<spec> MEMB <ids>" or "<spec> ALL"
+	void ConstantsIn(List<StaadCommand> rest)
+	{
+		foreach (var c in rest)
+		{
+			var t = c.Tokens;
+			int k = Array.FindIndex(t, x => Is(x, "MEMB") || Is(x, "MEMBER") || Is(x, "ALL"));
+			if (k < 1) { Unread.Add("CONSTANTS: " + c.Text); continue; }
+			var sp = new StaadSpec { Spec = t.Take(k).ToArray(), Text = c.Text, Comments = c.Comments };
+			if (Is(t[k], "ALL")) { sp.All = true; if (k != t.Length - 1) { Unread.Add("CONSTANTS: " + c.Text); continue; } }
+			else
+			{
+				int i = k + 1;
+				sp.Ids = IdList(t, ref i);
+				if (i != t.Length || sp.Ids.Count == 0) { Unread.Add("CONSTANTS: " + c.Text); continue; }
+			}
+			Constants.Add(sp);
+		}
+	}
+
+	void MaterialsIn(List<StaadCommand> rest)
+	{
+		StaadMaterial m = null;
+		foreach (var c in rest)
+		{
+			var t = c.Tokens;
+			double v;
+			if (Is(t[0], "ISOTROPIC") && t.Length == 2) { m = new StaadMaterial { Name = t[1] }; Materials.Add(m); continue; }
+			if (m == null) { Unread.Add("DEFINE MATERIAL: " + c.Text); continue; }
+			if (t.Length == 2 && Number(t[1], out v) && new[] { "E", "POISSON", "G", "DENSITY", "ALPHA", "DAMP" }.Any(x => Is(t[0], x)) && !m.Values.ContainsKey(t[0])) { m.Values[t[0]] = v; continue; }
+			if (t.Length == 2 && Is(t[0], "TYPE") && m.Type == null) { m.Type = t[1]; continue; }
+			if (Is(t[0], "STRENGTH") && t.Length % 2 == 1)
+			{
+				bool ok = true;
+				for (int k = 1; k + 1 < t.Length; k += 2) { if (!Number(t[k + 1], out v) || m.Strength.ContainsKey(t[k])) { ok = false; break; } m.Strength[t[k]] = v; }
+				if (ok) continue;
+			}
+			Unread.Add("DEFINE MATERIAL " + m.Name + ": " + c.Text);
+		}
+	}
+
+	// LOAD R1 LOADTYPE Dead TITLE DEAD; LOAD 1 LOADTYPE ... TITLE ...; LOAD COMBINATION [SRSS | ABS] n name (its factor lines
+	// in the same section)
+	StaadLoad LoadIn(StaadCommand head, List<StaadCommand> rest, bool reference)
+	{
+		var t = head.Tokens;
+		var l = new StaadLoad { Text = head.Text };
+		int k = 1;
+		if (t.Length > 1 && (Is(t[1], "COMBINATION") || Is(t[1], "COMB")))
+		{
+			l.Kind = "combination";
+			k = 2;
+			if (k < t.Length && (Is(t[k], "SRSS") || Is(t[k], "ABS"))) l.Method = t[k++].ToUpperInvariant();
+			int n;
+			if (reference || k >= t.Length || !int.TryParse(t[k], NumberStyles.None, Inv, out n)) { Unread.Add(head.Text); foreach (var c in rest) Unread.Add(head.Text + ": " + c.Text); return null; }
+			l.Id = t[k];
+			l.Title = string.Join(" ", t.Skip(k + 1).ToArray());
+			var b = new StaadBlock { Name = "COMBINATION" };
+			foreach (var c in rest) b.Lines.Add(new StaadSpec { Spec = c.Tokens, Text = c.Text, Comments = c.Comments });
+			l.Blocks.Add(b);
+			Loads.Add(l);
+			return null;
+		}
+		int num;
+		bool refId = t.Length > 1 && t[1].Length > 1 && (t[1][0] == 'R' || t[1][0] == 'r') && int.TryParse(t[1].Substring(1), NumberStyles.None, Inv, out num);
+		bool primary = t.Length > 1 && int.TryParse(t[1], NumberStyles.None, Inv, out num);
+		if ((reference && !refId) || (!reference && !primary)) { Unread.Add(head.Text); foreach (var c in rest) Unread.Add(head.Text + ": " + c.Text); return null; }
+		l.Kind = reference ? "reference" : "primary";
+		l.Id = t[1];
+		// LOADTYPE's words up to TITLE; TITLE's text as written (its spaces kept)
+		int lt = Array.FindIndex(t, x => Is(x, "LOADTYPE")), ti = Array.FindIndex(t, x => Is(x, "TITLE"));
+		if (lt == 2) l.LoadType = string.Join(" ", t.Skip(3).Take((ti < 0 ? t.Length : ti) - 3).ToArray());
+		if (ti >= 2)
+		{
+			int at = head.Text.IndexOf(" TITLE ", StringComparison.OrdinalIgnoreCase);
+			l.Title = at < 0 ? "" : head.Text.Substring(at + 7).Trim();
+		}
+		if ((lt >= 0 && lt != 2) || (ti >= 0 && ti < 2) || (lt < 0 && ti < 0 && t.Length > 2) || (lt < 0 && ti > 2)) Unread.Add(head.Text);
+		foreach (var c in rest) Unread.Add(head.Text + ": " + c.Text);
+		Loads.Add(l);
+		return l;
+	}
+
+	void BlockIn(string name, StaadCommand head, List<StaadCommand> rest, StaadLoad load)
+	{
+		if (load == null) { Unread.Add(head.Text + " (not in a load)"); foreach (var c in rest) Unread.Add(name + ": " + c.Text); return; }
+		var b = new StaadBlock { Name = name };
+		int words = name.Split(' ').Length;
+		b.Head = head.Tokens.Skip(words).ToArray();
+		if (name == "SELFWEIGHT") { foreach (var c in rest) Unread.Add(name + ": " + c.Text); }
+		else if (name == "REFERENCE LOAD") { foreach (var c in rest) b.Lines.Add(new StaadSpec { Spec = c.Tokens, Text = c.Text, Comments = c.Comments }); }
+		else
+		{
+			if (b.Head.Length > 0) Unread.Add(head.Text);
+			Specs(name, rest, b.Lines);
+		}
+		load.Blocks.Add(b);
+	}
 }
 
 public static class FirstBytes

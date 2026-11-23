@@ -8,11 +8,12 @@ created: 2026-11-18
 
 # Pluto handoff: current state
 
-**Where it stands (2026-11-21).** Branch `pipestress` holds:
+**Where it stands (2026-11-23).** Branch `pipestress` holds:
 - **The pipe workflow.** An Excel workbook or a TOML becomes one pipe model, reviewed in the viewer with CAESAR's error
   checks, and written as a CAESAR II `.cii`. An imported job comes back byte for byte.
 - **The frame side.** A lossless SAP2000 `.s2k` model, edited in the frame workbook (3D View, live checks) and written
-  to SAP and to STAAD.Pro (`-Std`, exact or refused).
+  to SAP and to STAAD.Pro (`-Std`, exact or refused). A `.std` it wrote reads back into a frame model, STAAD's edits
+  too (`-In x.std`), through the STAAD lib's `.anl` reader, extended in place.
 - **The CAESAR → SAP check model.** `Build-Frame -In <CAESAR job>` seeds the frame model from the pipe, for member
   forces and support reactions:
   - frames, bends, rigids, expansion joints, hangers and nozzles;
@@ -42,7 +43,10 @@ created: 2026-11-18
 Purging it means rewriting the branch's history.
 
 **Waiting on the production machine:**
-- the PS 5.1 compile probe (`Config.ps1`) for the session's C#;
+- the PS 5.1 compile probe (`Config.ps1`) for the session's C#, now with `StdToFrame` and the `.anl` reader's
+  extensions;
+- a `.std` that STAAD.Pro saves from its graphical editor, read back with `-In` (only Pluto's own files and hand
+  edits are tested);
 - the workbook question ("Overwrite the workbook?") in Windows PowerShell 5.1's console, run once by hand (checked
   here under PowerShell 7 in a terminal).
 
@@ -58,4 +62,4 @@ Purging it means rewriting the branch's history.
 CAESAR's restraints, re-seeding that keeps SAP-side additions, and writing a seeded model back as a `.cii`. See
 "Possible later" in [[vault/decisions/2026-11-12-caesar-to-sap|2026-11-12-caesar-to-sap]].
 
-Last session: [[vault/handoffs/handoff-2026-11-21|handoff-2026-11-21]].
+Last session: [[vault/handoffs/handoff-2026-11-23|handoff-2026-11-23]].

@@ -12,10 +12,15 @@ created: 2026-11-05
 model it seeds ([[vault/format/pipe-to-frame|pipe-to-frame]]). A seed is refused when it has a tie to a CNODE at its
 node or a zero-length expansion joint (zero-length links), or any nonlinear support (nonlinear links): see Links below.
 
+**And back:** `Build-Frame.ps1 -In <x>.std` reads a `.std` the writer made, after edits in STAAD too, into a frame
+model again (2026-11-23; "Reading a .std back", below).
+
 **Code:**
 - `FrameStd` is the writer.
 - `FrameStdSections` gives a section's properties.
 - `FrameStdProbe` writes the STAAD probe.
+- `StdToFrame` is the reader. It works over `StaadInput` in `scripts/lib/readers/ANLReader.cs`: the `.anl` reader's own
+  parsers, extended to read a `.std`'s input commands.
 
 **The rule:** exact or refused ([[vault/decisions/2026-11-05-frame-staad|2026-11-05-frame-staad]]).
 - Every refusal comes at once on `[refuse]` lines. Refusals with the same reason are one line naming the objects (12
@@ -32,7 +37,7 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > 1. `STAAD SPACE`, then comments:
 >    - the source;
 >    - every SAP label that is not its own STAAD number (text labels, plates renumbered after members, links as
->      truss members);
+>      truss members), and every material or group whose STAAD name is not its SAP label;
 >    - the load numbers of the SAP cases and combinations;
 >    - every notice.
 > 2. `INPUT WIDTH 79`, then `UNIT` from SAP's unit set. Length: `INCHES FEET MMS CM METER`. Force: `KIP POUND KNS
@@ -40,7 +45,9 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > 3. `JOINT COORDINATES`, `MEMBER INCIDENCES` (frames, then truss links), `ELEMENT INCIDENCES SHELL` (areas).
 > 4. `START GROUP DEFINITION`.
 > 5. `DEFINE MATERIAL START` … `END DEFINE MATERIAL`.
-> 6. `MEMBER PROPERTY AMERICAN`, `ELEMENT PROPERTY`.
+> 6. `MEMBER PROPERTY AMERICAN`, `ELEMENT PROPERTY`: a line per SAP section, its name in a comment above it
+>    (`* SAP section <name>`, `* SAP area section <name>`). A `TABLE ST` line's comment also holds the section's SAP
+>    row, which SAP needs to rebuild it.
 > 7. `CONSTANTS`: `MATERIAL`, `BETA`.
 > 8. `MEMBER OFFSET`, `MEMBER RELEASE`, `MEMBER TRUSS`, `SUPPORTS`.
 > 9. `DEFINE REFERENCE LOADS`, the primary loads, `LOAD COMBINATION`.
@@ -89,8 +96,11 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >
 >   The frame's modifiers multiply A, J, I22, I33, AS2 and AS3. A zero shear area is left out (shear deformation
 >   ignored, as in SAP). YD / ZD = t3 / t2 (temperature gradients need them).
-> - **Refused:** a section with a product of inertia I23 (angles, and General sections that carry one). STAAD's
->   prismatic property has none.
+> - **Refused:**
+>   - a section with a product of inertia I23 (angles, and General sections that carry one). STAAD's prismatic
+>     property has none.
+>   - a section with modifiers of its own (its row's `AMod` … `WMod` other than 1, 2026-11-23). SAP applies them as
+>     well as the frame's, and only the frame's are folded in. Give them to its frames instead.
 > - **Channels, tees and double angles are written centroidal, with a notice and a banner** (the user's choice,
 >   2026-11-07). SAP 24 twists them about their shear center; STAAD does not (round 2). The banner is a starred
 >   block just above `MEMBER PROPERTY AMERICAN`, listing the members: "SHEAR CENTER NOT MODELED …". Bending and axial
@@ -126,7 +136,9 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >
 >   **Loads on rigid end zones.** STAAD loads only the clear length; positions are measured from the offset end [V].
 >   The part of a load inside a zone, self weight included, goes to that end's joint as a force and its moment. This
->   assumes SAP loads the full joint-to-joint length (confirmed by round 2, part 5: equal to 0.00002 in).
+>   assumes SAP loads the full joint-to-joint length (confirmed by round 2, part 5: equal to 0.00002 in). The zones'
+>   self weight is worked out from the DENSITY and AX the file gives (STAAD's own self weight is their product), so a
+>   read takes it off again to the digit.
 > - **Links.**
 >   - Any nonlinear link refuses the model (each type with its links).
 >   - A grounded linear link adds its DOFs (fixed or KE) to its joint's support, in the link's axes.
@@ -213,6 +225,70 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > **Silent:** design, output, display, mass, functions, other analysis cases, bridge, rebar.
 >
 > **Listed** in a notice: anything else non-empty.
+
+> [!info]- Reading a .std back (`Build-Frame -In <x>.std`, 2026-11-23)
+> `StdToFrame` reads a `.std` this writer made back into a frame model, after edits in STAAD too. STAAD's commands are
+> the model, so an edit made there comes back; the comments the writer adds give back what STAAD has no place for:
+> SAP's labels; section, area section, material and group names; a table section's SAP row; the SAP version and units.
+> Outputs default to `<name>_std.*`, never over the model the `.std` came from.
+>
+> **The parsing is the `.anl` reader's.** `StaadInput` (in `scripts/lib/readers/ANLReader.cs`) indexes the file with the
+> `.anl` indexer and reads joints, incidences, groups and plate thicknesses with its parsers, made able to:
+> - take the commands only a `.std` needs marked (`MEMBER TRUSS`, `DEFINE REFERENCE LOADS`, `SELFWEIGHT`, `PDELTA` …);
+> - run without progress bars;
+> - keep coordinates and thicknesses as written, in doubles;
+> - record each group's kind.
+>
+> Text parsers there, on the same section index, read what an `.anl` never needed:
+> - materials, member properties, constants, offsets, releases, trusses and supports;
+> - reference loads, primary loads and combinations.
+>
+> An `.anl` is read as before: the old and new reader give the same output on random number lines, the probe and a
+> numbered echo of it.
+>
+> | STAAD | Frame model |
+> |---|---|
+> | joint (X, Y, Z) | SAP (X, −Z, Y) |
+> | BETA | the frame's angle (SAP's local 2 / 3 are STAAD's y / z) |
+> | `PRIS AX IX IY IZ [AY AZ] YD ZD` | a General section (shear areas 0 when absent) |
+> | the same SAP section with other numbers | the first one's section, with frame modifiers (mass and weight with AMod) |
+> | `TABLE ST` | the SAP row in its comment (refused without one: SAP cannot build a table section from its name) |
+> | `ISOTROPIC` | a material, Steel with `TYPE STEEL`, else Other; G must agree with E and POISSON (SAP's isotropic rule) |
+> | `MEMBER OFFSET` | end lengths (rigid) along it; across it, equal at both ends, joint offsets (local) |
+> | `MEMBER RELEASE` | releases; `K…` partial fixity (rotations per degree back to per radian) |
+> | `MEMBER TRUSS` | linear links, U1 = E AX / L (the header's EA / L when it agrees) |
+> | plates, `ELEMENT PLANE STRESS` | areas, Shell-Thin or Membrane |
+> | `SUPPORTS` | restraints and springs; `INCLINED`: the joint's local axes; `ENFORCED`: restraints |
+> | reference loads | load patterns, the zones' self weight taken off the joint loads |
+> | primary loads | linear static cases; nonlinear P-Delta from zero under `PDELTA` |
+> | a primary load's own loads, support displacements | a load pattern of its own each |
+> | `LOAD COMBINATION [SRSS, ABS]` | Linear Add, SRSS, Abs Add |
+>
+> A number worked out on the way back (a spring per radian, a modifier, a gradient) is the shortest that writes back
+> STAAD's digits: 1000, not 999.99999999752.
+>
+> **Exact or refused.** Any command the writer does not write is refused by name, with where it stood. That covers:
+> - another `UNIT` along the file;
+> - `CUT OFF`, `ELEMENT LOAD`, `LIN` member loads, `MP` releases, `CDAMP`;
+> - a `TABLE ST` with no SAP row.
+>
+> `START JOB INFORMATION`, a record only, is passed over with a notice.
+>
+> **The check.** The model is written back with `-Std` and its commands compared with the file's (comments, layout and
+> spacing aside); the run says whether they are the same, or lists the first differences.
+>
+> **Tested here:**
+> - The models below come back with every command the same:
+>   - the STAAD probe;
+>   - the linear rack, also with a catalog W10X33, P-Delta cases and kN / m;
+>   - a CAESAR seed with linear supports;
+>   - the probe with its comments stripped, which comes back with STAAD's numbers as labels;
+>   - the probe in STAAD's layout (four joints a line, job information);
+>   - a hand edit: a moved joint, an added load, a released support.
+> - The read model's workbook writes the same `.std`.
+>
+> **Not yet seen:** a `.std` that STAAD.Pro saves from its graphical editor. It may add or reorder commands; whatever
+> the reader does not take, it refuses by name.
 
 > [!info]- The STAAD probe (`-StdProbe <folder>`)
 > `staad-probe.s2k` and `staad-probe.std`: one model, every part analysable, for SAP2000 and STAAD.Pro alike. Each

@@ -27,7 +27,7 @@ flowchart LR
   FWB["frame workbook .xlsx"] <-->|"-Xlsx / -In"| FM
   FM(["frame model"])
   FM -->|"-S2k, -Open"| SAP["SAP2000"]
-  FM -->|"-Std"| STAAD["STAAD.Pro"]
+  FM <-->|"-Std / -In x.std"| STAAD["STAAD.Pro"]
   PM -->|"-Preview"| VIEW["Pluto viewer<br/>.bin + .features.json"]
   FM -->|"-Preview"| VIEW
   CAESAR -.->|"results: Run-Caesar.ps1"| VIEW
@@ -35,10 +35,12 @@ flowchart LR
 ```
 
 Solid arrows are what the two runners build. Dotted ones bring a program's results to the viewer. Nothing goes from
-SAP back to CAESAR. STAAD.Pro is an output only: nothing reads a `.std` into a frame model. (The older STAAD
-post-processing lib in `scripts/lib` reads STAAD's `.anl` results for plate models, for section cuts and design
-spreadsheets. It is not part of this pipeline; see STAAD in the [[vault/arms/Arms map|Arms map]].) The ways back are listed as later work in
-[[vault/decisions/2026-11-12-caesar-to-sap|2026-11-12-caesar-to-sap]].
+SAP back to CAESAR; those ways back are listed as later work in
+[[vault/decisions/2026-11-12-caesar-to-sap|2026-11-12-caesar-to-sap]]. A `.std` written with `-Std` comes back as a
+frame model with `-In <x>.std`, STAAD's edits too. The STAAD post-processing lib's `.anl` reader (`scripts/lib`)
+reads it: its parsers now take a `.std`'s input as well ([[vault/format/frame-to-staad|frame-to-staad]]). Its
+`.anl` results work (section cuts, design spreadsheets) is otherwise not part of this pipeline; see STAAD in the
+[[vault/arms/Arms map|Arms map]].
 
 > [!info]- The runners and what they take
 > All run under Windows PowerShell 5.1, need no Python, and end with one `RESULT {json}` line. Below, `...` stands
@@ -48,7 +50,7 @@ spreadsheets. It is not part of this pipeline; see STAAD in the [[vault/arms/Arm
 > | Runner | In | Out | Note |
 > |---|---|---|---|
 > | `scripts\caesar\Build-Pipe.ps1` | `.cii`, `.toml`, CAESAR workbook `.xlsx`, `.pipe.json` | `-Cii`, `-Xlsx`, `-Json`, `-Preview`, `-Compare <file>`; `-Watch`, `-NewWorkbook [-Seed <.cii>]`, `-Refresh` | [[vault/arms/pipe-workbook\|pipe-workbook]], [[vault/arms/pipe-builder\|pipe-builder]] |
-> | `scripts\frame\Build-Frame.ps1` | `.s2k`, frame workbook `.xlsx`, `.frame.json`; a CAESAR model (`.cii`, `.toml`, `.pipe.json`, CAESAR workbook) seeds the check model | `-S2k [-Open]`, `-Xlsx`, `-Std`, `-Json`, `-Preview`; `-Watch`, `-NewWorkbook`, `-Refresh`; `-AppendixD`; probes `-Probe`, `-ProbeCheck`, `-StdProbe` | [[vault/arms/frame-workbook\|frame-workbook]], [[vault/format/pipe-to-frame\|pipe-to-frame]], [[vault/format/frame-to-staad\|frame-to-staad]] |
+> | `scripts\frame\Build-Frame.ps1` | `.s2k`, frame workbook `.xlsx`, `.frame.json`, a `.std` written with `-Std`; a CAESAR model (`.cii`, `.toml`, `.pipe.json`, CAESAR workbook) seeds the check model | `-S2k [-Open]`, `-Xlsx`, `-Std`, `-Json`, `-Preview`; `-Watch`, `-NewWorkbook`, `-Refresh`; `-AppendixD`; probes `-Probe`, `-ProbeCheck`, `-StdProbe` | [[vault/arms/frame-workbook\|frame-workbook]], [[vault/format/pipe-to-frame\|pipe-to-frame]], [[vault/format/frame-to-staad\|frame-to-staad]] |
 > | `scripts\caesar\Run-Caesar.ps1` | `-Neutral <.cii>` `[-Results <CAESAR output .xlsx>]` | `.bin` + `.features.json` with CAESAR's results | [[vault/arms/caesar-to-viewer\|caesar-to-viewer]] |
 > | `scripts\sap\Run-Sap.ps1` | a running SAP2000, or `-Open <.s2k\|.sdb>` | `-Run`, `-Results <s2k>`, `-Export <base>` (viewer files) | [[vault/arms/sap-controller\|sap-controller]], [[vault/arms/sap-export-model\|sap-export-model]] |
 >
@@ -120,6 +122,18 @@ spreadsheets. It is not part of this pipeline; see STAAD in the [[vault/arms/Arm
 > 3. `-S2k` (or the `s2k` launcher) for SAP; `-Open` imports it in a SAP of its own and compares the object counts.
 > 4. `-Std` for STAAD.Pro. It is exact or refused: a nonlinear link, a zero-length tie or a partly rigid end zone
 >    refuses the file, every item named ([[vault/format/frame-to-staad|frame-to-staad]]).
+> 5. **Back from STAAD.** After edits in STAAD, `... Build-Frame.ps1 -In "<project dir>\rack.std" -Xlsx -S2k` reads the
+>    `.std` into a frame model again: `rack_std.xlsx` and `rack_std.s2k`, beside the model the `.std` came from, never
+>    over it. The read says whether writing the model back gives the file's commands, and refuses (by name) any
+>    command `-Std` does not write.
+>
+> ```mermaid
+> flowchart LR
+>   A["rack.xlsx / rack.s2k"] -->|"-Std"| B["rack.std"]
+>   B -->|"edit in STAAD.Pro"| B
+>   B -->|"-In rack.std -Xlsx -S2k"| C["rack_std.xlsx, rack_std.s2k"]
+>   C -->|"-S2k, -Open"| D["SAP2000"]
+> ```
 >
 > A new model starts from `... Build-Frame.ps1 -NewWorkbook -Out "<project dir>\duct.xlsx" -Units "lb, in, F"`.
 

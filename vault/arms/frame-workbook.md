@@ -266,9 +266,13 @@ The whole picture, CAESAR and STAAD included, with the commands for each job:
 > - the `.bak` name.
 
 > [!info]- The runner: `scripts/frame/Build-Frame.ps1`
-> - `-In <x.s2k | x.$2k | x.xlsx | x.frame.json>`, or a CAESAR model:
+> - `-In <x.s2k | x.$2k | x.xlsx | x.frame.json | x.std>`, or a CAESAR model:
 >   - An `.s2k` is read losslessly and checked: written back, it must be the source byte for byte. The report says so.
 >   - An `.xlsx` is a frame workbook, applied to the model it was written from.
+>   - A `.std` this runner wrote with `-Std`, after edits in STAAD too, is read back into a frame model (`StdToFrame`,
+>     2026-11-23; "Reading a .std back" in [[vault/format/frame-to-staad|frame-to-staad]]). Outputs default to
+>     `<name>_std.*`. A command `-Std` does not write refuses it, each on a `[refuse]` line. The read checks that the
+>     model written back with `-Std` gives the file's commands, and says so. `-Std` never writes over the input.
 >   - A `.cii`, `.toml`, `.pipe.json` or CAESAR workbook `.xlsx` seeds the check model of that pipe
 >     ([[vault/format/pipe-to-frame|pipe-to-frame]]). Outputs default to `<job>_sap.*`. What the check model cannot
 >     hold refuses it, each item on a `[refuse]` line. `-AppendixD` takes 1.65 / h for bends instead of B31J's

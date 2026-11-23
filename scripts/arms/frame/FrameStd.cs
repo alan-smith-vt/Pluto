@@ -94,6 +94,7 @@ public static class FrameStd
 
     // a number as STAAD reads it: 12 significant digits, -0 and residue below 1e-12 of `scale` as 0
     internal static string N(double v) { return N(v, 0); }
+    internal static double Printed(double v) { return double.Parse(N(v), Inv); }        // a number as the .std holds it
     internal static string N(double v, double scale)
     {
         if (double.IsNaN(v) || double.IsInfinity(v)) throw new InvalidOperationException("FrameStd: a number is " + v.ToString(Inv));
@@ -169,7 +170,7 @@ public static class FrameStd
         public double[] Mods;
         public double[] OffI, OffJ, Trans;       // STAAD offsets (global) and their common transverse part
         public double ZoneI, ZoneJ;              // end lengths (rigid, factor 1)
-        public double WeightPerLength;           // SAP's self weight per length (unit weight x A x WeightMod)
+        public double WeightPerLength;           // SAP's self weight per length (unit weight x A x WeightMod), as written: DENSITY x AX
         public string[] Rel = new string[2];     // MEMBER RELEASE items, START / END
     }
 
@@ -205,6 +206,7 @@ public static class FrameStd
         readonly Dictionary<string, int> AreaId = new Dictionary<string, int>(StringComparer.Ordinal);
         readonly Dictionary<int, double> PlateThick = new Dictionary<int, double>();
         readonly Dictionary<int, string> PlateMat = new Dictionary<int, string>();
+        readonly Dictionary<int, string> PlateSec = new Dictionary<int, string>();
         readonly List<string> PlaneStress = new List<string>();
         readonly List<FrameInfo> Mono = new List<FrameInfo>();           // channels, tees, double angles (shear center off the centroid)
         readonly Dictionary<string, int> TrussId = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -349,6 +351,10 @@ public static class FrameStd
             var p = FrameStdSections.Of(s, out why);
             if (p == null) { Refuse(who + ": section " + s.Label + ": " + why); return false; }
             if (p.I23 != 0) { Refuse(who + ": section " + s.Label + " (" + s.Shape + ") has a product of inertia I23; STAAD's prismatic property has none"); return false; }
+            // the section's own modifiers (its row's AMod ... WMod): SAP applies them with the frame's, which alone are folded in
+            var srow = s.Rec(FrameSection.General);
+            var smods = srow == null ? new string[0] : new[] { "AMod", "A2Mod", "A3Mod", "JMod", "I2Mod", "I3Mod", "MMod", "WMod" }.Where(k => srow.Has(k) && srow.Num(k, 1) != 1).ToArray();
+            if (smods.Length > 0) { Refuse("section " + s.Label + ": modifiers of its own (" + string.Join(" ", smods.Select(k => k + " " + N(srow.Num(k, 1))).ToArray()) + "); give them to its frames instead"); return false; }
             fi.S = s; fi.P = p;
             // SAP 24 twists a channel about its shear center (STAAD round 2, probe part 3, to 4 digits); STAAD's member is
             // centroidal. Written so (the user's choice, 2026-11-07), with a notice and a banner in the .std
@@ -366,10 +372,12 @@ public static class FrameStd
             var asg = f.Rec(FrameMember.SectionAssign);
             string mat = asg == null ? "" : asg.Get("MatProp") ?? "";
             if (mat == "" || Is(mat, "Default")) mat = s.Material;
-            double wf = fi.Mods[7] / fi.Mods[0];
-            fi.Mat = Material(mat, AnySelfWeight ? wf : 1, who);
+            double wf = AnySelfWeight ? fi.Mods[7] / fi.Mods[0] : 1;
+            fi.Mat = Material(mat, wf, who);
             var fm = M.Materials.FirstOrDefault(x => x.Label == mat);
-            fi.WeightPerLength = fm == null ? 0 : fm.Mech("UnitWeight") * p.A * fi.Mods[7];
+            // from the numbers STAAD is given, whose product its self weight is: the end zones' weight, added as joint loads,
+            // is then that of the rest of the member to the digit (and StdToFrame takes it off again exactly)
+            fi.WeightPerLength = fm == null ? 0 : Printed(fm.Mech("UnitWeight") * wf) * Printed(p.A * fi.Mods[0]);
             return fi.Mat != null;
         }
 
@@ -526,6 +534,7 @@ public static class FrameStd
                 Plates.Add(pl.ToArray());
                 PlateThick[id] = t;
                 PlateMat[id] = sm;
+                PlateSec[id] = s;
             }
             NextId = Math.Max(NextId, Plates.Count == 0 ? 0 : Plates.Max(x => x[0]));
             if (Plates.Count > 0)
@@ -1013,7 +1022,7 @@ public static class FrameStd
         // a frame's self weight on its rigid end zones (STAAD's SELFWEIGHT loads the clear length)
         void ZoneSelfWeight(FrameInfo fi, PatternLoads pl)
         {
-            double q = fi.WeightPerLength * pl.SelfWeight;
+            double q = fi.WeightPerLength * Printed(pl.SelfWeight);
             if (q == 0) return;
             if (fi.ZoneI > 0) Transfer(fi, pl, fi.ZoneI / 2, new[] { 0, -q * fi.ZoneI, 0 }, false);
             if (fi.ZoneJ > 0) Transfer(fi, pl, fi.L - fi.ZoneJ / 2, new[] { 0, -q * fi.ZoneJ, 0 }, false);
@@ -1251,15 +1260,25 @@ public static class FrameStd
                     Note("channels, tees and double angles (" + Few(Mono.Select(f => "frame " + f.F.Label + " (" + f.S.Shape + ")").ToList()) + "): SAP2000 twists them about their shear center; STAAD's members are centroidal, so STAAD shows no such twist (the probe: up to 0.03 in on a 70 in channel cantilever). Marked in the .std at MEMBER PROPERTY");
                 }
                 o.Add("MEMBER PROPERTY AMERICAN");
-                var props = new List<KeyValuePair<string, int>>();
-                foreach (var f in Frames) props.Add(new KeyValuePair<string, int>(f.Table != null ? "TABLE ST " + f.Table : Pris(f), f.Id));
-                foreach (var t in Trusses) props.Add(new KeyValuePair<string, int>("PRIS AX " + N(TrussAx[t[0]]), t[0]));
-                foreach (var g in props.GroupBy(x => x.Key)) line(Condense(g.Select(x => x.Value)) + " " + g.Key);
+                // a line per SAP section and property, the section's name in a comment above it (StdToFrame reads it back);
+                // a table section's comment holds its SAP row as well, which STAAD's table name cannot give SAP back
+                var props = Frames.Select(f => new { Sec = f.S, Prop = f.Table != null ? "TABLE ST " + f.Table : Pris(f), Id = f.Id })
+                                  .Concat(Trusses.Select(t => new { Sec = (FrameSection)null, Prop = "PRIS AX " + N(TrussAx[t[0]]), Id = t[0] })).ToList();
+                foreach (var g in props.GroupBy(x => (x.Sec == null ? "" : x.Sec.Label) + "\n" + x.Prop))
+                {
+                    var first = g.First();
+                    if (first.Sec != null) comment("SAP section " + first.Sec.Label + (first.Prop.StartsWith("TABLE ", StringComparison.Ordinal) ? ": " + SectionRow(first.Sec) : ""));
+                    line(Condense(g.Select(x => x.Id)) + " " + first.Prop);
+                }
             }
             if (Plates.Count > 0)
             {
                 o.Add("ELEMENT PROPERTY");
-                foreach (var g in PlateThick.GroupBy(kv => N(kv.Value))) line(Condense(g.Select(kv => kv.Key)) + " THICKNESS " + g.Key);
+                foreach (var g in PlateThick.GroupBy(kv => PlateSec[kv.Key] + "\n" + N(kv.Value)))
+                {
+                    comment("SAP area section " + PlateSec[g.First().Key]);
+                    line(Condense(g.Select(kv => kv.Key)) + " THICKNESS " + N(g.First().Value));
+                }
             }
             o.Add("CONSTANTS");
             var mats = Frames.Select(f => new KeyValuePair<string, int>(f.Mat, f.Id)).Concat(PlateMat.Select(kv => new KeyValuePair<string, int>(kv.Value, kv.Key)))
@@ -1374,6 +1393,7 @@ public static class FrameStd
             if (Plates.Count > 0) o.Add("PRINT ELEMENT JOINT STRESSES LIST ALL");
             o.Add("FINISH");
             // the head, last: groups, supports and loads add to the labels and notes
+            foreach (var md in MatDefs) if (md[2] == "1" && md[0] != md[1]) LabelLines.Add("material " + md[1] + " = " + md[0]);
             var body = o.ToList();
             o.Clear();
             o.Add("STAAD SPACE");
@@ -1385,6 +1405,16 @@ public static class FrameStd
             if (Notes.Count > 0) { comment("Notes:"); foreach (var n in Notes) comment("  " + n); }
             o.AddRange(body);
             return string.Join("\r\n", o.ToArray()) + "\r\n";
+        }
+
+        // a table section's SAP row for the comment above its TABLE ST line: its fields but its name, its material (the
+        // CONSTANTS give it), its colour, notes and totals
+        static string SectionRow(FrameSection s)
+        {
+            var r = s.Rec(FrameSection.General);
+            if (r == null) return "";
+            var skip = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "SectionName", "Material", "Color", "Notes", "GUID", "TotalWt", "TotalMass" };
+            return string.Join(" ", r.F.Where(kv => !skip.Contains(kv[0])).Select(kv => kv[0] + "=" + (kv[1].Length == 0 || kv[1].IndexOfAny(new[] { ' ', ',' }) >= 0 ? "\"" + kv[1] + "\"" : kv[1])).ToArray());
         }
 
         static string TempText(double[] v)
@@ -1440,7 +1470,7 @@ public static class FrameStd
                         count[key] = c + 1; keep.Add(id);
                     }
                     if (keep.Count > 0) blocks.Add(new[] { kv.Key, name, Condense(keep) });
-                    if (name != Name(g.Label, "_", 24)) LabelLines.Add("group " + g.Label + " = " + name);
+                    if (name != "_" + g.Label) LabelLines.Add("group " + g.Label + " = " + name);
                 }
             }
             if (full.Count > 0) Note("STAAD keeps an object in 4 groups at most: " + string.Join("; ", full.ToArray()));

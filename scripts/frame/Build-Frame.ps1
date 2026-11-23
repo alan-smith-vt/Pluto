@@ -15,6 +15,12 @@
 #                         (Pluto's defaults otherwise, with a warning). What the check model cannot hold yet refuses it,
 #                         each item on a [refuse] line. Bends take B31J's flexibility (1.3 / h), as CAESAR does for
 #                         B31.1-2020 and later; -AppendixD takes the older codes' 1.65 / h (CAESAR with B31J off)
+#           .std          a STAAD.Pro input file this runner wrote (-Std), edited in STAAD or not: read back into a frame
+#                         model (StdToFrame; vault/format/frame-to-staad.md). STAAD's commands are the model; the
+#                         comments -Std writes give back SAP's labels and names. Exact or refused: a command the frame
+#                         model cannot hold, or one -Std does not write, refuses it, each on a [refuse] line. The read
+#                         checks that writing the model back with -Std gives the file's commands (comments and layout
+#                         aside), and says so. Outputs default to <name>_std.*, never over the model it was written from
 #   out   -S2k      <base>.s2k for SAP2000 (File > Import > SAP2000 .s2k). Never written over the input file. An
 #                   existing <base>.s2k is replaced only when this runner wrote it (the stamp, <base>.build.json, says
 #                   so), when it is the model's own source, or when nothing in it would change; else -Force.
@@ -67,6 +73,7 @@
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.xlsx" -S2k -Preview
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.xlsx" -Std
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -In "<project dir>\job.xlsx" -Xlsx -S2k -Preview   (a CAESAR workbook: job_sap.*)
+#   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.std" -Xlsx -S2k   (a .std from -Std: rack_std.*)
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -NewWorkbook -Out "<project dir>\duct.xlsx" -Units "lb, in, F"
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -Probe "<project dir>\probe"
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -ProbeCheck "<project dir>\probe\probe.sap-export.s2k"
@@ -171,7 +178,7 @@ function InRepo([string]$p) { return $p.Equals($repoRoot, [StringComparison]::Or
 $modes = @($In, $Probe, $StdProbe, $ProbeCheck) | Where-Object { $_ }
 if ($NewWorkbook) {
     if ($modes.Count -ne 0 -or -not $Out) { Fail "Build-Frame: -NewWorkbook takes -Out <name>.xlsx (and -Units, -SapVersion) only" }
-} elseif ($modes.Count -ne 1) { Fail "Build-Frame: give one of -In <.s2k | .xlsx | .frame.json | .cii | .toml | .pipe.json>, -NewWorkbook -Out <name>.xlsx, -Probe <folder>, -StdProbe <folder>, -ProbeCheck <SAP's export .s2k>" }
+} elseif ($modes.Count -ne 1) { Fail "Build-Frame: give one of -In <.s2k | .xlsx | .frame.json | .std | .cii | .toml | .pipe.json>, -NewWorkbook -Out <name>.xlsx, -Probe <folder>, -StdProbe <folder>, -ProbeCheck <SAP's export .s2k>" }
 if ($Probe) {
     $dir = [IO.Path]::GetFullPath($ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Probe))
     if (InRepo $dir) { Fail ("Build-Frame: refusing to write the probe inside the Pluto repo ({0}); pass -Probe <project dir>\probe" -f $repoRoot) }
@@ -201,8 +208,9 @@ if ($In) {
     if ($inPath.ToLowerInvariant().EndsWith(".frame.json")) { $kind = "json" }
     elseif ($inPath.ToLowerInvariant().EndsWith(".pipe.json") -or $ext -eq ".cii" -or $ext -eq ".toml") { $kind = "pipe" }
     elseif ($ext -eq ".s2k" -or $ext -eq ".`$2k") { $kind = "s2k" }
+    elseif ($ext -eq ".std") { $kind = "std" }
     elseif ($ext -eq ".xlsx") { $kind = $(if (XlsxHas $inPath "pluto-pipe-workbook") { "pipe" } else { "xlsx" }) }
-    else { Fail ("Build-Frame: {0}: give a SAP2000 .s2k (or .`$2k), a frame workbook .xlsx, a .frame.json model, or a CAESAR model (.cii, .toml, .pipe.json, its workbook) to seed one" -f $inPath) }
+    else { Fail ("Build-Frame: {0}: give a SAP2000 .s2k (or .`$2k), a frame workbook .xlsx, a .frame.json model, a STAAD .std written with -Std, or a CAESAR model (.cii, .toml, .pipe.json, its workbook) to seed one" -f $inPath) }
     if ($Refresh -and $kind -ne "xlsx") { Fail "Build-Frame: -Refresh takes -In <frame workbook>.xlsx" }
     if ($Watch -and $kind -ne "xlsx") { Fail "Build-Frame: -Watch follows a frame workbook: -In <name>.xlsx (a CAESAR model seeds once: -In <job> -Xlsx, then watch that workbook)" }
     if ($Watch -and -not ($S2k -or $Std -or $Json -or $Preview)) { $Preview = $true }
@@ -212,6 +220,7 @@ if ($In) {
 $jobName = $null
 if ($inPath) { $jobName = ([IO.Path]::GetFileName($inPath) -replace '\.(frame|pipe)\.json$', '' -replace '\.[^.]+$', '') -replace ' ', '_' }
 if ($kind -eq "pipe") { $jobName = $jobName + "_sap" }   # the check model beside its CAESAR job, never over it
+if ($kind -eq "std") { $jobName = $jobName + "_std" }    # STAAD's model beside the one its .std was written from, never over it
 if ($Out) {
     $outBase = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Out)
     if (($Out -match '[\\/]$') -or (Test-Path -LiteralPath $outBase -PathType Container)) { $outBase = [IO.Path]::Combine($outBase, $(if ($jobName) { $jobName } else { "frame" })) }
@@ -233,7 +242,7 @@ if ($outBase) {
 }
 if ($S2k -or $Std -or $Json -or $Preview -or $Xlsx -or $NewWorkbook) {
     if (InRepo $outBase) { Fail ("Build-Frame: refusing to write {0}.* inside the Pluto repo ({1}): project outputs never land in Pluto. Pass -Out <project dir>\<name>." -f $outBase, $repoRoot) }
-    foreach ($pair in @(@($S2k, $s2kFile, "-S2k"), @($Json, $jsonFile, "-Json"), @($Xlsx, ($outBase + ".xlsx"), "-Xlsx"))) {
+    foreach ($pair in @(@($S2k, $s2kFile, "-S2k"), @($Std, $stdFile, "-Std"), @($Json, $jsonFile, "-Json"), @($Xlsx, ($outBase + ".xlsx"), "-Xlsx"))) {
         if ($pair[0] -and $inPath -and $pair[1].Equals($inPath, [StringComparison]::OrdinalIgnoreCase)) { Fail ("Build-Frame: {0} would write over the input {1}; pass -Out <another name>" -f $pair[2], $inPath) }
     }
     $outDir = [IO.Path]::GetDirectoryName($outBase)
@@ -405,6 +414,32 @@ function Build-Once {
         foreach ($w in $sw2) { Say "warn" ("check model: " + $w); $warnings += ("check model: " + $w) }
         foreach ($n in $sn2) { Say "notice" ("check model: " + $n) }
         Say "seed" ("the structural check model of the pipe (seeded once: edit it in its frame workbook, -Xlsx)")
+    } elseif ($kind -eq "std") {
+        $script:step = "reading the STAAD .std " + [IO.Path]::GetFileName($inPath)
+        $rn = New-Object 'System.Collections.Generic.List[string]'
+        try { $model = [StdToFrame]::Read($inPath, $SapVersion, $rn) }
+        catch {
+            $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }
+            if ($e -isnot [StdToFrameRefusal]) { throw }
+            foreach ($i in $e.Items) { Say "refuse" $i }
+            throw (New-Object InvalidOperationException(("the frame model cannot hold the {0} item(s) above exactly; nothing is written" -f $e.Items.Count)))
+        }
+        foreach ($n in $rn) { Say "notice" ("std read: " + $n) }
+        # the check: the model written back as a .std gives the file's STAAD commands (comments and layout aside)
+        $back = $null
+        try { $back = [FrameStd]::ToText($model, [IO.Path]::GetFileName($inPath), (New-Object 'System.Collections.Generic.List[string]')) }
+        catch {
+            $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }
+            if ($e -isnot [FrameStdRefusal]) { throw }
+            Say "warn" ("written back as a .std, the model is refused: " + ($e.Items -join " | "))
+        }
+        $diff = $(if ($null -ne $back) { [StdToFrame]::Differences((ReadSharedText $inPath), $back, 6) } else { $null })
+        $identical = ($null -ne $back) -and ($null -eq $diff)
+        if ($identical) { Say "read" ("{0}: read exactly (written back with -Std, the model gives the file's STAAD commands)" -f $inPath) }
+        else {
+            foreach ($d in @($diff)) { if ($d) { Say "warn" ("written back: " + $d) } }
+            Say "warn" ("{0}: written back with -Std, the model does NOT give the file's commands (the first differences are listed above); check the outputs before use" -f $inPath)
+        }
     } elseif ($kind -eq "xlsx") {
         $wb = [FrameWorkbook]::Read($inPath)
         $model = $wb.Model
@@ -485,7 +520,8 @@ function Build-Once {
         if (Test-Path -LiteralPath $scFile -PathType Leaf) { Copy-Item -LiteralPath $scFile -Destination ($tmp + ".features.json") -Force }
         $pv = New-Object FramePreview
         $pv.SourceJson = [PipeSidecar]::SourceOf($inPath, $kind, $hash)
-        if ($identical -eq $false) { $null = $pv.AddMessage("warning", "s2k-not-identical", "Written back, the .s2k is not the source byte for byte: check the outputs before use") }
+        if ($identical -eq $false -and $kind -eq "std") { $null = $pv.AddMessage("warning", "std-not-identical", "Written back with -Std, the model does not give the .std's commands: check the outputs before use") }
+        elseif ($identical -eq $false) { $null = $pv.AddMessage("warning", "s2k-not-identical", "Written back, the .s2k is not the source byte for byte: check the outputs before use") }
         foreach ($w in $warnings) { $null = $pv.AddMessage("warning", "workbook", $w) }
         foreach ($n in $notes) { $null = $pv.AddMessage("notice", "s2k-write", $n) }
         $mid = $(if ($ModelId) { $ModelId } else { "sap/" + [IO.Path]::GetFileName($outBase) })
