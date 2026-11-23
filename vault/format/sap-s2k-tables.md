@@ -87,6 +87,18 @@ ones, so they carry no notice ([[vault/format/pipe-to-frame|pipe-to-frame]]).
 >     - a file or a shape it has not refuses the `.s2k`, each named.
 >
 >     With no SAP on the machine, the rows are written as they are, with a notice.
+>   - **The library's entries** (`AISC15.xml`'s W10X33, from the user). An element per shape, its kind as the tag:
+>     `<STEEL_I_SECTION>`, with `LABEL`, `EDI_STD`, `DESIGNATION`, then `D BF TF TW KDES A I33 Z33 AS3 I22 Z22 AS2 J S33POS
+>     S33NEG S22POS S22NEG R33 R22`, in inches. SAP's own row takes them as they are: t3 = D, t2 = t2b = BF, tf = tfb =
+>     TF, tw = TW, Area = A, TorsConst = J, S33Top / S33Bot = S33POS / S33NEG. It adds two of its own:
+>     - FilletRadius = KDES − TF (0.935 − 0.435 = 0.5);
+>     - Cw = TF · BF³ · (D − TF)² / 24 (789.797958228851, to all 15 digits).
+>
+>     So `StdToFrame` builds a `TABLE ST` shape picked in STAAD (no SAP row in the `.std`) as SAP's catalog row
+>     (`FrameSapLibrary.Row`). It reads the newest US AISC file that has the shape (`AISC15.xml` before `AISC14.xml`,
+>     not the metric ones), in the model's length unit, with `FileName` the file's full path. Only I sections (W, M, S,
+>     HP) are read: another kind, a shape no file has, or no library refuses the `.std`, named. A file whose header
+>     gives its lengths in another unit is refused too.
 >
 > **Defaults SAP filled** (warnings): `CASE - STATIC 4` SolScheme; `03A` stress-strain fields; the offset-along-length
 > Type. The log's errors 1–10 ("Table key Steel Design 2 - NMM Details - Eurocode 3-2005 not found") are SAP's own

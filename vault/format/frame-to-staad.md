@@ -253,7 +253,7 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > | BETA | the frame's angle (SAP's local 2 / 3 are STAAD's y / z) |
 > | `PRIS AX IX IY IZ [AY AZ] YD ZD` | a General section (shear areas 0 when absent) |
 > | the same SAP section with other numbers | the first one's section, with frame modifiers (mass and weight with AMod) |
-> | `TABLE ST` | the SAP row in its comment (refused without one: SAP cannot build a table section from its name) |
+> | `TABLE ST` | the SAP row in its comment; with none (a shape picked in STAAD), SAP's catalog section from its library: an I section of its newest AISC file, the row SAP itself writes (refused with no library, or another kind of shape) |
 > | `ISOTROPIC` | a material, Steel with `TYPE STEEL`, else Other; G must agree with E and POISSON (SAP's isotropic rule) |
 > | `MEMBER OFFSET` | end lengths (rigid) along it; across it, equal at both ends, joint offsets (local) |
 > | `MEMBER RELEASE` | releases; `K…` partial fixity (rotations per degree back to per radian) |
@@ -279,7 +279,8 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > **Exact or refused.** Any command the writer does not write is refused by name, with where it stood. That covers:
 > - another `UNIT` along the file;
 > - `CUT OFF`, `ELEMENT LOAD`, `LIN` member loads, `MP` releases, `CDAMP`;
-> - a `TABLE ST` with no SAP row.
+> - a `TABLE ST` with no SAP row when SAP's library is not on the machine or lacks the shape, or the shape is not an I
+>   section.
 >
 > `START JOB INFORMATION`, a record only, is passed over with a notice.
 >
@@ -328,7 +329,14 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >   was the row, a test variant naming `AISC16.xml`, which SAP 24 does not have; SAP's own export names its library
 >   file by full path, and reads back. A restored row's library file is now checked when the `.s2k` is written
 >   ([[vault/format/sap-s2k-tables|sap-s2k-tables]]). A `TABLE ST` shape picked in STAAD, with no SAP row in its
->   comment, is still refused: Pluto does not read SAP's library for its numbers yet.
+>   comment, was still refused then.
+> - **SAP's own W10X33 export, through Pluto both ways** (later the same day): `-Std`, then `-In <it>.std -S2k`,
+>   imported into SAP with no error, warning or dialog, the shape still SAP's catalog section. On the way, `-Std` had
+>   refused SAP's own row for its `I23=2.8E-14`, round-off now counted as 0.
+> - **A shape picked in STAAD** now comes from SAP's library (`AISC15.xml`'s W10X33 entry, from the user). The row
+>   Pluto builds is SAP's own to every digit SAP writes, its noise aside
+>   ([[vault/format/sap-s2k-tables|sap-s2k-tables]], "The library's entries"). Tried here on a stand-in library holding
+>   that entry, not yet in SAP.
 
 > [!info]- The STAAD probe (`-StdProbe <folder>`)
 > `staad-probe.s2k` and `staad-probe.std`: one model, every part analysable, for SAP2000 and STAAD.Pro alike. Each

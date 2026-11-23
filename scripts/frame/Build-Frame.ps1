@@ -20,8 +20,10 @@
 #                         comments -Std writes give back SAP's labels and names. Exact or refused: a command the frame
 #                         model cannot hold, or one -Std does not write, refuses it, each on a [refuse] line. The read
 #                         checks that the model written back with -Std is the file's, object by object, to the digits
-#                         the file gives (STAAD.Pro's own save keeps 6), and says so. Outputs default to <name>_std.*,
-#                         never over the model it was written from
+#                         the file gives (STAAD.Pro's own save keeps 6), and says so. A TABLE ST shape picked in STAAD
+#                         (no SAP row in the comment above it) is read from SAP's section library (an I section of
+#                         its newest AISC file; -SapLibrary below) and comes back as SAP's catalog section. Outputs
+#                         default to <name>_std.*, never over the model it was written from
 #   out   -S2k      <base>.s2k for SAP2000 (File > Import > SAP2000 .s2k). Never written over the input file. An
 #                   existing <base>.s2k is replaced only when this runner wrote it (the stamp, <base>.build.json, says
 #                   so), when it is the model's own source, or when nothing in it would change; else -Force.
@@ -423,7 +425,10 @@ function Build-Once {
     } elseif ($kind -eq "std") {
         $script:step = "reading the STAAD .std " + [IO.Path]::GetFileName($inPath)
         $rn = New-Object 'System.Collections.Generic.List[string]'
-        try { $model = [StdToFrame]::Read($inPath, $SapVersion, $rn) }
+        # a TABLE ST shape picked in STAAD (no SAP row in the file) is read from SAP's section library
+        if ($SapLibrary -and -not (Test-Path -LiteralPath $SapLibrary -PathType Container)) { throw (New-Object InvalidOperationException(("-SapLibrary {0}: no such folder" -f $SapLibrary))) }
+        $stdLib = $(if ($SapLibrary) { [IO.Path]::GetFullPath($SapLibrary) } else { $null })
+        try { $model = [StdToFrame]::Read($inPath, $SapVersion, $rn, $stdLib) }
         catch {
             $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }
             if ($e -isnot [StdToFrameRefusal]) { throw }

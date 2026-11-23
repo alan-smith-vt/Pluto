@@ -14,7 +14,8 @@ using System.Text.RegularExpressions;
 // by FrameS2k, as PipeToFrame's seed is.
 //   axes        STAAD (X, Y, Z) is SAP (X, -Z, Y); a member's BETA becomes its SAP local axis angle
 //   sections    PRIS: a General section with SAP's analysis properties (AY / AZ absent: shear areas 0); TABLE ST: the SAP
-//               row in the comment above it (SAP cannot rebuild a catalog section from its name). The same SAP section
+//               row in the comment above it, else (a shape picked in STAAD) its entry in SAP's section library, as SAP
+//               writes a catalog section (FrameSapLibrary.Row; I sections). The same SAP section
 //               with other numbers (its frames' modifiers, which FrameStd folds in) gets them back as frame modifiers
 //   materials   each STAAD material a SAP material (Steel with TYPE STEEL, else Other); one FrameStd made for a weight
 //               modifier (NAME_W1) stays a material of its own, with its unit weight
@@ -42,15 +43,26 @@ public sealed class StdToFrameRefusal : Exception
 public static class StdToFrame
 {
     // the frame model of a .std (its source the generated .s2k text); notes gets every notice; sapVersion (null: the
-    // header's, else 22.0.0) stamps it; throws StdToFrameRefusal with every refusal
+    // header's, else 22.0.0) stamps it; sapLibrary: SAP's section library, for a TABLE ST shape with no SAP row (null: the
+    // one installed, FrameSapLibrary.Folder); throws StdToFrameRefusal with every refusal
     public static FrameModel Read(string path, string sapVersion, List<string> notes)
     {
-        return FrameS2k.Read(S2kDoc.ParseText(Text(path, sapVersion, notes)));
+        return Read(path, sapVersion, notes, null);
+    }
+
+    public static FrameModel Read(string path, string sapVersion, List<string> notes, string sapLibrary)
+    {
+        return FrameS2k.Read(S2kDoc.ParseText(Text(path, sapVersion, notes, sapLibrary)));
     }
 
     public static string Text(string path, string sapVersion, List<string> notes)
     {
-        return new Reader(StaadInput.Read(path), sapVersion, notes ?? new List<string>()).Run();
+        return Text(path, sapVersion, notes, null);
+    }
+
+    public static string Text(string path, string sapVersion, List<string> notes, string sapLibrary)
+    {
+        return new Reader(StaadInput.Read(path), sapVersion, notes ?? new List<string>(), sapLibrary).Run();
     }
 
     // whether a .std's model and the model written back are the same as STAAD reads them: each joint, member, plate,
@@ -123,11 +135,21 @@ public static class StdToFrame
         }
     }
 
+    // STAAD's unit words, as SAP's units (STAAD takes each spelling: KN and KNS are one unit)
+    static readonly Dictionary<string, string> LenWords = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+        { "INCHES", "in" }, { "INCH", "in" }, { "IN", "in" }, { "FEET", "ft" }, { "FOOT", "ft" }, { "FT", "ft" }, { "MMS", "mm" }, { "MM", "mm" },
+        { "CM", "cm" }, { "CMS", "cm" }, { "METER", "m" }, { "METERS", "m" }, { "METRE", "m" }, { "M", "m" } };
+    static readonly Dictionary<string, string> ForceWords = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
+        { "KIP", "Kip" }, { "KIPS", "Kip" }, { "POUND", "lb" }, { "POUNDS", "lb" }, { "LB", "lb" }, { "LBS", "lb" }, { "KNS", "KN" }, { "KN", "KN" },
+        { "NEWTON", "N" }, { "NEWTONS", "N" }, { "N", "N" }, { "KG", "Kgf" }, { "KGS", "Kgf" }, { "MTON", "Tonf" }, { "MTONS", "Tonf" } };
+
     static FactSet Facts(StaadInput s)
     {
         var f = new FactSet();
         foreach (string u in s.Unread) f.Add("not read: " + u);
-        foreach (var u in s.Units.Select(x => string.Join(" ", x).ToUpperInvariant()).Distinct()) f.Add("UNIT " + u);
+        // a unit by what it is, not its spelling (KN, KNS); a word neither table has, as written
+        Func<string, string> unit = w => { string x; return LenWords.TryGetValue(w, out x) || ForceWords.TryGetValue(w, out x) ? x : w.ToUpperInvariant(); };
+        foreach (var u in s.Units.Select(x => string.Join(" ", x.Select(unit).ToArray())).Distinct()) f.Add("UNIT " + u);
         foreach (int id in s.JointIds) f.Add("joint " + I(id), s.Joints[id]);
         foreach (var m in s.Members) f.Add("member " + I(m[0]) + " from joint " + I(m[1]) + " to " + I(m[2]));
         foreach (var p in s.Plates) f.Add("plate " + I(p[0]) + " on joints " + string.Join(" ", p.Skip(1).Select(I).ToArray()));
@@ -341,8 +363,10 @@ public static class StdToFrame
     sealed class Reader
     {
         readonly StaadInput In; readonly string SapVersion; readonly List<string> Notes;
+        string Library;                                                                    // SAP's section library ("": none here)
+        readonly Dictionary<string, string[]> LibRow = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);   // shape -> row, why
         readonly List<string> Refused = new List<string>();
-        string HeadVersion, HeadUnits, UnitsText;
+        string HeadVersion, HeadUnits, UnitsText, LenUnit;
         double Gravity;
         bool Pluto;
         readonly Dictionary<string, Dictionary<int, string>> HeadLabel = new Dictionary<string, Dictionary<int, string>>();
@@ -380,7 +404,11 @@ public static class StdToFrame
         bool PDelta;
         bool DistFirst;                                                                    // FrameStd's order: the distributed loads' table first
 
-        public Reader(StaadInput input, string sapVersion, List<string> notes) { In = input; SapVersion = sapVersion; Notes = notes; }
+        public Reader(StaadInput input, string sapVersion, List<string> notes, string library)
+        {
+            In = input; SapVersion = sapVersion; Notes = notes;
+            Library = string.IsNullOrEmpty(library) ? null : library;                       // PowerShell passes "" for $null
+        }
 
         void Refuse(string s) { if (!Refused.Contains(s)) Refused.Add(s); }
 
@@ -493,19 +521,15 @@ public static class StdToFrame
         // the SAP units: the header's when it names STAAD's length and force, else made from UNIT
         void Units()
         {
-            var len = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
-                { "INCHES", "in" }, { "INCH", "in" }, { "IN", "in" }, { "FEET", "ft" }, { "FOOT", "ft" }, { "FT", "ft" }, { "MMS", "mm" }, { "MM", "mm" },
-                { "CM", "cm" }, { "CMS", "cm" }, { "METER", "m" }, { "METERS", "m" }, { "METRE", "m" }, { "M", "m" } };
-            var force = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) {
-                { "KIP", "Kip" }, { "KIPS", "Kip" }, { "POUND", "lb" }, { "POUNDS", "lb" }, { "LB", "lb" }, { "LBS", "lb" }, { "KNS", "KN" }, { "KN", "KN" },
-                { "NEWTON", "N" }, { "NEWTONS", "N" }, { "N", "N" }, { "KG", "Kgf" }, { "KGS", "Kgf" }, { "MTON", "Tonf" }, { "MTONS", "Tonf" } };
-            if (In.Units.Count == 0) { Refuse("no UNIT command"); UnitsText = "Kip, in, F"; Gravity = 386.08858267716535; return; }
+            var len = LenWords; var force = ForceWords;
+            if (In.Units.Count == 0) { Refuse("no UNIT command"); UnitsText = "Kip, in, F"; LenUnit = "in"; Gravity = 386.08858267716535; return; }
             var sets = In.Units.Select(u => string.Join(" ", u).ToUpperInvariant()).Distinct().ToList();
             if (sets.Count > 1) Refuse("UNIT changes along the file (" + string.Join("; ", sets.ToArray()) + "); FrameStd writes one unit set");
             string l = null, f = null;
             foreach (string w in In.Units[0]) { string x; if (l == null && len.TryGetValue(w, out x)) l = x; else if (f == null && force.TryGetValue(w, out x)) f = x; }
             if (l == null || f == null) { Refuse("UNIT " + string.Join(" ", In.Units[0]) + ": no " + (l == null ? "length" : "force") + " unit SAP has"); l = l ?? "in"; f = f ?? "Kip"; }
             UnitsText = f + ", " + l + ", " + (l == "in" || l == "ft" ? "F" : "C");
+            LenUnit = l;
             if (HeadUnits != null)
             {
                 string hf, hl, ht;
@@ -721,10 +745,17 @@ public static class StdToFrame
                 else if (p.Spec.Length == 3 && Is(p.Spec[0], "TABLE") && Is(p.Spec[1], "ST"))
                 {
                     string inFile = row == null ? null : RowGet(row, "SectInFile");
-                    if (row == null || inFile == null || !Is(inFile, p.Spec[2]))
+                    if (row != null && (inFile == null || !Is(inFile, p.Spec[2])))
                     {
-                        Refuse(who + ": TABLE ST " + p.Spec[2] + ", a STAAD table section with no SAP row of it in the comment above (Pluto does not read SAP's section library for its numbers yet): pick it in SAP, or give it as PRIS");
-                        continue;
+                        // the shape changed in STAAD under the comment of the one Pluto wrote: the comment is not its row
+                        Note("TABLE ST " + p.Spec[2] + " under the SAP row of " + (inFile ?? name ?? "another section") + ": taken from SAP's section library, named " + p.Spec[2]);
+                        row = null; name = null;
+                    }
+                    if (row == null)
+                    {
+                        string[] lib = Catalog(p.Spec[2]);
+                        if (lib[0] == null) { Refuse(who + ": TABLE ST " + p.Spec[2] + ", a STAAD table section with no SAP row in the comment above it: " + lib[1]); continue; }
+                        row = lib[0]; name = null;
                     }
                     shape = RowGet(row, "Shape");
                     if (string.IsNullOrEmpty(shape)) { Refuse(who + ": the SAP row of " + p.Spec[2] + " has no Shape"); continue; }
@@ -754,6 +785,22 @@ public static class StdToFrame
             }
             var modded = Frames.Where(f => f.Mods != null).ToList();
             if (modded.Count > 0) Note("frames whose property is their section's with factors take it as property modifiers (FrameStd folds a frame's modifiers into its PRIS): " + string.Join(", ", modded.Select(f => f.Label).Take(12).ToArray()) + (modded.Count > 12 ? " ..." : ""));
+        }
+
+        // a STAAD table shape's SAP row from SAP's section library: { row, null } or { null, why }
+        string[] Catalog(string shape)
+        {
+            string[] r;
+            if (LibRow.TryGetValue(shape, out r)) return r;
+            if (Library == null) Library = FrameSapLibrary.Folder(!string.IsNullOrEmpty(SapVersion) ? SapVersion : HeadVersion) ?? "";
+            if (Library.Length == 0) r = new[] { null, "SAP's section library is not on this machine (name its folder with -SapLibrary), or give the shape as PRIS" };
+            else
+            {
+                string file, why, row = FrameSapLibrary.Row(Library, shape, LenUnit, out file, out why);
+                r = new[] { row, why };
+                if (row != null) Note("TABLE ST " + shape + ": a catalog section from SAP's section library, " + file + " (no SAP row of it in the file)");
+            }
+            return LibRow[shape] = r;
         }
 
         // whether these numbers are the section's with factors: the property modifiers (AMod AS2Mod AS3Mod JMod I22Mod I33Mod

@@ -288,6 +288,8 @@ The whole picture, CAESAR and STAAD included, with the commands for each job:
 >     version.
 >   - A file the library has gets its full path. A file or a shape it has not refuses the `.s2k`, each named: SAP
 >     would make the section a General one with every property 1 ([[vault/format/sap-s2k-tables|sap-s2k-tables]]).
+>   - Reading a `.std`, the same library gives a `TABLE ST` shape picked in STAAD (no SAP row in its comment) its SAP
+>     catalog row.
 > - `-Std`: writes `<base>.std` for STAAD.Pro (`FrameStd`, [[vault/format/frame-to-staad|frame-to-staad]]): exact or
 >   refused, every refusal on a `[refuse]` line; notices on `[notice] std:` lines. An existing `.std` is replaced only
 >   when this runner wrote it (the stamp's `std` part) or nothing would change; STAAD saves its own edits into the

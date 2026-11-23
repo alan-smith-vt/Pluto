@@ -43,11 +43,10 @@ created: 2026-11-18
 Purging it means rewriting the branch's history.
 
 **Waiting on the production machine:**
-- the PS 5.1 compile probe and a run of `-S2k` on a model with a catalog section, for the library check
-  (`FrameSapLibrary`); here it was tried on a stand-in library folder only. The test: a SAP-saved model with one
-  library W shape, `-Std`, then `-In <it>.std -S2k`, imported into SAP with no dialog;
-- one shape's entry from SAP's `AISC15.xml`, to read the library's numbers: then a `TABLE ST` shape picked in STAAD
-  comes back as a SAP catalog section (refused for now).
+- the PS 5.1 compile probe of the library read (`FrameSapLibrary.Row`), then a shape picked in STAAD, back in SAP:
+  - in a `.std` from `-Std`, change a `TABLE ST` line's shape to another W shape (or add a member with one);
+  - `-In <it>.std -S2k`, imported into SAP: the shape should be SAP's catalog section, with no dialog;
+  - the library check itself passed on the production machine (SAP's W10X33 model both ways; `AISC16.xml` refused).
 
 **Next:**
 1. **Round 3, the sample job, in SAP only.** CAESAR's outputs are already in `scripts/caesar/testdata`: restraint loads,
