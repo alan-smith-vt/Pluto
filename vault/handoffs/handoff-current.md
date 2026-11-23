@@ -43,9 +43,9 @@ created: 2026-11-18
 Purging it means rewriting the branch's history.
 
 **Waiting on the production machine:**
-- the PS 5.1 compile probe for the fix to the `.std` reader (STAAD.Pro's 6-digit save); the reader itself passed it;
-- the two files STAAD.Pro saved, read again with that fix (they read exactly here);
-- SAP's import of the read-back `.s2k` files: the probe's, and the rack with a catalog W10X33.
+- the user's choice of how a `TABLE ST` (catalog) member comes back from a `.std`: SAP 24.2 replaces the restored
+  catalog row with its default section ("Unable to open property file"). Also open: whether SAP re-imports its own
+  export of a catalog section; if not, every catalog section through Pluto's `-S2k` has the same problem.
 
 **Next:**
 1. **Round 3, the sample job, in SAP only.** CAESAR's outputs are already in `scripts/caesar/testdata`: restraint loads,

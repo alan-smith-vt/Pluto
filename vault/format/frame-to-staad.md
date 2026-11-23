@@ -315,6 +315,18 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > The first reader refused both files, holding G to 12 digits. Now an unedited save reads exactly. An edited one (a
 > moved joint, a support made fixed, a joint load added) reads with those three changes and nothing else. The probe,
 > rounded to 6 digits the same way, reads exactly as well, every converted number clean.
+>
+> **In SAP2000 24.2** (the same day):
+> - **The read-back probe.** It imported with only SAP's own ten design-table errors, the same as the original probe's.
+>   Its one warning, a Wind pattern's blank `AutoLoad`, is gone: Wind and Quake patterns now get `AutoLoad=None`. Run,
+>   it agrees with STAAD's run of the same `.std` at every joint, 480 displacements and 310 reactions; joints with
+>   local axes are compared in those axes, which SAP reports in. The channels agree too: read back they are General
+>   sections, which SAP does not twist about a shear center.
+> - **Catalog sections do not come back yet.** SAP 24.2 cannot rebuild a catalog section from the restored row
+>   (`FromFile=Yes FileName=AISC16.xml`): "Unable to open property file or section not found, Default Section
+>   substituted", as in the first SAP probe. The read-back rack's W10X33 members got SAP's default section; its columns
+>   shortened eight times more than in STAAD. The pipes on it grew the same to every digit. How a `TABLE ST` member
+>   should come back is the user's choice (open).
 
 > [!info]- The STAAD probe (`-StdProbe <folder>`)
 > `staad-probe.s2k` and `staad-probe.std`: one model, every part analysable, for SAP2000 and STAAD.Pro alike. Each

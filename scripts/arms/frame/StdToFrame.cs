@@ -1404,7 +1404,9 @@ public static class StdToFrame
             string gflags = "   Selection=Yes   SectionCut=Yes   Steel=Yes   Concrete=Yes   Aluminum=Yes   ColdFormed=Yes   Stage=Yes   Bridge=Yes   AutoSeismic=No   AutoWind=No   SelDesSteel=No   SelDesAlum=No   SelDesCold=No   MassWeight=Yes   Color=Green";
             table("GROUPS 1 - DEFINITIONS", GroupOrder.Select(g => "GroupName=" + Q(g) + gflags));
             table("GROUPS 2 - ASSIGNMENTS", GroupRows.Select(r => "GroupName=" + Q(r[0]) + "   ObjectType=" + r[1] + "   ObjectLabel=" + Q(r[2])));
-            table("LOAD PATTERN DEFINITIONS", Pats.Select(p => "LoadPat=" + Q(p.Name) + "   DesignType=" + Q(p.Type) + "   SelfWtMult=" + F(p.SelfWeight)));
+            // a Wind or Quake pattern names its automatic load, none (SAP 24.2 warns of the blank field otherwise)
+            table("LOAD PATTERN DEFINITIONS", Pats.Select(p => "LoadPat=" + Q(p.Name) + "   DesignType=" + Q(p.Type) + "   SelfWtMult=" + F(p.SelfWeight) +
+                (p.Type == "Wind" || p.Type == "Quake" ? "   AutoLoad=None" : "")));
             table("JOINT LOADS - FORCE", Pats.SelectMany(p => p.Joint.Where(kv => kv.Value.Any(x => x != 0)).Select(kv => "Joint=" + Q(JointLabel[kv.Key]) + "   LoadPat=" + Q(p.Name) + "   CoordSys=GLOBAL   F1=" + F(kv.Value[0]) + "   F2=" + F(kv.Value[1]) + "   F3=" + F(kv.Value[2]) +
                 "   M1=" + F(kv.Value[3]) + "   M2=" + F(kv.Value[4]) + "   M3=" + F(kv.Value[5]))));
             table("JOINT LOADS - GROUND DISPLACEMENT", Pats.SelectMany(p => p.Ground.Select(kv => "Joint=" + Q(JointLabel[kv.Key]) + "   LoadPat=" + Q(p.Name) + "   CoordSys=GLOBAL" + string.Concat(Enumerable.Range(0, 6).Select(i => "   " + FrameJoint.Dofs[i] + "=" + F(kv.Value[i])).ToArray()))));
