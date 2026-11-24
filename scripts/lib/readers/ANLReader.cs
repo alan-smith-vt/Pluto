@@ -63,6 +63,43 @@ public class AnlIndexer
 		"FINISH"
 	};
 
+	// Commands that only end the section before them (2026-11-06, frame models). They match only on STAAD's command
+	// echo ("  NN. TEXT"), as a whole word, so a section now ends where the next command starts instead of at the next
+	// marker above: a PRINT MEMBER FORCES section no longer runs on through a support reaction print or the CHECK CODE
+	// output, whose numeric rows read as member forces. EchoFirstMarkers are tried before SectionMarkers ("LOAD" would
+	// take them), EchoOnlyMarkers after (the specific PRINT ... markers above win over the generic PRINT).
+	private static readonly string[] EchoFirstMarkers = new string[]
+	{
+		"LOAD LIST",
+		"REPEAT LOAD"
+	};
+
+	private static readonly string[] EchoOnlyMarkers = new string[]
+	{
+		"PRINT SUPPORT REACTION",
+		"PRINT",
+		"PARAMETER",
+		"PARAMETERS",
+		"CHECK CODE",
+		"SELECT",
+		"SET",
+		"DEFINE",
+		"PDELTA",
+		"PERFORM",
+		"STEEL",
+		"CODE",
+		"MEMBER TRUSS",
+		"MEMBER TENSION",
+		"MEMBER COMPRESSION",
+		"MEMBER CABLE",
+		"SPRING",
+		"INACTIVE",
+		"CHANGE",
+		"CUT OFF",
+		"START",
+		"END"
+	};
+
 	// The input commands a .std needs marked as well (StaadInput, 2026-11-23): each ends the section before it. An .anl is
 	// indexed as it always was, without them. Never "STAAD SPACE": every .anl page header starts with it.
 	public static readonly string[] StdMarkers = new string[]
@@ -89,6 +126,14 @@ public class AnlIndexer
 		{
 			set.Add((byte)marker[0]);
 		}
+		foreach (string marker in EchoFirstMarkers)
+		{
+			set.Add((byte)marker[0]);
+		}
+		foreach (string marker in EchoOnlyMarkers)
+		{
+			set.Add((byte)marker[0]);
+		}
 		return set;
 	}
 
@@ -109,10 +154,12 @@ public class AnlIndexer
 	{
 		string[] markers = SectionMarkers;
 		HashSet<byte> interesting = InterestingFirstBytes;
+		bool echoMarkers = true;	// an .anl: the echo-only markers end sections too; a .std has no command echo
 		if (extraMarkers != null && extraMarkers.Length > 0)
 		{
 			markers = extraMarkers.Concat(SectionMarkers).ToArray();
 			interesting = new HashSet<byte>(markers.Select(m => (byte)m[0]));
+			echoMarkers = false;
 		}
 		var sections = new List<AnlSection>();
 		AnlSection current = null;
@@ -156,6 +203,7 @@ public class AnlIndexer
 				byte firstByte = lineBuf[start];
 
 				int contentStart = start;
+				bool hasEcho = false;	// the line carries STAAD's "NN." command echo prefix
 				// Section headers start with a non-zero number
 				if (firstByte > (byte)'0' && firstByte <= (byte)'9')
 				{
@@ -175,6 +223,7 @@ public class AnlIndexer
 
 					if (dotIdx > start)
 					{
+						hasEcho = true;
 						contentStart = dotIdx + 1;
 						while (contentStart < lineLen &&
 							(lineBuf[contentStart] == (byte)' ' || lineBuf[contentStart] == (byte)'\t'))
@@ -200,7 +249,7 @@ public class AnlIndexer
 				string trimmed = Encoding.UTF8.GetString(lineBuf, contentStart, lineLen - contentStart);
 
 				// Check if this line is a known section
-				string matchedSection = MatchSectionHeader(trimmed, markers);
+				string matchedSection = MatchSectionHeader(trimmed, markers, hasEcho && echoMarkers);
 
 				//if (lineStartOffset > 822742L && lineStartOffset < 1040117L)
 				// Console.WriteLine("Testing");
@@ -228,15 +277,42 @@ public class AnlIndexer
 		return sections;
 	}
 
-	private static string MatchSectionHeader(string trimmedLine, string[] markers)
+	// markers: the section markers of this file kind (an .anl's, or a .std's input commands before them). hasEcho: the line
+	// carries STAAD's "NN." command echo, so the echo-only markers apply too (an .anl; a .std has no echo).
+	private static string MatchSectionHeader(string trimmedLine, string[] markers, bool hasEcho)
 	{
 		string upper = trimmedLine.ToUpperInvariant();
+		if (hasEcho)
+		{
+			for (int i = 0; i < EchoFirstMarkers.Length; i++)
+			{
+				if (StartsWithWord(upper, EchoFirstMarkers[i]))
+					return EchoFirstMarkers[i];
+			}
+		}
 		for (int i = 0; i < markers.Length; i++)
 		{
 			if (upper.StartsWith(markers[i]))
 				return markers[i];
 		}
+		if (hasEcho)
+		{
+			for (int i = 0; i < EchoOnlyMarkers.Length; i++)
+			{
+				if (StartsWithWord(upper, EchoOnlyMarkers[i]))
+					return EchoOnlyMarkers[i];
+			}
+		}
 		return null;
+	}
+
+	// "PRINT" matches "PRINT ANALYSIS RESULTS" but "SET" does not match "SETTLE"
+	private static bool StartsWithWord(string upper, string marker)
+	{
+		if (!upper.StartsWith(marker)) return false;
+		if (upper.Length == marker.Length) return true;
+		char c = upper[marker.Length];
+		return c == ' ' || c == '\t' || c == '\r';
 	}
 }
 
@@ -906,13 +982,21 @@ public class AnlForceParser : AnlBlockParser
 	private Dictionary<int, Member> _mems;
 	private CoordFrame _targetState;
 
+	// true: the caller reads the print's units itself (AnlFrameReader), so the warning below is not printed
+	public bool UnitsReadByCaller;
+	// lines that hold 4 or more numbers yet are not a force row (7, 8 or 9 numbers): counted, never read (2026-11-24).
+	// A caller that must not lose a row reports them (AnlFrameReader); the rows read are as before.
+	public int SuspectRows;
+	public List<string> SuspectSamples = new List<string>();
+
 	public AnlForceParser(string path) : base(path) { }
 
 	public void ParseSection(AnlSection section, Dictionary<int, Member> mems, CoordFrame targetState)
 	{
 		_mems = mems;
 		_targetState = targetState;
-		Console.WriteLine("WARNING: MEMBER FORCE UNIT NORMALIZATION NOT SUPPORTED");
+		if (!UnitsReadByCaller)
+			Console.WriteLine("WARNING: MEMBER FORCE UNIT NORMALIZATION NOT SUPPORTED");
 
 		// One day we'll abstract this all away...
 		long bytesToRead = section.EndOffset - section.StartOffset;
@@ -959,6 +1043,11 @@ public class AnlForceParser : AnlBlockParser
 				}
 				else
 				{
+					if (n >= 4)
+					{
+						SuspectRows++;
+						if (SuspectSamples.Count < 3) SuspectSamples.Add(Encoding.UTF8.GetString(_lineBuf1, 0, len).Trim());
+					}
 					continue;
 				}
 

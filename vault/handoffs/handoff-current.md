@@ -54,6 +54,10 @@ Purging it means rewriting the branch's history.
   - whether `RA` gives SAP's leg arrangement (STAAD's `ST` is its mirror image), if drawings or STAAD's angle design
     matter.
 
+- the `.anl` reader's probe: run `scripts/lib/probes/anl-prints-probe.std` in STAAD.Pro and commit its `.anl`
+  (see the README beside it), so the reaction, displacement, code-check and member tables can be parsed from a real
+  file.
+
 **Next:**
 1. **Round 3, the sample job, in SAP only.** CAESAR's outputs are already in `scripts/caesar/testdata`: restraint loads,
    displacements and local element forces for all six cases. Seed it, run it in SAP and export.
@@ -66,4 +70,4 @@ Purging it means rewriting the branch's history.
 CAESAR's restraints, re-seeding that keeps SAP-side additions, and writing a seeded model back as a `.cii`. See
 "Possible later" in [[vault/decisions/2026-11-12-caesar-to-sap|2026-11-12-caesar-to-sap]].
 
-Last session: [[vault/handoffs/handoff-2026-11-23|handoff-2026-11-23]].
+Last sessions: [[vault/handoffs/handoff-2026-11-24|handoff-2026-11-24]] (the frame `.anl` reader), [[vault/handoffs/handoff-2026-11-23|handoff-2026-11-23]].
