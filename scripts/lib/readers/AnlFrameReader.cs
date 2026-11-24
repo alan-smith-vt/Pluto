@@ -1263,8 +1263,9 @@ public static class AnlFrameReader
                 if (_m.PutForce(f)) dup++;
                 print.Rows++;
             }
+            // an error, not a warning: the rows after an unread row are attributed to the member and case before it
             if (p.SuspectRows > 0)
-                _m.Warn("FORCE_ROW_UNREAD", p.SuspectRows + " line(s) of " + print.Command + " hold numbers but are not a force row of 7, 8 or 9 numbers (touching columns? overflow?), e.g. \"" +
+                _m.Error("FORCE_ROW_UNREAD", p.SuspectRows + " line(s) of " + print.Command + " hold numbers but are not a force row of 7, 8 or 9 numbers (touching columns? overflow?), e.g. \"" +
                     string.Join("\" | \"", p.SuspectSamples.ToArray()) + "\"");
             if (unknownMembers.Count > 0)
                 _m.Error("FORCE_MEMBER_UNKNOWN", "member force rows for members that have no incidence: " + Ids(unknownMembers.Distinct().ToList()));
