@@ -5,6 +5,9 @@
 //   Members                Member, Node I, Node J, Section, Family, Kind, Length, Beta, releases, offsets
 //   Joints                 Node, X, Y, Z, Support, how many columns / beams / braces end there
 //   Supports               Node, Type, Restrained, Springs
+//   Reactions              Node, LC, Fx .. Mz: the support reactions as STAAD printed them (global axes); with it
+//                          Reaction Extremes, the largest and smallest of each component per support
+//   Joint Displacements    Node, LC, X Y Z and the rotations, as printed (when the file prints them)
 //   Member Ends            one row per member end at a joint: Role, Section, the member it runs through
 //   Load Cases             LC, Kind, Method, Load Type, Title, Factors, Forces printed
 //   All End Forces         Member, End (I / J), Node, LC, Fx .. Mz as STAAD printed them (member local axes). Past
@@ -27,7 +30,7 @@ namespace CalcFlow
     public sealed class ModelDataResult
     {
         public string Path = "";
-        public int Members, Joints, Cases, EndForceRows, EnvelopeRows, ForceSheets;
+        public int Members, Joints, Cases, EndForceRows, EnvelopeRows, ForceSheets, ReactionRows, DisplacementRows;
         public readonly List<string> NotRead = new List<string>();     // output commands whose tables are not read yet
     }
 
@@ -124,7 +127,29 @@ namespace CalcFlow
                 "one row per joint", new[] { "Node" }, new[] { "Node", "Member ends", "Columns", "Beams", "Braces" }, new[] { "X (in)", "Y (in)", "Z (in)" }));
             sheets.Add(Small("Supports", "tblSupports", new[] { "Node", "Type", "Restrained", "Springs", "As written" },
                 supports.Select(r => Row("Node", V(r, "Node"), "Type", V(r, "Type"), "Restrained", V(r, "Restrained"), "Springs", V(r, "Springs"), "As written", V(r, "Spec"))).ToList(),
-                "one row per supported joint. The support reactions are not read yet (see About)", new[] { "Node" }, new[] { "Node" }, new string[0]));
+                "one row per supported joint", new[] { "Node" }, new[] { "Node" }, new string[0]));
+            List<string[]> reactions = Rows(pkg, "reactions.csv");
+            if (reactions.Count > 1)
+            {
+                res.ReactionRows = reactions.Count - 1;
+                sheets.Add(Long("Reactions", "tblReactions", reactions[0], 2, "every printed support reaction, in the global axes, as STAAD printed it", reactions.Count - 1, Numbers(reactions)));
+                var xr = new List<string> { "Node" };
+                for (int c = 2; c < 8; c++) { xr.Add(reactions[0][c].Replace(" (", " max (")); xr.Add(reactions[0][c].Replace(" (", " min (")); }
+                var byNode = reactions.Skip(1).GroupBy(r => r[0]).ToList();
+                sheets.Add(Long("Reaction Extremes", "tblReactionExtremes", xr.ToArray(), 1,
+                    "per support: the largest and smallest of each reaction component over the printed cases. These do not act together", byNode.Count,
+                    byNode.Select(g =>
+                    {
+                        var row = new object[13];
+                        row[0] = Num(g.Key);
+                        for (int c = 0; c < 6; c++)
+                        {
+                            row[1 + 2 * c] = g.Max(r => double.Parse(r[2 + c], NumberStyles.Float, Inv));
+                            row[2 + 2 * c] = g.Min(r => double.Parse(r[2 + c], NumberStyles.Float, Inv));
+                        }
+                        return row;
+                    })));
+            }
             sheets.Add(Small("Member Ends", "tblMemberEnds", new[] { "Node", "Member", "End", "Role", "Section", "Family", "Kind", "Released", "Runs through as member" },
                 ends.Select(r => Row("Node", V(r, "Node"), "Member", V(r, "Member"), "End", EndName(V(r, "End")), "Role", V(r, "Role"), "Section", V(r, "Section"),
                     "Family", V(r, "Family"), "Kind", V(r, "Kind"), "Released", V(r, "Released"), "Runs through as member", V(r, "ThroughMember"))).ToList(),
@@ -167,6 +192,12 @@ namespace CalcFlow
             sheets.Add(Long("End Force Extremes", "tblEndForceExtremes", xcols.ToArray(), 3,
                 "per member end: the largest and smallest value of each component over the cases with printed forces. These do not act together: for concurrent forces use Enveloped End Forces",
                 endKeys.Count, ExtremeRows(pkg, endKeys)));
+            List<string[]> disp = Rows(pkg, "displacements.csv");
+            if (disp.Count > 1)
+            {
+                res.DisplacementRows = disp.Count - 1;
+                sheets.Add(Long("Joint Displacements", "tblJointDisplacements", disp[0], 2, "every printed joint displacement, in the global axes, as STAAD printed it", disp.Count - 1, Numbers(disp)));
+            }
             return sheets;
         }
 
@@ -258,6 +289,18 @@ namespace CalcFlow
             var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             for (int i = 0; i + 1 < kv.Length; i += 2) d[kv[i]] = kv[i + 1];
             return d;
+        }
+
+        // a package CSV as rows of text, the header first (empty when the package has no such file)
+        static List<string[]> Rows(AnalysisPackage pkg, string file)
+        {
+            string p = System.IO.Path.Combine(pkg.Folder, file);
+            return File.Exists(p) ? Csv.ReadAll(p) : new List<string[]>();
+        }
+
+        static IEnumerable<object[]> Numbers(List<string[]> rows)
+        {
+            for (int i = 1; i < rows.Count; i++) yield return rows[i].Select(Num).ToArray();
         }
 
         static List<Dictionary<string, string>> Table(AnalysisPackage pkg, string file)

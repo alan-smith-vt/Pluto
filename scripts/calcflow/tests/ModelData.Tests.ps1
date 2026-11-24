@@ -34,7 +34,7 @@ Test 'post-process: the package and Model_Data.xlsx beside the workbook; every t
     $pkgDir = Join-Path $proj 'calcflow/package/frame-demo'
     foreach ($f in [FramePackageWriter]::Files) { Assert-True (Test-Path -LiteralPath (Join-Path $pkgDir $f)) "no $f" }
     $md = [CalcFlow.Xlsx]::Read((Join-Path $proj 'Model_Data.xlsx'))
-    Assert-Equal (@($md.Sheets | ForEach-Object { $_.Name }) -join '|') 'About|Members|Joints|Supports|Member Ends|Load Cases|All End Forces|Enveloped End Forces|End Force Extremes'
+    Assert-Equal (@($md.Sheets | ForEach-Object { $_.Name }) -join '|') 'About|Members|Joints|Supports|Reactions|Reaction Extremes|Member Ends|Load Cases|All End Forces|Enveloped End Forces|End Force Extremes'
     $f = @($md.TableRows('tblAllEndForces'))
     Assert-Equal $f.Count 70
     Assert-Equal "$($f[0]['Member']) $($f[0]['End']) $($f[0]['Node']) $($f[0]['LC']) $($f[0]['Fx (kip)']) $($f[0]['Mz (kip-ft)'])" '1 I 1 1 9.5 2.9'
@@ -45,9 +45,14 @@ Test 'post-process: the package and Model_Data.xlsx beside the workbook; every t
     Assert-Equal @($md.TableRows('tblSupports')).Count 3
     $about = $md.Sheet('About')
     $cells = @(0..40 | ForEach-Object { "$($about.Text($_, 1))=$($about.Text($_, 3))" })
-    Assert-True ($cells -contains 'PRINT SUPPORT REACTION=Not read yet') 'the reaction print is named as not read yet'
+    Assert-True ($cells -contains 'CHECK CODE ALL=Not read yet') 'the code check is named as not read yet'
+    Assert-True ($cells -contains 'PRINT SUPPORT REACTION=Yes (4 rows)') 'the reaction print is read'
+    $rx = @($md.TableRows('tblReactions'))
+    Assert-Equal "$($rx.Count) $($rx[0]['Node']) $($rx[0]['LC']) $($rx[0]['Fy (kip)'])" '4 1 1 8.432'
+    $re = @($md.TableRows('tblReactionExtremes') | Where-Object { $_['Node'] -eq '1' })[0]
+    Assert-Equal "$($re['Fy max (kip)']) $($re['Fy min (kip)'])" '10.221 8.432'
     Assert-True ($cells -contains 'PRINT MEMBER FORCES ALL=Yes (70 rows)') 'the force print is read'
-    Assert-True (@($o | Where-Object { $_ -like '*not read yet (listed on the About tab)*PRINT SUPPORT REACTION*' }).Count -eq 1) ($o -join "`n")
+    Assert-True (@($o | Where-Object { $_ -like '*not read yet (listed on the About tab)*CHECK CODE ALL*' }).Count -eq 1) ($o -join "`n")
 }
 
 Test 'the envelopes: per member end and component, the case of the largest and smallest value with its concurrent forces' {

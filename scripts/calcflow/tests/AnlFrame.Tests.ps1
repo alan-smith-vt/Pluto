@@ -193,8 +193,8 @@ Test "sections: STAAD 2025's database form, double angles, a quoted database nam
 }
 
 Test 'LOAD LIST: every output command is recorded with the list it ran under; what is not read is named; LOADTYPE keeps its words' {
-    Assert-Equal (@($m.Prints | ForEach-Object { "$($_.Order):$($_.Command):$($_.LoadList):$($_.Read)" }) -join ' | ') '1:PRINT MEMBER FORCES ALL:ALL:True | 2:PRINT MEMBER FORCES LIST 2:ALL:True | 3:PRINT SUPPORT REACTION:ALL:False | 4:CHECK CODE ALL:ALL:False'
-    Assert-Match @($m.Problems | Where-Object { $_.Code -eq 'PRINT_NOT_READ' })[0].Message 'PRINT SUPPORT REACTION; CHECK CODE ALL'
+    Assert-Equal (@($m.Prints | ForEach-Object { "$($_.Order):$($_.Command):$($_.LoadList):$($_.Read)" }) -join ' | ') '1:PRINT MEMBER FORCES ALL:ALL:True | 2:PRINT MEMBER FORCES LIST 2:ALL:True | 3:PRINT SUPPORT REACTION:ALL:True | 4:CHECK CODE ALL:ALL:False'
+    Assert-Match @($m.Problems | Where-Object { $_.Code -eq 'PRINT_NOT_READ' })[0].Message 'not read yet: CHECK CODE ALL$'
     $l = [AnlFrameReader]::Read((New-Variant 'loadlist' @{
         '    54. PRINT MEMBER FORCES ALL' = "    53. LOAD LIST 1 TO 3 101`n    54. PRINT MEMBER FORCES ALL"
         '    57. PRINT SUPPORT REACTION' = "    57. LOAD LIST 102`n    57. PRINT SUPPORT REACTIONS"
@@ -203,7 +203,7 @@ Test 'LOAD LIST: every output command is recorded with the list it ran under; wh
     $first = $l.Prints[0]
     Assert-Equal "$($first.Command)|$($first.LoadList)|$($first.AllCases)|$(@($first.Cases) -join ',')" 'PRINT MEMBER FORCES ALL|1 TO 3 101|False|1,2,3,101'
     $rx = @($l.Prints | Where-Object { $_.Command -eq 'PRINT SUPPORT REACTIONS' })[0]
-    Assert-Equal "$($rx.LoadList)|$($rx.Read)" '102|False'
+    Assert-Equal "$($rx.LoadList)|$($rx.Read)" '102|True'
     Assert-Equal $l.LoadCases[2].LoadType 'Roof Live'
     # the fixture prints all five cases, so a list of four is not short of any
     Assert-True ((Get-Codes $l) -notcontains 'FORCE_CASE_MISSING') 'no case missing'
@@ -240,6 +240,39 @@ Test 'no force row is lost silently: a line with touching numbers refuses the pa
     Assert-True ((Get-Codes $g) -contains 'FORCE_GLOBAL') 'GLOBAL'
 }
 
+Test "the probe's real .anl (STAAD.Pro 2025): the model, every end force, the support reactions and the joint displacements" {
+    $probe = Join-Path (Join-Path (Join-Path (Join-Path $script:Repo 'scripts') 'lib') 'probes') 'anl-prints-probe.anl'
+    $r = [AnlFrameReader]::Read($probe)
+    Assert-Equal $r.ErrorCount 0 (($r.ProblemsOf('Error') | ForEach-Object { $_.ToString() }) -join '; ')
+    Assert-Equal "$($r.Nodes.Count) $($r.Members.Count) $($r.Supports.Count) $($r.LoadCases.Count)" '18 32 6 14'
+    Assert-Equal $r.EndForces.Count (32 * 2 * 6) 'every member end in every case of the strength list'
+    Assert-Equal (@($r.Members.Values | ForEach-Object { $_.Family } | Sort-Object -Unique) -join ' ') '2L C HSS L PIPE PRIS W WT'
+    Assert-Equal $r.Members[654321].NodeB 123456 'six-digit numbers'
+    Assert-Equal "$($r.LoadCases[3].LoadType)|$($r.LoadCases[103].FactorsText)" 'ROOF LIVE|1*1.2 + 2*1 + 4*1' 'a LOADTYPE of two words; a comment between a combination and its factors'
+    # the two load lists, and what each print ran under
+    $p = @{}; foreach ($x in $r.Prints) { if (-not $p.ContainsKey($x.Command)) { $p[$x.Command] = $x } }
+    Assert-Equal "$($p['PRINT SUPPORT REACTIONS'].LoadList)|$($p['PRINT SUPPORT REACTIONS'].Read)|$($p['PRINT SUPPORT REACTIONS'].Rows)" '6 101 TO 104 201|True|36'
+    Assert-Equal "$($p['PRINT JOINT DISPLACEMENTS'].LoadList)|$($p['PRINT JOINT DISPLACEMENTS'].Rows)" '1 2 301 TO 303|90'
+    Assert-Equal @($r.Prints | Where-Object { $_.Command -like 'CHECK CODE*' }).Count 8 'the eight code checks'
+    # reactions: supports x cases, in the units of the table's title, values as printed
+    Assert-Equal "$($r.Reactions.Count) $($r.ReactionForceText) $($r.ReactionMomentText)" '36 kip kip-in'
+    $x = @($r.Reactions | Where-Object { $_.Node -eq 1 -and $_.LC -eq 104 })[0]
+    Assert-Equal ($x.V -join ' ') '-5.07 3.74 -5.67 -1333.95 0.2 -42.04'
+    # displacements: joints x cases
+    Assert-Equal "$($r.Displacements.Count) $($r.DisplacementLengthText)" '90 in'
+    $d = @($r.Displacements | Where-Object { $_.Node -eq 123456 -and $_.LC -eq 1 })[0]
+    Assert-Near $d.V[1] -0.00834 1e-12
+    Assert-Near $d.V[5] 0.00055 1e-12
+    Assert-True ((Get-Codes $r) -notcontains 'FORCE_ROW_UNREAD') 'no force row was lost'
+    # a reaction row with touching numbers is refused
+    $text = [IO.File]::ReadAllText($probe, [Text.Encoding]::GetEncoding(28591))
+    $bad = Join-Path $dir 'probe-touching.anl'
+    $row = '         104     -5.07      3.74     -5.67  -1333.95      0.20    -42.04'
+    Assert-True ($text.IndexOf($row) -gt 0) 'the row is in the probe'
+    [IO.File]::WriteAllText($bad, $text.Replace($row, '         104     -5.07      3.74-123456.67  -1333.95      0.20    -42.04'), [Text.Encoding]::GetEncoding(28591))
+    Assert-True ((Get-Codes ([AnlFrameReader]::Read($bad))) -contains 'REACTION_ROW_UNREAD') 'touching numbers in the reaction table'
+}
+
 Test 'BETA ANGLE keeps the member, flags its beta as unknown and takes the axes at BETA 0' {
     $a = [AnlFrameReader]::Read((New-Variant 'angle' @{ 'BETA 90 MEMB 1' = 'BETA ANGLE MEMB 1' }))
     Assert-Equal $a.ErrorCount 0
@@ -252,9 +285,13 @@ Test 'BETA ANGLE keeps the member, flags its beta as unknown and takes the axes 
 Test 'the package: every file, its header and its rows' {
     $out = Join-Path $dir 'package'
     $files = [FramePackageWriter]::Write($m, $out)
-    Assert-Equal $files.Count 9
+    Assert-Equal $files.Count 11
+    $rc = [CalcFlow.Csv]::ReadAll((Join-Path $out 'reactions.csv'))
+    Assert-Equal ($rc[0] -join ',') 'Node,LC,Fx (kip),Fy (kip),Fz (kip),Mx (kip-in),My (kip-in),Mz (kip-in)'
+    Assert-Equal ($rc[1] -join ',') '1,1,0.512,8.432,0,0,0,2.151'
+    Assert-Equal $rc.Count 5
     $pr = [CalcFlow.Csv]::ReadTable((Join-Path $out 'prints.csv'))
-    Assert-Equal (($pr | ForEach-Object { "$($_['Command'])=$($_['Read'])/$($_['Rows'])" }) -join '; ') 'PRINT MEMBER FORCES ALL=Y/70; PRINT MEMBER FORCES LIST 2=Y/10; PRINT SUPPORT REACTION=N/0; CHECK CODE ALL=N/0'
+    Assert-Equal (($pr | ForEach-Object { "$($_['Command'])=$($_['Read'])/$($_['Rows'])" }) -join '; ') 'PRINT MEMBER FORCES ALL=Y/70; PRINT MEMBER FORCES LIST 2=Y/10; PRINT SUPPORT REACTION=Y/4; CHECK CODE ALL=N/0'
     $read = { param($name) [CalcFlow.Csv]::ReadAll((Join-Path $out $name)) }
     $ef = & $read 'endforces.csv'
     Assert-Equal ($ef[0] -join ',') 'Member,End,Node,LC,Fx (kip),Fy (kip),Fz (kip),Mx (kip-ft),My (kip-ft),Mz (kip-ft)'

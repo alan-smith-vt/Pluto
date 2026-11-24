@@ -77,11 +77,12 @@ CAESAR's restraints, re-seeding that keeps SAP-side additions, and writing a see
   ([[vault/calcflow/calcflow-workbook|calcflow-workbook]]).
 - **Decided 2026-11-24** ([[vault/decisions/2026-11-24-calcflow-workbook|2026-11-24-calcflow-workbook]]): link cells,
   two files, a connection name is a mark with every geometry input on one schedule row, parser work on `pipestress`.
-- **The frame `.anl` reader lives on `pipestress`** since 2026-11-24. It reads the model and the member end forces;
-  reactions, the code check, displacements and the member tables wait for the probe's `.anl`.
-- **Waiting on the production machine:** the probe run in STAAD (`scripts/lib/probes/`); `CalcFlow.ps1 new` and the
-  link cell with a real `.anl`; `scripts\calcflow\tests\Run-Tests.ps1` under Windows PowerShell 5.1 (the Excel stage's
+- **The frame `.anl` reader lives on `pipestress`** since 2026-11-24. It reads the model, the member end forces,
+  support reactions and joint displacements, checked on the probe's real `.anl` (STAAD.Pro 2025). The code checks,
+  section displacements and the printed member tables are not read yet.
+- **Waiting on the production machine:** `CalcFlow.ps1 new` with the real templates, and the link cells; `scripts\calcflow\tests\Run-Tests.ps1` under Windows PowerShell 5.1 (the Excel stage's
   first run).
-- **Next:** the probe's parsers and their tabs; the pasted load block; small tables on the schedule row.
+- **Next:** the code-check and member-table parsers and their tabs; the pasted load block; small tables on the
+  schedule row.
 
 Last sessions: [[vault/handoffs/handoff-2026-11-24|handoff-2026-11-24]] (`CalcFlow`), [[vault/handoffs/handoff-2026-11-23|handoff-2026-11-23]] (`pipestress`).

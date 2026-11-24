@@ -63,16 +63,19 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 new -Out 
 > | Members | Member, Node I, Node J, Section, Family, Kind, Length, Beta, releases, offsets |
 > | Joints | Node, X, Y, Z, Support, how many columns / beams / braces end there |
 > | Supports | Node, Type, Restrained, Springs |
+> | Reactions | Node, LC, Fx to Mz: the support reactions as STAAD printed them, in the global axes (when the file prints them) |
+> | Reaction Extremes | per support: the largest and smallest of each reaction component. These do not act together |
 > | Member Ends | one row per member end at a joint: Role, Section, the member it runs through |
 > | Load Cases | LC, Kind, Method, Load Type, Title, Factors, Forces printed |
 > | All End Forces | Member, End (I / J), Node, LC, Fx to Mz as STAAD printed them, in the member's local axes |
 > | Enveloped End Forces | per member end and component: the case of the largest and of the smallest value, with the forces that act with it (12 rows an end) |
 > | End Force Extremes | per member end: the largest and smallest of each component on one row. These do not act together |
+> | Joint Displacements | Node, LC, X Y Z and the rotations (rad), as printed (when the file prints them) |
 >
 > - **Ends** A / B of the package are shown as I / J.
 > - **Size:** a long table continues on numbered tabs past 1,000,000 rows (`All End Forces (2)` ...), split between members. The rows are written as they are produced and each sheet is streamed into the file, so a long table is not held in memory twice. The CSV in the package stays the full source.
 > - **The envelopes** are over every case with printed forces. SRSS and ABS combinations are unsigned; keep them out of a load list that feeds an envelope where sign matters.
-> - **Not there yet:** Reactions, Code Check and Displacements tabs. Their prints are named "Not read yet" on About until the probe's `.anl` gives their layouts (`scripts/lib/probes/`).
+> - **Not there yet:** Code Check, Section Displacements and the printed member tables. Their prints are named "Not read yet" on About. Their layouts are known from the probe's real `.anl` (`scripts/lib/probes/`, with a README).
 
 > [!info]- Verification (2026-11-24, Linux)
 > - `tests/ModelData.Tests.ps1` (5):
@@ -84,5 +87,6 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 new -Out 
 >   - an `.anl` with errors writing nothing.
 > - Both workbooks pass the Open XML SDK validator and open in LibreOffice.
 > - `tests/ProjectBook.Tests.ps1` (4): the tabs written from the fixture's `.anl` and the generic templates; a filled-in copy checked (two weld marks on one template with different leg sizes, a base plate mark); each thing to fix named; `calcs` through LibreOffice, each record holding its own mark's values.
-> - The suite is 88 tests, 0 failed; the strict C# 5 compile is clean (CalcFlow alone; lib + arms + CalcFlow).
+> - On the probe's real `.anl` (STAAD.Pro 2025): 36 reaction rows and 90 displacement rows, supports x cases and joints x cases of their load lists.
+> - The suite is 89 tests, 0 failed; the strict C# 5 compile is clean (CalcFlow alone; lib + arms + CalcFlow).
 > - **Untested:** Excel following the link cell, the file dialog, the launcher under Windows PowerShell 5.1.

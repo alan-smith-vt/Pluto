@@ -38,7 +38,9 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\Export-AnlFrame.ps1 -A
 - `LOAD LIST` is parsed, and every output command is recorded with the list it ran under (`prints.csv`); the ones whose tables are not read yet are named in one warning (`PRINT_NOT_READ`);
 - a GLOBAL force print, a force-table line that is not a row, and a member with forces at one end only are errors.
 
-Support reactions, the code check, joint and section displacements and the two member tables are **not read yet**. Their parsers wait for the `.anl` of the probe model, `scripts/lib/probes/anl-prints-probe.std`, run on the production machine.
+**The probe ran on 2026-11-24** (STAAD.Pro 2025; `scripts/lib/probes/anl-prints-probe.anl`, the reader's first real file). The reader took it as it is: 18 joints, 32 members, 14 cases, all 384 end-force rows, no errors. Written from it the same day: **support reactions** and **joint displacements** (`reactions.csv`, `displacements.csv`; units from each table's title line; a row whose numbers run together is an error).
+
+The code checks (a boxed block per member in AISC 360; older layouts for `CODE AISC` and `CODE LRFD`), section displacements and the two printed member tables are **not read yet**; the README beside the probe says what each looks like.
 
 > [!info]- What is read, and from where
 > **The input echo.** STAAD writes every input line back into the `.anl` as `   NN. <text>`.
