@@ -12,8 +12,10 @@ created: 2026-11-18
 - **The pipe workflow.** An Excel workbook or a TOML becomes one pipe model, reviewed in the viewer with CAESAR's error
   checks, and written as a CAESAR II `.cii`. An imported job comes back byte for byte.
 - **The frame side.** A lossless SAP2000 `.s2k` model, edited in the frame workbook (3D View, live checks) and written
-  to SAP and to STAAD.Pro (`-Std`, exact or refused). A `.std` it wrote reads back into a frame model, STAAD's edits
-  too (`-In x.std`), through the STAAD lib's `.anl` reader, extended in place.
+  to SAP and to STAAD.Pro (`-Std`, exact or refused). A `.std` reads into a frame model (`-In x.std`): one it wrote,
+  STAAD's edits too, or a model made in STAAD. Later units are converted to the first, and envelopes become SAP
+  Envelope combinations. The commands after the analysis (load lists, prints, design parameters) and STAAD's load
+  numbers ride on the workbook's two STAAD sheets: `-Std` writes them again, `-S2k` leaves them out.
 - **STAAD results in the viewer.** A frame model's `.anl` becomes a viewer model (`scripts/staad/Run-StaadFrame.ps1`,
   [[vault/arms/staad-frame-to-viewer|staad-frame-to-viewer]]): forces, displacements, reactions and code ratios per
   load case (one `LOAD LIST <case>` + `CHECK CODE` per case).
@@ -46,6 +48,8 @@ created: 2026-11-18
 Purging it means rewriting the branch's history.
 
 **Waiting on the production machine:**
+- the user's STAAD model again with `-In <x>.std -Xlsx`: the remaining refusals, if any, to read next (see
+  [[vault/handoffs/handoff-2026-11-24b|handoff-2026-11-24b]]);
 - the PS 5.1 compile of `StaadToPluto`, and its probe run: `Run-StaadFrame.ps1 -Anl scripts\lib\probes\anl-prints-probe.anl
   -Out <outside the repo>`, then `node viewer/tests/readback_staad.js <out> --probe`. Then a real model with a
   `CHECK CODE` per case;

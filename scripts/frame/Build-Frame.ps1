@@ -15,10 +15,13 @@
 #                         (Pluto's defaults otherwise, with a warning). What the check model cannot hold yet refuses it,
 #                         each item on a [refuse] line. Bends take B31J's flexibility (1.3 / h), as CAESAR does for
 #                         B31.1-2020 and later; -AppendixD takes the older codes' 1.65 / h (CAESAR with B31J off)
-#           .std          a STAAD.Pro input file this runner wrote (-Std), edited in STAAD or not: read back into a frame
-#                         model (StdToFrame; vault/format/frame-to-staad.md). STAAD's commands are the model; the
-#                         comments -Std writes give back SAP's labels and names. Exact or refused: a command the frame
-#                         model cannot hold, or one -Std does not write, refuses it, each on a [refuse] line. The read
+#           .std          a STAAD.Pro input file: one this runner wrote (-Std), edited in STAAD or not, or a model made
+#                         in STAAD, read into a frame model (StdToFrame; vault/format/frame-to-staad.md). STAAD's
+#                         commands are the model; the comments -Std writes give back SAP's labels and names. A later
+#                         UNIT's numbers are converted to the first UNIT's. The commands after the analysis (LOAD LIST,
+#                         PRINT, design parameters, CHECK CODE) and STAAD's load numbers ride in the workbook's STAAD
+#                         sheets: -Std writes them again, the .s2k leaves them out. Exact or refused: a command the
+#                         frame model cannot hold refuses it, each on a [refuse] line. The read
 #                         checks that the model written back with -Std is the file's, object by object, to the digits
 #                         the file gives (STAAD.Pro's own save keeps 6), and says so. A table shape picked in STAAD
 #                         (no SAP row in the comment above it; TABLE ST, or STAAD 2025's TABLE 'HSS Rectangle' ST
@@ -44,7 +47,9 @@
 #                   the .bak), -Out writes elsewhere.
 #         -Std      <base>.std for STAAD.Pro (FrameStd; vault/format/frame-to-staad.md): Y up, a BETA per member, STAAD's
 #                   table for W shapes, exact properties for the rest, patterns as reference loads and cases as primary
-#                   loads. Exact or refused: what STAAD cannot hold exactly (a nonlinear link, a partly rigid end zone,
+#                   loads; after the analysis the model's STAAD commands (the workbook's STAAD commands sheet), else
+#                   Pluto's prints, and STAAD's load numbers where the STAAD loads sheet gives them.
+#                   Exact or refused: what STAAD cannot hold exactly (a nonlinear link, a partly rigid end zone,
 #                   an angle's product of inertia ...) refuses the file, every item named on a [refuse] line; what
 #                   leaving out cannot change (modal cases, envelopes) is a [notice]. An existing <base>.std is replaced
 #                   only when this runner wrote it or nothing in it would change; else -Force (STAAD saves its own edits)
@@ -223,7 +228,7 @@ if ($In) {
     elseif ($ext -eq ".s2k" -or $ext -eq ".`$2k") { $kind = "s2k" }
     elseif ($ext -eq ".std") { $kind = "std" }
     elseif ($ext -eq ".xlsx") { $kind = $(if (XlsxHas $inPath "pluto-pipe-workbook") { "pipe" } else { "xlsx" }) }
-    else { Fail ("Build-Frame: {0}: give a SAP2000 .s2k (or .`$2k), a frame workbook .xlsx, a .frame.json model, a STAAD .std written with -Std, or a CAESAR model (.cii, .toml, .pipe.json, its workbook) to seed one" -f $inPath) }
+    else { Fail ("Build-Frame: {0}: give a SAP2000 .s2k (or .`$2k), a frame workbook .xlsx, a .frame.json model, a STAAD .std, or a CAESAR model (.cii, .toml, .pipe.json, its workbook) to seed one" -f $inPath) }
     if ($Refresh -and $kind -ne "xlsx") { Fail "Build-Frame: -Refresh takes -In <frame workbook>.xlsx" }
     if ($Watch -and $kind -ne "xlsx") { Fail "Build-Frame: -Watch follows a frame workbook: -In <name>.xlsx (a CAESAR model seeds once: -In <job> -Xlsx, then watch that workbook)" }
     if ($Watch -and -not ($S2k -or $Std -or $Json -or $Preview)) { $Preview = $true }
@@ -497,6 +502,9 @@ function Build-Once {
     $script:step = "writing the .s2k"
     $doc = [FrameS2k]::ToDoc($model, $notes)
     foreach ($n in $notes) { Say "notice" $n }
+    # STAAD's own commands and load numbers (the workbook's STAAD sheets) are for -Std: SAP gets none of them
+    $staadRows = [StaadCarry]::StripForSap($doc)
+    if ($staadRows -gt 0 -and ($S2k -or $Open)) { Say "notice" ("the model's STAAD commands and load numbers ({0} rows, the workbook's STAAD sheets) are for -Std only: the .s2k leaves them out" -f $staadRows) }
 
     if ($S2k) {
         $bytes = $doc.ToBytes()

@@ -79,6 +79,9 @@ survive a re-export.
 >   over them, and its case: `Code ratio <code>, largest over cases ...`. It is what one check over all of them would
 >   print. The viewer's own envelopes are for shells only.
 >
+> `LOAD LIST ENV <envelopes>` (TR.40) is the cases of those envelopes, from the file's `DEFINE ENVELOPE`. A load in
+> two envelopes is in the last one only, as STAAD reads it. An envelope of one case puts its check into that case.
+>
 > Components (kind `code`): `Code ratio` and `Code case`. Each holds one value per member, the same at both ends.
 > A member that was not checked or was NOT DESIGNED has none and draws grey. In the check's own entries the forces
 > draw grey too; they belong to the cases.

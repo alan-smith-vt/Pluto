@@ -83,9 +83,9 @@ public static class FrameWorkbook
     public const string SJoints = "Joints", SFrames = "Frames", SSections = "Sections", SMaterials = "Materials", SReleases = "Releases", SModifiers = "Modifiers",
                         SLinks = "Links", SLinkProps = "Link props", SSprings = "Springs", SPatterns = "Load patterns", SJointLoads = "Joint loads",
                         SGround = "Ground displacements", SPoint = "Point loads", SDist = "Distributed loads", STemp = "Temperature", SCases = "Load cases",
-                        SCombos = "Combinations", SGroups = "Groups";
+                        SCombos = "Combinations", SGroups = "Groups", SStaad = "STAAD commands", SStaadLoads = "STAAD loads";
     static readonly string[] Inputs = { "Settings", SJoints, SFrames, SSections, SMaterials, SReleases, SModifiers, SLinks, SLinkProps, SSprings, SPatterns,
-                                        SJointLoads, SGround, SPoint, SDist, STemp, SCases, SCombos, SGroups };
+                                        SJointLoads, SGround, SPoint, SDist, STemp, SCases, SCombos, SGroups, SStaad, SStaadLoads };
 
     static readonly string[][] Groups =
     {
@@ -706,11 +706,30 @@ public static class FrameWorkbook
         gs.Conditional("C2:C" + lim, ofType("joint", noJoint("C2")) + "+" + ofType("frame", unknown("C2", frameIds, oldF)) + "+" + ofType("link", unknown("C2", linkIds, oldL)) + ">0", t.Red);
         gs.Conditional("C2:C" + lim, ofType("joint", oldJoint("C2")) + "+" + ofType("frame", renamed("C2", frameIds, oldF)) + "+" + ofType("link", renamed("C2", linkIds, oldL)) + ">0", t.Amber);
 
+        // ---- STAAD (StaadCarry): what a STAAD model holds that SAP has no place for; -Std writes it, the .s2k leaves it out
+        var sx = b.Add(SStaad);
+        var cmds = StaadCarry.CommandsOf(m);
+        for (int i = 0; i < cmds.Count; i++) sx.Set(i + 1, 0, cmds[i]);
+        t.Form.Table(sx, t, new[] { "Command" }, new[] {
+            C("Command", "load", "text", "One STAAD command per row, in order, as STAAD reads it: -Std writes them after the analysis (LOAD LIST, PRINT ..., PARAMETER, CODE, design parameters, CHECK CODE ...). A first row PERFORM ANALYSIS PRINT ... gives the analysis its PRINT option. Member, joint and group names are the model's, load numbers the STAAD loads sheet's. Empty: -Std writes Pluto's prints. SAP takes none of them."),
+        }, cmds.Count, 2000);
+        sx.Width(0, 100);
+        var sl = b.Add(SStaadLoads);
+        var nums = StaadCarry.LoadsOf(m);
+        for (int i = 0; i < nums.Count; i++) { sl.Set(i + 1, 0, nums[i][0]); sl.Set(i + 1, 1, nums[i][1]); Num(sl, i + 1, 2, nums[i][2]); if (nums[i][3].Length > 0) sl.Set(i + 1, 3, nums[i][3]); }
+        t.Form.Table(sl, t, new[] { "Kind", "Name", "Number", "Type" }, new[] {
+            C("Kind", "key", "text", "Case, Combination or Envelope."),
+            C("Name", "key", "text", "The load case's or the combination's name, as on the Load cases or Combinations sheet (an Envelope: a combination of type Envelope)."),
+            C("Number", "load", "nonneg", "Its STAAD number: -Std writes LOAD <number> (a case or combination), ENVELOPE <number> (an envelope), so the STAAD commands' LOAD LIST / LOAD LIST ENV names it. One not listed gets the next free number."),
+            C("Type", "load", "text", "An envelope's STAAD TYPE: STRENGTH, SERVICEABILITY, CONNECTION, COLUMN, STRESS (blank: none). Steel design takes STRENGTH and SERVICEABILITY."),
+        }, nums.Count, 2000);
+        sl.Width(0, 14); sl.Width(1, 44); sl.Width(2, 10); sl.Width(3, 18);
+
         // ---- Carried (read-only)
         var ca = b.Add("Carried");
         ca.Set(0, 0, "Table", t.Head["ro"]); ca.Set(0, 1, "Rows carried", t.Head["ro"]); ca.Width(0, 50); ca.Width(1, 14);
         r0 = 1;
-        foreach (var tb in m.Source.Tables)
+        foreach (var tb in m.Source.Tables.Where(x => !StaadCarry.IsOwn(x.Name)))
         {
             int n = 0;
             foreach (var row in tb.Rows) { string kind; bool main; if (!FrameS2k.OwnerOf(tb.Name, row, out kind, out main)) n++; }
@@ -797,6 +816,8 @@ public static class FrameWorkbook
             new WbSheetInfo(SCases, "Load cases: type, initial case, then one row per load", rowsOf(SCases, "B")),
             new WbSheetInfo(SCombos, "Combinations: type, then one row per item", rowsOf(SCombos, "B")),
             new WbSheetInfo(SGroups, "SAP groups, one row per member", rowsOf(SGroups, "A")),
+            new WbSheetInfo(SStaad, "STAAD only: its commands after the analysis (LOAD LIST, PRINT, design parameters, CHECK CODE)", rowsOf(SStaad, "A")),
+            new WbSheetInfo(SStaadLoads, "STAAD only: the load numbers -Std writes", rowsOf(SStaadLoads, "A")),
             new WbSheetInfo("Carried", "Tables the workbook does not show: they ride along unchanged (read-only)", null),
         };
         string fr = col(SFrames, "C"), frJ = col(SFrames, "D");
@@ -869,7 +890,7 @@ public static class FrameWorkbook
         { SLinks, "B45309" }, { SLinkProps, "B45309" }, { SSprings, "B45309" },
         { SPatterns, "9A3412" }, { SJointLoads, "9A3412" }, { SGround, "9A3412" }, { SPoint, "9A3412" }, { SDist, "9A3412" }, { STemp, "9A3412" },
         { SCases, "9A3412" }, { SCombos, "9A3412" },
-        { SGroups, "37474F" }, { "Carried", "7F7F7F" },
+        { SGroups, "37474F" }, { SStaad, "4A148C" }, { SStaadLoads, "4A148C" }, { "Carried", "7F7F7F" },
     };
 
     const string FramesHint = "The frames it loads: a label, a range in Frames' order (C1:C9), group:NAME, line:NAME, kind:NAME, section:NAME or all; several, separated by commas.";
@@ -1022,6 +1043,7 @@ public static class FrameWorkbook
         ReadFrameLoads(sheet(STemp), x, FrameLoad.Temperature, order, kindOf, lineOf);
         ReadCases(sheet(SCases), x);
         ReadCombos(sheet(SCombos), x);
+        ReadStaad(sheet(SStaad), sheet(SStaadLoads), x);
 
         CapitalsOnly(x);
         Refit(m, res.Base);
@@ -1615,6 +1637,44 @@ public static class FrameWorkbook
             if (sr != null && cs.Length > 0 && sr.Get("CoordSys") != cs) sr.Set("CoordSys", cs);
         }
         foreach (var j in x.M.Joints) if (!had.Contains(j) && j.Rec(FrameJoint.Springs) != null) j.Spring = null;
+    }
+
+    // the STAAD sheets into Pluto's own tables (StaadCarry); a workbook without them keeps its base's
+    static void ReadStaad(CaesarSheet cs, CaesarSheet ls, Ctx x)
+    {
+        if (cs == null && ls == null) return;
+        var cmds = cs == null ? StaadCarry.CommandsOf(x.M) : new List<string>();
+        if (cs != null)
+        {
+            var c = WbRead.ColsOf(cs, x, null);
+            foreach (int r in Rows(c))
+            {
+                string t = Text(c, r, "Command", x);
+                if (t.Length == 0) continue;
+                if (t.IndexOf('"') >= 0) { x.Err(At(c, r, "Command") + ": a STAAD command with a double quote (write ' instead)"); continue; }
+                cmds.Add(t);
+            }
+        }
+        var nums = ls == null ? StaadCarry.LoadsOf(x.M) : new List<string[]>();
+        if (ls != null)
+        {
+            var c = WbRead.ColsOf(ls, x, null);
+            foreach (int r in Rows(c))
+            {
+                string k = Text(c, r, "Kind", x), n = Text(c, r, "Name", x);
+                double v = Num(c, r, "Number", x, null);
+                string kind = new[] { "Case", "Combination", "Envelope" }.FirstOrDefault(w => string.Equals(k, w, StringComparison.OrdinalIgnoreCase));
+                if (kind == null) { x.Err(At(c, r, "Kind") + ": Case, Combination or Envelope"); continue; }
+                if (n.Length == 0) { x.Err(At(c, r, "Name") + ": the load's name"); continue; }
+                if (n.IndexOf('"') >= 0) { x.Err(At(c, r, "Name") + ": a name with a double quote"); continue; }
+                if (double.IsNaN(v)) continue;
+                if (v < 1 || v != Math.Floor(v) || v > 99999) { x.Err(At(c, r, "Number") + ": a whole number from 1 to 99999"); continue; }
+                string ty = kind == "Envelope" ? StaadInput.EnvelopeType(Text(c, r, "Type", x)) : "";
+                if (ty.IndexOf(' ') >= 0) { x.Err(At(c, r, "Type") + ": one word (STRENGTH, SERVICEABILITY ...)"); continue; }
+                nums.Add(new[] { kind, n, ((int)v).ToString(Inv), ty });
+            }
+        }
+        StaadCarry.Set(x.M, cmds, nums);
     }
 
     static void ReadPatterns(CaesarSheet s, Ctx x)

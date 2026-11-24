@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 
 // FrameStd  --  a SAP frame model as a STAAD.Pro input file (.std), for Build-Frame -Std (2026-11-05; decisions in
 // vault/decisions/2026-11-05-frame-staad.md, the mapping in vault/format/frame-to-staad.md). Exact or refused: what
@@ -29,6 +30,69 @@ public sealed class FrameStdRefusal : Exception
     {
         return "STAAD cannot hold this model exactly (" + items.Count.ToString(CultureInfo.InvariantCulture) + " item" + (items.Count == 1 ? "" : "s") + "): " +
                string.Join(" | ", items.ToArray());
+    }
+}
+
+// What a STAAD model holds that SAP has no place for (2026-11-25), carried in two tables of Pluto's own in the model's
+// document: its commands after the analysis (LOAD LIST, PRINT, PARAMETER, CHECK CODE ..., as written, in order; a first
+// "PERFORM ANALYSIS PRINT ..." is the analysis' PRINT option) and its load numbers. StdToFrame writes them, the frame
+// workbook's STAAD sheets show and edit them, FrameStd writes them back; the .s2k for SAP leaves them out (StripForSap).
+public static class StaadCarry
+{
+    public const string Commands = "PLUTO STAAD COMMANDS", Loads = "PLUTO STAAD LOADS";
+
+    public static bool IsOwn(string table) { return (table ?? "").StartsWith("PLUTO STAAD ", StringComparison.OrdinalIgnoreCase); }
+
+    public static List<string> CommandsOf(FrameModel m)
+    {
+        var o = new List<KeyValuePair<double, string>>();
+        var t = m.Source == null ? null : m.Source.Table(Commands);
+        if (t != null)
+            foreach (var r in t.Rows)
+            {
+                double n;
+                if (!double.TryParse(r.Get("Line") ?? "", NumberStyles.Float, CultureInfo.InvariantCulture, out n)) n = o.Count + 1;
+                o.Add(new KeyValuePair<double, string>(n, r.Get("Command") ?? ""));
+            }
+        return o.OrderBy(x => x.Key).Select(x => x.Value).Where(x => x.Trim().Length > 0).ToList();
+    }
+
+    // { Kind (Case | Combination | Envelope), Name, Number, Type (an envelope's: STRENGTH, SERVICEABILITY ...; else "") }
+    public static List<string[]> LoadsOf(FrameModel m)
+    {
+        var o = new List<string[]>();
+        var t = m.Source == null ? null : m.Source.Table(Loads);
+        if (t != null) foreach (var r in t.Rows) o.Add(new[] { r.Get("Kind") ?? "", r.Get("Name") ?? "", r.Get("Number") ?? "", r.Get("Type") ?? "" });
+        return o;
+    }
+
+    // the two tables made again from these (none when empty); false when nothing changed
+    public static bool Set(FrameModel m, List<string> commands, List<string[]> loads)
+    {
+        if (CommandsOf(m).SequenceEqual(commands) && LoadsOf(m).Select(x => string.Join("|", x)).SequenceEqual(loads.Select(x => string.Join("|", x)))) return false;
+        foreach (string name in new[] { Commands, Loads }) { var t = m.Source.Table(name); if (t != null) m.Source.Tables.Remove(t); }
+        Func<string, string> q = v => "\"" + (v ?? "").Replace("\"", "'") + "\"";
+        if (commands.Count > 0)
+        {
+            var t = m.Source.AddTable(Commands, null);
+            for (int i = 0; i < commands.Count; i++) t.AddRow(Row("Line=" + (i + 1).ToString(CultureInfo.InvariantCulture) + "   Command=" + q(commands[i])));
+        }
+        if (loads.Count > 0)
+        {
+            var t = m.Source.AddTable(Loads, null);
+            foreach (var l in loads) t.AddRow(Row("Kind=" + l[0] + "   Name=" + q(l[1]) + "   Number=" + l[2] + (l.Length > 3 && l[3].Length > 0 ? "   Type=" + l[3] : "")));
+        }
+        return true;
+    }
+
+    static S2kRow Row(string text) { var r = new S2kRow(); S2kRow.Tokenize(text, r); return r; }
+
+    // the document for SAP: Pluto's STAAD tables left out; the rows taken out
+    public static int StripForSap(S2kDoc doc)
+    {
+        int n = 0;
+        foreach (var t in doc.Tables.Where(x => IsOwn(x.Name)).ToList()) { n += t.Rows.Count(); doc.Tables.Remove(t); }
+        return n;
     }
 }
 
@@ -356,6 +420,8 @@ public static class FrameStd
             var refs = Loads();
             var cases = Cases(refs);
             var combos = Combos(cases);
+            Envs = Envelopes(cases, combos);
+            if (renumbered.Count > 0) Note("loads the STAAD loads sheet does not number, numbered by Pluto: " + string.Join(", ", renumbered.ToArray()));
             if (Refused.Count > 0) throw new FrameStdRefusal(Grouped());
             return Emit(refs, cases, combos);
         }
@@ -929,7 +995,7 @@ public static class FrameStd
             var skipped = new List<string>();
             foreach (string t in D.TableNames())
             {
-                if (Read.Any(x => Is(t, x))) continue;
+                if (Read.Any(x => Is(t, x)) || StaadCarry.IsOwn(t)) continue;      // Pluto's own STAAD tables: written after the analysis
                 int n = D.GetTable(t).Count;
                 if (n == 0) continue;
                 string up = t.ToUpperInvariant();
@@ -1144,6 +1210,32 @@ public static class FrameStd
             public readonly List<KeyValuePair<int, double>> Refs = new List<KeyValuePair<int, double>>();   // reference load index, factor
         }
 
+        // a load's STAAD number: the model's own (StaadCarry, the workbook's STAAD loads sheet), else the next one free
+        Dictionary<string, int> carriedNumbers;
+        List<Envelope> Envs = new List<Envelope>();
+        readonly HashSet<int> usedNumbers = new HashSet<int>();
+        readonly List<string> renumbered = new List<string>();
+        int nextNumber = 1;
+        int LoadNumber(string kind, string label)
+        {
+            if (carriedNumbers == null)
+            {
+                carriedNumbers = new Dictionary<string, int>(StringComparer.Ordinal);
+                foreach (var l in StaadCarry.LoadsOf(M).Where(x => x[0] == "Case" || x[0] == "Combination"))
+                {
+                    int n;
+                    if (int.TryParse(l[2], NumberStyles.None, Inv, out n) && n > 0 && !carriedNumbers.ContainsValue(n)) carriedNumbers[l[0] + "|" + l[1]] = n;
+                    else Note("the STAAD loads sheet's " + l[0].ToLowerInvariant() + " " + l[1] + ": number " + l[2] + " not taken (not a whole number above 0, or another load's)");
+                }
+            }
+            int k;
+            if (carriedNumbers.TryGetValue(kind + "|" + label, out k) && usedNumbers.Add(k)) return k;
+            while (usedNumbers.Contains(nextNumber) || carriedNumbers.ContainsValue(nextNumber)) nextNumber++;
+            usedNumbers.Add(nextNumber);
+            if (carriedNumbers.Count > 0) renumbered.Add(kind.ToLowerInvariant() + " " + label + " = LOAD " + nextNumber.ToString(Inv));
+            return nextNumber++;
+        }
+
         List<Primary> Cases(List<KeyValuePair<FramePattern, PatternLoads>> refs)
         {
             var o = new List<Primary>();
@@ -1156,7 +1248,7 @@ public static class FrameStd
             {
                 string type = c.Type;
                 if (!Is(type, "LinStatic") && !Is(type, "NonStatic")) { notWritten.Add(c.Label + " (" + type + ")"); continue; }
-                var pr = new Primary { C = c, Number = o.Count + 1 };
+                var pr = new Primary { C = c, Number = LoadNumber("Case", c.Label) };
                 var factors = new Dictionary<int, double>();
                 bool ok = true;
                 var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -1209,6 +1301,52 @@ public static class FrameStd
 
         sealed class Combination { public string Name, Kind; public int Number; public List<KeyValuePair<int, double>> Items; }
 
+        // SAP's Envelope combinations as STAAD's load envelopes (DEFINE ENVELOPE, TR.40): each listed load a written case or
+        // combination at scale factor 1, in one envelope only (STAAD keeps a load in the last); its number and TYPE the STAAD
+        // loads sheet's, else the next free number. One that cannot be written is listed (an envelope changes no result)
+        sealed class Envelope { public string Name, Type; public int Number; public List<int> Loads; }
+
+        List<Envelope> Envelopes(List<Primary> cases, List<Combination> combos)
+        {
+            var o = new List<Envelope>();
+            var number = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var p in cases) number["C|" + p.C.Label] = p.Number;
+            foreach (var c in combos) number["K|" + c.Name] = c.Number;
+            var carried = StaadCarry.LoadsOf(M).Where(l => l[0] == "Envelope").ToList();
+            var taken = new HashSet<int>();
+            var used = new HashSet<int>();
+            var notWritten = new List<string>();
+            int next = 1;
+            foreach (var c in M.Combos.Where(x => Is(x.Type, "Envelope")))
+            {
+                var ids = new List<int>();
+                string why = null;
+                foreach (var it in c.Items)
+                {
+                    double sf; int n;
+                    if (!double.TryParse(it[2], NumberStyles.Float, Inv, out sf) || sf != 1) { why = it[1] + " at scale factor " + it[2] + ": STAAD's envelope takes a load as it is"; break; }
+                    if (!number.TryGetValue((Is(it[0], "Response Combo") ? "K|" : "C|") + it[1], out n)) { why = it[1] + " is not written to STAAD"; break; }
+                    if (taken.Contains(n)) { why = it[1] + " is in an envelope before it: STAAD keeps a load in one"; break; }
+                    if (!ids.Contains(n)) ids.Add(n);
+                }
+                if (why == null && ids.Count == 0) why = "no load";
+                if (why != null) { notWritten.Add(c.Label + " (" + why + ")"); continue; }
+                taken.UnionWith(ids);
+                var row = carried.FirstOrDefault(l => l[1] == c.Label);
+                int num;
+                if (row == null || !int.TryParse(row[2], NumberStyles.None, Inv, out num) || num < 1 || used.Contains(num))
+                {
+                    while (used.Contains(next) || carried.Any(l => l[2] == next.ToString(Inv))) next++;
+                    num = next;
+                }
+                used.Add(num);
+                o.Add(new Envelope { Name = c.Label, Number = num, Type = row == null ? "" : row[3], Loads = ids });
+            }
+            if (notWritten.Count > 0) Note("envelopes not written (STAAD's DEFINE ENVELOPE): " + string.Join(", ", notWritten.ToArray()));
+            if (o.Count > 0) Note("SAP's envelope combinations as STAAD's DEFINE ENVELOPE: " + string.Join(", ", o.Select(e => e.Name + " = ENVELOPE " + e.Number.ToString(Inv) + (e.Type.Length > 0 ? " TYPE " + e.Type : "")).ToArray()));
+            return o;
+        }
+
         List<Combination> Combos(List<Primary> cases)
         {
             var o = new List<Combination>();
@@ -1217,20 +1355,20 @@ public static class FrameStd
             var byName = new Dictionary<string, FrameCombo>(StringComparer.Ordinal);
             foreach (var c in M.Combos) if (!byName.ContainsKey(c.Label)) byName[c.Label] = c;
             var notWritten = new List<string>();
-            int next = cases.Count;
             foreach (var c in M.Combos)
             {
                 string type = c.Type, kind;
                 if (Is(type, "Linear Add")) kind = "";
                 else if (Is(type, "SRSS")) kind = "SRSS";
                 else if (Is(type, "Abs Add")) kind = "ABS";
+                else if (Is(type, "Envelope")) continue;                  // DEFINE ENVELOPE (Envelopes)
                 else { notWritten.Add(c.Label + " (" + type + ")"); continue; }
                 string why;
                 var items = kind == "" ? Linear(c, number, byName, new HashSet<string>(), out why) : Direct(c, number, out why);
                 if (items == null) { notWritten.Add(c.Label + " (" + why + ")"); continue; }
                 var list = items.Where(kv => kv.Value != 0).OrderBy(kv => kv.Key).ToList();
                 if (list.Count == 0) { notWritten.Add(c.Label + " (its factors cancel)"); continue; }
-                o.Add(new Combination { Name = c.Label, Kind = kind, Number = ++next, Items = list });
+                o.Add(new Combination { Name = c.Label, Kind = kind, Number = LoadNumber("Combination", c.Label), Items = list });
             }
             if (notWritten.Count > 0) Note("combinations not written: " + string.Join(", ", notWritten.ToArray()));
             if (o.Count > 0 && cases.Any(p => p.PDelta)) Note("combinations add P-Delta results as SAP's do (STAAD warns that this is not a second-order result)");
@@ -1498,13 +1636,32 @@ public static class FrameStd
                 o.Add("LOAD COMBINATION " + (c.Kind == "" ? "" : c.Kind + " ") + c.Number.ToString(Inv) + " " + Plain(c.Name, 60));
                 line(string.Join(" ", c.Items.Select(kv => kv.Key.ToString(Inv) + " " + N(kv.Value)).ToArray()));
             }
+            if (Envs.Count > 0)
+            {
+                o.Add("DEFINE ENVELOPE");
+                foreach (var e in Envs) line(Condense(e.Loads) + " ENVELOPE " + e.Number.ToString(Inv) + (e.Type.Length > 0 ? " TYPE " + e.Type : ""));
+                o.Add("END DEFINE ENVELOPE");
+            }
 
-            o.Add(cases.Any(p => p.PDelta) ? "PDELTA 30 ANALYSIS SMALLDELTA" : "PERFORM ANALYSIS");
+            // the model's own STAAD commands after the analysis (StaadCarry, the workbook's STAAD commands sheet), else Pluto's prints
+            var carried = StaadCarry.CommandsOf(M);
+            string analysis = cases.Any(p => p.PDelta) ? "PDELTA 30 ANALYSIS SMALLDELTA" : "PERFORM ANALYSIS";
+            var option = carried.Count > 0 ? Regex.Match(carried[0], @"^\s*(?:PERFORM\s+ANALYSIS|PDELTA\b.*?\bANALYSIS(?:\s+SMALLDELTA)?)\s+(PRINT\b.*)$", RegexOptions.IgnoreCase) : Match.Empty;
+            if (option.Success) { analysis += " " + option.Groups[1].Value.Trim(); carried.RemoveAt(0); }
+            line(analysis);
             if (cases.Any(p => p.PDelta)) Note("P-Delta: STAAD's PDELTA 30 ANALYSIS SMALLDELTA (its own iteration, not SAP's)");
-            o.Add("PRINT JOINT DISPLACEMENTS LIST ALL");
-            if (Frames.Count + Trusses.Count > 0) o.Add("PRINT MEMBER FORCES ALL");
-            if (sup.Count > 0) o.Add("PRINT SUPPORT REACTIONS");
-            if (Plates.Count > 0) o.Add("PRINT ELEMENT JOINT STRESSES LIST ALL");
+            if (carried.Count > 0 || option.Success)
+            {
+                foreach (string c in carried) line(c);
+                Note("the model's STAAD commands after the analysis (" + carried.Count.ToString(Inv) + ", the workbook's STAAD commands sheet" + (option.Success ? "; the analysis' " + option.Groups[1].Value.Trim() : "") + ") written as given: STAAD checks them");
+            }
+            else
+            {
+                o.Add("PRINT JOINT DISPLACEMENTS LIST ALL");
+                if (Frames.Count + Trusses.Count > 0) o.Add("PRINT MEMBER FORCES ALL");
+                if (sup.Count > 0) o.Add("PRINT SUPPORT REACTIONS");
+                if (Plates.Count > 0) o.Add("PRINT ELEMENT JOINT STRESSES LIST ALL");
+            }
             o.Add("FINISH");
             // the head, last: groups, supports and loads add to the labels and notes
             foreach (var md in MatDefs) if (md[2] == "1" && md[0] != md[1]) LabelLines.Add("material " + md[1] + " = " + md[0]);

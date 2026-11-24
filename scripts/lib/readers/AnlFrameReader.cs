@@ -159,6 +159,14 @@ public sealed class AnlFrameLoadCase
     }
 }
 
+// DEFINE ENVELOPE's envelope (TR.40): the cases and combinations it holds (a load listed in two is in the last only)
+public sealed class AnlFrameEnvelope
+{
+    public int Number;
+    public string Type = "";        // STRENGTH, SERVICEABILITY ... as StaadInput.EnvelopeType gives it
+    public readonly List<int> Loads = new List<int>();
+}
+
 public sealed class AnlFrameEndForce
 {
     public int Member;
@@ -209,7 +217,8 @@ public sealed class AnlFrameModel
     public readonly SortedDictionary<int, AnlFrameLoadCase> LoadCases = new SortedDictionary<int, AnlFrameLoadCase>();
     public readonly SortedDictionary<int, AnlFrameJoint> Joints = new SortedDictionary<int, AnlFrameJoint>();
     public readonly List<AnlFrameEndForce> EndForces = new List<AnlFrameEndForce>();
-    public readonly List<AnlFramePrint> Prints = new List<AnlFramePrint>();   // every output command, in file order
+    public readonly List<AnlFramePrint> Prints = new List<AnlFramePrint>();
+    public readonly SortedDictionary<int, AnlFrameEnvelope> Envelopes = new SortedDictionary<int, AnlFrameEnvelope>();   // DEFINE ENVELOPE   // every output command, in file order
     // PRINT SUPPORT REACTIONS and PRINT JOINT DISPLACEMENTS, as printed (a later print of a joint and case replaces
     // the earlier one), with the units of their table headers ("kip", "kip-in"; "in": rotations are radians)
     public readonly List<AnlFrameJointRow> Reactions = new List<AnlFrameJointRow>();
@@ -400,6 +409,7 @@ public static class AnlFrameReader
                         m.Warn("CHANGE", "the file has a CHANGE command (more than one analysis): each member end and case keeps its last print");
                     break;
                 case "LOAD LIST": r.LoadList(s); break;
+                case "DEFINE": r.Define(s); break;
                 case "PRINT MEMBER FORCES": r.Forces(s, r.Print(s, true)); anyForces = true; break;
                 case "PRINT JOINT DISPLACEMENTS": r.Displacements(s, r.Print(s, true)); break;
                 case "CHECK CODE": r.CodeCheck(s, r.Print(s, false)); break;
@@ -1215,11 +1225,50 @@ public static class AnlFrameReader
         }
 
         // LOAD LIST 101 TO 104 201 | LOAD LIST ALL: the cases every later output command covers
+        // DEFINE ENVELOPE: "<load list> ENVELOPE i [TYPE t]" lines; another DEFINE is not read here
+        public void Define(AnlSection s)
+        {
+            List<string> cmds = Commands(s);
+            if (cmds.Count == 0 || !Regex.IsMatch(cmds[0], @"^\s*DEFINE\s+ENV", RegexOptions.IgnoreCase)) return;
+            foreach (string c in cmds.Skip(1))
+            {
+                string[] t = Tokens(c);
+                int i = 0; bool all; int n;
+                List<int> ids = List(t, ref i, out all, c);
+                if (all || ids.Count == 0 || i + 1 >= t.Length || !t[i].StartsWith("ENV", StringComparison.OrdinalIgnoreCase) || !int.TryParse(t[i + 1], NumberStyles.None, Inv, out n))
+                { _m.Warn("ENVELOPE_LINE", "DEFINE ENVELOPE line not read: " + c); continue; }
+                AnlFrameEnvelope e;
+                if (!_m.Envelopes.TryGetValue(n, out e)) _m.Envelopes[n] = e = new AnlFrameEnvelope { Number = n };
+                if (i + 3 < t.Length && t[i + 2].StartsWith("TYP", StringComparison.OrdinalIgnoreCase)) e.Type = StaadInput.EnvelopeType(t[i + 3]);
+                // a load is in one envelope, the last that lists it (TR.40)
+                foreach (var other in _m.Envelopes.Values) other.Loads.RemoveAll(ids.Contains);
+                e.Loads.AddRange(ids.Distinct());
+            }
+        }
+
         public void LoadList(AnlSection s)
         {
             List<string> cmds = Commands(s);
             if (cmds.Count == 0) return;
             string[] t = Tokens(cmds[0]);
+            // LOAD LIST ENV <envelopes>: their loads (DEFINE ENVELOPE)
+            if (t.Length > 2 && t[2].StartsWith("ENV", StringComparison.OrdinalIgnoreCase))
+            {
+                int j = 3; bool allEnv;
+                List<int> envs = List(t, ref j, out allEnv, cmds[0]);
+                var loads = new List<int>();
+                var missing = new List<int>();
+                foreach (int e in allEnv ? _m.Envelopes.Keys.ToList() : envs)
+                {
+                    AnlFrameEnvelope env;
+                    if (_m.Envelopes.TryGetValue(e, out env)) loads.AddRange(env.Loads); else missing.Add(e);
+                }
+                if (missing.Count > 0) _m.Warn("LOAD_LIST_ENVELOPE", "LOAD LIST ENV names envelopes no DEFINE ENVELOPE gives: " + Ids(missing));
+                if (j < t.Length) _m.Warn("LOAD_LIST", "a LOAD LIST was not read to its end (at '" + t[j] + "'): " + cmds[0]);
+                _list = loads.Distinct().ToList();
+                _listText = string.Join(" ", t.Skip(2).ToArray());
+                return;
+            }
             int i = 2; bool all;
             List<int> ids = List(t, ref i, out all, cmds[0]);
             if (all || (ids.Count == 0 && i >= t.Length)) { _list = null; _listText = "ALL"; return; }

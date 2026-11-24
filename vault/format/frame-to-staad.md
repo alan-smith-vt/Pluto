@@ -13,7 +13,9 @@ model it seeds ([[vault/format/pipe-to-frame|pipe-to-frame]]). A seed is refused
 node or a zero-length expansion joint (zero-length links), or any nonlinear support (nonlinear links): see Links below.
 
 **And back:** `Build-Frame.ps1 -In <x>.std` reads a `.std` the writer made, after edits in STAAD too, into a frame
-model again (2026-11-23; "Reading a .std back", below).
+model again (2026-11-23; "Reading a .std back", below), and a model made in STAAD, with its design parameters, prints
+and load envelopes (2026-11-24; "A model made in STAAD", below). The workbook it writes goes to SAP (`-S2k`) or back to
+STAAD (`-Std`).
 
 **Code:**
 - `FrameStd` is the writer.
@@ -302,6 +304,8 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > | primary loads | linear static cases; nonlinear P-Delta from zero under `PDELTA` |
 > | a primary load's own loads, support displacements | a load pattern of its own each |
 > | `LOAD COMBINATION [SRSS, ABS]` | Linear Add, SRSS, Abs Add |
+> | `REPEAT LOAD` | the case takes the repeated loads' patterns, each times its factor |
+> | `DEFINE ENVELOPE` | an Envelope combination per envelope (its number and TYPE on the STAAD loads sheet) |
 >
 > A number worked out on the way back (a spring per radian, a modifier, a gradient) is the shortest that writes back
 > STAAD's digits: 1000, not 999.99999999752.
@@ -315,7 +319,6 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > - offsets, and load positions on the clear length.
 >
 > **Exact or refused.** Any command the writer does not write is refused by name, with where it stood. That covers:
-> - another `UNIT` along the file;
 > - `CUT OFF`, `ELEMENT LOAD`, `LIN` member loads, `MP` releases, `CDAMP`;
 > - a `TABLE ST` with no SAP row when SAP's library is not on the machine or lacks the shape, or the shape is not an I
 >   section.
@@ -472,6 +475,64 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >   | 2L2-1/2X2-1/2X5/16 (STAAD's V16.0 database) | 0.44350 | 0.43597 (−1.7 %) |
 >
 >   STAAD ran every database form Pluto writes. It warned only that a tee's CT is worked out from the W.
+
+> [!info]- A model made in STAAD, and what it carries (2026-11-24)
+> `-In <x>.std` reads a model made in STAAD.Pro, not only one this writer made, and the workbook it writes goes to SAP
+> or back to STAAD. Tested on a file in the form STAAD's editor saves (units changing along it, GEOMETRY and FLOOR
+> groups, three materials, `REPEAT LOAD`, `PERFORM ANALYSIS PRINT`, load lists, prints, design parameters,
+> envelopes); it reads exactly and writes back the same, also through the workbook.
+>
+> **Units.** A number under a later `UNIT` is converted to the first `UNIT`'s by what it is (`StaadInput`):
+> - a length, an area, an inertia (`PRIS`, `SP`, offsets, coordinates, thicknesses, distances on member loads);
+> - a force and a moment (joint loads, member loads);
+> - a stress (`E`, `G`, `STRENGTH FY FU`);
+> - a weight per volume (`DENSITY`);
+> - a spring (`KFX` …, `KMX` …).
+>
+> The text is the shortest that holds the value to 12 digits: 10.5 FEET is 126 INCHES; 29000 KSI is 4176000 KSF.
+> A converted material's G is checked against E and POISSON to 1e-5 (STAAD's 6 digits), since its digits are no
+> longer the file's. Commands after the analysis keep their own `UNIT`. When the analysis ran under another `UNIT` than
+> the first, that `UNIT` goes first among them, so a design parameter like `LY 144` keeps its meaning.
+>
+> **Read as the model holds it:**
+> - GEOMETRY and FLOOR groups as groups of their members (and plates); SOLID is refused.
+> - A material no member uses is left out (STAAD's editor writes STEEL, CONCRETE and ALUMINUM).
+> - A `TYPE` other than STEEL is SAP's Other material, its `STRENGTH` (design data) not carried.
+> - `SELFWEIGHT Y -1 LIST <every member and plate>` as `SELFWEIGHT Y -1`; a list of some members only is refused.
+> - `LOADTYPE Live REDUCIBLE` as Live; `LOAD 1 DEAD LOAD`, the older title without `TITLE`.
+> - `REPEAT LOAD`: the case takes the repeated loads' patterns, each times its factor.
+> - A load combination after the analysis, as one before it.
+> - `PERFORM ANALYSIS PRINT …` and `PDELTA [n] ANALYSIS [SMALLDELTA]`.
+>
+> **Load envelopes (TR.40).** `DEFINE ENVELOPE` … `<loads> ENVELOPE i [TYPE t]` … `END DEFINE ENVELOPE`, before or after
+> the analysis:
+> - each envelope is a SAP Envelope combination of its cases and combinations, named `ENVELOPE i`;
+> - a load listed in two envelopes is in the last one only, as STAAD reads it (a notice names it);
+> - TYPE (STRENGTH, SERVICEABILITY, CONNECTION, COLUMN, STRESS; its first letters are enough) and the number ride on the
+>   STAAD loads sheet.
+>
+> `-Std` writes every SAP Envelope combination as `DEFINE ENVELOPE`, after the combinations. One is listed as not written
+> when an item has a scale factor other than 1, is not written to STAAD, or is in an envelope before it (STAAD keeps a
+> load in one). An envelope changes no result.
+>
+> **Carried: what SAP has no place for** (`StaadCarry`, in `FrameStd.cs`). Two tables of Pluto's own ride in the model's
+> document, the workbook shows them on two sheets, and `-Std` writes them again. The `.s2k` for SAP leaves them out,
+> with a notice:
+> - **STAAD commands:** every command after the analysis, as written and in order (`LOAD LIST`, `LOAD LIST ENV`,
+>   `PRINT …`, `PARAMETER`, `CODE`, design parameters, `CHECK CODE`, `SELECT` …). A `PRINT` before the analysis is
+>   carried too. The analysis' PRINT option is the first row. `-Std` writes them after the analysis, else its own
+>   prints. A file this writer made carries none: its prints are its own.
+> - **STAAD loads:** each case's and combination's STAAD number, when they are not the writer's own (cases from 1, then
+>   the combinations), and each envelope's number and TYPE. `-Std` numbers its loads by them, so a `LOAD LIST` among the
+>   commands still names the right loads; a load not listed gets the next free number, with a notice.
+>
+> The read-back check compares the commands and envelopes too.
+>
+> **Still refused, met on the probe's own `.std`** (`scripts/lib/probes/anl-prints-probe.std`):
+> - a truss member with a `TABLE` section (the writer's links take `PRIS AX` only);
+> - a truss member's weight under `SELFWEIGHT` (SAP's links carry none);
+> - a member offset under `SELFWEIGHT` with no joint loads for its end zones' weight. The writer puts that weight in as
+>   joint loads; a model made in STAAD has none.
 
 > [!info]- The STAAD probe (`-StdProbe <folder>`)
 > `staad-probe.s2k` and `staad-probe.std`: one model, every part analysable, for SAP2000 and STAAD.Pro alike. Each
