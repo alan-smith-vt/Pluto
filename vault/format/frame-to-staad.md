@@ -425,8 +425,11 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >   - **SAP → STAAD, end to end** (the production machine, 2026-11-24): SAP's export of the angle probe went through
 >     `-Std` with each BETA turned by −55.6577°, and STAAD ran it. On all seven members STAAD's principal axes lie on
 >     SAP's to 0.0074°, the probe's own precision. The flexibilities are STAAD's table's: soft +2.5 %, stiff −2.0 %.
->     STAAD → SAP waits on SAP's run of the `.s2k` Pluto wrote; from SAP's own behaviour its axes should lie 0.017°
->     from STAAD's (Pluto's I23).
+>   - **STAAD → SAP, end to end** (the same day): the probe's `.std` through `-In … -S2k`, imported and run in SAP. On
+>     all seven members SAP's principal axes lie 0.025° from STAAD's. That is 0.017° from Pluto's I23, 0.007° the
+>     probe's precision (the other way's figure), and 0.0006° where a whole-degree BETA let the SAP angle be written
+>     shorter. On H0 that is 0.003 in sideways on an 8.93 in deflection. The flexibilities are SAP's library against
+>     STAAD's table, as the other way.
 > - **STAAD's short PRIS forms** (its `PRINT MEMBER PROPERTIES`, 2026-11-24):
 >   - `PRIS YD 12 ZD 6` gives AX 72, IZ 864, IY 216, IX 593.26 (the rectangle series SAP uses), AY = AZ = 61.20 = 0.85 A.
 >   - `PRIS YD 10` gives AX 78.54, I 490.87, IX = 2I, AY = AZ = 69.90 = 0.89 A.
