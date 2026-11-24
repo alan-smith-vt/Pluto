@@ -93,3 +93,11 @@ replaced by `<removed>`. Every block ran, all eight code checks included.
   now gives an output heading back to the command that printed it.
 - **JOINT COORDINATES** as printed are checked against the echo (18 of 18 agree).
 - STAAD writes a NUL character into the profile line of the `CODE LRFD` drawing; it is read as a space.
+
+## Used by
+
+- `viewer/tests/readback_staad.js --probe` checks `StaadToPluto`'s export of `anl-prints-probe.anl` (the viewer arm,
+  `scripts/staad/Run-StaadFrame.ps1`) against the numbers this file prints.
+- For code ratios per case the arm wants one `LOAD LIST <case>` + `CHECK CODE` per case
+  (vault/arms/staad-frame-to-viewer.md). The probe has none yet; the layout is the same, as the reader reads each
+  `CHECK CODE` alone, but a real run of it is still to do.

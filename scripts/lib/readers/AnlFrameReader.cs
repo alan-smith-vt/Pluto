@@ -83,6 +83,7 @@ public sealed class AnlFrameMember
     public string Property = "";        // the MEMBER PROPERTY spec after the member list, e.g. "TABLE ST W14X90"
     public string Section = "";         // W14X90; "PRIS" for prismatic numbers; "" when no property was read
     public string Family = "";          // W S M HP WT C MC L 2L HSS PIPE PRIS ("" unknown)
+    public double PropertyInches = 1;   // inches per length unit where its MEMBER PROPERTY stands (PRIS numbers are as written)
     public double Beta;                 // degrees
     public bool BetaKnown = true;       // false: BETA ANGLE / RANGLE / REFERENCE / REFJT (the axes ignore it)
     public string BetaSpec = "";        // the BETA value as written when it is not a number
@@ -897,7 +898,7 @@ public static class AnlFrameReader
                 {
                     AnlFrameMember mem = Member(id, c);
                     if (mem == null) continue;
-                    mem.Property = spec; mem.Section = section; mem.Family = family;
+                    mem.Property = spec; mem.Section = section; mem.Family = family; mem.PropertyInches = Inch(1, s);
                 }
             }
         }

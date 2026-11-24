@@ -8,12 +8,15 @@ created: 2026-11-18
 
 # Pluto handoff: current state
 
-**Where it stands (2026-11-23, evening).** Branch `pipestress` holds:
+**Where it stands (2026-11-24).** Branch `pipestress` holds:
 - **The pipe workflow.** An Excel workbook or a TOML becomes one pipe model, reviewed in the viewer with CAESAR's error
   checks, and written as a CAESAR II `.cii`. An imported job comes back byte for byte.
 - **The frame side.** A lossless SAP2000 `.s2k` model, edited in the frame workbook (3D View, live checks) and written
   to SAP and to STAAD.Pro (`-Std`, exact or refused). A `.std` it wrote reads back into a frame model, STAAD's edits
   too (`-In x.std`), through the STAAD lib's `.anl` reader, extended in place.
+- **STAAD results in the viewer.** A frame model's `.anl` becomes a viewer model (`scripts/staad/Run-StaadFrame.ps1`,
+  [[vault/arms/staad-frame-to-viewer|staad-frame-to-viewer]]): forces, displacements, reactions and code ratios per
+  load case (one `LOAD LIST <case>` + `CHECK CODE` per case).
 - **The CAESAR → SAP check model.** `Build-Frame -In <CAESAR job>` seeds the frame model from the pipe, for member
   forces and support reactions:
   - frames, bends, rigids, expansion joints, hangers and nozzles;
@@ -43,6 +46,9 @@ created: 2026-11-18
 Purging it means rewriting the branch's history.
 
 **Waiting on the production machine:**
+- the PS 5.1 compile of `StaadToPluto`, and its probe run: `Run-StaadFrame.ps1 -Anl scripts\lib\probes\anl-prints-probe.anl
+  -Out <outside the repo>`, then `node viewer/tests/readback_staad.js <out> --probe`. Then a real model with a
+  `CHECK CODE` per case;
 - the PS 5.1 compile of `FrameMesh` (the auto mesh split). The user's workbook: `-In <it>.xlsx -Xlsx -Out <new>`
   splits its frames (insertion points kept). Then `-Std` from the new workbook should have no auto mesh refusals;
 - optional: whether `RA` gives SAP's leg arrangement (STAAD's `ST` is its mirror image), if drawings or STAAD's angle
@@ -72,4 +78,4 @@ which was taken from the channel; no probe has run a tee or a double angle in SA
 CAESAR's restraints, re-seeding that keeps SAP-side additions, and writing a seeded model back as a `.cii`. See
 "Possible later" in [[vault/decisions/2026-11-12-caesar-to-sap|2026-11-12-caesar-to-sap]].
 
-Last sessions: [[vault/handoffs/handoff-2026-11-24|handoff-2026-11-24]] (the frame `.anl` reader), [[vault/handoffs/handoff-2026-11-23|handoff-2026-11-23]].
+Last sessions: [[vault/handoffs/handoff-2026-11-24b|handoff-2026-11-24b]] (STAAD results in the viewer), [[vault/handoffs/handoff-2026-11-24|handoff-2026-11-24]] (the frame `.anl` reader), [[vault/handoffs/handoff-2026-11-23|handoff-2026-11-23]].

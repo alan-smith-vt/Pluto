@@ -124,6 +124,8 @@ domains by index. A shells-only file has one domain and is structurally v3.
 - `"restraint"` (beams, 2026-10-04): loads on a support, a node total written on every beam end
   at the support node, NaN elsewhere. The viewer keeps them out of the beam component list and
   colours the support symbols with them ([[vault/decisions/2026-10-03-imported-restraints|decision]]).
+- `"code"` (beams): a code check's result per member, the same at both ends (CAESAR's code stresses; STAAD's
+  `Code ratio` and `Code case`, [[vault/arms/staad-frame-to-viewer|staad-frame-to-viewer]]). A generic field.
 - **DSR status:** `kind:"dsr"` and the Global-DSR machinery are retained for shells but
   are **de-prioritised**. They must not constrain the domain model; if a conflict arises
   the DSR feature is archived (kept loadable via the v3 shim) rather than the schema bent.

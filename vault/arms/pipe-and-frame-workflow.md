@@ -32,15 +32,17 @@ flowchart LR
   FM -->|"-Preview"| VIEW
   CAESAR -.->|"results: Run-Caesar.ps1"| VIEW
   SAP -.->|"results: Run-Sap.ps1 -Export"| VIEW
+  STAAD -.->|"results: Run-StaadFrame.ps1"| VIEW
 ```
 
 Solid arrows are what the two runners build. Dotted ones bring a program's results to the viewer. Nothing goes from
 SAP back to CAESAR; those ways back are listed as later work in
 [[vault/decisions/2026-11-12-caesar-to-sap|2026-11-12-caesar-to-sap]]. A `.std` written with `-Std` comes back as a
 frame model with `-In <x>.std`, STAAD's edits too. The STAAD post-processing lib's `.anl` reader (`scripts/lib`)
-reads it: its parsers now take a `.std`'s input as well ([[vault/format/frame-to-staad|frame-to-staad]]). Its
-`.anl` results work (section cuts, design spreadsheets) is otherwise not part of this pipeline; see STAAD in the
-[[vault/arms/Arms map|Arms map]].
+reads it: its parsers now take a `.std`'s input as well ([[vault/format/frame-to-staad|frame-to-staad]]). A frame
+model's results come to the viewer from its `.anl` through `Run-StaadFrame.ps1`, code check ratios per case included
+([[vault/arms/staad-frame-to-viewer|staad-frame-to-viewer]]). The lib's other `.anl` work (section cuts, design
+spreadsheets) is not part of this pipeline; see STAAD in the [[vault/arms/Arms map|Arms map]].
 
 > [!info]- The runners and what they take
 > All run under Windows PowerShell 5.1, need no Python, and end with one `RESULT {json}` line. Below, `...` stands
@@ -53,6 +55,7 @@ reads it: its parsers now take a `.std`'s input as well ([[vault/format/frame-to
 > | `scripts\frame\Build-Frame.ps1` | `.s2k`, frame workbook `.xlsx`, `.frame.json`, a `.std` written with `-Std`; a CAESAR model (`.cii`, `.toml`, `.pipe.json`, CAESAR workbook) seeds the check model | `-S2k [-Open]`, `-Xlsx`, `-Std`, `-Json`, `-Preview`; `-Watch`, `-NewWorkbook`, `-Refresh`; `-AppendixD`; probes `-Probe`, `-ProbeCheck`, `-StdProbe` | [[vault/arms/frame-workbook\|frame-workbook]], [[vault/format/pipe-to-frame\|pipe-to-frame]], [[vault/format/frame-to-staad\|frame-to-staad]] |
 > | `scripts\caesar\Run-Caesar.ps1` | `-Neutral <.cii>` `[-Results <CAESAR output .xlsx>]` | `.bin` + `.features.json` with CAESAR's results | [[vault/arms/caesar-to-viewer\|caesar-to-viewer]] |
 > | `scripts\sap\Run-Sap.ps1` | a running SAP2000, or `-Open <.s2k\|.sdb>` | `-Run`, `-Results <s2k>`, `-Export <base>` (viewer files) | [[vault/arms/sap-controller\|sap-controller]], [[vault/arms/sap-export-model\|sap-export-model]] |
+> | `scripts\staad\Run-StaadFrame.ps1` | `-Anl <STAAD frame .anl>` | `.bin` + `.features.json` with STAAD's printed results: forces, displacements, reactions, code ratios per case | [[vault/arms/staad-frame-to-viewer\|staad-frame-to-viewer]] |
 >
 > A workbook written with `-Xlsx` (or `-NewWorkbook`) gets launchers beside it, linked from its Start sheet:
 > - CAESAR workbook: `<base> - preview.cmd` (`-Preview -Watch`) and `<base> - cii.cmd` (`-Cii -Preview`);
