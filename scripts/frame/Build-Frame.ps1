@@ -34,7 +34,10 @@
 #                   SAP2000 <version>\Property Libraries\Sections): a file SAP's library has gets its full path here,
 #                   a file or shape it has not refuses the .s2k (SAP would make the section a General one of all ones).
 #         -Xlsx     <base>.xlsx, the frame workbook, and its launchers ("<base> - preview.cmd", "<base> - s2k.cmd",
-#                   "<base> - open in SAP.cmd", "<base> - std.cmd").
+#                   "<base> - open in SAP.cmd", "<base> - std.cmd"). A frame SAP's automatic mesh joins to joints on its
+#                   span is split there first (FrameMesh), as SAP's analysis meshes it: the pieces keep its section,
+#                   insertion point, offsets, releases at its ends, loads and groups; [split] lines name them, and every
+#                   output of the run takes them. -In <name>.xlsx -Xlsx does it for a workbook already made.
 #                   An existing <base>.xlsx this runner wrote and nobody has saved since (the stamp says so) is
 #                   replaced; one with edits asks first ("Overwrite the workbook?", Keep by default), the old one kept
 #                   as <base>.xlsx.bak. With no one to ask (-NonInteractive), the run stops: -Force replaces it (with
@@ -461,6 +464,18 @@ function Build-Once {
     } else {
         $model = [FrameModelJson]::Read((ReadSharedText $inPath))
         Say "read" ("{0}: the frame model" -f $inPath)
+    }
+    if ($Xlsx) {
+        # a workbook says what SAP analyses: a frame SAP's automatic mesh joins to joints on its span is split there
+        # (FrameMesh), the pieces keeping its section, insertion point and the rest; every output of this run takes them
+        $script:step = "splitting frames at the joints SAP's automatic mesh joins them to"
+        $split = New-Object 'System.Collections.Generic.Dictionary[string,System.Collections.Generic.List[string]]'
+        $unsplit = New-Object 'System.Collections.Generic.Dictionary[string,string]'
+        $held = New-Object 'System.Collections.Generic.List[string]'
+        $model = [FrameMesh]::SplitAtJoints($model, $split, $unsplit, $held)
+        foreach ($k in $split.Keys) { Say "split" ("frame {0} into {1}, at the joint(s) SAP's automatic mesh joins it to (SAP analyses it so already)" -f $k, ($split[$k] -join " ")) }
+        foreach ($k in $unsplit.Keys) { Say "warn" ("frame {0}: SAP's automatic mesh joins it to joints along its length, and it is not split: {1}" -f $k, $unsplit[$k]); $warnings += ("frame " + $k + " not split") }
+        if ($held.Count -gt 0) { Say "warn" ("split at joints held to ground, so the frames are held there, in SAP as in the workbook: {0}. A seeded support point meant to sit on the steel is still held: free it on the Joints sheet" -f ($held -join "; ")) }
     }
     $counts = "{0} joints, {1} frames, {2} sections, {3} materials, {4} link properties, {5} links, {6} groups, {7} load patterns, {8} loads, {9} cases, {10} combinations; units {11}" -f `
         $model.Joints.Count, $model.Frames.Count, $model.Sections.Count, $model.Materials.Count, $model.LinkProps.Count, $model.Links.Count, $model.Groups.Count, `

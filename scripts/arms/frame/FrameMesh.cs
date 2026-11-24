@@ -6,16 +6,18 @@ using System.Linq;
 // FrameMesh  --  SAP's automatic frame mesh at joints, made explicit for STAAD (2026-11-24). A frame with AutoMesh=Yes and
 // AtJoints=Yes is joined, in SAP's analysis, to every joint on its span (a seeded check model's support points under the
 // steel that carries them, for one). A frame with no auto mesh row takes SAP's default, which is the same
-// (vault/format/sap-s2k-tables.md, "Frames join joints on their span"). STAAD joins a member at its ends only, so before FrameStd writes the model the frame
-// is split at those joints, into the pieces SAP's analysis meshes it into:
-//   - the first piece keeps the frame's label, the others take <label>_2, <label>_3 ...; each keeps its section, local
-//     axes, property modifiers, auto mesh and groups;
+// (vault/format/sap-s2k-tables.md, "Frames join joints on their span"). The frame is split at those joints, into the
+// pieces SAP's analysis meshes it into: when a workbook is written (Build-Frame -Xlsx, so the model says what SAP
+// analyses), and before FrameStd writes a model that still has such a frame (STAAD joins a member at its ends only):
+//   - the first piece keeps the frame's label, the others take <label>_2, <label>_3 ...; each keeps every row of the
+//     frame's (section, local axes, insertion point, property modifiers, auto mesh, design) and its groups. The joint is
+//     on the frame's line, so a piece with the frame's insertion point lies as the frame's part does;
 //   - I-end releases and partial fixity stay with the first piece, J-end ones with the last; end lengths likewise (a
 //     joint inside an end zone is refused);
 //   - point loads go to the piece they fall on, distributed loads are cut at the joints (a linear one keeps its line),
 //     temperatures go to every piece.
-// Refused, with the reason: a frame with an insertion point (a cardinal point or joint offsets: the joint is on the
-// frame's line, not its offset one), with end offsets SAP works out, or with loads in other tables. C# 5 (prefix Frame).
+// Not split, with the reason: joint offsets not the same at both ends (a piece's would be in between), end offsets SAP
+// works out, a joint inside an end zone, loads in other tables. C# 5 (prefix Frame).
 public static class FrameMesh
 {
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
@@ -91,8 +93,9 @@ public static class FrameMesh
     // why the frame cannot be split exactly at those joints (null: it can)
     static string Splittable(FrameModel m, FrameMember f, List<KeyValuePair<double, string>> at)
     {
-        if (f.CardinalPoint != 10 || f.JointOffsets.Any(v => v != 0))
-            return "it has an insertion point (" + (f.CardinalPoint != 10 ? "cardinal point " + FrameMember.CardinalText(f.CardinalPoint) : "joint offsets") + "), and the joint is on its line, not its offset one";
+        var jo = f.JointOffsets;
+        if (jo[0] != jo[3] || jo[1] != jo[4] || jo[2] != jo[5])
+            return "its joint offsets are not the same at both ends, so its pieces' would be in between";
         string type = f.EndOffsetType;
         if (type != "")
         {

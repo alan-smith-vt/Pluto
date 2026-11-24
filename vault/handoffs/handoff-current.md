@@ -43,16 +43,17 @@ created: 2026-11-18
 Purging it means rewriting the branch's history.
 
 **Waiting on the production machine:**
-- the PS 5.1 compile of `FrameMesh` (the auto mesh split), and a `-Std` of the user's workbook that gave the
-  refusals: its notices name the splits and any split joint still held to ground;
+- the PS 5.1 compile of `FrameMesh` (the auto mesh split). The user's workbook: `-In <it>.xlsx -Xlsx -Out <new>`
+  splits its frames (insertion points kept). Then `-Std` from the new workbook should have no auto mesh refusals;
 - optional: whether `RA` gives SAP's leg arrangement (STAAD's `ST` is its mirror image), if drawings or STAAD's angle
   design matter.
 
 Done there since 2026-11-23: catalog sections both ways in STAAD 2025's database form (W, channels, tees, HSS, double
 and single angles); single angles confirmed end to end both ways; STAAD's short PRIS forms into SAP.
 
-**For the user to look at:** `-Std` now splits frames SAP's auto mesh joins to joints on their span. A notice names any
-split joint still held to ground, and the user's workbook had such frames at seeded support points. Whether those
+**For the user to look at:** a workbook is now written split where SAP's auto mesh joins frames to joints on their span
+(and `-Std` splits what is left). A warning names any split joint still held to ground, and the user's workbook had
+such frames at seeded support points. Whether those
 points are meant to carry the steel or to stay held is the model's question, in SAP as in STAAD.
 
 **Seen, not settled:** SAP's own rows carry `IncludeSCAn=Yes` (shear center in the analysis) on its channel only, and

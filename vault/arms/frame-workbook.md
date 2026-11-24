@@ -189,8 +189,12 @@ The whole picture, CAESAR and STAAD included, with the commands for each job:
 > - SAP's analysis and design settings and preferences, grid lines, mass source, project information;
 > - area objects, which a frame workbook does not edit;
 > - per-frame SAP defaults (auto mesh, design procedures, output stations, end skew, load transfer). Auto mesh
->   matters to `-Std`: a frame SAP joins to joints on its span is split there for STAAD, with a notice
->   ([[vault/format/frame-to-staad|frame-to-staad]]);
+>   matters, so a workbook is written split: a frame SAP joins to joints on its span (its row's `AutoMesh=Yes
+>   AtJoints=Yes`, or no row, SAP's default) becomes the pieces SAP's analysis meshes it into (`FrameMesh`). The
+>   pieces are `<label>`, `<label>_2` …, keeping its rows (insertion point and offsets too), end releases, loads and
+>   groups. `[split]` lines name them, and a warning names any split joint still held to ground. SAP then gets the
+>   same analysis with the mesh written out, and `-Std` has nothing to split
+>   ([[vault/format/frame-to-staad|frame-to-staad]]). A workbook made before: `-In <name>.xlsx -Xlsx -Out <new>`;
 > - the nonlinear cases' solver controls beyond geometric nonlinearity.
 >
 > A table SAP exports with data that is not listed above shows on Carried by name, with its row count.
