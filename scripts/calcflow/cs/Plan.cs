@@ -285,7 +285,11 @@ namespace CalcFlow
                     }
                 }
                 if (rows.Count == 0) { P("Error", calc.Id, "NO_DEMAND", type.Id + " step " + step.Step + ": no load case in scope for " + tpl.Id); return; }
-                List<DemandRow> sel = Select(rows, step.Demand);
+                // a case table lists each connection's own rows (its cases in scope, or its own envelope), one connection
+                // after the other; any other template of a group takes the reduction over the group's union
+                List<DemandRow> sel = tpl.Shape == "case_table" && calc.Connections.Count > 1
+                    ? calc.Connections.SelectMany(c => Select(rows.Where(x => x.Conn == c).ToList(), step.Demand)).ToList()
+                    : Select(rows, step.Demand);
                 if (tpl.Shape == "case_table" && tpl.MaxCases > 0 && sel.Count > tpl.MaxCases)
                     P("Warning", calc.Id, "CHUNKS", tpl.Id + " takes " + tpl.MaxCases + " cases at a time: " + sel.Count + " cases run in " + ((sel.Count + tpl.MaxCases - 1) / tpl.MaxCases) + " chunks");
 
@@ -305,7 +309,7 @@ namespace CalcFlow
                         }
                         if (Bindings.Check(inp.Binding, inp.Unit, inp.PerCase) != null) { if (r == 0) P("Error", calc.Id, "BAD_BINDING", inp.Where + ": " + Bindings.Check(inp.Binding, inp.Unit, inp.PerCase)); continue; }
                         string err;
-                        string v = PerCase(inp, d, out err);
+                        string v = PerCase(inp, d, type, step, out err);
                         if (v == null) { if (r == 0) P("Error", calc.Id, "UNRESOLVED", inp.Where + " (" + Label(inp) + ", " + inp.Binding + "): " + err); continue; }
                         var pc = new PlanCase();
                         pc.Calc = calc.Id; pc.Step = step.Step; pc.Template = tpl.Id; pc.Row = r + 1; pc.LC = d.LC; pc.Connection = pd.Connection;
@@ -634,11 +638,20 @@ namespace CalcFlow
             }
 
             // a per-case input's value for one demand row
-            string PerCase(LibInput inp, DemandRow d, out string err)
+            string PerCase(LibInput inp, DemandRow d, LibType type, LibStep step, out string err)
             {
                 err = "";
                 int colon = inp.Binding.IndexOf(':');
                 string kind = inp.Binding.Substring(0, colon).Trim().ToLowerInvariant(), arg = inp.Binding.Substring(colon + 1).Trim();
+                if (kind == "pkg" || kind == "reg" || kind == "fn")
+                {
+                    // a fact of the row's own member end (beam number, node, section ...)
+                    if (d.Conn == null) { err = "an envelope row of several connections has no beam or node of its own"; return null; }
+                    Value v = Resolve(inp, d.Conn, type, step, out err);
+                    if (v != null) return v.Text;
+                    err = err.TrimStart('!');
+                    return null;
+                }
                 if (kind == "load")
                 {
                     int k = Array.FindIndex(LibrarySchema.Components, x => string.Equals(x, arg, StringComparison.OrdinalIgnoreCase));

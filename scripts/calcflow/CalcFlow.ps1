@@ -240,7 +240,7 @@ function Invoke-CfCheck([string]$Wb) {
     Write-Host ''
     Write-Host ("workbook {0}" -f $Wb)
     Write-Host ("model    {0} ({1})" -f $pkg.Folder, $pkg.Source)
-    $x = [CalcFlow.ProjectBook]::Expand($Wb, $pkg, (Join-Path $work 'generated'), $limit)
+    $x = [CalcFlow.ProjectBook]::Expand($Wb, $pkg, (Join-Path $work 'generated'), $limit, $tdir)
     foreach ($p in $x.Problems) {
         $color = if ($p[0] -eq 'Error') { 'Red' } else { 'Yellow' }
         $tag = if ($p[0] -eq 'Error') { '[fix  ]' } else { '[note ]' }

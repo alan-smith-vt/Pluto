@@ -215,6 +215,7 @@ namespace CalcFlow
         public readonly List<CalcUnit> Units = new List<CalcUnit>();
         public readonly List<OutputRead> Reads = new List<OutputRead>();
         public string Problem = "";    // why it cannot run ("" when it can)
+        public bool NeedsExcel;        // the template holds an Excel data table (a what-if table): LibreOffice gives every row one value
         public string Due = "";        // why it runs now ("" when it is up to date)
         public string Key { get { return Calc + "|" + Step.ToString(CultureInfo.InvariantCulture); } }
 
@@ -245,6 +246,7 @@ namespace CalcFlow
                     TemplateBook book;
                     if (!books.TryGetValue(j.TemplatePath, out book)) { book = TemplateBook.Open(j.TemplatePath); books[j.TemplatePath] = book; }
                     if (tpl.Sha256.Length > 0 && !string.Equals(book.Sha256, tpl.Sha256, StringComparison.OrdinalIgnoreCase)) { j.Problem = "the template file differs from the one the library pinned (" + j.TemplatePath + ")"; continue; }
+                    j.NeedsExcel = book.Sheets.Any(sh => sh.Cells.Values.Any(cell => cell.FormulaKind == "dataTable"));
                     try { j.Build(tpl, book, cellsBy[j.Key].ToList(), casesBy[j.Key].ToList(), demandsBy[j.Key].ToList()); }
                     catch (Exception ex) { j.Problem = ex.Message; j.Units.Clear(); j.Reads.Clear(); }
                 }
@@ -285,6 +287,11 @@ namespace CalcFlow
                     u.Rows.Add(cr);
                     foreach (var c in caseCells[row]) u.Writes.Add(Write(book, PlanSet.V(c, "Sheet"), PlanSet.V(c, "Cell"), PlanSet.V(c, "Value"), i - k));
                 }
+                // the rows of the table this evaluation does not use are emptied: a template's sample rows, or the
+                // rows of a longer run before, would be calculated with it
+                if (tpl.Shape == "case_table" && tpl.MaxCases > 0)
+                    for (int i = u.Rows.Count; i < tpl.MaxCases; i++)
+                        foreach (LibInput inp in tpl.Inputs.Where(x => x.PerCase && x.Binding.Length > 0)) u.Writes.Add(Write(book, inp.Sheet, inp.Cell, "", i));
                 Units.Add(u);
             }
         }
@@ -444,6 +451,8 @@ namespace CalcFlow
             foreach (CalcJob j in jobs)
             {
                 sum.Jobs++;
+                if (j.Problem.Length == 0 && j.NeedsExcel && engine.Name == "LibreOffice")
+                    j.Problem = "the template holds an Excel data table (a what-if table), which LibreOffice does not calculate row by row: run it with Excel (-Engine excel)";
                 if (j.Problem.Length > 0)
                 {
                     Save(st, j, engine, new List<CaseResult>(), "FAILED", j.Problem, 0, null);

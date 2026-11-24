@@ -639,7 +639,8 @@ namespace CalcFlow
                 case "param":
                 case "reg":
                     if (arg.Length == 0 && kind != "const") return kind + ": needs a name";
-                    if (perCase) return "a " + kind + ": binding is the same for every case: set PerCase = N";
+                    // a register column may sit on every row of a case table (the row's own connection); the others are once-only
+                    if (perCase && kind != "reg") return "a " + kind + ": binding is the same for every case: set PerCase = N";
                     return null;
                 case "load":
                     int k = Array.FindIndex(LibrarySchema.Components, x => string.Equals(x, arg, StringComparison.OrdinalIgnoreCase));
@@ -654,7 +655,7 @@ namespace CalcFlow
                     if (!perCase) return "a case: binding changes with the case: set PerCase = Y";
                     return null;
                 case "pkg":
-                    if (perCase) return "a pkg: binding is the same for every case: set PerCase = N";
+                    // PerCase = Y: the fact of the row's own member end (a case table that lists beam and node on each row)
                     int dot = arg.IndexOf('.');
                     if (dot <= 0) return "pkg: takes slot.field (e.g. pkg:this.Section)";
                     string slot = arg.Substring(0, dot), field = arg.Substring(dot + 1);

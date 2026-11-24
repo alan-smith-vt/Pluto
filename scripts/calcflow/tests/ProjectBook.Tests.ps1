@@ -65,9 +65,9 @@ $cells.Add(@($plate, 'A6', 'BP-A'))
 # the base plate's solver flags must hold
 $out = $b.Sheet('Outputs')
 for ($r = 2; $r -lt $out.Rows.Count; $r++) {
-    if ($out.Text($r, 0) -eq $plate -and $out.Text($r, 7) -in 'Converged', 'Singular') {
+    if ($out.Text($r, 0) -eq $plate -and $out.Text($r, 8) -in 'Converged', 'Singular') {
         $cells.Add(@('Outputs', "B$($r + 1)", 'Y')); $cells.Add(@('Outputs', "D$($r + 1)", 'health'))
-        $cells.Add(@('Outputs', "E$($r + 1)", $(if ($out.Text($r, 7) -eq 'Converged') { 'TRUE' } else { 'FALSE' })))
+        $cells.Add(@('Outputs', "E$($r + 1)", $(if ($out.Text($r, 8) -eq 'Converged') { 'TRUE' } else { 'FALSE' })))
     }
 }
 # beam 2 (joints 2 to 3) welded at both ends, column 1 on a base plate at joint 1
@@ -137,4 +137,93 @@ Test 'calcs: check, then LibreOffice fills and calculates each mark; two marks o
     $bp = @([CalcFlow.Csv]::ReadTable((Join-Path $work 'data/results/J1-M1A__s1.csv')))
     Assert-True (@($bp | Where-Object { $_['Valid'] -ne 'Y' }).Count -eq 0) 'the base plate converged in every case'
     Assert-True (@(Get-ChildItem -LiteralPath (Join-Path $work 'reports') -Filter 'Connection_Summary_*.xlsx').Count -ge 1) 'the summary'
+}
+
+# ---- a template that takes a table of load rows: one copy per mark, its rows from the beam ends that call the mark
+$tdir2 = Join-Path $dir 'templates2'
+New-Item -ItemType Directory -Force -Path $tdir2 | Out-Null
+$rowsXml = '<sheetData><row r="1">' + (@('Beam', 'Node', 'LC', 'Fx (kip)', 'Fy (kip)', 'Fz (kip)', 'Mx (kip-in)', 'My (kip-in)', 'Mz (kip-in)', 'DCR') | ForEach-Object -Begin { $i = 0 } -Process { $c = [CalcFlow.Xlsx]::ColName($i); $i++; "<c r=`"${c}1`" t=`"inlineStr`"><is><t>$_</t></is></c>" }) -join ''
+$rowsXml += '<c r="M1" t="inlineStr"><is><t>Capacity (kip)</t></is></c><c r="N1"><v>100</v></c></row>'
+for ($r = 2; $r -le 21; $r++) {
+    $rowsXml += "<row r=`"$r`">"
+    if ($r -le 3) { foreach ($c in 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I') { $rowsXml += "<c r=`"$c$r`"><v>9</v></c>" } }      # sample rows
+    $rowsXml += "<c r=`"J$r`"><f>IF(A$r=`"`",`"`",(ABS(D$r)+ABS(E$r)+ABS(F$r))/`$N`$1)</f></c>"
+    if ($r -eq 3) { $rowsXml += '<c r="M3" t="inlineStr"><is><t>Max DCR</t></is></c><c r="N3"><f>MAX(J2:J21)</f></c>' }
+    $rowsXml += '</row>'
+}
+$rowsXml += '</sheetData>'
+New-MiniXlsx (Join-Path $tdir2 'Beam Shear Batch.xlsx') $rowsXml ''
+$proj2 = Join-Path $dir 'proj2'
+$o2 = Invoke-CfCli new -Out $proj2 -Anl $fixture -Templates $tdir2
+$batch = 'Beam-Shear-Batch'
+
+Test "a load table is found in a template: its first cell, its columns in order, its rows and its units" {
+    Assert-Equal $LASTEXITCODE 0 ($o2 -join "`n")
+    $b = [CalcFlow.Xlsx]::Read((Join-Path $proj2 'CalcFlow.xlsx'))
+    $t = @($b.TableRows('tblConfigTemplates'))[0]
+    Assert-Equal "$($t['Template'])|$($t['Load table at'])|$($t['Load table columns'])|$($t['Max rows'])|$($t['Force unit'])|$($t['Moment unit'])|$($t['Loads'])" "$batch|A2|Beam, Node, LC, Fx, Fy, Fz, Mx, My, Mz|20|kip|kip-in|All cases"
+    Assert-Equal ($b.Sheet($batch).Text(4, 1)) 'Capacity (kip)' 'the one typed input is a column of the schedule'
+}
+
+$b = [CalcFlow.Xlsx]::Read((Join-Path $proj2 'CalcFlow.xlsx'))
+$cap = Get-Col $b $batch 'Capacity (kip)' 5
+$orow = 3; $os = $b.Sheet('Outputs'); while ($os.Text($orow - 1, 0)) { $orow++ }
+$filled2 = Join-Path $proj2 'CalcFlow-filled.xlsx'
+Save-Cells (Join-Path $proj2 'CalcFlow.xlsx') $filled2 @(
+    @('Connection Lib', 'A3', 'SB-1'), @('Connection Lib', 'B3', $batch), @('Connection Lib', 'A4', 'SB-2'), @('Connection Lib', 'B4', $batch),
+    @($batch, 'A6', 'SB-1'), @($batch, 'A7', 'SB-2'), @($batch, ($cap + '7'), 50),
+    # beam 2 end I and beam 5 end J call SB-1; beam 2 end J and beam 7 end I call SB-2
+    @('Model Config', 'F4', 'SB-1'), @('Model Config', 'G7', 'SB-1'), @('Model Config', 'G4', 'SB-2'), @('Model Config', 'F9', 'SB-2'),
+    # a result beside the table: one DCR per row, from J2 down
+    @('Outputs', "A$orow", $batch), @('Outputs', "B$orow", 'Y'), @('Outputs', "C$orow", 'Row DCR'), @('Outputs', "D$orow", 'dcr'), @('Outputs', "F$orow", 'Y'),
+    @('Outputs', "G$orow", 'DCR'), @('Outputs', "H$orow", 'Calc'), @('Outputs', "I$orow", 'J2')
+)
+
+Test 'a mark on a load-table template is one calc: its table lists only the beam ends that call it, each with its own cases' {
+    $o = Invoke-CfCli check -Workbook $filled2
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    Assert-True (@($o | Where-Object { $_ -like 'check *2 of 2 connection calcs are ready: 0 error(s)*' }).Count -eq 1) ($o -join "`n")
+    $plan = Join-Path $proj2 'calcflow/plan'
+    $calcs = [CalcFlow.Csv]::ReadTable((Join-Path $plan 'calcs.csv'))
+    Assert-Equal (@($calcs | ForEach-Object { "$($_['Calc']): $($_['Connections'])" }) -join ' | ') 'SB-1: J2-M2A J5-M5B | SB-2: J2-M7A J3-M2B'
+    $dem = @([CalcFlow.Csv]::ReadTable((Join-Path $plan 'demands.csv')) | Where-Object { $_['Calc'] -eq 'SB-1' })
+    Assert-Equal (@($dem | ForEach-Object { "$($_['Connection']):$($_['LC'])" }) -join ' ') 'J2-M2A:3 J2-M2A:101 J2-M2A:102 J5-M5B:3 J5-M5B:101 J5-M5B:102'
+    $cases = @([CalcFlow.Csv]::ReadTable((Join-Path $plan 'cases.csv')) | Where-Object { $_['Calc'] -eq 'SB-1' })
+    $row4 = @{}; foreach ($c in $cases | Where-Object { $_['Row'] -eq '4' }) { $row4[$c['Cell']] = $c['Value'] }
+    Assert-Equal "$($row4['A2']) $($row4['B2']) $($row4['C2'])" '5 5 3' 'the fourth row is beam 5 at node 5, case 3 (cells are given for the first row; each row sits one lower)'
+    $in = [CalcFlow.Csv]::ReadTable((Join-Path $proj2 'calcflow/generated/library/text/inputs.csv'))
+    $fx = @($in | Where-Object { $_['Binding'] -eq 'load:Fx' })[0]
+    Assert-Equal "$($fx['Cell'])|$($fx['Unit'])|$($fx['PerCase'])|$($fx['GuardCell'])|$($fx['GuardText'])" 'D2|kip|Y|D1|Fx (kip)'
+}
+
+Test 'calcs on a load table: each row gets its DCR, the unused rows are cleared, each mark keeps its own copy and capacity' {
+    if (-not [CalcFlow.LibreOffice]::Find()) { Write-Host '        (no LibreOffice here: skipped)' -ForegroundColor DarkGray; return }
+    $o = Invoke-CfCli calcs -Workbook $filled2 -Engine libreoffice
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    Assert-True (@($o | Where-Object { $_ -like 'run      2 calc steps: 2 OK, 0 invalid, 0 failed*' }).Count -eq 1) ($o -join "`n")
+    $work = Join-Path $proj2 'calcflow'
+    $dem = @([CalcFlow.Csv]::ReadTable((Join-Path $work 'plan/demands.csv')))
+    foreach ($m in @(@('SB-1', 100.0), @('SB-2', 50.0))) {
+        $rows = @([CalcFlow.Csv]::ReadTable((Join-Path $work "data/results/$($m[0])__s1.csv")))
+        Assert-Equal $rows.Count 6 "$($m[0]): two beam ends x three cases"
+        foreach ($r in $rows) {
+            $d = @($dem | Where-Object { $_['Calc'] -eq $m[0] -and $_['Row'] -eq $r['Row'] })[0]
+            $want = ([Math]::Abs([double]$d['Fx (kip)']) + [Math]::Abs([double]$d['Fy (kip)']) + [Math]::Abs([double]$d['Fz (kip)'])) / $m[1]
+            Assert-Near ([double]$r['DCR']) $want 1e-9 "$($m[0]) row $($r['Row'])"
+        }
+    }
+    # per connection: its own rows' largest DCR
+    $chk = @([CalcFlow.Csv]::ReadTable((Join-Path $work 'data/results/SB-1__s1.checks.csv')) | Where-Object { $_['Check'] -eq 'Row DCR' })
+    Assert-Equal (@($chk | ForEach-Object { $_['Connection'] }) -join ',') ',J2-M2A,J5-M5B'
+    # the record: six rows filled, the seventh cleared (the template's sample rows are gone)
+    $rec = [CalcFlow.TemplateBook]::Open((Join-Path $work @($chk)[0]['Record']))
+    $s = $rec.Sheet('Calc')
+    Assert-Equal "$($s.Get(1, 0).Value) $($s.Get(1, 1).Value) $($s.Get(6, 0).Value)" '2 2 5'
+    Assert-True ($s.Get(7, 0) -eq $null -or $s.Get(7, 0).IsEmpty) 'row 8 is empty'
+    Assert-True ($s.Get(7, 3) -eq $null -or $s.Get(7, 3).IsEmpty) 'its forces too'
+    # the summary: each beam end shows its own DCR
+    $sum = [CalcFlow.Xlsx]::Read(@(Get-ChildItem -LiteralPath (Join-Path $work 'reports') -Filter 'Connection_Summary_*.xlsx')[0].FullName)
+    $conn = @($sum.TableRows('tblSummaryConnections') | Where-Object { $_['Type'] })
+    Assert-Equal (@($conn | ForEach-Object { "$($_['Connection'])=$($_['Calc'])" }) -join ' ') 'J2-M2A=SB-1 J2-M7A=SB-2 J3-M2B=SB-2 J5-M5B=SB-1'
+    Assert-True (@($conn | ForEach-Object { [double]$_['Row DCR'] } | Sort-Object -Unique).Count -ge 3) 'the beam ends have their own DCRs'
 }
