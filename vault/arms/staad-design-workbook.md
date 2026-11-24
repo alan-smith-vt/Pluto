@@ -26,6 +26,8 @@ still to do, so this note stays `draft`.
 ... scripts\frame\Build-Frame.ps1 -In "<project dir>\frame.std" -Xlsx -Out "<project dir>\frame"
 # the .std from the two workbooks: the design workbook beside the model workbook is found by its name
 ... scripts\frame\Build-Frame.ps1 -In "<project dir>\frame.xlsx" -Std
+# a model with none yet (one from SAP): a starter beside the model workbook
+... scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.xlsx" -NewDesign
 # another design workbook for the same model
 ... scripts\frame\Build-Frame.ps1 -In "<project dir>\frame.xlsx" -Std -Design "<project dir>\frame.strength.design.xlsx"
 ```
@@ -38,6 +40,16 @@ still to do, so this note stays `draft`.
   beside the master.
 - **With none**, `-Std` writes the model's carried commands (a `.std` read straight to `-Std`, or an older workbook), else
   Pluto's own prints.
+
+**A starter (`-NewDesign`)**, for a model that has no design workbook yet (one from SAP). It goes beside the model
+workbook, or where `-Design` names, and holds:
+- set 1 (AISC UNIFIED 2016, LRFD) in the model's units;
+- a Parameters row for ALL and one per group with members, their cells blank;
+- a Run of Pluto's own prints and `CHECK CODE ALL`.
+
+Fill the cells and run `-Std`. An existing design workbook is never replaced without `-Force` (then kept as `.bak`).
+Checked on the SAP rack under pwsh 7: `KY` / `UNB` typed on its STEEL row come out as `MEMB _STEEL_M`, STAAD's member
+group of a SAP group that holds joints too.
 
 **When `-In <x>.std -Xlsx` writes it:** the design workbook takes the `.std`'s commands after the analysis and the model
 workbook keeps none, so each item has one place to edit. An existing design workbook is kept as `.bak`. An older frame

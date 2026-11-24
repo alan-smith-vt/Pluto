@@ -144,6 +144,28 @@ public sealed class StaadDesign
         return s.Length == 0 ? "ALL" : s;
     }
 
+    // ---------------- a starter for a model with none (Build-Frame -NewDesign): set 1 (AISC UNIFIED 2016, LRFD) in the
+    // model's units; a Parameters row for ALL and one per group with members, their cells blank; a Run of Pluto's own
+    // prints (what -Std writes with no design) and CHECK CODE ALL under set 1
+
+    public static StaadDesign Template(FrameModel m, string units)
+    {
+        var d = new StaadDesign { Units = units ?? "" };
+        d.Sets.Add(new Set { Name = "1", Code = "AISC UNIFIED 2016", Method = "LRFD", Units = units ?? "" });
+        d.Params.Add(new Param { Set = "1", Members = "ALL" });
+        foreach (var g in m.Groups)
+        {
+            if (Is(g.Label, "ALL") || g.Label.StartsWith("PL_", StringComparison.OrdinalIgnoreCase)) continue;      // SAP's All; Pluto's kind / line groups
+            if (!g.Members.Any(x => Is(x[0], "Frame") || Is(x[0], "Link"))) continue;
+            d.Params.Add(new Param { Set = "1", Members = g.Label });
+        }
+        d.Run.Add(new Step { LoadList = "ALL", Action = "PRINT", Text = "PRINT JOINT DISPLACEMENTS LIST ALL" });
+        if (m.Frames.Count + m.Links.Count > 0) d.Run.Add(new Step { Action = "PRINT", Text = "PRINT MEMBER FORCES ALL" });
+        if (m.Joints.Any(j => j.Restraint.Any(b => b) || j.Spring.Any(v => v != 0))) d.Run.Add(new Step { Action = "PRINT", Text = "PRINT SUPPORT REACTIONS" });
+        d.Run.Add(new Step { Action = "CHECK CODE", Set = "1", Members = "ALL" });
+        return d;
+    }
+
     // ---------------- back to STAAD's commands (FrameStd), names resolved by the writer:
     //   members(text, who) -> "ALL" or "MEMB <STAAD list>", null after refusing (the writer names why)
     //   loads(text, who)   -> the LOAD LIST's words, null after refusing

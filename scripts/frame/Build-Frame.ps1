@@ -74,6 +74,10 @@
 #                   after the analysis. Default: <model>.design.xlsx beside the model workbook (or the -Merge master).
 #                   -In <x>.std -Xlsx writes it from the .std's commands after the analysis (beside the workbook, or
 #                   where -Design names), an older one kept as .bak; the model workbook then holds structure and loads.
+#   -NewDesign      a starter design workbook for a model with none (one from SAP): beside the model workbook (or where
+#                   -Design names); set 1 (AISC UNIFIED 2016, LRFD, the model's units), a Parameters row for ALL and one
+#                   per group, Pluto's prints and CHECK CODE ALL. Never over an existing one without -Force (then .bak).
+#                     ... -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.xlsx" -NewDesign
 #   -Watch          with an .xlsx: every save rebuilds the outputs (-Preview when none is given); Ctrl+C stops
 #   -NewWorkbook    -Out <name>.xlsx: an empty workbook (-Units "Kip, in, F" by default, -SapVersion 22.0.0) and its
 #                   launchers; an existing workbook as for -Xlsx
@@ -128,7 +132,8 @@ param(
     [string]$ProbeCheck,
     [string]$ProbeFile,
     [string]$Merge,
-    [string]$Design
+    [string]$Design,
+    [switch]$NewDesign
 )
 $ErrorActionPreference = "Stop"
 function Say([string]$step, [string]$text) { Write-Output ("[{0}] {1}" -f $step.PadRight(7), $text) }
@@ -504,6 +509,7 @@ function Build-Once {
     # beside the model workbook or the -Merge master)
     $staadDesign = $null; $designOut = $null
     $carriedCmds = [StaadCarry]::CommandsOf($model)
+    if ($NewDesign -and $carriedCmds.Count -gt 0) { Say "notice" "-NewDesign: the model carries STAAD's own commands (a .std): the design workbook is made from them, not a starter" }
     if ($Xlsx -and $xlsxGo -ne "keep" -and $carriedCmds.Count -gt 0) {
         $script:step = "writing the STAAD design workbook"
         $staadDesign = [StaadDesign]::FromCommands($carriedCmds, [FrameStd]::StaadUnits($model))
@@ -513,6 +519,17 @@ function Build-Once {
         [StaadDesignWorkbook]::Write($staadDesign, $designOut, [IO.Path]::GetFileName($outBase + ".xlsx"))
         Say "write" ("{0}: the STAAD design workbook ({1} parameter set(s), {2} parameter row(s), {3} step(s)); -Std writes it after the analysis" -f $designOut, $staadDesign.Sets.Count, $staadDesign.Params.Count, $staadDesign.Run.Count)
         [void][StaadCarry]::Set($model, (New-Object 'System.Collections.Generic.List[string]'), [StaadCarry]::LoadsOf($model))
+    } elseif ($NewDesign) {
+        # a starter design workbook for a model with none (one from SAP): set 1, a Parameters row per group, Pluto's prints
+        # and CHECK CODE ALL; never over one holding edits without -Force
+        $designOut = $(if ($Design) { $designPath } elseif ($kind -eq "xlsx") { [IO.Path]::Combine([IO.Path]::GetDirectoryName($inPath), [IO.Path]::GetFileNameWithoutExtension($inPath) + ".design.xlsx") } else { $outBase + ".design.xlsx" })
+        if (Test-Path -LiteralPath $designOut -PathType Leaf) {
+            if (-not $Force) { throw (New-Object InvalidOperationException(("-NewDesign: {0} exists and holds its own edits; -Force replaces it (kept as .bak), -Design writes elsewhere" -f $designOut))) }
+            [IO.File]::Copy($designOut, $designOut + ".bak", $true); Say "write" ("{0}.bak: the design workbook as it was" -f $designOut)
+        }
+        $staadDesign = [StaadDesign]::Template($model, [FrameStd]::StaadUnits($model))
+        [StaadDesignWorkbook]::Write($staadDesign, $designOut, $(if ($kind -eq "xlsx") { [IO.Path]::GetFileName($inPath) } else { [IO.Path]::GetFileName($outBase + ".xlsx") }))
+        Say "write" ("{0}: a starter STAAD design workbook: set 1 (AISC UNIFIED 2016, LRFD, {1}), a Parameters row for ALL and {2} group(s), Pluto's prints and CHECK CODE ALL" -f $designOut, $staadDesign.Units, ($staadDesign.Params.Count - 1))
     } elseif ($Std) {
         $designIn = $null
         if ($Design) { $designIn = $designPath }
