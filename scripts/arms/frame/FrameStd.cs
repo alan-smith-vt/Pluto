@@ -1613,15 +1613,7 @@ public static class FrameStd
             if (sup.Count > 0) { o.Add("SUPPORTS"); foreach (var s in sup) line(s); }
             if (sup.Any(s => s.Contains(" INCLINED "))) Note("inclined supports: STAAD prints their reactions in global axes (SET INCLINED REACTION for the inclined ones)");
 
-            // loads. DEFINE ENVELOPE first: STAAD.Pro 2025 refuses a DEFINE after a primary load ("DEFINE commands for load
-            // generation should be provided before specifying primary load cases", round 4, 2026-11-24); its load numbers
-            // name loads defined below
-            if (Envs.Count > 0)
-            {
-                o.Add("DEFINE ENVELOPE");
-                foreach (var e in Envs) line(Condense(e.Loads) + " ENVELOPE " + e.Number.ToString(Inv) + (e.Type.Length > 0 ? " TYPE " + e.Type : ""));
-                o.Add("END DEFINE ENVELOPE");
-            }
+            // loads (DEFINE ENVELOPE goes after the analysis, below)
             var refNo = new Dictionary<int, int>();
             var used = refs.Select((kv, i) => i).Where(i => !refs[i].Value.Empty).ToList();
             if (used.Count > 0)
@@ -1695,6 +1687,15 @@ public static class FrameStd
             if (option.Success) { analysis += " " + option.Groups[1].Value.Trim(); carried.RemoveAt(0); }
             line(analysis);
             if (cases.Any(p => p.PDelta)) Note("P-Delta: STAAD's PDELTA 30 ANALYSIS SMALLDELTA (its own iteration, not SAP's)");
+            // DEFINE ENVELOPE after the analysis, before the prints and design commands. STAAD.Pro 2025's analysis refuses
+            // it after the loads, where STAAD's own save puts it ("DEFINE commands for load generation should be provided
+            // before specifying primary load cases"), and its editor drops it before the loads it names (round 4, 2026-11-24)
+            if (Envs.Count > 0)
+            {
+                o.Add("DEFINE ENVELOPE");
+                foreach (var e in Envs) line(Condense(e.Loads) + " ENVELOPE " + e.Number.ToString(Inv) + (e.Type.Length > 0 ? " TYPE " + e.Type : ""));
+                o.Add("END DEFINE ENVELOPE");
+            }
             if (DesignLines != null)
             {
                 foreach (string c in carried) line(c);

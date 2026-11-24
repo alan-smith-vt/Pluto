@@ -72,13 +72,6 @@ SUPPORTS
 7 PINNED
 8 FIXED BUT MY KMX 2000 KMZ 2000
 UNIT FEET KIP
-* the envelopes, before the first load (STAAD.Pro 2025 refuses a DEFINE after one); 103 is in envelopes 1 and 3:
-* STAAD keeps it in the last (TR.40)
-DEFINE ENVELOPE
-101 TO 103 ENVELOPE 1 TYPE STRENGTH
-201 202 ENVELOPE 2 TYPE SERVICEABILITY
-103 ENVELOPE 3 TYPE CONNECTION
-END DEFINE ENVELOPE
 LOAD 1 LOADTYPE Dead  TITLE DEAD
 SELFWEIGHT Y -1
 UNIT INCHES KIP
@@ -116,6 +109,14 @@ LOAD COMBINATION 202 D + 0.6WX + SETTLEMENT
 * the analysis runs in kN and m: the first print after it is in those units
 UNIT METER KN
 PERFORM ANALYSIS PRINT STATICS CHECK
+* the envelopes, after the analysis (the first run refused them after the
+* loads, the editor before them); 103 is in envelopes 1 and 3: STAAD keeps it
+* in the last (TR.40)
+DEFINE ENVELOPE
+101 TO 103 ENVELOPE 1 TYPE STRENGTH
+201 202 ENVELOPE 2 TYPE SERVICEABILITY
+103 ENVELOPE 3 TYPE CONNECTION
+END DEFINE ENVELOPE
 LOAD LIST 1
 PRINT SUPPORT REACTIONS
 * the comparison: every case, in one set of units

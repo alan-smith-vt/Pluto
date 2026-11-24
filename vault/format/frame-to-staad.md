@@ -53,7 +53,8 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > 7. `CONSTANTS`: `MATERIAL`, `BETA`.
 > 8. `MEMBER OFFSET`, `MEMBER RELEASE`, `MEMBER TRUSS`, `SUPPORTS`.
 > 9. `DEFINE REFERENCE LOADS`, the primary loads, `LOAD COMBINATION`.
-> 10. `PERFORM ANALYSIS` (or `PDELTA 30 ANALYSIS SMALLDELTA`), then:
+> 10. `PERFORM ANALYSIS` (or `PDELTA 30 ANALYSIS SMALLDELTA`), then `DEFINE ENVELOPE` when the model has envelopes,
+>     then:
 >     - `PRINT JOINT DISPLACEMENTS LIST ALL`;
 >     - `PRINT MEMBER FORCES ALL`;
 >     - `PRINT SUPPORT REACTIONS`;
@@ -512,12 +513,21 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > - TYPE (STRENGTH, SERVICEABILITY, CONNECTION, COLUMN, STRESS; its first letters are enough) and the number ride on the
 >   STAAD loads sheet.
 >
-> `-Std` writes every SAP Envelope combination as `DEFINE ENVELOPE`, before the first load (`DEFINE REFERENCE LOADS`
-> and the primary loads). STAAD.Pro 2025 stops at a `DEFINE` after a primary load: "DEFINE commands for load generation
-> should be provided before specifying primary load cases" (round 4; TR.40 does not say). Its load numbers name loads
-> defined below it. One is listed as not written
-> when an item has a scale factor other than 1, is not written to STAAD, or is in an envelope before it (STAAD keeps a
-> load in one). An envelope changes no result.
+> `-Std` writes every SAP Envelope combination as `DEFINE ENVELOPE` after `PERFORM ANALYSIS`, before the prints and
+> design commands. TR.40 does not say where the block goes. STAAD.Pro 2025 refused the two other places in round 4
+> (below):
+> - **after the combinations,** where STAAD's own save puts it, its analysis stops: "DEFINE commands for load
+>   generation should be provided before specifying primary load cases";
+> - **before the loads,** its editor drops the block: the loads it names are not yet defined.
+>
+> A `.std` with the block in any of these places reads the same.
+>
+> An envelope is listed as not written when an item:
+> - has a scale factor other than 1;
+> - is not written to STAAD;
+> - or is in an envelope before it (STAAD keeps a load in one).
+>
+> An envelope changes no result.
 >
 > **Carried: what SAP has no place for** (`StaadCarry`, in `FrameStd.cs`). Two tables of Pluto's own ride in the model's
 > document, the workbook shows them on two sheets, and `-Std` writes them again. The `.s2k` for SAP leaves them out,
@@ -596,10 +606,15 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > - −0.25 in → −0.020833 ft.
 >
 > **The first run (STAAD.Pro 2025 25.00.01).** Steps 1 and 2 ran on the production machine.
-> - **Both `.std` stopped in STAAD at `DEFINE ENVELOPE`,** given after the combinations: STAAD wants every DEFINE
->   before the first primary load. Everything before it parsed with no error in both files: every unit change, the
->   wrapped `IZ -` line, CMOM, TRAP, ENFORCED, the springs, `REPEAT LOAD`. The probe and `-Std` now put the envelopes
->   before the loads.
+> - **Both `.std` stopped in STAAD at `DEFINE ENVELOPE`,** given after the combinations ("DEFINE commands for load
+>   generation should be provided before specifying primary load cases"). Everything before it parsed with no error in
+>   both files:
+>   - every unit change;
+>   - the wrapped `IZ -` line;
+>   - CMOM, TRAP, ENFORCED;
+>   - the springs, `REPEAT LOAD`.
+> - **Moved before the loads,** the block was dropped by STAAD's editor: the loads it names were not yet defined.
+> - **Now after `PERFORM ANALYSIS`,** before the prints, in the probe and `-Std` alike.
 > - **STAAD's save of `round4.std` was refused** on G against E (its 6 digits, above). It now reads exactly.
 >
 > The results comparison and the SAP steps wait for the next run.

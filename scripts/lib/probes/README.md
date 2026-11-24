@@ -161,7 +161,7 @@ pull. `<dir>` is a folder outside the repo.
 |---|---|
 | Unit conversion of every kind of number | the two `.anl` agree on every displacement, reaction and member force, every case |
 | The `UNIT` in force at the analysis carried | the first reaction print is in kN and m in both |
-| `DEFINE ENVELOPE` where `-Std` writes it (before the first load: the first run showed STAAD stops at one after a primary load) | `round4.std` runs |
+| `DEFINE ENVELOPE` where `-Std` writes it: after `PERFORM ANALYSIS`, before the prints (the first run stopped at one after the combinations, and the editor drops one before the loads) | both `.std` run |
 | A load in two envelopes | the cases `LOAD LIST ENV 1`'s reaction print lists: 101 102 (TR.40's rule), or 101 to 103 |
 | Checks under envelopes and per case | the `.anl` reader takes `LOAD LIST ENV`; StaadToPluto puts envelope 3's and 101's to 103's checks into their cases |
 | SAP takes the workbook's output | the import log names no Pluto table; the envelope combinations import |

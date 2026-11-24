@@ -53,7 +53,9 @@ created: 2026-11-18
 Purging it means rewriting the branch's history.
 
 **Waiting on the production machine:**
-- STAAD round 4 (`scripts/lib/probes/README.md`, steps 1 to 7): units, envelopes, per-case checks, the triangle;
+- STAAD round 4 (`scripts/lib/probes/README.md`), again from step 2: units, envelopes, per-case checks, the triangle.
+  `DEFINE ENVELOPE` now goes after `PERFORM ANALYSIS`, before the prints; STAAD.Pro 2025 refused it after the
+  combinations and before the loads;
 - the user's STAAD model again with `-In <x>.std -Xlsx`: the remaining refusals, if any, to read next (see
   [[vault/handoffs/handoff-2026-11-24b|handoff-2026-11-24b]]);
 - the PS 5.1 compile of `StaadToPluto`, and its probe run: `Run-StaadFrame.ps1 -Anl scripts\lib\probes\anl-prints-probe.anl
