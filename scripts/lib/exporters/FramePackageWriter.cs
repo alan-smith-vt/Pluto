@@ -18,6 +18,8 @@ using System.Text;
 //   endforces.csv   Member, End (A start / B end), Node, LC, Fx..Mz: member local, STAAD's sign, the units in the header
 //   ends.csv        the joint index: one row per member end at a joint (direction away from it, role, section, releases)
 //   joints.csv      one row per joint: ends, columns / beams / braces, support
+//   reactions.csv   Node, LC, Fx..Mz: support reactions as printed (global axes), the units in the header
+//   displacements.csv  Node, LC, X Y Z (the length unit in the header), RX RY RZ (rad): joint displacements as printed
 //   prints.csv      every output command of the file in order (PRINT ..., CHECK CODE ...), the LOAD LIST it ran under,
 //                   whether its table is read into the package, and the rows read
 //
@@ -30,7 +32,7 @@ public static class FramePackageWriter
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
     public static readonly string[] Files = { "manifest.json", "nodes.csv", "members.csv", "supports.csv", "loadcases.csv",
-        "endforces.csv", "ends.csv", "joints.csv", "prints.csv" };
+        "endforces.csv", "ends.csv", "joints.csv", "prints.csv", "reactions.csv", "displacements.csv" };
 
     // writes the package into dir (created if needed); returns the paths written
     public static string[] Write(AnlFrameModel m, string dir)
@@ -80,6 +82,14 @@ public static class FramePackageWriter
         written.Add(Csv(dir, "prints.csv", new[] { "Order", "Command", "LoadList", "Cases", "Read", "Rows" },
             m.Prints.Select(p => new object[] { p.Order, p.Command, p.LoadList,
                 p.AllCases ? "ALL" : string.Join(" ", p.Cases.Select(c => c.ToString(Inv)).ToArray()), p.Read ? "Y" : "N", p.Rows })));
+
+        string rf = m.ReactionForceText.Length > 0 ? m.ReactionForceText : fu, rm = m.ReactionMomentText.Length > 0 ? m.ReactionMomentText : mu;
+        written.Add(Csv(dir, "reactions.csv", new[] { "Node", "LC", "Fx (" + rf + ")", "Fy (" + rf + ")", "Fz (" + rf + ")", "Mx (" + rm + ")", "My (" + rm + ")", "Mz (" + rm + ")" },
+            m.Reactions.OrderBy(x => x.Node).ThenBy(x => x.LC).Select(x => new object[] { x.Node, x.LC, x.V[0], x.V[1], x.V[2], x.V[3], x.V[4], x.V[5] })));
+
+        string dl = m.DisplacementLengthText.Length > 0 ? m.DisplacementLengthText : "in";
+        written.Add(Csv(dir, "displacements.csv", new[] { "Node", "LC", "X (" + dl + ")", "Y (" + dl + ")", "Z (" + dl + ")", "RX (rad)", "RY (rad)", "RZ (rad)" },
+            m.Displacements.OrderBy(x => x.Node).ThenBy(x => x.LC).Select(x => new object[] { x.Node, x.LC, x.V[0], x.V[1], x.V[2], x.V[3], x.V[4], x.V[5] })));
 
         written.Insert(0, Manifest(dir, m));
         return written.ToArray();

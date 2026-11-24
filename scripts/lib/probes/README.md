@@ -58,3 +58,22 @@ gives. The model is built to show what a table's layout depends on:
 3. Save it beside the probe as `anl-prints-probe.anl`, commit it to this branch and push.
    - If STAAD saved the `.std` again in its own form (for example the section database form), commit that file
      too, as `anl-prints-probe-saved.std`.
+
+## What the run showed (STAAD.Pro 2025, 2026-11-24)
+
+`anl-prints-probe.anl` is the probe's output as STAAD wrote it, with the licensee line and the input file's path
+replaced by `<removed>`. Every block ran, all eight code checks included.
+
+- **The reader took it as it is:** 18 joints, 32 members, 14 load cases, all 384 member end-force rows, every
+  section and family, no errors.
+- **The echo** is in capitals, and comment lines are echoed with a line number.
+- **Support reactions and joint displacements** are joint tables: the joint and the case on a joint's first row,
+  the case alone on the rest, units in the table's title line (`SUPPORT REACTIONS -UNIT KIP  INCH`,
+  `JOINT DISPLACEMENT (INCH RADIANS)`). Both are read now: 36 and 90 rows, supports x cases and joints x cases
+  of their load lists. A six-digit joint number fits its column.
+- **The AISC 360 code checks** (2005, 2010, 2016, 2022; LRFD and ASD) print a boxed block per member at every
+  TRACK level, with `Status`, `Ratio`, `Loadcase`, `Location` and `Ref` on fixed lines. `CODE AISC` and
+  `CODE LRFD` print their own, older layouts. Not read yet.
+- **MEMBER INFORMATION** is one row per member (start and end joint, length, BETA, releases); **MEMBER
+  PROPERTIES** two rows per member (profile, AX IZ IY IX, then AY AZ SZ SY), its unit in the title line.
+  **SECTION DISPLACEMENTS** and the printed **JOINT COORDINATES** are there too. Not read yet.
