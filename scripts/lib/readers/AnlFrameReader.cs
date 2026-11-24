@@ -125,7 +125,7 @@ public sealed class AnlFramePrint
     public bool AllCases = true;    // no LOAD LIST before it (or LOAD LIST ALL): every case
     public readonly List<int> Cases = new List<int>();    // the LOAD LIST in force (empty when AllCases)
     public string LoadList = "ALL"; // the list as written ("101 TO 104 201"), or ALL
-    public bool Read;               // its table is read into the model (today: PRINT MEMBER FORCES)
+    public bool Read;               // its table is read into the model
     public int Rows;                // rows read from its table
 }
 
@@ -214,6 +214,16 @@ public sealed class AnlFrameModel
     public readonly List<AnlFrameJointRow> Reactions = new List<AnlFrameJointRow>();
     public readonly List<AnlFrameJointRow> Displacements = new List<AnlFrameJointRow>();
     public string ReactionForceText = "", ReactionMomentText = "", DisplacementLengthText = "";
+    // the other tables, as printed (AnlFramePrints.cs): the code check per member and CHECK CODE command, with the
+    // checks behind it where TRACK printed them; member information and properties; section displacements
+    public readonly List<AnlFrameCodeCheck> CodeChecks = new List<AnlFrameCodeCheck>();
+    public readonly List<AnlFrameCodeCheckDetail> CodeCheckDetails = new List<AnlFrameCodeCheckDetail>();
+    public readonly List<AnlFrameMemberInfo> MemberInfo = new List<AnlFrameMemberInfo>();
+    public readonly List<AnlFrameMemberProperty> MemberProperties = new List<AnlFrameMemberProperty>();
+    public readonly List<AnlFrameSectionDisplacement> SectionDisplacements = new List<AnlFrameSectionDisplacement>();
+    public readonly List<AnlFrameSectionMax> SectionMaxima = new List<AnlFrameSectionMax>();
+    public string MemberInfoLengthText = "", MemberPropertyLengthText = "", SectionDisplacementLengthText = "";
+    public int SectionStations;     // stations per member of SectionDisplacements (13: the ends and the twelfth points)
     public readonly List<AnlFrameProblem> Problems = new List<AnlFrameProblem>();
     readonly Dictionary<long, AnlFrameEndForce> _forceIndex = new Dictionary<long, AnlFrameEndForce>();
 
@@ -349,7 +359,7 @@ public static class AnlFrameReader
         var m = new AnlFrameModel();
         m.Source = Path.GetFullPath(anlPath);
         m.SourceSha256 = Sha256(anlPath);
-        List<AnlSection> sections = AnlIndexer.IndexFile(anlPath);
+        List<AnlSection> sections = CommandSections(anlPath, AnlIndexer.IndexFile(anlPath));
         AnlUnitStamper.StampUnits(anlPath, sections);
         var r = new Reading(m, anlPath);
 
@@ -390,21 +400,26 @@ public static class AnlFrameReader
                     break;
                 case "LOAD LIST": r.LoadList(s); break;
                 case "PRINT MEMBER FORCES": r.Forces(s, r.Print(s, true)); anyForces = true; break;
-                // output commands whose tables are not read yet: recorded with their load list, and named below
                 case "PRINT JOINT DISPLACEMENTS": r.Displacements(s, r.Print(s, true)); break;
+                case "CHECK CODE": r.CodeCheck(s, r.Print(s, false)); break;
                 case "PRINT":
                 case "PRINT SUPPORT REACTION":
+                case "PRINT MEMBER":
                     {
-                        // PRINT SUPPORT REACTION is indexed by that name, PRINT SUPPORT REACTIONS as a plain PRINT
+                        // the indexer names a print by its first words: the command itself says which table follows.
+                        // A print whose table is not read is recorded with its load list, and named below.
                         AnlFramePrint pr = r.Print(s, false);
-                        if (pr.Command.ToUpperInvariant().StartsWith("PRINT SUPPORT REACTION")) { pr.Read = true; r.Reactions(s, pr); }
+                        string cmd = Regex.Replace(pr.Command.ToUpperInvariant(), @"\s+", " ");
+                        if (cmd.StartsWith("PRINT SUPPORT REACTION")) { pr.Read = true; r.Reactions(s, pr); }
+                        else if (cmd.StartsWith("PRINT JOINT COORD")) AnlFramePrintTables.JointCoordinates(r.Output(s), m, pr);
+                        else if (cmd.StartsWith("PRINT MEMBER INFO")) AnlFramePrintTables.MemberInformation(r.Output(s), m, pr);
+                        else if (cmd.StartsWith("PRINT MEMBER PROP")) AnlFramePrintTables.MemberProperties(r.Output(s), m, pr);
+                        else if (cmd.StartsWith("PRINT SECTION DISP")) AnlFramePrintTables.SectionDisplacements(r.Output(s), m, pr);
                     }
                     break;
-                case "PRINT MEMBER":
                 case "PRINT MEMBER SECTION FORCES":
                 case "PRINT ELEMENT STRESSES":
                 case "PRINT ELEMENT JOINT STRESSES":
-                case "CHECK CODE":
                     r.Print(s, false); break;
             }
         }
@@ -502,6 +517,30 @@ public static class AnlFrameReader
         e.Released = mem.Release(end).Text;
         e.LocalY = mem.LocalY; e.LocalZ = mem.LocalZ;
         j.Ends.Add(e);
+    }
+
+    // The sections that are commands: the ones whose first line carries STAAD's echo number ("  141. PRINT ..."). The
+    // indexer also starts a section at an output heading that reads like a command ("JOINT COORDINATES" over a printed
+    // table, "UNITS ARE - INCH" over the section displacements); such a section is the output of the command before
+    // it, so it is given back to that command.
+    static List<AnlSection> CommandSections(string path, List<AnlSection> sections)
+    {
+        var commands = new List<AnlSection>();
+        var buf = new byte[48];
+        using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
+        {
+            foreach (AnlSection s in sections)
+            {
+                fs.Seek(s.StartOffset, SeekOrigin.Begin);
+                int n = fs.Read(buf, 0, buf.Length);
+                string head = Encoding.GetEncoding(28591).GetString(buf, 0, Math.Max(n, 0));
+                int eol = head.IndexOf('\n');
+                if (eol >= 0) head = head.Substring(0, eol);
+                if (Regex.IsMatch(head, @"^\s*\d+\.(\s|$)")) commands.Add(s);
+                else if (commands.Count > 0) commands[commands.Count - 1].EndOffset = s.EndOffset;
+            }
+        }
+        return commands;
     }
 
     // ---- helpers ----
@@ -648,6 +687,9 @@ public static class AnlFrameReader
         public Reading(AnlFrameModel m, string path) { _m = m; _path = path; }
 
         public List<string> Commands(AnlSection s) { return EchoCommands(Text(s, long.MaxValue)); }
+
+        // everything a command printed (STAAD writes a NUL into some lines: read as a space)
+        public string Output(AnlSection s) { return Text(s, long.MaxValue).Replace('\0', ' '); }
 
         string Text(AnlSection s, long maxBytes)
         {
@@ -1200,6 +1242,25 @@ public static class AnlFrameReader
             p.Read = read;
             _m.Prints.Add(p);
             return p;
+        }
+
+        // CHECK CODE ALL | CHECK CODE MEMB 101 TO 103 201 | CHECK CODE _GROUP: the members it names, for the ones the
+        // output gives no result for
+        public void CodeCheck(AnlSection s, AnlFramePrint print)
+        {
+            List<int> listed = null;
+            string[] t = Tokens(print.Command);
+            if (t.Length >= 3)
+            {
+                int i = 2;
+                string w = t[i].ToUpperInvariant();
+                if (w.StartsWith("MEMB")) i++;
+                bool all;
+                List<int> ids = List(t, ref i, out all, print.Command);
+                if (all) listed = AllMembers();
+                else if (i >= t.Length && ids.Count > 0) listed = ids;
+            }
+            AnlFramePrintTables.CodeCheck(Output(s), _m, print, listed);
         }
 
         static readonly Regex NumbersOnly = new Regex(@"^[\s\d.+\-Ee]+$");

@@ -17,9 +17,10 @@ PRINT JOINT DISPLACEMENTS
 PRINT SECTION DISPLACEMENTS
 ```
 
-The reader (`scripts/lib/readers/AnlFrameReader.cs`) reads the member forces today and names the other tables as
-"not read yet". Their parsers are to be written against the real layout of each table, which this probe's `.anl`
-gives. The model is built to show what a table's layout depends on:
+The reader (`scripts/lib/readers/AnlFrameReader.cs`, with the tables besides the forces in `AnlFramePrints.cs`) was
+written against the real layout of each table, which this probe's `.anl` gives. It reads every one of the commands
+above; an output command it does not know is named as "not read yet". The model is built to show what a table's
+layout depends on:
 
 - two six-digit joint and member numbers (the column widths);
 - enough rows for page breaks inside the force and displacement tables;
@@ -71,9 +72,24 @@ replaced by `<removed>`. Every block ran, all eight code checks included.
   the case alone on the rest, units in the table's title line (`SUPPORT REACTIONS -UNIT KIP  INCH`,
   `JOINT DISPLACEMENT (INCH RADIANS)`). Both are read now: 36 and 90 rows, supports x cases and joints x cases
   of their load lists. A six-digit joint number fits its column.
-- **The AISC 360 code checks** (2005, 2010, 2016, 2022; LRFD and ASD) print a boxed block per member at every
-  TRACK level, with `Status`, `Ratio`, `Loadcase`, `Location` and `Ref` on fixed lines. `CODE AISC` and
-  `CODE LRFD` print their own, older layouts. Not read yet.
-- **MEMBER INFORMATION** is one row per member (start and end joint, length, BETA, releases); **MEMBER
-  PROPERTIES** two rows per member (profile, AX IZ IY IX, then AY AZ SZ SY), its unit in the title line.
-  **SECTION DISPLACEMENTS** and the printed **JOINT COORDINATES** are there too. Not read yet.
+- **The code checks** come in three layouts, all read (one row per member per `CHECK CODE` command: PASS / FAIL,
+  ratio, governing clause, case and location, the forces of that case):
+  - AISC 360-16 and 360-22 print a box per member (`Member No`, `Status`, `Ratio`, `Loadcase`, `Location`, `Ref`
+    on fixed lines), with all six forces in the code's axis names;
+  - AISC 360-05 and 360-10, and the older codes at TRACK 0 and 1, print a table (`MEMBER TABLE RESULT/ CRITICAL
+    COND/ RATIO/ LOADING/`) with FX, MY and MZ only;
+  - `CODE AISC` (ASD 9th) and `CODE LRFD` (LRFD 3rd) at TRACK 2 print a drawing of the member with a `DESIGN
+    SUMMARY` in its own units (kip-feet while the table says kip-inch).
+
+  At TRACK 1 and 2 the 360 codes also print the checks behind the result (demand, capacity, ratio, clause): read
+  as detail rows. A member STAAD does not design (a prismatic section) gets a message line, in three wordings:
+  read as NOT DESIGNED with the message.
+- **MEMBER INFORMATION** is one row per member (start and end joint, length with the offsets taken off, BETA,
+  releases as twelve digits, `TRUSS`). It is kept, and checked against what the echo was read as. **MEMBER
+  PROPERTIES** is two rows per member (profile, AX IZ IY IX, then AY AZ SZ SY), three when the profile name is
+  long, its unit in the title line.
+- **SECTION DISPLACEMENTS** is a block per member and case: global X Y Z at 13 stations, then a `MAX LOCAL DISP`
+  line per member with `L/DISP`. Its `UNITS ARE - INCH` line reads as a command to the indexer, so the frame reader
+  now gives an output heading back to the command that printed it.
+- **JOINT COORDINATES** as printed are checked against the echo (18 of 18 agree).
+- STAAD writes a NUL character into the profile line of the `CODE LRFD` drawing; it is read as a space.

@@ -22,6 +22,14 @@ using System.Text;
 //   displacements.csv  Node, LC, X Y Z (the length unit in the header), RX RY RZ (rad): joint displacements as printed
 //   prints.csv      every output command of the file in order (PRINT ..., CHECK CODE ...), the LOAD LIST it ran under,
 //                   whether its table is read into the package, and the rows read
+//   codechecks.csv  one row per member per CHECK CODE command (Print = its Order in prints.csv): the code, the profile,
+//                   PASS / FAIL / NOT DESIGNED, the ratio, the governing clause, case and location, the forces of that
+//                   case as printed (with their units), STAAD's message
+//   codecheckdetails.csv  the checks behind a result where TRACK printed them: demand, capacity, ratio, clause, case
+//   memberinfo.csv  PRINT MEMBER INFORMATION: joints, length (the unit in the header), beta, releases as printed
+//   memberproperties.csv  PRINT MEMBER PROPERTIES: AX IZ IY IX AY AZ SZ SY (the unit in the header)
+//   sectiondisplacements.csv  PRINT SECTION DISPLACEMENTS: Member, LC, Station (0 = start joint), X Y Z global
+//   sectionmaxima.csv  STAAD's largest local displacement of each member: where, in which case, and L / displacement
 //
 // A model with errors is refused: a package must be exactly what STAAD analysed. CSVs are UTF-8 with a BOM (Excel
 // reads them as UTF-8), manifest.json without one; CRLF, invariant culture, each written to a temporary name and
@@ -32,7 +40,8 @@ public static class FramePackageWriter
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
     public static readonly string[] Files = { "manifest.json", "nodes.csv", "members.csv", "supports.csv", "loadcases.csv",
-        "endforces.csv", "ends.csv", "joints.csv", "prints.csv", "reactions.csv", "displacements.csv" };
+        "endforces.csv", "ends.csv", "joints.csv", "prints.csv", "reactions.csv", "displacements.csv",
+        "codechecks.csv", "codecheckdetails.csv", "memberinfo.csv", "memberproperties.csv", "sectiondisplacements.csv", "sectionmaxima.csv" };
 
     // writes the package into dir (created if needed); returns the paths written
     public static string[] Write(AnlFrameModel m, string dir)
@@ -91,11 +100,41 @@ public static class FramePackageWriter
         written.Add(Csv(dir, "displacements.csv", new[] { "Node", "LC", "X (" + dl + ")", "Y (" + dl + ")", "Z (" + dl + ")", "RX (rad)", "RY (rad)", "RZ (rad)" },
             m.Displacements.OrderBy(x => x.Node).ThenBy(x => x.LC).Select(x => new object[] { x.Node, x.LC, x.V[0], x.V[1], x.V[2], x.V[3], x.V[4], x.V[5] })));
 
+        written.Add(Csv(dir, "codechecks.csv", new[] { "Print", "Member", "Code", "Profile", "Table", "Status", "Ratio", "Critical", "LC", "Location",
+            "Axial", "FX", "FY", "FZ", "MX", "MY", "MZ", "Force unit", "Length unit", "Starred", "Note" },
+            m.CodeChecks.Select(c => new object[] { c.Print, c.Member, c.Code, c.Profile, c.Table, c.Status, c.HasRatio ? (object)c.Ratio : "", c.Critical,
+                c.LC == 0 ? (object)"" : c.LC, c.Status == "NOT DESIGNED" ? (object)"" : c.Location, c.Axial,
+                Opt(c, 0), Opt(c, 1), Opt(c, 2), Opt(c, 3), Opt(c, 4), Opt(c, 5), c.ForceText, c.LengthText, c.Starred ? "Y" : "", c.Note })));
+
+        written.Add(Csv(dir, "codecheckdetails.csv", new[] { "Print", "Member", "Group", "Check", "Demand", "Capacity", "Ratio", "Reference", "LC", "Location" },
+            m.CodeCheckDetails.Select(d => new object[] { d.Print, d.Member, d.Group, d.Check, d.HasDemand ? (object)d.Demand : "", d.HasDemand ? (object)d.Capacity : "",
+                d.Ratio, d.Reference, d.LC, d.Location })));
+
+        string il = m.MemberInfoLengthText.Length > 0 ? m.MemberInfoLengthText : "in";
+        written.Add(Csv(dir, "memberinfo.csv", new[] { "Member", "Start joint", "End joint", "Length (" + il + ")", "Beta (deg)", "Releases" },
+            m.MemberInfo.OrderBy(x => x.Member).Select(x => new object[] { x.Member, x.StartJoint, x.EndJoint, x.Length, x.HasBeta ? (object)x.Beta : "", x.Releases })));
+
+        string pl = m.MemberPropertyLengthText.Length > 0 ? m.MemberPropertyLengthText : "in";
+        var propHead = new List<string> { "Member", "Profile" };
+        for (int k = 0; k < 8; k++) propHead.Add(AnlFrameMemberProperty.Names[k] + " (" + pl + "^" + AnlFrameMemberProperty.Powers[k] + ")");
+        written.Add(Csv(dir, "memberproperties.csv", propHead.ToArray(),
+            m.MemberProperties.OrderBy(x => x.Member).Select(x => new object[] { x.Member, x.Profile, x.V[0], x.V[1], x.V[2], x.V[3], x.V[4], x.V[5], x.V[6], x.V[7] })));
+
+        string sl = m.SectionDisplacementLengthText.Length > 0 ? m.SectionDisplacementLengthText : "in";
+        written.Add(Csv(dir, "sectiondisplacements.csv", new[] { "Member", "LC", "Station", "X (" + sl + ")", "Y (" + sl + ")", "Z (" + sl + ")" },
+            m.SectionDisplacements.OrderBy(x => x.Member).ThenBy(x => x.LC).SelectMany(x =>
+                Enumerable.Range(0, x.V.Length / 3).Select(i => new object[] { x.Member, x.LC, i, x.V[3 * i], x.V[3 * i + 1], x.V[3 * i + 2] }))));
+
+        written.Add(Csv(dir, "sectionmaxima.csv", new[] { "Member", "Max local displacement (" + sl + ")", "At (" + sl + ")", "LC", "L/Disp" },
+            m.SectionMaxima.OrderBy(x => x.Member).Select(x => new object[] { x.Member, x.Disp, x.At, x.LC, x.HasRatio ? (object)x.LOverDisp : "" })));
+
         written.Insert(0, Manifest(dir, m));
         return written.ToArray();
     }
 
     static object V(double[] v, int i) { return v == null ? (object)"" : v[i]; }
+
+    static object Opt(AnlFrameCodeCheck c, int k) { return c.Has[k] ? (object)c.F[k] : ""; }
 
     static string Offset(double[] v, bool local)
     {
@@ -152,13 +191,18 @@ public static class FramePackageWriter
         Prop(sb, "endForces", "member local axes, STAAD's sign (the force on the member at its end), as printed", true);
         Prop(sb, "analysis", m.Analysis, true);
         Prop(sb, "propertyCountry", m.PropertyCountry, true);
+        Prop(sb, "sectionStations", m.SectionStations.ToString(Inv), true);
         sb.Append("  \"counts\": { ");
         sb.Append("\"nodes\": ").Append(m.Nodes.Count).Append(", ");
         sb.Append("\"members\": ").Append(m.Members.Count).Append(", ");
         sb.Append("\"supports\": ").Append(m.Supports.Count).Append(", ");
         sb.Append("\"loadCases\": ").Append(m.LoadCases.Count).Append(", ");
         sb.Append("\"endForces\": ").Append(m.EndForces.Count).Append(", ");
-        sb.Append("\"joints\": ").Append(m.Joints.Count).Append(" },\r\n");
+        sb.Append("\"joints\": ").Append(m.Joints.Count).Append(", ");
+        sb.Append("\"reactions\": ").Append(m.Reactions.Count).Append(", ");
+        sb.Append("\"displacements\": ").Append(m.Displacements.Count).Append(", ");
+        sb.Append("\"codeChecks\": ").Append(m.CodeChecks.Count).Append(", ");
+        sb.Append("\"sectionDisplacements\": ").Append(m.SectionDisplacements.Count).Append(" },\r\n");
         sb.Append("  \"problems\": [");
         for (int i = 0; i < m.Problems.Count; i++)
         {
