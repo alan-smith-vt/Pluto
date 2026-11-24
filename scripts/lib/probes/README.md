@@ -1,7 +1,7 @@
 # Probes for the STAAD `.anl` reader
 
 `anl-prints-probe.std` is a small made-up frame (32 members, 18 joints, 6 primary cases, 8 combinations) that ends
-with the usual output commands, in the usual order:
+with the usual output commands, in the usual order, and then checks the code again under other design parameters:
 
 ```
 CHECK CODE ALL
@@ -27,14 +27,29 @@ gives. The model is built to show what a table's layout depends on:
 - a group name, a wrapped list and comment lines in the input (how STAAD echoes them);
 - releases, an offset, BETA, truss members, three kinds of support;
 - two load lists;
-- a code check with members at TRACK 2, TRACK 1 and TRACK 0.
+- a code check with members at TRACK 2, TRACK 1 and TRACK 0, and one of each shape at TRACK 2;
+- after the usual prints, **seven more code checks** on twelve of the members, because design parameters vary from
+  model to model and the layout follows them:
+
+  | Extra | Code and method | Under |
+  |---|---|---|
+  | (main) | AISC 360-16 LRFD, with FU, KY, KZ, LY, LZ, UNB, UNT, CB, NSF, RATIO, MAIN | every case |
+  | 1 | AISC 360-16 ASD | the strength list |
+  | 2 | AISC 360-16 ASD with a deflection check (DFF) | the service list |
+  | 3 | AISC 360-10 LRFD | the strength list |
+  | 4 | AISC ASD 9th edition (`CODE AISC`) | the strength list |
+  | 5 | AISC LRFD 3rd edition (`CODE LRFD`) | the strength list |
+  | 6 | AISC 360-05 LRFD | the strength list |
+  | 7 | AISC 360-22 LRFD (newer versions of STAAD only) | the strength list |
 
 ## Running it (production machine)
 
 1. Open `anl-prints-probe.std` in STAAD.Pro and run the analysis.
-   - If you normally use other design parameters (CODE, METHOD, TRACK ...), replace the block between the two
-     rows of dashes near the end of the file with yours first. The code-check layout depends on them.
-   - If the run stops on a command, note the message: that is a finding too.
+   - If STAAD stops at one of the extra code checks (a code this version does not have), delete that block,
+     from its `* ==== extra` line to the next one, and run again. What was printed before it is still good.
+     Note which block it was: that is a finding too.
+   - If none of the checks is like the one your models use, add yours as one more extra at the end, before
+     `FINISH`: a `PARAMETER` block with your usual lines, then `CHECK CODE` on a few members.
 2. Open the `.anl` in a text editor and **remove what names the licensee or the machine**, and nothing else:
    - the banner on the first page: the line naming who the program is licensed to;
    - any line with a folder path (the input file's path).
