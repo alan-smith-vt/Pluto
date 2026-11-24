@@ -388,6 +388,32 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >   Which principal axis STAAD calls y, the sign of α against SAP's legs, and whether SAP's analysis bends an angle
 >   through its I23 are left to the angle probe. That is seven cantilevers of L3X2-1/2X3/16, each with tip forces
 >   across it, run in both programs. Each tip's movement gives the member's principal axes in each program.
+> - **The angle probe** (2026-11-24): seven cantilevers of L3X2-1/2X3/16, 60 in, with 1 kip tip forces across them,
+>   in both programs. Four lie along X at SAP angles 0, 90, 180 and 270, one along Y, and two are vertical.
+>   - **SAP bends an angle through its I23.** Down, H0's tip moved 4.273 in down and 3.184 in across. That is SAP's
+>     leg-axis I33 0.899, I22 0.568 and I23 0.4241 coupled, its principal values 1.1888 and 0.2782.
+>   - **STAAD bends it about its principal axes**, local y the minor one. At BETA 0 a tip moves only along the
+>     force: 9.161 in along y, 2.057 in along z. From the tip rotations, which shear does not touch, Iz = 0.2714
+>     and Iy ≈ 1.217: STAAD's table, 2.5 % from SAP's library.
+>   - **The mapping.** STAAD's BETA = the BETA Pluto writes for any section + δ, where δ = ½·atan2(2·I23, I33 −
+>     I22) − 90° is the turn from SAP's local 2 to its minor principal axis (−55.658° here). Turned by δ, STAAD's
+>     principal axes lie on SAP's to 0.007° on all seven members, vertical ones included.
+>   - **Not settled by displacements:** a 180° turn, or the mirror image, bends alike. Which way the legs point
+>     matters only to drawings and STAAD's design checks. A look at STAAD's 3D view settles it (`angle-legs.std`).
+>   - **SAP's I23 is its own:** the plates give 0.4314 and the plates with the 0.375 root fillet 0.4249, against
+>     SAP's 0.4241. No toe radius explains the rest. For an angle picked in STAAD, Pluto's estimate (the fillet)
+>     would set SAP's axes within about 0.02°. An angle from a SAP export carries SAP's own I23.
+> - **STAAD's tables against SAP's library** (the same model run in STAAD with SAP's numbers as PRIS, then with
+>   STAAD's table sections; tip deflection under self weight):
+>
+>   | Shape | SAP's numbers | STAAD's table |
+>   |---|---|---|
+>   | W12X26, C15X33.9, HSS5.500X0.375 | 0.01000, 0.00835, 0.07650 | the same |
+>   | HSS24X12X3/4 | 0.00373 | 0.00371 (−0.5 %) |
+>   | WT22X131 (STAAD: T cut from W44X262) | 0.00636 | 0.00643 (+1.1 %) |
+>   | 2L2-1/2X2-1/2X5/16 (STAAD's V16.0 database) | 0.44350 | 0.43597 (−1.7 %) |
+>
+>   STAAD ran every database form Pluto writes. It warned only that a tee's CT is worked out from the W.
 
 > [!info]- The STAAD probe (`-StdProbe <folder>`)
 > `staad-probe.s2k` and `staad-probe.std`: one model, every part analysable, for SAP2000 and STAAD.Pro alike. Each
