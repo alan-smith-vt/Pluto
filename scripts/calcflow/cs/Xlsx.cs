@@ -1,7 +1,8 @@
 // Copied from pipe-review (src/cs/Xlsx.cs at d4b33aa, 2026-11-06) for CalcFlow; namespace PipeReview -> CalcFlow,
 // the zip / XML helpers made internal for Template.cs, Excel's sheet limits enforced (rows, columns, 32,767 characters
-// a cell) and numeric conditional formats added (2026-11-23); otherwise unchanged. The writer overlaps Pluto's XlsxBook (scripts/lib/writers/XlsxWriter.cs): to be merged later.
-// Xlsx.cs -- reads .xlsx / .csv / .txt without Excel and writes .xlsx workbooks (values and styles, no formulas).
+// a cell) and numeric conditional formats added (2026-11-23); formula cells (XFormula), rows from a source that is not
+// held in memory (XOutSheet.MoreRows) and sheets streamed into the zip added (2026-11-24); otherwise unchanged. The writer overlaps Pluto's XlsxBook (scripts/lib/writers/XlsxWriter.cs): to be merged later.
+// Xlsx.cs -- reads .xlsx / .csv / .txt without Excel and writes .xlsx workbooks (values, styles, and a formula with its shown text: XFormula).
 // C# 5 (Windows PowerShell 5.1 Add-Type, warnings are errors). The reader is a port of Pluto's CaesarWorkbook
 // (scripts/arms/CaesarResults.cs) extended with tables, defined names and cell types.
 //
@@ -702,6 +703,14 @@ namespace CalcFlow
         }
     }
 
+    // a formula cell: the formula without "=", and the text it shows until Excel calculates it (a link cell:
+    // new XFormula("HYPERLINK(\"Run.cmd\",\"Run\")", "Run"))
+    public sealed class XFormula
+    {
+        public string Formula = "", Text = "";
+        public XFormula(string formula, string text) { Formula = formula; Text = text ?? ""; }
+    }
+
     public sealed class XCell
     {
         public object Value;
@@ -738,6 +747,10 @@ namespace CalcFlow
         public string Name = "Sheet1";
         public string TabColor;
         public readonly List<object[]> Rows = new List<object[]>();
+        // rows after Rows that are produced as they are written (a long table is never held in memory): the source and
+        // how many rows it gives. A table that covers them sets its Bottom itself.
+        public IEnumerable<object[]> MoreRows;
+        public int MoreRowsCount;
         public readonly Dictionary<int, double> ColWidths = new Dictionary<int, double>();
         public readonly Dictionary<int, double> RowHeights = new Dictionary<int, double>();   // row index -> points
         public readonly HashSet<int> HiddenCols = new HashSet<int>();
@@ -843,7 +856,7 @@ namespace CalcFlow
                 if (string.IsNullOrEmpty(s.Name) || s.Name.Length > 31 || s.Name.IndexOfAny(new[] { ':', '\\', '/', '?', '*', '[', ']' }) >= 0)
                     throw new Exception("XlsxWriter: invalid sheet name '" + s.Name + "'");
                 if (!seen.Add(s.Name)) throw new Exception("XlsxWriter: duplicate sheet name '" + s.Name + "'");
-                int rows = s.Rows.Count, cols = 0;
+                int rows = s.Rows.Count + (s.MoreRows == null ? 0 : s.MoreRowsCount), cols = 0;
                 foreach (object[] r in s.Rows) if (r != null) cols = Math.Max(cols, r.Length);
                 foreach (XOutTable t in s.Tables) { rows = Math.Max(rows, t.Bottom + 1); cols = Math.Max(cols, t.Right + 1); }
                 if (rows > MaxRows) throw new Exception("XlsxWriter: sheet '" + s.Name + "' has " + rows + " rows; Excel holds " + MaxRows + " (split it)");
@@ -853,39 +866,30 @@ namespace CalcFlow
             var sst = new List<string>();
             var sstIndex = new Dictionary<string, int>(StringComparer.Ordinal);
             int sstCount = 0;
-            var sheetXml = new List<byte[]>();
-            var tableXml = new List<KeyValuePair<int, byte[]>>();   // sheet index -> table part
-            int tableId = 0;
-            foreach (XOutSheet s in sheets)
-            {
-                int sheetIndex = sheetXml.Count;
-                var parts = new List<byte[]>();
-                foreach (XOutTable t in s.Tables)
-                {
-                    tableId++;
-                    parts.Add(TablePart(s, t, tableId));
-                }
-                sheetXml.Add(SheetPart(s, styles, sst, sstIndex, ref sstCount, sheetIndex == 0, parts.Count));
-                foreach (byte[] p in parts) tableXml.Add(new KeyValuePair<int, byte[]>(sheetIndex, p));
-            }
-
+            int tableTotal = sheets.Sum(x => x.Tables.Count);
             string tmp = SharedFile.TempBeside(path);
             try
             {
                 using (var fs = new FileStream(tmp, FileMode.Create, FileAccess.Write, FileShare.None))
                 using (var zip = new ZipArchive(fs, ZipArchiveMode.Create))
                 {
-                    Put(zip, "[Content_Types].xml", ContentTypes(sheets.Count, tableXml.Count));
+                    Put(zip, "[Content_Types].xml", ContentTypes(sheets.Count, tableTotal));
                     Put(zip, "_rels/.rels", RootRels());
                     Put(zip, "xl/workbook.xml", WorkbookPart(sheets, names));
                     Put(zip, "xl/_rels/workbook.xml.rels", WorkbookRels(sheets.Count));
-                    Put(zip, "xl/styles.xml", StylesPart(styles));
-                    Put(zip, "xl/sharedStrings.xml", SharedStringsPart(sst, sstCount));
-                    int t = 0;
-                    for (int i = 0; i < sheetXml.Count; i++)
+                    int tableId = 0, t = 0;
+                    for (int i = 0; i < sheets.Count; i++)
                     {
-                        Put(zip, "xl/worksheets/sheet" + (i + 1).ToString(CultureInfo.InvariantCulture) + ".xml", sheetXml[i]);
-                        var mine = tableXml.Where(kv => kv.Key == i).ToList();
+                        XOutSheet s = sheets[i];
+                        var mine = new List<byte[]>();
+                        foreach (XOutTable tb in s.Tables)
+                        {
+                            tableId++;
+                            mine.Add(TablePart(s, tb, tableId));
+                        }
+                        // each sheet goes straight into its zip entry, a piece at a time
+                        ZipArchiveEntry e = zip.CreateEntry("xl/worksheets/sheet" + (i + 1).ToString(CultureInfo.InvariantCulture) + ".xml", CompressionLevel.Optimal);
+                        using (Stream es = e.Open()) SheetPart(s, styles, sst, sstIndex, ref sstCount, i == 0, mine.Count, es);
                         if (mine.Count == 0) continue;
                         var rels = new StringBuilder();
                         rels.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
@@ -894,11 +898,14 @@ namespace CalcFlow
                         {
                             t++;
                             rels.Append("<Relationship Id=\"rId").Append(j + 1).Append("\" Type=\"").Append(NsRel).Append("/table\" Target=\"../tables/table").Append(t).Append(".xml\"/>");
-                            Put(zip, "xl/tables/table" + t.ToString(CultureInfo.InvariantCulture) + ".xml", mine[j].Value);
+                            Put(zip, "xl/tables/table" + t.ToString(CultureInfo.InvariantCulture) + ".xml", mine[j]);
                         }
                         rels.Append("</Relationships>");
                         Put(zip, "xl/worksheets/_rels/sheet" + (i + 1).ToString(CultureInfo.InvariantCulture) + ".xml.rels", Encoding.UTF8.GetBytes(rels.ToString()));
                     }
+                    // the styles and shared strings are complete only once every sheet is written
+                    Put(zip, "xl/styles.xml", StylesPart(styles));
+                    Put(zip, "xl/sharedStrings.xml", SharedStringsPart(sst, sstCount));
                 }
                 SharedFile.ReplaceWith(tmp, path);
             }
@@ -1080,12 +1087,20 @@ namespace CalcFlow
             return Encoding.UTF8.GetBytes(sb.ToString());
         }
 
-        static byte[] SheetPart(XOutSheet s, Styles styles, List<string> sst, Dictionary<string, int> sstIndex, ref int sstCount, bool first, int tableCount)
+        static void Flush(StringBuilder sb, Stream output)
+        {
+            byte[] b = Encoding.UTF8.GetBytes(sb.ToString());
+            output.Write(b, 0, b.Length);
+            sb.Length = 0;
+        }
+
+        static void SheetPart(XOutSheet s, Styles styles, List<string> sst, Dictionary<string, int> sstIndex, ref int sstCount, bool first, int tableCount, Stream output)
         {
             int maxRow = 0, maxCol = 0;
             for (int r = 0; r < s.Rows.Count; r++)
                 if (s.Rows[r] != null && s.Rows[r].Length > 0) { maxRow = r; maxCol = Math.Max(maxCol, s.Rows[r].Length - 1); }
             foreach (XOutTable t in s.Tables) { maxRow = Math.Max(maxRow, t.Bottom); maxCol = Math.Max(maxCol, t.Right); }
+            if (s.MoreRows != null && s.MoreRowsCount > 0) maxRow = Math.Max(maxRow, s.Rows.Count + s.MoreRowsCount - 1);
 
             var sb = new StringBuilder();
             sb.Append("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>");
@@ -1129,10 +1144,10 @@ namespace CalcFlow
                 sb.Append("</cols>");
             }
             sb.Append("<sheetData>");
-            for (int r = 0; r < s.Rows.Count; r++)
+            var added = new int[1];     // shared strings used (a lambda cannot take the ref parameter)
+            Action<int, object[]> writeRow = (r, row) =>
             {
-                object[] row = s.Rows[r];
-                if (row == null || row.Length == 0) continue;
+                if (row == null || row.Length == 0) return;
                 var cells = new StringBuilder();
                 for (int c = 0; c < row.Length; c++)
                 {
@@ -1150,12 +1165,17 @@ namespace CalcFlow
                     }
                     cells.Append("<c r=\"").Append(rf).Append("\"");
                     if (xf != 0) cells.Append(" s=\"").Append(xf).Append("\"");
-                    if (o is string)
+                    if (o is XFormula)
+                    {
+                        var xf2 = (XFormula)o;
+                        cells.Append(" t=\"str\"><f>").Append(Esc(xf2.Formula)).Append("</f><v>").Append(Esc(CellText(xf2.Text))).Append("</v></c>");
+                    }
+                    else if (o is string)
                     {
                         string text = CellText((string)o);
                         int idx;
                         if (!sstIndex.TryGetValue(text, out idx)) { idx = sst.Count; sst.Add(text); sstIndex[text] = idx; }
-                        sstCount++;
+                        added[0]++;
                         cells.Append(" t=\"s\"><v>").Append(idx).Append("</v></c>");
                     }
                     else if (o is bool) cells.Append(" t=\"b\"><v>").Append((bool)o ? "1" : "0").Append("</v></c>");
@@ -1166,7 +1186,7 @@ namespace CalcFlow
                         string text = CellText(o.ToString());
                         int idx;
                         if (!sstIndex.TryGetValue(text, out idx)) { idx = sst.Count; sst.Add(text); sstIndex[text] = idx; }
-                        sstCount++;
+                        added[0]++;
                         cells.Append(" t=\"s\"><v>").Append(idx).Append("</v></c>");
                     }
                     else
@@ -1176,12 +1196,21 @@ namespace CalcFlow
                         cells.Append("><v>").Append(Num(d)).Append("</v></c>");
                     }
                 }
-                if (cells.Length == 0) continue;
+                if (cells.Length == 0) return;
                 double ht;
                 sb.Append("<row r=\"").Append(r + 1).Append("\"");
                 if (s.RowHeights.TryGetValue(r, out ht)) sb.Append(" ht=\"").Append(ht.ToString("R", CultureInfo.InvariantCulture)).Append("\" customHeight=\"1\"");
                 sb.Append(">").Append(cells).Append("</row>");
+                if (sb.Length > (1 << 20)) Flush(sb, output);
+            };
+            for (int r = 0; r < s.Rows.Count; r++) writeRow(r, s.Rows[r]);
+            if (s.MoreRows != null)
+            {
+                int r = s.Rows.Count, given = 0;
+                foreach (object[] row in s.MoreRows) { writeRow(r++, row); given++; }
+                if (given != s.MoreRowsCount) throw new Exception("XlsxWriter: sheet '" + s.Name + "' was promised " + s.MoreRowsCount + " more rows and given " + given);
             }
+            sstCount += added[0];
             sb.Append("</sheetData>");
             if (s.AutoFilter != null) sb.Append("<autoFilter ref=\"").Append(s.AutoFilter).Append("\"/>");
             if (s.Merges.Count > 0)
@@ -1230,7 +1259,7 @@ namespace CalcFlow
                 sb.Append("</tableParts>");
             }
             sb.Append("</worksheet>");
-            return Encoding.UTF8.GetBytes(sb.ToString());
+            Flush(sb, output);
         }
 
         static byte[] TablePart(XOutSheet s, XOutTable t, int id)

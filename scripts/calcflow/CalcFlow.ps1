@@ -3,7 +3,17 @@
   CalcFlow: set up, plan and run the connection calcs from one STAAD analysis package (vault/calcflow/CalcFlow map.md).
 
 .DESCRIPTION
-  The verbs, in the order a project uses them (only run calculates: with Excel where it is installed, else LibreOffice):
+  The front door (2026-11-24) is a workbook: its Start tab links to launchers that run the verbs for you.
+    new             the engineer's workbook and its launchers, once: -Out <project folder>
+                    -> CalcFlow.xlsx (Start: the steps as link cells, the settings) and "Post-process ANL.cmd"
+    post-process    reads the STAAD .anl and tabulates it: -Workbook <CalcFlow.xlsx> [-Anl <file>] [-NoOpen]
+                    The .anl is -Anl, else the workbook's "Anl file" setting, else you are asked for it (a file dialog).
+                    -> the analysis package in <workbook folder>\calcflow\package\<anl name>\ and Model_Data.xlsx
+                    beside the workbook (members, joints, supports, load cases, all end forces, enveloped end forces),
+                    opened when done. Model_Data.xlsx is generated: every run writes it again.
+    launchers       the launchers again (their path to this script is the one at write time): -Workbook <CalcFlow.xlsx>
+  The verbs underneath, in the order a project uses them (only run calculates: with Excel where it is installed, else
+  LibreOffice):
     harvest         learn each calc template's layout once: -Templates <folder or .xlsx files> [-Out harvest.xlsx]
                     -> harvest.xlsx with the drafted calc-library rows (Templates, Inputs, Outputs: inputs with their
                     guard labels and units, DCR / status / solver-check outputs) and every cell of every template
@@ -28,13 +38,14 @@
   written so they can be read); 2 = bad arguments. Windows PowerShell 5.1 or PowerShell 7.
 
 .EXAMPLE
+  powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 new -Out "<project dir>"
   powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 harvest -Templates "<templates folder>" -Out "<project dir>\calcflow\harvest.xlsx"
   powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 plan -Package "<project dir>\calcflow\package\MODEL-A\R03" -Library "<library folder>" -Register "<project dir>\Connection_Register.xlsx" -Out "<project dir>\calcflow\plan"
   powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 run -Plan "<project dir>\calcflow\plan"
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory, Position = 0)][ValidateSet('harvest', 'library-new', 'library-export', 'register-new', 'plan', 'run', 'summary')][string]$Verb,
+    [Parameter(Mandatory, Position = 0)][ValidateSet('new', 'post-process', 'launchers', 'harvest', 'library-new', 'library-export', 'register-new', 'plan', 'run', 'summary')][string]$Verb,
     [string[]]$Templates,
     [string]$Library,
     [string]$Harvest,
@@ -49,7 +60,10 @@ param(
     [switch]$All,
     [string[]]$Calc,
     [switch]$Visible,
-    [switch]$KeepRun
+    [switch]$KeepRun,
+    [string]$Workbook,
+    [string]$Anl,
+    [switch]$NoOpen
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Import-CalcFlow.ps1')
@@ -136,7 +150,92 @@ function New-CfEngine([string]$WorkDir) {
     return New-Object CalcFlow.DelegateEngine -ArgumentList @('Excel', $ver, 50, $recalc)
 }
 
+# the .anl to read, picked in a file dialog (Windows, an interactive run); $null when none was picked
+function Select-CfAnl([string]$StartDir) {
+    if (-not (Test-CfWindows) -or -not [Environment]::UserInteractive) { return $null }
+    Add-Type -AssemblyName System.Windows.Forms
+    $d = New-Object System.Windows.Forms.OpenFileDialog
+    $d.Title = 'CalcFlow: choose the STAAD analysis output (.anl)'
+    $d.Filter = 'STAAD analysis output (*.anl)|*.anl|All files (*.*)|*.*'
+    $d.InitialDirectory = $StartDir
+    # an owner that stays on top, so the dialog does not open behind the console window
+    $owner = New-Object System.Windows.Forms.Form
+    $owner.TopMost = $true
+    $picked = $null
+    try { if ($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) { $picked = $d.FileName } }
+    finally { $owner.Dispose(); $d.Dispose() }
+    return $picked
+}
+
 switch ($Verb) {
+    'new' {
+        Need 'Out' $Out
+        $folder = Get-CfFull $Out
+        Assert-CfOutsideRepo $folder
+        $wb = Join-Path $folder ([CalcFlow.EngineerWorkbook]::FileName)
+        if (Test-Path -LiteralPath $wb) { Stop-CfArgs "$wb exists: the workbook is yours once written and is never overwritten." }
+        $files = [CalcFlow.EngineerWorkbook]::WriteNew($folder, (Join-Path $PSScriptRoot 'CalcFlow.ps1'))
+        foreach ($f in $files) { Write-Host "written  $f" -ForegroundColor Green }
+        Write-Host 'Open the workbook: its Start tab has the steps.'
+        exit 0
+    }
+    'launchers' {
+        Need 'Workbook' $Workbook
+        $wb = Get-CfFull $Workbook
+        if (-not (Test-Path -LiteralPath $wb)) { Stop-CfArgs "No such workbook: $wb" }
+        foreach ($f in [CalcFlow.EngineerWorkbook]::WriteLaunchers((Split-Path -Parent $wb), (Join-Path $PSScriptRoot 'CalcFlow.ps1'))) { Write-Host "written  $f" -ForegroundColor Green }
+        exit 0
+    }
+    'post-process' {
+        Need 'Workbook' $Workbook
+        $wb = Get-CfFull $Workbook
+        if (-not (Test-Path -LiteralPath $wb)) { Stop-CfArgs "No such workbook: $wb (CalcFlow.ps1 new -Out <folder> writes one)" }
+        $dir = Split-Path -Parent $wb
+        Assert-CfOutsideRepo $dir
+        $anlPath = ''
+        if ($Anl) { $anlPath = Get-CfFull $Anl }
+        else {
+            $set = [CalcFlow.EngineerWorkbook]::Settings($wb)
+            $named = ''
+            if ($set.ContainsKey([CalcFlow.EngineerWorkbook]::AnlSetting)) { $named = $set[[CalcFlow.EngineerWorkbook]::AnlSetting] }
+            if ($named) {
+                # a name without a folder is beside the workbook
+                $anlPath = if ([IO.Path]::IsPathRooted($named)) { $named } else { Join-Path $dir $named }
+            }
+            else {
+                Write-Host 'Choose the STAAD analysis output (.anl) in the dialog ...'
+                $anlPath = Select-CfAnl $dir
+                if (-not $anlPath) { Stop-CfArgs "No .anl was chosen. Give one in the dialog, in the workbook's `"Anl file`" setting (Start tab), or with -Anl." }
+            }
+        }
+        if (-not (Test-Path -LiteralPath $anlPath -PathType Leaf)) { Stop-CfArgs "No such .anl: $anlPath" }
+        Import-PlutoLib
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        Write-Host ''
+        Write-Host "reading  $anlPath"
+        $m = [AnlFrameReader]::Read($anlPath)
+        foreach ($p in $m.Problems) {
+            $color = if ($p.Severity -eq 'Error') { 'Red' } else { 'Yellow' }
+            $tag = if ($p.Severity -eq 'Error') { '[error]' } else { '[warn ]' }
+            Write-Host ("{0} {1}: {2}" -f $tag, $p.Code, $p.Message) -ForegroundColor $color
+        }
+        if ($m.ErrorCount -gt 0) {
+            Write-Host ("not written: the analysis output has {0} error(s). Nothing was changed." -f $m.ErrorCount) -ForegroundColor Red
+            exit 1
+        }
+        $pkgDir = Join-Path (Join-Path (Join-Path $dir 'calcflow') 'package') ([IO.Path]::GetFileNameWithoutExtension($anlPath))
+        [void][FramePackageWriter]::Write($m, $pkgDir)
+        $pkg = [CalcFlow.AnalysisPackage]::Load($pkgDir)
+        $res = [CalcFlow.ModelData]::Write($pkg, $dir)
+        Write-Host ("model    {0} members, {1} joints, {2} load cases, {3} end-force rows ({4:0.0} s)" -f $res.Members, $res.Joints, $res.Cases, $res.EndForceRows, $sw.Elapsed.TotalSeconds)
+        Write-Host "package  $pkgDir"
+        Write-Host ("written  {0}" -f $res.Path) -ForegroundColor Green
+        if ($res.ForceSheets -gt 1) { Write-Host ("         All End Forces is on {0} tabs (a tab holds {1:n0} rows)" -f $res.ForceSheets, [CalcFlow.ModelData]::RowsPerSheet) }
+        if ($res.NotRead.Count -gt 0) { Write-Host ("         not read yet (listed on the About tab): {0}" -f ($res.NotRead -join '; ')) -ForegroundColor Yellow }
+        if ([IO.Path]::GetFileName($res.Path) -ne [CalcFlow.ModelData]::FileName) { Write-Host ("         {0} is open in Excel, so this run wrote a numbered copy." -f [CalcFlow.ModelData]::FileName) -ForegroundColor Yellow }
+        if (-not $NoOpen -and (Test-CfWindows) -and [Environment]::UserInteractive) { Invoke-Item -LiteralPath $res.Path }
+        exit 0
+    }
     'harvest' {
         Need 'Templates' $Templates
         $files = New-Object System.Collections.Generic.List[string]

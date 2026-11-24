@@ -33,7 +33,7 @@ Test 'reads the fixture: counts, force units, and only the warnings it should gi
     Assert-Equal $m.LoadCases.Count 5
     Assert-Equal $m.EndForces.Count 70 'end forces (7 members x 5 cases x 2 ends):'
     Assert-Equal $m.ErrorCount 0 ("errors: " + (($m.ProblemsOf('Error') | ForEach-Object { $_.ToString() }) -join '; '))
-    Assert-Equal ((Get-Codes $m | Sort-Object) -join ',') 'FORCE_PRINTED_TWICE,FORCE_UNITS_CONVERTED,MEMBER_OFFSET'
+    Assert-Equal ((Get-Codes $m | Sort-Object) -join ',') 'FORCE_PRINTED_TWICE,FORCE_UNITS_CONVERTED,MEMBER_OFFSET,PRINT_NOT_READ'
     Assert-Equal $m.ForceUnitText 'kip'
     Assert-Equal $m.MomentUnitText 'kip-ft'
     Assert-Equal $m.Analysis 'PERFORM ANALYSIS'
@@ -167,6 +167,79 @@ Test 'refused: SET Z UP, joints generated with REPEAT, no member force print, a 
     foreach ($x in $z, $r, $n, $g) { Assert-Throws { [FramePackageWriter]::Write($x, (Join-Path $dir 'refused')) } 'error' }
 }
 
+Test "sections: STAAD 2025's database form, double angles, a quoted database name; comment lines in the echo are skipped" {
+    $d = [AnlFrameReader]::Read((New-Variant 'dbform' @{
+        '    19. 2 TABLE ST W24X55' = "    19. 2 TABLE 'W' ST 'W24X55'"
+        '    21. 5 TABLE ST W12X26' = '    21. 5 TABLE LD L40404 SP 0.375'
+        '    17. MEMBER PROPERTY AMERICAN' = "    17. MEMBER PROPERTY 'US (AISC 2023).db3'"
+    }))
+    Assert-Equal $d.ErrorCount 0 (($d.ProblemsOf('Error') | ForEach-Object { $_.ToString() }) -join '; ')
+    Assert-Equal "$($d.Members[2].Section)|$($d.Members[2].Family)" 'W24X55|W'
+    Assert-Equal "$($d.Members[5].Section)|$($d.Members[5].Family)" 'L40404|2L'
+    Assert-Equal $d.PropertyCountry "'US (AISC 2023).db3'"
+    # a comment inside the joints, the properties, and between a combination and its factors
+    $lines = $fixtureText -split "`n"
+    $out = New-Object System.Collections.Generic.List[string]
+    foreach ($l in $lines) {
+        $out.Add($l)
+        if ($l -match '^\s+\d+\. (JOINT COORDINATES|MEMBER PROPERTY AMERICAN|LOAD COMB 101)') { $out.Add('   900. * a comment line; with a semicolon and 1 2 3') }
+    }
+    $p = Join-Path $dir 'comments.anl'
+    [IO.File]::WriteAllText($p, ($out -join "`n"))
+    $c = [AnlFrameReader]::Read($p)
+    Assert-Equal "$($c.Nodes.Count) $($c.Members.Count) $($c.ErrorCount)" '7 7 0'
+    Assert-Equal $c.LoadCases[101].FactorsText $m.LoadCases[101].FactorsText 'the combination keeps its factors'
+    Assert-Equal @($c.Members.Values | Where-Object { $_.Section -eq '' }).Count 0
+}
+
+Test 'LOAD LIST: every output command is recorded with the list it ran under; what is not read is named; LOADTYPE keeps its words' {
+    Assert-Equal (@($m.Prints | ForEach-Object { "$($_.Order):$($_.Command):$($_.LoadList):$($_.Read)" }) -join ' | ') '1:PRINT MEMBER FORCES ALL:ALL:True | 2:PRINT MEMBER FORCES LIST 2:ALL:True | 3:PRINT SUPPORT REACTION:ALL:False | 4:CHECK CODE ALL:ALL:False'
+    Assert-Match @($m.Problems | Where-Object { $_.Code -eq 'PRINT_NOT_READ' })[0].Message 'PRINT SUPPORT REACTION; CHECK CODE ALL'
+    $l = [AnlFrameReader]::Read((New-Variant 'loadlist' @{
+        '    54. PRINT MEMBER FORCES ALL' = "    53. LOAD LIST 1 TO 3 101`n    54. PRINT MEMBER FORCES ALL"
+        '    57. PRINT SUPPORT REACTION' = "    57. LOAD LIST 102`n    57. PRINT SUPPORT REACTIONS"
+        '    41. LOAD 2 LOADTYPE LIVE TITLE LL' = '    41. LOAD 2 LOADTYPE Roof Live TITLE LL'
+    }))
+    $first = $l.Prints[0]
+    Assert-Equal "$($first.Command)|$($first.LoadList)|$($first.AllCases)|$(@($first.Cases) -join ',')" 'PRINT MEMBER FORCES ALL|1 TO 3 101|False|1,2,3,101'
+    $rx = @($l.Prints | Where-Object { $_.Command -eq 'PRINT SUPPORT REACTIONS' })[0]
+    Assert-Equal "$($rx.LoadList)|$($rx.Read)" '102|False'
+    Assert-Equal $l.LoadCases[2].LoadType 'Roof Live'
+    # the fixture prints all five cases, so a list of four is not short of any
+    Assert-True ((Get-Codes $l) -notcontains 'FORCE_CASE_MISSING') 'no case missing'
+    $short = [AnlFrameReader]::Read((New-Variant 'listshort' @{ '    56. PRINT MEMBER FORCES LIST 2' = "    55. LOAD LIST 1 999`n    56. PRINT MEMBER FORCES LIST 2" }))
+    Assert-True ((Get-Codes $short) -contains 'LOAD_LIST_CASE') 'a listed case with no LOAD command'
+}
+
+Test 'no force row is lost silently: a line with touching numbers refuses the package; a GLOBAL print is refused' {
+    $row = @($fixtureText -split "`n" | Where-Object { $_ -match '^\s+3\s+1\s+3\s' })[0]
+    Assert-True ($row.Length -gt 0) 'the fixture has member 3, case 1, joint 3 on one row'
+    $touch = ('      3    1     3' + ('1234567.89' * 2) + '   0.00   0.00   0.00   0.00')
+    $t = [AnlFrameReader]::Read((New-Variant 'touching' @{ $row = $touch }))
+    $e = @($t.ProblemsOf('Error') | Where-Object { $_.Code -eq 'FORCE_ROW_UNREAD' })
+    Assert-Equal $e.Count 1 'the line is an error'
+    Assert-Match $e[0].Message '1 line\(s\) of PRINT MEMBER FORCES ALL .*1234567\.891234567\.89'
+    Assert-Throws { [FramePackageWriter]::Write($t, (Join-Path $dir 'refused2')) } 'error'
+    # a member whose end B rows are gone (the reader drops nothing itself: the lines are removed here)
+    $lines = New-Object System.Collections.Generic.List[string]
+    $inFirst = $false; $skipNext = $false
+    foreach ($l in ($fixtureText -split "`n")) {
+        if ($l -match 'PRINT MEMBER FORCES ALL') { $inFirst = $true }
+        if ($l -match 'PRINT MEMBER FORCES LIST 2') { $inFirst = $false }
+        if ($inFirst -and $skipNext -and $l -match '^\s+\d+\s+-?\d') { $skipNext = $false; continue }
+        if ($inFirst -and $l -match '^\s+6\s+1\s+\d+\s') { $skipNext = $true }
+        $lines.Add($l)
+    }
+    $p = Join-Path $dir 'oneend.anl'
+    [IO.File]::WriteAllText($p, ($lines -join "`n"))
+    $o = [AnlFrameReader]::Read($p)
+    $me = @($o.ProblemsOf('Error') | Where-Object { $_.Code -eq 'FORCE_END_MISSING' })
+    Assert-Equal $me.Count 1 (($o.Problems | ForEach-Object { $_.Code }) -join ',')
+    Assert-Match $me[0].Message ': 6$'
+    $g = [AnlFrameReader]::Read((New-Variant 'global' @{ '    54. PRINT MEMBER FORCES ALL' = '    54. PRINT MEMBER FORCES GLOBAL ALL' }))
+    Assert-True ((Get-Codes $g) -contains 'FORCE_GLOBAL') 'GLOBAL'
+}
+
 Test 'BETA ANGLE keeps the member, flags its beta as unknown and takes the axes at BETA 0' {
     $a = [AnlFrameReader]::Read((New-Variant 'angle' @{ 'BETA 90 MEMB 1' = 'BETA ANGLE MEMB 1' }))
     Assert-Equal $a.ErrorCount 0
@@ -179,7 +252,9 @@ Test 'BETA ANGLE keeps the member, flags its beta as unknown and takes the axes 
 Test 'the package: every file, its header and its rows' {
     $out = Join-Path $dir 'package'
     $files = [FramePackageWriter]::Write($m, $out)
-    Assert-Equal $files.Count 8
+    Assert-Equal $files.Count 9
+    $pr = [CalcFlow.Csv]::ReadTable((Join-Path $out 'prints.csv'))
+    Assert-Equal (($pr | ForEach-Object { "$($_['Command'])=$($_['Read'])/$($_['Rows'])" }) -join '; ') 'PRINT MEMBER FORCES ALL=Y/70; PRINT MEMBER FORCES LIST 2=Y/10; PRINT SUPPORT REACTION=N/0; CHECK CODE ALL=N/0'
     $read = { param($name) [CalcFlow.Csv]::ReadAll((Join-Path $out $name)) }
     $ef = & $read 'endforces.csv'
     Assert-Equal ($ef[0] -join ',') 'Member,End,Node,LC,Fx (kip),Fy (kip),Fz (kip),Mx (kip-ft),My (kip-ft),Mz (kip-ft)'
@@ -197,7 +272,7 @@ Test 'the package: every file, its header and its rows' {
     $j = [CalcFlow.Csv]::ReadTable((Join-Path $out 'joints.csv'))
     Assert-Equal (($j | ForEach-Object { $_['Node'] + ':' + $_['Support'] }) -join ' ') '1:FIXED 2: 3: 4:FIXED BUT 5: 6:PINNED 7:'
     $man = [IO.File]::ReadAllText((Join-Path $out 'manifest.json')) | ConvertFrom-Json
-    Assert-Equal "$($man.schema)|$($man.forceUnit)|$($man.momentUnit)|$($man.counts.endForces)|$($man.problems.Count)" 'calcflow-analysis-package/1|kip|kip-ft|70|3'
+    Assert-Equal "$($man.schema)|$($man.forceUnit)|$($man.momentUnit)|$($man.counts.endForces)|$($man.problems.Count)" 'calcflow-analysis-package/1|kip|kip-ft|70|4'
     Assert-Equal $man.sourceSha256 $m.SourceSha256
 }
 

@@ -32,6 +32,14 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\Export-AnlFrame.ps1 -A
 - The exit code is 0 when the package is written, 1 when the model has errors (each is listed and nothing is written), and 2 for bad arguments.
 - A package is project data, so a folder inside the repo is refused.
 
+**Since 2026-11-24 the reader lives on branch `pipestress`** (`scripts/lib/`); `CalcFlow` merges it. Added that day:
+- STAAD 2025's database form of a section (`TABLE 'W' ST 'W24X55'`) and double angles (`TABLE LD` / `SD`);
+- comment lines in the echo are skipped;
+- `LOAD LIST` is parsed, and every output command is recorded with the list it ran under (`prints.csv`); the ones whose tables are not read yet are named in one warning (`PRINT_NOT_READ`);
+- a GLOBAL force print, a force-table line that is not a row, and a member with forces at one end only are errors.
+
+Support reactions, the code check, joint and section displacements and the two member tables are **not read yet**. Their parsers wait for the `.anl` of the probe model, `scripts/lib/probes/anl-prints-probe.std`, run on the production machine.
+
 > [!info]- What is read, and from where
 > **The input echo.** STAAD writes every input line back into the `.anl` as `   NN. <text>`.
 > - Only those lines are read. Page headers, notes and the analysis output are not.

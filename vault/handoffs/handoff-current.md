@@ -72,16 +72,19 @@ which was taken from the channel; no probe has run a tee or a double angle in SA
 CAESAR's restraints, re-seeding that keeps SAP-side additions, and writing a seeded model back as a `.cii`. See
 "Possible later" in [[vault/decisions/2026-11-12-caesar-to-sap|2026-11-12-caesar-to-sap]].
 
-**Branch `CalcFlow`** (on `pipestress` `c04f1b6`; 2026-11-24). Steel connection calcs set up and run from one STAAD
+**Branch `CalcFlow`** (0 behind `pipestress`; 2026-11-24). Steel connection calcs set up and run from one STAAD
 `.anl` ([[vault/calcflow/CalcFlow map|CalcFlow map]]):
-- **Built:** the frame `.anl` reader and analysis package; harvest and the calc library; the connection register and
-  `plan`; `run` (Excel or LibreOffice, a record per check per revision) and `summary`.
-- **Reviewed 2026-11-24** ([[vault/audits/calcflow-process-review|calcflow-process-review]]): the process is too
-  heavy for its user, the pasted load table is the least supported template shape, and only the end forces are read
-  from the usual prints. A GUI-like workbook is proposed there; **nothing is decided**.
-- **Waiting on the production machine:** `scripts\calcflow\tests\Run-Tests.ps1` under Windows PowerShell 5.1
-  (it includes the Excel stage's first run); a real `.anl`; the real templates through both engines.
-- **Next:** the user's answers to the review, then its increment 1 (the post-process launcher, a generated model-data
-  workbook, and the reader's reactions, load lists and envelope).
+- **Built:** harvest and the calc library; the connection register and `plan`; `run` (Excel or LibreOffice, a record
+  per check per revision) and `summary`; and the start of the front door: `CalcFlow.xlsx` with a Start tab whose link
+  cell runs the post-process launcher, and the generated `Model_Data.xlsx`
+  ([[vault/calcflow/calcflow-workbook|calcflow-workbook]]).
+- **Decided 2026-11-24** ([[vault/decisions/2026-11-24-calcflow-workbook|2026-11-24-calcflow-workbook]]): link cells,
+  two files, a connection name is a mark with every geometry input on one schedule row, parser work on `pipestress`.
+- **The frame `.anl` reader lives on `pipestress`** since 2026-11-24. It reads the model and the member end forces;
+  reactions, the code check, displacements and the member tables wait for the probe's `.anl`.
+- **Waiting on the production machine:** the probe run in STAAD (`scripts/lib/probes/`); `CalcFlow.ps1 new` and the
+  link cell with a real `.anl`; `scripts\calcflow\tests\Run-Tests.ps1` under Windows PowerShell 5.1 (the Excel stage's
+  first run).
+- **Next:** the probe's parsers and their tabs; then Model Config, Connection Lib and the schedule tabs.
 
 Last sessions: [[vault/handoffs/handoff-2026-11-24|handoff-2026-11-24]] (`CalcFlow`), [[vault/handoffs/handoff-2026-11-23|handoff-2026-11-23]] (`pipestress`).

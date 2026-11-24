@@ -8,7 +8,7 @@ created: 2026-11-24
 
 # CalcFlow process review
 
-Three independent reviews of CalcFlow as built through step 3 ([[vault/calcflow/CalcFlow map|CalcFlow map]]), made on 2026-11-24 against the engineer's sketch of a workbook that works "sort of like a GUI". The review changed no code. **Everything under "proposed" is a proposal: nothing here is decided or built.**
+Three independent reviews of CalcFlow as built through step 3 ([[vault/calcflow/CalcFlow map|CalcFlow map]]), made on 2026-11-24 against the engineer's sketch of a workbook that works "sort of like a GUI". The review changed no code. **Decided since** ([[vault/decisions/2026-11-24-calcflow-workbook|2026-11-24-calcflow-workbook]]): the link cell, the two files, and geometry on the schedule row in place of the child tabs proposed below. The rest under "proposed" is still a proposal.
 
 **Verdict.** The engine is sound: guards, units, sign checks, named gaps, records. The front door is wrong for its user:
 - it is a command line plus a configuration language (about 45 named concepts, 8 commands, 21 sheets in 4 workbooks);
