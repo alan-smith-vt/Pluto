@@ -48,8 +48,10 @@ Purging it means rewriting the branch's history.
   - a `-Std` of SAP's library-probe export (its angle frame taken out), opened in STAAD.Pro 2025 to check it parses
     the database forms Pluto now writes;
   - the names probe's `.std` (its angle taken out) through `-In … -S2k`, imported into SAP.
-- single angles stay refused both ways until a probe settles STAAD's angle axes against SAP's (a cantilever of each
-  orientation, run in both).
+- single angles stay refused both ways until the angle probe settles STAAD's angle axes against SAP's (sent
+  2026-11-24, `angle-probe.s2k` / `.std`: seven cantilevers, tip forces across them, both programs). STAAD's help
+  says its angle axes are the principal ones ([[vault/format/frame-to-staad|frame-to-staad]]);
+- the re-check of STAAD 2025's table forms: the first run used a checkout older than the fix.
 
 **Next:**
 1. **Round 3, the sample job, in SAP only.** CAESAR's outputs are already in `scripts/caesar/testdata`: restraint loads,

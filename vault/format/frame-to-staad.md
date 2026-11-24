@@ -375,6 +375,19 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >
 >     STAAD's save, its single angle aside, reads exactly. So does SAP's export written by `-Std` (its angle aside).
 >     A single angle stays refused: STAAD's angle axes against SAP's are not confirmed.
+> - **STAAD's member orientation** (its help, "G.4.3 Relationship Between Global and Local Coordinates", from the
+>   user, 2026-11-24):
+>   - A `TABLE … ST` angle's local y / z are its **principal axes**. Its figures give each orientation with the legs
+>     along the global axes as BETA = 90°·k − α (`RA`, the reverse angle, with mirrored axes). SAP's angle has its
+>     legs as local 2 / 3 and an I23 (0.4241 on L3X2-1/2X3/16, so α ≈ 34°). Pluto's BETA, written as for any other
+>     section, would therefore set STAAD's angle α off SAP's.
+>   - A tee at BETA 0 has its flange toward local +y; a channel's figure shows its web and flanges by BETA. Their
+>     centroidal properties do not depend on which way the flange or toes point, and what does (the shear center)
+>     STAAD leaves out anyway (the notice above).
+>
+>   Which principal axis STAAD calls y, the sign of α against SAP's legs, and whether SAP's analysis bends an angle
+>   through its I23 are left to the angle probe. That is seven cantilevers of L3X2-1/2X3/16, each with tip forces
+>   across it, run in both programs. Each tip's movement gives the member's principal axes in each program.
 
 > [!info]- The STAAD probe (`-StdProbe <folder>`)
 > `staad-probe.s2k` and `staad-probe.std`: one model, every part analysable, for SAP2000 and STAAD.Pro alike. Each
