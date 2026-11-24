@@ -109,6 +109,7 @@ namespace CalcFlow
                 Palette.Severities(about, "A" + (ptop + 2) + ":A" + (ptop + 1 + problems.Count));
             }
             about.Width(0, 18); about.Width(1, 70); about.Width(2, 34); about.Width(3, 24);
+            about.Landscape = true; about.FitToWidth = true;
             sheets.Add(about);
 
             // ---- small tables
