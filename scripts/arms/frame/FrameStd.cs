@@ -268,7 +268,8 @@ public static class FrameStd
 
     sealed class Writer
     {
-        readonly FrameModel M; readonly string Source; readonly List<string> Notes;
+        FrameModel M; readonly string Source; readonly List<string> Notes;
+        readonly Dictionary<string, string> Unsplit = new Dictionary<string, string>(StringComparer.Ordinal);   // frames SAP meshes at joints, not split: why
         readonly List<string> Refused = new List<string>();
         S2kDoc D; SapLabels Ids;
         string LenUnit, ForceUnit, StaadLen, StaadForce;
@@ -329,6 +330,16 @@ public static class FrameStd
 
         public string Run()
         {
+            // SAP's automatic mesh at joints along a frame, made explicit: the frame split there (FrameMesh)
+            var split = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            var held = new List<string>();
+            M = FrameMesh.SplitAtJoints(M, split, Unsplit, held);
+            if (split.Count > 0)
+                Note("frames SAP's automatic mesh joins to joints along their length, split there as SAP's analysis meshes them (" + split.Count.ToString(Inv) + "): " +
+                     Few(split.Select(kv => "frame " + kv.Key + " into " + string.Join(" ", kv.Value.ToArray())).ToList()));
+            if (held.Count > 0)
+                Note("joints held to ground that SAP's automatic mesh joins frames to, so the frames are held there too, in SAP as here (" + held.Count.ToString(Inv) + "): " + Few(held) +
+                     ". A seeded support point under steel meant to carry it is still held: free it (Joints sheet) or set the frame's auto mesh off in SAP");
             D = FrameS2k.ToDoc(M);
             Ids = new SapLabels(D);
             AnySelfWeight = M.Patterns.Any(p => p.SelfWeight != 0);
@@ -832,13 +843,17 @@ public static class FrameStd
         // ---------------- SAP's frame meshing: joints and frames it connects along a frame
         void AutoMesh()
         {
-            foreach (var r in D.GetTable("FRAME AUTO MESH ASSIGNMENTS"))
+            var rows = new Dictionary<string, Dictionary<string, string>>(StringComparer.Ordinal);
+            foreach (var r in D.GetTable("FRAME AUTO MESH ASSIGNMENTS")) { string l = Get(r, "Frame"); if (l != null) rows[l] = r; }
+            foreach (var fi in Frames)
             {
-                string label = Get(r, "Frame");
-                FrameInfo fi;
-                if (label == null || !FrameOf.TryGetValue(label, out fi) || !Is(Get(r, "AutoMesh"), "Yes")) continue;
+                string label = fi.F.Label;
+                Dictionary<string, string> r;
+                rows.TryGetValue(label, out r);
+                // no row: SAP's default, at joints (and not at crossing frames)
+                if (r != null && !Is(Get(r, "AutoMesh"), "Yes")) continue;
                 double[] a = R(Pos[fi.F.JointI]), b = R(Pos[fi.F.JointJ]);
-                if (Is(Get(r, "AtJoints"), "Yes"))
+                if (r == null || Is(Get(r, "AtJoints"), "Yes"))
                 {
                     var on = new List<string>();
                     foreach (var kv in Pos)
@@ -849,9 +864,11 @@ public static class FrameStd
                         if (t <= 1e-6 * fi.L || t >= fi.L * (1 - 1e-6)) continue;
                         if (Len(Sub(p, Add(a, Mul(fi.Ax[0], t)))) < 1e-6 * fi.L + 1e-9) on.Add(kv.Key);
                     }
-                    if (on.Count > 0) Refuse("frame " + label + ": SAP's automatic mesh joins it to joint" + (on.Count > 1 ? "s " : " ") + string.Join(" ", on.ToArray()) + " along its length; split it there");
+                    string why;
+                    if (on.Count > 0) Refuse("frame " + label + ": SAP's automatic mesh joins it to joint" + (on.Count > 1 ? "s " : " ") + string.Join(" ", on.ToArray()) + " along its length; " +
+                                             (Unsplit.TryGetValue(label, out why) ? "Pluto does not split it there, as " + why + ": split it yourself" : "split it there"));
                 }
-                if (Is(Get(r, "AtFrames"), "Yes"))
+                if (r != null && Is(Get(r, "AtFrames"), "Yes"))
                 {
                     var cross = new List<string>();
                     foreach (var o in Frames)

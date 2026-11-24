@@ -205,6 +205,21 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >     no springs).
 > - **Joints nothing connects** (no frame, area or axial link) are left out with their supports and loads, in a
 >   notice. STAAD warns of them; in SAP they carry nothing.
+> - **Frames SAP meshes at joints on their span** (2026-11-24, `FrameMesh`). With `AutoMesh=Yes AtJoints=Yes`, and
+>   with no auto mesh row (SAP's default), SAP joins a frame to every joint on its span; STAAD joins a member at its
+>   ends only. Each such frame is split at those joints before writing, into the members SAP's analysis meshes it into:
+>   - the first piece keeps the label, the others `<label>_2`, `_3` …, each with the frame's section, local axes,
+>     modifiers and groups;
+>   - I-end releases and springs go to the first piece, J-end ones to the last, end lengths likewise;
+>   - point loads go to the piece they fall on, distributed loads are cut at the joints on their own line, and
+>     temperatures go to every piece.
+>
+>   A notice names the splits, and another names any split joint still held to ground. In the CAESAR probe SAP held
+>   a pipe through support points this way (sap-s2k-tables, "Frames join joints on their span"), so a held joint
+>   is worth a look. Refused, with the reason: an insertion point (the joint is on the frame's line, not its offset
+>   one), a joint inside an end zone, SAP's own end offsets, or a load table the split does not know. Crossing frames
+>   (`AtFrames=Yes`) are still refused. Until this, every such frame was refused, which a workbook's checks do not
+>   show: auto mesh is on no sheet, and in SAP it is no error.
 > - **One primary load per static case** (`LoadPattern` items only; `Accel` is refused): `LOAD n LOADTYPE …` with
 >   `REFERENCE LOAD R1 f …` [V].
 >   - A nonlinear case continuing another (its `InitialCond`) holds the whole chain's patterns.

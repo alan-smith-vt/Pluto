@@ -188,7 +188,9 @@ The whole picture, CAESAR and STAAD included, with the commands for each job:
 > What stays on **Carried** applies to no frame model edit:
 > - SAP's analysis and design settings and preferences, grid lines, mass source, project information;
 > - area objects, which a frame workbook does not edit;
-> - per-frame SAP defaults (auto mesh, design procedures, output stations, end skew, load transfer);
+> - per-frame SAP defaults (auto mesh, design procedures, output stations, end skew, load transfer). Auto mesh
+>   matters to `-Std`: a frame SAP joins to joints on its span is split there for STAAD, with a notice
+>   ([[vault/format/frame-to-staad|frame-to-staad]]);
 > - the nonlinear cases' solver controls beyond geometric nonlinearity.
 >
 > A table SAP exports with data that is not listed above shows on Carried by name, with its row count.

@@ -53,6 +53,10 @@ Purging it means rewriting the branch's history.
   - whether `RA` gives SAP's leg arrangement (STAAD's `ST` is its mirror image), if drawings or STAAD's angle design
     matter.
 
+**For the user to look at:** `-Std` now splits frames SAP's auto mesh joins to joints on their span. A notice names any
+split joint still held to ground, and the user's workbook had such frames at seeded support points. Whether those
+points are meant to carry the steel or to stay held is the model's question, in SAP as in STAAD.
+
 **Seen, not settled:** SAP's own rows carry `IncludeSCAn=Yes` (shear center in the analysis) on its channel only, and
 the angle probe showed SAP does not twist single angles. The `.std` notice says SAP twists tees and double angles too,
 which was taken from the channel; no probe has run a tee or a double angle in SAP.
