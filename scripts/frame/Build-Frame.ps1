@@ -69,6 +69,11 @@
 #                   the master's SAP-only tables (design, preferences, mass, functions, grids ...) for the objects still
 #                   there, and its load cases and combinations STAAD has no place for (modal, response spectrum ...).
 #                   Each item carried or not on a [merge] line. To update the master itself: -Out <master> -Xlsx.
+#   -Design <file>  the model's STAAD design workbook (StaadDesignWorkbook; vault/arms/staad-design-workbook.md): its
+#                   parameter sets, parameters by group or member, and run (checks, prints, commands), written by -Std
+#                   after the analysis. Default: <model>.design.xlsx beside the model workbook (or the -Merge master).
+#                   -In <x>.std -Xlsx writes it from the .std's commands after the analysis (beside the workbook, or
+#                   where -Design names), an older one kept as .bak; the model workbook then holds structure and loads.
 #   -Watch          with an .xlsx: every save rebuilds the outputs (-Preview when none is given); Ctrl+C stops
 #   -NewWorkbook    -Out <name>.xlsx: an empty workbook (-Units "Kip, in, F" by default, -SapVersion 22.0.0) and its
 #                   launchers; an existing workbook as for -Xlsx
@@ -122,7 +127,8 @@ param(
     [string]$StdProbe,
     [string]$ProbeCheck,
     [string]$ProbeFile,
-    [string]$Merge
+    [string]$Merge,
+    [string]$Design
 )
 $ErrorActionPreference = "Stop"
 function Say([string]$step, [string]$text) { Write-Output ("[{0}] {1}" -f $step.PadRight(7), $text) }
@@ -241,6 +247,7 @@ if ($In) {
     if ($Watch -and -not ($S2k -or $Std -or $Json -or $Preview)) { $Preview = $true }
     if ($Open -and $Watch) { Fail "Build-Frame: -Open is not for -Watch (it would start SAP on every save)" }
     if ($Open) { $S2k = $true }
+    if ($Design) { $designPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Design) }
     if ($Merge) {
         if ($kind -ne "s2k" -and $kind -ne "std") { Fail "Build-Frame: -Merge takes -In <SAP's .s2k> or -In <a .std>: the file whose model wins, the master filling in what its program has no place for" }
         if (-not (Test-Path -LiteralPath $Merge -PathType Leaf)) { Fail "Build-Frame: -Merge: master not found: $Merge" }
@@ -492,6 +499,33 @@ function Build-Once {
         foreach ($n in $mn) { Say "merge" ($n -replace '^merge: ', '') }
         Say "merge" ("{0} with {1}: the file's model, the master's {2} added" -f [IO.Path]::GetFileName($inPath), [IO.Path]::GetFileName($mergePath), $(if ($kind -eq "s2k") { "STAAD data" } else { "SAP-only data" }))
     }
+    # STAAD's design and output requests live in the design workbook (<model>.design.xlsx), not in the model: a model
+    # carrying them (a .std read, an older workbook) gives them to it on -Xlsx; -Std reads it (-Design, else the one
+    # beside the model workbook or the -Merge master)
+    $staadDesign = $null; $designOut = $null
+    $carriedCmds = [StaadCarry]::CommandsOf($model)
+    if ($Xlsx -and $xlsxGo -ne "keep" -and $carriedCmds.Count -gt 0) {
+        $script:step = "writing the STAAD design workbook"
+        $staadDesign = [StaadDesign]::FromCommands($carriedCmds, [FrameStd]::StaadUnits($model))
+        foreach ($n in $staadDesign.Notes) { Say "notice" ("design: " + $n) }
+        $designOut = $(if ($Design) { $designPath } else { $outBase + ".design.xlsx" })
+        if (Test-Path -LiteralPath $designOut -PathType Leaf) { [IO.File]::Copy($designOut, $designOut + ".bak", $true); Say "write" ("{0}.bak: the design workbook as it was" -f $designOut) }
+        [StaadDesignWorkbook]::Write($staadDesign, $designOut, [IO.Path]::GetFileName($outBase + ".xlsx"))
+        Say "write" ("{0}: the STAAD design workbook ({1} parameter set(s), {2} parameter row(s), {3} step(s)); -Std writes it after the analysis" -f $designOut, $staadDesign.Sets.Count, $staadDesign.Params.Count, $staadDesign.Run.Count)
+        [void][StaadCarry]::Set($model, (New-Object 'System.Collections.Generic.List[string]'), [StaadCarry]::LoadsOf($model))
+    } elseif ($Std) {
+        $designIn = $null
+        if ($Design) { $designIn = $designPath }
+        elseif ($kind -eq "xlsx") { $designIn = [IO.Path]::Combine([IO.Path]::GetDirectoryName($inPath), [IO.Path]::GetFileNameWithoutExtension($inPath) + ".design.xlsx") }
+        elseif ($Merge) { $designIn = [IO.Path]::Combine([IO.Path]::GetDirectoryName($mergePath), [IO.Path]::GetFileNameWithoutExtension($mergePath) + ".design.xlsx") }
+        if ($designIn -and (Test-Path -LiteralPath $designIn -PathType Leaf)) {
+            $de = New-Object 'System.Collections.Generic.List[string]'; $dw = New-Object 'System.Collections.Generic.List[string]'
+            $staadDesign = [StaadDesignWorkbook]::Read($designIn, $de, $dw)
+            foreach ($w in $dw) { Say "warn" ("design: " + $w) }
+            if ($null -eq $staadDesign) { foreach ($e in $de) { Say "refuse" ("design: " + $e) }; throw (New-Object InvalidOperationException(("{0}: the design workbook has the {1} error(s) above; nothing is written" -f $designIn, $de.Count))) }
+            Say "read" ("{0}: the STAAD design workbook ({1} parameter set(s), {2} parameter row(s), {3} step(s))" -f $designIn, $staadDesign.Sets.Count, $staadDesign.Params.Count, $staadDesign.Run.Count)
+        } elseif ($Design) { throw (New-Object InvalidOperationException(("-Design: {0} not found" -f $designIn))) }
+    }
     if ($Xlsx) {
         # a workbook says what SAP analyses: a frame SAP's automatic mesh joins to joints on its span is split there
         # (FrameMesh), the pieces keeping its section, insertion point and the rest; every output of this run takes them
@@ -526,7 +560,7 @@ function Build-Once {
     foreach ($n in $notes) { Say "notice" $n }
     # STAAD's own commands and load numbers (the workbook's STAAD sheets) are for -Std: SAP gets none of them
     $staadRows = [StaadCarry]::StripForSap($doc)
-    if ($staadRows -gt 0 -and ($S2k -or $Open)) { Say "notice" ("the model's STAAD commands and load numbers ({0} rows, the workbook's STAAD sheets) are for -Std only: the .s2k leaves them out" -f $staadRows) }
+    if ($staadRows -gt 0 -and ($S2k -or $Open)) { Say "notice" ("the model's STAAD load and envelope numbers ({0} rows, the STAAD loads sheet) are for -Std only: the .s2k leaves them out" -f $staadRows) }
 
     if ($S2k) {
         $bytes = $doc.ToBytes()
@@ -538,7 +572,7 @@ function Build-Once {
     $stdNotes = New-Object 'System.Collections.Generic.List[string]'
     if ($Std) {
         $script:step = "writing the STAAD .std"
-        try { $text = [FrameStd]::ToText($model, [IO.Path]::GetFileName($inPath), $stdNotes) }
+        try { $text = [FrameStd]::ToText($model, [IO.Path]::GetFileName($inPath), $stdNotes, $staadDesign) }
         catch {
             $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }
             if ($e -isnot [FrameStdRefusal]) { throw }
@@ -610,7 +644,7 @@ function Build-Once {
     }
     $res = "RESULT {""input"":" + (Q $inPath) + ",""kind"":" + (Q $kind) + ",""model"":" + (Q $hash)
     $res += ",""identical"":" + $(if ($identical -eq $null) { "null" } elseif ($identical) { "true" } else { "false" })
-    $res += ",""s2k"":" + $(if ($S2k) { Q $s2kFile } else { "null" }) + ",""std"":" + $(if ($Std) { Q $stdFile } else { "null" }) + ",""xlsx"":" + $(if ($Xlsx -and $xlsxGo -ne "keep") { Q ($outBase + ".xlsx") } else { "null" }) + ",""json"":" + $(if ($Json) { Q $jsonFile } else { "null" })
+    $res += ",""s2k"":" + $(if ($S2k) { Q $s2kFile } else { "null" }) + ",""std"":" + $(if ($Std) { Q $stdFile } else { "null" }) + ",""xlsx"":" + $(if ($Xlsx -and $xlsxGo -ne "keep") { Q ($outBase + ".xlsx") } else { "null" }) + ",""json"":" + $(if ($Json) { Q $jsonFile } else { "null" }) + ",""design"":" + $(if ($designOut) { Q $designOut } else { "null" })
     $res += ",""bin"":" + $(if ($Preview) { Q $binFile } else { "null" }) + ",""sidecar"":" + $(if ($Preview) { Q $scFile } else { "null" })
     $res += ",""notices"":" + ($notes.Count + $stdNotes.Count) + ",""counts"":" + (Q $counts) + "}"
     Write-Output $res

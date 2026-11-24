@@ -85,7 +85,7 @@ public static class FrameWorkbook
                         SGround = "Ground displacements", SPoint = "Point loads", SDist = "Distributed loads", STemp = "Temperature", SCases = "Load cases",
                         SCombos = "Combinations", SGroups = "Groups", SStaad = "STAAD commands", SStaadLoads = "STAAD loads";
     static readonly string[] Inputs = { "Settings", SJoints, SFrames, SSections, SMaterials, SReleases, SModifiers, SLinks, SLinkProps, SSprings, SPatterns,
-                                        SJointLoads, SGround, SPoint, SDist, STemp, SCases, SCombos, SGroups, SStaad, SStaadLoads };
+                                        SJointLoads, SGround, SPoint, SDist, STemp, SCases, SCombos, SGroups, SStaadLoads };
 
     static readonly string[][] Groups =
     {
@@ -706,14 +706,9 @@ public static class FrameWorkbook
         gs.Conditional("C2:C" + lim, ofType("joint", noJoint("C2")) + "+" + ofType("frame", unknown("C2", frameIds, oldF)) + "+" + ofType("link", unknown("C2", linkIds, oldL)) + ">0", t.Red);
         gs.Conditional("C2:C" + lim, ofType("joint", oldJoint("C2")) + "+" + ofType("frame", renamed("C2", frameIds, oldF)) + "+" + ofType("link", renamed("C2", linkIds, oldL)) + ">0", t.Amber);
 
-        // ---- STAAD (StaadCarry): what a STAAD model holds that SAP has no place for; -Std writes it, the .s2k leaves it out
-        var sx = b.Add(SStaad);
-        var cmds = StaadCarry.CommandsOf(m);
-        for (int i = 0; i < cmds.Count; i++) sx.Set(i + 1, 0, cmds[i]);
-        t.Form.Table(sx, t, new[] { "Command" }, new[] {
-            C("Command", "load", "text", "One STAAD command per row, in order, as STAAD reads it: -Std writes them after the analysis (LOAD LIST, PRINT ..., PARAMETER, CODE, design parameters, CHECK CODE ...). A first row PERFORM ANALYSIS PRINT ... gives the analysis its PRINT option. Member, joint and group names are the model's, load numbers the STAAD loads sheet's. Empty: -Std writes Pluto's prints. SAP takes none of them."),
-        }, cmds.Count, 2000);
-        sx.Width(0, 100);
+        // ---- STAAD loads (StaadCarry): STAAD's load and envelope numbers, part of the loads. The commands after the analysis
+        // (design, prints) are the design workbook's (StaadDesignWorkbook), not this one's; an older workbook's STAAD
+        // commands sheet is still read (ReadStaad), and -Xlsx moves it to the design workbook
         var sl = b.Add(SStaadLoads);
         var nums = StaadCarry.LoadsOf(m);
         for (int i = 0; i < nums.Count; i++) { sl.Set(i + 1, 0, nums[i][0]); sl.Set(i + 1, 1, nums[i][1]); Num(sl, i + 1, 2, nums[i][2]); if (nums[i][3].Length > 0) sl.Set(i + 1, 3, nums[i][3]); }
@@ -816,8 +811,7 @@ public static class FrameWorkbook
             new WbSheetInfo(SCases, "Load cases: type, initial case, then one row per load", rowsOf(SCases, "B")),
             new WbSheetInfo(SCombos, "Combinations: type, then one row per item", rowsOf(SCombos, "B")),
             new WbSheetInfo(SGroups, "SAP groups, one row per member", rowsOf(SGroups, "A")),
-            new WbSheetInfo(SStaad, "STAAD only: its commands after the analysis (LOAD LIST, PRINT, design parameters, CHECK CODE)", rowsOf(SStaad, "A")),
-            new WbSheetInfo(SStaadLoads, "STAAD only: the load numbers -Std writes", rowsOf(SStaadLoads, "A")),
+            new WbSheetInfo(SStaadLoads, "STAAD only: the load and envelope numbers -Std writes (design and prints: <model>.design.xlsx)", rowsOf(SStaadLoads, "A")),
             new WbSheetInfo("Carried", "Tables the workbook does not show: they ride along unchanged (read-only)", null),
         };
         string fr = col(SFrames, "C"), frJ = col(SFrames, "D");
@@ -890,7 +884,7 @@ public static class FrameWorkbook
         { SLinks, "B45309" }, { SLinkProps, "B45309" }, { SSprings, "B45309" },
         { SPatterns, "9A3412" }, { SJointLoads, "9A3412" }, { SGround, "9A3412" }, { SPoint, "9A3412" }, { SDist, "9A3412" }, { STemp, "9A3412" },
         { SCases, "9A3412" }, { SCombos, "9A3412" },
-        { SGroups, "37474F" }, { SStaad, "4A148C" }, { SStaadLoads, "4A148C" }, { "Carried", "7F7F7F" },
+        { SGroups, "37474F" }, { SStaadLoads, "4A148C" }, { "Carried", "7F7F7F" },
     };
 
     const string FramesHint = "The frames it loads: a label, a range in Frames' order (C1:C9), group:NAME, line:NAME, kind:NAME, section:NAME or all; several, separated by commas.";

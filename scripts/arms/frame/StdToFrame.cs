@@ -132,6 +132,30 @@ public static class StdToFrame
     }
 
     // a release or support list as a set: FX .. MZ, and KFX v .. KMZ v, in any order
+    // a command with its member or joint list after MEMB / MEMBER / LIST by the ids it names: ranges expanded, numbers in
+    // order after the group names ("DFF 240 MEMB 5 TO 7 11" is "DFF 240 MEMB 5 6 7 11")
+    static string IdsSorted(string c)
+    {
+        var t = c.Split(' ');
+        int at = Array.FindIndex(t, x => x == "MEMB" || x == "MEMBER" || x == "LIST");
+        if (at < 0 || at + 1 >= t.Length) return c;
+        var names = new List<string>(); var ids = new SortedSet<long>();
+        for (int k = at + 1; k < t.Length; k++)
+        {
+            long a, b, by = 1;
+            if (k + 2 < t.Length && t[k + 1] == "TO" && long.TryParse(t[k], NumberStyles.None, Inv, out a) && long.TryParse(t[k + 2], NumberStyles.None, Inv, out b) && b - a < 100000)
+            {
+                k += 2;
+                if (k + 2 < t.Length && t[k + 1] == "BY" && long.TryParse(t[k + 2], NumberStyles.None, Inv, out by) && by > 0) k += 2; else by = 1;
+                for (long n = a; n <= b; n += by) ids.Add(n);
+                continue;
+            }
+            if (long.TryParse(t[k], NumberStyles.None, Inv, out a)) ids.Add(a); else names.Add(t[k]);
+        }
+        names.Sort(StringComparer.Ordinal);
+        return string.Join(" ", t.Take(at + 1).Concat(names).Concat(ids.Select(x => x.ToString(Inv))).ToArray());
+    }
+
     static void ItemFacts(FactSet f, string key, string[] t, int from)
     {
         for (int k = from; k < t.Length; k++)
@@ -310,7 +334,7 @@ public static class StdToFrame
             f.Add("ENVELOPE " + I(e.Number) + " TYPE " + e.Type + ": loads " + FrameStd.Condense(e.Loads.Where(id => lastIn[id] == e.Number)));
         // the commands after the analysis, in order (carried: -Std writes them again)
         if (s.AnalysisPrint != null) f.Add("the analysis' " + Regex.Replace(s.AnalysisPrint.ToUpperInvariant(), @"\s+", " "));
-        for (int k = 0; k < s.Output.Count; k++) f.Add("command " + I(k + 1) + " after the analysis: " + Regex.Replace(s.Output[k].ToUpperInvariant(), @"\s+", " "));
+        for (int k = 0; k < s.Output.Count; k++) f.Add("command " + I(k + 1) + " after the analysis: " + IdsSorted(Regex.Replace(s.Output[k].ToUpperInvariant(), @"\s+", " ")));
         return f;
     }
 

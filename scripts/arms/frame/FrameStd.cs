@@ -106,12 +106,30 @@ public static class FrameStd
     // whether -Std writes a SAP table's content to STAAD (FrameMerge carries the others back from the master), and whether
     // a table changes the structure (-Std refuses it)
     public static bool StaadHolds(string table) { return Writer.Holds(table); }
+
+    // the UNIT words -Std writes for a model's units ("FEET KIP"); "" when STAAD has none
+    public static string StaadUnits(FrameModel m)
+    {
+        string f, l, t;
+        FrameUnits.Parse(m.Units, out f, out l, out t);
+        var len = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { { "in", "INCHES" }, { "ft", "FEET" }, { "mm", "MMS" }, { "cm", "CM" }, { "m", "METER" } };
+        var force = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { { "kip", "KIP" }, { "kips", "KIP" }, { "lb", "POUND" }, { "lbf", "POUND" }, { "kN", "KNS" }, { "N", "NEWTON" }, { "kgf", "KG" }, { "tonf", "MTON" } };
+        string a, b;
+        return len.TryGetValue(l ?? "", out a) && force.TryGetValue(f ?? "", out b) ? a + " " + b : "";
+    }
     public static bool IsStructural(string table) { return Writer.Changes(table); }
 
     // the .std text (CRLF); notes gets every notice; throws FrameStdRefusal with every refusal
     public static string ToText(FrameModel m, string source, List<string> notes)
     {
-        return new Writer(m, source, notes).Run();
+        return new Writer(m, source, notes, null).Run();
+    }
+
+    // with the model's design workbook (StaadDesign): its checks, parameters and prints after the analysis, in place of the
+    // model's carried commands and Pluto's prints
+    public static string ToText(FrameModel m, string source, List<string> notes, StaadDesign design)
+    {
+        return new Writer(m, source, notes, design).Run();
     }
 
     // ---------------- vectors (STAAD coordinates unless named)
@@ -367,7 +385,8 @@ public static class FrameStd
         readonly HashSet<string> Enforced = new HashSet<string>(StringComparer.Ordinal);   // joints with a ground displacement
         HashSet<int> Used;                                               // joints a member, plate or truss uses
 
-        public Writer(FrameModel m, string source, List<string> notes) { M = m; Source = source ?? ""; Notes = notes ?? new List<string>(); }
+        readonly StaadDesign Design; List<string> DesignLines;
+        public Writer(FrameModel m, string source, List<string> notes, StaadDesign design) { M = m; Source = source ?? ""; Notes = notes ?? new List<string>(); Design = design; }
 
         void Refuse(string s) { if (!Refused.Contains(s)) Refused.Add(s); }
 
@@ -426,6 +445,14 @@ public static class FrameStd
             var cases = Cases(refs);
             var combos = Combos(cases);
             Envs = Envelopes(cases, combos);
+            if (Design != null && !Design.Empty)
+            {
+                Groups(new List<string>(), x => { });                        // STAAD's group names, for the design's member lists
+                var loadNos = new HashSet<int>(cases.Select(p => p.Number).Concat(combos.Select(c => c.Number)));
+                var envNos = new HashSet<int>(Envs.Select(e => e.Number));
+                DesignLines = Design.ToCommands(StaadLen + " " + StaadForce, DesignMembers, (text, who) => DesignLoads(text, who, loadNos, envNos), Refuse);
+                foreach (string n in Design.Notes) Note("design workbook: " + n);
+            }
             if (renumbered.Count > 0) Note("loads the STAAD loads sheet does not number, numbered by Pluto: " + string.Join(", ", renumbered.ToArray()));
             if (Refused.Count > 0) throw new FrameStdRefusal(Grouped());
             return Emit(refs, cases, combos);
@@ -1655,11 +1682,23 @@ public static class FrameStd
             // the model's own STAAD commands after the analysis (StaadCarry, the workbook's STAAD commands sheet), else Pluto's prints
             var carried = StaadCarry.CommandsOf(M);
             string analysis = cases.Any(p => p.PDelta) ? "PDELTA 30 ANALYSIS SMALLDELTA" : "PERFORM ANALYSIS";
-            var option = carried.Count > 0 ? Regex.Match(carried[0], @"^\s*(?:PERFORM\s+ANALYSIS|PDELTA\b.*?\bANALYSIS(?:\s+SMALLDELTA)?)\s+(PRINT\b.*)$", RegexOptions.IgnoreCase) : Match.Empty;
+            if (DesignLines != null)
+            {
+                // the design workbook's (StaadDesign): its analysis PRINT option, then its run
+                if (Design.AnalysisPrint.Trim().Length > 0) analysis += " PRINT " + Design.AnalysisPrint.Trim();
+                if (carried.Count > 0) Note("the model's own STAAD commands (" + carried.Count.ToString(Inv) + ") not written: the design workbook's are");
+                carried = new List<string>(DesignLines);
+            }
+            var option = carried.Count > 0 && DesignLines == null ? Regex.Match(carried[0], @"^\s*(?:PERFORM\s+ANALYSIS|PDELTA\b.*?\bANALYSIS(?:\s+SMALLDELTA)?)\s+(PRINT\b.*)$", RegexOptions.IgnoreCase) : Match.Empty;
             if (option.Success) { analysis += " " + option.Groups[1].Value.Trim(); carried.RemoveAt(0); }
             line(analysis);
             if (cases.Any(p => p.PDelta)) Note("P-Delta: STAAD's PDELTA 30 ANALYSIS SMALLDELTA (its own iteration, not SAP's)");
-            if (carried.Count > 0 || option.Success)
+            if (DesignLines != null)
+            {
+                foreach (string c in carried) line(c);
+                Note("the design workbook written after the analysis: " + Design.Sets.Count.ToString(Inv) + " parameter set(s), " + Design.Params.Count.ToString(Inv) + " parameter row(s), " + Design.Run.Count.ToString(Inv) + " step(s)");
+            }
+            else if (carried.Count > 0 || option.Success)
             {
                 foreach (string c in carried) line(c);
                 Note("the model's STAAD commands after the analysis (" + carried.Count.ToString(Inv) + ", the workbook's STAAD commands sheet" + (option.Success ? "; the analysis' " + option.Groups[1].Value.Trim() : "") + ") written as given: STAAD checks them");
@@ -1717,6 +1756,65 @@ public static class FrameStd
 
         // SAP's groups as STAAD's: _NAME (24 characters at most) per kind; a group of several kinds gets _J / _M / _E;
         // an object STAAD already has in 4 groups is left out of the next
+        readonly Dictionary<string, string> GroupName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);   // "label|MEMBER" -> STAAD's name
+
+        // a design workbook's members: ALL, or MEMB with its groups (by the model's name, a leading _ STAAD's) and its member
+        // labels and number ranges (a TO b [BY c]) as STAAD's group names and numbers; null after refusing what the model
+        // does not have
+        string DesignMembers(string text, string who)
+        {
+            var t = (text ?? "").Split(new[] { ' ', '\t', ',' }, StringSplitOptions.RemoveEmptyEntries);
+            if (t.Length == 0 || (t.Length == 1 && Is(t[0], "ALL"))) return "ALL";
+            var groups = new List<string>(); var ids = new List<int>(); var missing = new List<string>();
+            Func<string, int> idOf = l => { FrameInfo fi; int id; return FrameOf.TryGetValue(l, out fi) ? fi.Id : TrussId.TryGetValue(l, out id) ? id : 0; };
+            for (int k = 0; k < t.Length; k++)
+            {
+                int a, b, by = 1;
+                if (k + 2 < t.Length && Is(t[k + 1], "TO") && int.TryParse(t[k], NumberStyles.None, Inv, out a) && int.TryParse(t[k + 2], NumberStyles.None, Inv, out b))
+                {
+                    k += 2;
+                    if (k + 2 < t.Length && Is(t[k + 1], "BY") && int.TryParse(t[k + 2], NumberStyles.None, Inv, out by) && by > 0) k += 2; else by = 1;
+                    int found = 0;
+                    for (int n = a; n <= b; n += by) { int id = idOf(n.ToString(Inv)); if (id > 0) { ids.Add(id); found++; } }
+                    if (found == 0) missing.Add(a.ToString(Inv) + " TO " + b.ToString(Inv));
+                    continue;
+                }
+                string g = t[k].TrimStart('_');
+                var grp = M.Groups.FirstOrDefault(x => Is(x.Label, g) || Is(x.Label, t[k]));
+                string gn;
+                if (grp != null && GroupName.TryGetValue(grp.Label + "|MEMBER", out gn)) { groups.Add(gn); continue; }
+                if (grp != null) { missing.Add(t[k] + " (a group with no member)"); continue; }
+                int mid = idOf(t[k]);
+                if (mid > 0) ids.Add(mid); else missing.Add(t[k]);
+            }
+            if (missing.Count > 0) { Refuse(who + ": " + string.Join(", ", missing.ToArray()) + ": no such group or member in the model"); return null; }
+            return "MEMB " + string.Join(" ", groups.Concat(ids.Count > 0 ? new[] { Condense(ids) } : new string[0]).ToArray());
+        }
+
+        // a design workbook's load list: ALL, ENV <envelopes>, or load numbers and ranges, as written; every number named
+        // alone is a written load (or envelope), a range holds one at least
+        string DesignLoads(string text, string who, HashSet<int> loads, HashSet<int> envs)
+        {
+            var t = (text ?? "").Split(new[] { ' ', '\t', ',' }, StringSplitOptions.RemoveEmptyEntries);
+            if (t.Length == 0 || (t.Length == 1 && Is(t[0], "ALL"))) return "ALL";
+            bool env = t[0].StartsWith("ENV", StringComparison.OrdinalIgnoreCase);
+            var have = env ? envs : loads;
+            var bad = new List<string>();
+            for (int k = env ? 1 : 0; k < t.Length; k++)
+            {
+                int a, b;
+                if (k + 2 < t.Length && Is(t[k + 1], "TO") && int.TryParse(t[k], NumberStyles.None, Inv, out a) && int.TryParse(t[k + 2], NumberStyles.None, Inv, out b))
+                {
+                    if (!have.Any(n => n >= a && n <= b)) bad.Add(t[k] + " TO " + t[k + 2]);
+                    k += 2;
+                    continue;
+                }
+                if (!int.TryParse(t[k], NumberStyles.None, Inv, out a) || !have.Contains(a)) bad.Add(t[k]);
+            }
+            if (bad.Count > 0) { Refuse(who + ": LOAD LIST " + text + ": " + string.Join(", ", bad.ToArray()) + (env ? " is no envelope written" : " is no load written (the STAAD loads sheet numbers them)")); return null; }
+            return string.Join(" ", t).ToUpperInvariant();
+        }
+
         void Groups(List<string> o, Action<string> line)
         {
             var count = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -1750,7 +1848,9 @@ public static class FrameStd
                         count[key] = c + 1; keep.Add(id);
                     }
                     if (keep.Count > 0) blocks.Add(new[] { kv.Key, name, Condense(keep) });
-                    if (name != "_" + g.Label) LabelLines.Add("group " + g.Label + " = " + name);
+                    GroupName[g.Label + "|" + kv.Key] = name;
+                    string ll = "group " + g.Label + " = " + name;
+                    if (name != "_" + g.Label && !LabelLines.Contains(ll)) LabelLines.Add(ll);
                 }
             }
             if (full.Count > 0) Note("STAAD keeps an object in 4 groups at most: " + string.Join("; ", full.ToArray()));

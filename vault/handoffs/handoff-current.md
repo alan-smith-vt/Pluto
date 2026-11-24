@@ -16,6 +16,8 @@ created: 2026-11-18
   STAAD's edits too, or a model made in STAAD. Later units are converted to the first, and envelopes become SAP
   Envelope combinations. The commands after the analysis (load lists, prints, design parameters) and STAAD's load
   numbers ride on the workbook's two STAAD sheets: `-Std` writes them again, `-S2k` leaves them out.
+- **STAAD's design** is in its own workbook, `<model>.design.xlsx`: parameter sets, parameters by group or member, and
+  the run ([[vault/arms/staad-design-workbook|staad-design-workbook]]). The frame workbook keeps structure and loads.
 - **SAP <-> workbook <-> STAAD.** The workbook is the master. `-In <SAP export | .std> -Merge <workbook>` reads either
   program's file back and keeps what that program has no place for
   ([[vault/arms/pipe-and-frame-workflow|pipe-and-frame-workflow]]).

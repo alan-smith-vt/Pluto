@@ -132,8 +132,10 @@ pull. `<dir>` is a folder outside the repo.
 1. Copy `staad-round4-probe.std` to `<dir>` (STAAD writes its output beside the file).
 2. **STAAD -> workbook:** `... scripts\frame\Build-Frame.ps1 -In <dir>\staad-round4-probe.std -Xlsx -Out <dir>\round4`.
    - It should read with no `[refuse]` line and say "read exactly".
-   - `round4.xlsx` has the STAAD commands and STAAD loads sheets filled.
-3. **Workbook -> STAAD:** `... -In <dir>\round4.xlsx -Std`, which writes `<dir>\round4.std`.
+   - `round4.xlsx` has the STAAD loads sheet filled, and `round4.design.xlsx` (the design workbook) has the codes,
+     parameters and run.
+3. **Workbook -> STAAD:** `... -In <dir>\round4.xlsx -Std`, which writes `<dir>\round4.std` (it reads
+   `round4.design.xlsx` beside it).
 4. **STAAD.Pro:** run `staad-round4-probe.std` and `round4.std`. Note any error or warning that one has and the other
    has not.
 5. **Workbook -> SAP:** `... -In <dir>\round4.xlsx -S2k` writes `<dir>\round4.s2k`.

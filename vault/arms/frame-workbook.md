@@ -61,9 +61,9 @@ The whole picture, CAESAR and STAAD included, with the commands for each job:
 > | Combinations | Combination, Type, then one row per item (a case or a combination, SF; SAP's case type is worked out) |
 > | Groups | SAP's groups, one row per member; the `PL_KIND_` / `PL_LINE_` groups are Frames' Kind and Line |
 > | Settings | The SAP version stamped on the `.s2k`'s PROGRAM CONTROL line (editable: SAP imports nothing from a file stamped for another version; Help > About in SAP shows yours), the units, where the model came from |
-> | STAAD commands | STAAD only (2026-11-24): its commands after the analysis, one per row, as STAAD reads them (`LOAD LIST`, `LOAD LIST ENV`, `PRINT …`, `PARAMETER`, `CODE`, design parameters, `CHECK CODE` …). `-Std` writes them after the analysis, else Pluto's own prints when the sheet is empty; a first row `PERFORM ANALYSIS PRINT …` gives the analysis its PRINT option. Filled by `-In <x>.std`. The `.s2k` leaves them out |
+> | (STAAD commands) | From 2026-11-24 in the STAAD design workbook, `<model>.design.xlsx` ([[vault/arms/staad-design-workbook\|staad-design-workbook]]): design parameters by group or member, checks, prints. An older workbook's STAAD commands sheet is still read, and its next `-Xlsx` moves it there |
 > | STAAD loads | STAAD only: Kind (Case, Combination, Envelope), Name, Number, Type. `-Std` writes each case or combination as `LOAD <Number>` and each Envelope combination as `ENVELOPE <Number> [TYPE <Type>]`, so the commands' load lists name them; a load not listed gets the next free number. Filled by `-In <x>.std` |
-> | (both STAAD sheets) | SAP's export has neither: `-In <export>.s2k -Merge <this workbook>` takes them back from the workbook ([[vault/format/frame-to-staad\|frame-to-staad]], "Merging") |
+> | (STAAD loads, in SAP) | SAP's export has none: `-In <export>.s2k -Merge <this workbook>` takes them back from the workbook ([[vault/format/frame-to-staad\|frame-to-staad]], "Merging") |
 > | Carried | Read-only: each table no object owns, with its row count, and each table objects keep that no sheet shows (offsets along the length, nonlinear case parameters, auto mesh, design data …): they ride along unchanged and follow renames and deletions |
 >
 > **Reading rules:**

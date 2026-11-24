@@ -522,6 +522,10 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >   `PRINT …`, `PARAMETER`, `CODE`, design parameters, `CHECK CODE`, `SELECT` …). A `PRINT` before the analysis is
 >   carried too. The analysis' PRINT option is the first row. `-Std` writes them after the analysis, else its own
 >   prints. A file this writer made carries none: its prints are its own.
+>
+>   From 2026-11-24 a workbook does not hold them: `-Xlsx` turns them into the STAAD design workbook
+>   ([[vault/arms/staad-design-workbook|staad-design-workbook]]). The model carries them only between a `.std` read and
+>   `-Std` in one run.
 > - **STAAD loads:** each case's and combination's STAAD number, when they are not the writer's own (cases from 1, then
 >   the combinations), and each envelope's number and TYPE. `-Std` numbers its loads by them, so a `LOAD LIST` among the
 >   commands still names the right loads; a load not listed gets the next free number, with a notice.
