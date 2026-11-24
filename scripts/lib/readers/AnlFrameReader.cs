@@ -129,6 +129,14 @@ public sealed class AnlFramePrint
     public int Rows;                // rows read from its table
 }
 
+// One row of a joint table: a support reaction (FX FY FZ MX MY MZ, global, as printed) or a joint displacement
+// (X Y Z translations and rotations, global, as printed).
+public sealed class AnlFrameJointRow
+{
+    public int Node, LC;
+    public readonly double[] V = new double[6];
+}
+
 public sealed class AnlFrameLoadCase
 {
     public int Id;
@@ -201,6 +209,11 @@ public sealed class AnlFrameModel
     public readonly SortedDictionary<int, AnlFrameJoint> Joints = new SortedDictionary<int, AnlFrameJoint>();
     public readonly List<AnlFrameEndForce> EndForces = new List<AnlFrameEndForce>();
     public readonly List<AnlFramePrint> Prints = new List<AnlFramePrint>();   // every output command, in file order
+    // PRINT SUPPORT REACTIONS and PRINT JOINT DISPLACEMENTS, as printed (a later print of a joint and case replaces
+    // the earlier one), with the units of their table headers ("kip", "kip-in"; "in": rotations are radians)
+    public readonly List<AnlFrameJointRow> Reactions = new List<AnlFrameJointRow>();
+    public readonly List<AnlFrameJointRow> Displacements = new List<AnlFrameJointRow>();
+    public string ReactionForceText = "", ReactionMomentText = "", DisplacementLengthText = "";
     public readonly List<AnlFrameProblem> Problems = new List<AnlFrameProblem>();
     readonly Dictionary<long, AnlFrameEndForce> _forceIndex = new Dictionary<long, AnlFrameEndForce>();
 
@@ -378,9 +391,15 @@ public static class AnlFrameReader
                 case "LOAD LIST": r.LoadList(s); break;
                 case "PRINT MEMBER FORCES": r.Forces(s, r.Print(s, true)); anyForces = true; break;
                 // output commands whose tables are not read yet: recorded with their load list, and named below
+                case "PRINT JOINT DISPLACEMENTS": r.Displacements(s, r.Print(s, true)); break;
                 case "PRINT":
                 case "PRINT SUPPORT REACTION":
-                case "PRINT JOINT DISPLACEMENTS":
+                    {
+                        // PRINT SUPPORT REACTION is indexed by that name, PRINT SUPPORT REACTIONS as a plain PRINT
+                        AnlFramePrint pr = r.Print(s, false);
+                        if (pr.Command.ToUpperInvariant().StartsWith("PRINT SUPPORT REACTION")) { pr.Read = true; r.Reactions(s, pr); }
+                    }
+                    break;
                 case "PRINT MEMBER":
                 case "PRINT MEMBER SECTION FORCES":
                 case "PRINT ELEMENT STRESSES":
@@ -1183,6 +1202,111 @@ public static class AnlFrameReader
             return p;
         }
 
+        static readonly Regex ReactionUnits = new Regex(@"SUPPORT\s+REACTIONS?\s*-\s*UNIT\s+([A-Z]+)\s+([A-Z]+)", RegexOptions.IgnoreCase);
+        static readonly Regex DisplacementUnits = new Regex(@"JOINT\s+DISPLACEMENTS?\s*\(\s*([A-Z]+)\s+RADIANS?\s*\)", RegexOptions.IgnoreCase);
+
+        // The rows of a joint table ("JOINT LOAD v1 .. v6"): the joint and the case on a joint's first row, the case
+        // alone on its other rows. A line of numbers that is neither is an error: the rows after it would go to the
+        // joint before.
+        List<AnlFrameJointRow> JointRows(string text, AnlFramePrint print, string code)
+        {
+            var rows = new List<AnlFrameJointRow>();
+            var index = new Dictionary<long, AnlFrameJointRow>();
+            int joint = -1, bad = 0;
+            string sample = "";
+            foreach (string raw in text.Split('\n'))
+            {
+                string line = raw.TrimEnd('\r');
+                if (line.IndexOf('\f') >= 0 || EchoLine.IsMatch(line)) continue;
+                string[] t = Tokens(line);
+                if (t.Length < 4) continue;
+                var v = new double[t.Length];
+                bool numeric = true;
+                for (int i = 0; i < t.Length && numeric; i++) numeric = IsNum(t[i], out v[i]);
+                if (!numeric) continue;
+                int a, b, at;
+                if (t.Length == 8 && IsInt(t[0], out a) && IsInt(t[1], out b)) { joint = a; at = 2; }
+                else if (t.Length == 7 && IsInt(t[0], out b) && joint >= 0) at = 1;
+                else { bad++; if (sample.Length == 0) sample = line.Trim(); continue; }
+                long key = ((long)joint << 32) | (uint)b;
+                AnlFrameJointRow row;
+                if (!index.TryGetValue(key, out row)) { row = new AnlFrameJointRow(); row.Node = joint; row.LC = b; index[key] = row; rows.Add(row); }
+                for (int i = 0; i < 6; i++) row.V[i] = v[at + i];
+                print.Rows++;
+            }
+            if (bad > 0)
+                _m.Error(code, bad + " line(s) of " + print.Command + " hold numbers but are not a row of 7 or 8 numbers (touching columns? overflow?), e.g. \"" + sample + "\"");
+            return rows;
+        }
+
+        // rows x listed cases: a table shorter than its load list is said
+        void CheckJointTable(List<AnlFrameJointRow> rows, AnlFramePrint print, int joints, string code, string what)
+        {
+            if (print.AllCases || joints == 0) return;
+            int want = joints * print.Cases.Count;
+            if (rows.Count != want)
+                _m.Warn(code, print.Command + " gave " + rows.Count + " rows; " + joints + " " + what + " x " + print.Cases.Count + " cases of LOAD LIST " + print.LoadList + " would be " + want);
+        }
+
+        public void Reactions(AnlSection s, AnlFramePrint print)
+        {
+            string text = Text(s, long.MaxValue);
+            Match mt = ReactionUnits.Match(text);
+            ForceUnit fu; LengthUnit lu;
+            if (!mt.Success || !TryForceWord(mt.Groups[1].Value, out fu) || !TryLengthWord(mt.Groups[2].Value, out lu))
+            {
+                _m.Error("REACTION_UNITS", print.Command + ": no readable \"SUPPORT REACTIONS -UNIT\" line in its table");
+                return;
+            }
+            string f = AnlFrameModel.UnitText(fu), m = f + "-" + AnlFrameModel.UnitText(lu);
+            if (_m.Reactions.Count > 0 && (f != _m.ReactionForceText || m != _m.ReactionMomentText))
+            {
+                _m.Error("REACTION_UNITS", "support reactions are printed twice in different units (" + _m.ReactionMomentText + ", then " + m + "): print them once");
+                return;
+            }
+            _m.ReactionForceText = f; _m.ReactionMomentText = m;
+            List<AnlFrameJointRow> rows = JointRows(text, print, "REACTION_ROW_UNREAD");
+            var noSupport = rows.Where(x => !_m.Supports.ContainsKey(x.Node)).Select(x => x.Node).Distinct().ToList();
+            if (noSupport.Count > 0) _m.Warn("REACTION_JOINT", "support reactions at joints with no SUPPORTS line: " + Ids(noSupport));
+            CheckJointTable(rows, print, _m.Supports.Count, "REACTION_ROWS", "supports");
+            Merge(_m.Reactions, rows);
+        }
+
+        public void Displacements(AnlSection s, AnlFramePrint print)
+        {
+            string text = Text(s, long.MaxValue);
+            Match mt = DisplacementUnits.Match(text);
+            LengthUnit lu;
+            if (!mt.Success || !TryLengthWord(mt.Groups[1].Value, out lu))
+            {
+                _m.Error("DISPLACEMENT_UNITS", print.Command + ": no readable \"JOINT DISPLACEMENT (<length> RADIANS)\" line in its table");
+                return;
+            }
+            string l = AnlFrameModel.UnitText(lu);
+            if (_m.Displacements.Count > 0 && l != _m.DisplacementLengthText)
+            {
+                _m.Error("DISPLACEMENT_UNITS", "joint displacements are printed twice in different units (" + _m.DisplacementLengthText + ", then " + l + "): print them once");
+                return;
+            }
+            _m.DisplacementLengthText = l;
+            List<AnlFrameJointRow> rows = JointRows(text, print, "DISPLACEMENT_ROW_UNREAD");
+            CheckJointTable(rows, print, _m.Nodes.Count, "DISPLACEMENT_ROWS", "joints");
+            Merge(_m.Displacements, rows);
+        }
+
+        // a later print of the same joint and case replaces the earlier one
+        static void Merge(List<AnlFrameJointRow> all, List<AnlFrameJointRow> rows)
+        {
+            if (all.Count == 0) { all.AddRange(rows); return; }
+            var index = all.ToDictionary(x => ((long)x.Node << 32) | (uint)x.LC);
+            foreach (AnlFrameJointRow r in rows)
+            {
+                AnlFrameJointRow old;
+                if (index.TryGetValue(((long)r.Node << 32) | (uint)r.LC, out old)) Array.Copy(r.V, old.V, 6);
+                else all.Add(r);
+            }
+        }
+
         // every member end with forces has both ends in the same cases; a listed case of a force print has its rows
         public void CheckForces()
         {
@@ -1204,7 +1328,7 @@ public static class AnlFrameReader
             if (oneEnd.Count > 0)
                 _m.Error("FORCE_END_MISSING", "members with forces at one end only in some case (a row of the print was not read): " + Ids(oneEnd));
             var printed = new HashSet<int>(_m.EndForces.Select(f => f.LC));
-            foreach (AnlFramePrint p in _m.Prints.Where(x => x.Read && !x.AllCases))
+            foreach (AnlFramePrint p in _m.Prints.Where(x => x.Read && !x.AllCases && x.Command.ToUpperInvariant().StartsWith("PRINT MEMBER FORCES")))
             {
                 var missing = p.Cases.Where(lc => !printed.Contains(lc)).ToList();
                 if (missing.Count > 0)

@@ -52,9 +52,6 @@ Purging it means rewriting the branch's history.
   STAAD's to 0.025° with Pluto's I23);
   - whether `RA` gives SAP's leg arrangement (STAAD's `ST` is its mirror image), if drawings or STAAD's angle design
     matter.
-- the `.anl` reader's probe: run `scripts/lib/probes/anl-prints-probe.std` in STAAD.Pro and commit its `.anl`
-  (see the README beside it), so the reaction, displacement, code-check and member tables can be parsed from a real
-  file.
 
 **Seen, not settled:** SAP's own rows carry `IncludeSCAn=Yes` (shear center in the analysis) on its channel only, and
 the angle probe showed SAP does not twist single angles. The `.std` notice says SAP twists tees and double angles too,
