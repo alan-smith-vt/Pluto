@@ -1202,6 +1202,7 @@ public static class AnlFrameReader
             return p;
         }
 
+        static readonly Regex NumbersOnly = new Regex(@"^[\s\d.+\-Ee]+$");
         static readonly Regex ReactionUnits = new Regex(@"SUPPORT\s+REACTIONS?\s*-\s*UNIT\s+([A-Z]+)\s+([A-Z]+)", RegexOptions.IgnoreCase);
         static readonly Regex DisplacementUnits = new Regex(@"JOINT\s+DISPLACEMENTS?\s*\(\s*([A-Z]+)\s+RADIANS?\s*\)", RegexOptions.IgnoreCase);
 
@@ -1218,15 +1219,17 @@ public static class AnlFrameReader
             {
                 string line = raw.TrimEnd('\r');
                 if (line.IndexOf('\f') >= 0 || EchoLine.IsMatch(line)) continue;
+                // a data line holds nothing but numbers; one whose numbers run together ("3.74-123456.67") is not
+                // split by guessing: it is counted as unread
+                if (!NumbersOnly.IsMatch(line)) continue;
                 string[] t = Tokens(line);
                 if (t.Length < 4) continue;
                 var v = new double[t.Length];
                 bool numeric = true;
                 for (int i = 0; i < t.Length && numeric; i++) numeric = IsNum(t[i], out v[i]);
-                if (!numeric) continue;
-                int a, b, at;
-                if (t.Length == 8 && IsInt(t[0], out a) && IsInt(t[1], out b)) { joint = a; at = 2; }
-                else if (t.Length == 7 && IsInt(t[0], out b) && joint >= 0) at = 1;
+                int a = 0, b = 0, at = 0;
+                if (numeric && t.Length == 8 && IsInt(t[0], out a) && IsInt(t[1], out b)) { joint = a; at = 2; }
+                else if (numeric && t.Length == 7 && IsInt(t[0], out b) && joint >= 0) at = 1;
                 else { bad++; if (sample.Length == 0) sample = line.Trim(); continue; }
                 long key = ((long)joint << 32) | (uint)b;
                 AnlFrameJointRow row;
