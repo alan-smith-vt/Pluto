@@ -113,12 +113,13 @@ ones, so they carry no notice ([[vault/format/pipe-to-frame|pipe-to-frame]]).
 >     | `STEEL_BOX` | `HT B TF TW` (the design wall, 0.93 t) and the properties | `Box/Tube`: t3 = HT, t2 = B, tf, tw; FilletRadius 0, Cw 0 |
 >     | `STEEL_PIPE` | `OD TDES A I33 Z33 AS2 J S33POS S33NEG R33` | `Pipe`: t3 = OD, tw = TDES; the one axis is both; Cw 0 |
 >     | `STEEL_DOUBLE_ANGLE` | `D B TF TW DIS …`, `Y` | `"Double Angle"`: t3 = D, t2 = B, SngAngWid = (B − DIS) / 2, tf, tw, dis; FilletRadius 0; CGOffset2 = t3 / 2 − Y |
->     | `STEEL_ANGLE` | `D B TF TW KDES …`, `X Y`; **no I23** | `Angle`: SAP adds I23 0.424146744778473 for L3X2-1/2X3/16 (its legs as axes) |
+>     | `STEEL_ANGLE` | `D B TF TW KDES …`, `X Y`; **no I23** | `Angle`: t3 = D, t2 = B, tf, tw; FilletRadius = KDES − TF; CGOffset3 = t2 / 2 − X, CGOffset2 = Y − t3 / 2; SAP adds I23 0.424146744778473 for L3X2-1/2X3/16 (its legs as axes) |
 >
 >     Every row also takes the file's properties as named, S33Top / S33Bot = S33POS / S33NEG, ConcCol / ConcBeam No.
 >     SAP works out what the file lacks: the shear center (EccV2 / EccV3) and Cw of a channel, tee or double angle, and
 >     a single angle's I23. Pluto leaves those to SAP, which reads the file, and its rows equal SAP's in every field
->     they write. A single angle is refused; STAAD's double angles come as `TABLE … LD / SD`
+>     they write. For a single angle Pluto writes its own I23, from the legs and the root fillet (0.424899 against
+>     SAP's 0.424147). SAP recomputes its own on import. STAAD's double angles come as `TABLE … LD / SD`
 >     ([[vault/format/frame-to-staad|frame-to-staad]]).
 >
 > **Defaults SAP filled** (warnings): `CASE - STATIC 4` SolScheme; `03A` stress-strain fields; the offset-along-length

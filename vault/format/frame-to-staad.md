@@ -98,7 +98,9 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >     | tee `WT22X131` | `TABLE 'W' T 'W44X262'`, the W it is cut from |
 >     | double angle `2L2-1/2X2-1/2X5/16`, equal legs, no spacing | `MEMBER PROPERTY 'US (AISC V16.0).db3'`, `TABLE 'Angle' LD 'L2-1/2X2-1/2X5/16'` |
 >
->     W shapes and whole-weight channels stay in `MEMBER PROPERTY AMERICAN`. A single angle is refused (its I23).
+>     | single angle `L3X2-1/2X3/16` (since 2026-11-24) | `'US (AISC V16.0).db3'`, `TABLE 'Angle' ST 'L3X2-1/2X3/16'`, BETA + δ (below) |
+>
+>     W shapes and whole-weight channels stay in `MEMBER PROPERTY AMERICAN`.
 >     Unequal legs, a spacing, MC channels and pipes by another name are written as numbers: STAAD's form for them
 >     has not been seen. Bentley's help gives older names (`L505010`, `PIPX20`), which STAAD 2025's save does not use.
 >   - A table section with property modifiers is written as numbers instead, with a notice.
@@ -268,6 +270,9 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > | `TABLE ST`, or STAAD 2025's `TABLE '<table>' ST '<name>'` under `MEMBER PROPERTY '<database>'` | the SAP row in its comment when `-Std` writes this property from it; otherwise (a shape picked in STAAD) SAP's catalog section from its library, the newest AISC file's: an I section, channel, HSS box or round, by SAP's label or EDI name. A single angle is refused, and so is a name SAP's library does not have |
 > | `TABLE '<table>' T '<W>'` | the tee cut from it, SAP's WT of half its depth and weight (`W44X262` → `WT22X131`) |
 > | `TABLE '<table>' LD / SD '<angle>' [SP s]` | SAP's 2L of that angle whose vertical legs are the long (LD) or short (SD) ones and whose spacing is s; Pluto knows SAP's labels for no spacing only |
+> | `TABLE 'Angle' ST '<angle>'` and its BETA | SAP's catalog angle, its SAP angle the BETA less δ (single angles, below). Refused on it: loads along local y / z, a gradient, a release or spring not the same about y and z |
+> | `PRIS YD d ZD b`, `PRIS YD d` | STAAD's own rectangle / circle, as a SAP General section with STAAD's numbers: shear areas 0.85 A / 0.89 A (SAP's Rectangular / Circle take 5/6 / 0.9) |
+> | a full `PRIS` with `YD` and no `ZD` | round: ZD = YD |
 > | `ISOTROPIC` | a material, Steel with `TYPE STEEL`, else Other; G must agree with E and POISSON (SAP's isotropic rule) |
 > | `MEMBER OFFSET` | end lengths (rigid) along it; across it, equal at both ends, joint offsets (local) |
 > | `MEMBER RELEASE` | releases; `K…` partial fixity (rotations per degree back to per radian) |
@@ -386,7 +391,7 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >     STAAD leaves out anyway (the notice above).
 >
 >   Which principal axis STAAD calls y, the sign of α against SAP's legs, and whether SAP's analysis bends an angle
->   through its I23 are left to the angle probe. That is seven cantilevers of L3X2-1/2X3/16, each with tip forces
+>   through its I23 were left to the angle probe (below). That is seven cantilevers of L3X2-1/2X3/16, each with tip forces
 >   across it, run in both programs. Each tip's movement gives the member's principal axes in each program.
 > - **The angle probe** (2026-11-24): seven cantilevers of L3X2-1/2X3/16, 60 in, with 1 kip tip forces across them,
 >   in both programs. Four lie along X at SAP angles 0, 90, 180 and 270, one along Y, and two are vertical.
@@ -400,6 +405,30 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >     principal axes lie on SAP's to 0.007° on all seven members, vertical ones included.
 >   - **Not settled by displacements:** a 180° turn, or the mirror image, bends alike. Which way the legs point
 >     matters only to drawings and STAAD's design checks. A look at STAAD's 3D view settles it (`angle-legs.std`).
+>   - **The look** (the user's screenshot, from +X):
+>     - BETA 0 shows the angle with its principal axes along Y / Z.
+>     - BETA +55.66 (90° − α) shows its legs along Y and Z: heel at the top on the +Z side, the 3 in leg down.
+>     - BETA −55.66, the one that bends like SAP's, shows them skewed.
+>
+>     SAP's angle at 0 is an L, with its heel at the bottom on the +Z side and the 3 in leg up. **STAAD's `ST` angle
+>     is SAP's mirror image** about its minor principal axis. That keeps the principal axes and values, so the analysis
+>     is the same. A drawing differs, and so does which leg tip is in tension under minor-axis bending (STAAD's angle
+>     design). `RA`, the reverse angle, may be the unmirrored one; it is not tried.
+> - **Single angles, both ways** (2026-11-24, by table as the user chose):
+>   - SAP → STAAD: `TABLE 'Angle' ST`, BETA = Pluto's + δ, from SAP's own I33, I22 and I23 in its exported row.
+>   - STAAD → SAP: the catalog angle from SAP's library, its SAP angle = BETA − δ. An angle picked in STAAD has no
+>     SAP row, so its I23 is Pluto's estimate (the legs and root fillet, 0.18 % above SAP's on L3X2-1/2X3/16). That
+>     sets SAP's axes within about 0.02° of STAAD's, the user's choice over refusing.
+>   - Refused on an angle either way: loads along local y / z or 2 / 3 (give them globally), a temperature gradient,
+>     and releases or springs not the same about both axes. The axes those name differ between the programs.
+>   - A dimension-built angle (not from SAP's library) is still refused: STAAD's PRIS has no I23.
+> - **STAAD's short PRIS forms** (its `PRINT MEMBER PROPERTIES`, 2026-11-24):
+>   - `PRIS YD 12 ZD 6` gives AX 72, IZ 864, IY 216, IX 593.26 (the rectangle series SAP uses), AY = AZ = 61.20 = 0.85 A.
+>   - `PRIS YD 10` gives AX 78.54, I 490.87, IX = 2I, AY = AZ = 69.90 = 0.89 A.
+>
+>   Both now read as SAP General sections with exactly those numbers, the read-back check expanding them alike. A full
+>   PRIS with `YD` and no `ZD` (how `-Std` writes a pipe or circle) reads as round. That fixes a round trip that had
+>   been refused. `YB` / `ZB` (tee, trapezoid) stay refused: STAAD printed a shear area larger than the area.
 >   - **SAP's I23 is its own:** the plates give 0.4314 and the plates with the 0.375 root fillet 0.4249, against
 >     SAP's 0.4241. No toe radius explains the rest. For an angle picked in STAAD, Pluto's estimate (the fillet)
 >     would set SAP's axes within about 0.02°. An angle from a SAP export carries SAP's own I23.

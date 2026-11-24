@@ -161,6 +161,25 @@ public static class FrameStd
 
     // ---------------- the writer
 
+    // a SAP angle's turn from its local 2 (along a leg) to its minor principal axis, about local 1, in degrees: STAAD's
+    // local y for a TABLE ... ST angle, which STAAD bends about its principal axes while SAP bends it about its legs with
+    // I23 (the angle probe, 2026-11-24: seven cantilevers of L3X2-1/2X3/16, both programs; STAAD's BETA = this
+    // writer's + delta put STAAD's principal axes on SAP's to 0.007 deg)
+    internal static double AngleTurn(double i33, double i22, double i23)
+    {
+        return 0.5 * Math.Atan2(2 * i23, i33 - i22) * 180 / Math.PI - 90;
+    }
+
+    // a BETA in (-180, 180], whole degrees snapped as Beta does
+    internal static double NormBeta(double b)
+    {
+        while (b > 180) b -= 360;
+        while (b <= -180 + 1e-9) b += 360;
+        double r = Math.Round(b);
+        if (Math.Abs(b - r) < 1e-7) b = r;
+        return b == 0 ? 0 : b;
+    }
+
     // STAAD 2025's AISC databases, as its own save names them (the names probe, 2026-11-23)
     internal const string Aisc2023 = "'US (AISC 2023).db3'", AiscV16 = "'US (AISC V16.0).db3'";
 
@@ -173,8 +192,8 @@ public static class FrameStd
     //                                       row's library file; numbers when the file is not here)
     //     tees                              TABLE 'W' T 'W44X262', the W it is cut from (WT22X131)
     //     double angles of equal legs, back to back with no spacing   TABLE 'Angle' LD 'L2-1/2X2-1/2X5/16'
-    // Single angles are not (their I23 refuses them); nor other spacings, unequal legs, MC channels or pipes by
-    // another name, whose STAAD forms are not seen
+    //     single angles                     TABLE 'Angle' ST 'L3X2-1/2X3/16', its BETA turned by AngleTurn
+    // Not other spacings, unequal legs, MC channels or pipes by another name, whose STAAD forms are not seen
     internal static string[] StaadTable(Func<string, string> get)
     {
         Func<string, string> g = k => (get(k) ?? "").Trim().Trim('"').Trim();
@@ -201,6 +220,8 @@ public static class FrameStd
                 Func<string, string> twice = x => { string t = (decimal.Parse(x, Inv) * 2).ToString(Inv); return t.IndexOf('.') >= 0 ? t.TrimEnd('0').TrimEnd('.') : t; };
                 return new[] { Aisc2023, "TABLE 'W' T 'W" + twice(m.Groups[1].Value) + "X" + twice(m.Groups[2].Value) + "'" };
             }
+            case "angle":
+                return like(@"^L[\d./-]+X[\d./-]+X[\d./-]+$") ? new[] { AiscV16, "TABLE 'Angle' ST '" + n + "'" } : null;
             case "double angle":
             {
                 double dis, t2, t3;
@@ -219,6 +240,7 @@ public static class FrameStd
         public double[][] Ax;                    // SAP local 1 2 3 in STAAD coordinates
         public double Beta;
         public FrameSection S; public FrameSectionProps P; public string[] Table; public string Mat;
+        public double Delta;                                          // an angle's turn to its principal axes (STAAD's y)
         public double[] Mods;
         public double[] OffI, OffJ, Trans;       // STAAD offsets (global) and their common transverse part
         public double ZoneI, ZoneJ;              // end lengths (rigid, factor 1)
@@ -260,7 +282,8 @@ public static class FrameStd
         readonly Dictionary<int, string> PlateMat = new Dictionary<int, string>();
         readonly Dictionary<int, string> PlateSec = new Dictionary<int, string>();
         readonly List<string> PlaneStress = new List<string>();
-        readonly List<FrameInfo> Mono = new List<FrameInfo>();           // channels, tees, double angles (shear center off the centroid)
+        readonly List<FrameInfo> Mono = new List<FrameInfo>();
+        readonly List<FrameInfo> Angles = new List<FrameInfo>();       // single angles, BETA turned to their principal axes           // channels, tees, double angles (shear center off the centroid)
         readonly Dictionary<string, int> TrussId = new Dictionary<string, int>(StringComparer.Ordinal);
         readonly List<int[]> Trusses = new List<int[]>();                // id, i, j
         readonly Dictionary<int, double> TrussAx = new Dictionary<int, double>();
@@ -402,7 +425,10 @@ public static class FrameStd
             string why;
             var p = FrameStdSections.Of(s, out why);
             if (p == null) { Refuse(who + ": section " + s.Label + ": " + why); return false; }
-            if (p.I23 != 0) { Refuse(who + ": section " + s.Label + " (" + s.Shape + ") has a product of inertia I23; STAAD's prismatic property has none"); return false; }
+            // a SAP catalog angle goes by STAAD's table, which bends it about its principal axes (its BETA turned below); any
+            // other section with an I23 cannot be written
+            bool angle = p.I23 != 0 && p.Catalog && Is((s.Shape ?? "").Trim(), "Angle") && TableName(s, p) != null;
+            if (p.I23 != 0 && !angle) { Refuse(who + ": section " + s.Label + " (" + s.Shape + ") has a product of inertia I23; STAAD's prismatic property has none (a SAP catalog angle goes by STAAD's table)"); return false; }
             // the section's own modifiers (its row's AMod ... WMod): SAP applies them with the frame's, which alone are folded in
             var srow = s.Rec(FrameSection.General);
             var smods = srow == null ? new string[0] : new[] { "AMod", "A2Mod", "A3Mod", "JMod", "I2Mod", "I3Mod", "MMod", "WMod" }.Where(k => srow.Has(k) && srow.Num(k, 1) != 1).ToArray();
@@ -418,7 +444,14 @@ public static class FrameStd
             bool mods = fi.Mods.Take(6).Any(x => x != 1);
             fi.Table = TableName(s, p);
             if (p.Stale) Note("section " + s.Label + ": its row's area and inertias disagree with its dimensions; SAP works them out from the dimensions on import, and so does this file (A " + N(p.A) + ")");
+            if (angle && mods) { Refuse(who + ": angle " + s.Label + " with property modifiers (STAAD's table cannot take them, and its PRIS has no I23)"); return false; }
             if (fi.Table != null && mods) { Note("frame " + f.Label + ": section " + s.Label + " written as numbers (PRIS), not STAAD's table, for its property modifiers"); fi.Table = null; }
+            if (angle)
+            {
+                fi.Delta = AngleTurn(p.I33, p.I22, p.I23);
+                fi.Beta = NormBeta(fi.Beta + fi.Delta);
+                Angles.Add(fi);
+            }
             if (p.EstimatedJ && fi.Table == null) Note("section " + s.Label + " (" + s.Shape + "): its torsion constant is SAP's rectangle sum, which SAP's own differs from by a junction term (2-3 %)");
             // material: the assignment's own when not Default, else the section's
             var asg = f.Rec(FrameMember.SectionAssign);
@@ -522,6 +555,12 @@ public static class FrameStd
         void Releases(FrameInfo fi)
         {
             var rel = fi.F.Releases; var pf = fi.F.PartialFixity;
+            // an angle's STAAD y / z are its principal axes, SAP's 2 / 3 its legs: only what both name alike
+            if (fi.Delta != 0)
+                for (int e = 0; e < 2; e++)
+                    foreach (int k in new[] { 1, 4 })
+                        if (rel[e * 6 + k] != rel[e * 6 + k + 1] || pf[e * 6 + k] != pf[e * 6 + k + 1])
+                            Refuse("frame " + fi.F.Label + ": a release of " + (k == 1 ? "V2 / V3" : "M2 / M3") + " not the same about both axes, on an angle (STAAD's y / z are its principal axes, SAP's 2 / 3 its legs)");
             string[] dof = { "FX", "FY", "FZ", "MX", "MY", "MZ" };
             for (int e = 0; e < 2; e++)
             {
@@ -978,6 +1017,7 @@ public static class FrameStd
             if (t == 0) return;
             var v = Six(pl, pl.Temp, fi.Id, 0);
             if (Is(type, "Temperature")) { v[0] += t; return; }
+            if (fi.Delta != 0) { Refuse(who + ": a temperature gradient on an angle (STAAD's y / z are its principal axes, SAP's 2 / 3 its legs)"); return; }
             bool two = Is(type, "Gradient2");
             double depth = two ? fi.P.Depth : fi.P.Width;
             if (depth <= 0) { Refuse(who + ": a gradient on section " + fi.S.Label + ", which has no " + (two ? "t3" : "t2")); return; }
@@ -995,6 +1035,7 @@ public static class FrameStd
             if (d == "1" || d == "2" || d == "3")
             {
                 int k = d[0] - '1';
+                if (k > 0 && fi.Delta != 0) { Refuse(who + ": along local " + d + ", on an angle (STAAD's y / z are its principal axes, SAP's 2 / 3 its legs; give it in a global direction)"); return false; }
                 key = "XYZ".Substring(k, 1); vec = fi.Ax[k];
                 return true;
             }
@@ -1296,6 +1337,8 @@ public static class FrameStd
 
             if (Frames.Count + Trusses.Count > 0)
             {
+                if (Angles.Count > 0)
+                    Note("single angles (" + Few(Angles.Select(f => "frame " + f.F.Label + " (" + f.S.Label + ", BETA turned " + N(f.Delta) + ")").ToList()) + "): STAAD bends a table angle about its principal axes, SAP about its legs with I23; each BETA is turned to the principal axes so STAAD's lie on SAP's (the angle probe, to 0.007 deg). STAAD's table numbers are its own (2.5 % from SAP's on L3X2-1/2X3/16)");
                 if (Mono.Count > 0)
                 {
                     // the banner the user asked for: where a STAAD user reads the properties

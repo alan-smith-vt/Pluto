@@ -212,7 +212,15 @@ public static class StdToFrame
                 double v;
                 string tw;
                 string[] t = p.Spec.Length > 0 && Is(p.Spec[0], "TABLE") ? TableOf(p.Table, string.Join(" ", p.Spec), out tw) : null;
-                if (p.Spec.Length % 2 == 1 && Is(p.Spec[0], "PRIS"))
+                string pw;
+                double[] pr = p.Spec.Length % 2 == 1 && Is(p.Spec[0], "PRIS") ? Reader.Pris(p.Spec, out pw) : null;
+                // a PRIS by the numbers STAAD analyses: its short forms worked out as STAAD does, a round one's ZD its YD
+                if (pr != null)
+                {
+                    string[] keys = { "AX", "IX", "IY", "IZ", "AY", "AZ", "YD", "ZD" };
+                    for (int k = 0; k < 8; k++) if (!double.IsNaN(pr[k])) f.Add(h + "PRIS " + keys[k], pr[k]);
+                }
+                else if (p.Spec.Length % 2 == 1 && Is(p.Spec[0], "PRIS"))
                     for (int k = 1; k + 1 < p.Spec.Length; k += 2) { if (Num(p.Spec[k + 1], out v)) f.Add(h + "PRIS " + p.Spec[k].ToUpperInvariant(), v); else f.Add(h + string.Join(" ", p.Spec)); }
                 // a table section by its shape, in either form, from whichever STAAD table (AMERICAN or a database)
                 else if (t != null) { Num(t[2], out v); f.Add(h + "TABLE " + t[0] + " " + t[1].ToUpperInvariant() + " SP", v); }
@@ -379,6 +387,7 @@ public static class StdToFrame
         public int Id, I, J; public string Label; public double L;
         public double[] X, Y, Z;                 // along it, SAP's local 2 and 3 (STAAD's y and z after BETA)
         public double Beta, Angle;
+        public double Delta;                      // a single angle's turn from SAP's local 2 to STAAD's y (its principal axis)
         public string Mat;                        // the STAAD material
         public StaadSpec Prop;
         public double ZoneI, ZoneJ;
@@ -481,6 +490,7 @@ public static class StdToFrame
             ConstantsIn();
             MaterialsIn();
             PropertiesIn();
+            AnglesIn();
             OffsetsIn();
             ReleasesIn();
             TrussesIn();
@@ -718,8 +728,33 @@ public static class StdToFrame
             return text.Substring(0, colon).Trim();
         }
 
-        // PRIS AX .. IX .. IY .. IZ .. [AY ..] [AZ ..] [YD ..] [ZD ..] -> AX IX IY IZ AY AZ YD ZD (NaN: not given)
-        static double[] Pris(string[] spec, out string why)
+        // PRIS AX .. IX .. IY .. IZ .. [AY ..] [AZ ..] [YD ..] [ZD ..] -> AX IX IY IZ AY AZ YD ZD (NaN: not given). STAAD's
+        // short forms are its own sections, whose numbers STAAD works out (its PRINT MEMBER PROPERTIES, 2026-11-24):
+        //   PRIS YD d ZD b   a rectangle: AX = d b, IZ = b d^3 / 12, IY = d b^3 / 12, IX by the rectangle series (SAP's
+        //                    too: 593.26 for 12 x 6, 159.69 for 4 x 10), AY = AZ = 0.85 AX (SAP's rectangle takes 5/6)
+        //   PRIS YD d        a circle: AX = pi d^2 / 4, IZ = IY = pi d^4 / 64, IX = 2 IZ, AY = AZ = 0.89 AX (SAP's: 0.9)
+        // and a full PRIS with YD but no ZD is round: ZD = YD. YB / ZB (tees, trapezoids) are not read
+        internal static double[] Pris(string[] spec, out string why)
+        {
+            var p = PrisWritten(spec, out why);
+            if (p == null) return null;
+            bool full = !double.IsNaN(p[0]) || !double.IsNaN(p[1]) || !double.IsNaN(p[2]) || !double.IsNaN(p[3]) || !double.IsNaN(p[4]) || !double.IsNaN(p[5]);
+            double d = p[6], b = p[7];
+            if (!full && !double.IsNaN(d) && d > 0)
+            {
+                if (!double.IsNaN(b) && b > 0)
+                {
+                    double ax = d * b, t = Math.Min(d, b), a = Math.Max(d, b);
+                    return new[] { ax, a * t * t * t * (1.0 / 3 - 0.21 * (t / a) * (1 - Math.Pow(t / a, 4) / 12)), d * b * b * b / 12, b * d * d * d / 12, ax * 85 / 100, ax * 85 / 100, d, b };
+                }
+                double ac = Math.PI * d * d / 4, ic = Math.PI * Math.Pow(d, 4) / 64;
+                return new[] { ac, 2 * ic, ic, ic, ac * 89 / 100, ac * 89 / 100, d, d };
+            }
+            if (full && !double.IsNaN(d) && double.IsNaN(b)) p[7] = d;
+            return p;
+        }
+
+        static double[] PrisWritten(string[] spec, out string why)
         {
             why = null;
             string[] keys = { "AX", "IX", "IY", "IZ", "AY", "AZ", "YD", "ZD" };
@@ -778,6 +813,8 @@ public static class StdToFrame
                 {
                     props = Pris(p.Spec, out why);
                     if (props == null) { Refuse(who + ": " + why); continue; }
+                    if (!p.Spec.Any(x => Is(x, "AX")))
+                        Note("PRIS " + string.Join(" ", p.Spec.Skip(1).ToArray()) + ": STAAD's own " + (p.Spec.Length == 3 ? "circle" : "rectangle") + ", as a SAP general section with the numbers STAAD works out (shear areas " + (p.Spec.Length == 3 ? "0.89" : "0.85") + " A, which SAP's " + (p.Spec.Length == 3 ? "Circle (0.9 A)" : "Rectangular (5/6 A)") + " would not give)");
                     if (Enumerable.Range(0, 4).Any(i => double.IsNaN(props[i]) || props[i] <= 0)) { Refuse(who + ": PRIS needs AX IX IY IZ, each positive"); continue; }
                     if (double.IsNaN(props[6]) || double.IsNaN(props[7]) || props[6] <= 0 || props[7] <= 0) { Refuse(who + ": PRIS without YD and ZD (SAP's general section needs its depth and width)"); continue; }
                     row = null;
@@ -788,9 +825,9 @@ public static class StdToFrame
                     var t = TableOf(p.Table, what, out tw);
                     if (t == null) { Refuse(who + ": MEMBER PROPERTY " + what + ": " + tw); continue; }
                     string inFile = row == null ? null : RowGet(row, "SectInFile");
-                    // the comment's SAP row is this property's when -Std writes this property from it (the same shape; a
-                    // legacy TABLE ST also by its name)
-                    if (row != null && !Same(t, row) && !(t[0] == "ST" && inFile != null && Is(inFile, t[1])))
+                    // the comment's SAP row is this property's when -Std writes this property from it, or names the same
+                    // shape (HSS24X12X3/4 for STAAD's HSS24X12X.750, when SAP's library file is not here to say so)
+                    if (row != null && !Same(t, row) && !(t[0] == "ST" && inFile != null && FrameSapLibrary.SameShape(inFile, t[1])))
                     {
                         // the shape changed in STAAD under the comment of the one Pluto wrote: the comment is not its row
                         Note(what + " under the SAP row of " + (inFile ?? name ?? "another section") + ": taken from SAP's section library");
@@ -802,8 +839,9 @@ public static class StdToFrame
                         if (lib[0] == null) { Refuse(who + ": " + what + ", a STAAD table section with no SAP row in the comment above it: " + lib[1]); continue; }
                         row = lib[0]; name = null;
                     }
+                    else row = LocalFile(row, what);
                     shape = RowGet(row, "Shape");
-                    if (string.IsNullOrEmpty(shape)) { Refuse(who + ": the SAP row of " + p.Spec[2] + " has no Shape"); continue; }
+                    if (string.IsNullOrEmpty(shape)) { Refuse(who + ": the SAP row of " + what + " has no Shape"); continue; }
                     props = RowProps(row);
                     var sr = new S2kRow();
                     S2kRow.Tokenize(row, sr);
@@ -855,6 +893,8 @@ public static class StdToFrame
                 {
                     string kind = RowGet(row, "Shape"), inFile = RowGet(row, "SectInFile");
                     Note(what + ": a catalog section from SAP's section library, " + inFile + " (" + kind + ") in " + file + " (no SAP row of it in the file)");
+                    if (Is(kind, "Angle"))
+                        Note(what + ": SAP works out an angle's I23 itself; Pluto's (its legs and root fillet, 0.18 % above SAP's on L3X2-1/2X3/16) sets the frame's orientation within about 0.02 deg");
                     if (Is(kind, "Channel") || Is(kind, "Tee") || Is(kind, "Double Angle"))
                         Note(what + ": SAP2000 twists a " + kind.ToLowerInvariant() + " about its shear center; STAAD's member is centroidal (the probe: up to 0.03 in on a 70 in channel cantilever)");
                     var back = FrameStd.StaadTable(k => RowGet(row, k));
@@ -867,6 +907,28 @@ public static class StdToFrame
             return LibRow[key] = r;
         }
 
+        // a comment's catalog row whose library file is not on this machine: SAP's own library's file of that name, as -S2k
+        // does (FrameSapLibrary.Check), so -Std can name the shape again (an HSS's STAAD name is in the file); with none,
+        // a notice that -Std writes it back as numbers here
+        string LocalFile(string row, string what)
+        {
+            string fn = (RowGet(row, "FileName") ?? "").Trim();
+            if (fn.Length == 0 || !Is(RowGet(row, "FromFile") ?? "", "Yes") || System.IO.File.Exists(fn)) return row;
+            if (Library == null) Library = FrameSapLibrary.Folder(!string.IsNullOrEmpty(SapVersion) ? SapVersion : HeadVersion) ?? "";
+            string file = fn.Substring(fn.LastIndexOfAny(new[] { '\\', '/' }) + 1);
+            string local = Library.Length == 0 || file.Length == 0 ? null : System.IO.Directory.GetFiles(Library).FirstOrDefault(f => Is(System.IO.Path.GetFileName(f), file));
+            if (local == null)
+            {
+                if (FrameStd.StaadTable(k => RowGet(row, k)) == null)
+                    Note(what + ": its SAP row's library file " + fn + " is not on this machine, so -Std writes it back as PRIS here (it takes STAAD's name from the file); the read-back check lists it");
+                return row;
+            }
+            var r = new S2kRow();
+            S2kRow.Tokenize(row, r);
+            r.Set("FileName", local);
+            return r.Render().TrimStart();
+        }
+
         // whether -Std writes this table property (TableOf's) from this SAP row: the same shape, by type and name
         static bool Same(string[] t, string row)
         {
@@ -876,6 +938,34 @@ public static class StdToFrame
             var b = TableOf(back[0], back[1], out why);
             double x, y;
             return b != null && b[0] == t[0] && Is(b[1], t[1]) && Num(b[2], out x) && Num(t[2], out y) && x == y;
+        }
+
+        // single angles: STAAD bends a TABLE ... ST angle about its principal axes (its y the minor one), SAP about its legs
+        // with I23 (the angle probe, 2026-11-24). SAP's local 2 is STAAD's y turned back by FrameStd.AngleTurn, from the
+        // SAP row's I33, I22 and I23 (SAP's own from a SAP export; Pluto's estimate for a shape picked in STAAD)
+        void AnglesIn()
+        {
+            var turned = new List<string>();
+            foreach (var m in Frames)
+            {
+                var s = m.Section == null ? null : Secs.FirstOrDefault(x => x.Name == m.Section);
+                if (s == null || s.Row == null || !Is((s.Shape ?? "").Trim(), "Angle")) continue;
+                double i33, i22, i23;
+                if (!Num(RowGet(s.Row, "I33") ?? "", out i33) || !Num(RowGet(s.Row, "I22") ?? "", out i22) || !Num(RowGet(s.Row, "I23") ?? "", out i23) || i23 == 0)
+                { Refuse("member " + I(m.Id) + ": angle " + s.Name + " with no I33, I22 and I23 in its SAP row"); continue; }
+                double d = FrameStd.AngleTurn(i33, i22, i23), b = m.Beta;
+                m.Delta = d;
+                var ax = FrameStd.StaadAxes(m.X);
+                double r = (b - d) * Math.PI / 180;
+                m.Y = Add(Mul(ax[1], Math.Cos(r)), Mul(Cross(m.X, ax[1]), Math.Sin(r)));
+                m.Z = Cross(m.X, m.Y);
+                var l2 = FrameStd.R(FrameSidecar.LocalAxes(Rinv(m.X), 0)[1]);
+                var dsap = Rinv(m.X); var mx = m.X;
+                m.Angle = Shortest(Snap(Math.Atan2(Dot(Cross(l2, m.Y), m.X), Dot(l2, m.Y)) * 180 / Math.PI), x => FrameStd.NormBeta(FrameStd.Beta(mx, FrameStd.R(FrameSidecar.LocalAxes(dsap, x)[1])) + d), b);
+                turned.Add(m.Label + " (" + s.Name + ", " + FrameStd.N(d) + ")");
+            }
+            if (turned.Count > 0)
+                Note("single angles: STAAD bends a table angle about its principal axes, SAP about its legs with I23; each frame's SAP angle is its BETA less the turn to those axes (the angle probe, to 0.007 deg): " + string.Join(", ", turned.Take(12).ToArray()) + (turned.Count > 12 ? " ..." : ""));
         }
 
         // whether these numbers are the section's with factors: the property modifiers (AMod AS2Mod AS3Mod JMod I22Mod I33Mod
@@ -956,6 +1046,8 @@ public static class StdToFrame
                         k++;
                     }
                     if (!ok) { Refuse(who + ": MEMBER RELEASE " + string.Join(" ", t) + " (FrameStd writes FX .. MZ and KFX v .. KMZ v)"); continue; }
+                    if (m.Delta != 0 && (rel[1] != rel[2] || pf[1] != pf[2] || rel[4] != rel[5] || pf[4] != pf[5]))
+                    { Refuse(who + ": MEMBER RELEASE " + string.Join(" ", t) + " on an angle, not the same about y and z (STAAD's y / z are its principal axes, SAP's 2 / 3 its legs)"); continue; }
                     for (int end = 0; end < 2; end++)
                     {
                         if (end == 0 ? !s : !e) continue;
@@ -1388,6 +1480,7 @@ public static class StdToFrame
             double w1 = v[0], w2 = type == "TRAP" ? v[1] : v[0];
             string cs, dir; double sign;
             if (!Dir(t[1], point, moment, !moment && w1 <= 0 && w2 <= 0 && (w1 < 0 || w2 < 0), out cs, out dir, out sign)) { Refuse(what + " (direction " + t[1] + ")"); return; }
+            if (m.Delta != 0 && cs == "Local" && dir != "1") { Refuse(what + " (along local " + t[1].ToLowerInvariant() + " on an angle: STAAD's y / z are its principal axes, SAP's 2 / 3 its legs)"); return; }
             string head = "Frame=" + Q(m.Label) + "   LoadPat=" + Q(p.Name) + "   CoordSys=" + cs + "   Type=" + (moment ? "Moment" : "Force") + "   Dir=" + Q(dir) + "   DistType=AbsDist";
             if (point)
             {
@@ -1418,6 +1511,7 @@ public static class StdToFrame
             for (int k = 1; k < t.Length; k++) if (!Num(t[k], out v[k - 1])) { Refuse(what); return; }
             string head = "Frame=" + Q(m.Label) + "   LoadPat=" + Q(p.Name);
             if (v[0] != 0) p.Temp.Add(head + "   Type=Temperature   Temp=" + F(v[0]));
+            if (m.Delta != 0 && (v[1] != 0 || v[2] != 0)) { Refuse(what + " (a gradient on an angle: STAAD's y / z are its principal axes, SAP's 2 / 3 its legs)"); return; }
             // STAAD's differences top to bottom (along y) and side to side (along z), over the depth / width: SAP's gradients
             double dep = m.Depth, wid = m.Width;
             if (v[1] != 0) { if (dep > 0) p.Temp.Add(head + "   Type=Gradient2   TempGrad2=" + F(Shortest(v[1] / dep, x => x * dep, v[1]))); else Refuse(what + " (a gradient on a section with no depth)"); }

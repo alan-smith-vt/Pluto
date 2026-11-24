@@ -28,7 +28,16 @@ CNODE at its node or a zero-length expansion joint (zero-length links), or with 
 **Since (2026-11-23), sections:** a shape picked in STAAD comes back as SAP's catalog section from SAP's own
 library. More families go to STAAD by name: fractional channels, HSS, tees and equal double angles. They are written
 in the form STAAD.Pro 2025's own save uses, a `MEMBER PROPERTY` block per AISC database
-([[vault/format/frame-to-staad|frame-to-staad]]). A single angle stays refused both ways.
+([[vault/format/frame-to-staad|frame-to-staad]]).
+
+**Since (2026-11-24):** the user chose, against measured differences:
+- **Table sections stay STAAD's tables** where its numbers differ from SAP's library (tee +1.1 %, double angle
+  −1.7 %, HSS box −0.5 %, angle 2.5 %), so STAAD keeps a section it can design.
+- **Single angles go by table both ways.** STAAD bends them about their principal axes and SAP about its legs with
+  I23, so the BETA is turned by δ (the angle probe, to 0.007°).
+- **An angle picked in STAAD is read with Pluto's I23 estimate,** within about 0.02° of SAP's orientation, not refused.
+
+STAAD draws its angle as the mirror image of SAP's. The analysis is the same; the drawing and design differ.
 
 The user asked that the reading reuse the STAAD lib's `.anl` reader rather than add a second one. Its parsers were
 extended in place (`StaadInput`), and an `.anl` reads as before.

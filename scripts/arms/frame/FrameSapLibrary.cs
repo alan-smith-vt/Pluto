@@ -162,9 +162,11 @@ public static class FrameSapLibrary
     //   Tee     the same, CGOffset2 = t3 / 2 - Y
     //   Box/Tube  t3 HT, t2 B, tf TF, tw TW, FilletRadius 0, Cw 0;  Pipe  t3 OD, tw TDES, Cw 0
     //   Double Angle  t3 D, t2 B, SngAngWid (B - DIS) / 2, tf TF, tw TW, dis DIS, FilletRadius 0, CGOffset2 = t3 / 2 - Y
+    //   Angle   t3 D, t2 B, tf TF, tw TW, FilletRadius KDES - TF, CGOffset3 = t2 / 2 - X, CGOffset2 = Y - t3 / 2, and an I23
+    //           SAP works out itself (0.424146744778473 on L3X2-1/2X3/16): Pluto's is the legs' and the root fillet's
+    //           (AngleI23; 0.424899, 0.18 % more), which sets the frame's orientation (StdToFrame) within about 0.02 deg
     // What SAP works out from the file and Pluto does not (a channel's, tee's or double angle's shear center EccV2 / EccV3
-    // and Cw) is left out; SAP reads the file. A single angle is refused: SAP works out its I23 about its legs (0.4241 on
-    // L3X2-1/2X3/16), and STAAD's angle axes are not confirmed against SAP's
+    // and Cw) is left out; SAP reads the file
     public static string Row(string folder, string shape, string lengthUnit, out string file, out string why)
     {
         return RowOf(folder, new[] { shape }, null, lengthUnit, out file, out why);
@@ -210,11 +212,18 @@ public static class FrameSapLibrary
         }, lengthUnit, out file, out why);
     }
 
-    // a library file's EDI name for one of its labels (HSS24X12X3/4 -> HSS24X12X.750, as STAAD 2025 names it); null
-    // when the file is not here or has no such label
+    // a library file's EDI name for one of its labels (HSS24X12X3/4 -> HSS24X12X.750, as STAAD 2025 names it): the file
+    // the row names, else the file of that name in SAP's library on this machine (as Check finds it); null when neither
+    // is here or it has no such label
     public static string EdiName(string file, string label)
     {
-        if (string.IsNullOrEmpty(file) || string.IsNullOrEmpty(label) || !File.Exists(file)) return null;
+        if (string.IsNullOrEmpty(file) || string.IsNullOrEmpty(label)) return null;
+        if (!File.Exists(file))
+        {
+            string folder = Folder(""), name = FileOf(file);
+            file = folder == null || name.Length == 0 ? null : Directory.GetFiles(folder).FirstOrDefault(f => Path.GetFileName(f).Equals(name, StringComparison.OrdinalIgnoreCase));
+            if (file == null) return null;
+        }
         KeyValuePair<string, Dictionary<string, string>> e;
         string edi;
         return EntriesOf(file).TryGetValue(label.Trim(), out e) && e.Value.TryGetValue("EDI_STD", out edi) && edi.Length > 0 ? edi : null;
@@ -313,8 +322,18 @@ public static class FrameSapLibrary
                 break;
             }
             case "STEEL_ANGLE":
-                why = label + " is an angle in " + fn + ": SAP works out its I23 about its legs, which the file does not give, and STAAD's single-angle axes are not confirmed against SAP's";
-                return null;
+            {
+                if ((why = lacks(new[] { "D", "B", "TF", "TW", "A", "J", "I33", "I22", "AS2", "AS3" })) != null) return null;
+                decimal fr = has("KDES") && num("KDES") > num("TF") ? num("KDES") - num("TF") : 0;
+                w.Add("Shape=Angle"); put("t3", "D", 1); put("t2", "B", 1); put("tf", "TF", 1); put("tw", "TW", 1);
+                if (fr > 0) len("FilletRadius", fr);
+                put("Area", "A", 2); put("TorsConst", "J", 4); put("I33", "I33", 4); put("I22", "I22", 4);
+                w.Add("I23=" + (AngleI23((double)num("D"), (double)num("B"), (double)num("TF"), (double)num("TW"), (double)fr) * Math.Pow(per, 4)).ToString("R", CultureInfo.InvariantCulture));
+                put("AS2", "AS2", 2); put("AS3", "AS3", 2);
+                moduli("S22", "22");
+                tail(has("X") ? Len(num("B") / 2 - num("X"), per, 1) : null, has("Y") ? Len(num("Y") - num("D") / 2, per, 1) : null, null);
+                break;
+            }
             default:
                 why = label + " is a " + found.Value.Key + " in " + fn + ", a kind Pluto does not read from SAP's library: give it as PRIS";
                 return null;
@@ -325,11 +344,47 @@ public static class FrameSapLibrary
         return string.Join("   ", w.ToArray());
     }
 
-    // a dimension as AISC names it: 2-1/2, 3/16, 2.5
+    // an angle's product of inertia with SAP's sign (its D leg along local 2, the heel toward +3, the B leg toward -3): the
+    // two legs and the root fillet of radius r, about their centroid. SAP's own is a little less (L3X2-1/2X3/16: 0.424899
+    // here, 0.424147 SAP's), its section model not being this one; no toe radius explains the rest
+    static double AngleI23(double d, double b, double tf, double tw, double r)
+    {
+        var parts = new List<double[]>();                          // area, centroid x, y, product about its own centroid
+        parts.Add(new[] { tw * d, tw / 2, d / 2, 0 });
+        parts.Add(new[] { (b - tw) * tf, (tw + b) / 2, tf / 2, 0 });
+        if (r > 0)
+        {
+            // the fillet: an r x r square at the inner corner less the quarter disc centred at (tw + r, tf + r)
+            parts.Add(new[] { r * r, tw + r / 2, tf + r / 2, 0 });
+            double aq = Math.PI * r * r / 4, k = 4 * r / (3 * Math.PI);
+            parts.Add(new[] { -aq, tw + r - k, tf + r - k, -(r * r * r * r / 8 - aq * k * k) });
+        }
+        double a = parts.Sum(q => q[0]), cx = parts.Sum(q => q[0] * q[1]) / a, cy = parts.Sum(q => q[0] * q[2]) / a;
+        return -parts.Sum(q => q[3] + q[0] * (q[1] - cx) * (q[2] - cy));
+    }
+
+    // whether two AISC names are one shape, written as SAP labels and STAAD's EDI names differ: HSS24X12X3/4 and
+    // HSS24X12X.750, HSS5.500X0.375 and HSS5.5X.375 (the same letters, the same numbers between the X's)
+    public static bool SameShape(string a, string b)
+    {
+        if (string.Equals((a ?? "").Trim(), (b ?? "").Trim(), StringComparison.OrdinalIgnoreCase)) return true;
+        var ma = Regex.Match((a ?? "").Trim(), @"^([A-Za-z]+)(.+)$"); var mb = Regex.Match((b ?? "").Trim(), @"^([A-Za-z]+)(.+)$");
+        if (!ma.Success || !mb.Success || !Is(ma.Groups[1].Value, mb.Groups[1].Value)) return false;
+        string[] pa = ma.Groups[2].Value.Split('X', 'x'), pb = mb.Groups[2].Value.Split('X', 'x');
+        if (pa.Length != pb.Length) return false;
+        for (int k = 0; k < pa.Length; k++)
+        {
+            decimal x, y;
+            if (!Frac(pa[k], out x) || !Frac(pb[k], out y) || x != y) return false;
+        }
+        return true;
+    }
+
+    // a dimension as AISC names it: 2-1/2, 3/16, 2.5, .750
     static bool Frac(string s, out decimal x)
     {
         x = 0;
-        var m = Regex.Match(s ?? "", @"^(?:(\d+(?:\.\d+)?)(?:-(\d+)/(\d+))?|(\d+)/(\d+))$");
+        var m = Regex.Match(s ?? "", @"^(?:(\d*\.?\d+)(?:-(\d+)/(\d+))?|(\d+)/(\d+))$");
         if (!m.Success) return false;
         if (m.Groups[4].Success) { x = decimal.Parse(m.Groups[4].Value, CultureInfo.InvariantCulture) / decimal.Parse(m.Groups[5].Value, CultureInfo.InvariantCulture); return true; }
         x = decimal.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
