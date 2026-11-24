@@ -601,7 +601,7 @@ public static class AnlFramePrintTables
             m.CodeChecks.Add(r);
             print.Rows++;
         }
-        print.Read = true;
+        print.Read = order.Count > 0;      // an output with no member result in a layout known here stays "not read"
         unread = unread.Distinct().Where(x => rows[x].Status.Length == 0).ToList();
         // an error: a member whose result is not read would pass as a member with no result
         if (unread.Count > 0)
