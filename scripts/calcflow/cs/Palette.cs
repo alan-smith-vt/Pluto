@@ -4,8 +4,10 @@
 //   Input      what a person fills in (Type, Support, Binding, Default ...): dark gold header, pale yellow cells
 //   Tool       what CalcFlow writes (Status, Max DCR, governing case ...): charcoal header, plain cells
 //   Reference  what was found or is shown for information (Example, Found, Role, Section): teal header, grey text
-// Statuses and problem severities get solid fills with white (or black, on amber / light grey) bold text, and a DCR
-// above the limit turns red. C# 5 (Windows PowerShell 5.1 Add-Type, warnings are errors).
+// Statuses, checks and problem severities get a soft fill with bold dark text of the same hue (the look of the
+// pipe-review workbooks: pale green / dark green for good, pale red / dark red for bad ...), and a DCR above the limit
+// turns bold dark red. The strong colours are kept for the headers. C# 5 (Windows PowerShell 5.1 Add-Type, warnings
+// are errors).
 
 using System;
 using System.Collections.Generic;
@@ -20,6 +22,10 @@ namespace CalcFlow
         public const string PaleYellow = "FFFFF2CC", White = "FFFFFFFF", GreyText = "FF404040";
         public const string Green = "FF2E7D32", Red = "FFC00000", Orange = "FFC55A11", Grey = "FF595959", LightGrey = "FFBFBFBF", Amber = "FFFFC000";
         public const string MidYellow = "FFFFE699", MidGreen = "FFA9D08E", MidBlue = "FF9BC2E6", MidOrange = "FFF4B183";
+        // the looks of a status or a check: fill, text
+        public static readonly string[] Good = { "FFC6EFCE", "FF006100" }, Bad = { "FFFFC7CE", "FF9C0006" }, Caution = { "FFFFEB9C", "FF7F6000" },
+            Redo = { "FFFFE0B2", "FF7F3F00" }, DataIssue = { "FFE4DFEC", "FF5B2C6F" }, Muted = { "FFEDEDED", "FF7F7F7F" };
+        public const string DarkRed = "FF9C0006";
         public const string TableStyle = "TableStyleMedium1";
 
         public static XStyle Header(ColumnKind k)
@@ -66,11 +72,13 @@ namespace CalcFlow
             sheet.CondFormats.Add(cf);
         }
 
+        public static void Highlight(XOutSheet sheet, string sqref, string text, string[] look) { Highlight(sheet, sqref, text, look[0], look[1]); }
+
         public static readonly string[][] StatusColours =
         {
-            new[] { "OK", Green, White }, new[] { "Over limit", Red, White }, new[] { "Failed", Red, White },
-            new[] { "Invalid", Orange, White }, new[] { "Not run", Grey, White }, new[] { "Gaps", Grey, White },
-            new[] { "Blocked", Grey, White }, new[] { "Excluded", LightGrey, "FF000000" }
+            new[] { "OK", Good[0], Good[1] }, new[] { "Over limit", Bad[0], Bad[1] }, new[] { "Failed", Bad[0], Bad[1] },
+            new[] { "Invalid", Redo[0], Redo[1] }, new[] { "Not run", Caution[0], Caution[1] }, new[] { "Gaps", DataIssue[0], DataIssue[1] },
+            new[] { "Blocked", DataIssue[0], DataIssue[1] }, new[] { "Excluded", Muted[0], Muted[1] }
         };
 
         public static void Statuses(XOutSheet sheet, string sqref)
@@ -80,16 +88,16 @@ namespace CalcFlow
 
         public static void Severities(XOutSheet sheet, string sqref)
         {
-            Highlight(sheet, sqref, "Error", Red, White);
-            Highlight(sheet, sqref, "Warning", Amber, "FF000000");
+            Highlight(sheet, sqref, "Error", Bad);
+            Highlight(sheet, sqref, "Warning", Caution);
         }
 
-        // a DCR above the limit: red, white bold
+        // a DCR above the limit: bold dark red
         public static void OverLimit(XOutSheet sheet, string sqref, double limit)
         {
             var cf = new XCondFormat();
             cf.Sqref = sqref; cf.Operator = "greaterThan"; cf.Value = limit;
-            cf.Style = new XStyle(); cf.Style.Fill = Red; cf.Style.Color = White; cf.Style.Bold = true;
+            cf.Style = new XStyle(); cf.Style.Color = DarkRed; cf.Style.Bold = true;
             sheet.CondFormats.Add(cf);
         }
 

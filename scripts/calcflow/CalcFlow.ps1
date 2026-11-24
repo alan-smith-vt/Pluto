@@ -19,6 +19,13 @@
                     -> the analysis package in <workbook folder>\calcflow\package\<anl name>\ and Model_Data.xlsx
                     beside the workbook (members, joints, supports, load cases, all end forces, enveloped end forces),
                     opened when done. Model_Data.xlsx is generated: every run writes it again.
+    refresh         the workbook written again around the model and the templates folder as they are now, with
+                    everything filled in carried over: -Workbook <CalcFlow.xlsx> [-Templates <folder>] [-NoWait]
+                    [-NoOpen]. For a template added to the folder or changed, new beams or load cases in the model, or
+                    Input cells / Result cells given on the Templates tab. The workbook as it was is kept beside it
+                    ("CalcFlow (before refresh <date>).xlsx"). Excel must have closed the workbook: the step waits for
+                    that (-NoWait: it refuses instead), and opens the workbook again when done.
+                    post-process and check say when a refresh is due.
     launchers       the launchers again (their path to this script is the one at write time): -Workbook <CalcFlow.xlsx>
   The verbs underneath, in the order a project uses them (only run calculates: with Excel where it is installed, else
   LibreOffice):
@@ -53,7 +60,7 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory, Position = 0)][ValidateSet('new', 'post-process', 'launchers', 'check', 'calcs', 'harvest', 'library-new', 'library-export', 'register-new', 'plan', 'run', 'summary')][string]$Verb,
+    [Parameter(Mandatory, Position = 0)][ValidateSet('new', 'post-process', 'refresh', 'launchers', 'check', 'calcs', 'harvest', 'library-new', 'library-export', 'register-new', 'plan', 'run', 'summary')][string]$Verb,
     [string[]]$Templates,
     [string]$Library,
     [string]$Harvest,
@@ -71,7 +78,8 @@ param(
     [switch]$KeepRun,
     [string]$Workbook,
     [string]$Anl,
-    [switch]$NoOpen
+    [switch]$NoOpen,
+    [switch]$NoWait
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Import-CalcFlow.ps1')
@@ -224,6 +232,26 @@ function Get-CfCurrentPackage([string]$ProjectDir) {
     return [CalcFlow.AnalysisPackage]::Load($pkgDir)
 }
 
+# the templates folder of a workbook: -Templates, else its "Templates folder" setting ('' when neither is given)
+function Get-CfTemplatesDir([string]$Wb) {
+    if ($Templates) { return (Get-CfFull $Templates[0]) }
+    $set = [CalcFlow.EngineerWorkbook]::Settings($Wb)
+    if ($set.ContainsKey([CalcFlow.EngineerWorkbook]::TemplatesSetting)) { return $set[[CalcFlow.EngineerWorkbook]::TemplatesSetting] }
+    return ''
+}
+
+# what changed since the workbook was set up (a template added or changed, beams or load cases new in the model):
+# said as notes that end with what to do. Returns how many.
+function Show-CfDrift([string]$Wb, $Pkg) {
+    $tdir = Get-CfTemplatesDir $Wb
+    $files = $null
+    if ($tdir -and (Test-Path -LiteralPath $tdir -PathType Container)) { $files = [string[]](Get-CfTemplateFiles @($tdir)) }
+    $notes = @([CalcFlow.ProjectBook]::Drift($Wb, $Pkg, $tdir, $files))
+    foreach ($n in $notes) { Write-Host "[note ] $n" -ForegroundColor Yellow }
+    if ($notes.Count -gt 0) { Write-Host '         Start tab, "Refresh config" brings the workbook up to date and keeps what you have filled in.' -ForegroundColor Yellow }
+    return $notes.Count
+}
+
 # check: the saved workbook -> library text, register and plan under <project>\calcflow; $true when nothing is wrong
 function Invoke-CfCheck([string]$Wb) {
     $dir = Split-Path -Parent $Wb
@@ -240,6 +268,7 @@ function Invoke-CfCheck([string]$Wb) {
     Write-Host ''
     Write-Host ("workbook {0}" -f $Wb)
     Write-Host ("model    {0} ({1})" -f $pkg.Folder, $pkg.Source)
+    [void](Show-CfDrift $Wb $pkg)
     $x = [CalcFlow.ProjectBook]::Expand($Wb, $pkg, (Join-Path $work 'generated'), $limit, $tdir)
     foreach ($p in $x.Problems) {
         $color = if ($p[0] -eq 'Error') { 'Red' } else { 'Yellow' }
@@ -310,6 +339,49 @@ switch ($Verb) {
         & $exe -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath run -Plan (Join-Path $work 'plan') -Work $work -Engine $Engine
         exit $LASTEXITCODE
     }
+    'refresh' {
+        Need 'Workbook' $Workbook
+        $wb = Get-CfFull $Workbook
+        if (-not (Test-Path -LiteralPath $wb)) { Stop-CfArgs "No such workbook: $wb" }
+        $dir = Split-Path -Parent $wb
+        Assert-CfOutsideRepo $dir
+        # the workbook is rewritten, so Excel must have closed it: wait for that (the step is started from inside it)
+        if ([CalcFlow.SharedFile]::IsLocked($wb)) {
+            if ($NoWait) { Stop-CfArgs "$([IO.Path]::GetFileName($wb)) is open in Excel: save and close it, then refresh." }
+            Write-Host ''
+            Write-Host ("{0} is open in Excel." -f [IO.Path]::GetFileName($wb)) -ForegroundColor Yellow
+            Write-Host 'SAVE it and CLOSE it now: the refresh starts when it is closed, and opens it again when it is done.' -ForegroundColor Yellow
+            $waited = 0
+            while ([CalcFlow.SharedFile]::IsLocked($wb)) {
+                Start-Sleep -Seconds 1
+                $waited++
+                if ($waited -ge 900) { Stop-CfArgs 'The workbook was still open after 15 minutes: nothing was changed. Close it and run Refresh config again.' }
+            }
+            Start-Sleep -Seconds 1
+        }
+        $tdir = Get-CfTemplatesDir $wb
+        $h = $null
+        if ($tdir) {
+            if (-not (Test-Path -LiteralPath $tdir -PathType Container)) { Stop-CfArgs "The templates folder is not there: $tdir (Start tab, `"Templates folder`")." }
+            $tfiles = Get-CfTemplateFiles @($tdir)
+            if ($tfiles.Count -gt 0) {
+                $h = [CalcFlow.Harvest]::Run([string[]]$tfiles, $tdir)
+                foreach ($k in $h.Skipped) { Write-Host ("[skip ] {0}: {1}" -f $k[0], $k[1]) -ForegroundColor Yellow }
+                foreach ($p in $h.Problems) { Write-Host "[error] $p" -ForegroundColor Red }
+                Write-Host ("learned  {0} template workbook(s): {1} inputs, {2} results" -f $h.Templates.Count, $h.Inputs.Count, $h.Outputs.Count)
+            }
+        }
+        else { Write-Host 'No templates folder is given (Start tab): the template tabs stay as they are.' -ForegroundColor Yellow }
+        $pkg = $null
+        if (Test-Path -LiteralPath (Join-Path (Join-Path $dir 'calcflow') 'current-package.txt')) { $pkg = Get-CfCurrentPackage $dir }
+        else { Write-Host 'No model has been read yet (Post-process .ANL): Model Config and Load Cases stay as they are.' -ForegroundColor Yellow }
+        $res = [CalcFlow.EngineerWorkbook]::Refresh($wb, (Join-Path $PSScriptRoot 'CalcFlow.ps1'), $pkg, $h, $tdir)
+        foreach ($n in $res.Notes) { Write-Host "[note ] $n" -ForegroundColor Yellow }
+        Write-Host ("kept     {0} (the workbook as it was)" -f $res.Backup)
+        Write-Host ("written  {0}: everything you had filled in is carried over ({1} note(s) above)" -f $res.Workbook, $res.Notes.Count) -ForegroundColor Green
+        if (-not $NoOpen -and (Test-CfWindows) -and [Environment]::UserInteractive) { Invoke-Item -LiteralPath $res.Workbook }
+        exit 0
+    }
     'launchers' {
         Need 'Workbook' $Workbook
         $wb = Get-CfFull $Workbook
@@ -353,6 +425,7 @@ switch ($Verb) {
         if ($res.MemberPropertyRows -gt 0) { $also += "member properties" }
         if ($res.SectionDisplacementRows -gt 0) { $also += "$($res.SectionDisplacementRows) section displacement rows" }
         if ($also.Count -gt 0) { Write-Host ("         with {0}" -f ($also -join ', ')) }
+        [void](Show-CfDrift $wb $pkg)
         Write-Host ("written  {0}" -f $res.Path) -ForegroundColor Green
         if ($res.ForceSheets -gt 1) { Write-Host ("         All End Forces is on {0} tabs (a tab holds {1:n0} rows)" -f $res.ForceSheets, [CalcFlow.ModelData]::RowsPerSheet) }
         if ($res.NotRead.Count -gt 0) { Write-Host ("         not read yet (listed on the About tab): {0}" -f ($res.NotRead -join '; ')) -ForegroundColor Yellow }

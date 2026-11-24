@@ -7,6 +7,11 @@
 //   WriteNew   CalcFlow.xlsx (Start: the steps, the link cells, the settings table tblStart) and the launchers,
 //              written once: an existing workbook is never overwritten (once saved, only Excel writes it)
 //   Settings   tblStart read back (the saved file, also while Excel has it open)
+//   Refresh    the one time a saved workbook is written again, and only when asked: it is rebuilt around the model
+//              and the templates folder as they are now, with everything that was filled in carried over
+//              (ProjectBook.Sheets), and the workbook as it was is kept beside it under a dated name. Excel must
+//              have closed it.
+// The Start tab also checks the force units as they are typed (formula cells: no step has to run).
 // What a launcher writes goes into other files (Model_Data.xlsx ...): no script can add tabs to a workbook that is
 // open in Excel. C# 5 (Windows PowerShell 5.1 Add-Type, warnings are errors).
 
@@ -18,13 +23,19 @@ using System.Text;
 
 namespace CalcFlow
 {
+    public sealed class RefreshResult
+    {
+        public string Workbook = "", Backup = "";
+        public readonly List<string> Notes = new List<string>();
+    }
+
     public static class EngineerWorkbook
     {
         public const string FileName = "CalcFlow.xlsx";
         public const string PostProcessLauncher = "Post-process ANL.cmd";
         public const string AnlSetting = "Anl file";
 
-        public const string CheckLauncher = "Check.cmd", RunLauncher = "Run calcs.cmd";
+        public const string CheckLauncher = "Check.cmd", RunLauncher = "Run calcs.cmd", RefreshLauncher = "Refresh config.cmd";
         public const string TemplatesSetting = "Templates folder", LimitSetting = "DCR limit";
 
         // the workbook and its launchers in dir; script: the full path of CalcFlow.ps1. pkg (the model read from the
@@ -35,8 +46,11 @@ namespace CalcFlow
             Directory.CreateDirectory(dir);
             string wb = Path.Combine(dir, FileName);
             if (File.Exists(wb)) throw new Exception(wb + " exists: the workbook is yours once written and is never overwritten.");
-            var sheets = new List<XOutSheet> { StartSheet(templatesDir ?? "") };
-            sheets.AddRange(ProjectBook.Sheets(pkg, harvest));
+            List<XOutSheet> tabs = ProjectBook.Sheets(pkg, harvest);
+            var settings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            settings[TemplatesSetting] = templatesDir ?? "";
+            var sheets = new List<XOutSheet> { StartSheet(settings, ProjectBook.UnitChecks(tabs)) };
+            sheets.AddRange(tabs);
             XlsxWriter.Write(wb, sheets, null);
             var files = new List<string> { wb };
             files.AddRange(WriteLaunchers(dir, script));
@@ -44,6 +58,32 @@ namespace CalcFlow
         }
 
         public static string[] WriteNew(string dir, string script) { return WriteNew(dir, script, null, null, ""); }
+
+        // The saved workbook written again around the model (pkg, may be null: Model Config and Load Cases stay as
+        // they are) and the templates (harvest, may be null: the template tabs stay as they are). Everything filled in
+        // is carried over; the workbook as it was is kept beside it. Refused while Excel has it open.
+        public static RefreshResult Refresh(string workbook, string script, AnalysisPackage pkg, HarvestResult harvest, string templatesDir)
+        {
+            if (!File.Exists(workbook)) throw new Exception("No such workbook: " + workbook);
+            if (SharedFile.IsLocked(workbook)) throw new Exception(Path.GetFileName(workbook) + " is open in Excel: save and close it, then refresh.");
+            var res = new RefreshResult();
+            res.Workbook = workbook;
+            XWorkbook old = Xlsx.Read(workbook, 2048);
+            Dictionary<string, string> settings = Settings(workbook);
+            List<XOutSheet> tabs = ProjectBook.Sheets(pkg, harvest, old, templatesDir ?? "", res.Notes);
+            var sheets = new List<XOutSheet> { StartSheet(settings, ProjectBook.UnitChecks(tabs)) };
+            sheets.AddRange(tabs);
+            var mine = new HashSet<string>(sheets.Select(s => s.Name), StringComparer.OrdinalIgnoreCase);
+            foreach (XSheet s in old.Sheets)
+                if (!mine.Contains(s.Name)) res.Notes.Add("tab '" + s.Name + "' is not one of CalcFlow's: it is not in the refreshed workbook (it is in the copy kept beside it)");
+            string dir = Path.GetDirectoryName(workbook), tmp = Path.Combine(dir, "~refresh-" + Path.GetFileName(workbook));
+            XlsxWriter.Write(tmp, sheets, null);
+            res.Backup = Path.Combine(dir, Path.GetFileNameWithoutExtension(workbook) + " (before refresh " + DateTime.Now.ToString("yyyy-MM-dd HHmmss", System.Globalization.CultureInfo.InvariantCulture) + ").xlsx");
+            File.Move(workbook, res.Backup);
+            File.Move(tmp, workbook);
+            if (!string.IsNullOrEmpty(script)) WriteLaunchers(dir, script);
+            return res;
+        }
 
         // the launchers again (a moved repo: their path to CalcFlow.ps1 is the one at write time)
         public static string[] WriteLaunchers(string dir, string script)
@@ -55,12 +95,17 @@ namespace CalcFlow
                 WriteLauncher(dir, CheckLauncher, LauncherText(script, "check", "Check",
                     new[] { "Reads the saved workbook and the model, and lists what is missing or does not fit.", "Nothing is calculated." })),
                 WriteLauncher(dir, RunLauncher, LauncherText(script, "calcs", "Run calcs",
-                    new[] { "Checks the saved workbook, then fills and calculates the connection calcs that are due", "and writes the connection summary." }))
+                    new[] { "Checks the saved workbook, then fills and calculates the connection calcs that are due", "and writes the connection summary." })),
+                WriteLauncher(dir, RefreshLauncher, LauncherText(script, "refresh", "Refresh config",
+                    new[] { "Rebuilds the workbook around the model and the templates folder as they are now,", "keeping everything you have filled in. The workbook as it was is kept beside it." }))
             };
         }
 
-        static XOutSheet StartSheet(string templatesDir)
+        // settings: the values of tblStart to write (a new workbook: the templates folder; a refresh: what was saved).
+        // checks: the template tabs whose force units the tab watches
+        static XOutSheet StartSheet(Dictionary<string, string> settings, List<ProjectBook.UnitCheck> checks)
         {
+            Func<string, string, string> saved = (k, d) => { string v; return settings != null && settings.TryGetValue(k, out v) && v != null ? v : d; };
             var s = new XOutSheet("Start");
             var step = new XStyle(); step.Bold = true; step.HAlign = "center"; step.VAlign = "top";
             var body = new XStyle(); body.Wrap = true; body.VAlign = "top";
@@ -89,17 +134,44 @@ namespace CalcFlow
                 s.Add(new XCell(i + 1, step), first, new XCell(what, body));
                 s.RowHeights[s.Rows.Count - 1] = what.Length > 220 ? 64 : what.Length > 120 ? 48 : 34;
             }
+            const string refresh = "When something changed: the model has new beams or load cases, a template was added to the templates folder or its cells moved, or you gave a template's Input cells or Result cells on the Templates tab. Rebuilds this workbook around what you have filled in: nothing typed is lost, and the workbook as it was is kept beside it. The window asks you to save and close this workbook, and opens it again when it is done.";
+            s.Add(new XCell("When needed", step), go(RefreshLauncher, "Refresh config"), new XCell(refresh, body));
+            s.RowHeights[s.Rows.Count - 1] = 66;
             s.Add();
             int top = s.Rows.Count;
             s.Add(new XCell("Setting", Palette.Header(ColumnKind.Key)), new XCell("Value", Palette.Header(ColumnKind.Input)), new XCell("Notes", Palette.Header(ColumnKind.Reference)));
             Action<string, string, string> setting = (k, v, n) => s.Add(new XCell(k, Palette.Data(ColumnKind.Key)), new XCell(v, Palette.Data(ColumnKind.Input)), new XCell(n, Palette.Data(ColumnKind.Reference)));
-            setting(AnlSetting, "", "The STAAD .anl to read. Leave blank to be asked for it each time. A name without a folder is looked for beside this workbook.");
-            setting(TemplatesSetting, templatesDir, "The folder that holds the calc template workbooks.");
-            setting(LimitSetting, "1.0", "A DCR above this is flagged in the summary.");
+            setting(AnlSetting, saved(AnlSetting, ""), "The STAAD .anl to read. Leave blank to be asked for it each time. A name without a folder is looked for beside this workbook.");
+            setting(TemplatesSetting, saved(TemplatesSetting, ""), "The folder that holds the calc template workbooks.");
+            setting(LimitSetting, saved(LimitSetting, "1.0"), "A DCR above this is flagged in the summary.");
             var t = new XOutTable();
             t.Name = "tblStart"; t.Top = top; t.Left = 0; t.Right = 2; t.Bottom = top + 3; t.Style = Palette.TableStyle;
             s.Tables.Add(t);
-            s.Width(0, 12); s.Width(1, 46); s.Width(2, 110);
+
+            // ---- the force units, checked as they are typed
+            s.Add();
+            s.Add(new XCell("Force units", Palette.Title()));
+            s.Add(new XCell("", body), new XCell("Checked as you type, for every template a connection uses: each column that takes a force of the model (Source Fx to Mz) needs its Unit, and so does a load table on the Templates tab. The forces are converted from the model's units to the unit you give.", Palette.Note()));
+            int ctop = s.Rows.Count;
+            s.Add(new XCell("Units", Palette.Header(ColumnKind.Tool)), new XCell("Template tab", Palette.Header(ColumnKind.Key)), new XCell("Says", Palette.Header(ColumnKind.Tool)), new XCell("Missing", Palette.Header(ColumnKind.Tool)));
+            var center = new XStyle(); center.HAlign = "center"; center.Bold = true; center.Border = true;
+            foreach (ProjectBook.UnitCheck c in checks ?? new List<ProjectBook.UnitCheck>())
+            {
+                int r = s.Rows.Count + 1;
+                string tab = c.Tab.Replace("\"", "\"\"");
+                const string ok = "every force it takes has its unit", unused = "no connection uses this template yet",
+                    fix = " force unit(s) missing: fill the Unit row of the tab, or the Force unit and Moment unit of its row on the Templates tab";
+                s.Add(new XCell(new XFormula("IF(COUNTIF('" + ProjectBook.ConnectionLib + "'!$B$3:$B$2000,\"" + tab + "\")=0,\"Not used\",IF(D" + r + "=0,\"OK\",\"Fix\"))", !c.Used ? "Not used" : c.Missing == 0 ? "OK" : "Fix"), center),
+                    new XCell(new XFormula("HYPERLINK(\"#'" + tab.Replace("'", "''") + "'!A1\",\"" + tab + "\")", c.Tab), link),
+                    new XCell(new XFormula("IF(A" + r + "=\"Not used\",\"" + unused + "\",IF(D" + r + "=0,\"" + ok + "\",D" + r + "&\"" + fix + "\"))", !c.Used ? unused : c.Missing == 0 ? ok : c.Missing + fix), body),
+                    new XCell(new XFormula(c.Formula, c.Missing.ToString(System.Globalization.CultureInfo.InvariantCulture)), body));
+            }
+            if (checks == null || checks.Count == 0) s.Add("", new XCell("(no template tab yet)", body), "", "");
+            int cbottom = s.Rows.Count;
+            Palette.Highlight(s, "A" + (ctop + 2) + ":A" + cbottom, "OK", Palette.Good);
+            Palette.Highlight(s, "A" + (ctop + 2) + ":A" + cbottom, "Fix", Palette.Bad);
+            Palette.Highlight(s, "A" + (ctop + 2) + ":A" + cbottom, "Not used", Palette.Muted);
+            s.Width(0, 17); s.Width(1, 46); s.Width(2, 110);
             s.Landscape = true; s.FitToWidth = true;
             return s;
         }

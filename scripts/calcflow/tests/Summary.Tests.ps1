@@ -76,7 +76,9 @@ Test 'the colours: statuses, DCRs above the limit, problems; numbers are numbers
     $over = @($c.CondFormats | Where-Object { $_.Operator -eq 'greaterThan' })
     Assert-True ($over.Count -ge 3) 'Max DCR and each check column'
     Assert-Equal $over[0].Value 1
-    Assert-Equal $over[0].Style.Fill 'FFC00000'
+    Assert-Equal "$($over[0].Style.Color)|$($over[0].Style.Bold)|$($over[0].Style.Fill)" 'FF9C0006|True|' 'a DCR above the limit: bold dark red, no fill'
+    $ok = @($c.CondFormats | Where-Object { $_.EqualsText -eq 'OK' })[0]; $bad = @($c.CondFormats | Where-Object { $_.EqualsText -eq 'Over limit' })[0]
+    Assert-Equal "$($ok.Style.Fill)/$($ok.Style.Color) $($bad.Style.Fill)/$($bad.Style.Color)" 'FFC6EFCE/FF006100 FFFFC7CE/FF9C0006' 'soft fills with dark text of the same hue'
     $maxCol = [Array]::IndexOf([string[]]@($c.Rows[1] | ForEach-Object { $_.Value }), 'Max DCR')
     $first = $c.Rows[2][$maxCol]
     Assert-True ($first.Value -is [double]) 'Max DCR is a number'

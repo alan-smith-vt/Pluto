@@ -493,6 +493,8 @@ namespace CalcFlow
                         if (o != null) { v.Text = o.Value; v.Source = "override (" + o.Connection + (o.Step.Length > 0 ? " step " + o.Step : "") + ")"; }
                         else if (p != null && p.Default.Length > 0) { v.Text = p.Default; v.Source = "type " + type.Id + " default"; }
                         else { err = "parameter '" + arg + "' has no value: give " + type.Id + " a default (tblParams) or the connection an override (tblOverrides)"; return null; }
+                        // (blank): the cell is emptied
+                        if (string.Equals(v.Text.Trim(), ProjectBook.Blank, StringComparison.OrdinalIgnoreCase)) { v.Text = ""; err = ""; return v; }
                         return Num(v, inp, pu ?? inp.Unit, out err);
                     case "reg":
                         string rv;

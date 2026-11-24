@@ -109,7 +109,7 @@ namespace CalcFlow
                 about.Add(Num(V(p, "Order")), V(p, "Command"), V(p, "LoadList"), read ? "Yes (" + V(p, "Rows") + " rows)" : "Not read yet");
             }
             if (prints.Count == 0) about.Add("", "(the package lists no output commands: written by an earlier reader)", "", "");
-            Palette.Highlight(about, "D" + (top + 2) + ":D" + (top + 1 + Math.Max(1, prints.Count)), "Not read yet", Palette.Amber, "FF000000");
+            Palette.Highlight(about, "D" + (top + 2) + ":D" + (top + 1 + Math.Max(1, prints.Count)), "Not read yet", Palette.Caution);
             about.Add();
             var problems = Problems(pkg);
             if (problems.Count > 0)
@@ -245,9 +245,9 @@ namespace CalcFlow
                     "one row per member per CHECK CODE command, as STAAD printed it. Governs = Y marks a member's largest ratio over the checks in the file. Ratio, Critical, LC and Location are the governing ones of that check; FX to MZ are the forces of that case in STAAD's axes, in the units beside them (FX is printed without its sign: Axial says C or T). The older layouts print FX, MY and MZ only",
                     new[] { "Member", "Check" }, new[] { "Member", "Check", "LC" }, new[] { "Ratio", "Location", "FX", "FY", "FZ", "MX", "MY", "MZ" });
                 string st = "G3:G" + (2 + rows.Count);
-                Palette.Highlight(cs, st, "FAIL", Palette.Red, Palette.White);
-                Palette.Highlight(cs, st, "PASS", Palette.Green, Palette.White);
-                Palette.Highlight(cs, st, "NOT DESIGNED", Palette.Amber, "FF000000");
+                Palette.Highlight(cs, st, "FAIL", Palette.Bad);
+                Palette.Highlight(cs, st, "PASS", Palette.Good);
+                Palette.Highlight(cs, st, "NOT DESIGNED", Palette.Caution);
                 sheets.Add(cs);
             }
             List<Dictionary<string, string>> details = Optional(pkg, "codecheckdetails.csv");

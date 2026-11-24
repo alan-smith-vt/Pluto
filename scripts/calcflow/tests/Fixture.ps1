@@ -116,3 +116,17 @@ function New-MiniXlsx([string]$Path, [string]$SheetXml, [string]$Names) {
     }
     finally { $fs.Dispose() }
 }
+
+# the column letter of a heading on a tab (schedule tabs: the heading row is 5; the others: 2)
+function Get-Col($Book, [string]$Tab, [string]$Heading, [int]$Row) {
+    $s = $Book.Sheet($Tab)
+    for ($c = 0; $c -lt 300; $c++) { if ($s.Text($Row - 1, $c).Trim() -eq $Heading) { return [CalcFlow.Xlsx]::ColName($c) } }
+    throw "no heading '$Heading' on $Tab"
+}
+
+# a copy of a workbook with cells written, as Excel would save them
+function Save-Cells([string]$From, [string]$To, [object[]]$Cells) {
+    $w = New-Object 'System.Collections.Generic.List[CalcFlow.CellWrite]'
+    foreach ($c in $Cells) { $w.Add([CalcFlow.CellWrite]::new([string]$c[0], [string]$c[1], $c[2])) }
+    [CalcFlow.XlsxPatch]::Write($From, $To, $w, $false)
+}

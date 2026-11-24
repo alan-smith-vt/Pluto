@@ -83,7 +83,7 @@ namespace CalcFlow
             return s.Length == 0 ? "template" : s;
         }
 
-        static string Relative(string full, string dir)
+        internal static string Relative(string full, string dir)
         {
             if (string.IsNullOrEmpty(dir)) return Path.GetFileName(full);
             string d = Path.GetFullPath(dir).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
@@ -210,6 +210,31 @@ namespace CalcFlow
             d["Kind"] = v != null && v.Type == "list" ? "list" : (c == null || c.IsEmpty ? "blank" : (c.IsNumber ? "number" : (c.Type == "b" ? "boolean" : "text")));
             d["List"] = v != null && v.Type == "list" ? v.Formula1.Trim('"') : "";
             d["Found"] = why + (name != null ? " (" + Xlsx.Ref(row, col) + ")" : "");
+            return d;
+        }
+
+        // an input the engineer points at: the row harvest would give it (its label, its unit, what it holds)
+        public static Dictionary<string, string> InputAt(TemplateBook b, string id, TSheet s, int row, int col)
+        {
+            return Input(b, s, row, col, s.Get(row, col), null, s.ValidationAt(row, col), id, "given");
+        }
+
+        // a result the engineer points at: what harvest makes of it, else a plain value under its label
+        public static Dictionary<string, string> OutputAt(TemplateBook b, string id, TSheet s, int row, int col)
+        {
+            TCell c = s.Get(row, col);
+            Dictionary<string, string> o = c != null && c.IsFormula ? Output(b, s, c, null, id) : null;
+            if (o != null) return o;
+            TCell nearest = LeftLabel(s, row, col, 8), title = RowTitle(s, row, col);
+            var d = Row(LibrarySchema.OutputColumns);
+            d["Template"] = id; d["Sheet"] = s.Name; d["Cell"] = Xlsx.Ref(row, col);
+            if (nearest != null) { d["GuardCell"] = nearest.Ref; d["GuardText"] = nearest.Value.Trim(); }
+            d["Output"] = nearest != null ? nearest.Value.Trim() : (title != null ? title.Value.Trim() : Xlsx.Ref(row, col));
+            d["Kind"] = "value";
+            d["PerCase"] = "N";
+            d["Example"] = Tidy(c);
+            d["Formula"] = c != null && c.IsFormula ? "=" + c.Formula : "";
+            d["Found"] = "given";
             return d;
         }
 
