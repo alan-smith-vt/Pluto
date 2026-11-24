@@ -73,4 +73,4 @@ which was taken from the channel; no probe has run a tee or a double angle in SA
 CAESAR's restraints, re-seeding that keeps SAP-side additions, and writing a seeded model back as a `.cii`. See
 "Possible later" in [[vault/decisions/2026-11-12-caesar-to-sap|2026-11-12-caesar-to-sap]].
 
-Last session: [[vault/handoffs/handoff-2026-11-23|handoff-2026-11-23]].
+Last sessions: [[vault/handoffs/handoff-2026-11-24|handoff-2026-11-24]] (the frame `.anl` reader), [[vault/handoffs/handoff-2026-11-23|handoff-2026-11-23]].
