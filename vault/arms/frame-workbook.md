@@ -63,6 +63,7 @@ The whole picture, CAESAR and STAAD included, with the commands for each job:
 > | Settings | The SAP version stamped on the `.s2k`'s PROGRAM CONTROL line (editable: SAP imports nothing from a file stamped for another version; Help > About in SAP shows yours), the units, where the model came from |
 > | STAAD commands | STAAD only (2026-11-24): its commands after the analysis, one per row, as STAAD reads them (`LOAD LIST`, `LOAD LIST ENV`, `PRINT …`, `PARAMETER`, `CODE`, design parameters, `CHECK CODE` …). `-Std` writes them after the analysis, else Pluto's own prints when the sheet is empty; a first row `PERFORM ANALYSIS PRINT …` gives the analysis its PRINT option. Filled by `-In <x>.std`. The `.s2k` leaves them out |
 > | STAAD loads | STAAD only: Kind (Case, Combination, Envelope), Name, Number, Type. `-Std` writes each case or combination as `LOAD <Number>` and each Envelope combination as `ENVELOPE <Number> [TYPE <Type>]`, so the commands' load lists name them; a load not listed gets the next free number. Filled by `-In <x>.std` |
+> | (both STAAD sheets) | SAP's export has neither: `-In <export>.s2k -Merge <this workbook>` takes them back from the workbook ([[vault/format/frame-to-staad\|frame-to-staad]], "Merging") |
 > | Carried | Read-only: each table no object owns, with its row count, and each table objects keep that no sheet shows (offsets along the length, nonlinear case parameters, auto mesh, design data …): they ride along unchanged and follow renames and deletions |
 >
 > **Reading rules:**

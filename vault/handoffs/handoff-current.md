@@ -16,6 +16,9 @@ created: 2026-11-18
   STAAD's edits too, or a model made in STAAD. Later units are converted to the first, and envelopes become SAP
   Envelope combinations. The commands after the analysis (load lists, prints, design parameters) and STAAD's load
   numbers ride on the workbook's two STAAD sheets: `-Std` writes them again, `-S2k` leaves them out.
+- **SAP <-> workbook <-> STAAD.** The workbook is the master. `-In <SAP export | .std> -Merge <workbook>` reads either
+  program's file back and keeps what that program has no place for
+  ([[vault/arms/pipe-and-frame-workflow|pipe-and-frame-workflow]]).
 - **STAAD results in the viewer.** A frame model's `.anl` becomes a viewer model (`scripts/staad/Run-StaadFrame.ps1`,
   [[vault/arms/staad-frame-to-viewer|staad-frame-to-viewer]]): forces, displacements, reactions and code ratios per
   load case (one `LOAD LIST <case>` + `CHECK CODE` per case).
@@ -48,6 +51,7 @@ created: 2026-11-18
 Purging it means rewriting the branch's history.
 
 **Waiting on the production machine:**
+- STAAD round 4 (`scripts/lib/probes/README.md`, steps 1 to 7): units, envelopes, per-case checks, the triangle;
 - the user's STAAD model again with `-In <x>.std -Xlsx`: the remaining refusals, if any, to read next (see
   [[vault/handoffs/handoff-2026-11-24b|handoff-2026-11-24b]]);
 - the PS 5.1 compile of `StaadToPluto`, and its probe run: `Run-StaadFrame.ps1 -Anl scripts\lib\probes\anl-prints-probe.anl

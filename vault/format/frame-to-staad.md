@@ -534,6 +534,59 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > - a member offset under `SELFWEIGHT` with no joint loads for its end zones' weight. The writer puts that weight in as
 >   joint loads; a model made in STAAD has none.
 
+> [!info]- Merging: SAP's or STAAD's file back into the master (`-Merge`, 2026-11-24)
+> The frame workbook is the master. SAP and STAAD each hold only part of it, so a file one of them saved, read on its
+> own, loses the other's part:
+> - **SAP's export** has no STAAD commands, STAAD load numbers or envelope types: SAP has no place for them.
+> - **A `.std`** has none of SAP's design data, preferences, mass source, functions or modal cases.
+>
+> `Build-Frame -In <file> -Merge <master.xlsx | .frame.json>` reads the file, and its model wins: the edits made in SAP
+> or STAAD stand. `FrameMerge` then fills in from the master what that program has no place for. It works on the `.s2k`
+> documents: the file's model's document gets the master's rows, and is read again. Each item carried, or not carried,
+> is a `[merge]` line.
+>
+> | `-In` | Carried from the master |
+> |---|---|
+> | SAP's `.s2k` | the STAAD commands, as written; the STAAD load and envelope numbers and envelope types of the loads still there, by name |
+> | a `.std` | the tables STAAD has no place for (`FrameStd.StaadHolds` false): design procedures and overwrites, preferences, mass source, functions, grids, output stations … Their rows come for the joints, frames, sections, materials, patterns and groups still there, and whole where no object owns them. Also the load cases STAAD has no place for (other than linear or nonlinear static) and the combinations of another type or of such a case, with all their rows |
+>
+> **Never carried:**
+> - structural SAP tables, which `-Std` refuses, so the `.std`'s structure stands;
+> - a link's rows, loads, and `PROGRAM CONTROL`.
+>
+> A combination whose items are not all in the model stays out. To update the master itself:
+> `-In <file> -Merge <master>.xlsx -Xlsx -Out <master>` (the workbook overwrite question applies).
+>
+> **Limits:**
+> - **Out of STAAD:** an insertion point comes back as joint offsets, and auto mesh as STAAD's (none).
+> - **Not restored:** an envelope `-Std` did not write (it overlapped another) is not carried back.
+> - **Not checked:** the STAAD commands carried after edits in SAP are not checked against SAP's renamed or deleted
+>   members.
+>
+> Checked in the session on the round 4 probe, on a SAP rack with a modal case, its envelope and steel design overwrites,
+> and on the earlier STAAD files:
+> - SAP's file merged gives the same `.std` as the master; without the merge, the design commands are gone;
+> - STAAD's file merged gives back the master's SAP-only tables and modal case;
+> - STAAD → workbook → STAAD is identical.
+
+> [!info]- STAAD round 4 (`scripts/lib/probes/staad-round4-probe.std`, pending)
+> The triangle SAP <-> workbook <-> STAAD, with STAAD as the judge. The steps and what to send back are in
+> `scripts/lib/probes/README.md`. It settles:
+> - the unit conversion of every kind of number (the original and Pluto's copy must print the same results);
+> - the `UNIT` in force at the analysis, carried;
+> - `DEFINE ENVELOPE` where `-Std` writes it, and a load in two envelopes;
+> - checks under envelopes and per case, in the `.anl` reader and the viewer;
+> - SAP's import of the workbook's `.s2k` and the merge from SAP's own export;
+> - STAAD's own save of the carried commands, load numbers and envelopes.
+>
+> In the session the probe reads with no refusal and writes back the same, through the workbook too. Every converted
+> number was checked by hand:
+> - 200 kN/mm² → 4177102.75 ksf;
+> - −10 kN/m → −0.6852 kip/ft;
+> - 2000 kN·m/rad → 1475.12 kip·ft/rad;
+> - 600 cm² → 0.645832 ft²;
+> - −0.25 in → −0.020833 ft.
+
 > [!info]- The STAAD probe (`-StdProbe <folder>`)
 > `staad-probe.s2k` and `staad-probe.std`: one model, every part analysable, for SAP2000 and STAAD.Pro alike. Each
 > part is its own cantilever or short frame, 100 in apart:

@@ -103,6 +103,11 @@ public static class FrameStd
         File.WriteAllText(path, ToText(m, source, notes), new UTF8Encoding(false));
     }
 
+    // whether -Std writes a SAP table's content to STAAD (FrameMerge carries the others back from the master), and whether
+    // a table changes the structure (-Std refuses it)
+    public static bool StaadHolds(string table) { return Writer.Holds(table); }
+    public static bool IsStructural(string table) { return Writer.Changes(table); }
+
     // the .std text (CRLF); notes gets every notice; throws FrameStdRefusal with every refusal
     public static string ToText(FrameModel m, string source, List<string> notes)
     {
@@ -989,6 +994,10 @@ public static class FrameStd
             "AREA STIFFNESS MODIFIER DEFINITIONS", "NAMED SETS", "SECTION CUTS", "SECTION DESIGNER", "JOINT PATTERN", "JOINT MERGE NUMBER",
             "LOAD PATTERN DEFINITIONS", "LOAD CASE DEFINITIONS", "ACTIVE DEGREES", "COORDINATE SYSTEMS", "SELECTION", "VIEW", "MODEL ALIVE", "DESIGN",
             "BRIDGE", "LANE", "VEHICLE", "REBAR", "AUTO WAVE", "FRAME END SKEW", "FRAME LOAD TRANSFER", "FRAME RATING" };
+
+        // what STAAD holds of a SAP table (FrameMerge): a table -Std reads; one that changes the structure and -Std refuses
+        internal static bool Holds(string table) { return Read.Any(x => Is(table, x)); }
+        internal static bool Changes(string table) { string up = (table ?? "").ToUpperInvariant(); return Structural.Any(x => up.StartsWith(x)); }
 
         void Tables()
         {

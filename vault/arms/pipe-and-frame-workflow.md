@@ -52,7 +52,7 @@ spreadsheets) is not part of this pipeline; see STAAD in the [[vault/arms/Arms m
 > | Runner | In | Out | Note |
 > |---|---|---|---|
 > | `scripts\caesar\Build-Pipe.ps1` | `.cii`, `.toml`, CAESAR workbook `.xlsx`, `.pipe.json` | `-Cii`, `-Xlsx`, `-Json`, `-Preview`, `-Compare <file>`; `-Watch`, `-NewWorkbook [-Seed <.cii>]`, `-Refresh` | [[vault/arms/pipe-workbook\|pipe-workbook]], [[vault/arms/pipe-builder\|pipe-builder]] |
-> | `scripts\frame\Build-Frame.ps1` | `.s2k`, frame workbook `.xlsx`, `.frame.json`, a `.std` written with `-Std`; a CAESAR model (`.cii`, `.toml`, `.pipe.json`, CAESAR workbook) seeds the check model | `-S2k [-Open]`, `-Xlsx`, `-Std`, `-Json`, `-Preview`; `-Watch`, `-NewWorkbook`, `-Refresh`; `-AppendixD`; probes `-Probe`, `-ProbeCheck`, `-StdProbe` | [[vault/arms/frame-workbook\|frame-workbook]], [[vault/format/pipe-to-frame\|pipe-to-frame]], [[vault/format/frame-to-staad\|frame-to-staad]] |
+> | `scripts\frame\Build-Frame.ps1` | `.s2k`, frame workbook `.xlsx`, `.frame.json`, a `.std` written with `-Std`; a CAESAR model (`.cii`, `.toml`, `.pipe.json`, CAESAR workbook) seeds the check model | `-S2k [-Open]`, `-Xlsx`, `-Std`, `-Json`, `-Preview`; `-Merge <master>`; `-Watch`, `-NewWorkbook`, `-Refresh`; `-AppendixD`; probes `-Probe`, `-ProbeCheck`, `-StdProbe` | [[vault/arms/frame-workbook\|frame-workbook]], [[vault/format/pipe-to-frame\|pipe-to-frame]], [[vault/format/frame-to-staad\|frame-to-staad]] |
 > | `scripts\caesar\Run-Caesar.ps1` | `-Neutral <.cii>` `[-Results <CAESAR output .xlsx>]` | `.bin` + `.features.json` with CAESAR's results | [[vault/arms/caesar-to-viewer\|caesar-to-viewer]] |
 > | `scripts\sap\Run-Sap.ps1` | a running SAP2000, or `-Open <.s2k\|.sdb>` | `-Run`, `-Results <s2k>`, `-Export <base>` (viewer files) | [[vault/arms/sap-controller\|sap-controller]], [[vault/arms/sap-export-model\|sap-export-model]] |
 > | `scripts\staad\Run-StaadFrame.ps1` | `-Anl <STAAD frame .anl>` | `.bin` + `.features.json` with STAAD's printed results: forces, displacements, reactions, code ratios per case | [[vault/arms/staad-frame-to-viewer\|staad-frame-to-viewer]] |
@@ -139,6 +139,32 @@ spreadsheets) is not part of this pipeline; see STAAD in the [[vault/arms/Arms m
 > ```
 >
 > A new model starts from `... Build-Frame.ps1 -NewWorkbook -Out "<project dir>\duct.xlsx" -Units "lb, in, F"`.
+
+> [!info]- SAP2000 <-> frame workbook <-> STAAD.Pro (2026-11-24)
+> The frame workbook is the master. Each way is one `Build-Frame` command:
+>
+> | From → to | Command |
+> |---|---|
+> | workbook → SAP | `-In <wb>.xlsx -S2k` |
+> | workbook → STAAD | `-In <wb>.xlsx -Std` |
+> | SAP → workbook | `-In <export>.s2k -Merge <wb>.xlsx -Xlsx -Out <wb>` |
+> | STAAD → workbook | `-In <x>.std -Merge <wb>.xlsx -Xlsx -Out <wb>` |
+> | SAP → STAAD | `-In <export>.s2k -Merge <wb>.xlsx -Std` |
+> | STAAD → SAP | `-In <x>.std -Merge <wb>.xlsx -S2k` |
+>
+> **The first time:** a model made in SAP or in STAAD starts the master with `-In <its file> -Xlsx` (no `-Merge`).
+>
+> **What each side keeps:** SAP holds no STAAD commands, load numbers or envelope types; STAAD holds no SAP design
+> data, preferences or modal cases. `-Merge` takes them back from the master, so a round through either program keeps
+> both ([[vault/format/frame-to-staad|frame-to-staad]], "Merging").
+>
+> ```mermaid
+> flowchart LR
+>   WB["frame workbook (master)"] -->|"-S2k"| SAP["SAP2000"]
+>   WB -->|"-Std"| STAAD["STAAD.Pro"]
+>   SAP -->|"-In export.s2k -Merge wb"| WB
+>   STAAD -->|"-In x.std -Merge wb"| WB
+> ```
 
 > [!info]- When SAP, STAAD or CAESAR change version: the probes
 > - **SAP's `.s2k` tables:** `-Probe <folder>`, import the probe in SAP, export it with every table, then

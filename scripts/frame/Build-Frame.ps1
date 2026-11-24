@@ -63,6 +63,12 @@
 #                   -Open <s2k> -Stamp -NewInstance -KeepOpen in a separate PowerShell (the SAP controller), stamped for
 #                   that SAP's version and saved beside it as .sdb; SAP's joint, frame and link counts are compared with
 #                   the model's. Not with -Watch.
+#   -Merge <master> with -In <SAP's .s2k> or -In <a .std>: the file's model, with what its program has no place for
+#                   taken from the master (the frame workbook or .frame.json the file was written from; FrameMerge):
+#                   from an .s2k the master's STAAD commands and STAAD load / envelope numbers (by name); from a .std
+#                   the master's SAP-only tables (design, preferences, mass, functions, grids ...) for the objects still
+#                   there, and its load cases and combinations STAAD has no place for (modal, response spectrum ...).
+#                   Each item carried or not on a [merge] line. To update the master itself: -Out <master> -Xlsx.
 #   -Watch          with an .xlsx: every save rebuilds the outputs (-Preview when none is given); Ctrl+C stops
 #   -NewWorkbook    -Out <name>.xlsx: an empty workbook (-Units "Kip, in, F" by default, -SapVersion 22.0.0) and its
 #                   launchers; an existing workbook as for -Xlsx
@@ -115,7 +121,8 @@ param(
     [string]$Probe,
     [string]$StdProbe,
     [string]$ProbeCheck,
-    [string]$ProbeFile
+    [string]$ProbeFile,
+    [string]$Merge
 )
 $ErrorActionPreference = "Stop"
 function Say([string]$step, [string]$text) { Write-Output ("[{0}] {1}" -f $step.PadRight(7), $text) }
@@ -234,6 +241,12 @@ if ($In) {
     if ($Watch -and -not ($S2k -or $Std -or $Json -or $Preview)) { $Preview = $true }
     if ($Open -and $Watch) { Fail "Build-Frame: -Open is not for -Watch (it would start SAP on every save)" }
     if ($Open) { $S2k = $true }
+    if ($Merge) {
+        if ($kind -ne "s2k" -and $kind -ne "std") { Fail "Build-Frame: -Merge takes -In <SAP's .s2k> or -In <a .std>: the file whose model wins, the master filling in what its program has no place for" }
+        if (-not (Test-Path -LiteralPath $Merge -PathType Leaf)) { Fail "Build-Frame: -Merge: master not found: $Merge" }
+        $mergePath = Full $Merge
+        if (-not ($mergePath.ToLowerInvariant().EndsWith(".xlsx") -or $mergePath.ToLowerInvariant().EndsWith(".frame.json"))) { Fail "Build-Frame: -Merge takes the master: a frame workbook (.xlsx) or a .frame.json" }
+    }
 }
 $jobName = $null
 if ($inPath) { $jobName = ([IO.Path]::GetFileName($inPath) -replace '\.(frame|pipe)\.json$', '' -replace '\.[^.]+$', '') -replace ' ', '_' }
@@ -469,6 +482,15 @@ function Build-Once {
     } else {
         $model = [FrameModelJson]::Read((ReadSharedText $inPath))
         Say "read" ("{0}: the frame model" -f $inPath)
+    }
+    if ($Merge) {
+        # the file's model wins; the master (the workbook it was written from) fills in what that program has no place for
+        $script:step = "merging the master " + [IO.Path]::GetFileName($mergePath)
+        $master = $(if ($mergePath.ToLowerInvariant().EndsWith(".xlsx")) { ([FrameWorkbook]::Read($mergePath)).Model } else { [FrameModelJson]::Read((ReadSharedText $mergePath)) })
+        $mn = New-Object 'System.Collections.Generic.List[string]'
+        $model = [FrameMerge]::Merge($model, $master, $kind, $mn)
+        foreach ($n in $mn) { Say "merge" ($n -replace '^merge: ', '') }
+        Say "merge" ("{0} with {1}: the file's model, the master's {2} added" -f [IO.Path]::GetFileName($inPath), [IO.Path]::GetFileName($mergePath), $(if ($kind -eq "s2k") { "STAAD data" } else { "SAP-only data" }))
     }
     if ($Xlsx) {
         # a workbook says what SAP analyses: a frame SAP's automatic mesh joins to joints on its span is split there
