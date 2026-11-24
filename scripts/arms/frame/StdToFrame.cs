@@ -788,8 +788,9 @@ public static class StdToFrame
                 if (!m.Values.TryGetValue("E", out e) || e <= 0) { Refuse(who + ": no E"); continue; }
                 bool hasNu = m.Values.TryGetValue("POISSON", out nu), hasG = m.Values.TryGetValue("G", out g);
                 if (!hasNu && hasG) nu = e / (2 * g) - 1;
-                // converted from a later UNIT, its digits are not the file's: STAAD.Pro's own save's 6 (1e-5 of the size) instead
-                if (hasG && !Close(g, e / (2 * (1 + nu))) && !(m.Converted && Math.Abs(g - e / (2 * (1 + nu))) <= 1e-5 * g)) Refuse(who + ": G " + FrameStd.N(g) + " apart from E / (2 (1 + POISSON)) = " + FrameStd.N(e / (2 * (1 + nu))) + " (SAP's isotropic material takes G from E and Poisson's ratio)");
+                // to STAAD.Pro's own save's 6 digits (1e-5 of the size): it writes E 4.1771e+06 and G 1.60658e+06, each rounded
+                // apart (round 4, 2026-11-24), and a number in E notation reads with no trace of its digits
+                if (hasG && !Close(g, e / (2 * (1 + nu))) && Math.Abs(g - e / (2 * (1 + nu))) > 1e-5 * g) Refuse(who + ": G " + FrameStd.N(g) + " apart from E / (2 (1 + POISSON)) = " + FrameStd.N(e / (2 * (1 + nu))) + " (SAP's isotropic material takes G from E and Poisson's ratio)");
                 if (nu < 0 || nu >= 0.5) Refuse(who + ": Poisson's ratio " + FrameStd.N(nu));
                 if (m.Values.ContainsKey("DAMP")) Note(who + ": its DAMP is not carried (static cases only)");
                 bool steel = m.Type != null && Is(m.Type, "STEEL");

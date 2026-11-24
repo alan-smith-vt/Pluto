@@ -1613,7 +1613,15 @@ public static class FrameStd
             if (sup.Count > 0) { o.Add("SUPPORTS"); foreach (var s in sup) line(s); }
             if (sup.Any(s => s.Contains(" INCLINED "))) Note("inclined supports: STAAD prints their reactions in global axes (SET INCLINED REACTION for the inclined ones)");
 
-            // loads
+            // loads. DEFINE ENVELOPE first: STAAD.Pro 2025 refuses a DEFINE after a primary load ("DEFINE commands for load
+            // generation should be provided before specifying primary load cases", round 4, 2026-11-24); its load numbers
+            // name loads defined below
+            if (Envs.Count > 0)
+            {
+                o.Add("DEFINE ENVELOPE");
+                foreach (var e in Envs) line(Condense(e.Loads) + " ENVELOPE " + e.Number.ToString(Inv) + (e.Type.Length > 0 ? " TYPE " + e.Type : ""));
+                o.Add("END DEFINE ENVELOPE");
+            }
             var refNo = new Dictionary<int, int>();
             var used = refs.Select((kv, i) => i).Where(i => !refs[i].Value.Empty).ToList();
             if (used.Count > 0)
@@ -1671,12 +1679,6 @@ public static class FrameStd
             {
                 o.Add("LOAD COMBINATION " + (c.Kind == "" ? "" : c.Kind + " ") + c.Number.ToString(Inv) + " " + Plain(c.Name, 60));
                 line(string.Join(" ", c.Items.Select(kv => kv.Key.ToString(Inv) + " " + N(kv.Value)).ToArray()));
-            }
-            if (Envs.Count > 0)
-            {
-                o.Add("DEFINE ENVELOPE");
-                foreach (var e in Envs) line(Condense(e.Loads) + " ENVELOPE " + e.Number.ToString(Inv) + (e.Type.Length > 0 ? " TYPE " + e.Type : ""));
-                o.Add("END DEFINE ENVELOPE");
             }
 
             // the model's own STAAD commands after the analysis (StaadCarry, the workbook's STAAD commands sheet), else Pluto's prints

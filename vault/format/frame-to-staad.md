@@ -490,8 +490,9 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > - a spring (`KFX` …, `KMX` …).
 >
 > The text is the shortest that holds the value to 12 digits: 10.5 FEET is 126 INCHES; 29000 KSI is 4176000 KSF.
-> A converted material's G is checked against E and POISSON to 1e-5 (STAAD's 6 digits), since its digits are no
-> longer the file's. Commands after the analysis keep their own `UNIT`. When the analysis ran under another `UNIT` than
+> A material's G is checked against E and POISSON to 1e-5 of its size, STAAD.Pro's own save's 6 digits. The digits
+> as written are not enough: a converted number has none of the file's, and STAAD's save writes E and G in E notation,
+> each rounded apart (`E 4.1771e+06`, `G 1.60658e+06`; round 4). Commands after the analysis keep their own `UNIT`. When the analysis ran under another `UNIT` than
 > the first, that `UNIT` goes first among them, so a design parameter like `LY 144` keeps its meaning.
 >
 > **Read as the model holds it:**
@@ -511,7 +512,10 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > - TYPE (STRENGTH, SERVICEABILITY, CONNECTION, COLUMN, STRESS; its first letters are enough) and the number ride on the
 >   STAAD loads sheet.
 >
-> `-Std` writes every SAP Envelope combination as `DEFINE ENVELOPE`, after the combinations. One is listed as not written
+> `-Std` writes every SAP Envelope combination as `DEFINE ENVELOPE`, before the first load (`DEFINE REFERENCE LOADS`
+> and the primary loads). STAAD.Pro 2025 stops at a `DEFINE` after a primary load: "DEFINE commands for load generation
+> should be provided before specifying primary load cases" (round 4; TR.40 does not say). Its load numbers name loads
+> defined below it. One is listed as not written
 > when an item has a scale factor other than 1, is not written to STAAD, or is in an envelope before it (STAAD keeps a
 > load in one). An envelope changes no result.
 >
@@ -573,7 +577,7 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > - STAAD's file merged gives back the master's SAP-only tables and modal case;
 > - STAAD → workbook → STAAD is identical.
 
-> [!info]- STAAD round 4 (`scripts/lib/probes/staad-round4-probe.std`, pending)
+> [!info]- STAAD round 4 (`scripts/lib/probes/staad-round4-probe.std`, the first run 2026-11-24, to run again)
 > The triangle SAP <-> workbook <-> STAAD, with STAAD as the judge. The steps and what to send back are in
 > `scripts/lib/probes/README.md`. It settles:
 > - the unit conversion of every kind of number (the original and Pluto's copy must print the same results);
@@ -590,6 +594,15 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > - 2000 kN·m/rad → 1475.12 kip·ft/rad;
 > - 600 cm² → 0.645832 ft²;
 > - −0.25 in → −0.020833 ft.
+>
+> **The first run (STAAD.Pro 2025 25.00.01).** Steps 1 and 2 ran on the production machine.
+> - **Both `.std` stopped in STAAD at `DEFINE ENVELOPE`,** given after the combinations: STAAD wants every DEFINE
+>   before the first primary load. Everything before it parsed with no error in both files: every unit change, the
+>   wrapped `IZ -` line, CMOM, TRAP, ENFORCED, the springs, `REPEAT LOAD`. The probe and `-Std` now put the envelopes
+>   before the loads.
+> - **STAAD's save of `round4.std` was refused** on G against E (its 6 digits, above). It now reads exactly.
+>
+> The results comparison and the SAP steps wait for the next run.
 
 > [!info]- The STAAD probe (`-StdProbe <folder>`)
 > `staad-probe.s2k` and `staad-probe.std`: one model, every part analysable, for SAP2000 and STAAD.Pro alike. Each
