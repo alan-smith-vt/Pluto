@@ -43,15 +43,13 @@ created: 2026-11-18
 Purging it means rewriting the branch's history.
 
 **Waiting on the production machine:**
-- STAAD's database form, both ways:
-  - the PS 5.1 compile probe;
-  - a `-Std` of SAP's library-probe export (its angle frame taken out), opened in STAAD.Pro 2025 to check it parses
-    the database forms Pluto now writes;
-  - the names probe's `.std` (its angle taken out) through `-In … -S2k`, imported into SAP.
-- nothing for single angles: both ways confirmed end to end (STAAD's principal axes on SAP's to 0.0074°, SAP's on
-  STAAD's to 0.025° with Pluto's I23);
-  - whether `RA` gives SAP's leg arrangement (STAAD's `ST` is its mirror image), if drawings or STAAD's angle design
-    matter.
+- the PS 5.1 compile of `FrameMesh` (the auto mesh split), and a `-Std` of the user's workbook that gave the
+  refusals: its notices name the splits and any split joint still held to ground;
+- optional: whether `RA` gives SAP's leg arrangement (STAAD's `ST` is its mirror image), if drawings or STAAD's angle
+  design matter.
+
+Done there since 2026-11-23: catalog sections both ways in STAAD 2025's database form (W, channels, tees, HSS, double
+and single angles); single angles confirmed end to end both ways; STAAD's short PRIS forms into SAP.
 
 **For the user to look at:** `-Std` now splits frames SAP's auto mesh joins to joints on their span. A notice names any
 split joint still held to ground, and the user's workbook had such frames at seeded support points. Whether those
