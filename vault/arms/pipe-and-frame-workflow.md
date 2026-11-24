@@ -154,6 +154,21 @@ spreadsheets) is not part of this pipeline; see STAAD in the [[vault/arms/Arms m
 >
 > **The first time:** a model made in SAP or in STAAD starts the master with `-In <its file> -Xlsx` (no `-Merge`).
 >
+> **What the workbook holds.** One frame model, kept in SAP's own terms (the hidden base is an `.s2k` document), and two
+> sheets for STAAD only. `-S2k` writes the model as it is. `-Std` translates the same model into STAAD's commands. There
+> is no second copy of the structure for STAAD.
+>
+> | Data | Where it lives | `-S2k` | `-Std` |
+> |---|---|---|---|
+> | the structure and its loads: joints, frames, sections, materials, releases, offsets, links, springs, patterns, loads, cases, combinations (envelopes too), groups | Joints, Frames, Sections … Combinations, Groups | as it is | translated: STAAD's axes and BETA, TABLE / PRIS, reference loads and primary loads, `DEFINE ENVELOPE` … |
+> | SAP only: design procedures and overwrites, preferences, mass source, functions, modal cases | Carried (read-only), the hidden base | written | left out, with a notice |
+> | STAAD only: the commands after the analysis (load lists, prints, design parameters, checks) and STAAD's load and envelope numbers | STAAD commands, STAAD loads | left out | written |
+>
+> **Neither program's extras are the whole of it.** What one of them has and the model cannot hold is refused by name,
+> never dropped quietly:
+> - reading a `.std` refuses, for example, a truss member with a table section;
+> - `-Std` refuses, for example, a nonlinear link.
+>
 > **What each side keeps:** SAP holds no STAAD commands, load numbers or envelope types; STAAD holds no SAP design
 > data, preferences or modal cases. `-Merge` takes them back from the master, so a round through either program keeps
 > both ([[vault/format/frame-to-staad|frame-to-staad]], "Merging").
