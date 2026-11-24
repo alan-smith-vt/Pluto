@@ -984,6 +984,10 @@ public class AnlForceParser : AnlBlockParser
 
 	// true: the caller reads the print's units itself (AnlFrameReader), so the warning below is not printed
 	public bool UnitsReadByCaller;
+	// lines that hold 4 or more numbers yet are not a force row (7, 8 or 9 numbers): counted, never read (2026-11-24).
+	// A caller that must not lose a row reports them (AnlFrameReader); the rows read are as before.
+	public int SuspectRows;
+	public List<string> SuspectSamples = new List<string>();
 
 	public AnlForceParser(string path) : base(path) { }
 
@@ -1039,6 +1043,11 @@ public class AnlForceParser : AnlBlockParser
 				}
 				else
 				{
+					if (n >= 4)
+					{
+						SuspectRows++;
+						if (SuspectSamples.Count < 3) SuspectSamples.Add(Encoding.UTF8.GetString(_lineBuf1, 0, len).Trim());
+					}
 					continue;
 				}
 

@@ -48,13 +48,17 @@ Purging it means rewriting the branch's history.
   - a `-Std` of SAP's library-probe export (its angle frame taken out), opened in STAAD.Pro 2025 to check it parses
     the database forms Pluto now writes;
   - the names probe's `.std` (its angle taken out) through `-In … -S2k`, imported into SAP.
-- single angles both ways, end to end on the production machine:
-  - SAP's export of the angle probe through `-Std`, run in STAAD: the tips should move as SAP's did, give or take
-    STAAD's table (2.5 %);
-  - the probe's `.std` through `-In … -S2k`, run in SAP: the tips should move as STAAD's did;
+- nothing for single angles: both ways confirmed end to end (STAAD's principal axes on SAP's to 0.0074°, SAP's on
+  STAAD's to 0.025° with Pluto's I23);
   - whether `RA` gives SAP's leg arrangement (STAAD's `ST` is its mirror image), if drawings or STAAD's angle design
     matter.
-- STAAD's short PRIS forms into SAP: `pris-forms.std` through `-In … -S2k`, imported.
+- the `.anl` reader's probe: run `scripts/lib/probes/anl-prints-probe.std` in STAAD.Pro and commit its `.anl`
+  (see the README beside it), so the reaction, displacement, code-check and member tables can be parsed from a real
+  file.
+
+**Seen, not settled:** SAP's own rows carry `IncludeSCAn=Yes` (shear center in the analysis) on its channel only, and
+the angle probe showed SAP does not twist single angles. The `.std` notice says SAP twists tees and double angles too,
+which was taken from the channel; no probe has run a tee or a double angle in SAP.
 
 **Next:**
 1. **Round 3, the sample job, in SAP only.** CAESAR's outputs are already in `scripts/caesar/testdata`: restraint loads,

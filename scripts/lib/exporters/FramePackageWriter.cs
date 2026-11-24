@@ -18,6 +18,8 @@ using System.Text;
 //   endforces.csv   Member, End (A start / B end), Node, LC, Fx..Mz: member local, STAAD's sign, the units in the header
 //   ends.csv        the joint index: one row per member end at a joint (direction away from it, role, section, releases)
 //   joints.csv      one row per joint: ends, columns / beams / braces, support
+//   prints.csv      every output command of the file in order (PRINT ..., CHECK CODE ...), the LOAD LIST it ran under,
+//                   whether its table is read into the package, and the rows read
 //
 // A model with errors is refused: a package must be exactly what STAAD analysed. CSVs are UTF-8 with a BOM (Excel
 // reads them as UTF-8), manifest.json without one; CRLF, invariant culture, each written to a temporary name and
@@ -28,7 +30,7 @@ public static class FramePackageWriter
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
     public static readonly string[] Files = { "manifest.json", "nodes.csv", "members.csv", "supports.csv", "loadcases.csv",
-        "endforces.csv", "ends.csv", "joints.csv" };
+        "endforces.csv", "ends.csv", "joints.csv", "prints.csv" };
 
     // writes the package into dir (created if needed); returns the paths written
     public static string[] Write(AnlFrameModel m, string dir)
@@ -74,6 +76,10 @@ public static class FramePackageWriter
                 return new object[] { j.Node, n == null ? (object)"" : n.X, n == null ? (object)"" : n.Y, n == null ? (object)"" : n.Z,
                     j.Ends.Count, j.Columns, j.Beams, j.Braces, j.Support == null ? "" : j.Support.Type };
             })));
+
+        written.Add(Csv(dir, "prints.csv", new[] { "Order", "Command", "LoadList", "Cases", "Read", "Rows" },
+            m.Prints.Select(p => new object[] { p.Order, p.Command, p.LoadList,
+                p.AllCases ? "ALL" : string.Join(" ", p.Cases.Select(c => c.ToString(Inv)).ToArray()), p.Read ? "Y" : "N", p.Rows })));
 
         written.Insert(0, Manifest(dir, m));
         return written.ToArray();

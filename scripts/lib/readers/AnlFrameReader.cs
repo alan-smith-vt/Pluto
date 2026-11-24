@@ -117,6 +117,18 @@ public sealed class AnlFrameSupport
     }
 }
 
+// One output command of the file (PRINT ..., CHECK CODE ...), in file order, with the LOAD LIST in force when it ran.
+public sealed class AnlFramePrint
+{
+    public int Order;               // 1-based, in file order
+    public string Command = "";     // as written: "PRINT SUPPORT REACTIONS"
+    public bool AllCases = true;    // no LOAD LIST before it (or LOAD LIST ALL): every case
+    public readonly List<int> Cases = new List<int>();    // the LOAD LIST in force (empty when AllCases)
+    public string LoadList = "ALL"; // the list as written ("101 TO 104 201"), or ALL
+    public bool Read;               // its table is read into the model (today: PRINT MEMBER FORCES)
+    public int Rows;                // rows read from its table
+}
+
 public sealed class AnlFrameLoadCase
 {
     public int Id;
@@ -188,6 +200,7 @@ public sealed class AnlFrameModel
     public readonly SortedDictionary<int, AnlFrameLoadCase> LoadCases = new SortedDictionary<int, AnlFrameLoadCase>();
     public readonly SortedDictionary<int, AnlFrameJoint> Joints = new SortedDictionary<int, AnlFrameJoint>();
     public readonly List<AnlFrameEndForce> EndForces = new List<AnlFrameEndForce>();
+    public readonly List<AnlFramePrint> Prints = new List<AnlFramePrint>();   // every output command, in file order
     public readonly List<AnlFrameProblem> Problems = new List<AnlFrameProblem>();
     readonly Dictionary<long, AnlFrameEndForce> _forceIndex = new Dictionary<long, AnlFrameEndForce>();
 
@@ -362,9 +375,24 @@ public static class AnlFrameReader
                     if (r.Commands(s).Count > 0)
                         m.Warn("CHANGE", "the file has a CHANGE command (more than one analysis): each member end and case keeps its last print");
                     break;
-                case "PRINT MEMBER FORCES": r.Forces(s); anyForces = true; break;
+                case "LOAD LIST": r.LoadList(s); break;
+                case "PRINT MEMBER FORCES": r.Forces(s, r.Print(s, true)); anyForces = true; break;
+                // output commands whose tables are not read yet: recorded with their load list, and named below
+                case "PRINT":
+                case "PRINT SUPPORT REACTION":
+                case "PRINT JOINT DISPLACEMENTS":
+                case "PRINT MEMBER":
+                case "PRINT MEMBER SECTION FORCES":
+                case "PRINT ELEMENT STRESSES":
+                case "PRINT ELEMENT JOINT STRESSES":
+                case "CHECK CODE":
+                    r.Print(s, false); break;
             }
         }
+        r.CheckForces();
+        var unread = m.Prints.Where(x => !x.Read).Select(x => x.Command).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (unread.Count > 0)
+            m.Warn("PRINT_NOT_READ", "output in the file that is not read yet: " + string.Join("; ", unread.ToArray()));
 
         if (m.Nodes.Count == 0) m.Error("NO_JOINTS", "no JOINT COORDINATES in the input echo (is the echo off, SET ECHO OFF?)");
         if (m.Members.Count == 0) m.Error("NO_MEMBERS", "no MEMBER INCIDENCES in the input echo");
@@ -493,6 +521,7 @@ public static class AnlFrameReader
             Match mt = EchoLine.Match(line);
             if (!mt.Success) continue;
             string body = mt.Groups[1].Value.TrimEnd();
+            if (body.TrimStart().StartsWith("*", StringComparison.Ordinal)) continue;   // a comment line: no command
             if (body == "-" || body.EndsWith(" -"))
             {
                 pending.Append(body.Substring(0, body.Length - 1)).Append(' ');
@@ -518,6 +547,17 @@ public static class AnlFrameReader
     internal static string[] Tokens(string cmd)
     {
         return cmd.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+    }
+
+    // tokens with a quoted name kept whole: TABLE 'W' ST 'W24X55' -> TABLE, 'W', ST, 'W24X55'
+    internal static string[] Quoted(string cmd)
+    {
+        return Regex.Matches(cmd ?? "", @"'[^']*'|\S+").Cast<Match>().Select(x => x.Value).ToArray();
+    }
+
+    internal static string Unquote(string t)
+    {
+        return t.Length >= 2 && t[0] == '\'' && t[t.Length - 1] == '\'' ? t.Substring(1, t.Length - 2).Trim() : t;
     }
 
     static bool IsInt(string t, out int v)
@@ -560,7 +600,8 @@ public static class AnlFrameReader
     {
         string t = table.ToUpperInvariant(), n = name.ToUpperInvariant();
         if (t == "PRIS") return "PRIS";
-        if (t == "D" && n.StartsWith("L")) return "2L";
+        if ((t == "LD" || t == "SD") && n.StartsWith("L")) return "2L";   // double angles, long or short legs back to back
+        if (t == "D" && (n.StartsWith("C") || n.StartsWith("MC"))) return "2C";
         if (t == "T") return "WT";
         if (n.StartsWith("HSS") || n.StartsWith("TUB")) return "HSS";
         if (n.StartsWith("PIP")) return "PIPE";
@@ -582,6 +623,8 @@ public static class AnlFrameReader
         readonly Dictionary<string, List<int>> _groups = new Dictionary<string, List<int>>(StringComparer.OrdinalIgnoreCase);
         int _currentLoad = -1;
         bool _haveForceUnits;
+        List<int> _list;            // the LOAD LIST in force (null: every case)
+        string _listText = "ALL";
 
         public Reading(AnlFrameModel m, string path) { _m = m; _path = path; }
 
@@ -758,7 +801,9 @@ public static class AnlFrameReader
                 string[] t = Tokens(c);
                 if (k == 0 && t[0].ToUpperInvariant() == "MEMBER")
                 {
-                    if (t.Length > 2) _m.PropertyCountry = string.Join(" ", t.Skip(2).ToArray());
+                    // AMERICAN, or STAAD 2025's database name in quotes (it may hold spaces)
+                    Match pm = Regex.Match(c, @"^\s*MEMBER\s+PROPERT\w*\s+(.+?)\s*$", RegexOptions.IgnoreCase);
+                    if (pm.Success) _m.PropertyCountry = pm.Groups[1].Value;
                     continue;
                 }
                 int i = 0; bool all;
@@ -772,7 +817,13 @@ public static class AnlFrameReader
                 string spec = string.Join(" ", t.Skip(i).ToArray());
                 string kind = t[i].ToUpperInvariant();
                 string section, table = "";
-                if (kind == "TABLE" && i + 2 < t.Length) { table = t[i + 1].ToUpperInvariant(); section = t[i + 2]; }
+                string[] q = Quoted(spec);
+                if (kind == "TABLE" && q.Length >= 4 && q[1].StartsWith("'", StringComparison.Ordinal))
+                {
+                    // STAAD 2025's database form: TABLE 'W' ST 'W24X55' (under MEMBER PROPERTY '<database>.db3')
+                    table = q[2].ToUpperInvariant(); section = Unquote(q[3]);
+                }
+                else if (kind == "TABLE" && i + 2 < t.Length) { table = t[i + 1].ToUpperInvariant(); section = Unquote(t[i + 2]); }
                 else if (kind == "PRIS" || kind == "PRISMATIC") { table = "PRIS"; section = "PRIS"; }
                 else if (kind == "UPTABLE" && i + 2 < t.Length) { table = "UPTABLE " + t[i + 1]; section = t[i + 2]; }
                 else
@@ -1045,7 +1096,8 @@ public static class AnlFrameReader
             var p = NewCase(lc, "PRIMARY");
             int ti = Array.IndexOf(u, "TITLE");
             int lt = Array.IndexOf(u, "LOADTYPE");
-            if (lt >= 0 && lt + 1 < u.Length) p.LoadType = t[lt + 1];
+            // "Roof Live", "Seismic-H": every word up to TITLE
+            if (lt >= 0 && lt + 1 < u.Length) p.LoadType = string.Join(" ", t.Skip(lt + 1).Take((ti > lt ? ti : t.Length) - lt - 1).ToArray());
             if (ti >= 0) p.Title = string.Join(" ", t.Skip(ti + 1).ToArray());
             else if (lt < 0) p.Title = string.Join(" ", t.Skip(2).ToArray());
             _currentLoad = lc;
@@ -1100,13 +1152,80 @@ public static class AnlFrameReader
             _m.Analysis = _m.Analysis.Length == 0 ? a : _m.Analysis + "; " + a;
         }
 
-        public void Forces(AnlSection s)
+        // LOAD LIST 101 TO 104 201 | LOAD LIST ALL: the cases every later output command covers
+        public void LoadList(AnlSection s)
         {
-            Match mt = UnitsLine.Match(Text(s, 256 * 1024));
+            List<string> cmds = Commands(s);
+            if (cmds.Count == 0) return;
+            string[] t = Tokens(cmds[0]);
+            int i = 2; bool all;
+            List<int> ids = List(t, ref i, out all, cmds[0]);
+            if (all || (ids.Count == 0 && i >= t.Length)) { _list = null; _listText = "ALL"; return; }
+            if (i < t.Length) _m.Warn("LOAD_LIST", "a LOAD LIST was not read to its end (at '" + t[i] + "'): " + cmds[0]);
+            _list = ids.Distinct().ToList();
+            _listText = string.Join(" ", t.Skip(2).ToArray());
+            var unknown = _list.Where(x => !_m.LoadCases.ContainsKey(x)).ToList();
+            if (unknown.Count > 0) _m.Warn("LOAD_LIST_CASE", "LOAD LIST names cases with no LOAD command: " + Ids(unknown));
+        }
+
+        // an output command: recorded with the load list in force
+        public AnlFramePrint Print(AnlSection s, bool read)
+        {
+            List<string> cmds = Commands(s);
+            var p = new AnlFramePrint();
+            p.Order = _m.Prints.Count + 1;
+            p.Command = cmds.Count > 0 ? cmds[0] : s.Name;
+            p.AllCases = _list == null;
+            if (_list != null) p.Cases.AddRange(_list);
+            p.LoadList = _listText;
+            p.Read = read;
+            _m.Prints.Add(p);
+            return p;
+        }
+
+        // every member end with forces has both ends in the same cases; a listed case of a force print has its rows
+        public void CheckForces()
+        {
+            var a = new Dictionary<int, HashSet<int>>();
+            var b = new Dictionary<int, HashSet<int>>();
+            foreach (AnlFrameEndForce f in _m.EndForces)
+            {
+                Dictionary<int, HashSet<int>> d = f.End == "A" ? a : b;
+                HashSet<int> set;
+                if (!d.TryGetValue(f.Member, out set)) { set = new HashSet<int>(); d[f.Member] = set; }
+                set.Add(f.LC);
+            }
+            var oneEnd = new List<int>();
+            foreach (int mem in a.Keys.Union(b.Keys).OrderBy(x => x))
+            {
+                HashSet<int> sa, sb;
+                if (!a.TryGetValue(mem, out sa) || !b.TryGetValue(mem, out sb) || !sa.SetEquals(sb)) oneEnd.Add(mem);
+            }
+            if (oneEnd.Count > 0)
+                _m.Error("FORCE_END_MISSING", "members with forces at one end only in some case (a row of the print was not read): " + Ids(oneEnd));
+            var printed = new HashSet<int>(_m.EndForces.Select(f => f.LC));
+            foreach (AnlFramePrint p in _m.Prints.Where(x => x.Read && !x.AllCases))
+            {
+                var missing = p.Cases.Where(lc => !printed.Contains(lc)).ToList();
+                if (missing.Count > 0)
+                    _m.Warn("FORCE_CASE_MISSING", p.Command + " under LOAD LIST " + p.LoadList + " printed no forces for case(s) " + Ids(missing));
+            }
+        }
+
+        public void Forces(AnlSection s, AnlFramePrint print)
+        {
+            string head = Text(s, 256 * 1024);
+            Match mt = UnitsLine.Match(head);
             ForceUnit fu; LengthUnit lu;
             if (!mt.Success || !TryForceWord(mt.Groups[1].Value, out fu) || !TryLengthWord(mt.Groups[2].Value, out lu))
             {
                 _m.Error("FORCE_UNITS", "a PRINT MEMBER FORCES table without a readable \"ALL UNITS ARE --\" line" + (mt.Success ? " (" + mt.Value + ")" : ""));
+                return;
+            }
+            // STAAD prints "(LOCAL )" after the units; a GLOBAL print is not the member's own axes
+            if (Regex.IsMatch(head, @"ALL\s+UNITS\s+ARE[^\r\n]*\(\s*GLOBAL", RegexOptions.IgnoreCase) || Regex.IsMatch(print.Command, @"\bGLOBAL\b", RegexOptions.IgnoreCase))
+            {
+                _m.Error("FORCE_GLOBAL", print.Command + " printed the member forces in GLOBAL axes: print them in the member's local axes (PRINT MEMBER FORCES without GLOBAL)");
                 return;
             }
             double ff = 1, mf = 1;
@@ -1142,7 +1261,11 @@ public static class AnlFrameReader
                     f.F[d] = k == 1 ? r.Ff[d] : (float)(double.Parse(r.Ff[d].ToString("R", Inv), Inv) * k);
                 }
                 if (_m.PutForce(f)) dup++;
+                print.Rows++;
             }
+            if (p.SuspectRows > 0)
+                _m.Warn("FORCE_ROW_UNREAD", p.SuspectRows + " line(s) of " + print.Command + " hold numbers but are not a force row of 7, 8 or 9 numbers (touching columns? overflow?), e.g. \"" +
+                    string.Join("\" | \"", p.SuspectSamples.ToArray()) + "\"");
             if (unknownMembers.Count > 0)
                 _m.Error("FORCE_MEMBER_UNKNOWN", "member force rows for members that have no incidence: " + Ids(unknownMembers.Distinct().ToList()));
             if (badJoints.Count > 0)
