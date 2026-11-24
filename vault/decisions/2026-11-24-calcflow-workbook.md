@@ -31,4 +31,10 @@ Decided by the engineer on 2026-11-24, after the review in [[vault/audits/calcfl
 
 ## Status
 
-- **2026-11-24:** items 1, 2, 4 and 5 are built ([[vault/calcflow/calcflow-workbook|calcflow-workbook]]). Item 3 is built for single cells: every input harvest finds is a column of the mark's row. Small tables (anchor coordinates) as columns of the row, and the pasted load block, are next.
+- **2026-11-24:** items 1, 2, 4 and 5 are built ([[vault/calcflow/calcflow-workbook|calcflow-workbook]]). Item 3 is built for single cells: every input harvest finds is a column of the mark's row.
+- **2026-11-24, later the same day,** decided with the engineer's requests:
+  - **A template that takes a table of load rows is one calc per mark,** and its table holds only the beam ends that call the mark, each with its own cases or envelope.
+  - **A small table stays on the mark's row, in one cell.** A block of a template (anchor coordinates) is one column, and the cell holds the table as text: rows separated by `;`, values by `,`. The row stays one line per connection, as decided in item 3, without a column per coordinate; the number of anchors is the number of rows typed, and the rest of the block is emptied. A column per cell remains possible (give the cells one by one), for a block that reads better across.
+  - **The engineer may give a template's input and result cells** on the Templates tab, in place of what harvest finds.
+  - **A saved workbook is written again only by Refresh config,** which the engineer starts: it carries everything filled in over to a workbook rebuilt around the model and templates as they are, and keeps the old file beside it. This is the one exception to item 2's "saved only by Excel". Post-process and check say when it is due.
+  - **Statuses and checks are coloured softly,** as in the pipe-review workbooks: a pale fill with dark text of the same hue. The dark, strong colours are for headers only.

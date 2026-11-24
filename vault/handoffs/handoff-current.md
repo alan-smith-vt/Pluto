@@ -74,15 +74,23 @@ CAESAR's restraints, re-seeding that keeps SAP-side additions, and writing a see
 - **Built:** harvest and the calc library; the connection register and `plan`; `run` (Excel or LibreOffice, a record
   per check per revision) and `summary`; and the front door: `CalcFlow.xlsx` (Start links, Model Config per beam, Connection
   Lib marks, a schedule tab per template, Check and Run calcs) and the generated `Model_Data.xlsx`
-  ([[vault/calcflow/calcflow-workbook|calcflow-workbook]]).
+  ([[vault/calcflow/calcflow-workbook|calcflow-workbook]]). Since 2026-11-24 also:
+  - a template that takes a table of load rows: one calc per mark, its rows from only the beam ends that call it;
+  - a template's input and result cells given by hand, and a block (anchor coordinates) typed as one table in a cell;
+  - **Refresh config:** the workbook rebuilt around a changed model or templates folder, everything filled in carried
+    over, the old file kept; post-process and check say when it is due;
+  - a live check of the force units on Start; statuses in the soft colours of the pipe-review workbooks.
 - **Decided 2026-11-24** ([[vault/decisions/2026-11-24-calcflow-workbook|2026-11-24-calcflow-workbook]]): link cells,
   two files, a connection name is a mark with every geometry input on one schedule row, parser work on `pipestress`.
-- **The frame `.anl` reader lives on `pipestress`** since 2026-11-24. It reads the model, the member end forces,
-  support reactions and joint displacements, checked on the probe's real `.anl` (STAAD.Pro 2025). The code checks,
-  section displacements and the printed member tables are not read yet.
-- **Waiting on the production machine:** `CalcFlow.ps1 new` with the real templates, and the link cells; `scripts\calcflow\tests\Run-Tests.ps1` under Windows PowerShell 5.1 (the Excel stage's
-  first run).
-- **Next:** the code-check and member-table parsers and their tabs; the pasted load block; small tables on the
-  schedule row.
+- **The frame `.anl` reader lives on `pipestress`** since 2026-11-24. It reads every usual output command: the model,
+  member end forces, support reactions, joint and section displacements, the code check (three layouts, AISC 360-05
+  to 360-22 and the older ASD and LRFD codes) and the printed member tables, checked on the probe's real `.anl`
+  (STAAD.Pro 2025). Model_Data.xlsx tabulates all of it.
+- **Waiting on the production machine:** `CalcFlow.ps1 new` with the real templates; the link cells, the refresh
+  waiting for Excel to close the workbook, and the Force units formulas in Excel;
+  `scripts\calcflow\tests\Run-Tests.ps1` under Windows PowerShell 5.1 (the Excel stage's first run); a template built
+  on an Excel data table (it needs the Excel engine).
+- **Next:** the first real project through the workbook; section dimensions looked up from the shape; a code check in
+  a layout the probe did not show (run the probe with that code as one more block).
 
 Last sessions: [[vault/handoffs/handoff-2026-11-24|handoff-2026-11-24]] (`CalcFlow`), [[vault/handoffs/handoff-2026-11-23|handoff-2026-11-23]] (`pipestress`).

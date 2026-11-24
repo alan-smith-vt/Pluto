@@ -112,9 +112,10 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 summary -
 > 7. **OK**.
 >
 > **Colours:**
-> - statuses: OK green, Over limit and Failed red, Invalid orange, Not run / Gaps / Blocked grey, Excluded light grey;
-> - DCRs above the limit in red;
-> - Problems: errors red, warnings amber.
+> - a soft fill with bold dark text of the same hue, as in the pipe-review workbooks (2026-11-24; the solid red and green were too harsh);
+> - statuses: OK pale green, Over limit and Failed pale red, Invalid pale orange, Not run pale yellow, Gaps / Blocked pale purple, Excluded pale grey;
+> - DCRs above the limit in bold dark red;
+> - Problems: errors pale red, warnings pale yellow.
 >
 > The register's charcoal columns stay empty until Phase 4 (written through Excel).
 

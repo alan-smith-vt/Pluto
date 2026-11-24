@@ -35,12 +35,32 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\Export-AnlFrame.ps1 -A
 **Since 2026-11-24 the reader lives on branch `pipestress`** (`scripts/lib/`); `CalcFlow` merges it. Added that day:
 - STAAD 2025's database form of a section (`TABLE 'W' ST 'W24X55'`) and double angles (`TABLE LD` / `SD`);
 - comment lines in the echo are skipped;
-- `LOAD LIST` is parsed, and every output command is recorded with the list it ran under (`prints.csv`); the ones whose tables are not read yet are named in one warning (`PRINT_NOT_READ`);
+- `LOAD LIST` is parsed, and every output command is recorded with the list it ran under (`prints.csv`); one whose table is not read is named in a warning (`PRINT_NOT_READ`);
 - a GLOBAL force print, a force-table line that is not a row, and a member with forces at one end only are errors.
 
 **The probe ran on 2026-11-24** (STAAD.Pro 2025; `scripts/lib/probes/anl-prints-probe.anl`, the reader's first real file). The reader took it as it is: 18 joints, 32 members, 14 cases, all 384 end-force rows, no errors. Written from it the same day: **support reactions** and **joint displacements** (`reactions.csv`, `displacements.csv`; units from each table's title line; a row whose numbers run together is an error).
 
-The code checks (a boxed block per member in AISC 360; older layouts for `CODE AISC` and `CODE LRFD`), section displacements and the two printed member tables are **not read yet**; the README beside the probe says what each looks like.
+**Every usual output command is read since 2026-11-24** (`scripts/lib/readers/AnlFramePrints.cs`, written from the probe's `.anl`). On that file: 112 code check rows from eight `CHECK CODE` commands, 654 detail rows, 32 members of information and of properties, 160 section displacement blocks, and nothing noted but the member offset.
+
+> [!info]- The printed tables besides the forces (code check, member tables, section displacements)
+> | Command | Read as | Checked |
+> |---|---|---|
+> | `CHECK CODE` | one row per member per command: the code as STAAD titles it, profile, PASS / FAIL, ratio, governing clause, case and location, the forces of that case with their units. Where TRACK 1 or 2 printed them, the checks behind the result (demand, capacity, ratio, clause, case) as detail rows. | a result in a layout that is not known is an **error** (`CODE_CHECK_UNREAD`); members the command names with no result are a warning |
+> | `PRINT MEMBER INFORMATION` | start and end joint, length (the offsets taken off), BETA, releases as printed | joints that differ from the echo are an **error**; BETA and releases that differ are warnings |
+> | `PRINT MEMBER PROPERTIES` | AX IZ IY IX AY AZ SZ SY, in the unit of the title line | a member whose rows are not eight numbers is left out, with a warning |
+> | `PRINT SECTION DISPLACEMENTS` | global X Y Z at the 13 stations of each member and case, and STAAD's `MAX LOCAL DISP` line per member (displacement, where, case, L / displacement) | a block that is not 13 stations of three numbers is an **error** |
+> | `PRINT JOINT COORDINATES` | nothing new: checked against the echo | a coordinate that differs is an **error** |
+>
+> - **Three layouts of a code check result**, by code and TRACK:
+>   - AISC 360-16 and 360-22: a box per member (`Member No`, `Status`, `Ratio`, `Loadcase`, `Location`, `Ref`), with all six forces under the code's axis names (Pz Vy Vx Tz My Mx = FX FY FZ MX MY MZ);
+>   - AISC 360-05 and 360-10, and the older codes at TRACK 0 and 1: a table (`MEMBER TABLE RESULT/ CRITICAL COND/ RATIO/ LOADING/`) with FX, MY and MZ;
+>   - `CODE AISC` (ASD 9th) and `CODE LRFD` (LRFD 3rd) at TRACK 2: a drawing of the member with a `DESIGN SUMMARY` in its own units.
+> - FX is printed without its sign, with C or T beside it.
+> - A member STAAD does not design (a prismatic section) is a row NOT DESIGNED with STAAD's message, in each of its three wordings.
+> - A deflection check (DFF) is a `CHECK CODE` like any other: its row carries the load list it ran under.
+> - **Output headings that read like commands.** The indexer starts a section at `JOINT COORDINATES` over a printed table and at `UNITS ARE - INCH` over the section displacements. The frame reader gives such a section back to the command that printed it: only a line with STAAD's echo number starts a command.
+> - A code other than these (another country's, a later edition with another layout) is named as not read, or refused where a result would be lost: run the probe with that code as one more block (`scripts/lib/probes/README.md`).
+
 
 > [!info]- What is read, and from where
 > **The input echo.** STAAD writes every input line back into the `.anl` as `   NN. <text>`.
@@ -96,6 +116,12 @@ The code checks (a boxed block per member in AISC 360; older layouts for `CODE A
 > | `endforces.csv` | Member, End (A / B), Node, LC, `Fx (kip)` … `Mz (kip-ft)`: member local axes, STAAD's sign, the units in the header |
 > | `ends.csv` | the joint index: Node, Member, End, Role, Section, Family, Kind, Released, Dir (unit vector away from the joint), local y and z, ThroughMember / ThroughEnd |
 > | `joints.csv` | Node, X / Y / Z (in), Ends, Columns, Beams, Braces, Support |
+> | `prints.csv` | every output command in file order: Order, Command, LoadList, Cases, Read, Rows |
+> | `reactions.csv`, `displacements.csv` | Node, LC and six components, as printed (global axes), the units in the header |
+> | `codechecks.csv` | Print (the command's Order), Member, Code, Profile, Table, Status, Ratio, Critical, LC, Location, Axial, FX to MZ, Force unit, Length unit, Starred, Note |
+> | `codecheckdetails.csv` | Print, Member, Group, Check, Demand, Capacity, Ratio, Reference, LC, Location |
+> | `memberinfo.csv`, `memberproperties.csv` | the two printed member tables, the unit in the header |
+> | `sectiondisplacements.csv`, `sectionmaxima.csv` | Member, LC, Station, X Y Z; and per member the largest local displacement, where, the case and L / displacement |
 >
 > **The joint index:**
 > - **Role:** Column (within 10° of vertical), Beam (within 10° of horizontal), else Brace.
