@@ -4,8 +4,16 @@
 
 .DESCRIPTION
   The front door (2026-11-24) is a workbook: its Start tab links to launchers that run the verbs for you.
-    new             the engineer's workbook and its launchers, once: -Out <project folder>
-                    -> CalcFlow.xlsx (Start: the steps as link cells, the settings) and "Post-process ANL.cmd"
+    new             the engineer's workbook and its launchers, once: -Out <project folder> [-Anl <file>]
+                    [-Templates <folder>]
+                    -> CalcFlow.xlsx: Start (the steps as link cells, the settings), Model Config (one row per beam of
+                    the .anl, a connection mark at each end), Connection Lib (the marks), Templates, a schedule tab per
+                    template found in -Templates (one row per mark, one column per input), Outputs, Sign Maps, Load
+                    Cases; and the launchers "Post-process ANL.cmd", "Check.cmd", "Run calcs.cmd"
+    check           reads the saved workbook and the model and lists what is missing or does not fit, tab by tab:
+                    -Workbook <CalcFlow.xlsx>. Writes the calc library text, a register and the plan under
+                    <workbook folder>\calcflow\ (all generated). Nothing is calculated.
+    calcs           check, then run and summary on the plan: -Workbook <CalcFlow.xlsx> [-Engine ...]
     post-process    reads the STAAD .anl and tabulates it: -Workbook <CalcFlow.xlsx> [-Anl <file>] [-NoOpen]
                     The .anl is -Anl, else the workbook's "Anl file" setting, else you are asked for it (a file dialog).
                     -> the analysis package in <workbook folder>\calcflow\package\<anl name>\ and Model_Data.xlsx
@@ -45,7 +53,7 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory, Position = 0)][ValidateSet('new', 'post-process', 'launchers', 'harvest', 'library-new', 'library-export', 'register-new', 'plan', 'run', 'summary')][string]$Verb,
+    [Parameter(Mandatory, Position = 0)][ValidateSet('new', 'post-process', 'launchers', 'check', 'calcs', 'harvest', 'library-new', 'library-export', 'register-new', 'plan', 'run', 'summary')][string]$Verb,
     [string[]]$Templates,
     [string]$Library,
     [string]$Harvest,
@@ -167,6 +175,95 @@ function Select-CfAnl([string]$StartDir) {
     return $picked
 }
 
+# the template workbooks under a folder (or the files given), Excel's lock files left out
+function Get-CfTemplateFiles([string[]]$From) {
+    $files = New-Object System.Collections.Generic.List[string]
+    foreach ($t in $From) {
+        $full = Get-CfFull $t
+        if (Test-Path -LiteralPath $full -PathType Container) {
+            $patterns = '*.xlsx', '*.xlsm', '*.xltx', '*.xltm', '*.xls', '*.xlsb', '*.xlt'
+            foreach ($f in Get-ChildItem -LiteralPath $full -Recurse -File -Include $patterns | Where-Object { $_.Name -notlike '~$*' } | Sort-Object FullName) { $files.Add($f.FullName) }
+        }
+        elseif (Test-Path -LiteralPath $full -PathType Leaf) { $files.Add($full) }
+        else { Stop-CfArgs "No such template file or folder: $t" }
+    }
+    return , $files.ToArray()
+}
+
+# reads an .anl into the package folder of a project (<project>\calcflow\package\<anl name>) and notes it as the
+# project's current model; exits 1 when the analysis output has errors. Returns the package.
+function Read-CfAnl([string]$AnlPath, [string]$ProjectDir) {
+    if (-not (Test-Path -LiteralPath $AnlPath -PathType Leaf)) { Stop-CfArgs "No such .anl: $AnlPath" }
+    Import-PlutoLib
+    Write-Host ''
+    Write-Host "reading  $AnlPath"
+    $m = [AnlFrameReader]::Read($AnlPath)
+    foreach ($p in $m.Problems) {
+        $color = if ($p.Severity -eq 'Error') { 'Red' } else { 'Yellow' }
+        $tag = if ($p.Severity -eq 'Error') { '[error]' } else { '[warn ]' }
+        Write-Host ("{0} {1}: {2}" -f $tag, $p.Code, $p.Message) -ForegroundColor $color
+    }
+    if ($m.ErrorCount -gt 0) {
+        Write-Host ("not written: the analysis output has {0} error(s). Nothing was changed." -f $m.ErrorCount) -ForegroundColor Red
+        exit 1
+    }
+    $work = Join-Path $ProjectDir 'calcflow'
+    $name = [IO.Path]::GetFileNameWithoutExtension($AnlPath)
+    $pkgDir = Join-Path (Join-Path $work 'package') $name
+    [void][FramePackageWriter]::Write($m, $pkgDir)
+    [IO.File]::WriteAllText((Join-Path $work 'current-package.txt'), $name)
+    return [CalcFlow.AnalysisPackage]::Load($pkgDir)
+}
+
+# the project's current model (the last .anl post-processed); stops when there is none
+function Get-CfCurrentPackage([string]$ProjectDir) {
+    $work = Join-Path $ProjectDir 'calcflow'
+    $ptr = Join-Path $work 'current-package.txt'
+    if (-not (Test-Path -LiteralPath $ptr)) { Stop-CfArgs 'No model has been read for this workbook yet: run "Post-process .ANL" first.' }
+    $pkgDir = Join-Path (Join-Path $work 'package') ([IO.File]::ReadAllText($ptr).Trim())
+    return [CalcFlow.AnalysisPackage]::Load($pkgDir)
+}
+
+# check: the saved workbook -> library text, register and plan under <project>\calcflow; $true when nothing is wrong
+function Invoke-CfCheck([string]$Wb) {
+    $dir = Split-Path -Parent $Wb
+    Assert-CfOutsideRepo $dir
+    $work = Join-Path $dir 'calcflow'
+    $pkg = Get-CfCurrentPackage $dir
+    $set = [CalcFlow.EngineerWorkbook]::Settings($Wb)
+    $tdir = ''
+    if ($Templates) { $tdir = Get-CfFull $Templates[0] }
+    elseif ($set.ContainsKey([CalcFlow.EngineerWorkbook]::TemplatesSetting)) { $tdir = $set[[CalcFlow.EngineerWorkbook]::TemplatesSetting] }
+    if (-not $tdir) { Stop-CfArgs 'Start tab: give the "Templates folder" setting (the folder that holds the calc template workbooks).' }
+    $limit = ''
+    if ($set.ContainsKey([CalcFlow.EngineerWorkbook]::LimitSetting)) { $limit = $set[[CalcFlow.EngineerWorkbook]::LimitSetting] }
+    Write-Host ''
+    Write-Host ("workbook {0}" -f $Wb)
+    Write-Host ("model    {0} ({1})" -f $pkg.Folder, $pkg.Source)
+    $x = [CalcFlow.ProjectBook]::Expand($Wb, $pkg, (Join-Path $work 'generated'), $limit)
+    foreach ($p in $x.Problems) {
+        $color = if ($p[0] -eq 'Error') { 'Red' } else { 'Yellow' }
+        $tag = if ($p[0] -eq 'Error') { '[fix  ]' } else { '[note ]' }
+        Write-Host ("{0} {1}: {2}" -f $tag, $p[1], $p[2]) -ForegroundColor $color
+    }
+    Write-Host ("read     {0} connection marks on {1} templates, {2} beam ends with a connection" -f $x.Marks, $x.Templates, $x.Connections)
+    if ($x.ErrorCount -gt 0) {
+        Write-Host ("check    {0} thing(s) to fix in the workbook. Fix them, save, and check again." -f $x.ErrorCount) -ForegroundColor Red
+        return $false
+    }
+    $lib = [CalcFlow.Library]::Load($x.LibraryFolder)
+    $reg = [CalcFlow.Register]::Load($x.RegisterPath)
+    $res = [CalcFlow.Planner]::Run($pkg, $lib, $reg, $tdir)
+    $planDir = Join-Path $work 'plan'
+    [void]$res.Write($planDir)
+    [CalcFlow.PlanManifest]::Write($planDir, $pkg, $lib, $reg, $tdir)
+    Show-CfProblems $res.Problems
+    $ready = @($res.Calcs | Where-Object { $_.Status -eq 'Ready' }).Count
+    $color = if ($res.ErrorCount -gt 0) { 'Red' } else { 'Green' }
+    Write-Host ("check    {0} of {1} connection calcs are ready: {2} error(s), {3} warning(s). Details in {4}" -f $ready, $res.Calcs.Count, $res.ErrorCount, $res.WarningCount, $planDir) -ForegroundColor $color
+    return ($res.ErrorCount -eq 0)
+}
+
 switch ($Verb) {
     'new' {
         Need 'Out' $Out
@@ -174,10 +271,44 @@ switch ($Verb) {
         Assert-CfOutsideRepo $folder
         $wb = Join-Path $folder ([CalcFlow.EngineerWorkbook]::FileName)
         if (Test-Path -LiteralPath $wb) { Stop-CfArgs "$wb exists: the workbook is yours once written and is never overwritten." }
-        $files = [CalcFlow.EngineerWorkbook]::WriteNew($folder, (Join-Path $PSScriptRoot 'CalcFlow.ps1'))
+        $pkg = $null; $h = $null; $tdir = ''
+        if ($Anl) { $pkg = Read-CfAnl (Get-CfFull $Anl) $folder }
+        if ($Templates) {
+            $tdir = Get-CfFull $Templates[0]
+            $tfiles = Get-CfTemplateFiles $Templates
+            if ($tfiles.Count -eq 0) { Stop-CfArgs "No template workbooks found in $tdir." }
+            $h = [CalcFlow.Harvest]::Run([string[]]$tfiles, $tdir)
+            foreach ($k in $h.Skipped) { Write-Host ("[skip ] {0}: {1}" -f $k[0], $k[1]) -ForegroundColor Yellow }
+            foreach ($p in $h.Problems) { Write-Host "[error] $p" -ForegroundColor Red }
+            Write-Host ("learned  {0} template workbook(s): {1} inputs, {2} results" -f $h.Templates.Count, $h.Inputs.Count, $h.Outputs.Count)
+        }
+        $files = [CalcFlow.EngineerWorkbook]::WriteNew($folder, (Join-Path $PSScriptRoot 'CalcFlow.ps1'), $pkg, $h, $tdir)
         foreach ($f in $files) { Write-Host "written  $f" -ForegroundColor Green }
+        if ($pkg) {
+            $md = [CalcFlow.ModelData]::Write($pkg, $folder)
+            Write-Host ("written  {0}" -f $md.Path) -ForegroundColor Green
+        }
+        else { Write-Host 'No -Anl given: Model Config is empty. Post-process an .anl, then copy the beams from Model_Data.xlsx (tab Members).' -ForegroundColor Yellow }
+        if (-not $h) { Write-Host 'No -Templates given: there are no schedule tabs yet.' -ForegroundColor Yellow }
         Write-Host 'Open the workbook: its Start tab has the steps.'
         exit 0
+    }
+    'check' {
+        Need 'Workbook' $Workbook
+        $wb = Get-CfFull $Workbook
+        if (-not (Test-Path -LiteralPath $wb)) { Stop-CfArgs "No such workbook: $wb" }
+        if (Invoke-CfCheck $wb) { exit 0 }
+        exit 1
+    }
+    'calcs' {
+        Need 'Workbook' $Workbook
+        $wb = Get-CfFull $Workbook
+        if (-not (Test-Path -LiteralPath $wb)) { Stop-CfArgs "No such workbook: $wb" }
+        if (-not (Invoke-CfCheck $wb)) { exit 1 }
+        $work = Join-Path (Split-Path -Parent $wb) 'calcflow'
+        $exe = (Get-Process -Id $PID).Path
+        & $exe -NoProfile -ExecutionPolicy Bypass -File $PSCommandPath run -Plan (Join-Path $work 'plan') -Work $work -Engine $Engine
+        exit $LASTEXITCODE
     }
     'launchers' {
         Need 'Workbook' $Workbook
@@ -208,24 +339,9 @@ switch ($Verb) {
                 if (-not $anlPath) { Stop-CfArgs "No .anl was chosen. Give one in the dialog, in the workbook's `"Anl file`" setting (Start tab), or with -Anl." }
             }
         }
-        if (-not (Test-Path -LiteralPath $anlPath -PathType Leaf)) { Stop-CfArgs "No such .anl: $anlPath" }
-        Import-PlutoLib
         $sw = [Diagnostics.Stopwatch]::StartNew()
-        Write-Host ''
-        Write-Host "reading  $anlPath"
-        $m = [AnlFrameReader]::Read($anlPath)
-        foreach ($p in $m.Problems) {
-            $color = if ($p.Severity -eq 'Error') { 'Red' } else { 'Yellow' }
-            $tag = if ($p.Severity -eq 'Error') { '[error]' } else { '[warn ]' }
-            Write-Host ("{0} {1}: {2}" -f $tag, $p.Code, $p.Message) -ForegroundColor $color
-        }
-        if ($m.ErrorCount -gt 0) {
-            Write-Host ("not written: the analysis output has {0} error(s). Nothing was changed." -f $m.ErrorCount) -ForegroundColor Red
-            exit 1
-        }
-        $pkgDir = Join-Path (Join-Path (Join-Path $dir 'calcflow') 'package') ([IO.Path]::GetFileNameWithoutExtension($anlPath))
-        [void][FramePackageWriter]::Write($m, $pkgDir)
-        $pkg = [CalcFlow.AnalysisPackage]::Load($pkgDir)
+        $pkg = Read-CfAnl $anlPath $dir
+        $pkgDir = $pkg.Folder
         $res = [CalcFlow.ModelData]::Write($pkg, $dir)
         Write-Host ("model    {0} members, {1} joints, {2} load cases, {3} end-force rows ({4:0.0} s)" -f $res.Members, $res.Joints, $res.Cases, $res.EndForceRows, $sw.Elapsed.TotalSeconds)
         Write-Host "package  $pkgDir"

@@ -75,8 +75,8 @@ CAESAR's restraints, re-seeding that keeps SAP-side additions, and writing a see
 **Branch `CalcFlow`** (0 behind `pipestress`; 2026-11-24). Steel connection calcs set up and run from one STAAD
 `.anl` ([[vault/calcflow/CalcFlow map|CalcFlow map]]):
 - **Built:** harvest and the calc library; the connection register and `plan`; `run` (Excel or LibreOffice, a record
-  per check per revision) and `summary`; and the start of the front door: `CalcFlow.xlsx` with a Start tab whose link
-  cell runs the post-process launcher, and the generated `Model_Data.xlsx`
+  per check per revision) and `summary`; and the front door: `CalcFlow.xlsx` (Start links, Model Config per beam, Connection
+  Lib marks, a schedule tab per template, Check and Run calcs) and the generated `Model_Data.xlsx`
   ([[vault/calcflow/calcflow-workbook|calcflow-workbook]]).
 - **Decided 2026-11-24** ([[vault/decisions/2026-11-24-calcflow-workbook|2026-11-24-calcflow-workbook]]): link cells,
   two files, a connection name is a mark with every geometry input on one schedule row, parser work on `pipestress`.
@@ -85,6 +85,6 @@ CAESAR's restraints, re-seeding that keeps SAP-side additions, and writing a see
 - **Waiting on the production machine:** the probe run in STAAD (`scripts/lib/probes/`); `CalcFlow.ps1 new` and the
   link cell with a real `.anl`; `scripts\calcflow\tests\Run-Tests.ps1` under Windows PowerShell 5.1 (the Excel stage's
   first run).
-- **Next:** the probe's parsers and their tabs; then Model Config, Connection Lib and the schedule tabs.
+- **Next:** the probe's parsers and their tabs; the pasted load block; small tables on the schedule row.
 
 Last sessions: [[vault/handoffs/handoff-2026-11-24|handoff-2026-11-24]] (`CalcFlow`), [[vault/handoffs/handoff-2026-11-23|handoff-2026-11-23]] (`pipestress`).

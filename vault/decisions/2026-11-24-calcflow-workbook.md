@@ -31,4 +31,4 @@ Decided by the engineer on 2026-11-24, after the review in [[vault/audits/calcfl
 
 ## Status
 
-- **2026-11-24:** items 1, 2 and 5 are built ([[vault/calcflow/calcflow-workbook|calcflow-workbook]]). Items 3 and 4 are the next increments.
+- **2026-11-24:** items 1, 2, 4 and 5 are built ([[vault/calcflow/calcflow-workbook|calcflow-workbook]]). Item 3 is built for single cells: every input harvest finds is a column of the mark's row. Small tables (anchor coordinates) as columns of the row, and the pasted load block, are next.

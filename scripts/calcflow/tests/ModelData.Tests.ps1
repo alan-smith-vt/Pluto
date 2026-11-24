@@ -99,7 +99,9 @@ Test 'a long table continues on numbered tabs, split between members; the Anl fi
     [void](Invoke-CfCli new -Out $p2)
     Copy-Item -LiteralPath $fixture -Destination (Join-Path $p2 'frame-demo.anl')
     $w = New-Object 'System.Collections.Generic.List[CalcFlow.CellWrite]'
-    $w.Add([CalcFlow.CellWrite]::new('Start', 'B10', 'frame-demo.anl'))
+    $start = [CalcFlow.Xlsx]::Read((Join-Path $p2 'CalcFlow.xlsx')).Sheet('Start')
+    $row = @(0..40 | Where-Object { $start.Text($_, 0) -eq 'Anl file' })[0] + 1
+    $w.Add([CalcFlow.CellWrite]::new('Start', "B$row", 'frame-demo.anl'))
     $saved = Join-Path $p2 'saved.xlsx'
     [CalcFlow.XlsxPatch]::Write((Join-Path $p2 'CalcFlow.xlsx'), $saved, $w, $false)
     Assert-Equal ([CalcFlow.EngineerWorkbook]::Settings($saved))['Anl file'] 'frame-demo.anl'
