@@ -299,7 +299,7 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > | `MEMBER RELEASE` | releases; `K…` partial fixity (rotations per degree back to per radian) |
 > | `MEMBER TRUSS` | linear links, U1 = E AX / L (the header's EA / L when it agrees) |
 > | plates, `ELEMENT PLANE STRESS` | areas, Shell-Thin or Membrane |
-> | `SUPPORTS` | restraints and springs; `INCLINED`: the joint's local axes; `ENFORCED`: restraints |
+> | `SUPPORTS` | restraints and springs; `INCLINED`: the joint's local axes; `ENFORCED`: restraints. A spring on a DOF the `BUT` list also releases, before or after it (`FIXED BUT MX MY MZ KMX v KMZ v`), is the spring, as `FIXED BUT MY KMX v KMZ v`; two springs on one DOF are refused |
 > | reference loads | load patterns, the zones' self weight taken off the joint loads |
 > | primary loads | linear static cases; nonlinear P-Delta from zero under `PDELTA` |
 > | a primary load's own loads, support displacements | a load pattern of its own each |

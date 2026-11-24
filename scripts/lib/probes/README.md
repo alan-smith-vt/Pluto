@@ -121,6 +121,9 @@ The round for the triangle SAP <-> frame workbook <-> STAAD (vault/format/frame-
    `LOAD LIST ENV 1 2`, and a check under the one-load envelope 3.
 3. **A code check per case:** `LOAD LIST 101` + `CHECK CODE ALL`, and the same for 102 and 103.
 
+Joint 8's springs are written `FIXED BUT MY KMX 2000 KMZ 2000`. The reader takes `FIXED BUT MX MY MZ KMX 2000 KMZ
+2000` (a released DOF then its spring) as the same support.
+
 ### Running it (production machine)
 
 `...` stands for `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File`, run from the repo after a

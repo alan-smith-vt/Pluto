@@ -252,7 +252,13 @@ public static class StdToFrame
                 int k = 0;
                 if (Is(t[0], "INCLINED") && t.Length >= 5) { var n = new List<double>(); Words(t.Skip(1).Take(3), n); f.Add(h + " INCLINED", n.ToArray()); k = 4; }
                 if (k < t.Length) f.Add(h + " " + t[k].ToUpperInvariant());
-                if (k + 1 < t.Length && Is(t[k + 1], "BUT")) ItemFacts(f, h + " but", t, k + 2);
+                if (k + 1 < t.Length && Is(t[k + 1], "BUT"))
+                {
+                    // a DOF released and given a spring is the spring (FIXED BUT MX KMX v is FIXED BUT KMX v)
+                    var rest = t.Skip(k + 2).ToList();
+                    var sprung = new HashSet<string>(rest.Where(x => x.Length == 3 && (x[0] == 'K' || x[0] == 'k')).Select(x => x.Substring(1).ToUpperInvariant()));
+                    ItemFacts(f, h + " but", rest.Where(x => !sprung.Contains(x.ToUpperInvariant())).ToArray(), 0);
+                }
                 else if (k + 1 < t.Length) { var n = new List<double>(); f.Add(h + " " + Words(t.Skip(k + 1), n), n.ToArray()); }
             }
         // loads: each primary load through its reference loads, a factor with every item
@@ -1217,7 +1223,7 @@ public static class StdToFrame
                         k = 4;
                     }
                     // fixed (true), free, or a spring in each STAAD DOF
-                    var fix = new bool[6]; var spr = new double[6];
+                    var fix = new bool[6]; var spr = new double[6]; var released = new bool[6];
                     bool ok = true, enforced = false;
                     string kind = t[k].ToUpperInvariant();
                     if (kind == "FIXED" || kind == "ENFORCED") { for (int i = 0; i < 6; i++) fix[i] = true; enforced = kind == "ENFORCED"; }
@@ -1229,11 +1235,14 @@ public static class StdToFrame
                         if (!Is(t[k], "BUT") || kind == "PINNED") ok = false;
                         for (k++; ok && k < t.Length; k++)
                         {
+                            // a DOF released, or given a spring (KMX v): on a DOF the list also releases, before or after
+                            // it, the spring stands (STAAD's FIXED BUT MX KMX v, as FIXED BUT KMX v)
                             int i = Array.FindIndex(dof, x => Is(t[k], x));
-                            if (i >= 0 && fix[i]) { fix[i] = false; continue; }
+                            if (i >= 0 && fix[i]) { fix[i] = false; released[i] = true; continue; }
+                            if (i >= 0 && spr[i] != 0) continue;
                             i = Array.FindIndex(dof, x => Is(t[k], "K" + x));
                             double v;
-                            if (enforced || i < 0 || !fix[i] || k + 1 >= t.Length || !Num(t[k + 1], out v) || v <= 0) { ok = false; break; }
+                            if (enforced || i < 0 || !(fix[i] || released[i]) || spr[i] != 0 || k + 1 >= t.Length || !Num(t[k + 1], out v) || v <= 0) { ok = false; break; }
                             fix[i] = false; spr[i] = i < 3 ? v : Shortest(v * 180 / Math.PI, x => x * Math.PI / 180, v);
                             k++;
                         }
