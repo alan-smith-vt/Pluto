@@ -345,6 +345,14 @@ switch ($Verb) {
         $res = [CalcFlow.ModelData]::Write($pkg, $dir)
         Write-Host ("model    {0} members, {1} joints, {2} load cases, {3} end-force rows ({4:0.0} s)" -f $res.Members, $res.Joints, $res.Cases, $res.EndForceRows, $sw.Elapsed.TotalSeconds)
         Write-Host "package  $pkgDir"
+        $also = @()
+        if ($res.ReactionRows -gt 0) { $also += "$($res.ReactionRows) support reactions" }
+        if ($res.DisplacementRows -gt 0) { $also += "$($res.DisplacementRows) joint displacements" }
+        if ($res.CodeCheckRows -gt 0) { $also += "$($res.CodeCheckRows) code check results" }
+        if ($res.MemberInfoRows -gt 0) { $also += "member information" }
+        if ($res.MemberPropertyRows -gt 0) { $also += "member properties" }
+        if ($res.SectionDisplacementRows -gt 0) { $also += "$($res.SectionDisplacementRows) section displacement rows" }
+        if ($also.Count -gt 0) { Write-Host ("         with {0}" -f ($also -join ', ')) }
         Write-Host ("written  {0}" -f $res.Path) -ForegroundColor Green
         if ($res.ForceSheets -gt 1) { Write-Host ("         All End Forces is on {0} tabs (a tab holds {1:n0} rows)" -f $res.ForceSheets, [CalcFlow.ModelData]::RowsPerSheet) }
         if ($res.NotRead.Count -gt 0) { Write-Host ("         not read yet (listed on the About tab): {0}" -f ($res.NotRead -join '; ')) -ForegroundColor Yellow }

@@ -15,6 +15,13 @@
 //   Enveloped End Forces   per member end and component: the case of the largest and of the smallest value, with the
 //                          forces that act with it (12 rows an end)
 //   End Force Extremes     per member end: the largest and smallest of each component on one row (not concurrent)
+//   Code Check             one row per member per CHECK CODE command: PASS / FAIL, ratio, governing clause, case and
+//                          location, the forces of that case; Governs = Y on a member's largest ratio. With it Code
+//                          Check Details, the checks behind a result where TRACK 1 or 2 printed them
+//   Member Information     joints, length, beta and releases as STAAD printed them
+//   Member Properties      AX IZ IY IX AY AZ SZ SY as STAAD printed them
+//   Section Displ. Maxima  STAAD's largest local displacement per member, where, in which case, and L / displacement
+//   Section Displacements  global X Y Z at each station along a member, per case (split like All End Forces)
 // End A / B of the package is shown as I / J, the engineer's words. The long tables are written row by row
 // (XOutSheet.MoreRows): they are never held in memory. C# 5 (Windows PowerShell 5.1 Add-Type, warnings are errors).
 
@@ -31,6 +38,7 @@ namespace CalcFlow
     {
         public string Path = "";
         public int Members, Joints, Cases, EndForceRows, EnvelopeRows, ForceSheets, ReactionRows, DisplacementRows;
+        public int CodeCheckRows, CodeCheckDetailRows, MemberInfoRows, MemberPropertyRows, SectionDisplacementRows, SectionSheets;
         public readonly List<string> NotRead = new List<string>();     // output commands whose tables are not read yet
     }
 
@@ -198,8 +206,137 @@ namespace CalcFlow
                 res.DisplacementRows = disp.Count - 1;
                 sheets.Add(Long("Joint Displacements", "tblJointDisplacements", disp[0], 2, "every printed joint displacement, in the global axes, as STAAD printed it", disp.Count - 1, Numbers(disp)));
             }
+            Printed(pkg, prints, sheets, res);
             return sheets;
         }
+
+        // ---- the other printed tables: code check, member information and properties, section displacements
+        static void Printed(AnalysisPackage pkg, List<Dictionary<string, string>> prints, List<XOutSheet> sheets, ModelDataResult res)
+        {
+            var command = new Dictionary<string, Dictionary<string, string>>();
+            foreach (var p in prints) command[V(p, "Order")] = p;
+
+            List<Dictionary<string, string>> checks = Optional(pkg, "codechecks.csv");
+            if (checks.Count > 0)
+            {
+                res.CodeCheckRows = checks.Count;
+                // a member's largest ratio over every CHECK CODE of the file
+                var worst = new Dictionary<string, Dictionary<string, string>>();
+                foreach (var r in checks)
+                {
+                    double ratio, old;
+                    if (!double.TryParse(V(r, "Ratio"), NumberStyles.Float, Inv, out ratio)) continue;
+                    Dictionary<string, string> w;
+                    if (!worst.TryGetValue(V(r, "Member"), out w) || !double.TryParse(V(w, "Ratio"), NumberStyles.Float, Inv, out old) || ratio > old) worst[V(r, "Member")] = r;
+                }
+                string[] cols = { "Member", "Check", "Command", "Load list", "Code", "Profile", "Status", "Ratio", "Governs", "Critical", "LC", "Location",
+                    "Axial", "FX", "FY", "FZ", "MX", "MY", "MZ", "Force unit", "Length unit", "Note" };
+                var rows = checks.OrderBy(r => Key(V(r, "Member"))).ThenBy(r => Key(V(r, "Print"))).Select(r =>
+                {
+                    Dictionary<string, string> c, w;
+                    command.TryGetValue(V(r, "Print"), out c);
+                    return Row("Member", V(r, "Member"), "Check", V(r, "Print"), "Command", c == null ? "" : V(c, "Command"), "Load list", c == null ? "" : V(c, "LoadList"),
+                        "Code", V(r, "Code"), "Profile", V(r, "Profile"), "Status", V(r, "Status"), "Ratio", V(r, "Ratio"),
+                        "Governs", worst.TryGetValue(V(r, "Member"), out w) && ReferenceEquals(w, r) ? "Y" : "", "Critical", V(r, "Critical"), "LC", V(r, "LC"),
+                        "Location", V(r, "Location"), "Axial", V(r, "Axial"), "FX", V(r, "FX"), "FY", V(r, "FY"), "FZ", V(r, "FZ"), "MX", V(r, "MX"), "MY", V(r, "MY"), "MZ", V(r, "MZ"),
+                        "Force unit", V(r, "Force unit"), "Length unit", V(r, "Length unit"), "Note", V(r, "Note"));
+                }).ToList();
+                XOutSheet cs = Small("Code Check", "tblCodeCheck", cols, rows,
+                    "one row per member per CHECK CODE command, as STAAD printed it. Governs = Y marks a member's largest ratio over the checks in the file. Ratio, Critical, LC and Location are the governing ones of that check; FX to MZ are the forces of that case in STAAD's axes, in the units beside them (FX is printed without its sign: Axial says C or T). The older layouts print FX, MY and MZ only",
+                    new[] { "Member", "Check" }, new[] { "Member", "Check", "LC" }, new[] { "Ratio", "Location", "FX", "FY", "FZ", "MX", "MY", "MZ" });
+                string st = "G3:G" + (2 + rows.Count);
+                Palette.Highlight(cs, st, "FAIL", Palette.Red, Palette.White);
+                Palette.Highlight(cs, st, "PASS", Palette.Green, Palette.White);
+                Palette.Highlight(cs, st, "NOT DESIGNED", Palette.Amber, "FF000000");
+                sheets.Add(cs);
+            }
+            List<Dictionary<string, string>> details = Optional(pkg, "codecheckdetails.csv");
+            if (details.Count > 0)
+            {
+                res.CodeCheckDetailRows = details.Count;
+                string[] cols = { "Member", "Check", "Group", "Clause check", "Demand", "Capacity", "Ratio", "Reference", "LC", "Location" };
+                var rows = details.OrderBy(r => Key(V(r, "Member"))).ThenBy(r => Key(V(r, "Print"))).Select(r => Row("Member", V(r, "Member"), "Check", V(r, "Print"),
+                    "Group", V(r, "Group"), "Clause check", V(r, "Check"), "Demand", V(r, "Demand"), "Capacity", V(r, "Capacity"), "Ratio", V(r, "Ratio"),
+                    "Reference", V(r, "Reference"), "LC", V(r, "LC"), "Location", V(r, "Location"))).ToList();
+                sheets.Add(Small("Code Check Details", "tblCodeCheckDetails", cols, rows,
+                    "the checks behind a member's result, where the code check printed them (TRACK 1 or 2). Check is the number of the CHECK CODE command on the Code Check tab; demand, capacity and location are in that check's units",
+                    new[] { "Member", "Check" }, new[] { "Member", "Check", "LC" }, new[] { "Demand", "Capacity", "Ratio", "Location" }));
+            }
+            List<string[]> info = Rows(pkg, "memberinfo.csv");
+            if (info.Count > 1)
+            {
+                res.MemberInfoRows = info.Count - 1;
+                sheets.Add(Long("Member Information", "tblMemberInformation", info[0], 1, "PRINT MEMBER INFORMATION, as STAAD printed it: the length is the member's own (its offsets taken off); releases are start FX FY FZ MX MY MZ then end, 1 = released",
+                    info.Count - 1, Numbers(info, 5)));
+            }
+            List<string[]> props = Rows(pkg, "memberproperties.csv");
+            if (props.Count > 1)
+            {
+                res.MemberPropertyRows = props.Count - 1;
+                sheets.Add(Long("Member Properties", "tblMemberProperties", props[0], 2, "PRINT MEMBER PROPERTIES, as STAAD printed it", props.Count - 1, Numbers(props, 1)));
+            }
+            List<string[]> maxima = Rows(pkg, "sectionmaxima.csv");
+            if (maxima.Count > 1)
+                sheets.Add(Long("Section Displ. Maxima", "tblSectionDisplMaxima", maxima[0], 1,
+                    "per member: STAAD's largest local displacement over the printed cases, where along the member, in which case, and the span over it", maxima.Count - 1, Numbers(maxima)));
+
+            // ---- Section Displacements: read from the package row by row, split between members past RowsPerSheet
+            string sd = System.IO.Path.Combine(pkg.Folder, "sectiondisplacements.csv");
+            if (!File.Exists(sd)) return;
+            string[] head = null;
+            var counts = new List<KeyValuePair<string, int>>();     // member -> its rows, in file order
+            foreach (string[] r in Stream(sd, 0, int.MaxValue, true))
+            {
+                if (head == null) { head = r; continue; }
+                if (counts.Count > 0 && counts[counts.Count - 1].Key == r[0]) counts[counts.Count - 1] = new KeyValuePair<string, int>(r[0], counts[counts.Count - 1].Value + 1);
+                else counts.Add(new KeyValuePair<string, int>(r[0], 1));
+            }
+            int total = counts.Sum(c => c.Value);
+            if (head == null || total == 0) return;
+            res.SectionDisplacementRows = total;
+            var parts = new List<int[]>();      // first row, rows, first member index, last member index
+            int start = 0, n = 0, firstMember = 0;
+            for (int i = 0; i < counts.Count; i++)
+            {
+                if (n > 0 && n + counts[i].Value > RowsPerSheet) { parts.Add(new[] { start, n, firstMember, i - 1 }); start += n; n = 0; firstMember = i; }
+                n += counts[i].Value;
+            }
+            parts.Add(new[] { start, n, firstMember, counts.Count - 1 });
+            res.SectionSheets = parts.Count;
+            for (int i = 0; i < parts.Count; i++)
+            {
+                int[] part = parts[i];
+                string name = "Section Displacements" + (i == 0 ? "" : " (" + (i + 1).ToString(Inv) + ")");
+                string note = "PRINT SECTION DISPLACEMENTS, as STAAD printed it: the global displacement at each station along the member, station 0 at its start joint" +
+                    (parts.Count > 1 ? " (part " + (i + 1) + " of " + parts.Count + ": members " + counts[part[2]].Key + " to " + counts[part[3]].Key + ")" : "");
+                sheets.Add(Long(name, "tblSectionDisplacements" + (i == 0 ? "" : (i + 1).ToString(Inv)), head, 3, note, part[1], StreamNumbers(sd, part[0], part[1])));
+            }
+        }
+
+        // the rows of a numeric package CSV, read as they are written: skip rows after the header, then take
+        static IEnumerable<string[]> Stream(string path, int skip, int take, bool header)
+        {
+            using (var sr = new StreamReader(path))
+            {
+                string line = sr.ReadLine();
+                if (line == null) yield break;
+                if (header) yield return line.Split(',').Select(h => h.Trim('"')).ToArray();
+                for (int i = 0; i < skip && sr.ReadLine() != null; i++) { }
+                for (int i = 0; i < take && (line = sr.ReadLine()) != null; i++) yield return line.Split(',');
+            }
+        }
+
+        static IEnumerable<object[]> StreamNumbers(string path, int skip, int take)
+        {
+            foreach (string[] r in Stream(path, skip, take, false)) yield return r.Select(Num).ToArray();
+        }
+
+        static List<Dictionary<string, string>> Optional(AnalysisPackage pkg, string file)
+        {
+            return File.Exists(System.IO.Path.Combine(pkg.Folder, file)) ? Table(pkg, file) : new List<Dictionary<string, string>>();
+        }
+
+        static long Key(string s) { long v; return long.TryParse(s, NumberStyles.Integer, Inv, out v) ? v : long.MaxValue; }
 
         // ---- rows of the long tables, produced as they are written
 
@@ -301,6 +438,12 @@ namespace CalcFlow
         static IEnumerable<object[]> Numbers(List<string[]> rows)
         {
             for (int i = 1; i < rows.Count; i++) yield return rows[i].Select(Num).ToArray();
+        }
+
+        // the same with one column kept as text (a profile name, a release pattern of digits)
+        static IEnumerable<object[]> Numbers(List<string[]> rows, int textCol)
+        {
+            for (int i = 1; i < rows.Count; i++) yield return rows[i].Select((v, c) => c == textCol ? (object)v : Num(v)).ToArray();
         }
 
         static List<Dictionary<string, string>> Table(AnalysisPackage pkg, string file)

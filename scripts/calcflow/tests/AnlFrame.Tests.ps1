@@ -33,7 +33,7 @@ Test 'reads the fixture: counts, force units, and only the warnings it should gi
     Assert-Equal $m.LoadCases.Count 5
     Assert-Equal $m.EndForces.Count 70 'end forces (7 members x 5 cases x 2 ends):'
     Assert-Equal $m.ErrorCount 0 ("errors: " + (($m.ProblemsOf('Error') | ForEach-Object { $_.ToString() }) -join '; '))
-    Assert-Equal ((Get-Codes $m | Sort-Object) -join ',') 'FORCE_PRINTED_TWICE,FORCE_UNITS_CONVERTED,MEMBER_OFFSET,PRINT_NOT_READ'
+    Assert-Equal ((Get-Codes $m | Sort-Object) -join ',') 'CODE_CHECK_MISSING,FORCE_PRINTED_TWICE,FORCE_UNITS_CONVERTED,MEMBER_OFFSET'
     Assert-Equal $m.ForceUnitText 'kip'
     Assert-Equal $m.MomentUnitText 'kip-ft'
     Assert-Equal $m.Analysis 'PERFORM ANALYSIS'
@@ -193,8 +193,15 @@ Test "sections: STAAD 2025's database form, double angles, a quoted database nam
 }
 
 Test 'LOAD LIST: every output command is recorded with the list it ran under; what is not read is named; LOADTYPE keeps its words' {
-    Assert-Equal (@($m.Prints | ForEach-Object { "$($_.Order):$($_.Command):$($_.LoadList):$($_.Read)" }) -join ' | ') '1:PRINT MEMBER FORCES ALL:ALL:True | 2:PRINT MEMBER FORCES LIST 2:ALL:True | 3:PRINT SUPPORT REACTION:ALL:True | 4:CHECK CODE ALL:ALL:False'
-    Assert-Match @($m.Problems | Where-Object { $_.Code -eq 'PRINT_NOT_READ' })[0].Message 'not read yet: CHECK CODE ALL$'
+    Assert-Equal (@($m.Prints | ForEach-Object { "$($_.Order):$($_.Command):$($_.LoadList):$($_.Read)" }) -join ' | ') '1:PRINT MEMBER FORCES ALL:ALL:True | 2:PRINT MEMBER FORCES LIST 2:ALL:True | 3:PRINT SUPPORT REACTION:ALL:True | 4:CHECK CODE ALL:ALL:True'
+    $u = [AnlFrameReader]::Read((New-Variant 'unread' @{ '    61. CHECK CODE ALL' = '    61. PRINT ANALYSIS RESULTS' }))
+    Assert-Match @($u.Problems | Where-Object { $_.Code -eq 'PRINT_NOT_READ' })[0].Message 'not read yet: PRINT ANALYSIS RESULTS$'
+    Assert-Equal $u.Prints[3].Read $false
+    # the fixture's code check prints one member of the seven it names
+    Assert-Equal $m.CodeChecks.Count 1
+    $c = $m.CodeChecks[0]
+    Assert-Equal "$($c.Print)|$($c.Member)|$($c.Code)|$($c.Profile)|$($c.Table)|$($c.Status)|$($c.Ratio)|$($c.Critical)|$($c.LC)|$($c.Axial)|$($c.F[0])|$($c.F[5])|$($c.ForceText)-$($c.LengthText)" '4|1|AISC 360-16 (LRFD)|ST W14X90|AISC SECTIONS|PASS|0.215|AISC- H1-1B|101|C|12.34|15.67|kip-ft'
+    Assert-Match @($m.Problems | Where-Object { $_.Code -eq 'CODE_CHECK_MISSING' })[0].Message 'no result for member\(s\) 2, 3, 4, 5, 6, 7$'
     $l = [AnlFrameReader]::Read((New-Variant 'loadlist' @{
         '    54. PRINT MEMBER FORCES ALL' = "    53. LOAD LIST 1 TO 3 101`n    54. PRINT MEMBER FORCES ALL"
         '    57. PRINT SUPPORT REACTION' = "    57. LOAD LIST 102`n    57. PRINT SUPPORT REACTIONS"
@@ -273,6 +280,110 @@ Test "the probe's real .anl (STAAD.Pro 2025): the model, every end force, the su
     Assert-True ((Get-Codes ([AnlFrameReader]::Read($bad))) -contains 'REACTION_ROW_UNREAD') 'touching numbers in the reaction table'
 }
 
+$probePath = Join-Path (Join-Path (Join-Path (Join-Path $script:Repo 'scripts') 'lib') 'probes') 'anl-prints-probe.anl'
+$probe = [AnlFrameReader]::Read($probePath)
+$probeText = [IO.File]::ReadAllText($probePath, [Text.Encoding]::GetEncoding(28591))
+function New-ProbeVariant([string]$Name, [string]$Find, [string]$Put) {
+    Assert-True ($probeText.IndexOf($Find) -gt 0) "the probe has: $Find"
+    $p = Join-Path $dir "probe-$Name.anl"
+    [IO.File]::WriteAllText($p, $probeText.Replace($Find, $Put), [Text.Encoding]::GetEncoding(28591))
+    return [AnlFrameReader]::Read($p)
+}
+
+Test "the probe's real .anl: every output command is read, and nothing but the member offset is noted" {
+    Assert-Equal ((Get-Codes $probe) -join ',') 'MEMBER_OFFSET'
+    Assert-Equal @($probe.Prints | Where-Object { -not $_.Read }).Count 0 'no print is left unread'
+    Assert-Equal (@($probe.Prints | ForEach-Object { $_.Rows }) -join ' ') '32 18 32 32 36 384 90 160 12 8 12 12 12 12 12'
+}
+
+Test "the probe's code checks: eight CHECK CODE commands in three layouts, one row per member each" {
+    Assert-Equal $probe.CodeChecks.Count 112
+    $by = @($probe.CodeChecks | Group-Object Print | ForEach-Object { "$($_.Name)=$($_.Count):$($_.Group[0].Code)" })
+    Assert-Equal ($by -join ' | ') '1=32:AISC 360-16 LRFD (V1.2) | 9=12:AISC 360-16 ASD (V1.2) | 10=8:AISC 360-16 ASD (V1.2) | 11=12:(AISC-360-10-LRFD) v1.4a | 12=12:(AISC 9TH EDITION) v1.0 | 13=12:(LRFD 3RD EDITION) v1.0 | 14=12:(AISC-360-05-LRFD) v3.3a | 15=12:AISC 360-22 LRFD (V1.0)'
+    $row = { param($print, $member) @($probe.CodeChecks | Where-Object { $_.Print -eq $print -and $_.Member -eq $member })[0] }
+    $show = { param($c) "$($c.Profile)|$($c.Status)|$($c.Ratio)|$($c.Critical)|$($c.LC)|$($c.Location)|$($c.Axial)|$(@(0..5 | ForEach-Object { if ($c.Has[$_]) { $c.F[$_] } else { '-' } }) -join ' ')|$($c.ForceText)-$($c.LengthText)|$($c.Starred)" }
+    # the box of AISC 360-16: all six forces, in the units of the check
+    Assert-Equal (& $show (& $row 1 101)) 'ST W10X49|FAIL|1.071|Eq.H1-1b|104|0|C|7.437 -1.324 -5.667 0.01668 111.2 -3.504|kip-ft|True'
+    Assert-Equal (& $show (& $row 1 103)) 'ST W10X49|PASS|0.126|Eq.H1-1b|102|12|C|53.35 5.611E-05 -0.6551 -0 -7.861 -0.0006734|kip-ft|False'
+    Assert-Equal (& $show (& $row 1 654321)).Split('|')[1] 'PASS' 'a six-digit member'
+    Assert-Equal (& $show (& $row 15 301)) 'LD L40404|FAIL|1.115|Slenderness (C)|6|0|C|2.307 0 0 0 0 0|kip-in|True'
+    # the table of AISC 360-10 and 360-05: FX, MY and MZ
+    Assert-Equal (& $show (& $row 11 101)) 'ST W10X49|FAIL|1.071|Eq. H1-1b|104|0|C|7.44 - - - 1333.95 -42.04|kip-in|True'
+    Assert-Equal (& $show (& $row 14 103)) 'ST W10X49|PASS|0.126|Eq. H1-1b|102|144|C|53.35 - - - -94.33 -0.01|kip-in|False'
+    # the older codes: a drawing at TRACK 2 (its summary in kip-feet), the table at TRACK 0 and 1 (kip-inch)
+    Assert-Equal (& $show (& $row 12 101)) 'ST W10X49|FAIL|1.952|AISC- H1-3|104|0|C|7.44 - - - 111.16 -3.5|kip-ft|False'
+    Assert-Equal (& $show (& $row 12 103)) 'ST W10X49|PASS|0.283|AISC- H1-1|102|144|C|53.35 - - - -94.33 -0.01|kip-in|False'
+    Assert-Equal (& $show (& $row 13 101)) 'ST W10X49|FAIL|1.082|LRFD-H1-1B-C|104|0|C|7.44 - - - 111.16 -3.5|kip-ft|False' 'the NUL STAAD writes into this profile line is read as a space'
+    Assert-Equal (& $show (& $row 13 202)).Split('|')[3] 'DEFLECTION'
+    # a member STAAD does not design, in its three wordings
+    Assert-Equal (@(1, 11, 12 | ForEach-Object { $c = & $row $_ 306; "$($c.Status): $($c.Note)" }) -join ' | ') 'NOT DESIGNED: DESIGN OF SECTION FOR MEMBER # 306 IS NOT SUPPORTED | NOT DESIGNED: DESIGN OF SECTION FOR MEMBER # 306 IS NOT SUPPORTED; MEMBER DESIGN FAILED FOR MEMBER 306 | NOT DESIGNED: THIS VERSION DOES NOT DESIGN PRISMATIC SECTIONS (MEMBER 306)'
+    Assert-Equal @($probe.CodeChecks | Where-Object { $_.Status -notin 'PASS', 'FAIL', 'NOT DESIGNED' }).Count 0
+    # the deflection check ran under the service list
+    Assert-Equal "$($probe.Prints[9].Command)|$($probe.Prints[9].LoadList)" 'CHECK CODE MEMB 201 TO 204 211 TO 213 20001|1 2 301 TO 303'
+}
+
+Test "the probe's code checks at TRACK 1 and 2: the checks behind a result, with demand, capacity, ratio, clause and case" {
+    Assert-Equal (@($probe.CodeCheckDetails | Group-Object Print | ForEach-Object { "$($_.Name)=$($_.Count)" }) -join ' ') '1=122 9=122 10=33 11=126 14=129 15=122'
+    $of = { param($print, $member) @($probe.CodeCheckDetails | Where-Object { $_.Print -eq $print -and $_.Member -eq $member } | ForEach-Object { "$($_.Check)=$($_.Ratio)" }) -join '; ' }
+    # TRACK 2 of the box layout: a block per check
+    Assert-Equal (& $of 1 101) 'TENSILE YIELDING=0.01; TENSILE RUPTURE=0.009; FLEXURAL BUCKLING X=0.089; FLEXURAL BUCKLING Y=0.1; FLEXURAL-TORSIONAL-BUCKLING=0.094; SHEAR ALONG X=0.019; SHEAR ALONG Y=0.023; FLEXURAL YIELDING (X)=0.093; FLEXURAL YIELDING (Y)=1.048; LAT TOR BUCK ABOUT X=0.097; COMBINED FORCES CLAUSE H1=1.071'
+    # TRACK 1: a table per group
+    Assert-Equal (& $of 1 102) 'TEN. YLD.=0; TEN. RUPT.=0; FLEX. BUCK. X=0.173; FLEX. BUCK. Y=0.195; FLEX. TOR. BUCK=0.184; SHEAR X=0.031; SHEAR Y=0.004; FLEX. YLD. X=0.019; FLEX. YLD. Y=1.667; L-T-B ABT X=0.02; CLAUSE H1=1.699'
+    $d = @($probe.CodeCheckDetails | Where-Object { $_.Print -eq 1 -and $_.Member -eq 101 -and $_.Check -eq 'FLEXURAL YIELDING (Y)' })[0]
+    Assert-Equal "$($d.Group)|$($d.Demand)|$($d.Capacity)|$($d.Reference)|$($d.LC)|$($d.Location)" 'CHECKS FOR BENDING|-111.2|106.1|Cl.F6.1|5|0'
+    # AISC 360-10: a name over two lines, a clause of two words
+    $d = @($probe.CodeCheckDetails | Where-Object { $_.Print -eq 11 -and $_.Member -eq 101 -and $_.Check -eq 'Flexural Tor Buck' })[0]
+    Assert-Equal "$($d.Group)|$($d.Demand)|$($d.Capacity)|$($d.Ratio)|$($d.Reference)|$($d.LC)" 'CHECK FOR AXIAL COMPRESSION|51.2|545|0.094|Eq. E4-1|102'
+    # a member's governing ratio is the largest of its checks
+    $worst = (@($probe.CodeCheckDetails | Where-Object { $_.Print -eq 1 -and $_.Member -eq 102 } | ForEach-Object { $_.Ratio }) | Measure-Object -Maximum).Maximum
+    Assert-Near $worst @($probe.CodeChecks | Where-Object { $_.Print -eq 1 -and $_.Member -eq 102 })[0].Ratio 1e-12
+}
+
+Test "the probe's member information and properties, as STAAD printed them" {
+    Assert-Equal "$($probe.MemberInfo.Count) $($probe.MemberInfoLengthText)" '32 ft'
+    $i = { param($id) $x = @($probe.MemberInfo | Where-Object { $_.Member -eq $id })[0]; "$($x.StartJoint)-$($x.EndJoint)|$($x.Length)|$($x.HasBeta):$($x.Beta)|$($x.Releases)" }
+    Assert-Equal (& $i 103) '3-13|12|True:90|'
+    Assert-Equal (& $i 201) '11-12|19.5|True:0|' 'the length has the offset taken off (joint to joint is 20 ft)'
+    Assert-Equal (& $i 221) '11-14|15|True:0|000001000001'
+    Assert-Equal (& $i 301) '1-12|23.324|False:0|TRUSS'
+    Assert-Equal (& $i 654321) '16-123456|12|True:0|'
+    Assert-Equal "$($probe.MemberProperties.Count) $($probe.MemberPropertyLengthText)" '32 in'
+    $p = { param($id) $x = @($probe.MemberProperties | Where-Object { $_.Member -eq $id })[0]; "$($x.Profile)|$($x.V -join ' ')" }
+    Assert-Equal (& $p 101) 'ST W10X49|14.4 272 93.4 1.39 3.4 7.47 54.4 18.68'
+    Assert-Equal (& $p 223) 'ST C10X30|8.81 103 3.93 1.22 6.73 1.76 20.6 1.65' 'the last member before a page break'
+    Assert-Equal (& $p 304) 'ST HSST6X6X0.375|7.58 39.5 39.5 64.6 4.19 4.19 13.17 13.17' 'a long profile name pushes the numbers to the next line'
+    Assert-Equal (& $p 306) 'PRISMATIC|36 108 108 182.52 30.6 30.6 36 36'
+    # what STAAD printed is checked against what the echo was read as
+    $j = New-ProbeVariant 'joints' '    221       11      14          15.000     0.00    000001000001' '    221       11      15          15.000     0.00    000001000001'
+    Assert-Match @($j.ProblemsOf('Error') | Where-Object { $_.Code -eq 'MEMBER_INFO_MISMATCH' })[0].Message 'members 221$'
+    $r = New-ProbeVariant 'release' '    221       11      14          15.000     0.00    000001000001' '    221       11      14          15.000     0.00    000011000001'
+    Assert-Match @($r.Problems | Where-Object { $_.Code -eq 'MEMBER_INFO_RELEASE' })[0].Message 'members 221$'
+    $c = New-ProbeVariant 'coord' '     12           20.000         12.000          0.000' '     12           20.000         12.500          0.000'
+    Assert-Match @($c.ProblemsOf('Error') | Where-Object { $_.Code -eq 'JOINT_PRINT_MISMATCH' })[0].Message 'joints 12$'
+}
+
+Test "the probe's section displacements: X Y Z at 13 stations per member and case, and STAAD's largest local displacement" {
+    Assert-Equal "$($probe.SectionDisplacements.Count) $($probe.SectionStations) $($probe.SectionDisplacementLengthText)" '160 13 in' '32 members x 5 cases of the service list'
+    $d = @($probe.SectionDisplacements | Where-Object { $_.Member -eq 101 -and $_.LC -eq 303 })[0]
+    Assert-Equal $d.V.Length 39
+    Assert-Equal "$($d.V[3]) $($d.V[4]) $($d.V[5]) | $($d.V[36]) $($d.V[37]) $($d.V[38])" '-0.0011 -0.0008 0.016 | 0.0117 -0.0093 1.8329'
+    Assert-Equal @($probe.SectionDisplacements | Where-Object { $_.V.Length -ne 39 }).Count 0
+    Assert-Equal $probe.SectionMaxima.Count 32
+    $x = @($probe.SectionMaxima | Where-Object { $_.Member -eq 101 })[0]
+    Assert-Equal "$($x.Disp) $($x.At) $($x.LC) $($x.LOverDisp)" '0.399 72 303 360'
+    # numbers that run together are refused, not shifted
+    $t = New-ProbeVariant 'sect' '                    -0.0031   -0.0015    0.0624   -0.0057   -0.0023    0.1373' '                    -0.0031   -0.0015    0.0624-123456.0057   -0.0023    0.1373'
+    Assert-True ((Get-Codes $t) -contains 'SECTION_DISPLACEMENT_UNREAD') 'touching numbers in a section displacement block'
+    Assert-Equal $t.ErrorCount 1
+}
+
+Test "a code check result in a layout that is not known is refused, not passed over" {
+    $u = New-ProbeVariant 'status' '|  Status:        FAIL       Ratio:         1.071       Loadcase:      104    |' '|  Result:        FAIL       Ratio:         1.071       Loadcase:      104    |'
+    $e = @($u.ProblemsOf('Error') | Where-Object { $_.Code -eq 'CODE_CHECK_UNREAD' })
+    Assert-True ($e.Count -ge 1) ((Get-Codes $u) -join ',')
+    Assert-Match $e[0].Message 'members 101$'
+}
+
 Test 'BETA ANGLE keeps the member, flags its beta as unknown and takes the axes at BETA 0' {
     $a = [AnlFrameReader]::Read((New-Variant 'angle' @{ 'BETA 90 MEMB 1' = 'BETA ANGLE MEMB 1' }))
     Assert-Equal $a.ErrorCount 0
@@ -285,14 +396,19 @@ Test 'BETA ANGLE keeps the member, flags its beta as unknown and takes the axes 
 Test 'the package: every file, its header and its rows' {
     $out = Join-Path $dir 'package'
     $files = [FramePackageWriter]::Write($m, $out)
-    Assert-Equal $files.Count 11
+    Assert-Equal $files.Count 17
+    Assert-Equal (@($files | ForEach-Object { [IO.Path]::GetFileName($_) } | Sort-Object) -join ' ') (@([FramePackageWriter]::Files | Sort-Object) -join ' ')
     $rc = [CalcFlow.Csv]::ReadAll((Join-Path $out 'reactions.csv'))
     Assert-Equal ($rc[0] -join ',') 'Node,LC,Fx (kip),Fy (kip),Fz (kip),Mx (kip-in),My (kip-in),Mz (kip-in)'
     Assert-Equal ($rc[1] -join ',') '1,1,0.512,8.432,0,0,0,2.151'
     Assert-Equal $rc.Count 5
     $pr = [CalcFlow.Csv]::ReadTable((Join-Path $out 'prints.csv'))
-    Assert-Equal (($pr | ForEach-Object { "$($_['Command'])=$($_['Read'])/$($_['Rows'])" }) -join '; ') 'PRINT MEMBER FORCES ALL=Y/70; PRINT MEMBER FORCES LIST 2=Y/10; PRINT SUPPORT REACTION=Y/4; CHECK CODE ALL=N/0'
+    Assert-Equal (($pr | ForEach-Object { "$($_['Command'])=$($_['Read'])/$($_['Rows'])" }) -join '; ') 'PRINT MEMBER FORCES ALL=Y/70; PRINT MEMBER FORCES LIST 2=Y/10; PRINT SUPPORT REACTION=Y/4; CHECK CODE ALL=Y/1'
     $read = { param($name) [CalcFlow.Csv]::ReadAll((Join-Path $out $name)) }
+    $cc = & $read 'codechecks.csv'
+    Assert-Equal ($cc[0] -join ',') 'Print,Member,Code,Profile,Table,Status,Ratio,Critical,LC,Location,Axial,FX,FY,FZ,MX,MY,MZ,Force unit,Length unit,Starred,Note'
+    Assert-Equal ($cc[1] -join ',') '4,1,AISC 360-16 (LRFD),ST W14X90,AISC SECTIONS,PASS,0.215,AISC- H1-1B,101,0,C,12.34,,,,0,15.67,kip,ft,,'
+    Assert-Equal ([CalcFlow.Csv]::ReadAll((Join-Path $out 'sectiondisplacements.csv'))).Count 1 'a table the file does not print is a header alone'
     $ef = & $read 'endforces.csv'
     Assert-Equal ($ef[0] -join ',') 'Member,End,Node,LC,Fx (kip),Fy (kip),Fz (kip),Mx (kip-ft),My (kip-ft),Mz (kip-ft)'
     Assert-Equal $ef.Count 71
