@@ -422,6 +422,11 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >   - Refused on an angle either way: loads along local y / z or 2 / 3 (give them globally), a temperature gradient,
 >     and releases or springs not the same about both axes. The axes those name differ between the programs.
 >   - A dimension-built angle (not from SAP's library) is still refused: STAAD's PRIS has no I23.
+>   - **SAP → STAAD, end to end** (the production machine, 2026-11-24): SAP's export of the angle probe went through
+>     `-Std` with each BETA turned by −55.6577°, and STAAD ran it. On all seven members STAAD's principal axes lie on
+>     SAP's to 0.0074°, the probe's own precision. The flexibilities are STAAD's table's: soft +2.5 %, stiff −2.0 %.
+>     STAAD → SAP waits on SAP's run of the `.s2k` Pluto wrote; from SAP's own behaviour its axes should lie 0.017°
+>     from STAAD's (Pluto's I23).
 > - **STAAD's short PRIS forms** (its `PRINT MEMBER PROPERTIES`, 2026-11-24):
 >   - `PRIS YD 12 ZD 6` gives AX 72, IZ 864, IY 216, IX 593.26 (the rectangle series SAP uses), AY = AZ = 61.20 = 0.85 A.
 >   - `PRIS YD 10` gives AX 78.54, I 490.87, IX = 2I, AY = AZ = 69.90 = 0.89 A.
@@ -429,6 +434,8 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >   Both now read as SAP General sections with exactly those numbers, the read-back check expanding them alike. A full
 >   PRIS with `YD` and no `ZD` (how `-Std` writes a pipe or circle) reads as round. That fixes a round trip that had
 >   been refused. `YB` / `ZB` (tee, trapezoid) stay refused: STAAD printed a shear area larger than the area.
+>   SAP 24.2 imported the short forms' `.s2k` (rectangles, circles, a square), its only messages its own design-table
+>   keys.
 >   - **SAP's I23 is its own:** the plates give 0.4314 and the plates with the 0.375 root fillet 0.4249, against
 >     SAP's 0.4241. No toe radius explains the rest. For an angle picked in STAAD, Pluto's estimate (the fillet)
 >     would set SAP's axes within about 0.02°. An angle from a SAP export carries SAP's own I23.

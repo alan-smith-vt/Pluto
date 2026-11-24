@@ -48,13 +48,11 @@ Purging it means rewriting the branch's history.
   - a `-Std` of SAP's library-probe export (its angle frame taken out), opened in STAAD.Pro 2025 to check it parses
     the database forms Pluto now writes;
   - the names probe's `.std` (its angle taken out) through `-In … -S2k`, imported into SAP.
-- single angles both ways, end to end on the production machine:
-  - SAP's export of the angle probe through `-Std`, run in STAAD: the tips should move as SAP's did, give or take
-    STAAD's table (2.5 %);
-  - the probe's `.std` through `-In … -S2k`, run in SAP: the tips should move as STAAD's did;
+- single angles, STAAD → SAP end to end: import `angle-probe_std.s2k` (the `.s2k` Pluto wrote from the probe's
+  `.std`) as a new model, run PA and PB, export joint displacements. The first try sent the original probe model's
+  results. SAP → STAAD is confirmed (0.0074°);
   - whether `RA` gives SAP's leg arrangement (STAAD's `ST` is its mirror image), if drawings or STAAD's angle design
     matter.
-- STAAD's short PRIS forms into SAP: `pris-forms.std` through `-In … -S2k`, imported.
 
 **Next:**
 1. **Round 3, the sample job, in SAP only.** CAESAR's outputs are already in `scripts/caesar/testdata`: restraint loads,
