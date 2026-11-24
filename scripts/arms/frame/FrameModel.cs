@@ -160,7 +160,8 @@ public sealed class FrameMember : FrameObj
 {
     public const string Conn = "CONNECTIVITY - FRAME", SectionAssign = "FRAME SECTION ASSIGNMENTS", LocalAxes = "FRAME LOCAL AXES ASSIGNMENTS 1 - TYPICAL",
                         Release = "FRAME RELEASE ASSIGNMENTS 1 - GENERAL", Partial = "FRAME RELEASE ASSIGNMENTS 2 - PARTIAL FIXITY",
-                        Insertion = "FRAME INSERTION POINT ASSIGNMENTS", Modifiers = "FRAME PROPERTY MODIFIERS", EndOffsets = "FRAME OFFSET ALONG LENGTH ASSIGNMENTS";
+                        Insertion = "FRAME INSERTION POINT ASSIGNMENTS", Modifiers = "FRAME PROPERTY MODIFIERS", EndOffsets = "FRAME OFFSET ALONG LENGTH ASSIGNMENTS",
+                        AutoMesh = "FRAME AUTO MESH ASSIGNMENTS";
     // the 12 end DOFs in SAP's order (I end, then J end); bit i of the viewer's release mask
     public static readonly string[] ReleaseDofs = { "PI", "V2I", "V3I", "TI", "M2I", "M3I", "PJ", "V2J", "V3J", "TJ", "M2J", "M3J" };
     // FRAME PROPERTY MODIFIERS' own names (SAP 24 export, 2026-11-05; the section table's A2Mod ... WMod are not read here)
@@ -505,6 +506,29 @@ public sealed class FrameLoad : FrameObj
     {
         return new[] { JointForce, GroundDisp, Point, Distributed, Temperature }.Any(x => string.Equals(x, table, StringComparison.OrdinalIgnoreCase));
     }
+    // SAP 24.2's frame temperature types and the field each holds its value in (the STAAD probe, 2026-11-07: a gradient
+    // assigned in SAP's own dialog exported as Type=Gradient2 TempGrad2=3): Temperature / Temp, Gradient2 / TempGrad2
+    // (change per length along local 2), Gradient3 / TempGrad3
+    public static readonly string[] TempTypes = { "Temperature", "Gradient2", "Gradient3" };
+    public static string TempField(string type)
+    {
+        if (string.Equals(type, "Gradient2", StringComparison.OrdinalIgnoreCase)) return "TempGrad2";
+        if (string.Equals(type, "Gradient3", StringComparison.OrdinalIgnoreCase)) return "TempGrad3";
+        return "Temp";
+    }
+    // SAP's name for a type as a person or an older workbook wrote it ("Temp Gradient 2", which SAP read as a uniform
+    // Temperature; "gradient 3"), null when it names none
+    public static string TempTypeOf(string text)
+    {
+        string t = (text ?? "").Replace(" ", "").Replace("-", "").ToLowerInvariant();
+        if (t == "" || t == "temperature" || t == "temp") return "Temperature";
+        if (!t.Contains("grad")) return null;
+        if (t.EndsWith("22") || t.EndsWith("2")) return "Gradient2";
+        if (t.EndsWith("33") || t.EndsWith("3")) return "Gradient3";
+        return null;
+    }
+    // a temperature row's value (its type's field)
+    public double TempValue { get { return Row == null ? 0 : Row.Num(TempField(Row.Get("Type") ?? "Temperature"), 0); } }
     public override string Kind { get { return "load"; } }
     public override string KeyField { get { return Table.StartsWith("JOINT", StringComparison.OrdinalIgnoreCase) ? "Joint" : "Frame"; } }
     public override string MainTable { get { return Table; } }
@@ -517,11 +541,34 @@ public sealed class FrameCase : FrameObj
 {
     public const string Defs = "LOAD CASE DEFINITIONS", StaticLoads = "CASE - STATIC 1 - LOAD ASSIGNMENTS", NonlinParams = "CASE - STATIC 4 - NONLINEAR PARAMETERS";
     public override string Kind { get { return "case"; } }
+    internal FrameModel M;
     // a nonlinear case's geometric nonlinearity: None, P-Delta, or P-Delta plus Large Displacements (SAP's names)
-    public string GeoNonLin { get { var r = Rec(NonlinParams); return r == null ? "None" : r.Get("GeoNonLin") ?? "None"; } set { if (GeoNonLin != value) Need(NonlinParams).Set("GeoNonLin", value); } }
+    public string GeoNonLin { get { var r = Rec(NonlinParams); return r == null ? "None" : r.Get("GeoNonLin") ?? "None"; } set { if (GeoNonLin != value) NonlinRow().Set("GeoNonLin", value); } }
     public override string KeyField { get { return "Case"; } }
     public override string MainTable { get { return Defs; } }
-    public string Type { get { var r = Rec(Defs); return r == null ? "" : r.Get("Type") ?? ""; } set { if (Type != value) Need(Defs).Set("Type", value); } }
+    public string Type
+    {
+        get { var r = Rec(Defs); return r == null ? "" : r.Get("Type") ?? ""; }
+        set
+        {
+            if (Type == value) return;
+            Need(Defs).Set("Type", value);
+            if (string.Equals(value, "NonStatic", StringComparison.OrdinalIgnoreCase) && Rec(NonlinParams) == null) Conform();
+        }
+    }
+    // a case becoming nonlinear takes the parameters every other nonlinear case shares (a seeded check model's raised step
+    // limits, 2026-11-21); when they differ, or there is none, SAP's defaults (the row only when something is set)
+    void Conform()
+    {
+        if (M == null) return;
+        var r = M.Conventional(M.Cases.Where(c => c != this && string.Equals(c.Type, "NonStatic", StringComparison.OrdinalIgnoreCase)).Cast<FrameObj>(), this, NonlinParams);
+        if (r != null) Recs.Add(r);
+    }
+    FrameRec NonlinRow()
+    {
+        if (Rec(NonlinParams) == null) Conform();
+        return Need(NonlinParams);
+    }
     public string Initial { get { var r = Rec(Defs); return r == null ? "" : r.Get("InitialCond") ?? ""; } set { if (Initial != value) Need(Defs).Set("InitialCond", value); } }
     // its static loads: {LoadType, LoadName, LoadSF}
     public IEnumerable<string[]> Loads { get { foreach (var r in RecsOf(StaticLoads)) yield return new[] { r.Get("LoadType") ?? "", r.Get("LoadName") ?? "", r.Get("LoadSF") ?? "1" }; } }
@@ -673,7 +720,42 @@ public sealed class FrameModel
         o.Uid = NextUid++;
         o.Recs.Add(NewRec(o.MainTable, o.KeyField, label));
         Attach(o);
+        // a new frame takes the auto mesh every other frame shares: AutoMesh=No in a seeded check model, so SAP does not
+        // join it to the support points on its span (2026-11-21)
+        var f = o as FrameMember;
+        if (f != null) { var r = Conventional(Frames.Cast<FrameObj>(), f, FrameMember.AutoMesh); if (r != null) f.Recs.Add(r); }
         return o;
+    }
+
+    // the row every peer holds alike in `table` (every field but the key, in order), keyed for `o`: the row a new object
+    // takes in a table no sheet shows, so additions keep the model's own convention. Null when a peer lacks the row or
+    // two differ: the new object then gets SAP's defaults
+    internal FrameRec Conventional(IEnumerable<FrameObj> peers, FrameObj o, string table)
+    {
+        FrameRec first = null;
+        foreach (var p in peers)
+        {
+            if (p == o) continue;
+            var r = p.Rec(table);
+            if (r == null) return null;
+            if (first == null) { first = r; continue; }
+            if (!SameButKey(first, r, p.KeyField)) return null;
+        }
+        if (first == null) return null;
+        var c = first.Clone();
+        c.Row = null;
+        c.Set(o.KeyField, o.Label);
+        return c;
+    }
+
+    static bool SameButKey(FrameRec a, FrameRec b, string key)
+    {
+        var fa = a.F.Where(x => !string.Equals(x[0], key, StringComparison.OrdinalIgnoreCase)).ToList();
+        var fb = b.F.Where(x => !string.Equals(x[0], key, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (fa.Count != fb.Count) return false;
+        for (int i = 0; i < fa.Count; i++)
+            if (!string.Equals(fa[i][0], fb[i][0], StringComparison.OrdinalIgnoreCase) || fa[i][1] != fb[i][1]) return false;
+        return true;
     }
 
     // a new row: the key, then the table's fields at SAP's defaults, in the order SAP writes them (those SAP's own
@@ -727,7 +809,7 @@ public sealed class FrameModel
         var g = o as FrameGroup; if (g != null) { Groups.Add(g); return; }
         var p = o as FramePattern; if (p != null) { Patterns.Add(p); return; }
         var ld = o as FrameLoad; if (ld != null) { Loads.Add(ld); return; }
-        var c = o as FrameCase; if (c != null) { Cases.Add(c); return; }
+        var c = o as FrameCase; if (c != null) { c.M = this; Cases.Add(c); return; }
         var cb = o as FrameCombo; if (cb != null) { Combos.Add(cb); return; }
         throw new ArgumentException("FrameModel: unknown object " + o.GetType().Name);
     }

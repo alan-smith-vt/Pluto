@@ -48,7 +48,13 @@ public class PipeModel
     public readonly List<PipeModelNodeLoad> NodeLoads = new List<PipeModelNodeLoad>();   // forces / moments and imposed displacements
     public readonly List<PipeModelCoord> Coords = new List<PipeModelCoord>();
     public readonly Dictionary<int, double[]> Positions = new Dictionary<int, double[]>();   // node -> x y z (in), as built
+    // the materials' E, Poisson, density and alpha for the SAP / STAAD check model (PipeToFrame), by CAESAR material
+    // number; never written to the .cii (CAESAR takes them from its own database). A material not listed takes
+    // PipeMaterialDefaults, with a warning
+    public readonly List<PipeModelMaterial> Materials = new List<PipeModelMaterial>();
     public readonly List<string> Warnings = new List<string>();
+
+    public PipeModelMaterial MaterialNumbered(int n) { foreach (var x in Materials) if (x.Number == n) return x; return null; }
 
     // English -> job factor i (CaesarUnits order); the English value (1, or the template's) when not known
     public double Factor(int i)

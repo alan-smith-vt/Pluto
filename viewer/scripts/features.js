@@ -671,10 +671,14 @@ var FEAFeatures = (function () {
         nodeGroupAt: nodeGroupAt,
         isOn: function () { return enabled && !!resolved; },
         envelope: function () { return envelope; },
-        // Recenter offset written by the exporter (units.worldOffset, "x y z" in
-        // FILE units); add to picked coordinates to recover world/plant position.
-        worldOffset: function () {
-            var s = envelope && envelope.units && envelope.units.worldOffset;
+        // Recenter offset written by the exporter (model.units.worldOffset, "x y z" in
+        // FILE units); add to picked coordinates to recover world/plant position. It
+        // read a top-level units, which no exporter writes, until 2026-11-21: a top-level
+        // one is still accepted. An envelope may be given (predicates read the one loading).
+        worldOffset: function (env) {
+            var e = env || envelope;
+            var u = e && ((e.model && e.model.units) || e.units);
+            var s = u && u.worldOffset;
             if (!s) return null;
             var p = String(s).trim().split(/\s+/).map(Number);
             return (p.length === 3 && p.every(isFinite)) ? p : null;

@@ -14,23 +14,42 @@ created: 2026-10-22
 - spring hangers: designed by CAESAR, springs as given, constant-effort supports ([[vault/format/caesar-neutral-hangers|caesar-neutral-hangers]]);
 - flexible nozzles: WRC 297, API 650, PD 5500, custom stiffnesses ([[vault/format/caesar-neutral-nozzles|caesar-neutral-nozzles]]);
 - loads: forces and moments, imposed displacements, uniform loads and wind ([[vault/format/caesar-neutral-loads|caesar-neutral-loads]]);
+- joints: node-to-node ties described per DOF, such as couplings (below);
+- materials: E, Poisson, density and alpha per CAESAR material, for the SAP check model only and never in the `.cii`
+  ([[vault/arms/pipe-workbook|pipe-workbook]], its Materials sheet);
 - COORDS.
 
-Three things become one:
+How it fits with the workbooks, CAESAR, SAP and the viewer: [[vault/arms/pipe-and-frame-workflow|pipe-and-frame-workflow]] (start here).
+
+Four things become one:
 
 | Source | Code | What it gives |
 |---|---|---|
 | a TOML config | `PipeBuilder` | a new model, written with the 15.01 English templates ([[vault/arms/pipe-builder\|pipe-builder]]) |
 | an existing `.cii` | `CaesarPipeImport.FromCii` | the job, with everything the model does not edit carried as written |
+| a CAESAR workbook (`.xlsx`) | `PipeWorkbook.Read` | its rows applied to the model it was written from ([[vault/arms/pipe-workbook\|pipe-workbook]]) |
 | a `.pipe.json` | `PipeModelJson.Read` | a model saved exactly, by `Build-Pipe.ps1 -Json` |
 
-`CaesarNeutralWriter` writes any of them back as a `.cii`; `CaesarToPluto.Export(CaesarModel …)` shows any of them in the viewer; `CaesarCompare` compares two of them by meaning. The runner for all of it is `scripts/caesar/Build-Pipe.ps1`.
+`CaesarNeutralWriter` writes any of them back as a `.cii`; `CaesarToPluto.Export(CaesarModel …)` shows any of them in the viewer; `CaesarCompare` compares two of them by meaning; `PipeToFrame` seeds a SAP2000 check model from any of them (`Build-Frame.ps1 -In`, [[vault/format/pipe-to-frame|pipe-to-frame]]). The runner for the rest is `scripts/caesar/Build-Pipe.ps1`.
 
-**Status: verified on Linux (2026-10-22), still `draft`** until the PS 5.1 compile and a CAESAR re-import on the production machine.
+**Status: verified on Linux (2026-10-22), still `draft`** until the PS 5.1 compile on the production machine. CAESAR 15.01 has re-imported Pluto's files: the probe jobs' re-exports differ only by CAESAR's default insulation density ([[vault/format/caesar-neutral-loads|caesar-neutral-loads]]).
 
 ## The rule: an unedited import is written back identically
 
 Importing a `.cii` and writing it back without an edit gives the source file **byte for byte**: the same CAESAR version's layout, the same line ending, code page and trailing lines. Every import checks this on the spot (`CaesarPipeImportResult.Identical` / `ByteIdentical`) and says so in the runner's report. An edit changes only what it touches.
+
+```mermaid
+flowchart LR
+  A[".cii (the source)"] --> I["CaesarPipeImport.FromCii<br/>raw text kept per record, block, slot"]
+  I --> M(["PipeModel"])
+  I -.->|"written back in memory"| K{"Identical?<br/>ByteIdentical?"}
+  K -.-> R["the runner's report"]
+  M --> J["PipeModelJson<br/>the exact base"]
+  J --> WB["workbook: _pluto sheet"]
+  WB -->|"edits, matched by Id"| M
+  M --> W["CaesarNeutralWriter<br/>overlay: changed columns only,<br/>new items from 15.01 templates"]
+  W --> B[".cii (written)"]
+```
 
 > [!info]- Overlay and carry, field by field
 > - **Raw text is kept** wherever the file has it:
@@ -66,8 +85,13 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 > [!info]- Joints
 > `PipeModelJoint` is a node-to-node tie described per DOF, expanded to CNODE restraints only when the `.cii` is written:
 > - `node`, `cnode`, `kind` (a label: coupling, hinge, slip, ball, link, custom);
-> - `frame`: `pipe` (axial, shear, torsion, bending, in the pipe's own axes at the node) or `global` (X Y Z RX RY RZ);
-> - `dofs`: each with a `gap` (free travel each way) and a `stiffness` after it (0 = rigid). **A DOF not listed is free.**
+> - `frame`: `global` (CAESAR's X Y Z) or `pipe` (X along the pipe at the node, Y and Z square to it,
+>   `CaesarNeutralWriter.Perps`);
+> - `dofs`: each one CAESAR restraint between the two nodes: `X Y Z RX RY RZ`, or with `+` / `-` for one way only
+>   (CAESAR's sense: `+Y` acts in +Y). Each has a `gap` (free travel; on its own side for a one-way DOF) and a
+>   `stiffness` after it (0 = rigid). **A DOF not listed is free.**
+> - The older pipe-frame names (before 2026-11-07) read as today's: `axial` = X, `shear` = Y and Z, `torsion` = RX,
+>   `bending` = RY and RZ, in the JSON as well as on a workbook.
 > - `sif` (> 0: a user SIF at the node) and `tag`.
 >
 > Pipe-frame DOFs need an element at the node to give the axis; the writer reports a joint without one.
@@ -120,7 +144,7 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 - **Version 2** (Stage C) adds the loads. A version 1 file, whose displacements were carried as slot lines (`nodeItems`), still reads.
 
 > [!info]- Keys
-> - **Top level:** `format`, `version`, `title`, `notes`, `zUp`, `ambient`, `code`, `unitFactors`, `allowablesBlock`, `source`, `elements`, `restraints`, `joints`, `sifs`, `nozzles` and `hangers` (only when there are any), `nodeLoads`, `coords`.
+> - **Top level:** `format`, `version`, `title`, `notes`, `zUp`, `ambient`, `code`, `unitFactors`, `allowablesBlock`, `source`, `elements`, `restraints`, `joints`, `sifs`, `nozzles`, `hangers` and `materials` (each only when there are any), `nodeLoads`, `coords`.
 > - **`source`** (imported or seeded models only): `fileName`, `version`, `versionLine`, `codePage`, `lineEnding`, `finalNewline`, `seed`, `prelude`, `sectionOrder`, `headers`, `sections` (raw lines per section), `linesPerBlock`, `trailing`, `miscelMaterialLines`, `miscelTail`, `tailNozzleLines` / `tailHangerLines` / `tailHangers` (the tail's parts; absent = carried whole), `coordsCountLine`, `originalTitle`, `originalNotes`, `elementCount`.
 > - **`elements[]`:** `uid`, `from`, `to`, `d` [dx dy dz], `od`, `wall`, `insul`, `corr`, `t` [T1–T9], `p` [P1–P9], `e`, `poisson`, `pipeDensity`, `insulDensity`, `fluidDensity`, `material`, `teeAngles` (CAESAR's element orientation angles), `design` (only when they differ from what the element's record holds: the 19 values `PipeModelElement.Design()` lists, CAESAR's items 33–46 and 49–53; without the key they are read from the record), `name`, `line`, `kind`; optional `bend` {`radius`, `type`, `nodes`, `miter`, `fittingThk`, `k`, `seq`, `raw`}, `rigid` {`weight`, `type`, `seq`, `raw`}, `expJoint` {`axial`, `transverse`, `bending`, `torsion`, `effId`, `seq`, `raw`}, `reducer` {`od2`, `wall2`, `alpha`, `r1`, `r2`, `seq`, `raw`}, `uniform` {`vectors` [9 × [ux, uy, uz]], `g` [9 flags], `seq`, `raw`}, `wind` {`type`, `shape`, `addedMass`, `lift`, `marineGrowth`, `marineGrowthDensity`, `seq`, `raw`}; `raw` (the record); `carried` and `slotBlocks` {section: {`seq`, `lines`}}.
 > - **`restraints[]`:** `node`, `type`, `code`, `k`, `gap`, `mu`, `cnode`, `cos`, `tag`, `guid`, `source`, `owner` (element uid), `slot`, `raw`.
@@ -128,6 +152,7 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 > - **`sifs[]`:** `node`, `type`, `sifIn`, `sifOut`, `surfaceNode`, `details` (only when they differ from what the slot holds: weld mismatch, item 6, pad, fitting outside radius, crotch radius, the slot's items 5-9; without the key they are read from the slot), `owner`, `slot`, `raw`.
 > - **`nozzles[]`:** `node`, `vesselNode`, `type`, `v` [20], `source`, `raw`. A file saved before 2026-10-26 holds 22 values, read into today's items.
 > - **`hangers[]`:** `node`, `cnode`, `data` [the 11 values], `tag`, `guid`, `free` [node 1, node 2, code 1, code 2], `count`, `table`, `shortRange`, `source`, `raw`, `freeRaw`.
+> - **`materials[]`** (2026-11-12): `number` (CAESAR's material), `e`, `poisson`, `density`, `alpha` (per degree), `note`. Written only when there are any, so a model without them keeps its text and fingerprint.
 > - **`nodeLoads[]`:** `kind` (force | displacement), `node`, `vectors` [9 × 6, `null` = free], `source`, `owner`, `slot`, `raw`.
 > - **`coords[]`:** `node`, `x`, `y`, `z` (in), `raw`, `imported`.
 >
@@ -135,12 +160,14 @@ Importing a `.cii` and writing it back without an edit gives the source file **b
 
 ## Compare by meaning
 
-`CaesarCompare.Compare(a, nameA, b, nameB, lengthTol)`, or `Build-Pipe.ps1 -In x -Compare y` with any two of `.cii` / `.toml` / `.pipe.json`. It is meant for a job against CAESAR's own re-export of it, where the text differs and the model should not.
+`CaesarCompare.Compare(a, nameA, b, nameB, lengthTol)`, or `Build-Pipe.ps1 -In x -Compare y` with any two of `.cii` / `.toml` / `.xlsx` / `.pipe.json`. It is meant for a job against CAESAR's own re-export of it, where the text differs and the model should not.
 
 - **Elements** matched by FROM–TO: added, removed, and every changed field.
 - **Node positions** by CAESAR's own geometry rules (`CaesarGeometry`), within `lengthTol`.
 - **Restraints** as a multiset per node: rigid stiffness normalized, CAESAR's default cosines filled in.
 - **Loads:** forces and displacements per node and vector, as a multiset. Uniform loads and wind on each matched element.
+- **Hangers and nozzles** by meaning: a hanger by its node, CNODE, kind and the design data given (a table of 0 as the
+  job's default); a nozzle by its node, vessel node, type and the values its type uses.
 - **SIFs / tees**, **carried blocks** (by section and owner), and **settings** (title, ambient, Z-up, units).
 
 The result lists each kind, a one-line `Summary()` and `ToJson()`.

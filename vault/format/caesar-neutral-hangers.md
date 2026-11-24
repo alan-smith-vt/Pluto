@@ -34,6 +34,9 @@ Spring hangers are not element blocks. They sit in MISCEL_1, after the material 
 > - **Writing** (`CaesarNeutralWriter.WriteHangers`): the defaults lines as written (a new model gets 15.01's); every list over its own lines while the count is unchanged; each hanger from its own lines with only changed fields rewritten; a new hanger in the job's layout, its table 0 for the job's default, as CAESAR 15.01 re-exported the probe's. CONTROL counts the model's hangers. An unedited job comes back byte for byte.
 > - **Compare** matches hangers by meaning (node, CNODE, kind, the design data given), a table of 0 as the job's default.
 > - **The viewer** shows each hanger as an arrow under the pipe; the readout says whether CAESAR designs it or takes it as given.
+> - **The SAP check model** holds a spring as given (its rate, its installed load in pattern H) and a constant support
+>   (its load in H). A hanger CAESAR designs refuses it until it has the rate and cold load CAESAR chose
+>   ([[vault/format/pipe-to-frame|pipe-to-frame]]).
 
 > [!info]- Checks
 > - `hangers` (info): the hangers CAESAR will design, and that it asks for its hanger-design cases first. `hangers-given` (info): the springs and constant supports it takes as given.

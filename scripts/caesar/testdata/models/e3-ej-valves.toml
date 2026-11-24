@@ -63,10 +63,40 @@ axial_stiffness = 1500
 bending_stiffness = 500
 torsion_stiffness = 1e6
 effective_id = 13.5
-# control rods across EJ-TIED: an axial tie with a gap between the flanges either side
+# control rods across EJ-TIED: an axial tie with a gap between the flanges either side. A CNODE is the same point as its node
+# to CAESAR (44E when the pipe puts them apart), so the rods are stubs: a weightless rigid lug up from the upstream flange
+# and the rod along the joint, a lug up from the downstream flange, and the tie where the two meet
+[[runs]]
+name = "rod1"
+from = { run = "line", at = "ej - 1" }
+tee = "none"
+legs = [{ dir = "+Y", length = 1, bend = "none" }, ["+X", 4]]
+[[runs]]
+name = "lug1"
+from = { run = "line", at = "ej + 3" }
+tee = "none"
+legs = [["+Y", 1]]
+[[components]]
+type = "rigid"
+run = "rod1"
+at = 0
+length = 1
+weight = 0
+[[components]]
+type = "rigid"
+run = "rod1"
+at = 1
+length = 4
+weight = 0
+[[components]]
+type = "rigid"
+run = "lug1"
+at = 0
+length = 1
+weight = 0
 [[ties]]
-node = { run = "line", at = "ej - 1" }
-cnode = { run = "line", at = "ej + 3" }
+node = { run = "rod1", at = "L" }
+cnode = { run = "lug1", at = "L" }
 type = "X"
 gap = 0.5
 tag = "ROD-1"
@@ -79,10 +109,39 @@ run = "line"
 at = [12, 26, 35, 46]
 type = ["+Y", "GUI"]
 mu = 0.3
-# control rods across EJ-FREE that act only in extension: a one-way CNODE restraint with the rods' free play
+# control rods across EJ-FREE that act only in extension: a one-way CNODE restraint with the rods' free play, on stubs as
+# above (the rod from the upstream side, the lug on the downstream side, the node on the downstream side as before)
+[[runs]]
+name = "rod2"
+from = { run = "line", at = 39 }
+tee = "none"
+legs = [{ dir = "+Y", length = 1, bend = "none" }, ["+X", 3]]
+[[runs]]
+name = "lug2"
+from = { run = "line", at = 42 }
+tee = "none"
+legs = [["+Y", 1]]
+[[components]]
+type = "rigid"
+run = "rod2"
+at = 0
+length = 1
+weight = 0
+[[components]]
+type = "rigid"
+run = "rod2"
+at = 1
+length = 3
+weight = 0
+[[components]]
+type = "rigid"
+run = "lug2"
+at = 0
+length = 1
+weight = 0
 [[ties]]
-node = { run = "line", at = 42 }
-cnode = { run = "line", at = 39 }
+node = { run = "lug2", at = "L" }
+cnode = { run = "rod2", at = "L" }
 type = "-X"
 gap = 0.375
 tag = "CONTROL-RODS"

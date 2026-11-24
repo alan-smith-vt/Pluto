@@ -22,6 +22,8 @@ Verified on the generic fixture and in the browser. The production-machine check
 
 The other direction, a `.cii` built from a TOML config or an existing job carried losslessly, is the [[vault/arms/pipe-builder|pipe-builder]] ([[vault/format/pipe-model|pipe-model]]). Its `-Preview` runs this arm on the file it writes.
 
+How it fits with the pipe model, CAESAR, SAP and the frame side: [[vault/arms/pipe-and-frame-workflow|pipe-and-frame-workflow]] (start here).
+
 ## Run
 
 ```powershell
@@ -62,7 +64,9 @@ From C#: `CaesarToPluto.Export(cii, resultsOrNull, outBase, modelId[, CaesarOpti
     - a rest (`+Y`) or a hanger: an arrow below the pipe;
     - a guide: arrows across the pipe;
     - a limit stop: arrows along the top of the pipe;
-    - a rotation: a double-headed arrow.
+    - a rotation: a double-headed arrow;
+  - a flexible nozzle: a plate at its node like an anchor's (the vessel wall); the readout names its vessel node.
+- **Pipe joints are mitred** (2026-10-26): where exactly two pipes of one OD meet and turn by at most 135°, both ends are cut on the bisecting plane, so a chorded bend draws as one tube (`viewer/scripts/beamGeometry.js`, `test_mitre.js`).
 - **Supports panel:** Show, Size, Colour.
   - Colour is the support group colour, the restraint kind, or a restraint load (`Restraint FX … |M|`) in the current load case.
   - Hover a symbol for its restraints and `|F|` / `|M|`. Click to pin a card with the loads on the restraint in every load case, and the node displacement.
@@ -84,7 +88,7 @@ Code: `scripts/arms/CaesarNeutralReader.cs` → `CaesarGeometry.cs` → [`Caesar
 >   - Lines per record = section lines ÷ the CONTROL count.
 >   - ELEMENTS: the real rows, then text rows, then the last 3 non-blank rows are the pointers.
 >   - RESTRANT: slots found by structure.
->   - Checked on 15.01 (the fixture) and on four public 11.00 files. Block sizes differ between those versions: ALLOWBLS 26 → 28 lines, SIF&TEES 10 → 14, REDUCERS 1 → 2.
+>   - Checked on 15.01 (the fixture) and on four public 11.00 files; since 2026-10-22 also on 22 public samples (7.00, 11.00, 15.01) through the lossless import ([[vault/format/pipe-model|pipe-model]]). Block sizes differ between those versions: ALLOWBLS 26 → 28 lines, SIF&TEES 10 → 14, REDUCERS 1 → 2.
 > - **Numbers** are 13-character columns after a 2-character indent, and can touch (`3.444566E+02-3.178331E+00`). Integers are written as reals.
 > - **Text rows** are a 12-character length field, a space, then the text.
 > - **Line endings:** LF, CRLF, CR, CR CR LF and BOM all read the same.
@@ -92,10 +96,10 @@ Code: `scripts/arms/CaesarNeutralReader.cs` → `CaesarGeometry.cs` → [`Caesar
 >   - UNITS: 22 factors plus labels; length unit from the label.
 >   - COORDS: in compound-length units, converted.
 >   - IZUP (CONTROL row 3), NODENAME, BEND, RIGID, EXPJT, RESTRANT, DISPLMNT, REDUCERS, SIF&TEES.
->   - MISCEL_1 hangers and nozzles: layout confirmed on 11.00 only.
+>   - MISCEL_1 hangers and nozzles: layout confirmed on 11.00 and on 15.01 ([[vault/format/caesar-neutral-hangers|caesar-neutral-hangers]], [[vault/format/caesar-neutral-nozzles|caesar-neutral-nozzles]]).
 > - **Restraint type codes:**
->   - Confirmed: 1 ANC, 2–4 X/Y/Z, 5–7 RX/RY/RZ, 8 GUI, 9 LIM, 14/15 +Y/+Z.
->   - Every other code becomes `OTHER(n)` with a warning, until a file proves it.
+>   - Named from the table in CAESAR's documentation, codes 1–62 (`Confirmed`); 1–26 are also seen in CAESAR-written files (the fixture, 11.00 jobs, the 15.01 probe jobs; [[vault/format/caesar-neutral-loads|caesar-neutral-loads]]).
+>   - A code outside the table becomes `OTHER(n)`, with a warning.
 >   - Rigid types: 0 Unspecified, 1 Valve, 2 Flange, 3 Flange Pair, 4 Flange Valve.
 > - **Bad input** gives a warning, never an exception. Malformed-input runs: 940, with 0 exceptions and 0 NaN positions.
 
@@ -175,9 +179,11 @@ Code: `scripts/arms/CaesarNeutralReader.cs` → `CaesarGeometry.cs` → [`Caesar
 >   - `RX` `RY` `RZ` → `rotation`.
 >   - `GUI` → `guide`, `direction` = up × pipe axis. On a pipe within 5° of vertical it is `vertical: true` (both horizontal dof).
 >   - `LIM` → `limit`, along the pipe axis.
->   - MISCEL_1 hangers → `hanger` (direction up, cold / hot load).
+>   - MISCEL_1 hangers → `hanger` (direction up; `design` `designed`, `spring` or `constant`; `stiffness` the rate,
+>     `constantLoad`, `table`, `count`, `cnode`, cold / hot load).
+>   - MISCEL_1 nozzles → `nozzle` (`nozzleType`; `cnode` the vessel node).
 >   - DISPLMNT → `imposed`.
->   - Anything else → `other`.
+>   - Anything else (snubbers, one-way rotations, `±LIM`, codes past 26) → `other`.
 > - **CAESAR's guide and limit cosines are dummies**, so both come from the pipe axis at the node.
 > - `gap`, `friction`, `stiffness` (non-rigid only), `cnode` and `tag` are written when present.
 > - **Re-export:** a support item keeps its `id` and `hidden` flag by name, and hand-made items are kept (`FeaturesSidecar.WriteSupports`).
@@ -243,8 +249,8 @@ The generic job in `scripts/caesar/testdata/` (README there, with the scrub chec
 
 ## Next (stage 3)
 
-- mitred ring joins at bends (removes the chord seams);
-- nozzles;
+Nozzles (2026-10-24) and mitred joins at bends (2026-10-26), once listed here, are done: In the viewer, above.
+
 - coupling recognition by name (the pipe model recognizes couplings by their CNODE pattern since 2026-11-05, `PipeJoints`; the viewer still draws them as their restraints);
 - beam envelopes (max over load cases) for the code ratio and the restraint loads;
 - per-restraint loads (the Restraints report) when a node has several restraints.

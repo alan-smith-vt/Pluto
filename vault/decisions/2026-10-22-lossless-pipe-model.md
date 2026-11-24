@@ -41,5 +41,11 @@ Format and rules: [[vault/format/pipe-model|pipe-model]]. Usage: [[vault/arms/pi
   - A CAESAR 15.01 export confirmed FORCMNT, UNIFORM and WIND the same day.
   - It was also read as showing uniform loads and wind stored per element, with no carry-forward. **Corrected 2026-10-24:** CAESAR carries them forward ([[vault/decisions/2026-10-24-uniform-wind-carry-forward|2026-10-24-uniform-wind-carry-forward]]).
 - **Stage B (2026-10-22):** the workbook as the model's master, `-Watch`, the viewer's Reload / Auto-reload ([[vault/arms/pipe-workbook|pipe-workbook]]).
-- **Next:** D, the viewer as the confirmation step (loads drawn, properties, checks); E, the SAP check model.
+- **Since (2026-10-24):** hangers and nozzles are the model's, no longer carried in the MISCEL_1 tail
+  ([[vault/decisions/2026-10-24-hangers-nozzles-in-model|2026-10-24-hangers-nozzles-in-model]]).
+- **Next:** D, the viewer as the confirmation step (loads drawn, properties, checks); E, the SAP check model (begun
+  2026-11-12: [[vault/decisions/2026-11-12-caesar-to-sap|2026-11-12-caesar-to-sap]]).
+  - **D done 2026-10-23** ([[vault/decisions/2026-10-23-pipe-model-in-viewer|2026-10-23-pipe-model-in-viewer]]).
+  - **E done 2026-11-18:** linear and nonlinear supports, verified against CAESAR 15.01 and SAP 24.2 on two probes
+    ([[vault/format/pipe-to-frame|pipe-to-frame]]).
 - **Still to do on the production machine:** the PS 5.1 compile, and a real 15.01 job round-tripped and re-imported into CAESAR.

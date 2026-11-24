@@ -193,9 +193,40 @@ run = "grooved"
 at = 22.5
 length = 0.5
 weight = 150
-[[ties]]                              # control rods: they stop the joint's extension past their free play
-node = { run = "grooved", at = 23 }
-cnode = { run = "grooved", at = 19 }
+# control rods: they stop the joint's extension past their free play. A CNODE is the same point as its node to CAESAR (it
+# stops, 44E, when the pipe puts them apart), so the rods are stubs: a weightless rigid lug up from the upstream flange and
+# the rod along the joint, a lug up from the downstream flange, and the tie where the rod meets that lug
+[[runs]]
+name = "rods"
+from = { run = "grooved", at = 19 }
+tee = "none"                          # a lug, not a branch
+legs = [{ dir = "+Y", length = 0.75, bend = "none" }, ["+X", 4]]
+[[runs]]
+name = "lug"
+from = { run = "grooved", at = 23 }
+tee = "none"
+legs = [["+Y", 0.75]]
+[[components]]
+type = "rigid"
+run = "rods"
+at = 0
+length = 0.75
+weight = 0                            # construction elements (CAESAR notes them, 18E)
+[[components]]
+type = "rigid"
+run = "rods"
+at = 0.75
+length = 4
+weight = 0
+[[components]]
+type = "rigid"
+run = "lug"
+at = 0
+length = 0.75
+weight = 0
+[[ties]]
+node = { run = "lug", at = "L" }      # the downstream side, as the rods see it: -X stops extension past the free play
+cnode = { run = "rods", at = "L" }
 type = "-X"
 gap = 0.375
 tag = "CONTROL-RODS"

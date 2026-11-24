@@ -40,7 +40,7 @@ var FEAFiles = (function () {
     var elName = document.getElementById('featName');
 
     var elReload = document.getElementById('feaReload');
-    var elAuto = document.getElementById('feaAuto');
+    var elAuto = document.getElementById('feaAutoReload');
 
     var binHandle = null;       // FileSystemFileHandle of the primary model, if picked with the API
     var featHandle = null;      // handle of the loaded / last-saved sidecar

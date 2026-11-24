@@ -1,18 +1,19 @@
 ---
 title: Binary format v3 (legacy fixed header)
-status: frozen
+status: archived
 created: 2026-08-25
 superseded-by: "[[vault/format/v4-schema|v4-schema]]"
 ---
 
-# Binary format v3 — frozen
-
 *↑ [[vault/Pluto Home|Home]] › [[vault/format/Format map|Format map]]*
+
+# Binary format v3 — frozen
 
 The original StressViewerDev per-corner field format. **Frozen:** v3 files load through
 the legacy shim (`viewer/scripts/format/v3Reader.js` + adapter in `pluto.js`); bugs are
 fixed by re-exporting as v4, not by extending this reader. Reference writer:
-`scripts/lib/writers/RawViewerWriter.cs`; reference generator: `FEASample.buildSampleBlob()`.
+`archive/RawViewerWriter_v3.cs` (`scripts/lib/writers/RawViewerWriter.cs` is the v4 writer now); reference
+generator: `FEASample.buildSampleBlob()`.
 
 All integers little-endian `uint32`. Offsets are absolute bytes. Everything is
 shell-only: 3- or 4-node elements, 4 corner slots, one component list.

@@ -94,6 +94,7 @@ public static class FrameStd
 
     // a number as STAAD reads it: 12 significant digits, -0 and residue below 1e-12 of `scale` as 0
     internal static string N(double v) { return N(v, 0); }
+    internal static double Printed(double v) { return double.Parse(N(v), Inv); }        // a number as the .std holds it
     internal static string N(double v, double scale)
     {
         if (double.IsNaN(v) || double.IsInfinity(v)) throw new InvalidOperationException("FrameStd: a number is " + v.ToString(Inv));
@@ -160,16 +161,90 @@ public static class FrameStd
 
     // ---------------- the writer
 
+    // a SAP angle's turn from its local 2 (along a leg) to its minor principal axis, about local 1, in degrees: STAAD's
+    // local y for a TABLE ... ST angle, which STAAD bends about its principal axes while SAP bends it about its legs with
+    // I23 (the angle probe, 2026-11-24: seven cantilevers of L3X2-1/2X3/16, both programs; STAAD's BETA = this
+    // writer's + delta put STAAD's principal axes on SAP's to 0.007 deg)
+    internal static double AngleTurn(double i33, double i22, double i23)
+    {
+        return 0.5 * Math.Atan2(2 * i23, i33 - i22) * 180 / Math.PI - 90;
+    }
+
+    // a BETA in (-180, 180], whole degrees snapped as Beta does
+    internal static double NormBeta(double b)
+    {
+        while (b > 180) b -= 360;
+        while (b <= -180 + 1e-9) b += 360;
+        double r = Math.Round(b);
+        if (Math.Abs(b - r) < 1e-7) b = r;
+        return b == 0 ? 0 : b;
+    }
+
+    // STAAD 2025's AISC databases, as its own save names them (the names probe, 2026-11-23)
+    internal const string Aisc2023 = "'US (AISC 2023).db3'", AiscV16 = "'US (AISC V16.0).db3'";
+
+    // STAAD's table property for a SAP catalog section (get: its row's fields, SectInFile its name in SAP's library):
+    // { the MEMBER PROPERTY table, the property }, null when -Std writes it as numbers.
+    //   W shapes, channels of a whole weight   AMERICAN, TABLE ST W10X33 (STAAD rounds 1-3)
+    //   STAAD 2025's database form, as its own save writes each (the names probe, 2026-11-23):
+    //     channels of a fractional weight   TABLE 'Standard Channel' ST 'C15X33.9'
+    //     HSS boxes and rounds              TABLE 'HSS Rectangle' / 'HSS Round' ST '<EDI name>' (HSS24X12X.750, from the
+    //                                       row's library file; numbers when the file is not here)
+    //     tees                              TABLE 'W' T 'W44X262', the W it is cut from (WT22X131)
+    //     double angles of equal legs, back to back with no spacing   TABLE 'Angle' LD 'L2-1/2X2-1/2X5/16'
+    //     single angles                     TABLE 'Angle' ST 'L3X2-1/2X3/16', its BETA turned by AngleTurn
+    // Not other spacings, unequal legs, MC channels or pipes by another name, whose STAAD forms are not seen
+    internal static string[] StaadTable(Func<string, string> get)
+    {
+        Func<string, string> g = k => (get(k) ?? "").Trim().Trim('"').Trim();
+        string n = g("SectInFile").ToUpperInvariant(), shape = g("Shape").ToLowerInvariant();
+        Func<string, bool> like = re => System.Text.RegularExpressions.Regex.IsMatch(n, re);
+        switch (shape)
+        {
+            case "i/wide flange":
+                return like(@"^W\d+X\d+(\.\d+)?$") ? new[] { "AMERICAN", "TABLE ST " + n } : null;
+            case "channel":
+                if (like(@"^C\d+X\d+$")) return new[] { "AMERICAN", "TABLE ST " + n };
+                return like(@"^C\d+X\d+\.\d+$") ? new[] { Aisc2023, "TABLE 'Standard Channel' ST '" + n + "'" } : null;
+            case "box/tube":
+            case "pipe":
+            {
+                if (!like(@"^HSS")) return null;
+                string edi = FrameSapLibrary.EdiName(g("FileName"), n);
+                return edi == null ? null : new[] { Aisc2023, "TABLE '" + (shape == "pipe" ? "HSS Round" : "HSS Rectangle") + "' ST '" + edi.ToUpperInvariant() + "'" };
+            }
+            case "tee":
+            {
+                var m = System.Text.RegularExpressions.Regex.Match(n, @"^WT(\d+(?:\.\d+)?)X(\d+(?:\.\d+)?)$");
+                if (!m.Success) return null;
+                Func<string, string> twice = x => { string t = (decimal.Parse(x, Inv) * 2).ToString(Inv); return t.IndexOf('.') >= 0 ? t.TrimEnd('0').TrimEnd('.') : t; };
+                return new[] { Aisc2023, "TABLE 'W' T 'W" + twice(m.Groups[1].Value) + "X" + twice(m.Groups[2].Value) + "'" };
+            }
+            case "angle":
+                return like(@"^L[\d./-]+X[\d./-]+X[\d./-]+$") ? new[] { AiscV16, "TABLE 'Angle' ST '" + n + "'" } : null;
+            case "double angle":
+            {
+                double dis, t2, t3;
+                if (!like(@"^2L[\d./-]+X[\d./-]+X[\d./-]+$")) return null;
+                if (!double.TryParse(g("dis") == "" ? "0" : g("dis"), System.Globalization.NumberStyles.Float, Inv, out dis) || dis != 0) return null;
+                if (!double.TryParse(g("t2"), System.Globalization.NumberStyles.Float, Inv, out t2) || !double.TryParse(g("t3"), System.Globalization.NumberStyles.Float, Inv, out t3) || t3 != t2 / 2) return null;
+                return new[] { AiscV16, "TABLE 'Angle' LD '" + n.Substring(1) + "'" };
+            }
+        }
+        return null;
+    }
+
     sealed class FrameInfo
     {
         public FrameMember F; public int Id; public double L;
         public double[][] Ax;                    // SAP local 1 2 3 in STAAD coordinates
         public double Beta;
-        public FrameSection S; public FrameSectionProps P; public string Table; public string Mat;
+        public FrameSection S; public FrameSectionProps P; public string[] Table; public string Mat;
+        public double Delta;                                          // an angle's turn to its principal axes (STAAD's y)
         public double[] Mods;
         public double[] OffI, OffJ, Trans;       // STAAD offsets (global) and their common transverse part
         public double ZoneI, ZoneJ;              // end lengths (rigid, factor 1)
-        public double WeightPerLength;           // SAP's self weight per length (unit weight x A x WeightMod)
+        public double WeightPerLength;           // SAP's self weight per length (unit weight x A x WeightMod), as written: DENSITY x AX
         public string[] Rel = new string[2];     // MEMBER RELEASE items, START / END
     }
 
@@ -205,7 +280,10 @@ public static class FrameStd
         readonly Dictionary<string, int> AreaId = new Dictionary<string, int>(StringComparer.Ordinal);
         readonly Dictionary<int, double> PlateThick = new Dictionary<int, double>();
         readonly Dictionary<int, string> PlateMat = new Dictionary<int, string>();
+        readonly Dictionary<int, string> PlateSec = new Dictionary<int, string>();
         readonly List<string> PlaneStress = new List<string>();
+        readonly List<FrameInfo> Mono = new List<FrameInfo>();
+        readonly List<FrameInfo> Angles = new List<FrameInfo>();       // single angles, BETA turned to their principal axes           // channels, tees, double angles (shear center off the centroid)
         readonly Dictionary<string, int> TrussId = new Dictionary<string, int>(StringComparer.Ordinal);
         readonly List<int[]> Trusses = new List<int[]>();                // id, i, j
         readonly Dictionary<int, double> TrussAx = new Dictionary<int, double>();
@@ -215,6 +293,9 @@ public static class FrameStd
         readonly List<string> LabelLines = new List<string>();
         bool AnySelfWeight;
         int NextId;
+        double LinkE = 1;                                                // the truss links' E (the model's largest)
+        readonly HashSet<string> Enforced = new HashSet<string>(StringComparer.Ordinal);   // joints with a ground displacement
+        HashSet<int> Used;                                               // joints a member, plate or truss uses
 
         public Writer(FrameModel m, string source, List<string> notes) { M = m; Source = source ?? ""; Notes = notes ?? new List<string>(); }
 
@@ -257,6 +338,7 @@ public static class FrameStd
             FramesIn();
             Areas();
             Links();
+            Connected();
             JointSupports();
             AutoMesh();
             Tables();
@@ -343,34 +425,56 @@ public static class FrameStd
             string why;
             var p = FrameStdSections.Of(s, out why);
             if (p == null) { Refuse(who + ": section " + s.Label + ": " + why); return false; }
-            if (p.I23 != 0) { Refuse(who + ": section " + s.Label + " (" + s.Shape + ") has a product of inertia I23; STAAD's prismatic property has none"); return false; }
+            // a SAP catalog angle goes by STAAD's table, which bends it about its principal axes (its BETA turned below); any
+            // other section with an I23 cannot be written
+            bool angle = p.I23 != 0 && p.Catalog && Is((s.Shape ?? "").Trim(), "Angle") && TableName(s, p) != null;
+            if (p.I23 != 0 && !angle) { Refuse(who + ": section " + s.Label + " (" + s.Shape + ") has a product of inertia I23; STAAD's prismatic property has none (a SAP catalog angle goes by STAAD's table)"); return false; }
+            // the section's own modifiers (its row's AMod ... WMod): SAP applies them with the frame's, which alone are folded in
+            var srow = s.Rec(FrameSection.General);
+            var smods = srow == null ? new string[0] : new[] { "AMod", "A2Mod", "A3Mod", "JMod", "I2Mod", "I3Mod", "MMod", "WMod" }.Where(k => srow.Has(k) && srow.Num(k, 1) != 1).ToArray();
+            if (smods.Length > 0) { Refuse("section " + s.Label + ": modifiers of its own (" + string.Join(" ", smods.Select(k => k + " " + N(srow.Num(k, 1))).ToArray()) + "); give them to its frames instead"); return false; }
             fi.S = s; fi.P = p;
+            // SAP 24 twists a channel about its shear center (STAAD round 2, probe part 3, to 4 digits); STAAD's member is
+            // centroidal. Written so (the user's choice, 2026-11-07), with a notice and a banner in the .std
+            string mono = (s.Shape ?? "").Trim().ToLowerInvariant();
+            if (mono == "channel" || mono == "tee" || mono == "double angle") Mono.Add(fi);
             fi.Mods = f.PropertyModifiers;
             for (int k = 0; k < 6; k++)
                 if (fi.Mods[k] <= 0) { Refuse(who + ": property modifier " + FrameMember.ModifierKeys[k] + " = " + N(fi.Mods[k]) + " (STAAD needs a positive property)"); return false; }
             bool mods = fi.Mods.Take(6).Any(x => x != 1);
-            fi.Table = TableName(s);
+            fi.Table = TableName(s, p);
+            if (p.Stale) Note("section " + s.Label + ": its row's area and inertias disagree with its dimensions; SAP works them out from the dimensions on import, and so does this file (A " + N(p.A) + ")");
+            if (angle && mods) { Refuse(who + ": angle " + s.Label + " with property modifiers (STAAD's table cannot take them, and its PRIS has no I23)"); return false; }
             if (fi.Table != null && mods) { Note("frame " + f.Label + ": section " + s.Label + " written as numbers (PRIS), not STAAD's table, for its property modifiers"); fi.Table = null; }
+            if (angle)
+            {
+                fi.Delta = AngleTurn(p.I33, p.I22, p.I23);
+                fi.Beta = NormBeta(fi.Beta + fi.Delta);
+                Angles.Add(fi);
+            }
             if (p.EstimatedJ && fi.Table == null) Note("section " + s.Label + " (" + s.Shape + "): its torsion constant is SAP's rectangle sum, which SAP's own differs from by a junction term (2-3 %)");
             // material: the assignment's own when not Default, else the section's
             var asg = f.Rec(FrameMember.SectionAssign);
             string mat = asg == null ? "" : asg.Get("MatProp") ?? "";
             if (mat == "" || Is(mat, "Default")) mat = s.Material;
-            double wf = fi.Mods[7] / fi.Mods[0];
-            fi.Mat = Material(mat, AnySelfWeight ? wf : 1, who);
+            double wf = AnySelfWeight ? fi.Mods[7] / fi.Mods[0] : 1;
+            fi.Mat = Material(mat, wf, who);
             var fm = M.Materials.FirstOrDefault(x => x.Label == mat);
-            fi.WeightPerLength = fm == null ? 0 : fm.Mech("UnitWeight") * p.A * fi.Mods[7];
+            // from the numbers STAAD is given, whose product its self weight is: the end zones' weight, added as joint loads,
+            // is then that of the rest of the member to the digit (and StdToFrame takes it off again exactly)
+            fi.WeightPerLength = fm == null ? 0 : Printed(fm.Mech("UnitWeight") * wf) * Printed(p.A * fi.Mods[0]);
             return fi.Mat != null;
         }
 
-        // STAAD's AISC table name for a section SAP took from its own table: W shapes, and channels of a whole weight
-        // (C10X30); every other family is written as numbers (its STAAD names are not confirmed)
-        static string TableName(FrameSection s)
+        // STAAD's AISC table name for a section SAP took from its own database (FromFile=Yes, its SectInFile name): W
+        // shapes, and channels of a whole weight (C10X30); every other family, and any section SAP builds from its
+        // dimensions (no fillets: a hand-made W10X33 is 9.49 in2 in SAP, 9.71 in STAAD's table), is written as numbers
+        static string[] TableName(FrameSection s, FrameSectionProps p)
         {
-            string n = s.Label.Trim().ToUpperInvariant(), shape = (s.Shape ?? "").ToLowerInvariant();
-            if (shape == "i/wide flange" && System.Text.RegularExpressions.Regex.IsMatch(n, @"^W\d+X\d+(\.\d+)?$")) return n;
-            if (shape == "channel" && System.Text.RegularExpressions.Regex.IsMatch(n, @"^C\d+X\d+$")) return n;
-            return null;
+            if (!p.Catalog) return null;
+            var r = s.Rec(FrameSection.General);
+            if (r == null) return null;
+            return StaadTable(k => k == "SectInFile" ? r.Get(k) ?? s.Label : k == "Shape" ? r.Get(k) ?? s.Shape : r.Get(k));
         }
 
         // the STAAD material for a SAP material and a density factor (a frame's WeightMod / AMod)
@@ -451,6 +555,12 @@ public static class FrameStd
         void Releases(FrameInfo fi)
         {
             var rel = fi.F.Releases; var pf = fi.F.PartialFixity;
+            // an angle's STAAD y / z are its principal axes, SAP's 2 / 3 its legs: only what both name alike
+            if (fi.Delta != 0)
+                for (int e = 0; e < 2; e++)
+                    foreach (int k in new[] { 1, 4 })
+                        if (rel[e * 6 + k] != rel[e * 6 + k + 1] || pf[e * 6 + k] != pf[e * 6 + k + 1])
+                            Refuse("frame " + fi.F.Label + ": a release of " + (k == 1 ? "V2 / V3" : "M2 / M3") + " not the same about both axes, on an angle (STAAD's y / z are its principal axes, SAP's 2 / 3 its legs)");
             string[] dof = { "FX", "FY", "FZ", "MX", "MY", "MZ" };
             for (int e = 0; e < 2; e++)
             {
@@ -513,9 +623,13 @@ public static class FrameStd
                 Plates.Add(pl.ToArray());
                 PlateThick[id] = t;
                 PlateMat[id] = sm;
+                PlateSec[id] = s;
             }
             NextId = Math.Max(NextId, Plates.Count == 0 ? 0 : Plates.Max(x => x[0]));
-            if (Plates.Count > 0) Note("plates: STAAD's plate element is its own formulation (SAP " + string.Join(" / ", props.Values.Select(x => Get(x, "Type") ?? "").Distinct().ToArray()) + "); its results differ from SAP's by the elements, not the model");
+            if (Plates.Count > 0)
+                Note("plates (" + Plates.Count.ToString(Inv) + (Plates.Count == 1 ? " area: " : " areas: ") + Few(AreaId.Where(kv => Plates.Any(q => q[0] == kv.Value)).Select(kv => kv.Key).ToList()) + "): SAP's shells (" +
+                     string.Join(" / ", props.Values.Select(x => Get(x, "Type") ?? "").Distinct().ToArray()) + ") and STAAD's plates are different elements, and on a coarse mesh their results differ" +
+                     " a great deal (a test wall as one element: 2.1 vs 42.7 kip thrust; meshed 8 x 6: 18.5 vs 21.9). Mesh walls finely before relying on either");
             if (PlaneStress.Count > 0) Note("membranes written as STAAD plane-stress plates: " + string.Join(" ", PlaneStress.ToArray()));
         }
 
@@ -526,6 +640,8 @@ public static class FrameStd
             var props = new Dictionary<string, FrameLinkProp>(StringComparer.Ordinal);
             foreach (var p in M.LinkProps) if (!props.ContainsKey(p.Label)) props[p.Label] = p;
             var nonlinear = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+            // the truss links' material: the model's largest E (STAAD warns of a soft material otherwise), AX = KE L / E
+            foreach (var mt in M.Materials) LinkE = Math.Max(LinkE, mt.Mech("E1"));
             foreach (var l in M.Links)
             {
                 string who = "link " + l.Label;
@@ -574,11 +690,23 @@ public static class FrameStd
                 int id = ++NextId;
                 TrussId[l.Label] = id;
                 Trusses.Add(new[] { id, JointId[l.JointI], JointId[l.JointJ] });
-                TrussAx[id] = k[0] * len;
+                TrussAx[id] = k[0] * len / LinkE;
                 LabelLines.Add("link " + l.Label + " = member " + id.ToString(Inv) + " (truss, EA/L = " + N(k[0]) + ")");
             }
             if (nonlinear.Count > 0)
                 Refuse("nonlinear links (make them linear, or leave them out) -- " + string.Join("; ", nonlinear.Select(kv => kv.Key + " (" + kv.Value.Count.ToString(Inv) + "): " + Few(kv.Value)).ToArray()));
+        }
+
+        // joints a member, plate or truss uses; any other is left out (STAAD warns of a joint not connected, and it carries
+        // nothing in SAP either), with its supports and loads
+        void Connected()
+        {
+            Used = new HashSet<int>();
+            foreach (var f in Frames) { Used.Add(JointId[f.F.JointI]); Used.Add(JointId[f.F.JointJ]); }
+            foreach (var p in Plates) for (int i = 1; i < p.Length; i++) Used.Add(p[i]);
+            foreach (var t in Trusses) { Used.Add(t[1]); Used.Add(t[2]); }
+            var lone = M.Joints.Where(j => !Used.Contains(JointId[j.Label])).Select(j => j.Label).ToList();
+            if (lone.Count > 0) Note("joints nothing connects (no frame, area or axial link), left out with their supports and loads: " + Few(lone));
         }
 
         // ---------------- supports
@@ -674,14 +802,21 @@ public static class FrameStd
                 if (!ok) continue;
                 inclined = f > 0;
                 string head = JointId[joint].ToString(Inv) + (inclined ? " INCLINED " + string.Join(" ", frames[f][0].Select(x => N(x, 1)).ToArray()) : "");
-                return head + " " + Spec(sum);
+                return head + " " + Spec(sum, Enforced.Contains(joint));
             }
             return null;
         }
 
-        static string Spec(double[] st)
+        // a joint with a ground displacement is ENFORCED (STAAD takes support displacements in a model with plates, and in
+        // more than 4 load cases, only so; Technical Reference and STAAD 2025's own message); it has no springs (refused)
+        static string Spec(double[] st, bool enforced)
         {
             string[] dof = { "FX", "FY", "FZ", "MX", "MY", "MZ" };
+            if (enforced)
+            {
+                var free = Enumerable.Range(0, 6).Where(i => !double.IsPositiveInfinity(st[i])).Select(i => dof[i]).ToArray();
+                return free.Length == 0 ? "ENFORCED" : "ENFORCED BUT " + string.Join(" ", free);
+            }
             if (st.All(double.IsPositiveInfinity)) return "FIXED";
             if (st.Take(3).All(double.IsPositiveInfinity) && st.Skip(3).All(x => x == 0)) return "PINNED";
             var rel = new List<string>(); var spr = new List<string>();
@@ -857,6 +992,7 @@ public static class FrameStd
             string text = parts == null ? null : SupportText(ld.Target, parts, out inclined);
             if (parts == null || text == null) return;
             if (inclined) { Refuse(who + ": a ground displacement at an inclined support"); return; }
+            if (parts.Any(q => q.K.Any(k => k != 0))) { Refuse(who + ": a ground displacement at a joint with springs or a grounded link (STAAD's ENFORCED support takes no springs)"); return; }
             var glob = new[] { new[] { 1.0, 0, 0 }, new[] { 0.0, 1, 0 }, new[] { 0.0, 0, 1 } };
             var st = new double[6];
             foreach (var s in parts) { var o = InFrame(s, glob); for (int i = 0; i < 6; i++) st[i] = double.IsPositiveInfinity(st[i]) || double.IsPositiveInfinity(o[i]) ? double.PositiveInfinity : st[i] + o[i]; }
@@ -865,20 +1001,24 @@ public static class FrameStd
             for (int i = 0; i < 6; i++)
             {
                 if (val[i] == 0) continue;
-                if (double.IsPositiveInfinity(st[i])) d[i] = (double.IsNaN(d[i]) ? 0 : d[i]) + val[i];
+                if (double.IsPositiveInfinity(st[i])) { d[i] = (double.IsNaN(d[i]) ? 0 : d[i]) + val[i]; Enforced.Add(ld.Target); }
                 else if (st[i] != 0) Refuse(who + ": a ground displacement through a spring or a grounded link (STAAD moves supports only)");
             }
         }
 
         void TempLoad(FrameInfo fi, FrameRec row, PatternLoads pl, string who)
         {
+            // SAP's own types (STAAD probe, 2026-11-07): Temperature / Temp, Gradient2 / TempGrad2, Gradient3 / TempGrad3.
+            // Any other name SAP 24.2 reads as a uniform temperature ("Temp Gradient 2") or drops ("Gradient 2"): refused,
+            // since what SAP analyses is not what the row says (a workbook read writes SAP's names)
             string type = (row.Get("Type") ?? "Temperature").Trim();
-            double t = row.Num("Temp", 0);
+            if (!FrameLoad.TempTypes.Any(x => Is(type, x))) { Refuse(who + ": type \"" + type + "\", which SAP does not read as written (its types: Temperature, Gradient2, Gradient3; a workbook read writes them)"); return; }
+            double t = row.Num(FrameLoad.TempField(type), 0);
             if (t == 0) return;
             var v = Six(pl, pl.Temp, fi.Id, 0);
             if (Is(type, "Temperature")) { v[0] += t; return; }
-            if (type.IndexOf("Gradient", StringComparison.OrdinalIgnoreCase) < 0) { Refuse(who + ": type " + type); return; }
-            bool two = type.EndsWith("2");
+            if (fi.Delta != 0) { Refuse(who + ": a temperature gradient on an angle (STAAD's y / z are its principal axes, SAP's 2 / 3 its legs)"); return; }
+            bool two = Is(type, "Gradient2");
             double depth = two ? fi.P.Depth : fi.P.Width;
             if (depth <= 0) { Refuse(who + ": a gradient on section " + fi.S.Label + ", which has no " + (two ? "t3" : "t2")); return; }
             // STAAD: the difference top (+y) minus bottom, and side to side along z, over the section's depth / width
@@ -895,6 +1035,7 @@ public static class FrameStd
             if (d == "1" || d == "2" || d == "3")
             {
                 int k = d[0] - '1';
+                if (k > 0 && fi.Delta != 0) { Refuse(who + ": along local " + d + ", on an angle (STAAD's y / z are its principal axes, SAP's 2 / 3 its legs; give it in a global direction)"); return false; }
                 key = "XYZ".Substring(k, 1); vec = fi.Ax[k];
                 return true;
             }
@@ -972,7 +1113,7 @@ public static class FrameStd
         // a frame's self weight on its rigid end zones (STAAD's SELFWEIGHT loads the clear length)
         void ZoneSelfWeight(FrameInfo fi, PatternLoads pl)
         {
-            double q = fi.WeightPerLength * pl.SelfWeight;
+            double q = fi.WeightPerLength * Printed(pl.SelfWeight);
             if (q == 0) return;
             if (fi.ZoneI > 0) Transfer(fi, pl, fi.ZoneI / 2, new[] { 0, -q * fi.ZoneI, 0 }, false);
             if (fi.ZoneJ > 0) Transfer(fi, pl, fi.L - fi.ZoneJ / 2, new[] { 0, -q * fi.ZoneJ, 0 }, false);
@@ -1044,9 +1185,6 @@ public static class FrameStd
             if (o.Any(p => p.PDelta) && o.Any(p => !p.PDelta))
                 Refuse("P-Delta in load cases " + string.Join(" ", o.Where(p => p.PDelta).Select(p => p.C.Label).ToArray()) + " but not in " + string.Join(" ", o.Where(p => !p.PDelta).Select(p => p.C.Label).ToArray()) +
                        " (STAAD's P-Delta analysis takes every load case: give all or none P-Delta)");
-            // support displacements go in the primary loads: STAAD takes them in 4 load cases at most
-            int withDisp = o.Count(p => p.Refs.Any(r => refs[r.Key].Value.Disp.Count > 0));
-            if (withDisp > 4) Refuse("ground displacements in " + withDisp.ToString(Inv) + " load cases (STAAD's support displacement load takes 4)");
             return o;
         }
 
@@ -1151,6 +1289,7 @@ public static class FrameStd
             o.Add("JOINT COORDINATES");
             foreach (var j in M.Joints)
             {
+                if (!Used.Contains(JointId[j.Label])) continue;
                 var p = R(Pos[j.Label]);
                 o.Add(JointId[j.Label].ToString(Inv) + " " + N(p[0]) + " " + N(p[1]) + " " + N(p[2]));
             }
@@ -1193,21 +1332,50 @@ public static class FrameStd
                     }
                 }
             }
-            if (links) { o.Add("ISOTROPIC PL_LINK"); o.Add("E 1"); o.Add("POISSON 0.3"); o.Add("DENSITY 0"); o.Add("ALPHA 0"); }
+            if (links) { o.Add("ISOTROPIC PL_LINK"); o.Add("E " + N(LinkE)); o.Add("POISSON 0.3"); o.Add("DENSITY 0"); o.Add("ALPHA 0"); }
             o.Add("END DEFINE MATERIAL");
 
             if (Frames.Count + Trusses.Count > 0)
             {
-                o.Add("MEMBER PROPERTY AMERICAN");
-                var props = new List<KeyValuePair<string, int>>();
-                foreach (var f in Frames) props.Add(new KeyValuePair<string, int>(f.Table != null ? "TABLE ST " + f.Table : Pris(f), f.Id));
-                foreach (var t in Trusses) props.Add(new KeyValuePair<string, int>("PRIS AX " + N(TrussAx[t[0]]), t[0]));
-                foreach (var g in props.GroupBy(x => x.Key)) line(Condense(g.Select(x => x.Value)) + " " + g.Key);
+                if (Angles.Count > 0)
+                    Note("single angles (" + Few(Angles.Select(f => "frame " + f.F.Label + " (" + f.S.Label + ", BETA turned " + N(f.Delta) + ")").ToList()) + "): STAAD bends a table angle about its principal axes, SAP about its legs with I23; each BETA is turned to the principal axes so STAAD's lie on SAP's (the angle probe, to 0.007 deg). STAAD's table numbers are its own (2.5 % from SAP's on L3X2-1/2X3/16)");
+                if (Mono.Count > 0)
+                {
+                    // the banner the user asked for: where a STAAD user reads the properties
+                    o.Add("*************************************************************************");
+                    o.Add("* SHEAR CENTER NOT MODELED: channels, tees and double angles. SAP2000");
+                    o.Add("* twists these about their shear center (a shear along the web, acting");
+                    o.Add("* at the centroid, makes a torque); STAAD's members are centroidal and");
+                    o.Add("* do not. Bending and axial results match SAP's; twist and the joint");
+                    o.Add("* movements it causes do not. Members:");
+                    foreach (var x in Wrap(Condense(Mono.Select(f => f.Id)), 70)) o.Add("*   " + (x.EndsWith(" -") ? x.Substring(0, x.Length - 2) : x));
+                    o.Add("*************************************************************************");
+                    Note("channels, tees and double angles (" + Few(Mono.Select(f => "frame " + f.F.Label + " (" + f.S.Shape + ")").ToList()) + "): SAP2000 twists them about their shear center; STAAD's members are centroidal, so STAAD shows no such twist (the probe: up to 0.03 in on a 70 in channel cantilever). Marked in the .std at MEMBER PROPERTY");
+                }
+                // a line per SAP section and property, the section's name in a comment above it (StdToFrame reads it back);
+                // a table section's comment holds its SAP row as well, which STAAD's table name cannot give SAP back. A block
+                // per table: AMERICAN, then STAAD 2025's databases for the families written in their form
+                var props = Frames.Select(f => new { Sec = f.S, Db = f.Table != null ? f.Table[0] : "AMERICAN", Prop = f.Table != null ? f.Table[1] : Pris(f), Id = f.Id })
+                                  .Concat(Trusses.Select(t => new { Sec = (FrameSection)null, Db = "AMERICAN", Prop = "PRIS AX " + N(TrussAx[t[0]]), Id = t[0] })).ToList();
+                foreach (var block in props.GroupBy(x => x.Db).OrderBy(b => b.Key == "AMERICAN" ? 0 : 1))
+                {
+                    o.Add("MEMBER PROPERTY " + block.Key);
+                    foreach (var g in block.GroupBy(x => (x.Sec == null ? "" : x.Sec.Label) + "\n" + x.Prop))
+                    {
+                        var first = g.First();
+                        if (first.Sec != null) comment("SAP section " + first.Sec.Label + (first.Prop.StartsWith("TABLE ", StringComparison.Ordinal) ? ": " + SectionRow(first.Sec) : ""));
+                        line(Condense(g.Select(x => x.Id)) + " " + first.Prop);
+                    }
+                }
             }
             if (Plates.Count > 0)
             {
                 o.Add("ELEMENT PROPERTY");
-                foreach (var g in PlateThick.GroupBy(kv => N(kv.Value))) line(Condense(g.Select(kv => kv.Key)) + " THICKNESS " + g.Key);
+                foreach (var g in PlateThick.GroupBy(kv => PlateSec[kv.Key] + "\n" + N(kv.Value)))
+                {
+                    comment("SAP area section " + PlateSec[g.First().Key]);
+                    line(Condense(g.Select(kv => kv.Key)) + " THICKNESS " + N(g.First().Value));
+                }
             }
             o.Add("CONSTANTS");
             var mats = Frames.Select(f => new KeyValuePair<string, int>(f.Mat, f.Id)).Concat(PlateMat.Select(kv => new KeyValuePair<string, int>(kv.Value, kv.Key)))
@@ -1243,7 +1411,7 @@ public static class FrameStd
             foreach (var j in M.Joints)
             {
                 List<Support> parts;
-                if (!Supports.TryGetValue(j.Label, out parts)) continue;
+                if (!Supports.TryGetValue(j.Label, out parts) || !Used.Contains(JointId[j.Label])) continue;
                 bool inc;
                 string text = SupportText(j.Label, parts, out inc);
                 if (text == null) { Refuse("joint " + j.Label + ": its " + string.Join(", ", parts.Select(p => p.From).ToArray()) + " act in axes no STAAD support holds together"); continue; }
@@ -1266,7 +1434,7 @@ public static class FrameStd
                     refNo[i] = refNo.Count + 1;
                     o.Add("LOAD R" + refNo[i].ToString(Inv) + " LOADTYPE " + LoadType(pat.DesignType) + " TITLE " + Plain(pat.Label, 60));
                     if (pl.SelfWeight != 0) o.Add("SELFWEIGHT Y " + N(-pl.SelfWeight));
-                    var jl = pl.Joint.Where(kv => kv.Value.Any(x => Math.Abs(x) > 0)).ToList();
+                    var jl = pl.Joint.Where(kv => Used.Contains(kv.Key) && kv.Value.Any(x => Math.Abs(x) > 0)).ToList();
                     if (jl.Count > 0)
                     {
                         o.Add("JOINT LOAD");
@@ -1294,6 +1462,7 @@ public static class FrameStd
                 foreach (var kv in p.Refs)
                     foreach (var d in refs[kv.Key].Value.Disp)
                     {
+                        if (!Used.Contains(d.Key)) continue;
                         double[] v;
                         if (!disp.TryGetValue(d.Key, out v)) disp[d.Key] = v = new double[6];
                         for (int i = 0; i < 6; i++) if (!double.IsNaN(d.Value[i])) v[i] += kv.Value * d.Value[i];
@@ -1321,6 +1490,7 @@ public static class FrameStd
             if (Plates.Count > 0) o.Add("PRINT ELEMENT JOINT STRESSES LIST ALL");
             o.Add("FINISH");
             // the head, last: groups, supports and loads add to the labels and notes
+            foreach (var md in MatDefs) if (md[2] == "1" && md[0] != md[1]) LabelLines.Add("material " + md[1] + " = " + md[0]);
             var body = o.ToList();
             o.Clear();
             o.Add("STAAD SPACE");
@@ -1332,6 +1502,16 @@ public static class FrameStd
             if (Notes.Count > 0) { comment("Notes:"); foreach (var n in Notes) comment("  " + n); }
             o.AddRange(body);
             return string.Join("\r\n", o.ToArray()) + "\r\n";
+        }
+
+        // a table section's SAP row for the comment above its TABLE ST line: its fields but its name, its material (the
+        // CONSTANTS give it), its colour, notes and totals
+        static string SectionRow(FrameSection s)
+        {
+            var r = s.Rec(FrameSection.General);
+            if (r == null) return "";
+            var skip = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "SectionName", "Material", "Color", "Notes", "GUID", "TotalWt", "TotalMass" };
+            return string.Join(" ", r.F.Where(kv => !skip.Contains(kv[0])).Select(kv => kv[0] + "=" + (kv[1].Length == 0 || kv[1].IndexOfAny(new[] { ' ', ',' }) >= 0 ? "\"" + kv[1] + "\"" : kv[1])).ToArray());
         }
 
         static string TempText(double[] v)
@@ -1368,7 +1548,7 @@ public static class FrameStd
                 {
                     string t = mm[0].ToLowerInvariant(), l = mm[1];
                     int id; FrameInfo fi;
-                    if (t == "joint" && JointId.TryGetValue(l, out id)) ids["JOINT"].Add(id);
+                    if (t == "joint" && JointId.TryGetValue(l, out id) && Used.Contains(id)) ids["JOINT"].Add(id);
                     else if (t == "frame" && FrameOf.TryGetValue(l, out fi)) ids["MEMBER"].Add(fi.Id);
                     else if (t == "link" && TrussId.TryGetValue(l, out id)) ids["MEMBER"].Add(id);
                     else if (t == "area" && AreaId.TryGetValue(l, out id) && Plates.Any(p => p[0] == id)) ids["ELEMENT"].Add(id);
@@ -1387,7 +1567,7 @@ public static class FrameStd
                         count[key] = c + 1; keep.Add(id);
                     }
                     if (keep.Count > 0) blocks.Add(new[] { kv.Key, name, Condense(keep) });
-                    if (name != Name(g.Label, "_", 24)) LabelLines.Add("group " + g.Label + " = " + name);
+                    if (name != "_" + g.Label) LabelLines.Add("group " + g.Label + " = " + name);
                 }
             }
             if (full.Count > 0) Note("STAAD keeps an object in 4 groups at most: " + string.Join("; ", full.ToArray()));

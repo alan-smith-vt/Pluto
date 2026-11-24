@@ -137,6 +137,20 @@ static class PipeWorkbookGui
         };
     }
 
+    internal static Col[] MaterialCols()
+    {
+        return new[]
+        {
+            L("Material", "key", "catalog", LMaterial, "The CAESAR material (106 - A106 Grade B ...), one row each.",
+              "Materials: for the SAP / STAAD check model only (Build-Frame.ps1 -In this workbook). CAESAR never reads them: it takes its own from its material database, so give the same values here. A material the job uses and this sheet does not list takes Pluto's default for its class, with a warning."),
+            C("E", "prop", "pos", "Cold elastic modulus: the SAP model's E (a Sections row's own E wins for its pipe, as in CAESAR)."),
+            C("Poisson", "prop", "nonneg", "Poisson's ratio."),
+            C("Density", "prop", "nonneg", "Pipe density: the SAP model's unit weight (a Sections row's own density wins for its pipe)."),
+            C("Alpha", "prop", "nonneg", "Mean thermal expansion coefficient per degree: the SAP model's temperature loads are each T1-T9 minus the ambient, times this. Take it at the operating temperature."),
+            C("Note", "text", "text", "Where the values came from. \"Pluto default: ...\" (amber) = never checked: compare with CAESAR's material database."),
+        };
+    }
+
     internal static Col[] ProcessCols()
     {
         var l = new List<Col> { C("Name", "key", "text", "A unique name; elements use it in their Process column.", "Name: what the Elements sheet's Process column says. Each name once.") };
@@ -239,9 +253,9 @@ static class PipeWorkbookGui
             C("Node", "key", "node", "One end of the joint."),
             C("CNode", "key", "node", "The other end (written as CNODE restraints Node -> CNode)."),
             L("Kind", "prop", "list?", LKind, "A label: coupling, hinge, slip, ball, link (or your own).", null),
-            L("Frame", "prop", "list!", LFrame, "pipe: DOFs along the pipe (axial, shear, torsion, bending); global: X Y Z RX RY RZ.", null),
-            C("DOFs", "prop", "text", "e.g. axial gap=0.125 k=5000; shear; torsion; bending gap=2. A DOF not listed is free.",
-              "DOFs: the connected degrees of freedom, separated by ';'. Frame pipe: axial, shear, torsion, bending. Frame global: X, Y, Z, RX, RY, RZ. Each may take gap=<value> and k=<stiffness>; without k it is rigid. A DOF not listed is free."),
+            L("Frame", "prop", "list!", LFrame, "global: X Y Z are CAESAR's axes. pipe: X along the pipe (the element at Node), Y and Z square to it, so one joint means the same on any run.", null),
+            C("DOFs", "prop", "text", "e.g. +Y; -Y gap=2; RX; RY; RZ (control rods) or X; Y; Z; RX gap=1; RY; RZ (a flexible coupling). A DOF not listed is free.",
+              "DOFs: the connected degrees of freedom, separated by ';', each one CAESAR restraint between Node and CNode: X, Y, Z, RX, RY, RZ, or with + or - for one way only (CAESAR's sense: +Y acts in +Y, so Node may move +Y from CNode but not -Y). Each may take gap=<value> (rotations in degrees) and k=<stiffness>; without k it is rigid. A DOF not listed is free. The older axial / shear / torsion / bending (frame pipe) still read, as X; Y and Z; RX; RY and RZ."),
             C("SIF", "prop", "nonneg", "A SIF at the joint. Blank = none."),
             C("Tag", "text", "text", "A tag, kept with the joint."),
         };

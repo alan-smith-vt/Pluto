@@ -17,6 +17,8 @@ A pipe-stress model as an Excel workbook you edit, built back into the model by 
 - **An unedited workbook gives back its source exactly.** For a CAESAR job, that is the `.cii` byte for byte: what the sheets do not show is carried as written ([[vault/format/pipe-model|pipe-model]]).
 - **Requirements:** Windows PowerShell 5.1 and C# 5 through `Config.ps1`. Excel is needed only to edit the workbook; nothing here opens Excel.
 
+How it fits with the TOML, CAESAR, SAP and the viewer: [[vault/arms/pipe-and-frame-workflow|pipe-and-frame-workflow]] (start here).
+
 The workbook is also the form you edit the model in:
 - **Guidance:** coloured headers by kind of column, a note on every header, a hint on every input cell, and dropdowns.
 - **Highlighting:** red where the build would stop, amber where a look is worth it.
@@ -53,22 +55,26 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
    - **Check what you are about to export** (Stage D): the **Loads** panel draws every force, moment, imposed displacement, uniform load and wind by vector; the **Checks** tab (✓) lists what the build found (an unsupported piece, a branch without a tee, a bend with no room, a load off the model, layouts to check in CAESAR) and flies to each; hovering a pipe shows its size, T1, P1, material; **Node numbers** labels the nodes; the Model panel names the workbook and when it was saved.
 2. **`-Cii` says where the model stands** (`[review ]`): it is the one you previewed, it changed since the preview, or no preview was made.
 3. **Every read lists what the workbook changed** against the model it was written from (a compare by meaning): elements, nodes moved, restraints, SIFs, loads.
+4. **The SAP check model, if wanted:** `Build-Frame.ps1 -In "<project dir>\job.xlsx" -Xlsx -S2k -Preview` seeds it
+   from this workbook (`job_sap.*`), its materials from the Materials sheet. The steps: [[vault/arms/pipe-and-frame-workflow|pipe-and-frame-workflow]]; what
+   it holds and refuses: [[vault/format/pipe-to-frame|pipe-to-frame]].
 
 > [!info]- The sheets
 > | Sheet | One row per | Columns |
 > |---|---|---|
 > | Settings | setting | title, notes, vertical axis (Y / Z), ambient; read-only: units, source, base fingerprint, node numbers (live and its step, or fixed and why) |
-> | Elements | element, in CAESAR's order | Id, From, To, DX DY DZ, Type, Section, Process, bend radius / nodes / type, rigid weight, reducer OD2 / wall2, expansion joint (axial, transverse, bending, torsion, effective ID), name, line; then a collapsed group (+) of one-element overrides: OD, wall, insulation, corrosion, densities, material, E, Poisson, T1–T9, P1–P9, fluid density, bend miter points, fitting thickness, K, hydro pressure, mill tolerance − / +, seam weld |
+> | Elements | element, in CAESAR's order | Id, From, To, DX DY DZ, Type, Section, Process, bend radius / nodes / type, rigid weight, reducer OD2 / wall2, expansion joint (axial, transverse, bending, torsion, effective ID), name, line; then a collapsed group (+) of one-element overrides: OD, wall, insulation, corrosion, densities, material, E, Poisson, T1–T9, P1–P9, fluid density, bend miter points, fitting thickness, K, hydro pressure, mill tolerance − / +, seam weld. The SAP check model needs a mitred bend's K |
 > | Sections | pipe size | name, OD, wall, insulation, corrosion, insulation density, material, E / Poisson / pipe density (blank = CAESAR's database), mill tolerance − / + (% of the wall), seam weld (yes / no) |
 > | Processes | operating condition | name, T1–T9, P1–P9, fluid density, hydro pressure (CAESAR's hydrotest case) |
 > | Restraints | restraint | Id, node, type (CAESAR's), CNODE, stiffness (blank = rigid), gap, friction, cosines (blank = the type's own axis), tag |
 > | SIFs | SIF / tee | Id, node, type (a dropdown of CAESAR's list, "3 - welding tee"; a bare number from an older workbook reads the same), SIF in / out, surface node, pad (a reinforced tee; amber without), crotch radius, weld mismatch |
 > | Forces / Displacements | node and load vector | Id, node, vector (1–9), FX…MZ / DX…RZ. A blank displacement DOF is free; 0 holds it |
 > | Uniform / Wind | element, or a range of elements with the same values | Element (`E4`, a range `E3:E9`, or blank with From and To), vector, UX UY UZ, in g's / type, shape factor, wave data |
-> | Joints | joint | Id, node, CNODE, kind, frame (pipe / global), DOFs (`axial gap=0.125 k=5000; shear; torsion; bending gap=2`), SIF, tag. Couplings in a `.cii` or a TOML build come here (below); their CNODE restraints and SIF are off Restraints and SIFs |
-> | Hangers | spring hanger (one per node) | Id, node, CNODE; Rate with Cold load (a spring as given) or Constant (a constant-effort support), both blank = CAESAR designs it; table, count, load variation, short range, max travel, space, rigid criteria, operating load, hardware weight, multi-load; anchors freed while it is designed (node + Y / XY / ZY / XYZ / all, two); tag. A workbook made before this sheet keeps its base's hangers |
-> | Nozzles | flexible nozzle | Id, node, vessel node (blank = a rigid vessel), type (WRC 297, API 650, PD 5500, Custom), then the values: nozzle OD / wall, vessel type, vessel OD / wall, pad, reinforcing, distances to stiffeners, nozzle and fluid heights, vessel centreline X Y Z, vessel temperature and material, displacement vector, fluid SG, tank alpha / ΔT / E, the four custom stiffnesses. A column the row's type does not use is red |
+> | Joints | joint | Id, node, CNODE, kind, frame (global / pipe), DOFs (`+Y; -Y gap=2; RX; RY; RZ`, `X; Y; Z; RX gap=1; RY; RZ`), SIF, tag. Couplings in a `.cii` or a TOML build come here (below); their CNODE restraints and SIF are off Restraints and SIFs |
+> | Hangers | spring hanger (one per node) | Id, node, CNODE; Rate with Cold load (a spring as given) or Constant (a constant-effort support), both blank = CAESAR designs it; table, count, load variation, short range, max travel, space, rigid criteria, operating load, hardware weight, multi-load; anchors freed while it is designed (node + Y / XY / ZY / XYZ / all, two); tag. A workbook made before this sheet keeps its base's hangers. The SAP check model needs Rate and Cold load, or Constant: a hanger CAESAR designs refuses it |
+> | Nozzles | flexible nozzle | Id, node, vessel node (blank = a rigid vessel), type (WRC 297, API 650, PD 5500, Custom), then the values: nozzle OD / wall, vessel type, vessel OD / wall, pad, reinforcing, distances to stiffeners, nozzle and fluid heights, vessel centreline X Y Z, vessel temperature and material, displacement vector, fluid SG, tank alpha / ΔT / E, the four custom stiffnesses. A column the row's type does not use is red. The SAP check model takes Custom rows only: give another type the stiffnesses CAESAR computed |
 > | Coords | COORDS entry | node, X Y Z |
+> | Materials | CAESAR material the job uses | material, E, Poisson, density, alpha (per degree), note. **For the SAP / STAAD check model only** ([[vault/format/pipe-to-frame\|pipe-to-frame]]): CAESAR never reads it (it takes its own from its database), so give the same values. Rows start as Pluto's defaults by material class, noted "Pluto default: …" (amber) until a value is typed over. A Sections row's own E, Poisson or density wins for its pipe, as in CAESAR |
 > | Start | — | the landing page: how to use the workbook, links to the sheets with their row counts, the live checks, the colour key, a reference |
 > | 3D View | — | the model drawn live; its controls (view, highlight, labels, restraints), figures, key |
 > | Nodes, Carried | — | read-only: rebuilt on every export, never read |
@@ -76,6 +82,20 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >
 > - **Units are the job's.** Each header says which (`DX (in)`).
 > - **Sections and Processes** are named from what they hold (`8in STD ins2`, `T300 P150`).
+
+> [!info]- The Materials sheet (2026-11-12)
+> - **Why:** the SAP check model needs each material's E, Poisson, density and thermal expansion, and a `.cii` holds them
+>   only where the input overrides CAESAR's database (never the expansion).
+> - **Where it lives:** the workbook keeps the rows in the model (`PipeModel.Materials`, the model JSON's `materials`, only
+>   when there are any), never in the `.cii`. Every job's `.cii` is unchanged, written directly or through a workbook.
+> - **Base and fingerprint:** the base model holds the sheet's starting rows, so an unedited workbook gives its base exactly.
+> - **Where values come from:**
+>   - every material the elements use gets a row: the model's values, or Pluto's defaults for its class (carbon steel,
+>     chrome-moly, austenitic, aluminum …);
+>   - a default row says so in its Note (amber); typing over a value makes the row the user's;
+>   - a workbook from before the sheet reads as before; its materials take the defaults, and the check model warns.
+> - **Defaults:** typical room-temperature values, alpha the mean from 70 °F to about 250 °F. They are a starting point
+>   to check against CAESAR's database, never the job's values (`PipeMaterials.cs`).
 
 > [!info]- Ids (2026-11-05)
 > The Id column is each row's link to its object in the model, not a row counter.
@@ -116,6 +136,35 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >   - edits to a gap, a stiffness, a SIF, a frame, a deleted and an added joint each change only their own lines.
 > - **A workbook made before this** keeps its couplings on Restraints (Refresh does not move them). Make it again
 >   from the `.cii` to get them on Joints.
+
+> [!info]- Joint DOFs by axis and direction (2026-11-07)
+> The DOFs column names each CAESAR restraint of a joint by axis, with a sign for one way and its gap and stiffness
+> written out:
+> - **Syntax:** DOFs separated by `;`.
+>   - Each is `X Y Z RX RY RZ`, or `+X` … `-RZ` for one way only. The sign is CAESAR's: `+Y` acts in +Y, so Node may
+>     move +Y from CNode but not −Y.
+>   - Each may take `gap=<value>` (rotations in degrees) and `k=<stiffness>`; without `k` it is rigid.
+>   - The values are always named: a bare `-Y=2` is refused at its cell, with the form to use.
+> - **Examples:**
+>   - expansion joint control rods: `+Y; -Y gap=2; RX; RY; RZ`;
+>   - a flexible coupling: `X; Y; Z; RX gap=1; RY; RZ`.
+> - **Frame:**
+>   - `global`: CAESAR's X Y Z.
+>   - `pipe`: X along the pipe at the joint (the element at Node), Y and Z square to it. One spec means the same on any
+>     run, skewed ones too; a pipe-frame `+X` on a run along −Z is written as CAESAR's `-Z`.
+> - **Refused at their cells:** two DOFs along one axis (but a `+` and `-` pair); an unknown DOF; a pipe-frame name with
+>   frame global.
+> - **Recognized couplings** now show in CAESAR's own axes when their restraints lie on them (the sample model's
+>   `X; Y; Z; RX; RY; RZ gap=1`); a skewed one shows in the pipe frame.
+> - **Older workbooks** (`axial gap=0.125; shear; torsion; bending gap=1`) read as `X; Y; Z; RX; RY; RZ` with the same
+>   values, and their restraints keep their place and bytes.
+>
+> **Checked:**
+> - all 16 test models and examples write the same `.cii` as before, from the source and through a workbook;
+> - workbooks made before the change, read now, write it byte for byte;
+> - the gate's model hashes change only for the six models with joints, whose `.cii` is unchanged;
+> - typed into a workbook, the two examples and a pipe-frame one-way DOF give the CAESAR types expected (`+Y`, `-Y`
+>   gap 2 …; `+X` along a Z run as `+Z`).
 
 > [!info]- Node numbers (live)
 > - **From and To are formulas** (2026-10-29), so inserting a node renumbers the nodes after it. Settings says `live, step 10` (the commonest increment) or `fixed` and why.
@@ -175,7 +224,12 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xl
 >   - Excel holds an open workbook: close it first. The Start sheet's run block carries the command.
 > - **`-NewWorkbook -Out <base>`:** writes the template (two legs, a bend, two anchors and a rest).
 >   - With `-Seed <job.cii>`, it takes the job's settings (English units only).
->   - An existing file needs `-Force`.
+>   - An existing workbook as for `-Xlsx` (below).
+> - **`-Xlsx` over an existing workbook** (2026-11-21): one this runner wrote and nobody has saved since is replaced
+>   (the stamp's `xlsx` part holds its fingerprint). One with edits asks first, "Overwrite the workbook?", Keep by
+>   default; Overwrite keeps the old one as `<base>.xlsx.bak`. A run with no one to ask (`-NonInteractive`) stops:
+>   `-Force` replaces it, with the `.bak`, and `-Out` writes elsewhere. So importing the `.cii` again cannot lose the
+>   edits made in its workbook.
 > - **`-Watch`:** rebuilds the chosen outputs (default `-Preview`) on every save. A save that does not build is reported, and the last good outputs stay. The preview is written to temporary names and moved into place, with the sidecar's own groups merged in, so a viewer reloading never sees half a file.
 > - **`-Cii` guards an existing `<base>.cii`.** It replaces the file only if one of these holds:
 >   - this runner wrote it;

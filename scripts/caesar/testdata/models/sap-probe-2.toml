@@ -1,0 +1,123 @@
+# The SAP check model's probe, round 2 (2026-11-16): a made-up job with the nonlinear supports the check model translates
+# (vault/format/pipe-to-frame.md): one-way rests, friction, guides and limit stops with gaps, a hold-down, a two-way gap, a
+# vertical guide, a coupling with gaps, a rest with a gap on a frame node that settles. Run it in CAESAR II (Build-Pipe.ps1 -In this -Cii) and its seed in
+# SAP2000 (Build-Frame.ps1 -In this -S2k), both with their own nonlinear solutions, then compare displacements, restraint
+# loads and element forces per case. No tees: B31J's branch flexibility is not in the check model yet. The temperatures
+# are thermal strains (in/in, under CAESAR's alpha tolerance), so both grow the pipe alike whatever alpha CAESAR holds.
+[model]
+title = "SAP check model probe 2"
+material = 106
+ambient = 70
+[defaults]
+section = "8in"
+temperature = [0.0016, 0.0008]
+pressure = 150
+bend = "LR"
+max_length = 5
+[sections.8in]
+nps = 8
+schedule = "40"
+insulation = 2
+insulation_density = 11.5
+fluid_sg = 1.0
+
+# one line: a long run on rests, a corner, a run with a gap and a hold-down, a riser with a guide, a run with a coupling
+[[runs]]
+name = "main"
+start = [0, 0, 0]
+legs = [["+X", 40], ["+Z", 30], ["+Y", 12], ["+X", 30]]
+
+[[components]]
+type = "coupling"
+name = "CPL-1"
+run = "main"
+at = 103
+axial_gap = 0.25
+deflection = 1
+
+[[supports]]
+run = "main"
+at = 0
+type = "ANC"
+[[supports]]
+run = "main"
+at = "L"
+type = "ANC"
+# rests: plain, with friction, and a guide with a gap and friction
+[[supports]]
+run = "main"
+at = 8
+type = "+Y"
+[[supports]]
+run = "main"
+at = 16
+type = "+Y"
+mu = 0.3
+[[supports]]
+run = "main"
+at = 24
+type = ["+Y", "GUI"]
+gap = { GUI = 0.0625 }
+mu = 0.3
+# a limit stop with a gap each way
+[[supports]]
+run = "main"
+at = 32
+type = ["+Y", "LIM"]
+gap = { LIM = 0.25 }
+# the Z leg: a rest with friction, a two-way vertical gap, a hold-down
+[[supports]]
+run = "main"
+at = 48
+type = "+Y"
+mu = 0.3
+[[supports]]
+run = "main"
+at = 58
+type = "Y"
+gap = 0.125
+[[supports]]
+run = "main"
+at = 64
+type = ["+Y", "-Y"]
+gap = { "-Y" = 0.1 }
+# the riser: a guide with a gap (a vertical pipe: both horizontals)
+[[supports]]
+run = "main"
+at = 77
+type = "GUI"
+gap = 0.125
+# the last run: a rest with friction; a rest with a gap on a frame node that settles (a one-way restraint to a CNODE, the
+# CNODE moved down in D1: CAESAR's way to move a support); then the coupling. A CNODE is the same point as its node to
+# CAESAR (it connects geometry through CNODEs): a tie between points the pipe puts apart stops it (44E)
+[[supports]]
+run = "main"
+at = 90
+type = "+Y"
+mu = 0.3
+[[supports]]
+run = "main"
+at = 86
+type = "+Y"
+gap = 0.05
+cnode = 9000
+[[displacements]]
+node = 9000
+vector = 1
+dx = 0
+dy = -0.2
+dz = 0
+rx = 0
+ry = 0
+rz = 0
+[[supports]]
+run = "main"
+at = 106
+type = "+Y"
+
+[[hangers]]
+run = "main"
+at = 100
+rate = 1500
+cold_load = 1800
+tag = "SPR-2"

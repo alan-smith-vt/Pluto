@@ -109,7 +109,9 @@ itself, typed**: every object owns the rows that describe it, and every value is
 > edit survives the trip. Covered: rack, the tank golden (1.4 MB of JSON), the probe, the synthetic file.
 
 > [!info]- Not yet
-> - Typed views of link-type tables beyond their DOF rows; combinations and cases typed beyond their rows.
+> - Typed views of link-type tables beyond their DOF rows and a multilinear DOF's curve points (`FrameLinkProp.Points`
+>   / `SetPoints`); combinations and cases typed beyond their rows.
 > - Changing the model's unit set (Phase 6).
-> - Confirmed tables are in `FrameS2kSchema` (the proven writers' tables and the probe's round 1); new rows elsewhere
->   get an `s2k-unconfirmed` notice ([[vault/format/sap-s2k-tables|sap-s2k-tables]]). Per-field flags are not kept.
+> - Confirmed tables are in `FrameS2kSchema` (the proven writers' tables and the probe's rounds 1 and 2); new rows
+>   elsewhere get an `s2k-unconfirmed` notice ([[vault/format/sap-s2k-tables|sap-s2k-tables]]). Per-field flags are
+>   not kept.

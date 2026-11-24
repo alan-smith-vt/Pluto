@@ -64,6 +64,13 @@
       }
     },
     {
+      "query": "path:vault/handoffs",
+      "color": {
+        "a": 1,
+        "rgb": 12092939
+      }
+    },
+    {
       "query": "path:README.md",
       "color": {
         "a": 1,

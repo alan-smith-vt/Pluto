@@ -54,9 +54,8 @@ Several files in one scene, e.g. plant steel and pipes over a SAP duct model. Th
 - [ ] Section cuts clip every visible model. They are defined on the active model, in world coordinates.
 - [ ] Predicates evaluate on the active model.
 
-## Open: `FEAFeatures.worldOffset()` reads the wrong path
+## Fixed (2026-11-21): `FEAFeatures.worldOffset()` read the wrong path
 
-- It reads top-level `units.worldOffset`, but the spec and every exporter (`FeaturesSidecar.cs`) put it under **`model.units`**. So it has always returned null.
-- **Effect:** for plant files, which are recentred by the exporter, the readout's World xyz and spatial predicates work in the exporter's local frame, not plant coordinates. The two agree with each other.
-- **Fixing it** gives true coordinates but shifts any saved predicate whose coordinates were read off the old readout.
-- `overlays.js` already reads the correct path for its own placement. **The user decides** whether to fix the main path.
+- It read top-level `units.worldOffset`, but the spec and every exporter (`FeaturesSidecar.cs`) put it under **`model.units`**, so it always returned null. Plant files, recentred by the exporter, showed World xyz and evaluated spatial predicates in the exporter's local frame.
+- It now reads `model.units` (a top-level one still accepted), as `overlays.js` always did: the readout shows plant coordinates.
+- **Saved predicates keep their meaning.** Their points were in the local frame; the sidecar now writes `predicates.version` 2 (world points), and a version-1 file's points are moved by the offset as it loads ([[vault/format/features-sidecar|features-sidecar]]). `viewer/tests/test_predicates.js` T9 checks it.

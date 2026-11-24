@@ -82,6 +82,7 @@ var highlightMats = null;       // its materials, for opacity pulsing
 var highlightStart = 0;         // performance.now() ms
 var HIGHLIGHT_MS = 2200;        // ~3 pulses, then auto-removed
 var elemIdMap = null, nodeIdMap = null;   // real ID -> index (built lazily)
+var beamIdMap = null, labelMaps = null;   // the beam domain's IDs; labels (lower case) -> hits, for Find
 
 // Render-on-demand: animate() always ticks for input + tweens, but only
 // renders when something visual actually changed. Saves a lot of GPU on
@@ -774,7 +775,7 @@ function disposeCurrentModel() {
     dsrCategorical = false;
     currentStr = -1;
     dsrIndices = [];
-    elemIdMap = nodeIdMap = null;
+    elemIdMap = nodeIdMap = beamIdMap = labelMaps = null;
     deformMaxDisp = 0;
     deformLCLoaded = -1;
     deformScaleAuto = true;
@@ -1444,9 +1445,34 @@ function ensureIdMaps() {
     if (elemIdMap) return;
     elemIdMap = new Map();
     nodeIdMap = new Map();
+    beamIdMap = new Map();
     var eIds = feaModel.elemIds, nIds = feaModel.nodeIds;
     for (var e = 0; e < eIds.length; e++) elemIdMap.set(eIds[e], e);
     for (var n = 0; n < nIds.length; n++) nodeIdMap.set(nIds[n], n);
+    var bv = findBeamView();
+    if (bv) for (var b = 0; b < bv.elemIds.length; b++) beamIdMap.set(bv.elemIds[b], b);
+}
+
+function findBeamView() { return (window.FEABeams && FEABeams.view()) || null; }
+
+// labels (SAP's text ones too) -> [{kind: 'shell' | 'beam' | 'node', index}], built on the first text search
+function ensureLabelMaps() {
+    if (labelMaps) return;
+    labelMaps = { elem: new Map(), node: new Map() };
+    function add(map, labels, kind) {
+        if (!labels) return;
+        for (var i = 0; i < labels.count; i++) {
+            var t = labels.get(i);
+            if (!t) continue;
+            var k = String(t).trim().toLowerCase();
+            if (!map.has(k)) map.set(k, []);
+            map.get(k).push({ kind: kind, index: i });
+        }
+    }
+    add(labelMaps.elem, feaModel.labels, 'shell');
+    var bv = findBeamView();
+    if (bv) add(labelMaps.elem, bv.labels, 'beam');
+    add(labelMaps.node, feaModel.nodeLabels, 'node');
 }
 
 function clearHighlight() {
@@ -1562,21 +1588,94 @@ function focusNode(nodeIdx) {
     highlightNode(nodeIdx);
 }
 
+// a beam element: the orbit focus at its middle, the member flashed as a thick bar on top
+function beamEnds(b) {
+    var bv = findBeamView(), REC = bv.elemRecordU32;
+    return [nodeVec(bv.elems[b * REC + 1]), nodeVec(bv.elems[b * REC + 2])];
+}
+
+function focusBeam(b) {
+    var ends = beamEnds(b);
+    tweenFocusTo(ends[0].clone().lerp(ends[1], 0.5));
+    var d = ends[1].clone().sub(ends[0]), len = d.length();
+    var sph = modelSphere(), rad = (sph ? sph.radius : 100) * 0.005;
+    var mat = new THREE.MeshBasicMaterial({ color: 0xffe14d, depthTest: false,
+        depthWrite: false, transparent: true, opacity: 0 });
+    var group = new THREE.Group(), mats = [{ material: mat, peak: 0.9 }];
+    if (len > 0) {
+        var bar = new THREE.Mesh(new THREE.CylinderGeometry(rad, rad, len, 10), mat);
+        bar.position.copy(ends[0]).lerp(ends[1], 0.5);
+        bar.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+        bar.renderOrder = 6;
+        group.add(bar);
+    }
+    [0, 1].forEach(function (k) {
+        var m = new THREE.Mesh(new THREE.SphereGeometry(rad * 1.6, 16, 10), mat);
+        m.position.copy(ends[k]);
+        m.renderOrder = 6;
+        group.add(m);
+    });
+    startHighlight(group, mats);
+}
+
+function showElementHit(h, what) {
+    if (h.kind === 'beam') {
+        focusBeam(h.index);
+        log(what + ': beam element ' + findBeamView().elemIds[h.index] + labelText(findBeamView().labels, h.index) + ' (index ' + h.index + ').');
+    } else {
+        focusElement(h.index);
+        log(what + ': shell element ' + feaModel.elemIds[h.index] + labelText(feaModel.labels, h.index) + ' (index ' + h.index + ').');
+    }
+}
+
+function labelText(labels, i) {
+    var t = labels ? labels.get(i) : null;
+    return t ? ' [' + t + ']' : '';
+}
+
+// Find: an element (shells and beams) or a node by its ID, or by its label (a SAP text label such as A1). IDs are per
+// domain: when a shell and a beam share one, the shell shows and the log says so; "b101" / "s101" pick the beam / shell
 function doFind() {
     if (!feaModel) return;
-    var id = parseInt(elFindId.value, 10);
-    if (isNaN(id)) { log('Find: enter a numeric ID.'); return; }
+    var raw = elFindId.value.trim();
+    if (!raw) { log('Find: enter an ID or a label.'); return; }
     ensureIdMaps();
-    if (elFindKind.value === 'elem') {
-        var e = elemIdMap.get(id);
-        if (e === undefined) { log('Element ID ' + id + ' not found.'); return; }
-        focusElement(e);
-        log('Element ' + id + ' (index ' + e + ').');
-    } else {
-        var n = nodeIdMap.get(id);
-        if (n === undefined) { log('Node ID ' + id + ' not found.'); return; }
-        focusNode(n);
-        log('Node ' + id + ' (index ' + n + ').');
+    var elem = elFindKind.value === 'elem';
+    var m = elem ? /^([bs])\s*(\d+)$/i.exec(raw) : null;
+    var only = m ? m[1].toLowerCase() : '';
+    var num = m ? m[2] : raw;
+    var hits = [];
+    if (/^\d+$/.test(num)) {
+        var id = parseInt(num, 10);
+        if (elem) {
+            if (only !== 'b' && elemIdMap.has(id)) hits.push({ kind: 'shell', index: elemIdMap.get(id) });
+            if (only !== 's' && beamIdMap.has(id)) hits.push({ kind: 'beam', index: beamIdMap.get(id) });
+        } else if (nodeIdMap.has(id)) hits.push({ kind: 'node', index: nodeIdMap.get(id) });
+    }
+    var byLabel = false;
+    if (!hits.length) {
+        ensureLabelMaps();
+        var found = (elem ? labelMaps.elem : labelMaps.node).get(raw.toLowerCase()) || [];
+        hits = found.filter(function (h) { return !only || h.kind.charAt(0) === only; });
+        byLabel = hits.length > 0;
+    }
+    if (!hits.length) {
+        log((elem ? 'Element' : 'Node') + ' ' + raw + ' not found' + (elem ? ' (shells and beams searched, by ID and by label).' : ' (by ID and by label).'));
+        return;
+    }
+    var what = 'Find ' + raw + (byLabel ? ' (label)' : '');
+    if (!elem) {
+        focusNode(hits[0].index);
+        log(what + ': node ' + feaModel.nodeIds[hits[0].index] + labelText(feaModel.nodeLabels, hits[0].index) + ' (index ' + hits[0].index + ')' +
+            (hits.length > 1 ? '; ' + hits.length + ' nodes have this label, the first shown.' : '.'));
+        return;
+    }
+    showElementHit(hits[0], what);
+    if (hits.length > 1) {
+        var kinds = hits.map(function (h) { return h.kind; });
+        if (kinds.indexOf('shell') >= 0 && kinds.indexOf('beam') >= 0 && !byLabel)
+            log('A shell and a beam share ID ' + num + ': the shell is shown; type b' + num + ' for the beam.');
+        else log(hits.length + ' elements match ' + raw + ': the first is shown.');
     }
 }
 

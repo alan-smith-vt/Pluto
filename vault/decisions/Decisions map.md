@@ -1,16 +1,23 @@
-# Decisions map
+---
+title: Decisions map
+status: current
+created: 2026-09-03
+---
 
 *↑ [[vault/Pluto Home|Home]]*
+
+# Decisions map
 
 Hub for `vault/decisions/` — one dated note per design decision, filed as `YYYY-MM-DD-<slug>.md`.
 Older decisions are recorded inline: the v4 format decisions log in
 [[vault/format/v4-schema|v4-schema]], the predicate dialect in
 [[vault/format/features-sidecar|features-sidecar]], and the per-session decisions in the
-handoff log (Notes vault, `Tools/Pluto Handoffs`).
+handoff log ([[vault/handoffs/Handoffs map|Handoffs map]]; before 2026-11-18, the Notes vault's `Tools/Pluto Handoffs`).
 
 - [[vault/decisions/2026-10-03-beam-taper|2026-10-03-beam-taper]] — beam `ELEM` slot 4 = `sectionIdxB + 1` (tapered members: reducers, valve halves; 0 = straight, old files unchanged) and optional META `upAxis` for Y-up models.
 - [[vault/decisions/2026-10-03-imported-restraints|2026-10-03-imported-restraints]] — restraints imported from a solver model are sidecar `supports` items + node groups; their loads go in the binary as beam components of kind `restraint`. The binary `point` domain was considered and not chosen. Built in CAESAR stage 2 (2026-10-04), drawn by `supports.js`.
 - [[vault/decisions/2026-10-07-pipe-builder|2026-10-07-pipe-builder]] — pipe-stress models from a TOML config by C# (`PipeBuilder`) into a solver-neutral `PipeModel` in CAESAR's terms; the CAESAR neutral file first, SAP `.s2k` later from the same model; temperatures as ΔT from the ambient; couplings as 6 CNODE restraints N → N+1 and free ties; CAESAR's own position conventions; no unconfirmed block layout guessed.
+- [[vault/decisions/2026-10-22-lossless-pipe-model|2026-10-22-lossless-pipe-model]] — models are defined in Excel or TOML only (the viewer confirms, never edits); one `PipeModel` gives the `.cii`, the preview and later the `.s2k` (a check model of CAESAR's: same pipe, loads and equivalent supports); a `.cii` import carries everything losslessly (overlay-and-carry, byte-identical when unedited, checked on every import); an exact model JSON as the workbook's base; compare by meaning against CAESAR's re-export.
 - [[vault/decisions/2026-10-23-pipe-model-in-viewer|2026-10-23-pipe-model-in-viewer]] — the viewer shows the whole pipe model before CAESAR sees it: loads, element properties, the build's checks (each with its place, click to fly) and the model's source are sidecar sections the CAESAR export owns and rewrites, from the runner's model or one imported from the `.cii`; hidden groups show where each temperature, pressure, material and insulation applies; load cases stay CAESAR's.
 - [[vault/decisions/2026-10-24-uniform-wind-carry-forward|2026-10-24-uniform-wind-carry-forward]] — CAESAR carries a UNIFORM or WIND block forward to every later element until another changes it: the model holds what acts on each element, the reader carries a block onto the elements after it, the writer puts a block where a load starts or changes and a zero / off block where it stops; corrects the 2026-10-22 reading.
 - [[vault/decisions/2026-10-24-hangers-nozzles-in-model|2026-10-24-hangers-nozzles-in-model]] — spring hangers and flexible nozzles move from the carried MISCEL_1 tail into the pipe model, made and edited in the workbook and the TOML; imports stay byte-identical (each keeps its lines), a tail Pluto cannot take apart is carried whole and refuses edits.
@@ -18,5 +25,5 @@ handoff log (Notes vault, `Tools/Pluto Handoffs`).
 - [[vault/decisions/2026-11-05-frame-staad|2026-11-05-frame-staad]] — a frame model goes to STAAD.Pro exactly or not at all (`-Std`): rotated to Y up, catalog sections where the name is confirmed, nonlinear links and partly rigid zones refused, patterns as reference loads and cases as primary loads (a continued case holds both), inclined supports, the analysis and Pluto's prints at the end.
 - [[vault/decisions/2026-11-06-calcflow|2026-11-06-calcflow]] — CalcFlow (steel connection calcs from STAAD) is three layers instead of one configuration workbook: a calc library (cell maps with label guards for the locked templates, edited in Excel, run from its text export), a connection register, and an analysis package written from the `.anl` that is the only source of inputs; exact or flagged; pipe-review's generic machinery copied (with provenance), not shared.
 - [[vault/decisions/2026-11-06-calcflow-end-axes|2026-11-06-calcflow-end-axes]] — CalcFlow takes a member end's forces in the end's own axes (x away from the joint, y the member's y; end B = STAAD's axes turned 180 deg about y), so a template's frame holds whichever way a member was drawn; SRSS / ABS cases in scope are flagged. Needs the engineer's sign-off.
+- [[vault/decisions/2026-11-12-caesar-to-sap|2026-11-12-caesar-to-sap]] — a CAESAR model seeds a SAP2000 check model of the pipe for member forces and support reactions (no code checks): materials from the CAESAR workbook's Materials sheet (Pluto's defaults with a warning otherwise), temperatures as Tn − ambient, seeded once and edited in the frame workbook; linear first, nonlinear supports in phase 2, both verified against CAESAR 15.01 and SAP 24.2 (OPE continuing from SUS); the ways back from SAP to CAESAR logged as possible later work.
 - [[vault/decisions/2026-11-23-calcflow-engines|2026-11-23-calcflow-engines]] — CalcFlow calculates with Excel where it is installed, else LibreOffice (headless, open source), behind one batch interface; the inputs are written into copies at the XML level for both; the record is the calculated copy the governing DCR was read from; every record names its engine and version; development-side checks use open-source tools (Open XML SDK, LibreOffice, poppler).
-- [[vault/decisions/2026-10-22-lossless-pipe-model|2026-10-22-lossless-pipe-model]] — models are defined in Excel or TOML only (the viewer confirms, never edits); one `PipeModel` gives the `.cii`, the preview and later the `.s2k` (a check model of CAESAR's: same pipe, loads and equivalent supports); a `.cii` import carries everything losslessly (overlay-and-carry, byte-identical when unedited, checked on every import); an exact model JSON as the workbook's base; compare by meaning against CAESAR's re-export.

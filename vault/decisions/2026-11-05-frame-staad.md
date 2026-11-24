@@ -15,6 +15,33 @@ Any frame model (a workbook, an `.s2k`, a `.frame.json`) can be written as a STA
 - What it cannot hold exactly refuses the whole file. Every refusal is reported at once, each naming its objects.
 - What leaving out cannot change in the structure is listed as not written: modal cases, envelopes.
 
+**Since (2026-11-18):** a CAESAR model seeds a frame model too, the check model
+([[vault/decisions/2026-11-12-caesar-to-sap|2026-11-12-caesar-to-sap]]). The same rule refuses a seed with a tie to a
+CNODE at its node or a zero-length expansion joint (zero-length links), or with any nonlinear support.
+
+**Since (2026-11-23):** a `.std` the writer made comes back too, after edits in STAAD (`Build-Frame -In <x>.std`,
+`StdToFrame`), by the same rule:
+- any command the writer does not write refuses the file, named;
+- the read checks that the model written back is the file's, object by object, to the file's digits (STAAD.Pro's own
+  save keeps 6).
+
+**Since (2026-11-23), sections:** a shape picked in STAAD comes back as SAP's catalog section from SAP's own
+library. More families go to STAAD by name: fractional channels, HSS, tees and equal double angles. They are written
+in the form STAAD.Pro 2025's own save uses, a `MEMBER PROPERTY` block per AISC database
+([[vault/format/frame-to-staad|frame-to-staad]]).
+
+**Since (2026-11-24):** the user chose, against measured differences:
+- **Table sections stay STAAD's tables** where its numbers differ from SAP's library (tee +1.1 %, double angle
+  −1.7 %, HSS box −0.5 %, angle 2.5 %), so STAAD keeps a section it can design.
+- **Single angles go by table both ways.** STAAD bends them about their principal axes and SAP about its legs with
+  I23, so the BETA is turned by δ (the angle probe, to 0.007°).
+- **An angle picked in STAAD is read with Pluto's I23 estimate,** within about 0.02° of SAP's orientation, not refused.
+
+STAAD draws its angle as the mirror image of SAP's. The analysis is the same; the drawing and design differ.
+
+The user asked that the reading reuse the STAAD lib's `.anl` reader rather than add a second one. Its parsers were
+extended in place (`StaadInput`), and an `.anl` reads as before.
+
 The mapping is in [[vault/format/frame-to-staad|frame-to-staad]]. The choices made with the user:
 
 | Question | Chosen |
@@ -57,3 +84,18 @@ The mapping is in [[vault/format/frame-to-staad|frame-to-staad]]. The choices ma
 > - offsets and the loads on rigid end zones.
 >
 > Until then [[vault/format/frame-to-staad|frame-to-staad]] marks these as unconfirmed.
+>
+> Round 1 (2026-11-07): STAAD 2025 parsed every command; ground displacements are now `ENFORCED` supports. The plate
+> policy waits for the meshed-wall comparison: the rack's single wall element differed by 20× in thrust between the
+> programs, a mesh effect on both sides, not a translation.
+>
+> Round 2 (2026-11-07) confirmed the BETA sign, vertical axes, offsets and end-zone loads, springs per degree,
+> inclined supports, settlement and combinations. Two exceptions remain, and the user decided both:
+> - **Plates:** written, with a notice naming the areas and the coarse-mesh difference. Meshed 8 × 6, the test
+>   wall's thrust was 18.5 kip in SAP and 21.9 in STAAD (one element: 2.1 vs 42.7).
+> - **Channels, tees and double angles:** SAP twists them about their shear center and STAAD does not. They are
+>   written centroidal, with a notice and an eye-catching banner at the member properties in the `.std`.
+>
+> **Since (2026-11-18):** round 3 (2026-11-07) confirmed the TEMP gradient signs, the last item above, so nothing in
+> this list is open. [[vault/format/frame-to-staad|frame-to-staad]] marks as unconfirmed only the STAAD table names of
+> other section families (HSS, pipes, angles, tees), which the writer does not use.

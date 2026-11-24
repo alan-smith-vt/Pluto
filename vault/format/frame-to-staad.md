@@ -1,6 +1,6 @@
 ---
 title: A SAP frame model as a STAAD.Pro .std (Build-Frame -Std)
-status: draft
+status: current
 created: 2026-11-05
 ---
 
@@ -8,26 +8,36 @@ created: 2026-11-05
 
 # Frame model → STAAD.Pro `.std`
 
-`Build-Frame.ps1 -Std` writes `<out>.std` from any frame input: a workbook, an `.s2k` or a `.frame.json`.
+`Build-Frame.ps1 -Std` writes `<out>.std` from any frame input: a workbook, an `.s2k`, a `.frame.json`, or a CAESAR
+model it seeds ([[vault/format/pipe-to-frame|pipe-to-frame]]). A seed is refused when it has a tie to a CNODE at its
+node or a zero-length expansion joint (zero-length links), or any nonlinear support (nonlinear links): see Links below.
+
+**And back:** `Build-Frame.ps1 -In <x>.std` reads a `.std` the writer made, after edits in STAAD too, into a frame
+model again (2026-11-23; "Reading a .std back", below).
 
 **Code:**
 - `FrameStd` is the writer.
 - `FrameStdSections` gives a section's properties.
 - `FrameStdProbe` writes the STAAD probe.
+- `StdToFrame` is the reader. It works over `StaadInput` in `scripts/lib/readers/ANLReader.cs`: the `.anl` reader's own
+  parsers, extended to read a `.std`'s input commands.
 
 **The rule:** exact or refused ([[vault/decisions/2026-11-05-frame-staad|2026-11-05-frame-staad]]).
 - Every refusal comes at once on `[refuse]` lines. Refusals with the same reason are one line naming the objects (12
   at most, then a count).
 - What leaving out cannot change in the structure is a `[notice]`, also listed in the file's header comment.
 
-**Status: draft.** The forms below come from excerpts of STAAD's Technical Reference, not the pages themselves. STAAD
-has not yet read a file from this writer. The STAAD probe (end of this note) confirms the open points.
+**Status: current** (STAAD.Pro 2025 and SAP 24.2, three probe rounds, 2026-11-07). The forms came from excerpts of
+STAAD's Technical Reference ([V] below means the excerpt). STAAD.Pro 2025 has read every command the writer uses, and
+the STAAD probe (end of this note) confirmed the conventions against SAP's own results. Two differences remain, both
+written with a notice: plates (element formulation, large on coarse meshes) and channels, tees and double angles
+(SAP's shear-center twist).
 
 > [!info]- The file, in order
 > 1. `STAAD SPACE`, then comments:
 >    - the source;
 >    - every SAP label that is not its own STAAD number (text labels, plates renumbered after members, links as
->      truss members);
+>      truss members), and every material or group whose STAAD name is not its SAP label;
 >    - the load numbers of the SAP cases and combinations;
 >    - every notice.
 > 2. `INPUT WIDTH 79`, then `UNIT` from SAP's unit set. Length: `INCHES FEET MMS CM METER`. Force: `KIP POUND KNS
@@ -35,7 +45,9 @@ has not yet read a file from this writer. The STAAD probe (end of this note) con
 > 3. `JOINT COORDINATES`, `MEMBER INCIDENCES` (frames, then truss links), `ELEMENT INCIDENCES SHELL` (areas).
 > 4. `START GROUP DEFINITION`.
 > 5. `DEFINE MATERIAL START` … `END DEFINE MATERIAL`.
-> 6. `MEMBER PROPERTY AMERICAN`, `ELEMENT PROPERTY`.
+> 6. `MEMBER PROPERTY AMERICAN`, `ELEMENT PROPERTY`: a line per SAP section, its name in a comment above it
+>    (`* SAP section <name>`, `* SAP area section <name>`). A `TABLE ST` line's comment also holds the section's SAP
+>    row, which SAP needs to rebuild it.
 > 7. `CONSTANTS`: `MATERIAL`, `BETA`.
 > 8. `MEMBER OFFSET`, `MEMBER RELEASE`, `MEMBER TRUSS`, `SUPPORTS`.
 > 9. `DEFINE REFERENCE LOADS`, the primary loads, `LOAD COMBINATION`.
@@ -65,13 +77,32 @@ has not yet read a file from this writer. The STAAD probe (end of this note) con
 >   - a vertical member pointing up gets 180° more;
 >   - one pointing down gets the angle.
 >
->   `FrameStd.Beta` works this out for every member; BETA is right-handed about x **[U]**. SAP's advanced local axes
+>   `FrameStd.Beta` works this out for every member; BETA is right-handed about x (confirmed by STAAD round 2, part 1). SAP's advanced local axes
 >   are refused.
 
 > [!info]- Sections and materials
-> - **Table.** `TABLE ST <name>` for W shapes (`W12X26`) and channels of a whole weight (`C10X30`) [V].
->   - Other families' STAAD names differ from SAP's and are not confirmed: HSS `HSST…`, pipes `PIPS` / `PIPX`, angles
->     `L40404` in sixteenths, tees by their parent W.
+> - **Table.** `TABLE ST <name>` for W shapes (`W12X26`) and channels of a whole weight (`C10X30`) [V], only for
+>   a section SAP took from its own database (`FromFile=Yes`, named by its `SectInFile`). SAP rebuilds any other
+>   shape from its dimensions on import, without fillets: the rack fixture's hand-written W10X33 (`FromFile=No`,
+>   Area 9.71 in its row) was 9.49 in² in SAP, while STAAD's table gave 9.71. Such a section is `PRIS` with the
+>   dimensions' values; its row's are used only where they agree with them (SAP's own export), and a row that
+>   disagrees gets a notice.
+>   - **Since (2026-11-23):** more families go by name, in the form STAAD.Pro 2025's own save writes them (the
+>     names probe). It writes a `MEMBER PROPERTY` block per database, and the database's own table names:
+>
+>     | SAP catalog section | STAAD 2025 |
+>     |---|---|
+>     | channel of a fractional weight `C15X33.9` | `MEMBER PROPERTY 'US (AISC 2023).db3'`, `TABLE 'Standard Channel' ST 'C15X33.9'` |
+>     | HSS box `HSS24X12X3/4` | the same database, `TABLE 'HSS Rectangle' ST 'HSS24X12X.750'` (the EDI name, from SAP's library file) |
+>     | HSS round `HSS5.500X0.375` | `TABLE 'HSS Round' ST 'HSS5.5X.375'` |
+>     | tee `WT22X131` | `TABLE 'W' T 'W44X262'`, the W it is cut from |
+>     | double angle `2L2-1/2X2-1/2X5/16`, equal legs, no spacing | `MEMBER PROPERTY 'US (AISC V16.0).db3'`, `TABLE 'Angle' LD 'L2-1/2X2-1/2X5/16'` |
+>
+>     | single angle `L3X2-1/2X3/16` (since 2026-11-24) | `'US (AISC V16.0).db3'`, `TABLE 'Angle' ST 'L3X2-1/2X3/16'`, BETA + δ (below) |
+>
+>     W shapes and whole-weight channels stay in `MEMBER PROPERTY AMERICAN`.
+>     Unequal legs, a spacing, MC channels and pipes by another name are written as numbers: STAAD's form for them
+>     has not been seen. Bentley's help gives older names (`L505010`, `PIPX20`), which STAAD 2025's save does not use.
 >   - A table section with property modifiers is written as numbers instead, with a notice.
 > - **Numbers.** `PRIS AX IX IY IZ AY AZ YD ZD` [V], from:
 >   - SAP's own computed properties when the section row has them;
@@ -79,8 +110,16 @@ has not yet read a file from this writer. The STAAD probe (end of this note) con
 >
 >   The frame's modifiers multiply A, J, I22, I33, AS2 and AS3. A zero shear area is left out (shear deformation
 >   ignored, as in SAP). YD / ZD = t3 / t2 (temperature gradients need them).
-> - **Refused:** a section with a product of inertia I23 (angles, and General sections that carry one). STAAD's
->   prismatic property has none.
+> - **Refused:**
+>   - a section with a product of inertia I23 (angles, and General sections that carry one). STAAD's prismatic
+>     property has none. An I23 below 1e-9 of I33 + I22 is round-off and counts as 0: SAP's own row for a library
+>     W10X33 carries 2.8E-14 (2026-11-23).
+>   - a section with modifiers of its own (its row's `AMod` … `WMod` other than 1, 2026-11-23). SAP applies them as
+>     well as the frame's, and only the frame's are folded in. Give them to its frames instead.
+> - **Channels, tees and double angles are written centroidal, with a notice and a banner** (the user's choice,
+>   2026-11-07). SAP 24 twists them about their shear center; STAAD does not (round 2). The banner is a starred
+>   block just above `MEMBER PROPERTY AMERICAN`, listing the members: "SHEAR CENTER NOT MODELED …". Bending and axial
+>   results match SAP's; the twist and the joint movement it causes do not.
 > - **Materials.** `ISOTROPIC` with E, POISSON (when 0.01–0.499), G, DENSITY (SAP's unit weight), ALPHA [V]. Steel adds
 >   `TYPE STEEL` and `STRENGTH FY FU RY RT` (RY = EffFy / Fy) [V example].
 >   - A frame whose weight modifier differs from its area modifier gets a copy of its material (`<name>_W2`) with
@@ -112,12 +151,14 @@ has not yet read a file from this writer. The STAAD probe (end of this note) con
 >
 >   **Loads on rigid end zones.** STAAD loads only the clear length; positions are measured from the offset end [V].
 >   The part of a load inside a zone, self weight included, goes to that end's joint as a force and its moment. This
->   assumes SAP loads the full joint-to-joint length **[U: the probe's part 5]**.
+>   assumes SAP loads the full joint-to-joint length (confirmed by round 2, part 5: equal to 0.00002 in). The zones'
+>   self weight is worked out from the DENSITY and AX the file gives (STAAD's own self weight is their product), so a
+>   read takes it off again to the digit.
 > - **Links.**
 >   - Any nonlinear link refuses the model (each type with its links).
 >   - A grounded linear link adds its DOFs (fixed or KE) to its joint's support, in the link's axes.
->   - A two-joint link with only U1 (KE > 0) is a truss member: material `PL_LINK` (E 1, density 0, α 0), `PRIS AX` =
->     KE × L. Any other two-joint or zero-length link is refused. A link with a weight is refused when a pattern has
+>   - A two-joint link with only U1 (KE > 0) is a truss member: material `PL_LINK` (the model's largest E, so STAAD
+>     does not warn of a soft material; density 0, α 0), `PRIS AX` = KE × L / E. Any other two-joint or zero-length link is refused. A link with a weight is refused when a pattern has
 >     self weight.
 > - **Supports** gather restraints (in the joint's local axes), springs (row CoordSys GLOBAL or Local) and grounded
 >   links:
@@ -148,14 +189,22 @@ has not yet read a file from this writer. The STAAD probe (end of this note) con
 >
 >     Varying or projected distributed moments are refused.
 >   - `TEMPERATURE LOAD`: `TEMP f1 f2 f4` (sic: f3 is the strain form [V]). Uniform → f1; gradient 2 × t3 → f2
->     (top +y minus bottom); gradient 3 × t2 → f4 (+z side minus −z **[U: sign]**).
+>     (top +y minus bottom); gradient 3 × t2 → f4 (+z side minus −z). Confirmed against SAP in round 3: SAP's `Gradient2` 3 and `Gradient3` −2 on a 100 in cantilever
+>     moved its tip U2 −0.065, U3 −0.0975, R2 0.00195, R3 −0.0013 in both programs. SAP's gradients are
+>     `Type=Gradient2` / `Gradient3` with their value in `TempGrad2` / `TempGrad3`; any other type name is refused
+>     (SAP reads it as a uniform temperature, or drops it).
 >   - A load by joint pattern, in another coordinate system, or from SAP's automatic lateral loads is refused.
 > - **Ground displacements.**
 >   - They go in the primary loads, as `SUPPORT DISPLACEMENT LOAD` with each case's factor. Rotations are in degrees
 >     [V]. The excerpt did not show whether reference loads take them.
->   - Only restrained DOFs move (SAP ignores a free one). Through a spring, or at an inclined support, they are
->     refused.
->   - STAAD takes them in 4 load cases at most [V].
+>   - Only restrained DOFs move (SAP ignores a free one).
+>   - The joint is an `ENFORCED` support (`ENFORCED BUT <free DOFs>`). STAAD 2025 stops a model with plates
+>     otherwise ("not valid on models with finite elements, unless used in conjunction with ENFORCED support
+>     definitions", round 1), and without ENFORCED it takes them in 4 load cases at most.
+>   - Refused: a displacement at an inclined support, or at a joint with springs or a grounded link (ENFORCED takes
+>     no springs).
+> - **Joints nothing connects** (no frame, area or axial link) are left out with their supports and loads, in a
+>   notice. STAAD warns of them; in SAP they carry nothing.
 > - **One primary load per static case** (`LoadPattern` items only; `Accel` is refused): `LOAD n LOADTYPE …` with
 >   `REFERENCE LOAD R1 f …` [V].
 >   - A nonlinear case continuing another (its `InitialCond`) holds the whole chain's patterns.
@@ -192,6 +241,209 @@ has not yet read a file from this writer. The STAAD probe (end of this note) con
 >
 > **Listed** in a notice: anything else non-empty.
 
+> [!info]- Reading a .std back (`Build-Frame -In <x>.std`, 2026-11-23)
+> `StdToFrame` reads a `.std` this writer made back into a frame model, after edits in STAAD too. STAAD's commands are
+> the model, so an edit made there comes back; the comments the writer adds give back what STAAD has no place for:
+> SAP's labels; section, area section, material and group names; a table section's SAP row; the SAP version and units.
+> Outputs default to `<name>_std.*`, never over the model the `.std` came from.
+>
+> **The parsing is the `.anl` reader's.** `StaadInput` (in `scripts/lib/readers/ANLReader.cs`) indexes the file with the
+> `.anl` indexer and reads joints, incidences, groups and plate thicknesses with its parsers, made able to:
+> - take the commands only a `.std` needs marked (`MEMBER TRUSS`, `DEFINE REFERENCE LOADS`, `SELFWEIGHT`, `PDELTA` …);
+> - run without progress bars;
+> - keep coordinates and thicknesses as written, in doubles;
+> - record each group's kind.
+>
+> Text parsers there, on the same section index, read what an `.anl` never needed:
+> - materials, member properties, constants, offsets, releases, trusses and supports;
+> - reference loads, primary loads and combinations.
+>
+> An `.anl` is read as before: the old and new reader give the same output on random number lines, the probe and a
+> numbered echo of it.
+>
+> | STAAD | Frame model |
+> |---|---|
+> | joint (X, Y, Z) | SAP (X, −Z, Y) |
+> | BETA | the frame's angle (SAP's local 2 / 3 are STAAD's y / z) |
+> | `PRIS AX IX IY IZ [AY AZ] YD ZD` | a General section (shear areas 0 when absent) |
+> | the same SAP section with other numbers | the first one's section, with frame modifiers (mass and weight with AMod) |
+> | `TABLE ST`, or STAAD 2025's `TABLE '<table>' ST '<name>'` under `MEMBER PROPERTY '<database>'` | the SAP row in its comment when `-Std` writes this property from it; otherwise (a shape picked in STAAD) SAP's catalog section from its library, the newest AISC file's: an I section, channel, HSS box or round, by SAP's label or EDI name. A single angle is refused, and so is a name SAP's library does not have |
+> | `TABLE '<table>' T '<W>'` | the tee cut from it, SAP's WT of half its depth and weight (`W44X262` → `WT22X131`) |
+> | `TABLE '<table>' LD / SD '<angle>' [SP s]` | SAP's 2L of that angle whose vertical legs are the long (LD) or short (SD) ones and whose spacing is s; Pluto knows SAP's labels for no spacing only |
+> | `TABLE 'Angle' ST '<angle>'` and its BETA | SAP's catalog angle, its SAP angle the BETA less δ (single angles, below). Refused on it: loads along local y / z, a gradient, a release or spring not the same about y and z |
+> | `PRIS YD d ZD b`, `PRIS YD d` | STAAD's own rectangle / circle, as a SAP General section with STAAD's numbers: shear areas 0.85 A / 0.89 A (SAP's Rectangular / Circle take 5/6 / 0.9) |
+> | a full `PRIS` with `YD` and no `ZD` | round: ZD = YD |
+> | `ISOTROPIC` | a material, Steel with `TYPE STEEL`, else Other; G must agree with E and POISSON (SAP's isotropic rule) |
+> | `MEMBER OFFSET` | end lengths (rigid) along it; across it, equal at both ends, joint offsets (local) |
+> | `MEMBER RELEASE` | releases; `K…` partial fixity (rotations per degree back to per radian) |
+> | `MEMBER TRUSS` | linear links, U1 = E AX / L (the header's EA / L when it agrees) |
+> | plates, `ELEMENT PLANE STRESS` | areas, Shell-Thin or Membrane |
+> | `SUPPORTS` | restraints and springs; `INCLINED`: the joint's local axes; `ENFORCED`: restraints |
+> | reference loads | load patterns, the zones' self weight taken off the joint loads |
+> | primary loads | linear static cases; nonlinear P-Delta from zero under `PDELTA` |
+> | a primary load's own loads, support displacements | a load pattern of its own each |
+> | `LOAD COMBINATION [SRSS, ABS]` | Linear Add, SRSS, Abs Add |
+>
+> A number worked out on the way back (a spring per radian, a modifier, a gradient) is the shortest that writes back
+> STAAD's digits: 1000, not 999.99999999752.
+>
+> **Numbers to the file's digits.** Pluto writes 12 significant digits; STAAD.Pro's own save keeps 6. Every check that
+> compares a number with one worked out allows half a unit in the last digit the file gives, never more than 1e-5 of
+> it. That covers:
+> - G against E and POISSON;
+> - a truss's EA / L from the header against its AX;
+> - the end zones' weight against the joint loads;
+> - offsets, and load positions on the clear length.
+>
+> **Exact or refused.** Any command the writer does not write is refused by name, with where it stood. That covers:
+> - another `UNIT` along the file;
+> - `CUT OFF`, `ELEMENT LOAD`, `LIN` member loads, `MP` releases, `CDAMP`;
+> - a `TABLE ST` with no SAP row when SAP's library is not on the machine or lacks the shape, or the shape is not an I
+>   section.
+>
+> `START JOB INFORMATION`, a record only, is passed over with a notice.
+>
+> **The check.** The model is written back with `-Std`, and both files are read as STAAD reads them, then compared
+> object by object, numbers to the file's digits:
+> - each joint, member, plate, property, constant, offset, release, support and group by its id;
+> - each material by its name;
+> - each primary load through its reference loads and their factors;
+> - each combination by its number.
+>
+> Order, layout, keyword order, comments and prints do not count. A load given in a primary load itself comes back as a
+> reference load of its own, and counts as the same. The run says whether the models are the same, or lists the first
+> differences.
+>
+> **Tested here:**
+> - The models below come back with every command the same:
+>   - the STAAD probe;
+>   - the linear rack, also with a catalog W10X33, P-Delta cases and kN / m;
+>   - a CAESAR seed with linear supports;
+>   - the probe with its comments stripped, which comes back with STAAD's numbers as labels;
+>   - the probe in STAAD's layout (four joints a line, job information);
+>   - a hand edit: a moved joint, an added load, a released support.
+> - The read model's workbook writes the same `.std`.
+>
+> **STAAD.Pro's own save** (STAAD.Pro 2025, on the production machine, 2026-11-23). A `.std` Pluto wrote, opened in
+> STAAD.Pro and saved from its graphical editor:
+> - keeps every comment in place, the SAP row above `TABLE ST` too;
+> - writes numbers to 6 significant digits (`G 11153.8`, `PRIS AX 3.51084`);
+> - reorders PRIS (`AX AY AZ IX IY IZ`), writes `LOAD COMB`, several joints and members a line, and id lists split
+>   over lines;
+> - rewords the prints and adds `START JOB INFORMATION`;
+> - puts a joint load added in a load case directly in its primary load.
+>
+> The first reader refused both files, holding G to 12 digits. Now an unedited save reads exactly. An edited one (a
+> moved joint, a support made fixed, a joint load added) reads with those three changes and nothing else. The probe,
+> rounded to 6 digits the same way, reads exactly as well, every converted number clean.
+>
+> **In SAP2000 24.2** (the same day):
+> - **The read-back probe.** It imported with only SAP's own ten design-table errors, the same as the original probe's.
+>   Its one warning, a Wind pattern's blank `AutoLoad`, is gone: Wind and Quake patterns now get `AutoLoad=None`. Run,
+>   it agrees with STAAD's run of the same `.std` at every joint, 480 displacements and 310 reactions; joints with
+>   local axes are compared in those axes, which SAP reports in. The channels agree too: read back they are General
+>   sections, which SAP does not twist about a shear center.
+> - **Catalog sections.** The read-back rack's W10X33 got SAP's default section, a General one with every property 1,
+>   and its columns shortened eight times more than in STAAD (the pipes on it grew the same to every digit). The cause
+>   was the row, a test variant naming `AISC16.xml`, which SAP 24 does not have; SAP's own export names its library
+>   file by full path, and reads back. A restored row's library file is now checked when the `.s2k` is written
+>   ([[vault/format/sap-s2k-tables|sap-s2k-tables]]). A `TABLE ST` shape picked in STAAD, with no SAP row in its
+>   comment, was still refused then.
+> - **SAP's own W10X33 export, through Pluto both ways** (later the same day): `-Std`, then `-In <it>.std -S2k`,
+>   imported into SAP with no error, warning or dialog, the shape still SAP's catalog section. On the way, `-Std` had
+>   refused SAP's own row for its `I23=2.8E-14`, round-off now counted as 0.
+> - **A shape picked in STAAD** now comes from SAP's library (`AISC15.xml`'s W10X33 entry, from the user). The row
+>   Pluto builds is SAP's own to every digit SAP writes, its noise aside
+>   ([[vault/format/sap-s2k-tables|sap-s2k-tables]], "The library's entries"). On the production machine, a W12X26
+>   picked in STAAD (with no comments, and under W10X33's old comment) read exactly. It imported into SAP as its AISC15
+>   catalog section with no error, warning or dialog. SAP's export of it equals Pluto's row in all 38 shared fields,
+>   Cw to its 15 digits. A channel was refused, named: the library's element for it is `STEEL_CHANNEL`.
+> - **The other steel families** (the same day: an entry of each kind from the user, then two probes).
+>   - **SAP's library probe:** SAP 24.2 imported a frame of each kind from its reference alone, and its export gives
+>     SAP's own row of each kind. Pluto's rows equal them in every field Pluto writes. SAP also works out a channel's,
+>     tee's and double angle's shear center and Cw, which Pluto leaves to it, and a single angle's I23 about its legs
+>     (0.4241 on L3X2-1/2X3/16).
+>   - **STAAD's names probe:** STAAD.Pro 2025 saved the same shapes in its database form. The names are AISC's: HSS
+>     by their EDI names, tees cut from a W, double angles as `LD` of the single angle.
+>     - `MEMBER PROPERTY 'US (AISC 2023).db3'`, `TABLE 'W' ST 'W12X26'`;
+>     - `TABLE 'Standard Channel' ST 'C15X33.9'`;
+>     - `TABLE 'HSS Rectangle' ST 'HSS24X12X.750'`, `TABLE 'HSS Round' ST 'HSS5.5X.375'`;
+>     - `TABLE 'W' T 'W44X262'`;
+>     - under `'US (AISC V16.0).db3'`, `TABLE 'Angle' ST 'L3X2-1/2X3/16'` and `TABLE 'Angle' LD 'L2-1/2X2-1/2X5/16'`.
+>
+>     The reader had refused all of it: it read one table per file, and split quoted names.
+>   - **Now:**
+>     - the reader takes either form, a table per block;
+>     - `-Std` writes these families in STAAD's form (Sections and materials);
+>     - the read-back check compares a table section by its shape, whichever STAAD table it came from;
+>     - a material with no `G` counts as STAAD's E / 2 (1 + ν).
+>
+>     STAAD's save, its single angle aside, reads exactly. So does SAP's export written by `-Std` (its angle aside).
+>     A single angle stays refused: STAAD's angle axes against SAP's are not confirmed.
+> - **STAAD's member orientation** (its help, "G.4.3 Relationship Between Global and Local Coordinates", from the
+>   user, 2026-11-24):
+>   - A `TABLE … ST` angle's local y / z are its **principal axes**. Its figures give each orientation with the legs
+>     along the global axes as BETA = 90°·k − α (`RA`, the reverse angle, with mirrored axes). SAP's angle has its
+>     legs as local 2 / 3 and an I23 (0.4241 on L3X2-1/2X3/16, so α ≈ 34°). Pluto's BETA, written as for any other
+>     section, would therefore set STAAD's angle α off SAP's.
+>   - A tee at BETA 0 has its flange toward local +y; a channel's figure shows its web and flanges by BETA. Their
+>     centroidal properties do not depend on which way the flange or toes point, and what does (the shear center)
+>     STAAD leaves out anyway (the notice above).
+>
+>   Which principal axis STAAD calls y, the sign of α against SAP's legs, and whether SAP's analysis bends an angle
+>   through its I23 were left to the angle probe (below). That is seven cantilevers of L3X2-1/2X3/16, each with tip forces
+>   across it, run in both programs. Each tip's movement gives the member's principal axes in each program.
+> - **The angle probe** (2026-11-24): seven cantilevers of L3X2-1/2X3/16, 60 in, with 1 kip tip forces across them,
+>   in both programs. Four lie along X at SAP angles 0, 90, 180 and 270, one along Y, and two are vertical.
+>   - **SAP bends an angle through its I23.** Down, H0's tip moved 4.273 in down and 3.184 in across. That is SAP's
+>     leg-axis I33 0.899, I22 0.568 and I23 0.4241 coupled, its principal values 1.1888 and 0.2782.
+>   - **STAAD bends it about its principal axes**, local y the minor one. At BETA 0 a tip moves only along the
+>     force: 9.161 in along y, 2.057 in along z. From the tip rotations, which shear does not touch, Iz = 0.2714
+>     and Iy ≈ 1.217: STAAD's table, 2.5 % from SAP's library.
+>   - **The mapping.** STAAD's BETA = the BETA Pluto writes for any section + δ, where δ = ½·atan2(2·I23, I33 −
+>     I22) − 90° is the turn from SAP's local 2 to its minor principal axis (−55.658° here). Turned by δ, STAAD's
+>     principal axes lie on SAP's to 0.007° on all seven members, vertical ones included.
+>   - **Not settled by displacements:** a 180° turn, or the mirror image, bends alike. Which way the legs point
+>     matters only to drawings and STAAD's design checks. A look at STAAD's 3D view settles it (`angle-legs.std`).
+>   - **The look** (the user's screenshot, from +X):
+>     - BETA 0 shows the angle with its principal axes along Y / Z.
+>     - BETA +55.66 (90° − α) shows its legs along Y and Z: heel at the top on the +Z side, the 3 in leg down.
+>     - BETA −55.66, the one that bends like SAP's, shows them skewed.
+>
+>     SAP's angle at 0 is an L, with its heel at the bottom on the +Z side and the 3 in leg up. **STAAD's `ST` angle
+>     is SAP's mirror image** about its minor principal axis. That keeps the principal axes and values, so the analysis
+>     is the same. A drawing differs, and so does which leg tip is in tension under minor-axis bending (STAAD's angle
+>     design). `RA`, the reverse angle, may be the unmirrored one; it is not tried.
+> - **Single angles, both ways** (2026-11-24, by table as the user chose):
+>   - SAP → STAAD: `TABLE 'Angle' ST`, BETA = Pluto's + δ, from SAP's own I33, I22 and I23 in its exported row.
+>   - STAAD → SAP: the catalog angle from SAP's library, its SAP angle = BETA − δ. An angle picked in STAAD has no
+>     SAP row, so its I23 is Pluto's estimate (the legs and root fillet, 0.18 % above SAP's on L3X2-1/2X3/16). That
+>     sets SAP's axes within about 0.02° of STAAD's, the user's choice over refusing.
+>   - Refused on an angle either way: loads along local y / z or 2 / 3 (give them globally), a temperature gradient,
+>     and releases or springs not the same about both axes. The axes those name differ between the programs.
+>   - A dimension-built angle (not from SAP's library) is still refused: STAAD's PRIS has no I23.
+> - **STAAD's short PRIS forms** (its `PRINT MEMBER PROPERTIES`, 2026-11-24):
+>   - `PRIS YD 12 ZD 6` gives AX 72, IZ 864, IY 216, IX 593.26 (the rectangle series SAP uses), AY = AZ = 61.20 = 0.85 A.
+>   - `PRIS YD 10` gives AX 78.54, I 490.87, IX = 2I, AY = AZ = 69.90 = 0.89 A.
+>
+>   Both now read as SAP General sections with exactly those numbers, the read-back check expanding them alike. A full
+>   PRIS with `YD` and no `ZD` (how `-Std` writes a pipe or circle) reads as round. That fixes a round trip that had
+>   been refused. `YB` / `ZB` (tee, trapezoid) stay refused: STAAD printed a shear area larger than the area.
+>   - **SAP's I23 is its own:** the plates give 0.4314 and the plates with the 0.375 root fillet 0.4249, against
+>     SAP's 0.4241. No toe radius explains the rest. For an angle picked in STAAD, Pluto's estimate (the fillet)
+>     would set SAP's axes within about 0.02°. An angle from a SAP export carries SAP's own I23.
+> - **STAAD's tables against SAP's library** (the same model run in STAAD with SAP's numbers as PRIS, then with
+>   STAAD's table sections; tip deflection under self weight):
+>
+>   | Shape | SAP's numbers | STAAD's table |
+>   |---|---|---|
+>   | W12X26, C15X33.9, HSS5.500X0.375 | 0.01000, 0.00835, 0.07650 | the same |
+>   | HSS24X12X3/4 | 0.00373 | 0.00371 (−0.5 %) |
+>   | WT22X131 (STAAD: T cut from W44X262) | 0.00636 | 0.00643 (+1.1 %) |
+>   | 2L2-1/2X2-1/2X5/16 (STAAD's V16.0 database) | 0.44350 | 0.43597 (−1.7 %) |
+>
+>   STAAD ran every database form Pluto writes. It warned only that a tee's CT is worked out from the W.
+
 > [!info]- The STAAD probe (`-StdProbe <folder>`)
 > `staad-probe.s2k` and `staad-probe.std`: one model, every part analysable, for SAP2000 and STAAD.Pro alike. Each
 > part is its own cantilever or short frame, 100 in apart:
@@ -205,7 +457,8 @@ has not yet read a file from this writer. The STAAD probe (end of this note) con
 > | 6, 7 | cardinal point 8 and joint offsets |
 > | 8, 19 | partial fixity and a hinge |
 > | 9 | springs |
-> | 10, 11 | temperature (uniform and both gradients; fixed-fixed and cantilever) |
+> | 10, 11 | a uniform temperature (fixed-fixed and cantilever) |
+> | 22 | gradients 2 and 3 on a cantilever, SAP's `Gradient2` / `TempGrad2` (round 2 tried four guessed spellings on parts 22 – 25) |
 > | 12 | an inclined support |
 > | 13, 14 | a grounded link and an axial link |
 > | 15 | a settlement with a rotation |
@@ -213,7 +466,8 @@ has not yet read a file from this writer. The STAAD probe (end of this note) con
 > | 18 | a plate |
 >
 > Import the `.s2k` in SAP, run every case, and export joint displacements and reactions. Open and run the `.std`
-> in STAAD. The joint displacements and reactions should agree (the plate by its element only).
+> in STAAD. The joint displacements and reactions should agree (the plate by its element only). The `.s2k` is stamped
+> 22.0.0 unless `-SapVersion` gives another; if SAP asks, edit its Version to the one Help > About shows.
 >
 > **Checked in development:**
 > - every joint rotated back equals SAP's;
@@ -221,5 +475,102 @@ has not yet read a file from this writer. The STAAD probe (end of this note) con
 > - per pattern, the written joint and member loads (and self weight) give SAP's total force and moment about the
 >   origin.
 >
-> This held for the probe (95 checks), an adjusted SAP export probe (105) and the rack with linear links (44).
-> **Not yet run in STAAD.**
+> This held for the probe (95 checks, 111 in round 2), an adjusted SAP export probe and the rack with linear links.
+
+> [!info]- STAAD round 1 (STAAD.Pro 2025 25.00.01 and SAP 24.2, 2026-11-07)
+> The rack (its gap and friction links made linear) and the probe ran in both programs. SAP's results came back as its
+> Excel export and were compared joint by joint, rotated back.
+>
+> **STAAD parsed every command without an error:**
+> - geometry and properties: `TABLE ST W10X33`, `PRIS`, `MEMBER TRUSS`, `ELEMENT INCIDENCES SHELL`, `ELEMENT
+>   PROPERTY … THICKNESS`;
+> - materials: `ISOTROPIC` with `TYPE STEEL` / `STRENGTH FY FU RY RT`;
+> - `CONSTANTS` (`MATERIAL`, `BETA`), `MEMBER OFFSET`, `MEMBER RELEASE` with `KMY` / `KMZ`;
+> - `SUPPORTS` with `K…` springs and `INCLINED f1 f2 f3`;
+> - reference loads and `REFERENCE LOAD`, `SELFWEIGHT`, `JOINT LOAD`;
+> - `MEMBER LOAD` (`CON`, `CMOM`, `UNI`, `TRAP` in local, global and projected directions), `TEMP f1 f2 f4`,
+>   `SUPPORT DISPLACEMENT LOAD`;
+> - `LOAD COMBINATION` plain / `SRSS` / `ABS`, the prints.
+>
+> **The rack agreed where it could be checked:**
+> - per case, the total vertical reaction (77.30 vs 77.248 kip, 79.26 vs 79.203, at STAAD's printed 2 decimals);
+> - the pipes' thermal growth to every printed digit (0.03754 / 0.41290 / 0.45043 in), so OPE = SUS + T1 and EXP
+>   are right.
+>
+> **Its frames could not be checked.** The wall W1 is one shell element (240 × 180 in, 6 in steel, 73.5 kip, pinned
+> at two corners) that every frame ties into, and the two programs' single elements behave very differently:
+>
+> | (DEAD) | SAP | STAAD |
+> |---|---|---|
+> | wall thrust at each pin | 2.14 kip | 42.67 kip |
+> | top corner sag | 0.00016 in | 0.00171 in |
+> | top corner in the wall's plane | 0.00005 in | 0.00096 in |
+> | top corner out of it | 0.0080 in | 0.0044 in |
+> | column C1 axial | 0.48 kip | 2.93 kip |
+>
+> A plane-stress solve of the wall alone (in the session, Wilson's incompatible-mode quad) reproduces SAP's one
+> element: 2.07 kip thrust, 0.00015 in sag. Refined, the thrust converges to about 21 kip (13 at 2 × 2, 19 at
+> 8 × 6). So:
+> - SAP's single element, its weight at the corners right above the pins, hardly acts as a deep beam;
+> - STAAD's overshoots about 2×;
+> - neither is the wall's answer.
+>
+> Round 2 runs the rack without the wall, and with it meshed 8 × 6, to tell the translation from the mesh.
+
+> [!info]- STAAD round 2 (2026-11-07)
+> **The probe ran to the end** with the settled joint `ENFORCED`. Per part, the largest joint-displacement difference
+> was at most 0.00002 in for every part but four (STAAD prints 5 decimals):
+> - BETA sign (1);
+> - vertical members, up and down at angles (2, 21);
+> - rigid end zones with loads inside them (5);
+> - cardinal point and joint offsets (6, 7);
+> - partial fixity and springs per degree (8, 9);
+> - uniform temperature (10, 11), the grounded and the axial link (13, 14);
+> - settlement with a rotation (15), a tip moment, modifiers with the weight modifier (16, 17);
+> - the hinge (19), and every combination (Linear Add, nested, SRSS, Abs Add, OPE from SUS).
+>
+> The four that differed:
+> - **Part 12 (inclined support) agrees too.** SAP reports a joint with local axes in those axes. Projected onto
+>   them, STAAD's displacements match to every digit, and the reaction along the support is −1.193 vs −1.188 kip.
+> - **Part 13's reaction** is reported differently: SAP leaves the grounded link's fixed DOF out of the joint
+>   reaction. Its displacements agree.
+> - **Channels (3, 4) twist in SAP and not in STAAD.** SAP 24 puts a channel's torsion axis at its shear center, so
+>   a shear along local 2 at the centroid twists it. Part 3's twist matches exactly: V2 0.0964 × e 1.861 in ×
+>   L / GJ = 0.004925 rad, SAP 0.004924. The joint's extra movement along local 2 is twist × e. STAAD's `PRIS`
+>   member is centroidal and does not twist (R 0). Tees and double angles are monosymmetric the same way.
+> - **Gradients (22 – 25):** SAP read `Temperature Gradient 2`, `Temperature Gradient 2-2` and `Temp Gradient 2-2`
+>   as `Temperature`, and dropped `Gradient 2` / `3`. SAP's name has to come from its own dialog.
+>
+> **The rack without its wall** agreed to 1.5 – 3 %. All of it is the W10X33: SAP rebuilt the hand-written section
+> from its dimensions (9.49 in², J 0.49), while STAAD's table section is 9.71, J 0.583. The DEAD weights differ by
+> exactly that (3.748 vs about 3.807 kip). The section rule above now writes SAP's values.
+>
+> The rack also has a free X-sway once the wall is gone (pinned column bases). STAAD added a weak spring; SAP's
+> nonlinear cases drifted a uniform 0.0033 in, with no force.
+>
+> **The meshed wall (8 × 6)** brings the plates together:
+>
+> | | 1 element | 8 × 6 |
+> |---|---|---|
+> | SAP thrust at each pin | 2.14 kip | 18.54 kip |
+> | STAAD thrust at each pin | 42.67 kip | 21.87 kip |
+>
+> The wall alone in plane stress converges to about 21 kip. Vertical reactions agree (37.54 / 37.55); the pipe
+> anchor away from the wall agrees to 0.1 % (17.25 / 17.27 kip-in). Displacements near the wall still differ 5 –
+> 10 %: plate formulation and the W10X33 together.
+>
+> **The probe stopped in STAAD's solver** (support displacement in a model with plates needs `ENFORCED`; now
+> written so). STAAD warned of the rack's unconnected joint 20 (now left out) and of the truss links' E of 1 (now
+> the model's E).
+>
+> **SAP read the workbook's gradient names as uniform temperatures.** `Type="Temp Gradient 2"` / `"3"` came back as
+> `Temperature`: the probe's cantilever grew by α × 21 × L (20 + 3 − 2) and did not bend. See
+> [[vault/format/sap-s2k-tables|sap-s2k-tables]]. Round 2's parts 22 – 25 try four spellings.
+
+> [!info]- STAAD round 3 (2026-11-07)
+> - **Gradients, the last open sign, agree.** Part 22 in SAP's own form (`Gradient2` 3, `Gradient3` −2 on a 100 in
+>   cantilever) moved its tip U2 −0.065, U3 −0.0975, R2 0.00195, R3 −0.0013 in both programs (the `TEMP` row
+>   above).
+> - **SAP read all four temperature rows** back as written ([[vault/format/sap-s2k-tables|sap-s2k-tables]]).
+> - **The ten "Table key … not found" import errors** came again with SAP's own `TABLES AUTOMATICALLY SAVED AFTER
+>   ANALYSIS` row in the file: they are SAP's, not the file's ([[vault/format/sap-s2k-tables|sap-s2k-tables]]).

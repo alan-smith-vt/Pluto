@@ -235,6 +235,11 @@ public static class PipeWorkbook
                        "Material", "E (" + u.E + ")", "Poisson", "Pipe density (" + u.PipeDens + ")", "Mill tol - (%)", "Mill tol + (%)", "Seam weld" };
     }
 
+    static string[] MaterialHeaders(Units u)
+    {
+        return new[] { "Material", "E (" + u.E + ")", "Poisson", "Density (" + u.PipeDens + ")", "Alpha (per " + u.Temp + ")", "Note" };
+    }
+
     static string[] ProcessHeaders(Units u)
     {
         var h = new List<string> { "Name" };
@@ -256,6 +261,14 @@ public static class PipeWorkbook
 
     static XlsxBook Book(PipeModel m, string sourceName, PipeWorkbookRun run)
     {
+        // the Materials sheet's rows: the model's, with Pluto's defaults for the materials it does not list. The base
+        // holds them too, so the workbook read back unedited is its base exactly
+        var mats = PipeMaterialDefaults.Complete(m);
+        if (mats.Count != m.Materials.Count || mats.Where((x, i) => !x.SameAs(m.Materials[i])).Any())
+        {
+            m = PipeModelJson.Read(PipeModelJson.Write(m));
+            m.Materials.Clear(); m.Materials.AddRange(mats.Select(x => x.Copy()));
+        }
         string json = PipeModelJson.Write(m);
         string hash = Sha(json);
         var u = UnitsOf(m);
@@ -667,6 +680,24 @@ public static class PipeWorkbook
         int limC = Math.Max(500, m.Coords.Count + 300);
         PipeWorkbookGui.Table(co, t, coh, PipeWorkbookGui.CoordCols(), m.Coords.Count, limC);
 
+        // ---- Materials: for the SAP / STAAD check model only (CAESAR never reads them): every material the job uses,
+        // the model's values or Pluto's defaults (the base holds the same rows, so an unedited workbook gives it back)
+        var ma = b.Add("Materials");
+        ma.FreezeRows = 1; ma.TabColor = "6A1B9A";
+        string[] mah = MaterialHeaders(u);
+        ma.Width(0, 28); for (int c = 1; c < 5; c++) ma.Width(c, 13); ma.Width(5, 70);
+        r = 1;
+        foreach (var x in mats)
+        {
+            ma.Set(r, 0, PipeModelCatalog.MaterialLabel(x.Number)); ma.Set(r, 1, x.E); ma.Set(r, 2, x.Poisson); ma.Set(r, 3, x.Density); ma.Set(r, 4, x.Alpha); ma.Set(r, 5, x.Note);
+            r++;
+        }
+        int limM = Math.Max(200, mats.Count + 100);
+        PipeWorkbookGui.Table(ma, t, mah, PipeWorkbookGui.MaterialCols(), mats.Count, limM);
+        PipeWorkbookGui.Rule(ma, "A2:A" + limM, "AND(A2<>\"\",COUNTIF($A$2:$A$" + limM + ",A2)>1)", t.Red);
+        PipeWorkbookGui.Rule(ma, "B2:E" + limM, "AND($A2<>\"\",B2=\"\")", t.Red);
+        PipeWorkbookGui.Rule(ma, "F2:F" + limM, "LEFT(F2," + PipeMaterialDefaults.Mark.Length.ToString(CultureInfo.InvariantCulture) + ")=\"" + PipeMaterialDefaults.Mark + "\"", t.Amber);
+
         // ---- read-only: Nodes, Carried
         var nodes = b.Add("Nodes");
         NodesSheet(nodes, m, u);
@@ -746,7 +777,8 @@ public static class PipeWorkbook
                                                                : "spring hangers: designed by CAESAR, springs as given, constant supports", rowsOf("Hangers", "B,C")),
             new WbSheetInfo("Nozzles", "flexible nozzles on vessels and tanks: WRC 297, API 650, PD 5500, custom stiffnesses", rowsOf("Nozzles", "B,D")),
             new WbSheetInfo("Coords", "where pieces of the model start", rowsOf("Coords", "A")),
-            new WbSheetInfo("Nodes", "read-only: every node, its position and what is on it", null),
+            new WbSheetInfo("Materials", "E, Poisson, density and alpha per material, for the SAP / STAAD check model only (CAESAR takes its own from its database); amber = still Pluto's default", rowsOf("Materials", "A")),
+            new WbSheetInfo("Nodes","read-only: every node, its position and what is on it", null),
             new WbSheetInfo("Carried", "read-only: what the job holds that the sheets do not show (kept as written)", null),
         };
         Func<string, string, string> textIn = (sheet, cols) => string.Join("+", cols.Split(',').Select(c => "SUMPRODUCT(--ISTEXT(" + sheet + "!$" + c.Split(':')[0] + "$2:$" + c.Split(':')[c.Split(':').Length - 1] + "$" + L2 + "))").ToArray());
@@ -873,7 +905,7 @@ public static class PipeWorkbook
             "Section / Process: a name from those sheets; blank = the row above's. The grouped columns at the right of Elements (+) override one value for one element.",
             "Restraints: Stiffness blank = rigid; Cos blank = the type's own axis (guides and limit stops take the pipe's). Forces / Displacements: one row per node and load vector (1-9); a displacement left blank is free, 0 holds it.",
             "Uniform / Wind: per element; an element no row names has none (CAESAR carries a load on to later elements; Pluto ends it there). Element = an Id, a range in the Elements order (E3:E9), or blank with From and To (a chain of elements).",
-            "Joints: DOFs like 'axial gap=0.125 k=5000; shear; torsion; bending gap=2' (frame pipe) or 'X; Y; RZ k=1e6' (frame global); a DOF not listed is free.",
+            "Joints: DOFs like '+Y; -Y gap=2; RX; RY; RZ' (expansion joint control rods) or 'X; Y; Z; RX gap=1; RY; RZ' (a flexible coupling): X Y Z RX RY RZ, + or - for one way (CAESAR's: +Y acts in +Y), gap=<v> and k=<v> (none: rigid); frame global = CAESAR's axes, pipe = X along the pipe; a DOF not listed is free.",
             "Nozzles: Type WRC 297 / PD 5500 (a vessel: give its OD, wall, centreline, material and the distances to its stiffeners or heads), API 650 (a tank shell), Custom (its four stiffnesses and the vessel's material); Vessel node blank = a rigid vessel. A column the type does not use is red.",
             "Hangers: Rate and Constant blank = CAESAR designs the hanger (from Table; it then asks for its hanger-design load cases). Rate with Cold load = a spring as given. Constant = a constant-effort support. One row per node: Count for more than one.",
             "Read back: only the input sheets. Start, 3D View, Nodes and Carried are rebuilt on every export. The hidden _pluto sheet holds the model this workbook was written from: what you did not change is given back exactly.",
@@ -889,7 +921,7 @@ public static class PipeWorkbook
     // a blank left blank) goes back where it was, the sheets, checks, highlights and hidden model around it rebuilt from
     // `read` (its model, read from the same file). Settings keep Title, Notes, Vertical axis and Ambient (its unit aside).
     static readonly string[] InputSheets =
-    { "Settings", "Elements", "Sections", "Processes", "Restraints", "SIFs", "Forces", "Displacements", "Uniform", "Wind", "Joints", "Hangers", "Nozzles", "Coords" };
+    { "Settings", "Elements", "Sections", "Processes", "Restraints", "SIFs", "Forces", "Displacements", "Uniform", "Wind", "Joints", "Hangers", "Nozzles", "Coords", "Materials" };
 
     public static byte[] RefreshBytes(string path, PipeWorkbookResult read, string sourceName, PipeWorkbookRun run, List<string> notes)
     {
@@ -1210,6 +1242,7 @@ public static class PipeWorkbook
         ReadHangers(sheet("Hangers"), x);
         ReadNozzles(sheet("Nozzles"), x);
         ReadCoords(sheet("Coords"), x);
+        ReadMaterials(sheet("Materials"), x);
         m.AssignUids();
         foreach (string e in CaesarNeutralWriter.Validate(m)) x.Err(e);
         if (x.Errors.Count == 0)
@@ -1657,21 +1690,37 @@ public static class PipeWorkbook
             if (frame != "pipe" && frame != "global") { x.Err(w + ": frame \"" + frame + "\" (pipe or global)"); continue; }
             j.Frame = frame;
             j.Dofs.Clear();
+            // "+Y; -Y gap=2; RX; RY; RZ": X Y Z RX RY RZ, + or - for one way, each with gap=<v> and k=<v> (none: rigid);
+            // the older pipe-frame names (axial shear torsion bending) read as theirs and are written so next time
+            var seen = new Dictionary<string, string>(StringComparer.Ordinal);   // axis (RX ...) -> its DOF
             foreach (string part in Text(c, r, "DOFs", x).Split(';'))
             {
                 var toks = part.Trim().Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
                 if (toks.Length == 0) continue;
+                if (toks[0].Contains("=")) { x.Err(w + ": \"" + part.Trim() + "\": give a gap or a stiffness by name after the DOF (\"-Y gap=2\", \"RX k=5000\")"); continue; }
                 var d = new PipeModelJointDof { Dof = toks[0] };
+                bool okOpts = true;
                 foreach (string tk in toks.Skip(1))
                 {
                     var kv = tk.Split('=');
                     double v;
-                    if (kv.Length != 2 || !double.TryParse(kv[1], NumberStyles.Float, CultureInfo.InvariantCulture, out v)) { x.Err(w + ": DOF option \"" + tk + "\" (gap=<value> or k=<value>)"); continue; }
+                    if (kv.Length != 2 || !double.TryParse(kv[1], NumberStyles.Float, CultureInfo.InvariantCulture, out v) || v < 0) { x.Err(w + ": DOF option \"" + tk + "\" (gap=<value> or k=<value>, not negative)"); okOpts = false; continue; }
                     if (kv[0].Equals("gap", StringComparison.OrdinalIgnoreCase)) d.Gap = v;
                     else if (kv[0].Equals("k", StringComparison.OrdinalIgnoreCase)) d.Stiffness = v;
-                    else x.Err(w + ": DOF option \"" + tk + "\" (gap=<value> or k=<value>)");
+                    else { x.Err(w + ": DOF option \"" + tk + "\" (gap=<value> or k=<value>)"); okOpts = false; }
                 }
-                j.Dofs.Add(d);
+                if (!okOpts) continue;
+                if (PipeJoints.IsLegacy(d.Dof) && frame != "pipe") { x.Err(w + ": \"" + d.Dof + "\" names a pipe-frame DOF: with frame global give X Y Z RX RY RZ"); continue; }
+                foreach (var e in PipeJoints.Expand(d))
+                {
+                    int sign; bool rot; int ax;
+                    if (!PipeJoints.ParseDof(e.Dof, out sign, out rot, out ax)) { x.Err(w + ": DOF \"" + e.Dof + "\" (X Y Z RX RY RZ, + or - for one way: \"+Y\", \"-RX\")"); continue; }
+                    string key = (rot ? "R" : "") + "XYZ"[ax], had;
+                    if (seen.TryGetValue(key, out had) && (had == e.Dof || sign == 0 || had.Length == key.Length))
+                    { x.Err(w + ": " + e.Dof + " and " + had + " both act along " + key + " (a + and a - pair, or one both-ways DOF)"); continue; }
+                    seen[key] = e.Dof;
+                    j.Dofs.Add(e);
+                }
             }
             j.Sif = Z(Num(c, r, "SIF", x, -1, null));
             j.Tag = Text(c, r, "Tag", x);
@@ -2040,6 +2089,42 @@ public static class PipeWorkbook
     }
 
     // ---- Coords
+
+    // ---- Materials: one row per CAESAR material; a workbook from before the sheet keeps the base's (none: defaults)
+    static void ReadMaterials(CaesarSheet s, Ctx x)
+    {
+        var m = x.M;
+        if (s == null) return;
+        var c = ColsOf(s, x, new[] { "Material", "E", "Poisson", "Density", "Alpha", "Note" });
+        var list = new List<PipeModelMaterial>();
+        for (int r = 1; r < s.Rows.Count; r++)
+        {
+            if (Blank(s, r)) continue;
+            string w = "Materials row " + (r + 1);
+            int n = LeadInt(c, r, "Material", x, 0);
+            if (n <= 0) { x.Err(w + ": a CAESAR material number is required (106 - A106 Grade B ...)"); continue; }
+            w += " (material " + n.ToString(CultureInfo.InvariantCulture) + ")";
+            if (list.Any(q => q.Number == n)) { x.Err(w + ": the material is listed twice"); continue; }
+            var old = m.MaterialNumbered(n);
+            var o = old != null ? old.Copy() : new PipeModelMaterial { Number = n };
+            var d = PipeMaterialDefaults.For(m, n);
+            foreach (var f in new[] { "E", "Poisson", "Density", "Alpha" })
+            {
+                double v = Num(c, r, f, x, -1, null);
+                double dv = f == "E" ? d.E : f == "Poisson" ? d.Poisson : f == "Density" ? d.Density : d.Alpha;
+                if (double.IsNaN(v)) { x.Err(w + ": " + f + " is required (Pluto's default for " + PipeMaterialDefaults.ClassName(n) + " is " + R(dv) + ")"); continue; }
+                if (v < 0 || f == "E" && v == 0) { x.Err(w + ": " + f + " must be " + (f == "E" ? "positive" : "zero or more") + " (" + R(v) + ")"); continue; }
+                if (f == "E") SetN(ref o.E, v); else if (f == "Poisson") SetN(ref o.Poisson, v); else if (f == "Density") SetN(ref o.Density, v); else SetN(ref o.Alpha, v);
+            }
+            string note = Text(c, r, "Note", x);
+            // a default's mark on values typed over is no longer true: the row is the user's
+            if (PipeMaterialDefaults.IsDefaultNote(note) && (o.E != d.E || o.Poisson != d.Poisson || o.Density != d.Density || o.Alpha != d.Alpha)) note = "";
+            if (note != (o.Note ?? "").Trim()) o.Note = note;
+            list.Add(o);
+        }
+        m.Materials.Clear();
+        m.Materials.AddRange(list);
+    }
 
     static void ReadCoords(CaesarSheet s, Ctx x)
     {

@@ -18,6 +18,18 @@ Pluto runs the same rules while the model is still being built, so a model reach
 - **The direct path:** `Build-Pipe.ps1 -Cii` prints the errors and warnings as `[checks ]` lines.
 - **The workbook:** red and amber cells as you type, counted on the Start sheet. This covers what a sheet can see.
 
+```mermaid
+flowchart LR
+  M(["pipe model"]) --> R["PipeReview.Check<br/>CaesarRules + model checks"]
+  W["CaesarNeutralWriter<br/>NoticeItems"] --> R
+  R -->|"-Preview, Run-Caesar.ps1"| S["sidecar review"]
+  S --> V["viewer: Checks tab"]
+  R -->|"Build-Pipe -Cii"| C["[checks ] and [notice ] lines"]
+  X["workbook rules<br/>(PlotCalc, CheckCalc)"] --> B["red / amber cells,<br/>Start counts"]
+```
+
+One rule set in C# serves the viewer and the runner; the workbook's own formulas repeat what a sheet can see.
+
 The rules are `PipeReview.CaesarRules`, plus the model checks Pluto had before. Their limits are CAESAR's configuration defaults (Geometry Directives); a job whose configuration changes them can differ. Codes are the `review` item codes ([[vault/format/features-sidecar|features-sidecar]]).
 
 **Sources:**
@@ -36,7 +48,7 @@ Every rule is summarised in our own words.
 > | Corrosion allowance as thick as the wall (3E) | `corrosion-wall` | Sections' Corrosion and Elements' Section / Wall / Corrosion red; Start |
 > | A restraint to ground and an imposed displacement at one node: overspecified (57E), whatever their directions (a +Y support with a DX displacement stops it too). CAESAR's advice: give the displacement alone (a direction given holds the node), or give the restraint a connecting node and impose the displacement there | `displacement-restrained` (a restraint with a connecting node does not count) | Displacements, the row red; Start |
 > | An element that ends more than 1 in from where an earlier element put its TO node (44E; Loop Closure Tolerance). CAESAR prints the miss in X, Y and Z | `loop-closure`, one per element, with the deltas that close it there | Elements, To red; Start |
-> | Pluto's own: a miss CAESAR does not warn about, 0.001–1 in: an element that ends away from where an earlier element put its TO node, or a COORDS entry away from where the pipe reaches its node. CAESAR takes the model (the elements still join by node number; one length around the loop is off by the miss) and may draw the miss as a gap (a 0.25 in one at a tee, 2026-11-03; many others it drew closed) | `gap`, one per element, bend node or COORDS entry, with the deltas (or COORDS) that close it. The review walks the file as written, as CAESAR does (`PipeReview.CaesarWalk`): the written order, a FROM node placed by an element before it, a bend's arc, COORDS, or a CNODE tie to a placed node, else at the end of the element before it (CAESAR's rule). That last rule is what moved a run 1.256 in and drew 44E on a real job (2026-11-03) where the workbook drew the run joined: so the writer now gives such a run's first node a COORDS entry where Pluto places it (`CaesarNeutralWriter.PlacingCoords`, notice `coords-placing`), only where CAESAR's rule would put it elsewhere (an unedited CAESAR job is written as it was). The workbook's highlights place the rows as its 3D View does, and stay a guide | Elements, To amber (the row that misses) and From amber (a Coords entry off the pipe); Start |
+> | Pluto's own: a miss CAESAR does not warn about, 0.001–1 in: an element that ends away from where an earlier element put its TO node, or a COORDS entry away from where the pipe reaches its node. CAESAR takes the model (the elements still join by node number; one length around the loop is off by the miss) and may draw the miss as a gap (a 0.25 in one at a tee, 2026-11-03; many others it drew closed) | `gap` (a warning), one per element, bend node or COORDS entry, with the deltas (or COORDS) that close it. The review walks the file as written, as CAESAR does (`PipeReview.CaesarWalk`): the written order, a FROM node placed by an element before it, a bend's arc, COORDS, or a CNODE tie to a placed node, else at the end of the element before it (CAESAR's rule). That last rule is what moved a run 1.256 in and drew 44E on a real job (2026-11-03) where the workbook drew the run joined: so the writer now gives such a run's first node a COORDS entry where Pluto places it (`CaesarNeutralWriter.PlacingCoords`, notice `coords-placing`), only where CAESAR's rule would put it elsewhere (an unedited CAESAR job is written as it was). The workbook's highlights place the rows as its 3D View does, and stay a guide | Elements, To amber (the row that misses) and From amber (a Coords entry off the pipe); Start |
 > | Node numbers 1 to 8,000,000 (since CAESAR 11.00; 32,000 before) | `node-range` | every node column red; Start |
 > | A user SIF below 1.0 (1E, once per SIF value) | `sif-below-one` | SIFs red; Start |
 > | An element with no length (2E), unless it is a zero-length expansion joint | `element-zero` | DX DY DZ amber |
@@ -47,6 +59,8 @@ Every rule is summarised in our own words.
 > | An element from a node to itself | `element-self` | From / To red |
 > | Nothing holding a piece to ground (unstable) | `unsupported` | — |
 > | A nozzle whose vessel centreline runs along the nozzle (from the documentation; the probe's nozzle stopped on 118E first) | `nozzle-axis` (a missing centreline: a warning) | — |
+> | A restraint, hanger or nozzle whose node and CNODE (vessel node) the pipe puts more than 1 in apart. CAESAR connects geometry through CNODEs: a CNODE is the same point as its node, so it moved one onto the other and stopped on the mismatch (44E on the next element, 144 in: the SAP probe's control-rod tie, CAESAR 15.01, 2026-11-16). Pluto's walk follows a CNODE only when the elements run out, so it used to miss this. Tie points apart through a stub (a weightless rigid from one to beside the other, its end the CNODE) | `cnode-apart` | — |
+> | Pluto's own: a restraint, SIF / tee, force, displacement, hanger or nozzle at a node that is on no element and that no connection reaches | `off-model` | — |
 
 > [!info]- Warnings: CAESAR accepts, and says so
 > | CAESAR's rule | Pluto | Workbook |
@@ -68,6 +82,7 @@ Every rule is summarised in our own words.
 > | Expansion joints: the torsion stiffness given; on a joint with length, one of transverse / bending blank (CAESAR computes it) | `expansion-joint-stiffness` | EJ columns amber; Start |
 > | Pluto's own: a node on a bend within 5 deg of its near end. The configuration's limit names both ends, but 15.01 let a node at 3 deg pass on the bend whose 88 deg node it stopped on | `bend-node-near` | Bend nodes amber; Start |
 > | Pluto's own: a CNODE tied to nothing, a bend with no room, a straight shorter than the bend before it needs | `cnode-off-model`, `bend-room`, `piece-backward`, `bend-corner`, `bend-code` | — |
+> | Pluto's own: two elements between the same two nodes | `element-twice` | — |
 > | Pluto's own: a reinforced fabricated tee without its pad thickness | `sif-pad` | SIFs, Pad amber |
 > | Pluto's own, nozzles: a WRC 297 or PD 5500 nozzle without a vessel material | `nozzle-material` | Nozzles, Vessel material amber; Start |
 > | Pluto's own, hangers: two entries at one node; a rate without its installed load; an anchor to free that nothing holds | `hanger-twice`, `hanger-rate-only`, `hanger-free` | Hangers, Node amber; Rate / Cold load and Free columns red; Start |
@@ -78,6 +93,9 @@ Every rule is summarised in our own words.
 > - **283E:** a tee's geometric parameters not given or outside the tee's requirements, so the SIFs and flexibilities are not reduced. Seen at welding tees and a sweepolet; not at the extruded tee given its crotch radius, the fabricated tees (reinforced, unreinforced) or the weldolet. A welding tee with a surface node and a 1.0 in crotch radius still drew it (tee probe, 2026-11-03): which fields clear it is not known yet.
 > - **285E:** a weldolet without the fitting's outside radius (rp).
 > - **286E, 287E, 288E:** a reducer without its radius r2, its length L2, or its cone angle alpha. On the tee probe (2026-11-03) alpha (REDUCERS line 1, field 3) cleared 288E and R2 (field 5) cleared 286E; where the file keeps L2 is not known yet: a 6th value on line 1 and the first value on line 2 both imported without complaint and left 287E (L2 probe, 2026-11-03). CAESAR's default angle was 18.1 deg for an 8 in long 8 in x 6 in reducer, against 7.1 deg for a straight cone over its length. A reducer right after a bend drew the same warnings as one on a straight.
+>
+> **The SAP check model** takes B31J's bend flexibility (1.3 / h; `-AppendixD`: 1.65 / h) and holds tees as rigid
+> joints, with a notice: B31J's branch flexibility is not in it yet ([[vault/format/pipe-to-frame|pipe-to-frame]]).
 
 > [!info]- Notes: information
 > | CAESAR's note | Pluto |
@@ -86,6 +104,7 @@ Every rule is summarised in our own words.
 > | The job's hangers: how many, how many to design and how many pre-designed (69E); the load cases to define for the hanger design (70E) | `hangers` (the ones it designs); `hangers-given` (springs and constant supports as given). The probe's counts matched: 7, 5 and 2 |
 > | WRC 297 and API 650 nozzles: their inputs and the stiffnesses CAESAR computed | `nozzles` |
 > | An expansion joint with no effective ID gets no pressure thrust: right for a tied joint whose ties are not modelled; a warning when tie rods are modelled across it (a joint or CNODE restraint between its two nodes), which then carry nothing | `expansion-joint-thrust` (info; warning when tied across) |
+> | Pluto's own: a free end, one element with nothing holding it. An open end, a vent or a drain is fine; a missing support or a connection to equipment is not | `free-end` |
 
 > [!info]- What Pluto does not check, and why
 > - **Material limits:** a temperature outside the material's table, the minimum wall for the pressure (104E for pipe, 210E for a bent pipe's bend), allowables (121E, 134E). They need CAESAR's material database, which Pluto only names by number.

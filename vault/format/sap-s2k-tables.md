@@ -13,6 +13,10 @@ has imported it and exported it again. The SAP probe (`FrameProbe`, `Build-Frame
 [[vault/arms/frame-workbook|frame-workbook]]) writes one of everything the frame model writes. `FrameS2kSchema` lists
 the confirmed tables; new rows anywhere else carry an `s2k-unconfirmed` notice.
 
+The CAESAR check model's seed also writes three tables the list does not hold: `ACTIVE DEGREES OF FREEDOM`,
+`FRAME AUTO MESH ASSIGNMENTS` and `TABLES AUTOMATICALLY SAVED AFTER ANALYSIS`. They are the seed's own rows, not new
+ones, so they carry no notice ([[vault/format/pipe-to-frame|pipe-to-frame]]).
+
 > [!info]- Round 1: SAP 24.2.0, 2026-11-05
 > The probe stamped 22.0.0 was imported as a new model in SAP 24.2.0, then exported with every table (1,318 tables).
 > The scrubbed export is the fixture `scripts/frame/testdata/probe.sap-export.s2k`: the path on its first line and the
@@ -56,6 +60,68 @@ the confirmed tables; new rows anywhere else carry an `s2k-unconfirmed` notice.
 >   section not found", and SAP substituted a default General section. The workbook only carries catalog sections from
 >   SAP's own exports.
 >
+>   **Since (2026-11-23):** SAP 24.2's own export of a W10X33 from its library settles why.
+>   - **The library.** SAP 24's section libraries are `Property Libraries\Sections\*.xml` in its program folder. They
+>     are `AISC14.xml`, `AISC15.xml` and the metric `…M.xml`; there is no `AISC16.xml`, the file the probe named.
+>   - **SAP's own row.** It is `FromFile=Yes SectInFile=W10X33`, with `FileName` the full path to `aisc15.xml` (lower
+>     case, quoted). The row also carries the dimensions, `FilletRadius=0.5` (fillets: Area 9.71, not the 9.49 of the
+>     bare plates) and SAP's computed properties.
+>   - **SAP reads its own row back** without an error or a warning. A catalog section from a SAP export therefore
+>     survives the frame model's `.s2k`, which writes its row as read. A row whose `FileName` the importing machine
+>     does not have gets SAP's default section, with only a dialog to say so.
+>   - **The catalog probe** (five frames, the same day) settles what a row needs:
+>
+>     | The row | SAP 24.2 built |
+>     |---|---|
+>     | SAP's own, the full path | the catalog shape, no dialog |
+>     | the reference only (`FromFile=Yes SectInFile=W12X26`, the full path) | the whole shape from its library: dimensions, fillet, Area 7.65, I33 204; no dialog |
+>     | the reference, or the whole row, with the bare `AISC15.xml` | the catalog shape, after a dialog per section: "not found, reimported from" its own `Sections` folder |
+>     | a file it does not have (`aisc16.xml`) | **a General section with every property 1** (Area 1, I 1), after one dialog |
+>
+>     So a catalog row needs only its reference and a library file SAP has; a missing one is silently a section of all
+>     ones (the rack's soft columns). `Build-Frame -S2k` now checks every catalog row against SAP's library on the
+>     machine (`FrameSapLibrary`; `-SapLibrary <folder>` names it, else the installed SAP2000's for the model's
+>     version):
+>     - a path the machine has is kept;
+>     - a file name the library has gets its full path, so SAP shows no dialog;
+>     - a file or a shape it has not refuses the `.s2k`, each named.
+>
+>     With no SAP on the machine, the rows are written as they are, with a notice.
+>   - **The library's entries** (`AISC15.xml`'s W10X33, from the user). An element per shape, its kind as the tag:
+>     `<STEEL_I_SECTION>`, with `LABEL`, `EDI_STD`, `DESIGNATION`, then `D BF TF TW KDES A I33 Z33 AS3 I22 Z22 AS2 J S33POS
+>     S33NEG S22POS S22NEG R33 R22`, in inches. SAP's own row takes them as they are: t3 = D, t2 = t2b = BF, tf = tfb =
+>     TF, tw = TW, Area = A, TorsConst = J, S33Top / S33Bot = S33POS / S33NEG. It adds two of its own:
+>     - FilletRadius = KDES − TF (0.935 − 0.435 = 0.5);
+>     - Cw = TF · BF³ · (D − TF)² / 24 (789.797958228851, to all 15 digits).
+>
+>     So `StdToFrame` builds a `TABLE ST` shape picked in STAAD (no SAP row in the `.std`) as SAP's catalog row
+>     (`FrameSapLibrary.Row`). It reads the newest US AISC file that has the shape (`AISC15.xml` before `AISC14.xml`,
+>     not the metric ones), in the model's length unit, with `FileName` the file's full path. Only I sections (W, M, S,
+>     HP) are read: another kind, a shape no file has, or no library refuses the `.std`, named. A file whose header
+>     gives its lengths in another unit is refused too.
+>
+>     Confirmed on a second shape (W12X26, the production machine): SAP 24.2 imported Pluto's row as the catalog
+>     section, and its own export of it equals that row in every field but SAP's round-off (I23, CGOffset), Color and
+>     Notes.
+>   - **The other kinds** (one entry of each from the user, 2026-11-23). A shape is found by its `LABEL` or its
+>     `EDI_STD` name (`HSS24X12X3/4`, `HSS24X12X.750`); `SectInFile` is the label.
+>
+>     | Element | Fields (inches) | SAP's own row (the library probe) |
+>     |---|---|---|
+>     | `STEEL_CHANNEL` | as an I section, and `X` (centroid from the web's back) | `Channel`: t3 t2 tf tw; FilletRadius = KDES − TF; S22Left / S22Right = S22POS / S22NEG; CGOffset3 = t2 / 2 − X |
+>     | `STEEL_TEE` | as an I section, and `Y` (centroid from the flange's top) | `Tee`: the same; CGOffset2 = t3 / 2 − Y |
+>     | `STEEL_BOX` | `HT B TF TW` (the design wall, 0.93 t) and the properties | `Box/Tube`: t3 = HT, t2 = B, tf, tw; FilletRadius 0, Cw 0 |
+>     | `STEEL_PIPE` | `OD TDES A I33 Z33 AS2 J S33POS S33NEG R33` | `Pipe`: t3 = OD, tw = TDES; the one axis is both; Cw 0 |
+>     | `STEEL_DOUBLE_ANGLE` | `D B TF TW DIS …`, `Y` | `"Double Angle"`: t3 = D, t2 = B, SngAngWid = (B − DIS) / 2, tf, tw, dis; FilletRadius 0; CGOffset2 = t3 / 2 − Y |
+>     | `STEEL_ANGLE` | `D B TF TW KDES …`, `X Y`; **no I23** | `Angle`: t3 = D, t2 = B, tf, tw; FilletRadius = KDES − TF; CGOffset3 = t2 / 2 − X, CGOffset2 = Y − t3 / 2; SAP adds I23 0.424146744778473 for L3X2-1/2X3/16 (its legs as axes) |
+>
+>     Every row also takes the file's properties as named, S33Top / S33Bot = S33POS / S33NEG, ConcCol / ConcBeam No.
+>     SAP works out what the file lacks: the shear center (EccV2 / EccV3) and Cw of a channel, tee or double angle, and
+>     a single angle's I23. Pluto leaves those to SAP, which reads the file, and its rows equal SAP's in every field
+>     they write. For a single angle Pluto writes its own I23, from the legs and the root fillet (0.424899 against
+>     SAP's 0.424147). SAP recomputes its own on import. STAAD's double angles come as `TABLE … LD / SD`
+>     ([[vault/format/frame-to-staad|frame-to-staad]]).
+>
 > **Defaults SAP filled** (warnings): `CASE - STATIC 4` SolScheme; `03A` stress-strain fields; the offset-along-length
 > Type. The log's errors 1–10 ("Table key Steel Design 2 - NMM Details - Eurocode 3-2005 not found") are SAP's own
 > design tables, not the file's.
@@ -77,7 +143,7 @@ the confirmed tables; new rows anywhere else carry an `s2k-unconfirmed` notice.
 > |---|---|
 > | `LINK PROPERTY DEFINITIONS 03 - MULTILINEAR` | `Link DOF Fixed NonLinear TransKE TransCE DJ Point Force Displ` on the first row, then one row per further point: `Link DOF Point Force Displ` |
 > | `LINK PROPERTY DEFINITIONS 04 - DAMPER` | `Link DOF Fixed NonLinear TransKE TransCE TransK TransC CExp FLDamper` |
-> | `LINK PROPERTY DEFINITIONS 08 - SLIDING ISOLATOR` | `Link DOF Fixed NonLinear TransKE TransCE DJ TransK Slow Fast Rate Radius` (U1 without the friction fields) |
+> | `LINK PROPERTY DEFINITIONS 08 - SLIDING ISOLATOR` | U2 / U3: `Link DOF Fixed NonLinear TransKE TransCE DJ TransK Slow Fast Rate Radius`; U1: `Link DOF Fixed NonLinear TransKE TransCE TransK TransC` |
 > | `FRAME INSERTION POINT ASSIGNMENTS` | `Frame CardinalPt CoordSys JtOffsetXI JtOffsetYI JtOffsetZI JtOffsetXJ JtOffsetYJ JtOffsetZJ Mirror2 Mirror3 Transform`; with `CoordSys=Local`, X Y Z are local 1 2 3; no offsets: no `CoordSys` and no `JtOffset` fields |
 >
 > **Findings:**
@@ -101,3 +167,64 @@ the confirmed tables; new rows anywhere else carry an `s2k-unconfirmed` notice.
 >   An offset SAP holds in another system shows as `GLOBAL: 1 2 3` and is carried unchanged.
 > - The viewer draws the offsets (`SapToPluto.EndOffset` reads `JtOffset…`). Its link card shows `c`, `exp` and the
 >   curve's `(d, F)` points.
+
+> [!info]- Temperature gradients: not the workbook's names (STAAD probe, SAP 24.2.0, 2026-11-07)
+> The STAAD probe's `FRAME LOADS - TEMPERATURE` rows with `Type="Temp Gradient 2"` and `"Temp Gradient 3"` (the frame
+> workbook's names, never in a SAP probe before) were read without an error. SAP exported them as `Type=Temperature`
+> with the same values, and analysed them so: a cantilever with 20, gradient 2 = 3 and gradient 3 = −2 grew by
+> α × 21 × L and did not bend.
+> - **Round 2's guesses failed too:** `Temperature Gradient 2`, `Temperature Gradient 2-2` and `Temp Gradient 2-2` came
+>   back as `Temperature`, and `Gradient 2` / `Gradient 3` were dropped.
+> - **SAP's own form**, from a gradient assigned in SAP 24.2's dialog and exported: `Type=Gradient2 TempGrad2=3` and
+>   `Type=Gradient3 TempGrad3=-2`. The value has its own field (`TempGrad2` / `TempGrad3`, °F per in), not `Temp`. The
+>   table's columns are `Frame LoadPat Type Temp TempGrad2 TempGrad3 JtPattern`.
+> - **SAP reads the form back:** round 3's import read all four temperature rows.
+> - **Pluto now writes SAP's form.** The workbook lists Temperature, Gradient2 and Gradient3. A workbook read turns an
+>   older name into SAP's, moves its value to the gradient's field in place, and says so. `-Std` refuses any other
+>   name.
+
+> [!info]- The ten "Table key … not found" import errors (2026-11-07)
+> Every SAP 24.2 import here logs the same ten errors, "Table key … not found; table skipped". They name design-detail
+> tables: Steel Design / Details 2 - NMM Details for Eurocode 3-2005 and Italian NTC 2008 / 2018, and Cold Formed
+> Design / Details 3a / 3b - Flexure Details for Eurocode 3 1-3 2006.
+> - The keys appear in no file, Pluto's or SAP's own exports; those carry `TABLES AUTOMATICALLY SAVED AFTER ANALYSIS`
+>   with `SaveFile=No` only.
+> - The STAAD probe's round 3 carried that row. SAP read it ("1 of 1 records") and logged the same ten errors, before
+>   any table, with no table name.
+> - So they come from SAP's own default list of tables saved after analysis, which names tables this install does not
+>   have. They change nothing in the model; the fix, if one is wanted, is on SAP's side (CSI, or a repair install).
+
+
+> [!info]- A ground displacement through a `Fixed` link DOF (the CAESAR probe, SAP 24.2.0, 2026-11-16)
+> The CAESAR check model's probe tied a pipe joint to a joint below it by a zero-length link with U1 `Fixed`. The joint
+> below was restrained and moved down 0.25 in (`JOINT LOADS - GROUND DISPLACEMENT`). SAP moved the pipe joint the full
+> 0.25 in, but the pipe's next joints stayed put. The supported joint reported 238 kip, where CAESAR has 2.2 kip.
+> - The link's own forces read 0.
+> - The frames' joint forces at the next joints did not balance: 172 kip and 66 kip, the same as the reaction.
+> - In every case without the ground displacement they balanced.
+>
+> So SAP turned the displacement into loads on those joints and never solved for their response. The same DOF as a
+> stiffness (`Fixed=No`, KE = 1e12 lb/in, CAESAR's rigid value) takes the displacement as any spring would: a solver of
+> the same model gives CAESAR's 2,199 lb. The CAESAR check model writes rigid link DOFs that way
+> ([[vault/format/pipe-to-frame|pipe-to-frame]]).
+>
+> The same round confirmed a zero-length two-joint link's default axes: local 1 = +Z, 2 = +X, 3 = +Y, as for a
+> one-joint link.
+
+> [!info]- Frames join joints on their span (the CAESAR probe, SAP 24.2.0, 2026-11-16)
+> SAP exports `FRAME AUTO MESH ASSIGNMENTS` with `AutoMesh=Yes AtJoints=Yes` for every frame, and an import without the
+> table takes the same: a frame is joined to any joint lying on its span. The CAESAR probe's limit stop had its support
+> points on the pipe's axis beside the node. SAP joined them to the pipe and held the pipe through them: the stop's gap
+> was gone and the anchored leg took 395 kip instead of CAESAR's 234. The CAESAR check model writes `AutoMesh=No
+> AtJoints=No AtFrames=No NumSegments=0 MaxLength=0 MaxDegrees=0` (SAP's own field order) for every frame it seeds.
+
+> [!info]- A link shorter than the merge tolerance is zero-length (the CAESAR probe, SAP 24.2.0, 2026-11-16)
+> The CAESAR check model's coupling had six gap links 0.01 in long, each from a support point to the node along the side
+> it acts on. SAP reported one deformation for all six, in a zero-length link's axes (local 1 = +Z, 2 = +X, 3 = +Y). So
+> every gap acted vertically and the coupling's axial gap never closed. SAP takes a two-joint link shorter than its
+> merge tolerance as zero-length, whatever the line between its joints (taken as the threshold: the probe shows only
+> that 0.01 in is under it). SAP 24.2's export gives the tolerance as `PREFERENCES - DIMENSIONAL ... MergeTol=0.1`, in
+> the export's units (in). It rejects `MergeTol` in `PROGRAM CONTROL`.
+>
+> The CAESAR check model keeps every link either zero-length or longer than 1 in, and takes a tie under 0.1 in as
+> zero-length ([[vault/format/pipe-to-frame|pipe-to-frame]], round 2c).

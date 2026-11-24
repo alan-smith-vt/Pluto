@@ -10,7 +10,7 @@ created: 2026-10-02
 Python never talks to SAP: it calls `scripts/sap/Run-Sap.ps1` through
 `pythonTools/sap/tankbuilder/sap_cli.py`. **Before writing SAP code, find the capability in the
 table below. If it is missing, add it to the C# (a method plus a runner switch), never to Python.**
-This is the only route that runs on the production machine (SAP 22, no Python). Unified
+This is the only route that runs on the production machine (no Python). Unified
 2026-10-02. The Python `comtypes` driver `sap_api.py` and the C# proof of concept `SapPoc.cs` are in `archive/`.
 
 ## Files
@@ -29,21 +29,22 @@ This is the only route that runs on the production machine (SAP 22, no Python). 
 
 | capability | C# | runner | used by |
 |---|---|---|---|
-| attach to the running SAP, else start one | `SapSession.AttachOrStart` | every runner | all |
-| a second SAP whatever is running | `SapSession.NewInstance` | `Run-Sap.ps1 -NewInstance [-KeepOpen]` | `export_model.py --new-instance` |
+| attach to the running SAP, else start one; `Run-Sap.ps1` closes a SAP it started unless `-KeepOpen` | `SapSession.AttachOrStart`, `Close` | every runner; `Run-Sap.ps1 [-KeepOpen]` | all |
+| a second SAP whatever is running | `SapSession.NewInstance` | `Run-Sap.ps1 -NewInstance [-KeepOpen]` | `export_model.py --new-instance`, `Build-Frame.ps1 -Open` |
 | open `.sdb` / import `.s2k` (+ save `.sdb`) | `Open` | `-Open X [-NoSaveSdb]` | `run_sap.py`, `offset_study.py`, `export_model.py` |
-| import a `.s2k` stamped for another SAP version: a re-stamped copy (2026-11-05) | `OpenStamped`, `Restamped` | `-Open X -Stamp` | `Build-Frame.ps1 -Open` (frame workbook) |
+| import a `.s2k` stamped for another SAP version: a re-stamped copy, `%TEMP%\<name>.stamped.s2k`, its `.sdb` saved beside the original (2026-11-05) | `OpenStamped`, `Restamped` | `-Open X -Stamp` | `Build-Frame.ps1 -Open` (frame workbook) |
 | run; run on a saved copy; only if results are missing | `Run`, `RunOnCopy`, `AllCasesFinished` | `-Run`, `-RunOnCopy <sdb>\|auto`, `-RunIfNeeded` | tank, export |
 | shell local 1 axis in global | `AreaLocal1`, `WriteAreaLocal1` | `-AreaAxes <tsv>` | `run_sap.py` axes check |
 | input tables read back (display precision) | `TableRows`, `WriteTablesS2k` | `-Tables "a;b" -TablesOut <s2k>` | `offset_study.py` (insertion points, gap props) |
-| results at full precision: joints, shells (forces + face stresses), frames, links | `WriteResultsS2k` | `-Results <s2k>` | tank `results.s2k` |
-| model → viewer: mesh, model + results `.s2k`, `SapToPluto` | `SapExport` | `-Export <base\|folder> [-NoResults] [-FinalOnly] [-Cylindrical] [-NoViewerFile]` | `export_model.py` |
+| results at full precision, for every load case (no combinations): joint displacements (no reactions), shells (forces + face stresses), frame forces, link forces; a case with several saved steps becomes `<case>.<step>` per step, its last step only with `-FinalOnly` | `WriteResultsS2k` | `-Results <s2k> [-FinalOnly]` | tank `results.s2k` |
+| model → viewer: mesh, model + results `.s2k`, `SapToPluto` | `SapExport` | `-Export <base\|folder> [-NoResults] [-FinalOnly] [-Cylindrical] [-NoViewerFile] [-ModelId <id>]` | `export_model.py` |
 | survey, candidates, forces by group, axis probe | `SapSurvey` | `Run-SapSurvey.ps1` | duct workflow |
 | link / direct release models, synthetic duct | `SapRelease` | `Run-SapRelease.ps1` | duct workflow |
 | self test: 20 ft beam, 10 kip midspan → 5 kip, 50 kip-ft | `WriteTestBeamS2k` | `-SelfTest <dir>` | install check |
 
-`Run-Sap.ps1` prints `[step]` progress lines and ends with `RESULT {json}` (version, counts,
-groups, units, cases, output paths). Steps run in a fixed order: attach → open → axes → run → tables → results → export.
+`Run-Sap.ps1` prints `[step]` progress lines and, on success, ends with `RESULT {json}` (version, counts,
+groups, units, cases, output paths). A failure throws, with no `RESULT` line. Steps run in a fixed order:
+attach → open → axes → run → tables → results → export.
 
 ## Facts the code relies on
 
@@ -65,4 +66,7 @@ groups, units, cases, output paths). Steps run in a fixed order: attach → open
 - Survey OK.
 - Duct `Run-ReleaseCheck.ps1 -TestModel`: see the handoff.
 
-Not yet run on SAP 22: the first production run of any runner is that check.
+## On the production machine
+
+- 2026-11-05, SAP 24.2: `Build-Frame.ps1 -Open` ran `Run-Sap.ps1 -Open <s2k> -Stamp -NewInstance -KeepOpen` on an
+  edited rack; its import log is in [[vault/arms/frame-workbook|frame-workbook]] (the first production import).

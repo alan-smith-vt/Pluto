@@ -16,7 +16,7 @@ created: 2026-11-05
   in SAP through the one SAP controller (`scripts/sap/`, its own process) and saves the `.sdb`.
 - **The round-trip source is an `.s2k` exported from SAP.**
 - **Seeding the model from a CAESAR model is a later phase.** The frame model carries Kind, Line, Process and pipe
-  sizes so that mapping is direct.
+  sizes so that mapping is direct. Begun 2026-11-12: [[vault/decisions/2026-11-12-caesar-to-sap|2026-11-12-caesar-to-sap]].
 - **Units are the model's own**, SAP's unit set for the file. Workbook headers show them, and a header in another unit
   converts its column.
 - **The model is the `.s2k`, typed.** Every object owns the rows that describe it in every table keyed by its label,
@@ -59,3 +59,10 @@ created: 2026-11-05
   workbook byte-identical (Phase 0b, [[vault/arms/workbook-kit|workbook-kit]]); the frame workbook and the runner's
   workbook switches (Phase 3a, [[vault/arms/frame-workbook|frame-workbook]]). Tables SAP has not confirmed are written
   with a notice until the probe's results come back.
+- **Since (2026-11-18):**
+  - The probe's results came back the same day: SAP 24.2 imported and exported rounds 1 and 2 on 2026-11-05. The
+    tables they confirmed are in `FrameS2kSchema` ([[vault/format/sap-s2k-tables|sap-s2k-tables]]); a new row in any
+    other table still gets the notice.
+  - The seeding phase is built: a CAESAR model seeds the check model, linear (2026-11-12) and with nonlinear supports
+    (2026-11-16), verified against CAESAR by 2026-11-18
+    ([[vault/decisions/2026-11-12-caesar-to-sap|2026-11-12-caesar-to-sap]]).

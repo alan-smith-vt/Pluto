@@ -16,18 +16,23 @@ using System.Text;
 //    6, 7         a box on its top center (cardinal 8); a rectangle on joint offsets (local 0 1.5 -2)
 //    8, 19        partial fixity (M2 3000, M3 5000) at a frame's I end; a hinge (M2 M3) between two frames
 //    9 springs    a tip on springs U1 U2 U3 R1 R2 R3
-//   10, 11        temperature on a fixed-fixed beam and a cantilever: uniform, gradient 2, gradient 3
+//   10, 11        a uniform temperature on a fixed-fixed beam and a cantilever
+//   22            temperature gradients 2 and 3 on a cantilever, in SAP's own form (Gradient2 / TempGrad2, Gradient3 /
+//                 TempGrad3: SAP's dialog, 2026-11-07; round 2's four guessed spellings were read as uniform or dropped)
 //   12 inclined   a tip held along joint local 1 (A 30, B 20)
 //   13, 14        a grounded linear link (U1, U2 fixed, R3; angle 45); an axial link between two column tops
 //   15 settlement a fixed end moved U3 -0.1, R2 0.002
 //   16, 17        a tip force and moment; property modifiers (A, AS2, J, I33, weight)
 //   18 plate      a 40 x 40 shell on four pins, self weight
 // Cases DEAD LIVE WIND TEMP SETTLE (linear), SUS and OPE from SUS (nonlinear, no P-Delta); combinations of each kind
-// FrameStd writes (Linear Add, SRSS, Abs Add, one nested) and an Envelope it lists. Synthetic. C# 5 (prefix Frame).
+// FrameStd writes (Linear Add, SRSS, Abs Add, one nested) and an Envelope it lists. Round 2 (2026-11-07): SAP's
+// defaults where its import warned (the WIND pattern's AutoLoad, the nonlinear parameters, the steel data), and the
+// settled joint is an ENFORCED support in STAAD (FrameStd). Synthetic. C# 5 (prefix Frame).
 
 public static class FrameStdProbe
 {
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
+
 
     public static string Text(string version)
     {
@@ -37,10 +42,13 @@ public static class FrameStdProbe
         Action<string, IEnumerable<string>> table = (name, rows) => { w.Add("TABLE:  \"" + name + "\""); foreach (var r in rows) w.Add("   " + r); w.Add(""); };
 
         table("PROGRAM CONTROL", new[] { "ProgramName=SAP2000   Version=" + version + "   CurrUnits=\"Kip, in, F\"" });
+        // as SAP's own exports carry it. SAP 24.2's import logs ten "Table key ... not found" errors for design tables of
+        // its own default after-analysis list with this row or without it (round 3, 2026-11-07): SAP's, not the file's
+        table("TABLES AUTOMATICALLY SAVED AFTER ANALYSIS", new[] { "SaveFile=No" });
         table("ACTIVE DEGREES OF FREEDOM", new[] { "UX=Yes   UY=Yes   UZ=Yes   RX=Yes   RY=Yes   RZ=Yes" });
         table("MATERIAL PROPERTIES 01 - GENERAL", new[] { "Material=STEEL   Type=Steel   SymType=Isotropic   TempDepend=No   Color=Blue" });
         table("MATERIAL PROPERTIES 02 - BASIC MECHANICAL PROPERTIES", new[] { "Material=STEEL   UnitWeight=0.000283564814814815   UnitMass=7.34446554001670E-07   E1=29000   G12=11153.8461538462   U12=0.3   A1=6.5E-06" });
-        table("MATERIAL PROPERTIES 03A - STEEL DATA", new[] { "Material=STEEL   Fy=50   Fu=65   EffFy=55   EffFu=71.5" });
+        table("MATERIAL PROPERTIES 03A - STEEL DATA", new[] { "Material=STEEL   Fy=50   Fu=65   EffFy=55   EffFu=71.5   SSCurveOpt=Simple   SSHysType=Kinematic   SHard=0.015   SMax=0.11   SRup=0.17   FinalSlope=-0.1   CoupModType=\"Von Mises\"" });
         table("FRAME SECTION PROPERTIES 01 - GENERAL", new[] {
             "SectionName=S_RECT   Material=STEEL   Shape=Rectangular   t3=8   t2=4   Color=Green",
             "SectionName=S_BOX   Material=STEEL   Shape=Box/Tube   t3=6   t2=4   tf=0.25   tw=0.375   Color=Green",
@@ -96,6 +104,8 @@ public static class FrameStdProbe
         J(1901, 0, 1600, 0); J(1902, 40, 1600, 0); J(1903, 80, 1600, 0); F("F19A", 1901, 1902, "S_PIPE"); F("F19B", 1902, 1903, "S_PIPE"); fixd.Add(1901);
         // 21 vertical at angle 90 with local loads
         J(2101, 0, 1700, 0); J(2102, 0, 1700, 60); F("F21", 2101, 2102, "S_IUNEQ"); fixd.Add(2101);
+        // 22 temperature gradients
+        J(2201, 0, 1800, 0); J(2202, 100, 1800, 0); F("F22", 2201, 2202, "S_RECT"); fixd.Add(2201);
         table("JOINT COORDINATES", joints);
 
         var res = new List<string>();
@@ -141,7 +151,7 @@ public static class FrameStdProbe
             "GroupName=PL_KIND_PIPE   ObjectType=Frame   ObjectLabel=F8A", "GroupName=PL_KIND_PIPE   ObjectType=Frame   ObjectLabel=F8B", "GroupName=PL_KIND_PIPE   ObjectType=Frame   ObjectLabel=F9" });
 
         table("LOAD PATTERN DEFINITIONS", new[] {
-            "LoadPat=DEAD   DesignType=Dead   SelfWtMult=1", "LoadPat=LIVE   DesignType=Live   SelfWtMult=0", "LoadPat=WIND   DesignType=Wind   SelfWtMult=0",
+            "LoadPat=DEAD   DesignType=Dead   SelfWtMult=1", "LoadPat=LIVE   DesignType=Live   SelfWtMult=0", "LoadPat=WIND   DesignType=Wind   SelfWtMult=0   AutoLoad=None",
             "LoadPat=TEMP   DesignType=Temperature   SelfWtMult=0", "LoadPat=SETTLE   DesignType=Other   SelfWtMult=0" });
         Func<int, string, string> jl = (j, f) => string.Format(Inv, "Joint={0}   LoadPat=LIVE   CoordSys=GLOBAL   {1}", j, f);
         table("JOINT LOADS - FORCE", new[] {
@@ -166,9 +176,8 @@ public static class FrameStdProbe
             pt("F6", "LIVE", "CoordSys=GLOBAL   Type=Force   Dir=Gravity   DistType=RelDist   RelDistA=0   RelDistB=1   AbsDistA=0   AbsDistB=0   FOverLA=0.02   FOverLB=0.02"),
             pt("F9", "LIVE", "CoordSys=GLOBAL   Type=Force   Dir=Gravity   DistType=RelDist   RelDistA=0   RelDistB=1   AbsDistA=0   AbsDistB=0   FOverLA=0.05   FOverLB=0.05"),
             pt("F21", "WIND", "CoordSys=Local   Type=Force   Dir=2   DistType=RelDist   RelDistA=0   RelDistB=1   AbsDistA=0   AbsDistB=0   FOverLA=0.01   FOverLB=0.01") });
-        table("FRAME LOADS - TEMPERATURE", new[] {
-            "Frame=F10   LoadPat=TEMP   Type=Temperature   Temp=50", "Frame=F10   LoadPat=TEMP   Type=\"Temp Gradient 2\"   Temp=3", "Frame=F10   LoadPat=TEMP   Type=\"Temp Gradient 3\"   Temp=-2",
-            "Frame=F11   LoadPat=TEMP   Type=Temperature   Temp=20", "Frame=F11   LoadPat=TEMP   Type=\"Temp Gradient 2\"   Temp=3", "Frame=F11   LoadPat=TEMP   Type=\"Temp Gradient 3\"   Temp=-2" });
+        table("FRAME LOADS - TEMPERATURE", new[] { "Frame=F10   LoadPat=TEMP   Type=Temperature   Temp=50", "Frame=F11   LoadPat=TEMP   Type=Temperature   Temp=20",
+            "Frame=F22   LoadPat=TEMP   Type=Gradient2   TempGrad2=3", "Frame=F22   LoadPat=TEMP   Type=Gradient3   TempGrad3=-2" });
 
         table("LOAD CASE DEFINITIONS", new[] {
             "Case=DEAD   Type=LinStatic   InitialCond=Zero", "Case=LIVE   Type=LinStatic   InitialCond=Zero", "Case=WIND   Type=LinStatic   InitialCond=Zero",
@@ -178,7 +187,8 @@ public static class FrameStdProbe
         table("CASE - STATIC 1 - LOAD ASSIGNMENTS", new[] {
             la("DEAD", "DEAD", "1"), la("LIVE", "LIVE", "1"), la("WIND", "WIND", "1"), la("TEMP", "TEMP", "1"), la("SETTLE", "SETTLE", "1"),
             la("SUS", "DEAD", "1"), la("SUS", "LIVE", "0.5"), la("OPE", "TEMP", "1") });
-        table("CASE - STATIC 4 - NONLINEAR PARAMETERS", new[] { "Case=SUS   GeoNonLin=None", "Case=OPE   GeoNonLin=None" });
+        string nl = "   ResultsSave=\"Final State\"   SolScheme=\"Iterative Events\"   MaxTotal=200   MaxNull=50   EvLumpTol=0.01   MaxEvPerStp=24   MaxIterCS=10   MaxIterNR=40   ItConvTol=0.0001   TFMaxIter=10   TFTol=0.01   TFAccelFact=1   TFNoStop=No";
+        table("CASE - STATIC 4 - NONLINEAR PARAMETERS", new[] { "Case=SUS   GeoNonLin=None" + nl, "Case=OPE   GeoNonLin=None" + nl });
         string first = "   AutoDesign=No   ";
         string flags = "   SteelDesign=None   ConcDesign=None   AlumDesign=None   ColdDesign=None";
         table("COMBINATION DEFINITIONS", new[] {

@@ -180,11 +180,12 @@ assert(_env && _env.predicates.items.length === 1, 'T6 synced into (auto-created
 console.log('T6 ok  legacy v3 import + domain filter');
 
 // ---- T7: envelope round-trip preserves unknown keys --------------------
+// (predicates version 2: points in true world coordinates, the exporter's recenter included)
 T.reset();
 _env = {
     format: 'pluto-features', version: 1,
     groups: { version: 1, items: [{ id: 'g-1', name: 'G', members: [{ predicateId: 'p-keep' }] }] },
-    predicates: { version: 1, items: [{
+    predicates: { version: 2, items: [{
         id: 'p-keep', name: 'Kept', target: 'elements', customKey: 'KEEP-ME',
         tree: { kind: 'plane', negated: false, point: W(120, 120, 0), normal: [0, 0, 1], tol: 0.5, normal_tol_deg: 5 }
     }] }
@@ -199,6 +200,7 @@ P.createFromPick(W(0, 100, 50), [1, 0, 0]);     // adds a second item, triggers 
 assert.strictEqual(_env.predicates.items.length, 2, 'T7 second item synced');
 assert.strictEqual(_env.predicates.items[0].customKey, 'KEEP-ME', 'T7 unknown key preserved');
 assert.strictEqual(_env.predicates.items[0].name, 'Renamed', 'T7 known key updated');
+assert.strictEqual(_env.predicates.version, 2, 'T7 written as version 2');
 let m7 = P.resolveMembers('p-keep');
 assert.deepStrictEqual(ids(m7, 'shells'), [1001, 1002, 1003, 1004], 'T7 resolves by stable id');
 console.log('T7 ok  envelope round-trip, unknown keys, group refresh');
@@ -213,5 +215,29 @@ l8.point = [120 + WORLD_OFF[0], 120 + WORLD_OFF[1], 0 + WORLD_OFF[2]];
 let after = ids(P.resolveMembers(it8.id), 'shells');
 assert.deepStrictEqual(after, before, 'T8 same members under different recenter');
 console.log('T8 ok  recenter invariance');
+
+// ---- T9: a version-1 predicate (saved before the world offset was read) is moved by it on load --------------
+// Before 2026-11-21 FEAFeatures.worldOffset read a path no exporter writes, so saved points lack the exporter's
+// recenter: stored = local + viewRecenter. Loading moves them by the offset; saving writes version 2; a reload of
+// that does not move them again.
+T.reset();
+global.viewRecenter = [10, 20, 30];
+_env = {
+    format: 'pluto-features', version: 1,
+    predicates: { version: 1, items: [{
+        id: 'p-old', name: 'Old', target: 'elements',
+        tree: { kind: 'plane', negated: false, point: [120 + 10, 120 + 20, 0 + 30], normal: [0, 0, 1], tol: 0.5, normal_tol_deg: 5 }
+    }] }
+};
+P.onEnvelope(_env);
+assert.deepStrictEqual(P.items()[0].root.point, W(120, 120, 0), 'T9 version-1 point moved by the offset');
+assert.deepStrictEqual(ids(P.resolveMembers('p-old'), 'shells'), [1001, 1002, 1003, 1004], 'T9 selects what it did');
+T.sync();
+assert.strictEqual(_env.predicates.version, 2, 'T9 saved as version 2');
+assert.deepStrictEqual(_env.predicates.items[0].tree.point, W(120, 120, 0), 'T9 saved in world coordinates');
+P.onEnvelope(JSON.parse(JSON.stringify(_env)));
+assert.deepStrictEqual(P.items()[0].root.point, W(120, 120, 0), 'T9 version 2 not moved again');
+assert.deepStrictEqual(ids(P.resolveMembers('p-old'), 'shells'), [1001, 1002, 1003, 1004], 'T9 still selects it');
+console.log('T9 ok  version-1 predicates moved by the world offset once');
 
 console.log('\nALL PREDICATE ENGINE TESTS PASSED');

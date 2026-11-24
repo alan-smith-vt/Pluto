@@ -284,7 +284,7 @@ public static class FrameSidecar
                            ", \"valueA\": " + N(r.Num("FOverLA", r.Num("MOverLA", 0))) + ", \"valueB\": " + N(r.Num("FOverLB", r.Num("MOverLB", 0))) + "}";
                 else if (ld.Table.Equals(FrameLoad.Temperature, StringComparison.OrdinalIgnoreCase))
                     item = "{" + common + ", \"name\": " + Q(target + " " + pat) + ", \"kind\": \"temperature\", " + mem + ", \"type\": " + Q(r.Get("Type") ?? "Temperature") +
-                           ", \"dT\": " + N(r.Num("Temp", 0)) + "}";
+                           ", \"dT\": " + N(ld.TempValue) + "}";
             }
             if (item == null) continue;
             sb.Append(first ? "\n  " : ",\n  ").Append(item);

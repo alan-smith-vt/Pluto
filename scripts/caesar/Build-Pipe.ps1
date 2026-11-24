@@ -20,7 +20,11 @@
 #                   error checker stops on and the warnings, as the viewer's Checks panel lists them).
 #         -Xlsx     <base>.xlsx, the model as a workbook to edit (never written over the input), with two launchers beside
 #                   it that the Start sheet links to: "<base> - preview.cmd" (-Preview -Watch) and "<base> - cii.cmd"
-#                   (-Cii -Preview); -NewWorkbook writes them too (PipeWorkbookRun)
+#                   (-Cii -Preview); -NewWorkbook writes them too (PipeWorkbookRun).
+#                   An existing <base>.xlsx this runner wrote and nobody has saved since (the stamp says so) is
+#                   replaced; one with edits asks first ("Overwrite the workbook?", Keep by default), the old one kept
+#                   as <base>.xlsx.bak. With no one to ask (-NonInteractive), the run stops: -Force replaces it (with
+#                   the .bak), -Out writes elsewhere.
 #         -Json     <base>.pipe.json, the whole model (PipeModelJson; exact)
 #         -Preview  <base>.bin + <base>.features.json for the viewer, built from the model in memory (what
 #                   Run-Caesar.ps1 makes of the .cii): look before CAESAR does. Written to temporary names and moved
@@ -30,7 +34,8 @@
 #   -Watch          keep running: rebuild the chosen outputs (default -Preview) every time the input is saved; an
 #                   input that does not build is reported and the last good outputs stay. Ctrl+C stops.
 #   -NewWorkbook    start a model: -Out <base> gets <base>.xlsx, a small template (two legs, a bend, two anchors and a
-#                   rest) to edit; with -Seed, the CAESAR job's settings (English units only)
+#                   rest) to edit; with -Seed, the CAESAR job's settings (English units only); an existing workbook
+#                   as for -Xlsx
 #   -Refresh        -In <workbook>.xlsx only: the workbook in this version's layout, written over itself. It is read
 #                   first (edits included; a workbook that does not read is left as it was) and then replaced in one
 #                   step, the previous file kept beside it as <workbook>.xlsx.bak. What was typed stays as typed:
@@ -40,7 +45,7 @@
 #   -Seed <.cii>    a .toml model (or -NewWorkbook) takes that CAESAR job's settings: VERSION lines, UNITS (English
 #                   only), execution options, first allowables block
 #   -Set "a=1;b=2"  overrides [parameters] of a .toml
-#   -Force          replace a .cii this runner did not write (see -Cii), or an existing -NewWorkbook file
+#   -Force          replace a .cii this runner did not write (see -Cii), or a workbook with edits (see -Xlsx)
 #   -Out <base>     default beside the input, same name with spaces -> underscores; an existing folder or a path
 #                   ending in \ or / means <folder>\<name>; a trailing .cii / .xlsx is dropped. Outputs inside this
 #                   repo are refused: project outputs never land in Pluto.
@@ -80,6 +85,43 @@ function Full([string]$p) { return (Resolve-Path -LiteralPath $p).ProviderPath }
 function Sha([byte[]]$b) { $h = [Security.Cryptography.SHA256]::Create(); try { return (($h.ComputeHash($b) | ForEach-Object { $_.ToString("x2") }) -join "") } finally { $h.Dispose() } }
 function FileSha([string]$p) { $fs = New-Object IO.FileStream($p, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)); try { $h = [Security.Cryptography.SHA256]::Create(); return (($h.ComputeHash($fs) | ForEach-Object { $_.ToString("x2") }) -join "") } finally { $fs.Dispose() } }
 function Fail([string]$msg) { Say "error" $msg; Write-Output ("RESULT {""error"":" + (Q $msg) + "}"); exit 1 }
+
+# an existing workbook may be replaced when this runner wrote it and nobody has saved it since (the stamp's xlsx part
+# holds its fingerprint); otherwise writing it again would lose the edits made in it, so ask first, the old one kept as
+# <name>.xlsx.bak. With no one to ask (-NonInteractive, input redirected), -Force replaces it and -Out writes elsewhere.
+# Returns "write", "backup" (keep the old one as .bak, then write), "force" (the same, by -Force: the caller says so,
+# with $script:workbookWhy) or "keep". It writes nothing to the output: a caller captures its value
+function Confirm-Workbook([string]$file, [string]$stamp) {
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { return "write" }
+    $st = $null
+    if ($stamp -and (Test-Path -LiteralPath $stamp -PathType Leaf)) { try { $st = Get-Content -LiteralPath $stamp -Raw | ConvertFrom-Json } catch { } }
+    if ($st -and $st.xlsx -and $st.xlsx.sha256 -eq (FileSha $file)) { return "write" }
+    $saved = (Get-Item -LiteralPath $file).LastWriteTime.ToString("yyyy-MM-dd HH:mm")
+    $why = $(if ($st -and $st.xlsx) { "was saved after this runner wrote it" } else { "was not written by this runner" }) + " (last saved " + $saved + ")"
+    $bak = [IO.Path]::GetFileName($file) + ".bak"
+    if ($Force) { $script:workbookWhy = $why; return "force" }
+    $c = -1
+    if (-not [Console]::IsInputRedirected) {
+        $choices = [Management.Automation.Host.ChoiceDescription[]]@(
+            (New-Object Management.Automation.Host.ChoiceDescription "&Overwrite", ("Write the new workbook; the old one is kept as " + $bak)),
+            (New-Object Management.Automation.Host.ChoiceDescription "&Keep", "Keep the workbook as it is: nothing is written over it"))
+        $ask = "{0} {1}. Overwriting it loses the edits made in it; the old one is kept as {2}." -f $file, $why, $bak
+        try { $c = $Host.UI.PromptForChoice("Overwrite the workbook?", $ask, $choices, 1) } catch { $c = -1 }
+    }
+    if ($c -eq 0) { return "backup" }
+    if ($c -eq 1) { return "keep" }
+    throw ("{0} {1}: overwriting it would lose the edits made in it. Run without -NonInteractive to be asked, add -Force to replace it (the old one is kept as {2}), or write elsewhere with -Out." -f $file, $why, $bak)
+}
+
+# the stamp's xlsx part: the fingerprint of the workbook just written, so the next run knows whether anyone saved it since
+function Set-StampXlsx([string]$file, [string]$stamp, [string]$format, [string]$when) {
+    $o = $null
+    if (Test-Path -LiteralPath $stamp -PathType Leaf) { try { $o = Get-Content -LiteralPath $stamp -Raw | ConvertFrom-Json } catch { } }
+    if (-not $o) { $o = New-Object PSObject -Property @{ format = $format } }
+    $part = New-Object PSObject -Property @{ sha256 = (FileSha $file); written = $when }
+    if ($o.PSObject.Properties["xlsx"]) { $o.xlsx = $part } else { $o | Add-Member -NotePropertyName xlsx -NotePropertyValue $part }
+    [IO.File]::WriteAllText($stamp, (ConvertTo-Json -InputObject $o -Depth 6 -Compress), (New-Object Text.UTF8Encoding($false)))
+}
 
 # ---- check: arguments and the output location, before the C# batch loads ----
 if ($NewWorkbook) {
@@ -152,12 +194,16 @@ else {
 # ---- -NewWorkbook: the template, written once ----
 if ($NewWorkbook) {
     try {
-        if ((Test-Path -LiteralPath $xlsxFile) -and -not $Force) { throw ("{0} exists: pick another -Out, or -Force to replace it" -f $xlsxFile) }
+        $go = Confirm-Workbook $xlsxFile $stampFile
+        if ($go -eq "force") { Say "warn" ("-Force: replacing {0}, which {1}" -f $xlsxFile, $script:workbookWhy); $go = "backup" }
+        if ($go -eq "keep") { Say "keep" ("{0}: kept as it is; nothing written" -f $xlsxFile); Write-Output ("RESULT {""kind"":""new"",""xlsx"":null,""kept"":" + (Q $xlsxFile) + "}"); exit 0 }
+        if ($go -eq "backup") { [IO.File]::Copy($xlsxFile, $xlsxFile + ".bak", $true); Say "write" ("{0}.bak: the workbook as it was" -f $xlsxFile) }
         $model = [PipeWorkbook]::Template()
         $seedText = $null
         if ($Seed) { $seedText = [CaesarPipeImport]::ApplySeed($model, (Full $Seed), $true); Say "seed" $seedText }
         $run = [PipeWorkbookRun]::For($xlsxFile, $repoRoot, $null)
         [PipeWorkbook]::Write($model, $xlsxFile, "the Pluto template" + $(if ($Seed) { " + seed " + [IO.Path]::GetFileName($Seed) } else { "" }), $run)
+        Set-StampXlsx $xlsxFile $stampFile "pluto-pipe-build" ([DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"))
         Say "write" ("{0}: a {1}-element template to edit in Excel; then Build-Pipe.ps1 -In ""{0}"" -Preview" -f $xlsxFile, $model.Elements.Count)
         foreach ($l in $run.WriteLaunchers()) { Say "write" ("{0}: double-click it, or use the Start sheet's link" -f $l) }
         Write-Output ("RESULT {""kind"":""new"",""xlsx"":" + (Q $xlsxFile) + ",""seed"":" + (Q $seedText) + "}")
@@ -208,10 +254,11 @@ function Read-Stamp {
 
 function Write-Stamp($cii, $preview) {
     $o = Read-Stamp
-    $cj = "null"; $pj = "null"
+    $cj = "null"; $pj = "null"; $xj = "null"
+    if ($o -and $o.xlsx) { $xj = (ConvertTo-Json -InputObject $o.xlsx -Compress) }
     if ($cii) { $cj = $cii } elseif ($o -and $o.cii) { $cj = (ConvertTo-Json -InputObject $o.cii -Compress) }
     if ($preview) { $pj = $preview } elseif ($o -and $o.preview) { $pj = (ConvertTo-Json -InputObject $o.preview -Compress) }
-    $text = "{""format"":""pluto-pipe-build"",""cii"":" + $cj + ",""preview"":" + $pj + "}"
+    $text = "{""format"":""pluto-pipe-build"",""cii"":" + $cj + ",""preview"":" + $pj + ",""xlsx"":" + $xj + "}"
     [IO.File]::WriteAllText($stampFile, $text, (New-Object Text.UTF8Encoding($false)))
 }
 
@@ -233,6 +280,9 @@ function Check-Target($model, $base) {
 # ---- one build: read the input, write the chosen outputs; throws on an input that does not build ----
 function Build-Once {
     $script:sw.Reset(); $script:sw.Start()
+    # the workbook question first, before any file is written
+    $xlsxGo = $(if ($Xlsx) { Confirm-Workbook $xlsxFile $stampFile } else { $null })
+    if ($xlsxGo -eq "force") { Say "warn" ("-Force: replacing {0}, which {1}" -f $xlsxFile, $script:workbookWhy); $xlsxGo = "backup" }
     $r = @{ build = "null"; seed = $null; compare = "null"; notices = @(); preview = "null"; review = $null; checks = $null }
     $base = $null; $csv = $null
     $script:buildWarnings = New-Object System.Collections.Generic.List[string]   # the build's warnings, for the preview's Checks panel
@@ -291,9 +341,12 @@ function Build-Once {
         if (-not $Preview) { Say "review" $r.review }
         Write-Stamp ("{""sha256"":" + (Q (Sha $bytes)) + ",""model"":" + (Q $modelHash) + ",""input"":" + (Q $inPath) + ",""inputSha256"":" + (Q $inSha) + ",""written"":" + (Q $now) + "}") $null
     }
-    if ($Xlsx) {
+    if ($Xlsx -and $xlsxGo -eq "keep") { Say "keep" ("{0}: kept as it is; nothing written over it" -f $xlsxFile) }
+    elseif ($Xlsx) {
+        if ($xlsxGo -eq "backup") { [IO.File]::Copy($xlsxFile, $xlsxFile + ".bak", $true); Say "write" ("{0}.bak: the workbook as it was" -f $xlsxFile) }
         $run = [PipeWorkbookRun]::For($xlsxFile, $repoRoot, $inPath)
         [PipeWorkbook]::Write($model, $xlsxFile, [IO.Path]::GetFileName($inPath), $run)
+        Set-StampXlsx $xlsxFile $stampFile "pluto-pipe-build" $now
         Say "write" ("{0}: the model as a workbook to edit (open it on its Start sheet)" -f $xlsxFile)
         foreach ($l in $run.WriteLaunchers()) { Say "write" ("{0}: double-click it, or use the Start sheet's link" -f $l) }
     }
@@ -335,7 +388,7 @@ function Build-Once {
     $res = "RESULT {""input"":" + (Q $inPath) + ",""kind"":" + (Q $kind) + ",""model"":" + (Q $modelHash)
     $res += ",""cii"":" + $(if ($Cii) { Q $ciiFile } else { "null" })
     $res += ",""nodes"":" + $(if ($Cii -and $csv) { Q $csvFile } else { "null" })
-    $res += ",""xlsx"":" + $(if ($Xlsx) { Q $xlsxFile } else { "null" })
+    $res += ",""xlsx"":" + $(if ($Xlsx -and $xlsxGo -ne "keep") { Q $xlsxFile } else { "null" })
     $res += ",""json"":" + $(if ($Json) { Q $jsonFile } else { "null" })
     $res += ",""review"":" + (Q $r.review)
     $res += ",""notices"":[" + (($r.notices | ForEach-Object { Q $_ }) -join ",") + "]"

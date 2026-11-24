@@ -4,9 +4,9 @@ status: current
 created: 2026-09-03
 ---
 
-# SAP tank builder — features, plans, checks
-
 *↑ [[vault/Pluto Home|Home]] › [[vault/arms/Arms map|Arms map]]*
+
+# SAP tank builder — features, plans, checks
 
 `pythonTools/sap/tankbuilder` generates a SAP2000 tank model from a TOML config
 (kip, ft, F), `run_sap.py` runs it and hands the results to
@@ -81,7 +81,8 @@ meant to be checked. Real project numbers live only in the gitignored `configs/*
 >    write): hoop tension vs φ f_y A_s of the longitudinal bars; bending vs the bars per
 >    face; shear vs the hoops. Reads the SAP frame-force table; prints demand / capacity
 >    per member, flags the governing one. Python because it runs on the development side and reads SAP
->    output. Frame forces are not exported to the viewer yet (SapToPluto open thread).
+>    output. The viewer already shows the frame end forces and the station envelope (`SapToPluto`,
+>    [[vault/arms/sap-results-coverage|sap-results-coverage]]).
 > 3. *SAP concrete frame design* — the section can carry the rebar (ACI 318 beam
 >    design), least work, but SAP designs beams/columns, not rings in tension, so it
 >    does not replace 2.
