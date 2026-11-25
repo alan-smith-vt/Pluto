@@ -194,6 +194,16 @@ ones, so they carry no notice ([[vault/format/pipe-to-frame|pipe-to-frame]]).
 > - So they come from SAP's own default list of tables saved after analysis, which names tables this install does not
 >   have. They change nothing in the model; the fix, if one is wanted, is on SAP's side (CSI, or a repair install).
 
+> [!info]- A load case's design type: `DesTypeOpt` (STAAD round 4, 2026-11-25)
+> `LOAD CASE DEFINITIONS` carries a case's design type in two fields, `DesTypeOpt` and `DesignType`.
+> - **SAP sets the type itself** (`DesTypeOpt="Prog Det"`, its default) from the case's load patterns. A row with only
+>   `DesignType=Other` came back from SAP 24.2 as `DesTypeOpt="Prog Det"   DesignType=Dead`. That case was STAAD's
+>   `LOADTYPE None`, made of DEAD and LIVE.
+> - **Pluto's fix:** a `.s2k` made from a `.std` now writes `DesTypeOpt="User Spec"` before a design type of the case's
+>   own. It writes one only where the type differs from its first pattern's.
+> - **To confirm at the next import:** the spelling `"User Spec"`. SAP's exports seen here only show `"Prog Det"`, and the
+>   import log names a value it does not take.
+
 
 > [!info]- A ground displacement through a `Fixed` link DOF (the CAESAR probe, SAP 24.2.0, 2026-11-16)
 > The CAESAR check model's probe tied a pipe joint to a joint below it by a zero-length link with U1 `Fixed`. The joint

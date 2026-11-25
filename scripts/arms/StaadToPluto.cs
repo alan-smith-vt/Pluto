@@ -402,7 +402,10 @@ public static class StaadToPluto
         foreach (var ck in checks)
         {
             int only = !ck.Print.AllCases && ck.Print.Cases.Count == 1 ? ck.Print.Cases[0] : 0;
-            if (only != 0 && checkedCase.Add(only))
+            // a check that gave no ratio (STAAD checked nothing: an envelope of no strength or serviceability TYPE, round 4)
+            // does not take its case's place from a later check that did
+            bool rated = ck.Rows.Any(c => c.HasRatio);
+            if (only != 0 && rated && checkedCase.Add(only))
             {
                 ck.InCase = true; ck.Plane = only;
                 res.CodeChecksInCases++;
@@ -417,7 +420,8 @@ public static class StaadToPluto
                 caseNames[ck.Plane] = "Check " + ck.Print.Order.ToString(CI) + ": " + ck.Code + ", " +
                     (only != 0 ? "case " + only.ToString(CI) : "worst of " + (ck.Print.AllCases ? "every case" : "LOAD LIST " + ck.Print.LoadList));
                 res.CodeCheckEntries++;
-                if (only != 0) res.Notes.Add("CHECK CODE " + ck.Print.Order.ToString(CI) + " (" + ck.Code + ") is case " + only.ToString(CI) + "'s second check: an entry of its own");
+                if (only != 0 && !rated) res.Notes.Add("CHECK CODE " + ck.Print.Order.ToString(CI) + " (" + ck.Code + ", LOAD LIST " + ck.Print.LoadList + ") gave no ratio: an entry of its own, not case " + only.ToString(CI) + "'s");
+                else if (only != 0) res.Notes.Add("CHECK CODE " + ck.Print.Order.ToString(CI) + " (" + ck.Code + ") is case " + only.ToString(CI) + "'s second check: an entry of its own");
             }
             foreach (var c in ck.Rows)
             {

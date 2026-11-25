@@ -72,7 +72,8 @@ survive a re-export.
 > How each check is placed:
 > - **A `LOAD LIST` of one case:** the check's ratios go into that case, beside its forces. Pick a member, or colour
 >   by `Code ratio`, in any case. The first such check of a case goes there. A later one of the same case is an entry
->   of its own, with a notice.
+>   of its own, with a notice. So is one that gave no ratio (STAAD checked nothing, as under an envelope of TYPE
+>   CONNECTION), so that it does not take the case's place from a later check that did.
 > - **Any other check** (several cases, or no `LOAD LIST`: every case) is an entry of its own in the load case list:
 >   `Check <n>: <code>, worst of LOAD LIST <list>`. It holds each member's governing ratio and its case.
 > - **Where one code was checked case by case in two cases or more**, one more entry holds each member's largest ratio
@@ -80,7 +81,12 @@ survive a re-export.
 >   print. The viewer's own envelopes are for shells only.
 >
 > `LOAD LIST ENV <envelopes>` (TR.40) is the cases of those envelopes, from the file's `DEFINE ENVELOPE`. A load in
-> two envelopes is in the last one only, as STAAD reads it. An envelope of one case puts its check into that case.
+> two envelopes is in both, as STAAD.Pro 2025 lists it (round 4; TR.40 says the last only). An envelope of one case
+> puts its check into that case.
+>
+> STAAD prints a box with no ratio for a member with `DFF` under a load list that has no serviceability envelope:
+> "Status: PASS, Ratio: NaN, Loadcase: 0, Ref: Deflection". Nothing was checked, so it reads as NOT DESIGNED, with
+> that as its note.
 >
 > Components (kind `code`): `Code ratio` and `Code case`. Each holds one value per member, the same at both ends.
 > A member that was not checked or was NOT DESIGNED has none and draws grey. In the check's own entries the forces
@@ -117,7 +123,8 @@ survive a re-export.
 >   global. A case that leaves out a member joint is not written, with a warning; a missing joint would draw
 >   undeformed.
 > - **Reactions** are as printed, global: `Reaction FX FY FZ |F| MX MY MZ |M|` (kind `restraint`), on every member
->   end at the support.
+>   end at the support. Printed in two sets of units, they are read in the first print's: a later print's rows are
+>   converted, with a warning, and a case an earlier print gave keeps those rows.
 > - **Load cases** are named `<number>: <title>`. Only cases with a result are listed.
 > - **Sidecar:**
 >   - one beam group per section, ticked;

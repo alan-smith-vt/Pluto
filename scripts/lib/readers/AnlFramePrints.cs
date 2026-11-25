@@ -498,7 +498,7 @@ public static class AnlFramePrintTables
                 double ratio; int lc;
                 if (!(mt = BoxStatus.Match(line)).Success) { fail(); continue; }
                 cur.Status = mt.Groups[1].Value.ToUpperInvariant();
-                cur.HasRatio = IsNum(mt.Groups[2].Value, out ratio); cur.Ratio = cur.HasRatio ? ratio : 0;
+                cur.HasRatio = IsNum(mt.Groups[2].Value, out ratio) && !double.IsNaN(ratio); cur.Ratio = cur.HasRatio ? ratio : 0;
                 IsInt(mt.Groups[3].Value, out lc); cur.LC = lc;
                 stage = 12; continue;
             }
@@ -511,6 +511,19 @@ public static class AnlFramePrintTables
             }
             if (stage == 13)
             {
+                // a box that ends after Location: no forces. STAAD 2025 prints one for a member with DFF under a load list
+                // with no serviceability envelope: "Status: PASS  Ratio: NaN  Loadcase: 0", "Ref: Deflection" (round 4).
+                // Nothing was checked, so it reads as not designed
+                if (Regex.IsMatch(line, @"^\s*\|-+\|\s*$"))
+                {
+                    if (!cur.HasRatio && cur.LC == 0)
+                    {
+                        cur.Status = "NOT DESIGNED";
+                        string note = (cur.Critical.Length > 0 ? cur.Critical + ": " : "") + "STAAD gives no ratio and no load case (nothing checked under this load list)";
+                        if (cur.Note.IndexOf(note, StringComparison.OrdinalIgnoreCase) < 0) cur.Note = cur.Note.Length == 0 ? note : cur.Note + "; " + note;
+                    }
+                    stage = 0; continue;
+                }
                 if (!(mt = BoxPz.Match(line)).Success || !Put(cur, 0, mt.Groups[1].Value) || !Put(cur, 1, mt.Groups[3].Value) || !Put(cur, 2, mt.Groups[4].Value)) { fail(); continue; }
                 cur.Axial = mt.Groups[2].Value.ToUpperInvariant();
                 stage = 14; continue;
@@ -645,7 +658,7 @@ public static class AnlFramePrintTables
         double ratio; int lc;
         r.Status = mt.Groups[1].Value.ToUpperInvariant();
         r.Critical = Squeeze(mt.Groups[2].Value);
-        r.HasRatio = IsNum(mt.Groups[3].Value, out ratio); r.Ratio = r.HasRatio ? ratio : 0;
+        r.HasRatio = IsNum(mt.Groups[3].Value, out ratio) && !double.IsNaN(ratio); r.Ratio = r.HasRatio ? ratio : 0;
         IsInt(mt.Groups[4].Value, out lc); r.LC = lc;
         return true;
     }

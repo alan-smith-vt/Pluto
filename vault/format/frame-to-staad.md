@@ -509,25 +509,36 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > **Load envelopes (TR.40).** `DEFINE ENVELOPE` … `<loads> ENVELOPE i [TYPE t]` … `END DEFINE ENVELOPE`, before or after
 > the analysis:
 > - each envelope is a SAP Envelope combination of its cases and combinations, named `ENVELOPE i`;
-> - a load listed in two envelopes is in the last one only, as STAAD reads it (a notice names it);
+> - a load listed in two envelopes stays in both, with a notice;
 > - TYPE (STRENGTH, SERVICEABILITY, CONNECTION, COLUMN, STRESS; its first letters are enough) and the number ride on the
 >   STAAD loads sheet.
+>
+> **A load in two envelopes.** STAAD.Pro 2025 does not do what TR.40 says ("only included in the last load envelope").
+> Round 4 listed 103 in envelopes 1 (STRENGTH) and 3 (CONNECTION):
+> - STAAD warns: "Load Case 103 is already defined in a previous envelope. The load case of final envelope type will
+>   override previous envelope type attributes";
+> - `LOAD LIST ENV 1` still prints 101, 102 **and** 103;
+> - its design takes 103 as CONNECTION, the last envelope's TYPE: the strength check under `LOAD LIST ENV 1 2` leaves 103
+>   out (column 3: 0.277 under 102, where 103 alone gives 0.334).
+>
+> So Pluto keeps the lists as written, and `-Std` writes them so. STAAD's own save of a file does what TR.40 says: it
+> drops the load from the earlier envelope, which changes what that envelope's prints list. Pluto reads that save as it
+> is.
 >
 > `-Std` writes every SAP Envelope combination as `DEFINE ENVELOPE` after `PERFORM ANALYSIS`, before the prints and
 > design commands. TR.40 does not say where the block goes. STAAD.Pro 2025 refused the two other places in round 4
 > (below):
-> - **after the combinations,** where STAAD's own save puts it, its analysis stops: "DEFINE commands for load
->   generation should be provided before specifying primary load cases";
+> - **after the combinations,** its analysis stops: "DEFINE commands for load generation should be provided before
+>   specifying primary load cases";
 > - **before the loads,** its editor drops the block: the loads it names are not yet defined.
 >
-> A `.std` with the block in any of these places reads the same.
+> STAAD's save keeps the block where the file has it. A `.std` with the block in any of these places reads the same.
 >
 > An envelope is listed as not written when an item:
 > - has a scale factor other than 1;
-> - is not written to STAAD;
-> - or is in an envelope before it (STAAD keeps a load in one).
+> - or is not written to STAAD.
 >
-> An envelope changes no result.
+> An envelope changes no result. It changes which cases a `LOAD LIST ENV` names, and so what is printed and checked.
 >
 > **Carried: what SAP has no place for** (`StaadCarry`, in `FrameStd.cs`). Two tables of Pluto's own ride in the model's
 > document, the workbook shows them on two sheets, and `-Std` writes them again. The `.s2k` for SAP leaves them out,
@@ -577,7 +588,6 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >
 > **Limits:**
 > - **Out of STAAD:** an insertion point comes back as joint offsets, and auto mesh as STAAD's (none).
-> - **Not restored:** an envelope `-Std` did not write (it overlapped another) is not carried back.
 > - **Not checked:** the STAAD commands carried after edits in SAP are not checked against SAP's renamed or deleted
 >   members.
 >
@@ -587,7 +597,7 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > - STAAD's file merged gives back the master's SAP-only tables and modal case;
 > - STAAD → workbook → STAAD is identical.
 
-> [!info]- STAAD round 4 (`scripts/lib/probes/staad-round4-probe.std`, the first run 2026-11-24, to run again)
+> [!info]- STAAD round 4 (`scripts/lib/probes/staad-round4-probe.std`, run 2026-11-24 and 25)
 > The triangle SAP <-> workbook <-> STAAD, with STAAD as the judge. The steps and what to send back are in
 > `scripts/lib/probes/README.md`. It settles:
 > - the unit conversion of every kind of number (the original and Pluto's copy must print the same results);
@@ -617,7 +627,36 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > - **Now after `PERFORM ANALYSIS`,** before the prints, in the probe and `-Std` alike.
 > - **STAAD's save of `round4.std` was refused** on G against E (its 6 digits, above). It now reads exactly.
 >
-> The results comparison and the SAP steps wait for the next run.
+> **The second run (2026-11-25).** Both `.std` ran to the end in STAAD.Pro 2025.
+> - **Units: settled.** The probe, with five sets of units, and Pluto's copy, all in FEET KIP, print the same results:
+>   - displacements, reactions and member end forces, every case: 2,687 numbers, none apart by more than 1 in the last
+>     printed digit;
+>   - every code check ratio and governing case, in all five `CHECK CODE` runs.
+> - **The analysis' UNIT: settled.** The first print after the analysis is in kN and m in both.
+> - **The envelope's place: settled.** After `PERFORM ANALYSIS` STAAD takes it, and its save keeps it there.
+> - **A load in two envelopes:** not TR.40's rule (above). `LOAD LIST ENV 1` printed 101 to 103 in the probe, and 101 102
+>   in Pluto's copy, which had followed TR.40. The design was the same in both. `-Std` now writes the lists as given.
+> - **Checks with no strength or serviceability envelope.** Under `LOAD LIST ENV 3` (CONNECTION only), STAAD checked
+>   nothing:
+>   - it warns for members 1 to 4, 8 and 9;
+>   - members 5, 6, 7 and 11 have `DFF`, and each gets a box "Status: PASS, Ratio: NaN, Loadcase: 0, Ref: Deflection".
+>
+>   The `.anl` reader now reads that box as not designed, with a note.
+> - **`StaadToPluto`.**
+>   - The checks of 101, 102 and 103 go into their cases; `ENV 1 2` and `ENV 3` get an entry each.
+>   - A check that gave no ratio no longer takes its case's place: `ENV 3` (103 only) had taken it from
+>     `LOAD LIST 103`.
+>   - Reactions printed in two sets of units (the probe's kN·m, then kip·in) are read in the first set, converted, with a
+>     warning. A case already read keeps its rows. This had been an error, "print them once".
+> - **SAP:**
+>   - the import log names no Pluto table, and the three envelopes imported (16 combination rows);
+>   - its ten errors are SAP's own (see [[vault/format/sap-s2k-tables|sap-s2k-tables]]).
+> - **The merge from SAP's export:** `round4_fromsap.std` is `round4.std` as STAAD reads it, but for one thing. `LOAD 5`
+>   (LOADTYPE None, of DEAD and LIVE) came back Dead. SAP sets a case's design type from its patterns unless the type is
+>   user specified, so the `.s2k` from a `.std` now writes `DesTypeOpt="User Spec"` with a design type of the case's own.
+>   SAP's spelling is to be confirmed at the next import.
+> - **STAAD's save:** reads exactly, and writes back the same. Against Pluto's file, the only differences are STAAD's
+>   6-digit numbers and `PRINT SUPPORT REACTION` (singular).
 
 > [!info]- The STAAD probe (`-StdProbe <folder>`)
 > `staad-probe.s2k` and `staad-probe.std`: one model, every part analysable, for SAP2000 and STAAD.Pro alike. Each

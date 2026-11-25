@@ -694,6 +694,7 @@ public static class AnlFrameReader
         bool _haveForceUnits;
         List<int> _list;            // the LOAD LIST in force (null: every case)
         string _listText = "ALL";
+        ForceUnit _reactionF; LengthUnit _reactionL;     // the first reaction print's units, which the model keeps
 
         public Reading(AnlFrameModel m, string path) { _m = m; _path = path; }
 
@@ -1240,9 +1241,9 @@ public static class AnlFrameReader
                 AnlFrameEnvelope e;
                 if (!_m.Envelopes.TryGetValue(n, out e)) _m.Envelopes[n] = e = new AnlFrameEnvelope { Number = n };
                 if (i + 3 < t.Length && t[i + 2].StartsWith("TYP", StringComparison.OrdinalIgnoreCase)) e.Type = StaadInput.EnvelopeType(t[i + 3]);
-                // a load is in one envelope, the last that lists it (TR.40)
-                foreach (var other in _m.Envelopes.Values) other.Loads.RemoveAll(ids.Contains);
-                e.Loads.AddRange(ids.Distinct());
+                // a load stays in every envelope that lists it: STAAD.Pro 2025's LOAD LIST ENV lists it under each (round 4,
+                // 2026-11-25; TR.40 says the last only). Its design takes the last envelope's TYPE, which STAAD warns of
+                e.Loads.AddRange(ids.Distinct().Where(x => !e.Loads.Contains(x)));
             }
         }
 
@@ -1373,16 +1374,24 @@ public static class AnlFrameReader
                 return;
             }
             string f = AnlFrameModel.UnitText(fu), m = f + "-" + AnlFrameModel.UnitText(lu);
-            if (_m.Reactions.Count > 0 && (f != _m.ReactionForceText || m != _m.ReactionMomentText))
-            {
-                _m.Error("REACTION_UNITS", "support reactions are printed twice in different units (" + _m.ReactionMomentText + ", then " + m + "): print them once");
-                return;
-            }
-            _m.ReactionForceText = f; _m.ReactionMomentText = m;
+            // a print in other units than the first (round 4 prints the first case in kN-m, then all in kip-in): converted to
+            // the first's units; a case an earlier print gave keeps those rows, not overwritten by a converted copy
+            bool other = _m.Reactions.Count > 0 && (f != _m.ReactionForceText || m != _m.ReactionMomentText);
+            if (!other) { _m.ReactionForceText = f; _m.ReactionMomentText = m; _reactionF = fu; _reactionL = lu; }
             List<AnlFrameJointRow> rows = JointRows(text, print, "REACTION_ROW_UNREAD");
             var noSupport = rows.Where(x => !_m.Supports.ContainsKey(x.Node)).Select(x => x.Node).Distinct().ToList();
             if (noSupport.Count > 0) _m.Warn("REACTION_JOINT", "support reactions at joints with no SUPPORTS line: " + Ids(noSupport));
             CheckJointTable(rows, print, _m.Supports.Count, "REACTION_ROWS", "supports");
+            if (other)
+            {
+                double kF = UnitConvert.Force(1, fu, _reactionF), kM = kF * UnitConvert.Length(1, lu, _reactionL);
+                var held = new HashSet<long>(_m.Reactions.Select(x => ((long)x.Node << 32) | (uint)x.LC));
+                int kept = rows.RemoveAll(x => held.Contains(((long)x.Node << 32) | (uint)x.LC));
+                foreach (var r in rows) for (int i = 0; i < 6; i++) r.V[i] *= i < 3 ? kF : kM;
+                _m.Warn("REACTION_UNITS", print.Command + " (LOAD LIST " + print.LoadList + ") is in " + m + ", the first reaction print in " + _m.ReactionMomentText + ": "
+                    + (rows.Count > 0 ? rows.Count + " row(s) converted to " + _m.ReactionMomentText : "no new row")
+                    + (kept > 0 ? "; " + kept + " row(s) an earlier print gave are kept from it" : ""));
+            }
             Merge(_m.Reactions, rows);
         }
 

@@ -328,10 +328,9 @@ public static class StdToFrame
             }
         }
         if (s.Analysis != null) f.Add(Regex.Replace(s.Analysis.ToUpperInvariant(), @"\s+", " "));
-        var lastIn = new Dictionary<int, int>();
-        foreach (var e in s.Envelopes) foreach (int id in e.Loads) lastIn[id] = e.Number;
+        // each envelope's loads as written: STAAD lists a load under every envelope that names it
         foreach (var e in s.Envelopes)
-            f.Add("ENVELOPE " + I(e.Number) + " TYPE " + e.Type + ": loads " + FrameStd.Condense(e.Loads.Where(id => lastIn[id] == e.Number)));
+            f.Add("ENVELOPE " + I(e.Number) + " TYPE " + e.Type + ": loads " + FrameStd.Condense(e.Loads.Distinct()));
         // the commands after the analysis, in order (carried: -Std writes them again)
         if (s.AnalysisPrint != null) f.Add("the analysis' " + Regex.Replace(s.AnalysisPrint.ToUpperInvariant(), @"\s+", " "));
         for (int k = 0; k < s.Output.Count; k++) f.Add("command " + I(k + 1) + " after the analysis: " + IdsSorted(Regex.Replace(s.Output[k].ToUpperInvariant(), @"\s+", " ")));
@@ -1475,8 +1474,9 @@ public static class StdToFrame
                 if (co.Items.Count == 0) Refuse("LOAD COMBINATION " + l.Id + ": no loads");
                 Combos.Add(co);
             }
-            // DEFINE ENVELOPE (TR.40): SAP's Envelope combinations of the cases and combinations listed; a load listed in two
-            // envelopes is in the last one only, as STAAD reads it
+            // DEFINE ENVELOPE (TR.40): SAP's Envelope combinations of the cases and combinations listed, as written. A load
+            // listed in two envelopes stays in both: STAAD.Pro 2025's LOAD LIST ENV lists it under each, and its design takes
+            // the last envelope's TYPE for it (round 4, 2026-11-25; TR.40 and STAAD's own save keep it in the last only)
             var lastIn = new Dictionary<int, int>();
             foreach (var e in In.Envelopes) foreach (int id in e.Loads) lastIn[id] = e.Number;
             foreach (var e in In.Envelopes)
@@ -1487,14 +1487,19 @@ public static class StdToFrame
                 var later = new List<int>();
                 foreach (int id in e.Loads.Distinct())
                 {
-                    if (lastIn[id] != e.Number) { later.Add(id); continue; }
+                    if (lastIn[id] != e.Number) later.Add(id);
                     Case c; var co = Combos.FirstOrDefault(x => x.Number == id);
                     if (numbers.TryGetValue(id, out c)) env.Items.Add(new[] { "C", c.Name });
                     else if (co != null) env.Items.Add(new[] { "K", co.Name });
                     else Refuse(who + ": load " + I(id) + " is not a load case or a combination");
                 }
-                if (later.Count > 0) Note(who + ": loads " + FrameStd.Condense(later) + " are in a later envelope too, which keeps them (STAAD's rule)");
-                if (env.Items.Count == 0) { Note(who + ": no load left in it, not read"); continue; }
+                foreach (var g in later.GroupBy(id => lastIn[id]))
+                {
+                    var last = In.Envelopes.Last(x => x.Number == g.Key);
+                    bool one = g.Count() == 1;
+                    Note(who + ": " + (one ? "load " : "loads ") + FrameStd.Condense(g) + (one ? " is" : " are") + " in ENVELOPE " + I(g.Key) + " too. STAAD lists " + (one ? "it" : "them") + " under both, and designs " + (one ? "it" : "them") + " as ENVELOPE " + I(g.Key) + "'s" + (last.Type.Length > 0 ? " TYPE " + last.Type : " (no TYPE)"));
+                }
+                if (env.Items.Count == 0) { Note(who + ": no load in it, not read"); continue; }
                 Envs.Add(env);
             }
             if (Envs.Count > 0) Note("DEFINE ENVELOPE as SAP Envelope combinations: " + string.Join(", ", Envs.Select(x => x.Name + (x.Type.Length > 0 ? " (TYPE " + x.Type + ")" : "")).ToArray()) + "; their numbers and types ride in the workbook's STAAD loads sheet");
@@ -1791,7 +1796,9 @@ public static class StdToFrame
             if (!DistFirst) table("FRAME LOADS - DISTRIBUTED", Pats.SelectMany(p => p.Dist));
             table("FRAME LOADS - TEMPERATURE", Pats.SelectMany(p => p.Temp));
             string type = PDelta ? "NonStatic" : "LinStatic";
-            table("LOAD CASE DEFINITIONS", Cases.Select(c => "Case=" + Q(c.Name) + "   Type=" + type + "   InitialCond=Zero" + (c.TypeNeeded ? "   DesignType=" + Q(c.Type) : "")));
+            // a design type of the case's own is user specified: without DesTypeOpt SAP 24.2 sets its own from the patterns
+            // (LOAD 5 LOADTYPE None, of DEAD and LIVE, came back Dead in round 4)
+            table("LOAD CASE DEFINITIONS", Cases.Select(c => "Case=" + Q(c.Name) + "   Type=" + type + "   InitialCond=Zero" + (c.TypeNeeded ? "   DesTypeOpt=\"User Spec\"   DesignType=" + Q(c.Type) : "")));
             table("CASE - STATIC 1 - LOAD ASSIGNMENTS", Cases.SelectMany(c => c.Loads.Select(kv => "Case=" + Q(c.Name) + "   LoadType=\"Load pattern\"   LoadName=" + Q(kv.Key) + "   LoadSF=" + F(kv.Value))));
             string nlp = "   ResultsSave=\"Final State\"   SolScheme=\"Iterative Events\"   MaxTotal=200   MaxNull=50   EvLumpTol=0.01   MaxEvPerStp=24   MaxIterCS=10   MaxIterNR=40   ItConvTol=0.0001   TFMaxIter=10   TFTol=0.01   TFAccelFact=1   TFNoStop=No";
             if (PDelta) table("CASE - STATIC 4 - NONLINEAR PARAMETERS", Cases.Select(c => "Case=" + Q(c.Name) + "   GeoNonLin=P-Delta" + nlp));

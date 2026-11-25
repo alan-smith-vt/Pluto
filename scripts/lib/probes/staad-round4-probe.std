@@ -110,8 +110,8 @@ LOAD COMBINATION 202 D + 0.6WX + SETTLEMENT
 UNIT METER KN
 PERFORM ANALYSIS PRINT STATICS CHECK
 * the envelopes, after the analysis (the first run refused them after the
-* loads, the editor before them); 103 is in envelopes 1 and 3: STAAD keeps it
-* in the last (TR.40)
+* loads, the editor before them); 103 is in envelopes 1 and 3: STAAD lists it
+* under both and designs it as the last's TYPE (round 4; TR.40 says the last)
 DEFINE ENVELOPE
 101 TO 103 ENVELOPE 1 TYPE STRENGTH
 201 202 ENVELOPE 2 TYPE SERVICEABILITY

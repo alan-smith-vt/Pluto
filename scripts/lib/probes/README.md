@@ -116,7 +116,8 @@ The round for the triangle SAP <-> frame workbook <-> STAAD (vault/format/frame-
 
    The analysis runs under METER KN, so the first print after it is in those units. Pluto's copy has every number in
    FEET KIP, so **its results must be the original's, to the last printed digit**.
-2. **Load envelopes** (TR.40). Three envelopes, with case 103 listed in two (STAAD keeps it in the last).
+2. **Load envelopes** (TR.40). Three envelopes, with case 103 listed in two. STAAD lists it under both and designs it
+   as the last's TYPE (round 4; TR.40 says the last only).
    `LOAD LIST ENV 1` then prints the reactions of the loads it holds. Strength and deflection (`DFF`) checks run under
    `LOAD LIST ENV 1 2`, and a check under the one-load envelope 3.
 3. **A code check per case:** `LOAD LIST 101` + `CHECK CODE ALL`, and the same for 102 and 103.
@@ -157,14 +158,14 @@ pull. `<dir>` is a folder outside the repo.
 
 ### What it settles
 
-| Question | Settled by |
-|---|---|
-| Unit conversion of every kind of number | the two `.anl` agree on every displacement, reaction and member force, every case |
-| The `UNIT` in force at the analysis carried | the first reaction print is in kN and m in both |
-| `DEFINE ENVELOPE` where `-Std` writes it: after `PERFORM ANALYSIS`, before the prints (the first run stopped at one after the combinations, and the editor drops one before the loads) | both `.std` run |
-| A load in two envelopes | the cases `LOAD LIST ENV 1`'s reaction print lists: 101 102 (TR.40's rule), or 101 to 103 |
-| Checks under envelopes and per case | the `.anl` reader takes `LOAD LIST ENV`; StaadToPluto puts envelope 3's and 101's to 103's checks into their cases |
-| SAP takes the workbook's output | the import log names no Pluto table; the envelope combinations import |
-| The merge from SAP's own export | `round4_fromsap.std` is `round4.std` as STAAD reads it |
-| STAAD's own save of carried commands, load numbers and envelopes | step 7 reads exactly |
+| Question | Settled by | Result (2026-11-25) |
+|---|---|---|
+| Unit conversion of every kind of number | the two `.anl` agree on every displacement, reaction and member force, every case | **yes:** 2,687 numbers, none more than 1 in the last printed digit apart; every code ratio the same |
+| The `UNIT` in force at the analysis carried | the first reaction print is in kN and m in both | **yes** |
+| `DEFINE ENVELOPE` where `-Std` writes it: after `PERFORM ANALYSIS`, before the prints (the first run stopped at one after the combinations, and the editor drops one before the loads) | both `.std` run | **yes**, and STAAD's save keeps it there |
+| A load in two envelopes | the cases `LOAD LIST ENV 1`'s reaction print lists: 101 102 (TR.40's rule), or 101 to 103 | **101 to 103**, not TR.40's rule; the design takes 103 as the last envelope's TYPE. Pluto now keeps the lists as written |
+| Checks under envelopes and per case | the `.anl` reader takes `LOAD LIST ENV`; StaadToPluto puts 101's to 103's checks into their cases | **yes**, after two fixes: the reader reads STAAD's `Ratio: NaN` deflection box, and a check with no ratio (`ENV 3`) no longer takes case 103's place |
+| SAP takes the workbook's output | the import log names no Pluto table; the envelope combinations import | **yes** (its ten errors are SAP's own) |
+| The merge from SAP's own export | `round4_fromsap.std` is `round4.std` as STAAD reads it | **all but `LOAD 5`'s LOADTYPE**, which SAP set from its patterns; fixed with `DesTypeOpt="User Spec"`, to confirm at the next import |
+| STAAD's own save of carried commands, load numbers and envelopes | step 7 reads exactly | **yes** |
 

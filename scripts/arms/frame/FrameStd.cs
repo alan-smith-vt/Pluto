@@ -1338,8 +1338,9 @@ public static class FrameStd
         sealed class Combination { public string Name, Kind; public int Number; public List<KeyValuePair<int, double>> Items; }
 
         // SAP's Envelope combinations as STAAD's load envelopes (DEFINE ENVELOPE, TR.40): each listed load a written case or
-        // combination at scale factor 1, in one envelope only (STAAD keeps a load in the last); its number and TYPE the STAAD
-        // loads sheet's, else the next free number. One that cannot be written is listed (an envelope changes no result)
+        // combination at scale factor 1; its number and TYPE the STAAD loads sheet's, else the next free number. A load in two
+        // envelopes is written in both: STAAD lists it under each and designs it by the last one's TYPE, with a notice. One
+        // that cannot be written is listed (an envelope changes no result)
         sealed class Envelope { public string Name, Type; public int Number; public List<int> Loads; }
 
         List<Envelope> Envelopes(List<Primary> cases, List<Combination> combos)
@@ -1349,7 +1350,6 @@ public static class FrameStd
             foreach (var p in cases) number["C|" + p.C.Label] = p.Number;
             foreach (var c in combos) number["K|" + c.Name] = c.Number;
             var carried = StaadCarry.LoadsOf(M).Where(l => l[0] == "Envelope").ToList();
-            var taken = new HashSet<int>();
             var used = new HashSet<int>();
             var notWritten = new List<string>();
             int next = 1;
@@ -1362,12 +1362,10 @@ public static class FrameStd
                     double sf; int n;
                     if (!double.TryParse(it[2], NumberStyles.Float, Inv, out sf) || sf != 1) { why = it[1] + " at scale factor " + it[2] + ": STAAD's envelope takes a load as it is"; break; }
                     if (!number.TryGetValue((Is(it[0], "Response Combo") ? "K|" : "C|") + it[1], out n)) { why = it[1] + " is not written to STAAD"; break; }
-                    if (taken.Contains(n)) { why = it[1] + " is in an envelope before it: STAAD keeps a load in one"; break; }
                     if (!ids.Contains(n)) ids.Add(n);
                 }
                 if (why == null && ids.Count == 0) why = "no load";
                 if (why != null) { notWritten.Add(c.Label + " (" + why + ")"); continue; }
-                taken.UnionWith(ids);
                 var row = carried.FirstOrDefault(l => l[1] == c.Label);
                 int num;
                 if (row == null || !int.TryParse(row[2], NumberStyles.None, Inv, out num) || num < 1 || used.Contains(num))
@@ -1379,6 +1377,16 @@ public static class FrameStd
                 o.Add(new Envelope { Name = c.Label, Number = num, Type = row == null ? "" : row[3], Loads = ids });
             }
             if (notWritten.Count > 0) Note("envelopes not written (STAAD's DEFINE ENVELOPE): " + string.Join(", ", notWritten.ToArray()));
+            // a load in two envelopes: STAAD lists it under both, and its design takes the last one's TYPE (round 4, 2026-11-25)
+            for (int k = 0; k < o.Count; k++)
+            {
+                var again = o[k].Loads.Where(id => o.Skip(k + 1).Any(x => x.Loads.Contains(id))).ToList();
+                foreach (var g in again.GroupBy(id => o.Last(x => x.Loads.Contains(id))))
+                {
+                    bool one = g.Count() == 1;
+                    Note("ENVELOPE " + o[k].Number.ToString(Inv) + ": " + (one ? "load " : "loads ") + Condense(g) + (one ? " is" : " are") + " in ENVELOPE " + g.Key.Number.ToString(Inv) + " too. STAAD lists " + (one ? "it" : "them") + " under both, and designs " + (one ? "it" : "them") + " as ENVELOPE " + g.Key.Number.ToString(Inv) + "'s" + (g.Key.Type.Length > 0 ? " TYPE " + g.Key.Type : " (no TYPE)"));
+                }
+            }
             if (o.Count > 0) Note("SAP's envelope combinations as STAAD's DEFINE ENVELOPE: " + string.Join(", ", o.Select(e => e.Name + " = ENVELOPE " + e.Number.ToString(Inv) + (e.Type.Length > 0 ? " TYPE " + e.Type : "")).ToArray()));
             return o;
         }
