@@ -109,7 +109,10 @@ function New-MiniBook([string]$Path, [System.Collections.Specialized.OrderedDict
     foreach ($name in $Sheets.Keys) {
         $n++
         $types += "<Override PartName=`"/xl/worksheets/sheet$n.xml`" ContentType=`"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml`"/>"
-        $list += "<sheet name=`"$([Security.SecurityElement]::Escape($name))`" sheetId=`"$n`" r:id=`"rId$n`"/>"
+        # a sheet named "Data (hidden)" is the hidden sheet Data
+        $shown = $name; $state = ''
+        if ($name.EndsWith(' (hidden)')) { $shown = $name.Substring(0, $name.Length - 9); $state = ' state="hidden"' }
+        $list += "<sheet name=`"$([Security.SecurityElement]::Escape($shown))`" sheetId=`"$n`"$state r:id=`"rId$n`"/>"
         $rels += "<Relationship Id=`"rId$n`" Type=`"$rel/worksheet`" Target=`"worksheets/sheet$n.xml`"/>"
     }
     $parts['[Content_Types].xml'] = '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' + $types + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'

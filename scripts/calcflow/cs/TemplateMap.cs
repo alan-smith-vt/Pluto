@@ -31,6 +31,12 @@ namespace CalcFlow
         public string Name = "";
         public readonly Dictionary<long, int> Xf = new Dictionary<long, int>();      // cell -> style index (every cell of the sheet part)
         public readonly List<int[]> Merges = new List<int[]>();                      // r1, c1, r2, c2 (0-based, inclusive)
+        public bool Hidden;                                                          // the sheet itself is hidden
+        public readonly HashSet<int> HiddenRows = new HashSet<int>();
+        public readonly List<int[]> HiddenCols = new List<int[]>();                  // c1, c2 (0-based, inclusive)
+
+        // a cell the engineer cannot see: its row or its column is hidden
+        public bool IsHidden(int row, int col) { return HiddenRows.Contains(row) || HiddenCols.Any(h => col >= h[0] && col <= h[1]); }
 
         // the merged range a cell lies in (null: none)
         public int[] MergeAt(int row, int col)
@@ -85,7 +91,7 @@ namespace CalcFlow
                                 do { if (xr.LocalName == "id" && xr.NamespaceURI.Length > 0) rid = xr.Value; } while (xr.MoveToNextAttribute());
                                 xr.MoveToElement();
                             }
-                            order.Add(new[] { Xlsx.DecodeX(name ?? ""), rid ?? "" });
+                            order.Add(new[] { Xlsx.DecodeX(name ?? ""), rid ?? "", xr.GetAttribute("state") ?? "" });
                         }
                 int k = 0;
                 foreach (string[] sh in order)
@@ -97,11 +103,23 @@ namespace CalcFlow
                     if (e == null) continue;
                     var s = new LookSheet();
                     s.Name = sh[0];
+                    s.Hidden = sh[2].Length > 0 && !string.Equals(sh[2], "visible", StringComparison.OrdinalIgnoreCase);
                     using (XmlReader xr = Xlsx.Xml(e))
                         while (xr.Read())
                         {
                             if (xr.NodeType != XmlNodeType.Element) continue;
-                            if (xr.LocalName == "c")
+                            if (xr.LocalName == "row" && IsOn(xr.GetAttribute("hidden")))
+                            {
+                                int r;
+                                if (int.TryParse(xr.GetAttribute("r") ?? "", NumberStyles.Integer, CultureInfo.InvariantCulture, out r)) s.HiddenRows.Add(r - 1);
+                            }
+                            else if (xr.LocalName == "col" && IsOn(xr.GetAttribute("hidden")))
+                            {
+                                int a, b;
+                                if (int.TryParse(xr.GetAttribute("min") ?? "", NumberStyles.Integer, CultureInfo.InvariantCulture, out a) && int.TryParse(xr.GetAttribute("max") ?? "", NumberStyles.Integer, CultureInfo.InvariantCulture, out b))
+                                    s.HiddenCols.Add(new[] { a - 1, b - 1 });
+                            }
+                            else if (xr.LocalName == "c")
                             {
                                 int col, row, xf;
                                 if (!Xlsx.ParseRef(xr.GetAttribute("r") ?? "", out col, out row)) continue;
@@ -119,6 +137,8 @@ namespace CalcFlow
             }
             return look;
         }
+
+        static bool IsOn(string v) { return v == "1" || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase); }
 
         // ---- colours
 
@@ -291,6 +311,8 @@ namespace CalcFlow
     public sealed class MapColumn
     {
         public string Cells = "", Heading = "", Group = "", Unit = "", Example = "", FilledBy = "", Notes = "";
+        public string LabelCell = "";       // the cell the heading was read from ("" none)
+        public string Check = "";           // why the engineer should look at this one ("" nothing to look at)
     }
 
     public sealed class MapBlock
@@ -341,6 +363,9 @@ namespace CalcFlow
             {
                 LookSheet ls = look.Sheet(sheet.Name);
                 if (ls == null) continue;
+                // what the engineer cannot see is not for the engineer to fill in: a hidden sheet, row or column
+                if (ls.Hidden) { res.Notes.Add(sheet.Name + ": a hidden sheet, not read"); continue; }
+                int unseen = 0;
                 // every fill of the sheet, and the cells it is on
                 var fills = new Dictionary<string, MapFill>(StringComparer.Ordinal);
                 var units = new List<Unit1>();
@@ -357,11 +382,13 @@ namespace CalcFlow
                     if (!fills.TryGetValue(fill, out f)) { f = new MapFill(); f.Sheet = sheet.Name; f.Fill = fill; f.Example = Xlsx.Ref(row, col); f.Input = IsInput(fill); fills[fill] = f; }
                     if (formula) f.Formulas++; else f.Cells++;
                     if (!f.Input || formula) continue;
+                    if (ls.IsHidden(row, col)) { unseen++; continue; }
                     var u = new Unit1();
                     u.R1 = row; u.C1 = col; u.R2 = merge == null ? row : merge[2]; u.C2 = merge == null ? col : merge[3];
                     units.Add(u);
                 }
                 res.Fills.AddRange(fills.Values.OrderByDescending(x => x.Cells));
+                if (unseen > 0) res.Notes.Add(sheet.Name + ": " + unseen.ToString(CultureInfo.InvariantCulture) + " cell(s) with the input fill sit in hidden rows or columns and are left out");
                 foreach (MapFill f in fills.Values.Where(x => x.Input && x.Formulas > 0))
                     res.Notes.Add(sheet.Name + ": " + f.Formulas.ToString(CultureInfo.InvariantCulture) + " cell(s) with the input fill " + f.Fill + " hold a formula and are not inputs");
 
@@ -423,15 +450,15 @@ namespace CalcFlow
                 Unit1 top = rows[0][j], bottom = rows[m - 1][j];
                 var c = new MapColumn();
                 c.Cells = Xlsx.Ref(top.R1, top.C1) + (m == 1 ? "" : ":" + Xlsx.Ref(bottom.R1, bottom.C1));
-                string group;
-                c.Heading = Above(sheet, ls, look, top, out group);
-                c.Group = group;
-                if (m == 1 && n == 1 && c.Heading.Length == 0) c.Heading = LeftLabel(sheet, ls, look, top).TrimEnd(':', ' ');
+                string group, at;
+                c.Heading = Above(sheet, ls, look, top, out group, out at);
+                c.Group = group; c.LabelCell = at;
+                if (m == 1 && n == 1 && c.Heading.Length == 0) { c.Heading = LeftLabel(sheet, ls, look, top, out at).TrimEnd(':', ' '); c.LabelCell = at; }
                 else if (m == 1 && n == 1)
                 {
                     // a lone cell with text above and text beside it: the label beside it is the nearer name
-                    string left = LeftLabel(sheet, ls, look, top);
-                    if (left.Length > 0) { c.Group = ""; c.Heading = left.TrimEnd(':', ' '); }
+                    string left = LeftLabel(sheet, ls, look, top, out at);
+                    if (left.Length > 0) { c.Group = ""; c.Heading = left.TrimEnd(':', ' '); c.LabelCell = at; }
                 }
                 c.Unit = Units.FromLabel(c.Heading);
                 if (c.Unit.Length == 0 && m == 1)
@@ -464,6 +491,13 @@ namespace CalcFlow
                 else if (m > 1) c.FilledBy = MarkTable;
                 else c.FilledBy = model ?? PerMark;      // a lone cell headed Fx takes the force of one load case at a time
             }
+            // what the engineer should look at: the tool's guesses, and an input it could not name
+            foreach (MapColumn c in b.Columns)
+            {
+                if (c.Heading.Length == 0) c.Check = "no heading found: named by its cell";
+                else if (c.Notes.IndexOf("a guess", StringComparison.Ordinal) >= 0) c.Check = "a guess";
+                else if (!b.LoadRows && c.FilledBy != PerMark && c.FilledBy != MarkTable) c.Check = "taken from the model by its heading";
+            }
             list.Add(b);
             return list;
         }
@@ -474,6 +508,8 @@ namespace CalcFlow
             string h = Regex.Replace(c.Heading, @"\s+", " ").Trim();
             string force = ProjectBook.GuessSource(h, "", c.Unit);
             if (force != ProjectBook.Typed) return force;
+            // a beam number, a node and a load case are whole numbers: "Beam" over W8X31 names a shape to type
+            if (c.Example.Length > 0 && !Regex.IsMatch(c.Example.Trim(), @"^\d+(\.0+)?$")) return null;
             if (Regex.IsMatch(h, @"^(staad )?(beam|member|memb\.?)\s*(#|no\.?|number|id)?$", RegexOptions.IgnoreCase)) return "Beam number";
             if (Regex.IsMatch(h, @"^(staad )?(node|joint|jt\.?)\s*(#|no\.?|number|id)?$", RegexOptions.IgnoreCase)) return "Node";
             if (Regex.IsMatch(h, @"^(l\.?\s*/?\s*c\.?|load\s*(case|comb\w*)?|case|combo\w*)\s*(#|no\.?|number|id)?$", RegexOptions.IgnoreCase)) return "Load case";
@@ -487,15 +523,18 @@ namespace CalcFlow
         }
 
         // the label of a lone cell: the nearest text to its left that is not itself a cell to fill
-        static string LeftLabel(TSheet sheet, LookSheet ls, TemplateLook look, Unit1 u)
+        static string LeftLabel(TSheet sheet, LookSheet ls, TemplateLook look, Unit1 u) { string at; return LeftLabel(sheet, ls, look, u, out at); }
+
+        static string LeftLabel(TSheet sheet, LookSheet ls, TemplateLook look, Unit1 u, out string at)
         {
+            at = "";
             for (int col = u.C1 - 1; col >= Math.Max(0, u.C1 - 4); col--)
             {
                 int[] m = ls.MergeAt(u.R1, col);
                 int r = m == null ? u.R1 : m[0], c = m == null ? col : m[1];
                 if (IsInput(look.Fill(ls, r, c))) return "";
                 string t = Text(sheet.Get(r, c));
-                if (t.Length > 0) return t;
+                if (t.Length > 0) { at = Xlsx.Ref(r, c); return t; }
                 TCell any = sheet.Get(r, c);
                 if (any != null && !any.IsEmpty) return "";         // a number or a formula beside it: no label
                 if (m != null) col = m[1];
@@ -507,9 +546,9 @@ namespace CalcFlow
         // over "(kip)" in two cells is one heading). Its group is the heading above that one, when that is a cell
         // merged across several columns ("End forces from the analysis"): other text higher up belongs to something
         // else, and is left alone.
-        static string Above(TSheet sheet, LookSheet ls, TemplateLook look, Unit1 u, out string group)
+        static string Above(TSheet sheet, LookSheet ls, TemplateLook look, Unit1 u, out string group, out string at)
         {
-            group = "";
+            group = ""; at = "";
             string own = "";
             int row = u.R1 - 1;
             for (int step = 0; step < 3 && row >= 0; step++)
@@ -520,7 +559,7 @@ namespace CalcFlow
                 string t = Text(sheet.Get(r, c));
                 if (t.Length == 0) break;
                 bool across = m != null && m[3] > m[1];
-                if (own.Length == 0) { own = t; if (across) break; }
+                if (own.Length == 0) { own = t; at = Xlsx.Ref(r, c); if (across) break; }
                 else if (Regex.IsMatch(own, @"^\(.{1,12}\)$") && !across) own = t + " " + own;
                 else { if (across) group = t; break; }
                 row = r - 1;
@@ -533,6 +572,7 @@ namespace CalcFlow
         {
             var inputs = new List<Dictionary<string, string>>();
             var fills = new List<Dictionary<string, string>>();
+            var summary = new List<Dictionary<string, string>>();
             Func<int, string> n = i => i.ToString(CultureInfo.InvariantCulture);
             foreach (var t in templates)
             {
@@ -542,9 +582,29 @@ namespace CalcFlow
                         var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                         d["Template"] = t.Key; d["Sheet"] = b.Sheet; d["Block"] = b.Range;
                         d["Shape"] = b.Shape + (b.Rows > 1 ? " of " + n(b.Rows) + " rows" : "") + (b.LoadRows ? ", written by the tool" : "");
-                        d["Cells"] = c.Cells; d["Heading"] = c.Heading; d["Under"] = c.Group; d["Unit"] = c.Unit; d["Holds now"] = c.Example; d["Filled by"] = c.FilledBy; d["Notes"] = c.Notes;
+                        d["Cells"] = c.Cells; d["Heading"] = c.Heading; d["Under"] = c.Group; d["Unit"] = c.Unit; d["Holds now"] = c.Example; d["Filled by"] = c.FilledBy;
+                        d["Look at"] = c.Check; d["Notes"] = c.Notes;
                         inputs.Add(d);
                     }
+                foreach (var bySheet in t.Value.Blocks.GroupBy(x => x.Sheet))
+                {
+                    var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    d["Template"] = t.Key; d["Sheet"] = bySheet.Key;
+                    d["Single inputs"] = n(bySheet.Where(x => x.Rows == 1).Sum(x => x.Columns.Count));
+                    d["Tables to type"] = n(bySheet.Count(x => x.Rows > 1 && !x.LoadRows));
+                    d["Tables the tool writes"] = n(bySheet.Count(x => x.LoadRows));
+                    d["To look at"] = n(bySheet.Sum(x => x.Columns.Count(c => c.Check.Length > 0)));
+                    d["Notes"] = string.Join("; ", t.Value.Notes.Where(x => x.StartsWith(bySheet.Key + ": ", StringComparison.Ordinal)).Select(x => x.Substring(bySheet.Key.Length + 2)).ToArray());
+                    summary.Add(d);
+                }
+                foreach (string note in t.Value.Notes.Where(x => !t.Value.Blocks.Any(bk => x.StartsWith(bk.Sheet + ": ", StringComparison.Ordinal))))
+                {
+                    int cut = note.IndexOf(": ", StringComparison.Ordinal);
+                    var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    d["Template"] = t.Key; d["Sheet"] = cut > 0 ? note.Substring(0, cut) : ""; d["Single inputs"] = "0"; d["Tables to type"] = "0"; d["Tables the tool writes"] = "0"; d["To look at"] = "0";
+                    d["Notes"] = cut > 0 ? note.Substring(cut + 2) : note;
+                    summary.Add(d);
+                }
                 foreach (MapFill f in t.Value.Fills)
                 {
                     var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -554,11 +614,18 @@ namespace CalcFlow
                 }
             }
             var sheets = new List<XOutSheet>();
-            string[] icols = { "Template", "Sheet", "Block", "Shape", "Cells", "Heading", "Under", "Unit", "Holds now", "Filled by", "Notes" };
+            string[] scols = { "Template", "Sheet", "Single inputs", "Tables to type", "Tables the tool writes", "To look at", "Notes" };
+            XOutSheet ss = WorkbookTables.Sheet("Templates", "tblMapTemplates", scols, summary,
+                "One row per template sheet that has inputs: how many, and how many the tool is unsure of (To look at). Start with the rows where that is not 0: on the tab Inputs found, filter the column Look at.",
+                c => (c == "Template" || c == "Sheet") ? ColumnKind.Key : ColumnKind.Reference);
+            foreach (string c in new[] { "Single inputs", "Tables to type", "Tables the tool writes", "To look at" }) WorkbookTables.Numbers(ss, Array.IndexOf(scols, c), "0");
+            ss.Width(Array.IndexOf(scols, "Notes"), 70);
+            sheets.Add(ss);
+            string[] icols = { "Template", "Sheet", "Block", "Shape", "Cells", "Heading", "Under", "Unit", "Holds now", "Filled by", "Look at", "Notes" };
             XOutSheet si = WorkbookTables.Sheet("Inputs found", "tblMapInputs", icols, inputs,
                 "A look at what the tool reads as inputs in each template: the cells filled yellow that hold no formula, in blocks of cells that touch. One row per cell, or per column of a list or table. 'Filled by' is the tool's first answer to the one question it will ask about each. Nothing here is used yet: it is for looking over.",
                 c => (c == "Template" || c == "Sheet" || c == "Block") ? ColumnKind.Key : c == "Filled by" ? ColumnKind.Input : ColumnKind.Reference);
-            si.Width(Array.IndexOf(icols, "Heading"), 34); si.Width(Array.IndexOf(icols, "Under"), 30); si.Width(Array.IndexOf(icols, "Filled by"), 26);
+            si.Width(Array.IndexOf(icols, "Heading"), 34); si.Width(Array.IndexOf(icols, "Under"), 30); si.Width(Array.IndexOf(icols, "Filled by"), 26); si.Width(Array.IndexOf(icols, "Look at"), 34);
             sheets.Add(si);
             string[] fcols = { "Template", "Sheet", "Fill", "Cells", "Formula cells", "Taken as inputs", "First cell" };
             XOutSheet sf = WorkbookTables.Sheet("Fills", "tblMapFills", fcols, fills,

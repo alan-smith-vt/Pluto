@@ -127,6 +127,36 @@ Test 'the input colour is the yellow family, whether typed as a colour, picked f
     Assert-Equal (@($m.Blocks | ForEach-Object { "$($_.Range)=$($_.Columns[0].Heading)" }) -join ' | ') 'B2=Width (in) | B3=Depth (in)' 'an empty yellow cell is an input too; the plain one is not'
 }
 
+Test 'what cannot be seen is not an input: a hidden row, a hidden column, a hidden sheet' {
+    $styles = '<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>' +
+        '<fill><patternFill patternType="solid"><fgColor rgb="FFFFFF99"/></patternFill></fill></fills><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="0" fontId="0" fillId="2" borderId="0" applyFill="1"/></cellXfs></styleSheet>'
+    $cell = { param($at, $label) $r = $at.Substring(1); "<row r=`"$r`"$(if ($at -eq 'B4') { ' hidden="1"' })><c r=`"A$r`" t=`"inlineStr`"><is><t>$label</t></is></c><c r=`"B$r`" s=`"1`"><v>1</v></c><c r=`"D$r`" s=`"1`"><v>2</v></c></row>" }
+    $shown = '<cols><col min="4" max="4" width="9" hidden="1"/></cols><sheetData>' + (& $cell 'B2' 'Width (in)') + (& $cell 'B3' 'Depth (in)') + (& $cell 'B4' 'Unseen (in)') + '</sheetData>'
+    $p = Join-Path $dir 'Hidden.xlsx'
+    New-MiniBook $p ([ordered]@{ 'Calc' = $shown; 'Lists (hidden)' = '<sheetData><row r="2"><c r="B2" s="1"><v>5</v></c></row></sheetData>' }) '' @{ 'xl/styles.xml' = $styles }
+    $m = [CalcFlow.TemplateMap]::Read($p)
+    Assert-Equal (@($m.Blocks | ForEach-Object { "$($_.Sheet)!$($_.Range)=$($_.Columns[0].Heading)" }) -join ' | ') 'Calc!B2=Width (in) | Calc!B3=Depth (in)' 'row 4 and column D are hidden, and so is the sheet Lists'
+    Assert-Match ($m.Notes -join '; ') 'Calc: 4 cell\(s\) with the input fill sit in hidden rows or columns and are left out'
+    Assert-Match ($m.Notes -join '; ') 'Lists: a hidden sheet, not read'
+}
+
+Test 'a first answer is only offered where the heading and the value agree: Beam over a shape is typed, Beam # over a number is the beam' {
+    $s = New-Object CalcFlow.XOutSheet 'Calc'
+    Put $s 'A2' 'Beam:'; Put $s 'B2' 'W8X31' $yellow
+    Put $s 'A3' 'Beam #'; Put $s 'B3' 12 $yellow
+    Put $s 'A4' 'Node'; Put $s 'B4' '' $yellow
+    Put $s 'A5' 'Fy (ksi)'; Put $s 'B5' 50 $yellow
+    Put $s 'A6' 'Fy (kip)'; Put $s 'B6' 3.5 $yellow
+    Put $s 'B8' 7 $yellow
+    $p = Join-Path $dir 'Answers.xlsx'
+    [CalcFlow.XlsxWriter]::Write($p, [CalcFlow.XOutSheet[]]@($s), $null)
+    $m = [CalcFlow.TemplateMap]::Read($p)
+    Assert-Equal (@($m.Blocks | ForEach-Object { $c = $_.Columns[0]; "$($c.Heading)>$($c.FilledBy)>$($c.Check)" }) -join ' | ') 'Beam>Typed per mark> | Beam #>Beam number>taken from the model by its heading | Node>Node>taken from the model by its heading | Fy (ksi)>Typed per mark> | Fy (kip)>Fy>taken from the model by its heading | >Typed per mark>no heading found: named by its cell'
+    Assert-Equal "$($m.Blocks[0].Columns[0].LabelCell) $($m.Blocks[4].Columns[0].LabelCell)" 'A2 A6' 'the cell each heading was read from'
+    # the fills of a real library: the yellows are inputs, black and the blues are not
+    Assert-Equal (@('FFF2CC', '000000', 'FFF2C9', 'FFEEB9', '4472C4', 'FFFF00', 'B4C7E7' | ForEach-Object { "$_=$([CalcFlow.TemplateLook]::IsInputColour($_))" }) -join ' ') 'FFF2CC=True 000000=False FFF2C9=True FFEEB9=True 4472C4=False FFFF00=True B4C7E7=False'
+}
+
 Test 'a library whose inputs are not yellow: the fill is named, and only its cells are inputs' {
     $m = [CalcFlow.TemplateMap]::Read($platePath, [string[]]@('#ddebf7'))
     Assert-Equal (& $say $m) 'Pattern!M3 Cell'
@@ -152,4 +182,8 @@ Test 'map writes the look at a templates folder: a row per input cell or table c
     $fx = @($rows | Where-Object { $_['Template'] -eq 'Clip Batch.xlsx' -and $_['Heading'] -eq 'FX (kip)' })[0]
     Assert-Equal "$($fx['Block'])|$($fx['Shape'])|$($fx['Cells'])|$($fx['Under'])|$($fx['Unit'])|$($fx['Filled by'])" 'A9:I18|Table of 10 rows, written by the tool|D9:D18|End forces from the analysis|kip|Fx'
     Assert-Equal @($wb.TableRows('tblMapFills') | Where-Object { $_['Taken as inputs'] -eq 'N' }).Count 1
+    # for a library of many templates: a count per template sheet, and the few rows to look at marked
+    $sum = @{}; foreach ($r in $wb.TableRows('tblMapTemplates')) { $sum["$($r['Template'])|$($r['Sheet'])"] = "$($r['Single inputs'])/$($r['Tables to type'])/$($r['Tables the tool writes'])/$($r['To look at'])" }
+    Assert-Equal "$($sum['Clip Batch.xlsx|Clip']) $($sum['Brace Batch.xlsx|Braces']) $($sum['Plate.xlsx|Pattern']) $($sum['Plate.xlsx|Loads'])" '2/0/1/0 0/0/1/1 8/1/0/1 0/0/1/0'
+    Assert-Equal (@($rows | Where-Object { $_['Look at'] } | ForEach-Object { "$($_['Heading']): $($_['Look at'])" }) -join ' | ') 'Axial (kip): a guess | Joint: taken from the model by its heading'
 }
