@@ -89,6 +89,8 @@ public partial class SapDucts
                 string hex; int col; if (!groupColor.ContainsKey(g) && r.TryGetValue("SystemColor", out hex) && OleColor(hex, out col)) groupColor[g] = col;
             }
             if (sec == NoSize) addTo("FLAG_NO_SIZE", name);
+            // no thickness given (user 2026-11-25): the 0.001 in placeholder, findable as a group
+            else if (r["Shape"] != "rigid" && (!(Num(r, "Thk_in") > 0) || Num(r, "Thk_in") <= ThkPlaceholder || Val(r, "ThkSource") == "default")) addTo("FLAG_NO_THICKNESS", name);
             if (r["Shape"] != "rigid") addTo(IsStainless(r) ? "MAT_STAINLESS" : "MAT_CARBON", name);
             if (sec == Stub) addTo("TAP_STUBS", name);
             foreach (string f in (r["Flags"] ?? "").Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)) addTo("FLAG_" + Clean(f), name);
@@ -98,24 +100,11 @@ public partial class SapDucts
         }
         // steel, supports, extra flags, plant axes (SapSteel.cs); nothing when none of their inputs is set
         string steelNote = AddSteelAndSupports(joints, sections, addTo, frameName);
-        // SYS_ groups defined last and the only coloured ones (Display Options > Color By: Groups)
-        foreach (KeyValuePair<string, List<string>> kv in groups.OrderBy(g => g.Key.StartsWith("SYS_") ? 1 : 0).ToList())
-        {
-            int col; if (!groupColor.TryGetValue(kv.Key, out col)) col = -1;
-            Check(M.GroupDef.SetGroup(kv.Key, col, true, true, true, true, true, true, true, true, true, true, true), "SetGroup " + kv.Key);
-            foreach (string f in kv.Value) Check(M.FrameObj.SetGroupAssign(f, kv.Key, false, eItemType.Objects), "SetGroupAssign " + f + " " + kv.Key);
-        }
-        foreach (KeyValuePair<string, List<string>> kv in pointGroups)
-        {
-            if (!groups.ContainsKey(kv.Key)) Check(M.GroupDef.SetGroup(kv.Key, -1, true, true, true, true, true, true, true, true, true, true, true), "SetGroup " + kv.Key);
-            foreach (string p in kv.Value) Check(M.PointObj.SetGroupAssign(p, kv.Key, false, eItemType.Objects), "SetGroupAssign " + p + " " + kv.Key);
-        }
-        foreach (KeyValuePair<string, List<string>> kv in linkGroups)
-        {
-            if (!groups.ContainsKey(kv.Key) && !pointGroups.ContainsKey(kv.Key)) Check(M.GroupDef.SetGroup(kv.Key, -1, true, true, true, true, true, true, true, true, true, true, true), "SetGroup " + kv.Key);
-            foreach (string l in kv.Value) Check(M.LinkObj.SetGroupAssign(l, kv.Key, false, eItemType.Objects), "SetGroupAssign " + l + " " + kv.Key);
-        }
+        // groups in reading order with colours, unused template properties deleted, the legend beside the .sdb (SapUx.cs)
+        SortedDictionary<string, int> groupCount = DefineGroups(groups, groupColor);
+        string propNote = CleanProperties();
         Check(M.File.Save(savePath), "Save " + savePath);
+        WriteLegend(savePath, groupCount, propNote);
         var parts = new List<string>();
         foreach (KeyValuePair<string, List<string>> kv in groups) if (kv.Key.StartsWith("FLAG_")) parts.Add(kv.Key.Substring(5) + " " + kv.Value.Count);
         var spans = groups.Where(g => g.Key.StartsWith("SPAN_")).ToList();
@@ -126,7 +115,7 @@ public partial class SapDucts
             skipped > 0 ? F(", {0} zero-length rows skipped ({1})", skipped, string.Join(" ", zeroRows.Take(10).ToArray()) + (zeroRows.Count > 10 ? " ..." : "")) : "",
             F("carbon {0} frames ({1}), stainless {2} ({3})", groups.ContainsKey("MAT_CARBON") ? groups["MAT_CARBON"].Count : 0, MatCS, groups.ContainsKey("MAT_STAINLESS") ? groups["MAT_STAINLESS"].Count : 0, MatSS), oriented, noDir, defThk, parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "none",
             failed.Count > 0 ? F("\nNEW SAP refused {0} frames (not in the model): {1}", failed.Count, string.Join("; ", failed.Take(10).ToArray()) + (failed.Count > 10 ? " ..." : "")) : "", ThkPlaceholder)
-            + spanNote + (steelNote != "" ? "\n" + steelNote : "");
+            + spanNote + (steelNote != "" ? "\n" + steelNote : "") + "\n" + propNote + "\nNEW legend: " + Path.GetFileName(LegendPath);
     }
 
     // SAP's local-axis angle (degrees) that puts local 3 along the width direction w. Default axes (SAP): local 1 = I->J;

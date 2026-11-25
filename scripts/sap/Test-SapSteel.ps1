@@ -105,6 +105,12 @@ Expect "FLAG_OPEN_NEAR joints" (InGroup "FLAG_OPEN_NEAR" "Joint") 1
 Expect "FLAG_UNSUPPORTED_SPAN frames" (InGroup "FLAG_UNSUPPORTED_SPAN" "Frame") 1
 Expect "SPAN_US1 frames (frames.csv Span)" (InGroup "SPAN_US1" "Frame") 1
 Expect "FLAG_NO_SIZE frames" (InGroup "FLAG_NO_SIZE" "Frame") 1
+Expect "FLAG_NO_THICKNESS: none (every test duct has 0.06 in)" (InGroup "FLAG_NO_THICKNESS" "Frame") 0
+$leg = Join-Path $Out "test_steel.legend.txt"
+Expect "legend beside the sdb" (Test-Path $leg) $true
+$lt = if (Test-Path $leg) { [IO.File]::ReadAllText($leg) } else { "" }
+Expect "legend: anchor conversion, Color By, the groups with counts" ($lt -match "Assign > Link/Support" -and $lt -match "Color By: Groups" -and $lt -match "SUPPORT_GUIDE\s+1\s" -and $lt -match "STEEL_ALL\s+9\s") $true
+Expect "legend: template properties deleted, none refused" ($lt -match "Template properties: [1-9]\d* unused ones deleted" -and $lt -notmatch "would not delete") $true
 Expect "PLANT coordinate system" @(Rows "COORDINATE SYSTEMS" | Where-Object { $_ -match "Name=`"?PLANT" }).Count 1
 Expect "viewer file" (Test-Path "$base.bin") $true
 # glyph looks (scripts\duct\sap-looks.csv): anchors from the model

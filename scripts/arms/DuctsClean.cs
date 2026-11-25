@@ -143,7 +143,7 @@ public partial class DuctsToPluto
         sections.Add(RawViewerWriter.SectionDef.Pipe("rigid link", (float)(1.5 * scale / 12), (float)(0.375 * scale / 12)));
         var secIx = new Dictionary<string, int>(StringComparer.Ordinal);
         var beams = new Dictionary<int, RawViewerWriter.BeamMember>(); var labels = new Dictionary<int, string>();
-        var bySys = new SortedDictionary<string, List<uint>>(StringComparer.Ordinal); var gRigid = new List<uint>(); var gTrans = new List<uint>(); var gConf = new List<uint>(); var gCut = new List<uint>(); var gSpan = new List<uint>(); var beamOf = new Dictionary<CEdge, int>();
+        var bySys = new SortedDictionary<string, List<uint>>(StringComparer.Ordinal); var gRigid = new List<uint>(); var gTrans = new List<uint>(); var gConf = new List<uint>(); var gCut = new List<uint>(); var gSpan = new List<uint>(); var gNoThk = new List<uint>(); var beamOf = new Dictionary<CEdge, int>();
         int nb = 1; double ft = scale / 12;
         foreach (CEdge ce in clean)
         {
@@ -181,6 +181,7 @@ public partial class DuctsToPluto
             if (ce.DimB != null) gTrans.Add((uint)nb);
             if (ce.Flags.Contains("OVERLAP_SIZE_CONFLICT")) gConf.Add((uint)nb);
             if (ce.Flags.Contains("CUT_END")) gCut.Add((uint)nb);
+            if (!ce.Rigid && ce.Dim != null && double.IsNaN(ce.Thk)) gNoThk.Add((uint)nb);   // the 0.001 in placeholder (SAP FLAG_NO_THICKNESS)
             if (ce.Flags.Contains("UNSUPPORTED_SPAN")) gSpan.Add((uint)nb);
             beamOf[ce] = nb;
             nb++;
@@ -212,6 +213,7 @@ public partial class DuctsToPluto
         if (gRigid.Count > 0) sc.AddGroup("Clean: rigid links", "#ff3b3b", "beams", gRigid, new[] { "duct", "clean", "link" }, "RIGID");
         if (gTrans.Count > 0) sc.AddGroup("Clean: transitions", "#ffd23f", "beams", gTrans, new[] { "duct", "clean", "transition" }, null);
         if (gConf.Count > 0) sc.AddGroup("Flag: OVERLAP_SIZE_CONFLICT", "#ff5fa2", "beams", gConf, new[] { "duct", "clean", "flag" }, "FLAG_OVERLAP_SIZE_CONFLICT");
+        if (gNoThk.Count > 0) sc.AddGroup("Flag: NO_THICKNESS", "#ff9f40", "beams", gNoThk, new[] { "duct", "clean", "flag" }, "FLAG_NO_THICKNESS");
         if (gCut.Count > 0) sc.AddGroup("Clean: cut ends", "#ffffff", "beams", gCut, new[] { "duct", "clean", "cut" }, "FLAG_CUT_END");
         new DuctSystems(Cfg).ApplySystemView(sc);
         SteelViewWriter.AddGroups(sc, sv);
