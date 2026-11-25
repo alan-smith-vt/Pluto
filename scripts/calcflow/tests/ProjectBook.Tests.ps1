@@ -114,7 +114,9 @@ Test 'check: the tabs become the library text and a register, and every connecti
 
 Test 'check says what to fix, by tab: a mark with no row, a force with no unit, a mark that does not exist, a renamed heading' {
     $b2 = [CalcFlow.Xlsx]::Read($filled)
-    $bad = Join-Path $proj 'CalcFlow-bad.xlsx'
+    # named patched-*: the heading is renamed in its cell only (the test's stand-in for typing in Excel, which would
+    # rename the table's column too), so the checks of every written workbook leave this file out
+    $bad = Join-Path $proj 'patched-bad.xlsx'
     Save-Cells $filled $bad @(
         @($weld, 'A7', ''),
         @($weld, ((Get-Col $b2 $weld 'Fz' 5) + '3'), ''),
@@ -239,4 +241,63 @@ Test 'calcs on a load table: each row gets its DCR, the unused rows are cleared,
     $conn = @($sum.TableRows('tblSummaryConnections') | Where-Object { $_['Type'] })
     Assert-Equal (@($conn | ForEach-Object { "$($_['Connection'])=$($_['Calc'])" }) -join ' ') 'J2-M2A=SB-1 J2-M7A=SB-2 J3-M2B=SB-2 J5-M5B=SB-1'
     Assert-True (@($conn | ForEach-Object { [double]$_['Row DCR'] } | Sort-Object -Unique).Count -ge 3) 'the beam ends have their own DCRs'
+}
+
+# ---- labels a real template can hold, and Excel's rules for the headings of a table (a workbook that breaks one is
+# "repaired" by Excel when it opens): a note of 300 characters beside an input, two labels that differ by a
+# superscript or by case only, a label on two lines, a label that is a number
+$tdir3 = Join-Path $dir 'templates3'
+New-Item -ItemType Directory -Force -Path $tdir3 | Out-Null
+$longLabel = 'Plate width. ' + ('Measure it between the outer faces, not between the welds. ' * 5)
+$awkward = @($longLabel, "Area (in$([char]0xB2))", 'Area (in2)', "Plate`nthickness", '12', 'd', 'D')
+$x3 = '<sheetData>'
+for ($i = 0; $i -lt $awkward.Count; $i++) {
+    $r = $i + 2
+    $x3 += "<row r=`"$r`"><c r=`"A$r`" t=`"inlineStr`"><is><t xml:space=`"preserve`">$([Security.SecurityElement]::Escape($awkward[$i]))</t></is></c><c r=`"B$r`" s=`"1`"><v>$($i + 1)</v></c></row>"
+}
+$x3 += '<row r="10"><c r="A10" t="inlineStr"><is><t>Governing DCR</t></is></c><c r="B10"><f>SUM(B2:B8)/100</f></c></row></sheetData>'
+New-MiniXlsx (Join-Path $tdir3 'Awkward Labels.xlsx') $x3 ''
+$proj3 = Join-Path $dir 'proj3'
+$o3 = Invoke-CfCli new -Out $proj3 -Anl $fixture -Templates $tdir3
+$new3 = $LASTEXITCODE
+$wb3 = Join-Path $proj3 'CalcFlow.xlsx'
+$awk = 'Awkward-Labels'
+
+Test "awkward template labels become headings Excel takes: cut at 255 characters, one line, and told apart where Excel would see one name" {
+    Assert-Equal $new3 0 ($o3 -join "`n")
+    Assert-True ($longLabel.Length -gt 255) 'the note is longer than a heading may be'
+    Assert-Equal ([CalcFlow.XlsxCheck]::Tables($wb3) -join '; ') ''
+    $s = [CalcFlow.Xlsx]::Read($wb3).Sheet($awk)
+    $heads = @(1..7 | ForEach-Object { $s.Text(4, $_) })
+    Assert-True ($heads[0].Length -le 255 -and $heads[0].StartsWith('Plate width. Measure it') -and $heads[0].EndsWith(' ...')) $heads[0]
+    Assert-Equal ($heads[1..6] -join '|') "Area (in$([char]0xB2))|Area (in2) [B4]|Plate thickness|12|d|D [B8]"
+    # the Template Cells tab names each column the same way: that is how a column finds its cell
+    $cells = @([CalcFlow.Xlsx]::Read($wb3).TableRows('tblTemplateCells') | Where-Object { $_['Template'] -eq $awk })
+    Assert-Equal (@($cells | ForEach-Object { "$($_['Column'].Length -le 255)$($_['Cell'])" }) -join ' ') 'TrueB2 TrueB3 TrueB4 TrueB5 TrueB6 TrueB7 TrueB8'
+    Assert-Equal @($cells | Where-Object { $_['Cell'] -eq 'B2' })[0]['Column'] $heads[0]
+}
+
+Test 'a value typed under a cut heading reaches its cell, and a refresh keeps it' {
+    $b = [CalcFlow.Xlsx]::Read($wb3)
+    $filled3 = Join-Path $proj3 'CalcFlow-filled.xlsx'
+    Save-Cells $wb3 $filled3 @(
+        @('Connection Lib', 'A3', 'AW-1'), @('Connection Lib', 'B3', $awk),
+        @($awk, 'A6', 'AW-1'), @($awk, 'B6', 42), @($awk, 'D6', 7),
+        @('Model Config', 'F4', 'AW-1')
+    )
+    $o = Invoke-CfCli check -Workbook $filled3
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    $plan = [CalcFlow.Csv]::ReadTable((Join-Path $proj3 'calcflow/plan/plan.csv'))
+    Assert-Equal (@($plan | Where-Object { $_['Calc'] -eq 'J2-M2A' } | Sort-Object { $_['Cell'] } | ForEach-Object { "$($_['Cell'])=$($_['Value'])" }) -join ' ') 'B2=42 B4=7'
+    # refresh: the workbook is rebuilt, and the values stay under their headings
+    $w = Join-Path $proj3 'refresh'
+    New-Item -ItemType Directory -Force -Path $w | Out-Null
+    foreach ($f in @(Get-ChildItem -LiteralPath $proj3 -File | Where-Object { $_.Name -notlike 'CalcFlow*.xlsx' })) { Copy-Item -LiteralPath $f.FullName -Destination $w }
+    Copy-Item -LiteralPath (Join-Path $proj3 'calcflow') -Destination $w -Recurse
+    Copy-Item -LiteralPath $filled3 -Destination (Join-Path $w 'CalcFlow.xlsx')
+    $o = Invoke-CfCli refresh -Workbook (Join-Path $w 'CalcFlow.xlsx') -NoWait -NoOpen
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    $s = [CalcFlow.Xlsx]::Read((Join-Path $w 'CalcFlow.xlsx')).Sheet($awk)
+    Assert-Equal "$($s.Text(5, 0))|$($s.Text(5, 1))|$($s.Text(5, 3))|$($s.Text(4, 3))" 'AW-1|42|7|Area (in2) [B4]'
+    Assert-Equal ([CalcFlow.XlsxCheck]::Tables((Join-Path $w 'CalcFlow.xlsx')) -join '; ') ''
 }

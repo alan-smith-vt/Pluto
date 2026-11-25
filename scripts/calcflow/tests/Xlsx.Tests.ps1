@@ -77,6 +77,116 @@ Test 'writer refuses NaN, duplicate sheets and bad table names' {
     Assert-Throws { [CalcFlow.XlsxWriter]::Write((Join-Path $dir 'tbl.xlsx'), [CalcFlow.XOutSheet[]]@($d), $null) } 'table name'
 }
 
+# a part of a written workbook, rewritten by a script block (text in, text out)
+function Edit-XlsxPart([string]$Path, [string]$Part, [scriptblock]$Change) {
+    Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+    $zip = [IO.Compression.ZipFile]::Open($Path, [IO.Compression.ZipArchiveMode]::Update)
+    try {
+        $e = $zip.GetEntry($Part)
+        $r = New-Object IO.StreamReader($e.Open(), [Text.Encoding]::UTF8)
+        $text = $r.ReadToEnd(); $r.Dispose()
+        $e.Delete()
+        $w = New-Object IO.StreamWriter($zip.CreateEntry($Part).Open(), (New-Object Text.UTF8Encoding($false)))
+        $w.Write((& $Change $text)); $w.Dispose()
+    }
+    finally { $zip.Dispose() }
+}
+
+Test "a table heading as Excel takes it: one line, single spaces, nothing invisible, 255 characters at most" {
+    Assert-Equal ([CalcFlow.Xlsx]::TableHeading("  Plate`r`nthickness`t(in) ")) 'Plate thickness (in)'
+    Assert-Equal ([CalcFlow.Xlsx]::TableHeading("nb$([char]0xA0)sp zero$([char]0x200B)width")) 'nb sp zerowidth'
+    $long = 'Long ' + ('label text ' * 30)
+    $cut = [CalcFlow.Xlsx]::TableHeading($long)
+    Assert-True ($cut.Length -le 255 -and $cut.Length -ge 250 -and $cut.EndsWith(' ...') -and $cut.StartsWith('Long label text label')) $cut
+    $tagged = [CalcFlow.Xlsx]::TableHeading($long, ' [B5]')
+    Assert-True ($tagged.Length -le 255 -and $tagged.Length -ge 250 -and $tagged.EndsWith(' ... [B5]')) $tagged
+    Assert-Equal ([CalcFlow.Xlsx]::TableHeading('wleg (in.)', ' [B6]')) 'wleg (in.) [B6]'
+    # alike: letter case, the forms of a character that look the same, spacing. Not alike: other signs, other words
+    $same = { param($a, $b) [CalcFlow.Xlsx]::Headings.Equals($a, $b) }
+    Assert-True (& $same 'd (in)' 'D (in)')
+    Assert-True (& $same "Ohm $([char]0x2126)" "ohm $([char]0x3A9)") 'the ohm sign and omega'
+    Assert-True (& $same "Area (in$([char]0xB2))" 'area (in2)') 'a superscript two'
+    Assert-True (& $same 'a  b' "a$([char]0xA0)b")
+    Assert-True (-not (& $same '+x' '-x'))
+    Assert-True (-not (& $same "cx$([char]0x2212) (in)" 'cx+ (in)'))
+    Assert-True (-not (& $same 'Fy' 'Fy (ksi)'))
+}
+
+Test "the writer makes a table's headings what Excel takes, the cell and the table part alike, and refuses two that are alike" {
+    $s = New-Object CalcFlow.XOutSheet 'T'
+    $long = 'Note ' + ('that goes on ' * 25)
+    $s.Add('Mark', 12, " Plate`nthickness ", $long, '+x', '=SUM', "f'c [psi] #1", $true)
+    $s.Add('A', 1, 2, 3, 4, 5, 6, 7)
+    $t = New-Object CalcFlow.XOutTable; $t.Name = 'tblT'; $t.Top = 0; $t.Bottom = 1; $t.Left = 0; $t.Right = 7; $s.Tables.Add($t)
+    $p = Join-Path $dir 'headings.xlsx'
+    [CalcFlow.XlsxWriter]::Write($p, [CalcFlow.XOutSheet[]]@($s), $null)
+    Assert-Equal ([CalcFlow.XlsxCheck]::Tables($p) -join '; ') ''
+    $wb = [CalcFlow.Xlsx]::Read($p)
+    $cols = $wb.Tables[0].Columns
+    Assert-Equal ($cols[0..2] -join '|') 'Mark|12|Plate thickness'
+    Assert-Equal "$($cols[3].Length)|$($cols[4])|$($cols[5])|$($cols[6])|$($cols[7])" "255|+x|=SUM|f'c [psi] #1|True"
+    foreach ($i in 0..7) { Assert-Equal $wb.Sheet('T').Cell(0, $i) $cols[$i] "the heading cell of column $i" }
+    foreach ($pair in @(@('d (in)', 'D (in)'), @("Area (in$([char]0xB2))", 'Area (in2)'), @('Fy', ' fy '))) {
+        $d = New-Object CalcFlow.XOutSheet 'D'; $d.Add($pair[0], $pair[1]); $d.Add(1, 2)
+        $u = New-Object CalcFlow.XOutTable; $u.Name = 'tblD'; $u.Top = 0; $u.Bottom = 1; $u.Left = 0; $u.Right = 1; $d.Tables.Add($u)
+        Assert-Throws { [CalcFlow.XlsxWriter]::Write((Join-Path $dir 'alike.xlsx'), [CalcFlow.XOutSheet[]]@($d), $null) } 'takes for one name'
+    }
+    $e = New-Object CalcFlow.XOutSheet 'E'; $e.Add('a', ''); $e.Add(1, 2)
+    $v = New-Object CalcFlow.XOutTable; $v.Name = 'tblE'; $v.Top = 0; $v.Bottom = 1; $v.Left = 0; $v.Right = 1; $e.Tables.Add($v)
+    Assert-Throws { [CalcFlow.XlsxWriter]::Write((Join-Path $dir 'blank.xlsx'), [CalcFlow.XOutSheet[]]@($e), $null) } 'needs a text heading'
+}
+
+Test "the check of Excel's table rules finds what Excel repairs: a heading that is a number, not the column's name, too long, alike, merged" {
+    # the files spoiled on purpose are named patched-*: the checks of every written workbook leave those out
+    $make = {
+        param($name)
+        $s = New-Object CalcFlow.XOutSheet 'T'
+        $s.Add('Mark', 'Size', 'Grade'); $s.Add('A', 1, 'x'); $s.Add('B', 2, 'y')
+        $t = New-Object CalcFlow.XOutTable; $t.Name = 'tblT'; $t.Top = 0; $t.Bottom = 2; $t.Left = 0; $t.Right = 2; $s.Tables.Add($t)
+        $p = Join-Path $dir $name
+        [CalcFlow.XlsxWriter]::Write($p, [CalcFlow.XOutSheet[]]@($s), $null)
+        $p
+    }
+    $good = & $make 'rules-good.xlsx'
+    Assert-Equal ([CalcFlow.XlsxCheck]::Tables($good)).Count 0
+    $table = 'xl/tables/table1.xml'; $sheet = 'xl/worksheets/sheet1.xml'
+    $p = & $make 'patched-rules-name.xlsx'
+    Edit-XlsxPart $p $table { param($x) $x.Replace('name="Size"', 'name="Size (in)"') }
+    Assert-Match ([CalcFlow.XlsxCheck]::Tables($p) -join '; ') "B1 reads 'Size' but the column is named 'Size \(in\)'"
+    $p = & $make 'patched-rules-long.xlsx'
+    Edit-XlsxPart $p $table { param($x) $x.Replace('name="Size"', 'name="' + ('S' * 300) + '"') }
+    Assert-Match ([CalcFlow.XlsxCheck]::Tables($p) -join '; ') 'B1 has a name of 300 characters \(255 at most\)'
+    $p = & $make 'patched-rules-alike.xlsx'
+    Edit-XlsxPart $p $table { param($x) $x.Replace('name="Grade"', 'name="SIZE"') }
+    Assert-Match ([CalcFlow.XlsxCheck]::Tables($p) -join '; ') "C1 'SIZE' is the same name as 'Size'"
+    $p = & $make 'patched-rules-number.xlsx'
+    Edit-XlsxPart $p $sheet { param($x) [regex]::Replace($x, '<c r="B1"[^>]*>.*?</c>', '<c r="B1"><v>12</v></c>') }
+    Assert-Match ([CalcFlow.XlsxCheck]::Tables($p) -join '; ') "B1 is not a text cell \(n 12\): a heading 'Size' must be text"
+    $p = & $make 'patched-rules-rows.xlsx'
+    Edit-XlsxPart $p $table { param($x) $x.Replace('A1:C3', 'A1:C1') }
+    Assert-Match ([CalcFlow.XlsxCheck]::Tables($p) -join '; ') 'no data row under the headings'
+    $p = & $make 'patched-rules-merge.xlsx'
+    Edit-XlsxPart $p $sheet { param($x) $x.Replace('</sheetData>', '</sheetData><mergeCells count="1"><mergeCell ref="A2:B2"/></mergeCells>') }
+    Assert-Match ([CalcFlow.XlsxCheck]::Tables($p) -join '; ') 'merged cells A2:B2 inside the table'
+}
+
+Test 'excel-check lists what Excel repairs in a workbook, and with the repaired copy what Excel changed' {
+    $o = Invoke-CfCli excel-check -Workbook (Join-Path $dir 'rules-good.xlsx')
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    Assert-Match ($o -join "`n") 'nothing in them breaks a rule of Excel'
+    $bad = Join-Path $dir 'patched-rules-long.xlsx'
+    # Excel's repair, played: the name cut to 255 characters in the table and in its cell
+    $fixed = Join-Path $dir 'patched-rules-long-repaired.xlsx'
+    Copy-Item -LiteralPath $bad -Destination $fixed
+    Edit-XlsxPart $fixed 'xl/tables/table1.xml' { param($x) $x.Replace(('S' * 300), ('S' * 255)) }
+    $o = Invoke-CfCli excel-check -Workbook $bad -Repaired $fixed
+    Assert-Equal $LASTEXITCODE 1 ($o -join "`n")
+    $all = $o -join "`n"
+    Assert-Match $all '\[fix  \] patched-rules-long\.xlsx xl/tables/table1\.xml \(tblT, sheet1\.xml A1:C3\): B1 has a name of 300 characters \(255 at most\)'
+    Assert-Match $all "\[excel\] tab T, table tblT: B1 'S+\.\.\.' \(300 characters\) became 'S+\.\.\.'"
+    Assert-Match $all '1 change\(s\) by Excel in the tables'
+}
+
 Test "writer keeps to Excel's limits: too many rows or columns refused before a byte is written, long text cut visibly" {
     $r = New-Object CalcFlow.XOutSheet 'Rows'; $r.Set([CalcFlow.XlsxWriter]::MaxRows, 0, 'x')
     $p = Join-Path $dir 'rows.xlsx'

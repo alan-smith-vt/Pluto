@@ -130,6 +130,10 @@ CAESAR's restraints, re-seeding that keeps SAP-side additions, and writing a see
   area as inputs.
 - **First real output (2026-11-25):** refused for a member list on `PRINT MEMBER FORCES` (the echoed command line was
   read as a force row); fixed on `pipestress` and merged. The user's file was not seen: to be confirmed on their run.
+- **Excel repaired the first real workbook's tables (2026-11-25):** headings now keep Excel's rules for a table (a
+  label over 255 characters was the one way found to break them), and a check of those rules runs over every
+  workbook the tests write. The cause on the user's file is not confirmed: `CalcFlow.ps1 excel-check -Workbook <it>`
+  on their machine says what its tables break.
 - **Next:** the same pass on the production machine with Excel; the first real project through the workbook; section
   dimensions looked up from the shape.
 

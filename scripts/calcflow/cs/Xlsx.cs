@@ -1,7 +1,8 @@
 // Copied from pipe-review (src/cs/Xlsx.cs at d4b33aa, 2026-11-06) for CalcFlow; namespace PipeReview -> CalcFlow,
 // the zip / XML helpers made internal for Template.cs, Excel's sheet limits enforced (rows, columns, 32,767 characters
 // a cell) and numeric conditional formats added (2026-11-23); formula cells (XFormula), rows from a source that is not
-// held in memory (XOutSheet.MoreRows) and sheets streamed into the zip added (2026-11-24); otherwise unchanged. The writer overlaps Pluto's XlsxBook (scripts/lib/writers/XlsxWriter.cs): to be merged later.
+// held in memory (XOutSheet.MoreRows) and sheets streamed into the zip added (2026-11-24); a table's headings made what
+// Excel takes (TableHeading, Headings: text, one line, 255 characters, none alike; 2026-11-25); otherwise unchanged. The writer overlaps Pluto's XlsxBook (scripts/lib/writers/XlsxWriter.cs): to be merged later.
 // Xlsx.cs -- reads .xlsx / .csv / .txt without Excel and writes .xlsx workbooks (values, styles, and a formula with its shown text: XFormula).
 // C# 5 (Windows PowerShell 5.1 Add-Type, warnings are errors). The reader is a port of Pluto's CaesarWorkbook
 // (scripts/arms/CaesarResults.cs) extended with tables, defined names and cell types.
@@ -513,6 +514,67 @@ namespace CalcFlow
             if (i < s.Length && int.TryParse(s.Substring(i), NumberStyles.Integer, CultureInfo.InvariantCulture, out rn) && rn > 0) row = rn - 1;
             return true;
         }
+
+        // ---- Excel's rules for the column names of a table. A workbook that breaks one opens with "Repaired Records:
+        // Table from /xl/tables/tableN.xml": the heading must be text, on one line, at most 255 characters, the same in
+        // the cell and in the table, and no two alike. LibreOffice and the schema validator check none of this.
+        public const int MaxTableHeading = 255;
+
+        // a heading as a table can hold it: one line, single spaces, no invisible characters, at most 255 characters
+        public static string TableHeading(string s)
+        {
+            return CutHeading(OneLine(s), MaxTableHeading);
+        }
+
+        // the heading with a suffix that tells it from another one (" [B7]"), still within the limit
+        public static string TableHeading(string s, string suffix)
+        {
+            suffix = suffix ?? "";
+            return CutHeading(OneLine(s), Math.Max(8, MaxTableHeading - suffix.Length)) + suffix;
+        }
+
+        static string OneLine(string s)
+        {
+            if (s == null) return "";
+            var sb = new StringBuilder(s.Length);
+            bool space = false;
+            foreach (char ch in s)
+            {
+                // zero-width and soft-hyphen characters show nothing; a space of any kind, a line break or a tab is one space
+                if (ch == '\u200B' || ch == '\u200C' || ch == '\u200D' || ch == '\u2060' || ch == '\uFEFF' || ch == '\u00AD') continue;
+                if (char.IsWhiteSpace(ch) || char.IsControl(ch) || ch == '\uFFFE' || ch == '\uFFFF') { space = true; continue; }
+                if (space && sb.Length > 0) sb.Append(' ');
+                space = false;
+                sb.Append(ch);
+            }
+            return sb.ToString();
+        }
+
+        static string CutHeading(string t, int max)
+        {
+            if (t.Length <= max) return t;
+            int n = max - 4;
+            if (char.IsHighSurrogate(t[n - 1])) n--;
+            return t.Substring(0, n).TrimEnd() + " ...";
+        }
+
+        // What makes two headings one column name. Excel's own comparison is not written down, so alike is taken widely:
+        // letter case, the Unicode forms that look the same (the ohm sign and omega, a superscript 2 and 2) and spacing.
+        public static string HeadingKey(string s)
+        {
+            string t = OneLine(s);
+            try { t = OneLine(t.Normalize(NormalizationForm.FormKC)); }
+            catch (ArgumentException) { }       // text that is not valid Unicode: compared as it is
+            return t.ToUpperInvariant().ToLowerInvariant();
+        }
+
+        sealed class HeadingComparer : IEqualityComparer<string>
+        {
+            public bool Equals(string a, string b) { return string.Equals(HeadingKey(a), HeadingKey(b), StringComparison.Ordinal); }
+            public int GetHashCode(string s) { return HeadingKey(s).GetHashCode(); }
+        }
+        // sets and dictionaries of headings compare with this
+        public static readonly IEqualityComparer<string> Headings = new HeadingComparer();
 
         // Excel escapes characters that XML cannot carry as _xHHHH_ (e.g. _x000D_ for a carriage return).
         public static string DecodeX(string s)
@@ -1274,16 +1336,26 @@ namespace CalcFlow
             sb.Append("<autoFilter ref=\"").Append(rf).Append("\"/>");
             int n = t.Right - t.Left + 1;
             sb.Append("<tableColumns count=\"").Append(n).Append("\">");
-            var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var used = new Dictionary<string, string>(Xlsx.Headings);
             object[] header = t.Top < s.Rows.Count ? s.Rows[t.Top] : new object[0];
             for (int c = 0; c < n; c++)
             {
                 object h = t.Left + c < header.Length ? header[t.Left + c] : null;
                 var xc = h as XCell;
                 if (xc != null) h = xc.Value;
-                string name = h == null ? "" : Convert.ToString(h, CultureInfo.InvariantCulture).Trim();
-                if (name.Length == 0 || !used.Add(name))
-                    throw new Exception("XlsxWriter: table " + t.Name + " needs a unique text header in " + Xlsx.Ref(t.Top, t.Left + c));
+                // Excel wants the heading as text, the same in the cell and here, on one line and within 255 characters:
+                // the cell is put right before its sheet is written (the sheet is written after its tables)
+                string name = Xlsx.TableHeading(h == null ? "" : Convert.ToString(h, CultureInfo.InvariantCulture));
+                if (name.Length == 0)
+                    throw new Exception("XlsxWriter: table " + t.Name + " needs a text heading in " + Xlsx.Ref(t.Top, t.Left + c));
+                string twin;
+                if (used.TryGetValue(name, out twin))
+                    throw new Exception("XlsxWriter: table " + t.Name + " has two columns that Excel takes for one name: '" + twin + "' and '" + name + "' (" + Xlsx.Ref(t.Top, t.Left + c) + ")");
+                used[name] = name;
+                if (!(h is string) || (string)h != name)
+                {
+                    if (xc != null) header[t.Left + c] = new XCell(name, xc.Style); else header[t.Left + c] = name;
+                }
                 sb.Append("<tableColumn id=\"").Append(c + 1).Append("\" name=\"").Append(Esc(name)).Append("\"/>");
             }
             sb.Append("</tableColumns>");

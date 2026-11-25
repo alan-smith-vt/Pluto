@@ -42,6 +42,14 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 new -Out 
 > - **Cells kept as text:** the Fx to Mz cells of Sign Maps, Input cells and Result cells, and table columns are formatted as text, so `-Fz` or a table that starts with a minus sign is not read as a formula.
 > - **Sign Maps** and **Load Cases** (Use, Basis).
 
+> [!info]- Headings, and Excel's rules for a table
+> Every tab's rows are an Excel table, and a schedule tab's headings are the template's own labels. Excel has rules for a table's headings that LibreOffice and the Open XML schema check do not apply. A workbook that breaks one opens in Excel with "Repaired Records: Table from /xl/tables/tableN.xml part (Table)".
+> - **The rules:** a heading is text, on one line, of 255 characters at most, the same in its cell and in the table part, and no two headings of a table are alike.
+> - **What the tool does (2026-11-25):** a label is put on one line with single spaces; one over 255 characters (a note beside an input) is cut and ends in ` ...`; two that are alike get the cell in brackets on the second (`D (in) [B15]`). Alike is taken widely, since Excel's comparison is not written down: letter case, spacing, and the forms of a character that look the same (the ohm sign and omega, a superscript 2 and 2). The writer puts every table's heading cells right and refuses two alike (`Xlsx.TableHeading`, `Xlsx.Headings`).
+> - **The check:** `cs/XlsxCheck.cs` reads a written workbook's tables against these rules. The tests run it over every workbook they write, beside the schema validator and the LibreOffice open check.
+> - **For a workbook Excel repaired:** `CalcFlow.ps1 excel-check -Workbook <it, as written>` lists what in its tables breaks a rule. With `-Repaired <the copy saved from Excel after the repair>` it also lists what Excel changed, heading by heading, which names the rule when the check itself finds nothing.
+> - **Not seen in Excel here:** the first report came from the production machine, with templates this repo does not hold. A heading over 255 characters is the one way found to make the tool write such a table.
+
 > [!info]- Forces: member end forces, or the support reaction
 > The Templates tab's **Forces** column says what a template is given, per template, from a list of two.
 > - **Member end forces** (the start value): the printed end forces of the beam end the mark sits at.

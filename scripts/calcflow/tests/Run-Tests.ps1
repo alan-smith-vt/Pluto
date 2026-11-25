@@ -3,7 +3,8 @@
   Runs every scripts\calcflow\tests\*.Tests.ps1 file. Works in Windows PowerShell 5.1 and PowerShell 7 (Windows or
   Linux). Excel is never started here: the COM stages are covered by parsing them, and Excel.Tests.ps1 runs only
   where Excel is installed. Every workbook the tests write is then checked by the open-source tools on the machine
-  (tests\Tools.ps1: the Open XML SDK validator, LibreOffice), each skipped when absent.
+  (tests\Tools.ps1: the Open XML SDK validator, LibreOffice), each skipped when absent, and against Excel's own
+  rules for tables (cs\XlsxCheck.cs), which those tools do not know.
   Under PowerShell 7 the Pluto lib (the .anl readers) is loaded from $env:PLUTO_DLL, a prebuilt assembly of
   scripts\lib + scripts\arms: the lib uses the .NET Framework's JSON serializer, which PowerShell 7 does not have.
   Copied from pipe-review (tests/Run-Tests.ps1 at d4b33aa, 2026-11-06): loads CalcFlow and the Pluto lib.
@@ -51,6 +52,10 @@ if ($written.Count -gt 0) {
         $e = Invoke-CfOoxmlCheck $written
         if ($null -eq $e) { Write-Host '        (no dotnet SDK here: skipped)' -ForegroundColor DarkGray; return }
         Assert-True ($e.Count -eq 0) ($e -join '; ')
+    }
+    Test "each keeps Excel's rules for tables: text headings that are the column names, none alike, 255 characters at most" {
+        $e = Invoke-CfExcelTableRules $written
+        Assert-True ($e.Count -eq 0) (($e | Select-Object -First 12) -join '; ')
     }
     Test 'each opens in LibreOffice without a load error' {
         $e = Invoke-CfLibreOpen $written

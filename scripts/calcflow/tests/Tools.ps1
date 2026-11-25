@@ -49,6 +49,14 @@ function Invoke-CfOoxmlCheck([string[]]$Files) {
     return , $o
 }
 
+# what Excel would repair in the tables of the files (empty when clean): Excel's own rules for a table, which neither
+# the schema validator nor LibreOffice checks (cs\XlsxCheck.cs)
+function Invoke-CfExcelTableRules([string[]]$Files) {
+    $o = New-Object System.Collections.Generic.List[string]
+    foreach ($f in $Files) { foreach ($line in [CalcFlow.XlsxCheck]::Tables($f)) { $o.Add($line) } }
+    return , $o.ToArray()
+}
+
 # load errors of the files as LibreOffice opens them (empty when clean); $null when LibreOffice is not installed
 function Invoke-CfLibreOpen([string[]]$Files) {
     $so = [CalcFlow.LibreOffice]::Find()
@@ -82,12 +90,14 @@ function Export-CfPreview([string]$File, [string]$OutDir, [int]$Pages = 3, [int]
 }
 
 # every workbook the tests wrote since $Since under tests\out (the tools' own folder aside; records are copies of a
-# template, so a template's own faults would show: Run.Tests.ps1 checks that a copy adds none)
+# template, so a template's own faults would show: Run.Tests.ps1 checks that a copy adds none). Left out too: the
+# files the tests patch cell by cell as a stand-in for typing in Excel (patched-*, and the copies a refresh keeps of
+# them), where a renamed heading is renamed in its cell only
 function Get-CfWrittenWorkbooks([datetime]$Since) {
     $root = Join-Path $PSScriptRoot 'out'
     if (-not (Test-Path -LiteralPath $root)) { return @() }
     $tools = $script:ToolsOut + [IO.Path]::DirectorySeparatorChar
     return @(Get-ChildItem -LiteralPath $root -Recurse -File -Filter '*.xlsx' |
-        Where-Object { $_.LastWriteTimeUtc -ge $Since.ToUniversalTime() -and -not $_.FullName.StartsWith($tools) -and $_.FullName -notmatch '[\\/](records|patched-[^\\/]*$)' } |
+        Where-Object { $_.LastWriteTimeUtc -ge $Since.ToUniversalTime() -and -not $_.FullName.StartsWith($tools) -and $_.FullName -notmatch '[\\/](records|patched-[^\\/]*$|[^\\/]* \(before refresh [^\\/]*$)' } |
         Sort-Object FullName | ForEach-Object { $_.FullName })
 }

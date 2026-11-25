@@ -27,6 +27,10 @@
                     that (-NoWait: it refuses instead), and opens the workbook again when done.
                     post-process and check say when a refresh is due.
     launchers       the launchers again (their path to this script is the one at write time): -Workbook <CalcFlow.xlsx>
+    excel-check     for a workbook Excel opened with "Repaired Records: Table from /xl/tables/...": lists what in its
+                    tables breaks a rule Excel has for them (a heading over 255 characters, two headings alike, a
+                    heading that is not text ...): -Workbook <any .xlsx> [-Repaired <the copy saved from Excel after
+                    its repair>]. With -Repaired it also lists what Excel changed, heading by heading. Reads only.
   The verbs underneath, in the order a project uses them (only run calculates: with Excel where it is installed, else
   LibreOffice):
     harvest         learn each calc template's layout once: -Templates <folder or .xlsx files> [-Out harvest.xlsx]
@@ -60,7 +64,7 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory, Position = 0)][ValidateSet('new', 'post-process', 'refresh', 'launchers', 'check', 'calcs', 'harvest', 'library-new', 'library-export', 'register-new', 'plan', 'run', 'summary')][string]$Verb,
+    [Parameter(Mandatory, Position = 0)][ValidateSet('new', 'post-process', 'refresh', 'launchers', 'check', 'calcs', 'excel-check', 'harvest', 'library-new', 'library-export', 'register-new', 'plan', 'run', 'summary')][string]$Verb,
     [string[]]$Templates,
     [string]$Library,
     [string]$Harvest,
@@ -79,7 +83,8 @@ param(
     [string]$Workbook,
     [string]$Anl,
     [switch]$NoOpen,
-    [switch]$NoWait
+    [switch]$NoWait,
+    [string]$Repaired
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Import-CalcFlow.ps1')
@@ -380,6 +385,25 @@ switch ($Verb) {
         Write-Host ("kept     {0} (the workbook as it was)" -f $res.Backup)
         Write-Host ("written  {0}: everything you had filled in is carried over ({1} note(s) above)" -f $res.Workbook, $res.Notes.Count) -ForegroundColor Green
         if (-not $NoOpen -and (Test-CfWindows) -and [Environment]::UserInteractive) { Invoke-Item -LiteralPath $res.Workbook }
+        exit 0
+    }
+    'excel-check' {
+        Need 'Workbook' $Workbook
+        $wb = Get-CfFull $Workbook
+        if (-not (Test-Path -LiteralPath $wb)) { Stop-CfArgs "No such workbook: $wb" }
+        Write-Host ("workbook {0}" -f $wb)
+        $found = @([CalcFlow.XlsxCheck]::Tables($wb))
+        foreach ($line in $found) { Write-Host ("[fix  ] {0}" -f $line) -ForegroundColor Red }
+        if ($found.Count -eq 0) { Write-Host 'tables   nothing in them breaks a rule of Excel that this check knows' -ForegroundColor Green }
+        else { Write-Host ("tables   {0} thing(s) Excel repairs on opening" -f $found.Count) -ForegroundColor Red }
+        if ($Repaired) {
+            $rp = Get-CfFull $Repaired
+            if (-not (Test-Path -LiteralPath $rp)) { Stop-CfArgs "No such workbook: $rp" }
+            $changed = @([CalcFlow.XlsxCheck]::Changed($wb, $rp))
+            foreach ($line in $changed) { Write-Host ("[excel] {0}" -f $line) -ForegroundColor Yellow }
+            Write-Host ("repaired {0} change(s) by Excel in the tables of {1}" -f $changed.Count, $rp)
+        }
+        if ($found.Count -gt 0) { exit 1 }
         exit 0
     }
     'launchers' {

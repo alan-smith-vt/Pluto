@@ -265,14 +265,19 @@ namespace CalcFlow
                             else mine = also ? mine.Where(x => !given.Any(g => Covers(g, x))).ToList().Concat(given) : given;
                         }
                         var cols = new List<Dictionary<string, string>>();
-                        var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Connection" };
+                        // a column's name is its heading in an Excel table: one line, within 255 characters, and no
+                        // two alike (Xlsx.TableHeading, Xlsx.Headings)
+                        var used = new HashSet<string>(Xlsx.Headings) { "Connection" };
                         foreach (var i in mine)
                         {
                             string label = Regex.Replace(V(i, "GuardText"), @"\s+", " ").Trim();
                             string col = label.Length == 0 ? (V(i, "Kind") == "table" ? "Table " + V(i, "Cell") : V(i, "Cell")) : label;
                             if (V(i, "Sheet") != sheet) col = V(i, "Sheet") + ": " + col;      // another sheet of the workbook
                             if (V(i, "Name").Length > 0) col = V(i, "Name");                    // the name the engineer gave it
-                            if (!used.Add(col)) { col = col + " [" + V(i, "Cell") + "]"; used.Add(col); }
+                            col = Xlsx.TableHeading(col);
+                            string plain = col;
+                            for (int n = 1; !used.Add(col); n++)
+                                col = Xlsx.TableHeading(plain, " [" + V(i, "Cell") + "]" + (n == 1 ? "" : " (" + I(n) + ")"));
                             var c = Row("Template", name, "Column", col, "Sheet", V(i, "Sheet"), "Cell", V(i, "Cell"), "Label cell", V(i, "GuardCell"), "Label", V(i, "GuardText"),
                                 "Unit", V(i, "Unit"), "Kind", V(i, "Kind"), "List", V(i, "List"), "Template value", V(i, "Example"));
                             cols.Add(c); cells.Add(c);
@@ -574,8 +579,8 @@ namespace CalcFlow
         sealed class ScheduleCarry
         {
             public readonly List<string> Heads = new List<string>();
-            public readonly Dictionary<string, string> Source = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            public readonly Dictionary<string, string> Unit = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            public readonly Dictionary<string, string> Source = new Dictionary<string, string>(Xlsx.Headings);
+            public readonly Dictionary<string, string> Unit = new Dictionary<string, string>(Xlsx.Headings);
             public readonly List<Dictionary<string, string>> Rows = new List<Dictionary<string, string>>();
 
             public static ScheduleCarry Read(XSheet s)
@@ -585,15 +590,18 @@ namespace CalcFlow
                 var at = new List<int>();
                 for (int k = 1; s.Text(HeaderRow, k).Length > 0; k++)
                 {
-                    string h = s.Text(HeaderRow, k);
-                    if (c.Source.ContainsKey(h)) continue;
+                    // a heading written before the 255-character limit was kept is cut the way a new one is. Two that
+                    // are alike (a workbook from before headings were compared widely) are both kept, the second numbered
+                    string text = s.Text(HeaderRow, k), h = Xlsx.TableHeading(text);
+                    if (h.Length == 0) continue;
+                    for (int n = 2; c.Source.ContainsKey(h); n++) h = Xlsx.TableHeading(text, " (" + n.ToString(Inv) + ")");
                     c.Heads.Add(h); at.Add(k);
                     c.Source[h] = s.Text(SourceRow, k); c.Unit[h] = s.Text(UnitRow, k);
                 }
                 int blank = 0;
                 for (int r = FirstMarkRow; r < s.Rows.Count && blank < 50; r++)
                 {
-                    var d = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    var d = new Dictionary<string, string>(Xlsx.Headings);
                     d["Connection"] = s.Text(r, 0);
                     bool any = d["Connection"].Length > 0;
                     for (int k = 0; k < at.Count; k++) { string v = s.Text(r, at[k]); d[c.Heads[k]] = v; if (v.Length > 0) any = true; }
@@ -620,7 +628,7 @@ namespace CalcFlow
             cols = new List<Dictionary<string, string>>(cols);
             if (carry != null)
             {
-                var have = new HashSet<string>(cols.Select(c => V(c, "Column")), StringComparer.OrdinalIgnoreCase);
+                var have = new HashSet<string>(cols.Select(c => V(c, "Column")), Xlsx.Headings);
                 foreach (string h in carry.Heads)
                     if (!have.Contains(h) && carry.Rows.Any(r => V(r, h).Length > 0))
                     {
