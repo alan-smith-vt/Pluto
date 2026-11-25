@@ -70,6 +70,8 @@ $loads = New-Object CalcFlow.XOutSheet 'Loads'
 Put $loads 'A1' 'Forces at the joint'
 Put $loads 'A2' 'LC'; Put $loads 'B2' 'Fx (kip)'; Put $loads 'C2' 'Fy (kip)'; Put $loads 'D2' 'Mz (kip-ft)'
 Fill $loads 'A3' 'D8' $yellow
+Put $loads 'E2' 'Ratio'
+foreach ($r in 3..8) { Put $loads "E$r" (New-Object CalcFlow.XFormula "IF(A$r=`"`",`"`",ABS(B$r)/(Pattern!`$H`$8*100))", '') }
 $platePath = Join-Path $dir 'Plate.xlsx'
 [CalcFlow.XlsxWriter]::Write($platePath, [CalcFlow.XOutSheet[]]@($plate, $loads), $null)
 
@@ -186,4 +188,109 @@ Test 'map writes the look at a templates folder: a row per input cell or table c
     $sum = @{}; foreach ($r in $wb.TableRows('tblMapTemplates')) { $sum["$($r['Template'])|$($r['Sheet'])"] = "$($r['Single inputs'])/$($r['Tables to type'])/$($r['Tables the tool writes'])/$($r['To look at'])" }
     Assert-Equal "$($sum['Clip Batch.xlsx|Clip']) $($sum['Brace Batch.xlsx|Braces']) $($sum['Plate.xlsx|Pattern']) $($sum['Plate.xlsx|Loads'])" '2/0/1/0 0/0/1/1 8/1/0/1 0/0/1/0'
     Assert-Equal (@($rows | Where-Object { $_['Look at'] } | ForEach-Object { "$($_['Heading']): $($_['Look at'])" }) -join ' | ') 'Axial (kip): a guess | Joint: taken from the model by its heading'
+}
+
+# ---- the whole way with templates read from their yellow cells: the tabs, the marks, the beam ends, the calcs
+$lib = Join-Path $dir 'library'
+New-Item -ItemType Directory -Force -Path $lib | Out-Null
+foreach ($f in $clipPath, $bracePath, $platePath) { Copy-Item -LiteralPath $f -Destination $lib }
+$proj = Join-Path $dir 'proj'
+$fixtureAnl = Join-Path $script:Fixtures 'frame-demo.anl'
+$oNew = Invoke-CfCli new -Out $proj -Anl $fixtureAnl -Templates $lib
+$newExit = $LASTEXITCODE
+$wb = Join-Path $proj 'CalcFlow.xlsx'
+function Set-Cells([string]$Path, [object[]]$Cells) { $tmp = $Path + '.tmp'; Save-Cells $Path $tmp $Cells; Move-Item -LiteralPath $tmp -Destination $Path -Force }
+$headsOf = { param($book, $tab) $s = $book.Sheet($tab); $h = @(); $n = 1; while ($s.Text(4, $n)) { $h += "$($s.Text(4, $n))<$($s.Text(1, $n))" ; $n++ }; $h -join ' | ' }
+
+Test 'new on templates with yellow cells: a tab holds the cells typed once and nothing else; a table of rows is the template''s load table; its ratios are results, one a row' {
+    Assert-Equal $newExit 0 ($oNew -join "`n")
+    $b = [CalcFlow.Xlsx]::Read($wb)
+    $t = @{}; foreach ($r in $b.TableRows('tblConfigTemplates')) { $t[$r['Template']] = $r }
+    Assert-Equal (@($t.Keys | Sort-Object) -join ' ') 'Brace-Batch Clip-Batch Plate'
+    $c = $t['Clip-Batch']
+    Assert-Equal "$($c['Sheet'])|$($c['Load table at'])|$($c['Load table columns'])|$($c['Max rows'])|$($c['Force unit'])|$($c['Moment unit'])|$($c['Loads'])|$($c['Beam ends tab'])" 'Clip|A9|[Stiffened?], Beam, Node, Fx, Fy, Fz, Mx, My, Mz|10|kip|kip-in|All cases|Clip-Batch ends'
+    Assert-Equal $t['Brace-Batch']['Load table columns'] '[Shape], [Grade], [Slotted?], [Span (in)], Beam, Fx'
+    Assert-Equal "$($t['Plate']['Sheet'])|$($t['Plate']['Load table columns'])|$($t['Plate']['Beam ends tab'])" 'Loads|LC, Fx, Fy, Mz|' 'the plate is filled in on its Pattern sheet and takes its loads on another'
+    # typed once per mark: the two merged cells of the clip, and every cell of the pattern sheet under its own heading
+    Assert-Equal (& $headsOf $b 'Clip-Batch') 'Girder<Typed here | Post<Typed here'
+    Assert-Equal (& $headsOf $b 'Brace-Batch') '' 'every input of the brace table is the tool''s or typed per beam end'
+    Assert-Equal (& $headsOf $b 'Plate') 'Bolt pattern<Typed here | Mark<Typed here | Joint<Node | Face<Typed here | left (in)<Typed here | right (in)<Typed here | t<Typed here | d<Typed here | Fy<Typed here'
+    $block = @($b.TableRows('tblTemplateCells') | Where-Object { $_['Column'] -eq 'Bolt pattern' })[0]
+    Assert-Equal "$($block['Sheet'])!$($block['Cell'])|$($block['Kind'])|$($block['Template value'])" 'Pattern!D4:E9|table|0, 0; 3, 0; 0, 4; 3, 4; 0, 8; 3, 8' 'the grid is one cell to type a table in'
+    $outs = @($b.TableRows('tblConfigOutputs') | ForEach-Object { "$($_['Template']):$($_['Result'])@$($_['Sheet'])!$($_['Cell']) use=$($_['Use']) check=$($_['Check']) row=$($_['Per row'])" })
+    Assert-Equal ($outs -join ' | ') 'Brace-Batch:Ratio@Braces!G6 use=Y check=Ratio row=Y | Clip-Batch:Shear ratio@Clip!J9 use=Y check=Shear ratio row=Y | Clip-Batch:Bolt ratio@Clip!K9 use=Y check=Bolt ratio row=Y | Plate:Ratio@Loads!E3 use=Y check=Ratio row=Y'
+    # nothing was guessed from formulas: the capacities the clip's formulas read are on no tab
+    Assert-Equal @($b.TableRows('tblTemplateCells') | Where-Object { $_['Sheet'] -eq 'Capacities' }).Count 0
+}
+
+$b0 = [CalcFlow.Xlsx]::Read($wb)
+$loadsCol = Get-Col $b0 'Templates' 'Loads' 2
+$braceRow = @(2..12 | Where-Object { $b0.Sheet('Templates').Text($_, 0) -eq 'Brace-Batch' })[0] + 1
+Set-Cells $wb @(
+    @('Connection Lib', 'A3', 'CL-1'), @('Connection Lib', 'B3', 'Clip-Batch'), @('Connection Lib', 'A4', 'BR-1'), @('Connection Lib', 'B4', 'Brace-Batch'), @('Connection Lib', 'A5', 'PL-1'), @('Connection Lib', 'B5', 'Plate'),
+    @('Clip-Batch', 'A6', 'CL-1'), @('Brace-Batch', 'A6', 'BR-1'), @('Plate', 'A6', 'PL-1'), @('Plate', ((Get-Col $b0 'Plate' 't' 5) + '6'), 1),
+    # the clip at beam 2 end I and beam 5 end J, the brace at beam 4 end I, the plate under column 1
+    @('Model Config', 'F4', 'CL-1'), @('Model Config', 'G7', 'CL-1'), @('Model Config', 'F6', 'BR-1'), @('Model Config', 'F3', 'PL-1'),
+    @('Templates', "$loadsCol$braceRow", 'Largest of each force')
+)
+
+Test 'a beam end that calls a mark needs its row of values typed per beam end: check says to refresh, and refresh lists the beam ends' {
+    $o = Invoke-CfCli check -Workbook $wb
+    Assert-Equal $LASTEXITCODE 1 ($o -join "`n")
+    Assert-Match ($o -join "`n") '\[fix  \] Clip-Batch ends: beam 2, end I calls CL-1 and has no row on this tab: run Refresh config, then fill its row in'
+    $o = Invoke-CfCli refresh -Workbook $wb -NoWait -NoOpen
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    $b = [CalcFlow.Xlsx]::Read($wb)
+    Assert-Equal (@($b.TableRows('tblEnds2') | ForEach-Object { "$($_['Beam'])$($_['End'])@$($_['Node'])=$($_['Connection'])" }) -join ' ') '2I@2=CL-1 5J@5=CL-1'
+    $e1 = @($b.TableRows('tblEnds1'))
+    Assert-Equal "$($e1.Count) $($e1[0]['Beam'])$($e1[0]['End']) $(@($e1[0].Keys | Where-Object { $_ -ne '__row' }) -join ',')" '1 4I Beam,End,Node,Connection,Shape,Grade,Slotted?,Span (in)'
+    Assert-Equal ([CalcFlow.XlsxCheck]::Tables($wb) + [CalcFlow.XlsxCheck]::Validations($wb)).Count 0
+}
+
+Set-Cells $wb @(
+    @('Clip-Batch ends', 'E3', 'Yes'), @('Clip-Batch ends', 'E4', 'No'),
+    @('Brace-Batch ends', 'E3', 'HSS4X4X1/4'), @('Brace-Batch ends', 'F3', 'A500'), @('Brace-Batch ends', 'G3', 'No'), @('Brace-Batch ends', 'H3', 60)
+)
+
+Test 'check: each row of a table the tool writes carries its beam end''s own values; a refresh keeps what was typed per beam end' {
+    $o = Invoke-CfCli refresh -Workbook $wb -NoWait -NoOpen
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    Assert-Equal (@([CalcFlow.Xlsx]::Read($wb).TableRows('tblEnds2') | ForEach-Object { $_['Stiffened?'] }) -join ' ') 'Yes No'
+    $o = Invoke-CfCli check -Workbook $wb
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    Assert-True (@($o | Where-Object { $_ -like 'check *3 of 3 connection calcs are ready: 0 error(s)*' }).Count -eq 1) ($o -join "`n")
+    Assert-True (@($o | Where-Object { $_ -like '*NO_GUARD*' }).Count -eq 0) 'under headings merged over two rows each table column still has its heading as a guard'
+    $cases = @([CalcFlow.Csv]::ReadTable((Join-Path $proj 'calcflow/plan/cases.csv')))
+    $cell = { param($calc, $row, $at) @($cases | Where-Object { $_['Calc'] -eq $calc -and $_['Row'] -eq "$row" -and $_['Cell'] -eq $at })[0]['Value'] }
+    # the clip: two beam ends, three cases each; rows 1 to 3 are beam 2 at node 2, rows 4 to 6 beam 5 at node 5
+    Assert-Equal "$(& $cell 'CL-1' 1 'A9') $(& $cell 'CL-1' 1 'B9') $(& $cell 'CL-1' 1 'C9') $(& $cell 'CL-1' 1 'E9') | $(& $cell 'CL-1' 4 'A9') $(& $cell 'CL-1' 4 'B9') $(& $cell 'CL-1' 4 'C9')" 'Yes 2 2 3.731 | No 5 5'
+    # the brace: one row a beam end, the largest of each force
+    $br = @($cases | Where-Object { $_['Calc'] -eq 'BR-1' })
+    Assert-Equal (@($br | Sort-Object { $_['Cell'] } | ForEach-Object { "$($_['Cell'])=$($_['Value'])" }) -join ' ') 'A6=HSS4X4X1/4 B6=A500 C6=No D6=60 E6=4 F6=47.488'
+    Assert-Equal (@($br | ForEach-Object { $_['Row'] } | Sort-Object -Unique) -join ',') '1'
+    # the plate: its node from the model and the typed thickness on the Pattern sheet, its loads on the Loads sheet
+    $plan = @([CalcFlow.Csv]::ReadTable((Join-Path $proj 'calcflow/plan/plan.csv')) | Where-Object { $_['Calc'] -eq 'PL-1' })
+    Assert-Equal (@($plan | Sort-Object { $_['Cell'] } | ForEach-Object { "$($_['Sheet'])!$($_['Cell'])=$($_['Value'])" }) -join ' ') 'Pattern!H5=1 Pattern!H8=1'
+    Assert-Equal "$(& $cell 'PL-1' 1 'A3') $(& $cell 'PL-1' 1 'B3')" '3 32.224'
+}
+
+Test 'calcs: the ratios of every row come back, each beam end with its own' {
+    if (-not [CalcFlow.LibreOffice]::Find()) { Write-Host '        (no LibreOffice here: skipped)' -ForegroundColor DarkGray; return }
+    $o = Invoke-CfCli calcs -Workbook $wb -Engine libreoffice
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    Assert-True (@($o | Where-Object { $_ -like 'run      3 calc steps: 3 OK, 0 invalid, 0 failed*' }).Count -eq 1) ($o -join "`n")
+    $chk = { param($calc) @([CalcFlow.Csv]::ReadTable((Join-Path $proj "calcflow/data/results/${calc}__s1.checks.csv"))) }
+    $cl = & $chk 'CL-1'
+    $of = { param($rows, $check, $conn) [double]@($rows | Where-Object { $_['Check'] -eq $check -and $_['Connection'] -eq $conn })[0]['Max DCR'] }
+    # shear ratio = |Fy| / 34.5, bolt ratio = |Fx| / 20, from the capacities sheet no input was made of
+    Assert-Near (& $of $cl 'Shear ratio' 'J2-M2A') (3.731 / 34.5) 1e-9
+    Assert-Near (& $of $cl 'Bolt ratio' 'J2-M2A') (37.312 / 20) 1e-9
+    Assert-True ((& $of $cl 'Shear ratio' 'J5-M5B') -gt (& $of $cl 'Shear ratio' 'J2-M2A')) 'beam 5 has its own rows'
+    Assert-Near ([double]@(& $chk 'BR-1')[0]['Max DCR']) (47.488 / 50) 1e-9
+    Assert-Near ([double]@(& $chk 'PL-1')[0]['Max DCR']) (32.224 / (1 * 100)) 1e-9 'the thickness typed for the mark, 1 in place of 0.75'
+    # the record of the clip: the rows written, the rest of the ten emptied
+    $rec = [CalcFlow.TemplateBook]::Open((Join-Path (Join-Path $proj 'calcflow') @($cl)[0]['Record']))
+    $s = $rec.Sheet('Clip')
+    Assert-Equal "$($s.Get(8, 0).Value) $($s.Get(8, 1).Value) $($s.Get(11, 0).Value) $($s.Get(11, 1).Value)" 'Yes 2 No 5'
+    Assert-True ($s.Get(14, 1) -eq $null -or $s.Get(14, 1).IsEmpty) 'the seventh row is empty'
 }

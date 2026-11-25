@@ -402,6 +402,8 @@ namespace CalcFlow
             {
                 var env = new DemandRow();
                 env.Source = rows.Count > 0 ? rows[0].Source : "";
+                // the rows of one beam end: the row is that beam end's own (its beam, node and typed values)
+                if (rows.Count > 0 && rows.All(r => r.Conn == rows[0].Conn)) env.Conn = rows[0].Conn;
                 env.F = new double[6];
                 var notes = new List<string>();
                 for (int i = 0; i < 6; i++)
@@ -668,7 +670,8 @@ namespace CalcFlow
                     // a fact of the row's own member end (beam number, node, section ...)
                     if (d.Conn == null) { err = "an envelope row of several connections has no beam or node of its own"; return null; }
                     Value v = Resolve(inp, d.Conn, type, step, out err);
-                    if (v != null) return v.Text;
+                    // a value typed per beam end that was left blank: the cell is emptied
+                    if (v != null) return string.Equals(v.Text.Trim(), ProjectBook.Blank, StringComparison.OrdinalIgnoreCase) ? "" : v.Text;
                     err = err.TrimStart('!');
                     return null;
                 }

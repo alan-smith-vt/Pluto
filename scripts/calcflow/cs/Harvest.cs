@@ -27,6 +27,10 @@ namespace CalcFlow
         public readonly List<Dictionary<string, string>> Layout = new List<Dictionary<string, string>>();
         public readonly List<string> Problems = new List<string>();
         public readonly List<string[]> Skipped = new List<string[]>();     // file, why (an .xls / .xlsb harvest cannot read)
+        // the templates whose inputs were read from the cells coloured as inputs (TemplateMap), and the tables of
+        // such a template that the tool writes a row at a time
+        public readonly HashSet<string> Coloured = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        public readonly List<LoadTable> Tables = new List<LoadTable>();
         // every sheet of every template workbook, in the workbook's order: template, sheet, the sheets its formulas
         // read however far (joined by "|"). Sheets that read one another are parts of one calc.
         public readonly List<string[]> Sheets = new List<string[]>();
@@ -55,6 +59,11 @@ namespace CalcFlow
         // file formats harvest reads (Office Open XML workbooks and templates) and the old ones it lists as skipped
         public static readonly string[] Readable = { ".xlsx", ".xlsm", ".xltx", ".xltm" };
         public static readonly string[] Unreadable = { ".xls", ".xlsb", ".xlt" };
+
+        // The fills that mark the cells to fill in, six hex digits each (empty: the yellow family). A workbook that has
+        // such cells takes its inputs from them and nothing is guessed from its formulas; one that has none is read
+        // the old way.
+        public static List<string> InputFills = new List<string>();
 
         public static HarvestResult Run(IEnumerable<string> paths, string templatesDir)
         {
@@ -118,21 +127,31 @@ namespace CalcFlow
             }
             int nIn = 0, nOut = 0;
             var protectedSheets = new List<string>();
+            // the cells the template's author coloured as inputs, when there are any
+            TemplateMapResult map = null;
+            try { map = TemplateMap.Read(b, TemplateLook.Read(b.Path), InputFills); }
+            catch (Exception ex) { res.Problems.Add(file + ": its fills could not be read (" + ex.Message + "); its inputs are guessed from its formulas"); }
+            bool coloured = map != null && map.Blocks.Count > 0;
+            if (coloured) res.Coloured.Add(id);
             foreach (TSheet s in b.Sheets)
             {
                 if (s.Protected) protectedSheets.Add(s.Name);
                 var bodies = b.Tables.Where(t => string.Equals(t.Sheet, s.Name, StringComparison.OrdinalIgnoreCase)).ToList();
                 var roles = new Dictionary<long, string>();
+                var written = coloured ? map.Blocks.Where(x => x.LoadRows && x.Sheet == s.Name).ToList() : new List<MapBlock>();
                 foreach (TCell c in s.Cells.Values.OrderBy(x => x.Row).ThenBy(x => x.Col))
                 {
                     if (InTable(bodies, c.Row, c.Col)) { roles[TSheet.Key(c.Row, c.Col)] = "table"; continue; }
                     string name = NameAt(named, s, c.Row, c.Col);
                     if (c.IsFormula)
                     {
+                        // along the rows of a table the tool writes, a formula is one of the row's results (below)
+                        if (written.Any(x => c.Row >= x.Top && c.Row <= x.Bottom)) continue;
                         Dictionary<string, string> o = Output(b, s, c, name, id);
                         if (o != null) { res.Outputs.Add(o); nOut++; roles[TSheet.Key(c.Row, c.Col)] = "output"; }
                         continue;
                     }
+                    if (coloured) continue;
                     var why = new List<string>();
                     if (!c.IsEmpty && b.IsReferenced(s, c.Row, c.Col)) why.Add("read by a formula");
                     TValidation v = s.ValidationAt(c.Row, c.Col);
@@ -147,8 +166,9 @@ namespace CalcFlow
                     nIn++;
                     roles[TSheet.Key(c.Row, c.Col)] = "input";
                 }
+                if (coloured) Coloured(b, s, id, map, named, res, roles, ref nIn, ref nOut);
                 // blank cells a formula reads, with a label beside them: optional inputs ("blank = UNC table")
-                foreach (long k in b.ReferencedKeys(s).OrderBy(x => x))
+                foreach (long k in coloured ? new List<long>() : b.ReferencedKeys(s).OrderBy(x => x).ToList())
                 {
                     int row = (int)(k >> 20), col = (int)(k & 0xFFFFF);
                     TCell c = s.Get(row, col);
@@ -204,6 +224,76 @@ namespace CalcFlow
             if (b.Notes.Count > 20) notes.Add("and " + (b.Notes.Count - 20) + " more notes like these");
             tr["Notes"] = string.Join("; ", notes.ToArray());
             res.Templates.Add(tr);
+        }
+
+        // The inputs of one sheet as its author coloured them (TemplateMap): a cell, or each cell of a row of cells, is
+        // an input named by its heading; a list or table to type is one input that holds the whole block; a table the
+        // tool writes is the sheet's load table, with the formulas along its rows as results, one a row.
+        static void Coloured(TemplateBook b, TSheet s, string id, TemplateMapResult map, Dictionary<string, string> named, HarvestResult res, Dictionary<long, string> roles, ref int nIn, ref int nOut)
+        {
+            foreach (MapBlock block in map.Blocks.Where(x => x.Sheet == s.Name))
+            {
+                if (block.LoadRows)
+                {
+                    var t = new LoadTable();
+                    t.Template = id; t.Sheet = s.Name; t.At = Xlsx.Ref(block.Top, block.Left); t.MaxRows = block.Rows;
+                    foreach (MapColumn c in block.Columns)
+                    {
+                        string f = c.FilledBy == "Beam number" ? "Beam" : c.FilledBy == "Load case" ? "LC" : c.FilledBy == TemplateMap.PerEnd ? LoadTable.Typed(c.Heading.Length > 0 ? c.Heading : c.Cells) : c.FilledBy;
+                        t.Fields.Add(f);
+                        for (int k = 1; k < c.Width; k++) t.Fields.Add("-");
+                        Unit u;
+                        if (Units.TryParse(c.Unit, out u) && f.Length == 2 && f[0] == 'F' && t.ForceUnit.Length == 0) t.ForceUnit = c.Unit;
+                        if (Units.TryParse(c.Unit, out u) && f.Length == 2 && f[0] == 'M' && t.MomentUnit.Length == 0) t.MomentUnit = c.Unit;
+                    }
+                    res.Tables.Add(t);
+                    foreach (MapColumn r in block.Results)
+                    {
+                        var o = Row(LibrarySchema.OutputColumns);
+                        o["Template"] = id; o["Sheet"] = s.Name; o["Cell"] = r.Cells;
+                        int lc, lr;
+                        if (r.LabelCell.Length > 0 && Xlsx.ParseRef(r.LabelCell, out lc, out lr)) { o["GuardCell"] = r.LabelCell; o["GuardText"] = TemplateBook.TextOf(s, lr, lc).Trim(); }
+                        o["Output"] = r.Heading.Length > 0 ? r.Heading : r.Cells;
+                        o["Kind"] = DcrWords.IsMatch(r.Heading) || Regex.IsMatch(r.Heading, @"(?i)\b(IR|UC)\b") ? "dcr" : "value";
+                        o["PerCase"] = "Y";
+                        o["Example"] = r.Example;
+                        o["Found"] = "beside a table the tool writes (one a row)";
+                        o["PerRow"] = "Y";
+                        res.Outputs.Add(o);
+                        nOut++;
+                    }
+                    continue;
+                }
+                bool table = block.Rows > 1;
+                foreach (MapColumn c in table ? block.Columns.Take(1) : block.Columns)
+                {
+                    int col, row;
+                    if (!Xlsx.ParseRef(c.Cells.Split(':')[0], out col, out row)) continue;
+                    Dictionary<string, string> d = Input(b, s, row, col, s.Get(row, col), table ? null : NameAt(named, s, row, col), table ? null : s.ValidationAt(row, col), id, table ? "input fill (a block)" : "input fill");
+                    int lc, lr;
+                    d["GuardCell"] = ""; d["GuardText"] = "";
+                    if (c.LabelCell.Length > 0 && Xlsx.ParseRef(c.LabelCell, out lc, out lr)) { d["GuardCell"] = c.LabelCell; d["GuardText"] = TemplateBook.TextOf(s, lr, lc).Trim(); }
+                    d["Unit"] = table ? "" : c.Unit;
+                    d["Name"] = table ? (c.Group.Length > 0 ? c.Group : string.Join(", ", block.Columns.Select(x => x.Heading).Where(x => x.Length > 0).ToArray())) : c.Heading;
+                    d["Source"] = c.FilledBy == TemplateMap.PerMark || c.FilledBy == TemplateMap.MarkTable ? "" : c.FilledBy;
+                    if (table)
+                    {
+                        d["Cell"] = block.Range; d["Kind"] = "table"; d["List"] = ""; d["Required"] = "N";
+                        var lines = new List<string>();
+                        for (int r = block.Top; r <= block.Bottom; r++)
+                        {
+                            var vals = block.Columns.Select(x => TemplateBook.TextOf(s, r, x.Col).Trim()).ToList();
+                            if (vals.All(v => v.Length == 0)) break;
+                            lines.Add(string.Join(", ", vals.ToArray()));
+                        }
+                        d["Example"] = string.Join("; ", lines.ToArray());
+                        d["Description"] = "a block of " + block.Rows.ToString(CultureInfo.InvariantCulture) + " rows: " + string.Join(", ", block.Columns.Select(x => x.Heading).ToArray());
+                    }
+                    res.Inputs.Add(d);
+                    nIn++;
+                    roles[TSheet.Key(row, col)] = "input";
+                }
+            }
         }
 
         static Dictionary<string, string> Input(TemplateBook b, TSheet s, int row, int col, TCell c, string name, TValidation v, string id, string why)

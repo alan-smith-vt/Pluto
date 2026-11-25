@@ -312,6 +312,7 @@ namespace CalcFlow
     {
         public string Cells = "", Heading = "", Group = "", Unit = "", Example = "", FilledBy = "", Notes = "";
         public string LabelCell = "";       // the cell the heading was read from ("" none)
+        public int Col, Width = 1;          // the column of its cells (0-based), and how many columns a merged cell spans
         public string Check = "";           // why the engineer should look at this one ("" nothing to look at)
     }
 
@@ -321,6 +322,8 @@ namespace CalcFlow
         public int Top, Left, Bottom, Right, Rows;
         public bool LoadRows;                                    // a table the tool writes a row at a time
         public readonly List<MapColumn> Columns = new List<MapColumn>();
+        // beside a table the tool writes: the formula columns of its rows, one result a row (Cells: the first row's cell)
+        public readonly List<MapColumn> Results = new List<MapColumn>();
     }
 
     public sealed class MapFill
@@ -450,6 +453,7 @@ namespace CalcFlow
                 Unit1 top = rows[0][j], bottom = rows[m - 1][j];
                 var c = new MapColumn();
                 c.Cells = Xlsx.Ref(top.R1, top.C1) + (m == 1 ? "" : ":" + Xlsx.Ref(bottom.R1, bottom.C1));
+                c.Col = top.C1; c.Width = top.C2 - top.C1 + 1;
                 string group, at;
                 c.Heading = Above(sheet, ls, look, top, out group, out at);
                 c.Group = group; c.LabelCell = at;
@@ -491,6 +495,28 @@ namespace CalcFlow
                 else if (m > 1) c.FilledBy = MarkTable;
                 else c.FilledBy = model ?? PerMark;      // a lone cell headed Fx takes the force of one load case at a time
             }
+            // the results of such a table: the formulas along its first row, to its right (and left), a column each
+            if (b.LoadRows)
+                foreach (int dir in new[] { 1, -1 })
+                {
+                    int gap = 0;
+                    for (int col = dir > 0 ? b.Right + 1 : b.Left - 1; col >= 0 && col <= b.Right + 60 && gap < 3; col += dir)
+                    {
+                        TCell f = sheet.Get(b.Top, col);
+                        if (f == null || !f.IsFormula) { gap++; continue; }
+                        gap = 0;
+                        if (ls.IsHidden(b.Top, col)) continue;
+                        var one = new Unit1();
+                        one.R1 = one.R2 = b.Top; one.C1 = one.C2 = col;
+                        var r = new MapColumn();
+                        string group, at;
+                        r.Cells = Xlsx.Ref(b.Top, col); r.Col = col;
+                        r.Heading = Above(sheet, ls, look, one, out group, out at);
+                        r.Group = group; r.LabelCell = at;
+                        r.Example = f.Value;
+                        b.Results.Add(r);
+                    }
+                }
             // what the engineer should look at: the tool's guesses, and an input it could not name
             foreach (MapColumn c in b.Columns)
             {
