@@ -70,12 +70,15 @@ Check "6 corner: one end released, the other keeps its moments for stability" ($
 Check "6 corner: both ends drawn as hinges" ([SteelModel]::EndGroup($a.J, $a.RJ, $fa.KeptJ) -eq "hinged" -and [SteelModel]::EndGroup($b.I, $b.RI, $fb.KeptI) -eq "hinged")
 Check "6 corner one joint" ($a.JJ.Id -eq $b.JI.Id -and $a.JJ.Condition -eq "corner")
 
-# 7 collinear splice (1 in gap)
+# 7 in line (user 2026-11-25: no collinear splices): 1 in apart with nothing crossing = not joined, both open;
+#   coinciding ends = one member split by the model: one joint, continuous (no release, no glyph)
 $sm = Model @((M "A" 0 0 120 120 0 120), (M "B" 121 0 120 240 0 120))
 $a = Ends $sm "A"; $b = Ends $sm "B"
-$fa = @($sm.Frames | Where-Object { $sm.Members[$_.Source].MemberOid -eq "A" })[0]; $fb = @($sm.Frames | Where-Object { $sm.Members[$_.Source].MemberOid -eq "B" })[0]
-Check "7 collinear: one side released, one kept" ($a.J -eq "collinear" -and $b.I -eq "collinear" -and (@($a.RJ, $b.RI) -contains "M2M3") -and ($fa.KeptJ -or $fb.KeptI))
-Check "7 collinear end groups" ([SteelModel]::EndGroup($a.J, $a.RJ, $fa.KeptJ) -eq "collinear-hinged" -and [SteelModel]::EndGroup($b.I, $b.RI, $fb.KeptI) -eq "collinear-hinged")
+Check "7a in line 1 in apart: not joined, both open, OPEN_NEAR" ($a.J -eq "open-pinned" -and $b.I -eq "open-pinned" -and $a.JJ.Id -ne $b.JI.Id -and ($a.JJ.Flags -contains "OPEN_NEAR") -and $sm.InLineOpen -eq 2)
+$sm = Model @((M "A" 0 0 120 120 0 120), (M "B" 120 0 120 240 0 120))
+$a = Ends $sm "A"; $b = Ends $sm "B"
+Check "7b coinciding in-line ends: one joint, continuous, no release, no glyph" ($a.JJ.Id -eq $b.JI.Id -and $a.J -eq "continuous" -and $b.I -eq "continuous" -and $a.RJ -eq "" -and $b.RI -eq "" -and $a.JJ.Condition -eq "continuous" -and $null -eq [SteelModel]::EndGroup($a.J, $a.RJ, $false) -and $sm.KeptMoments -eq 0)
+Check "7 no joint is collinear" (@($sm.Joints | Where-Object { $_.Condition -eq "collinear" }).Count -eq 0)
 
 # 8 four horizontals into a continuous vertical (each 3 in off the centreline on its side)
 $sm = Model @((M "COL" 0 0 0 0 0 240), (M "E" 3 0 120 120 0 120), (M "W" (-3) 0 120 (-120) 0 120), (M "N" 0 3 120 0 120 120), (M "S" 0 (-3) 120 0 (-120) 120))
@@ -129,7 +132,7 @@ $sm = Model @((M "COL" 0 0 0 0 0 240), (M "BM" 3 0 120 120 0 120))
 Check "13d framed: nothing kept" ($sm.KeptMoments -eq 0)
 # 13e a member pinned at both ends but touching other steel is not lone: no torsion restraint
 $sm = Model @((M "A" 0 0 120 120 0 120), (M "B" 120 0 120 240 0 120))
-Check "13e collinear pair: no PINNED+T" (@($sm.Joints | Where-Object { $_.Restraint -eq "PINNED+T" }).Count -eq 0)
+Check "13e continuous pair: no PINNED+T" (@($sm.Joints | Where-Object { $_.Restraint -eq "PINNED+T" }).Count -eq 0)
 # 13f joints csv carries the torsion axis
 $tmp = Join-Path $env:TEMP ("steelmodel_test_" + [guid]::NewGuid().ToString("N"))
 $sm = Model @((M "S" 0 0 0 0 120 0)); $sm.WriteCsv($tmp)
@@ -201,19 +204,22 @@ Check "14c corner 2 in apart: one joint, both members where they were" ($fa.J -e
 # a column missing from the data: two beams cut back to it, 5 in apart in line. Not tied to each other: open, flagged
 $sm = Model @((M "A" 0 0 120 120 0 120), (M "B" 125 0 120 245 0 120))
 $a = Ends $sm "A"; $b = Ends $sm "B"
-Check "14d in line, 5 in apart: both ends open and OPEN_NEAR, not joined" ($a.J -like "open-*" -and $b.I -like "open-*" -and $a.JJ.Id -ne $b.JI.Id -and ($a.JJ.Flags -contains "OPEN_NEAR") -and $sm.EndGapSkipped -eq 2)
-Check "14d nothing moved, no offsets" ((V3 $sm.EndPos((Fr $sm "A")[0], $false) 120 0 120) -and (V3 $sm.EndPos((Fr $sm "B")[0], $true) 125 0 120) -and $sm.Summary() -like "*members not moved: 0 ends offset from their joint (largest 0 in); 2 ends left open, the other member's end over 2 in away")
+Check "14d in line, 5 in apart: both ends open and OPEN_NEAR, not joined" ($a.J -like "open-*" -and $b.I -like "open-*" -and $a.JJ.Id -ne $b.JI.Id -and ($a.JJ.Flags -contains "OPEN_NEAR") -and $sm.InLineOpen -eq 2)
+Check "14d nothing moved, no offsets" ((V3 $sm.EndPos((Fr $sm "A")[0], $false) 120 0 120) -and (V3 $sm.EndPos((Fr $sm "B")[0], $true) 125 0 120) -and $sm.Summary() -like "*members not moved: 0 ends offset from their joint (largest 0 in); 0 ends left open, the other member's end over 2 in away; in line: 0 joints continuous (one member split by the model), 2 ends left open with only an in-line member near (no splice)")
 # the same at a corner: beams from two sides of the missing column, ends 5.7 in apart
 $sm = Model @((M "A" 0 0 120 116 0 120), (M "B" 120 4 120 120 124 120))
 Check "14e square to each other, 5.7 in apart: open, not joined" ((Ends $sm "A").J -like "open-*" -and (Ends $sm "B").I -like "open-*")
 # with the column there, both beams connect to it and neither is moved
 $sm = Model @((M "COL" 120 0 0 120 0 240), (M "A" 0 0 120 116 0 120), (M "B" 120 4 120 120 124 120))
 Check "14f with the column: both framed into it, ends kept" ((Ends $sm "A").J -eq "framed" -and (Ends $sm "B").I -eq "framed" -and (V3 $sm.EndPos((Fr $sm "A")[-1], $false) 116 0 120) -and (V3 $sm.EndPos((Fr $sm "B")[0], $true) 120 4 120))
-# EndJoinIn is a setting
+# EndJoinIn is a setting (centreline snap, crossing members): it never joins in-line ends (2026-11-25)
 $l = New-Object 'System.Collections.Generic.List[SteelMember]'; $l.Add((M "A" 0 0 120 120 0 120)); $l.Add((M "B" 125 0 120 245 0 120))
 $st = New-Object 'SteelModel+Settings'; $st.EndJoinIn = 6
 $sm = [SteelModel]::Build($l, $st)
-Check "14g EndJoinIn 6: the 5 in gap joins (one joint), B keeps its position by an offset" ((Ends $sm "A").JJ.Id -eq (Ends $sm "B").JI.Id -and (V3 $sm.EndPos((Fr $sm "B")[0], $true) 125 0 120))
+Check "14g EndJoinIn 6: in-line ends 5 in apart still not joined" ((Ends $sm "A").JJ.Id -ne (Ends $sm "B").JI.Id -and (Ends $sm "A").J -like "open-*")
+$l = New-Object 'System.Collections.Generic.List[SteelMember]'; $l.Add((M "A" 0 0 120 116 0 120)); $l.Add((M "B" 120 4 120 120 124 120))
+$sm = [SteelModel]::Build($l, $st)
+Check "14g EndJoinIn 6: square beams 5.7 in apart join (one joint), B keeps its position by an offset" ((Ends $sm "A").JJ.Id -eq (Ends $sm "B").JI.Id -and (V3 $sm.EndPos((Fr $sm "B")[0], $true) 120 4 120))
 
 # 15 slab filter (2026-11-12): a vertical open end is fixed only in or near a slab; it only removes restraints
 function ModelSlabs([object[]]$ms, $slabs, $near = 12) {
@@ -274,9 +280,28 @@ $b1 = Ends $sm "B1"; $b2 = Ends $sm "B2"; $c = Ends $sm "COL"
 Check "17 both beams framed into the column, hinged" ($b1.J -eq "framed" -and $b1.RJ -eq "M2M3" -and $b2.I -eq "framed" -and $b2.RI -eq "M2M3")
 Check "17 no collinear joint; one joint on the column, the column split and continuous" (@($sm.Joints | Where-Object { $_.Condition -eq "collinear" }).Count -eq 0 -and $b1.JJ.Id -eq $b2.JI.Id -and $c.N -eq 2 -and
     @($sm.Frames | Where-Object { $sm.Members[$_.Source].MemberOid -eq "COL" -and ($_.ReleaseI -ne "" -or $_.ReleaseJ -ne "") }).Count -eq 0)
-# two beams end to end with nothing beside them stay a collinear splice
-$sm = Model @((M "A" 0 0 120 120 0 120), (M "B" 121 0 120 240 0 120))
-Check "17 a plain end-to-end splice is still collinear" ((Ends $sm "A").J -eq "collinear")
+
+# 18 the production case (user 2026-11-25): W8 column split at the beams' top flange, two W8 beams framing into its
+# web from both sides, beam lines at the centroid (4 in under the split), ends 0.6 in off the web, contact snap
+function W8($m) { $m.SectionName = "W8X31"; $m.D = 8 * $in; $m.Bf = 8 * $in; $m.Tf = 0.43 * $in; $m.Tw = 0.29 * $in; $m }
+$split = @((W8 (M "COLA" 0 0 0 0 0 124)), (W8 (M "COLB" 0 0 124 0 0 240)), (W8 (M "B1" (-240) 0 120 (-0.6) 0 120)), (W8 (M "B2" 0.6 0 120 240 0 120)))
+foreach ($mode in "contact", "centreline") {
+    $sm = ModelMode $split $mode
+    $b1 = Ends $sm "B1"; $b2 = Ends $sm "B2"; $ca = Ends $sm "COLA"; $cb = Ends $sm "COLB"
+    if ($mode -eq "contact") {
+        Check "18 contact: both beams framed into the column split, hinged" ($b1.J -eq "framed" -and $b1.RJ -eq "M2M3" -and $b2.I -eq "framed" -and $b2.RI -eq "M2M3")
+        Check "18 contact: one joint, at the split on the column line; the column pieces continuous" ($b1.JJ.Id -eq $b2.JI.Id -and $b1.JJ.Id -eq $ca.JJ.Id -and $ca.JJ.Id -eq $cb.JI.Id -and
+            [math]::Abs($ca.JJ.Z - 124) -lt 1e-6 -and [math]::Abs($ca.JJ.X) -lt 1e-6 -and $ca.J -eq "continuous" -and $ca.RJ -eq "" -and $cb.I -eq "continuous" -and $cb.RI -eq "")
+        $fb1 = @($sm.Frames | Where-Object { $sm.Members[$_.Source].MemberOid -eq "B1" })[-1]
+        Check "18 contact: the beam end not moved (joint offset to its real end)" ([math]::Abs($fb1.OffJ[2] + 4) -lt 1e-6 -and [math]::Abs($fb1.OffJ[0] + 0.6) -lt 1e-6)
+    }
+    Check "18 $mode`: no collinear joint, the beams never joined to each other alone" (@($sm.Joints | Where-Object { $_.Condition -eq "collinear" }).Count -eq 0 -and
+        -not ($b1.JJ.Id -eq $b2.JI.Id -and $b1.JJ.Id -ne $ca.JJ.Id))
+}
+# a continuous beam passing a column split (the column pieces land on its side): the column stays continuous
+$sm = Model @((W8 (M "COLA" 0 4 0 0 4 120)), (W8 (M "COLB" 0 4 120 0 4 240)), (W8 (M "BM" (-120) 0 120 120 0 120)))
+$ca = Ends $sm "COLA"; $cb = Ends $sm "COLB"
+Check "18 column split on a through beam: the column pieces continuous (no release)" ($ca.J -eq "continuous" -and $ca.RJ -eq "" -and $cb.I -eq "continuous" -and $cb.RI -eq "" -and $ca.JJ.Condition -eq "framed")
 
 Write-Output ("{0} passed, {1} failed" -f $script:pass, $script:fail)
 exit $(if ($script:fail) { 1 } else { 0 })

@@ -30,12 +30,14 @@ using System.Text;
 //   framed        an end landing on a continuous member -> M2M3 released (torsion kept)
 //   corner        ends meeting ends -> M2M3 on all of them, except: three or more ends where exactly one is vertical
 //                 (within VerticalDeg) and the rest are not -> the vertical keeps its moments
-//   collinear     exactly two ends meeting, axes within CollinearDeg -> M2M3 on both, condition 'collinear' (own
-//                 viewer group so the rule can change)
+//   continuous    (user, 2026-11-25, replaces 'collinear') two in-line ends at a joint (axes within CollinearDeg,
+//                 continuing each other) are one member split by the model: no release, end condition
+//                 'continuous'; every other end there frames into it (M2M3). Two in-line ends alone join only
+//                 when they coincide (SplitIn); in-line members never take an end otherwise (InLineOpen).
 // Stability rules (user decision 2026-10-30, the demo SAP model could not run MODAL):
 //   column-base   the bottom end of a vertical member with nothing below it (a brace landing there too) -> FIXED,
 //                 the column keeps its moments, the others M2M3
-//   kept moments  a joint where every end would be M2M3 (corner, collinear): one member keeps its moments (vertical,
+//   kept moments  a joint where every end would be M2M3 (corner): one member keeps its moments (vertical,
 //                 deepest, longest; Frame.KeptI/J) so the joint rotation has stiffness; statics unchanged
 //   PINNED+T      a lone member pinned at both ends: its I joint also holds rotation about the member axis (TAxis)
 public class SteelModel
@@ -52,7 +54,8 @@ public class SteelModel
         public string SnapMode = "centreline";
         public double ContactIn = 2;
         public double MergeIn = 1;   // joints landing on one member within this distance along it are one joint
-        public double EndJoinIn = 2; // an end beyond another member's end joins it only when the end points are this close
+        public double EndJoinIn = 2; // centreline snap: an end beyond another member's end joins it only when the end points are this close
+        public double SplitIn = 0.1; // in-line ends this close are one member line split by the model: joined, continuous
         // slab boxes { x0, y0, z0, x1, y1, z1 } in inches; null or empty = no slab filter (every vertical open end fixed)
         public List<double[]> Slabs;
         public double SlabNearIn = 12;   // a fixed end keeps its restraint within this of a slab box
@@ -62,7 +65,7 @@ public class SteelModel
     {
         public int Id; public double X, Y, Z;
         public string Restraint = "";    // PINNED | PINNED+T (also torsion about TAxis) | FIXED | ""
-        public string Condition = "";    // open-pinned | open-fixed | column-base | framed | corner | collinear | ""
+        public string Condition = "";    // open-pinned | open-fixed | column-base | framed | corner | continuous | ""
         public double[] TAxis;           // PINNED+T: the unit member axis the rotation is held about
         public List<string> Flags = new List<string>();
         public string Name { get { return "S" + Id; } }
@@ -84,6 +87,8 @@ public class SteelModel
     public int Snapped, OnSide, Open, OpenNear, ZeroLength, ColumnBases, KeptMoments, TorsionHeld;
     public int FixedKept, FixedRemoved;   // slab filter: fixed ends in / near a slab, and those whose restraint was removed
     public int EndGapSkipped;   // connections not made: the end lies beyond the other member's end, farther than EndJoinIn
+    public int InLineOpen;      // ends left open with only an in-line member near (not coinciding): no collinear join
+    public int ContinuousPairs; // joints where two in-line ends make one continuous member (no release)
 
     public SteelModel(Settings s) { S = s ?? new Settings(); }
 
@@ -121,36 +126,41 @@ public class SteelModel
         contact = string.Equals(S.SnapMode, "contact", StringComparison.OrdinalIgnoreCase);
         PrepareBoxes(A, B);
 
-        // 1. each end: nearest other centreline within SnapIn
+        // 1. each end: the nearest CROSSING member (not in line with it) within the snap. In-line members never take
+        //    an end (user, 2026-11-25: no collinear splices; every one seen was a beam that missed its column):
+        //    in-line ends join only when they coincide (within SplitIn: one member line split in two by the model,
+        //    e.g. a column split at a beam's top flange), and that pair is then one continuous member.
+        //    Beyond a crossing member's end: with the contact snap, the end's section touching that member's solid
+        //    is enough (a beam framing into a column split at the beam's top flange lies just past the lower piece's
+        //    end); with the centreline snap the two end points must be within EndJoinIn (beams cut back to a
+        //    missing column stay open).
         var onSide = new Dictionary<int, KeyValuePair<int, double>>();   // end -> (member, t) landing inside it
+        double cosIn = Math.Cos(S.CollinearDeg * Math.PI / 180);
         for (int e = 0; e < 2 * n; e++)
         {
             int mi = e >> 1; double[] p = endPos(e);
+            double[] ax = Axis(A, B, mi);
             int best = -1; double bestD = double.MaxValue, bestT = 0;
-            int beyond = -1; double beyondD = double.MaxValue, beyondT = 0;
-            bool gapSkipped = false;
+            bool inLineLeft = false, gapSkipped = false;
             for (int j = 0; j < n; j++)
             {
                 if (j == mi) continue;
+                bool inLine = Math.Abs(Dot(ax, Axis(A, B, j))) >= cosIn;
+                if (inLine)
+                {
+                    if (Dist(p, A[j]) <= S.SplitIn) Union(e, 2 * j);
+                    else if (Dist(p, B[j]) <= S.SplitIn) Union(e, 2 * j + 1);
+                }
                 double t, d; Proj(A[j], B[j], p, out t, out d);
                 double dd = contact ? ContactGap(e, j) : d;
                 if (dd > (contact ? S.ContactIn : S.SnapIn)) continue;
-                // beyond j's end (not beside it): only ends that actually meet; d is then the distance to that end point
+                if (inLine) { if (Math.Min(Dist(p, A[j]), Dist(p, B[j])) > S.SplitIn) inLineLeft = true; continue; }
+                // beyond j's end (not beside it); d is then the distance to that end point
                 double tr = RawT(A[j], B[j], p);
-                if (tr < 0 || tr > 1)
-                {
-                    if (d > S.EndJoinIn) { gapSkipped = true; continue; }
-                    if (dd < beyondD) { beyondD = dd; beyond = j; beyondT = t; }
-                    continue;
-                }
+                if ((tr < 0 || tr > 1) && !contact && d > S.EndJoinIn) { gapSkipped = true; continue; }
                 if (dd < bestD) { bestD = dd; best = j; bestT = t; }
             }
-            // a landing beside a member wins over an end-to-end join beyond another member's end (user, 2026-11-25:
-            // the hinge supersedes the collinear splice). Two beams framing into a column web from both sides have
-            // their ends closer to each other than to the column's line when that line is offset (cardinal point);
-            // joined end to end they became a continuous splice through the column, the column left unconnected.
-            if (best < 0 && beyond >= 0) { best = beyond; bestD = beyondD; bestT = beyondT; }
-            if (best < 0) { if (gapSkipped) EndGapSkipped++; continue; }
+            if (best < 0) { if (gapSkipped) EndGapSkipped++; if (inLineLeft) InLineOpen++; continue; }
             Snapped++;
             double L = Dist(A[best], B[best]);
             if (bestT * L <= S.SnapIn) Union(e, 2 * best);
@@ -252,10 +262,19 @@ public class SteelModel
     void ClassifyJoint(Joint jt, List<int> ends, bool onThrough, Dictionary<int, KeyValuePair<Frame, bool>> endFrame,
                        double[][] A, double[][] B)
     {
+        // two in-line ends meeting here are one continuous member (a member line the model split: a column split at
+        // a beam's top flange); they keep their moments and every other end frames into them (user, 2026-11-25)
+        int[] pair = ends.Count >= 2 ? InLinePair(ends, A, B) : null;
+        // a horizontal pair with other members at the joint is two beams ending there: hinged like the rest (user:
+        // beams hinge to the column or the crossing beam). Continuous = a split column, or a pair alone at the joint
+        if (pair != null && ends.Count > 2 && !(IsVertical(A, B, pair[0]) && IsVertical(A, B, pair[1]))) pair = null;
         if (onThrough)
         {
             jt.Condition = "framed";
-            foreach (int e in ends) SetEnd(endFrame[e], "framed", "M2M3");
+            foreach (int e in ends)
+                if (pair != null && (e == pair[0] || e == pair[1])) SetEnd(endFrame[e], "continuous", "");
+                else SetEnd(endFrame[e], "framed", "M2M3");
+            if (pair != null) ContinuousPairs++;
             return;
         }
         if (ends.Count == 1)
@@ -293,9 +312,16 @@ public class SteelModel
             foreach (int e in ends) SetEnd(endFrame[e], e == col ? jt.Condition : "corner", e == col ? "" : "M2M3");
             return;
         }
+        if (pair != null)
+        {
+            jt.Condition = ends.Count == 2 ? "continuous" : "framed";
+            foreach (int e in ends)
+                if (e == pair[0] || e == pair[1]) SetEnd(endFrame[e], "continuous", "");
+                else SetEnd(endFrame[e], "framed", "M2M3");
+            ContinuousPairs++;
+            return;
+        }
         string cond = "corner";
-        if (ends.Count == 2 && Math.Abs(Dot(Axis(A, B, ends[0] >> 1), Axis(A, B, ends[1] >> 1))) >= Math.Cos(S.CollinearDeg * Math.PI / 180))
-            cond = "collinear";
         jt.Condition = cond;
         var vert = ends.Where(e => IsVertical(A, B, e)).ToList();
         int keep = cond == "corner" && ends.Count >= 3 && vert.Count == 1 ? vert[0] : -1;
@@ -332,6 +358,31 @@ public class SteelModel
             if (jt.X >= b[0] - t && jt.X <= b[3] + t && jt.Y >= b[1] - t && jt.Y <= b[4] + t && jt.Z >= b[2] - t && jt.Z <= b[5] + t) { FixedKept++; return true; }
         FixedRemoved++;
         return false;
+    }
+
+    // two ends at a joint that continue each other: axes in line (CollinearDeg), the members on opposite sides of
+    // the joint. Several pairs: a vertical pair first (the column), then the deepest, then the longest.
+    int[] InLinePair(List<int> ends, double[][] A, double[][] B)
+    {
+        double cosIn = Math.Cos(S.CollinearDeg * Math.PI / 180);
+        int[] best = null; double bestScore = double.MinValue;
+        for (int a = 0; a < ends.Count; a++)
+            for (int b = a + 1; b < ends.Count; b++)
+            {
+                int ea = ends[a], eb = ends[b];
+                // only a member line split by the model: the two end points coincide (beams framing into a column
+                // from both sides are a web apart and stay hinged)
+                if (Dist((ea & 1) == 0 ? A[ea >> 1] : B[ea >> 1], (eb & 1) == 0 ? A[eb >> 1] : B[eb >> 1]) > S.SplitIn) continue;
+                double[] da = Sub(OtherEnd(A, B, ea), (ea & 1) == 0 ? A[ea >> 1] : B[ea >> 1]);
+                double[] db = Sub(OtherEnd(A, B, eb), (eb & 1) == 0 ? A[eb >> 1] : B[eb >> 1]);
+                double la = Math.Sqrt(Dot(da, da)), lb = Math.Sqrt(Dot(db, db));
+                if (Dot(da, db) / (la * lb) > -cosIn) continue;   // not continuing each other
+                SteelMember ma = Members[ea >> 1], mb = Members[eb >> 1];
+                double depth = (double.IsNaN(ma.D) ? 0 : ma.D) + (double.IsNaN(mb.D) ? 0 : mb.D);
+                double score = (IsVertical(A, B, ea) ? 1e9 : 0) + depth * 1e6 + la + lb;
+                if (score > bestScore) { bestScore = score; best = new[] { ea, eb }; }
+            }
+        return best;
     }
 
     bool IsVertical(double[][] A, double[][] B, int e) { return SlopeDeg(A[e >> 1], B[e >> 1]) >= 90 - S.VerticalDeg; }
@@ -516,7 +567,7 @@ public class SteelModel
         if (cond == "open-pinned" || cond == "open-fixed") return cond;
         if (cond == "column-base") return "open-fixed";
         if (release != "M2M3" && !kept) return null;
-        return cond == "collinear" ? "collinear-hinged" : "hinged";
+        return "hinged";
     }
 
     public string Summary()
@@ -527,11 +578,12 @@ public class SteelModel
         return string.Format(Inv, "steel model: {0} members -> {1} frames, {2} joints ({3}); ends snapped {4} ({5} onto a member's side); " +
             "open {6} ({7} OPEN_NEAR, other steel within {8} in); released ends (M2M3) {9}; zero length dropped {10}; " +
             "stability: column bases {11}, all-hinged joints with one member kept {12}, lone members with torsion held {13}; " +
-            "members not moved: {14} ends offset from their joint (largest {15:0.#} in); {16} ends left open, the other member's end over {17:0.#} in away",
+            "members not moved: {14} ends offset from their joint (largest {15:0.#} in); {16} ends left open, the other member's end over {17:0.#} in away; " +
+            "in line: {18} joints continuous (one member split by the model), {19} ends left open with only an in-line member near (no splice)",
             Members.Count, Frames.Count, Joints.Count, string.Join(", ", c), Snapped, OnSide, Open, OpenNear, S.NearIn, rel, ZeroLength,
             ColumnBases, KeptMoments, TorsionHeld,
             Frames.Count(f => OffLen(f.OffI) > 1e-6) + Frames.Count(f => OffLen(f.OffJ) > 1e-6),
-            Frames.Count == 0 ? 0 : Frames.Max(f => Math.Max(OffLen(f.OffI), OffLen(f.OffJ))), EndGapSkipped, S.EndJoinIn)
+            Frames.Count == 0 ? 0 : Frames.Max(f => Math.Max(OffLen(f.OffI), OffLen(f.OffJ))), EndGapSkipped, S.EndJoinIn, ContinuousPairs, InLineOpen)
             + (S.Slabs != null && S.Slabs.Count > 0
                 ? string.Format(Inv, "; slab filter: {0} fixed ends kept (in or within {1:0.#} in of a slab), {2} not fixed (no slab near: open-free, NO_SLAB)", FixedKept, S.SlabNearIn, FixedRemoved)
                 : "");

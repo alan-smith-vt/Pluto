@@ -2,7 +2,7 @@
 // C# 5, Add-Type under PS 5.1. Called from SapDucts.Build when SteelFramesCsv / SupportsCsv / FlagsCsv / PenetrationsCsv are set.
 // Inputs (inches, the frames.csv frame; vault/arms/sap-controller.md):
 //   steel joints  <out>.steel_joints.csv (SteelModel.cs): Joint, X_in, Y_in, Z_in, Restraint (PINNED = U1-3,
-//                 FIXED = all 6, empty), Condition (open-pinned | open-fixed | framed | corner | collinear | empty), Flags
+//                 FIXED = all 6, empty), Condition (open-pinned | open-fixed | framed | corner | continuous | empty), Flags
 //   steel frames  <out>.steel_frames.csv: Frame, JointI, JointJ, XI_in..ZJ_in, Section, D_in, Bf_in, Tf_in, Tw_in,
 //                 WebX..WebZ (local 2), CP (SAP cardinal point; empty / 5 = centred), ReleaseI / ReleaseJ (M2M3 or
 //                 empty), MemberOid, Flags, OffIX_in..OffJZ_in (joint -> the member's real end, global: SAP joint

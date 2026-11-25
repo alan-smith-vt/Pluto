@@ -91,7 +91,7 @@ Check "steel" "every frame's joints are in steel_joints.csv" ($dangling.Count -e
 $badRel = @($sf | Where-Object { ($_.ReleaseI -and $_.ReleaseI -ne "M2M3") -or ($_.ReleaseJ -and $_.ReleaseJ -ne "M2M3") })
 Check "steel" "releases are M2M3 or none" ($badRel.Count -eq 0)
 foreach ($c in "PINNED", "FIXED") { Check "steel" "restraint $c present" (@($sj | Where-Object { $_.Restraint -eq $c }).Count -gt 0) }
-foreach ($c in "framed", "corner", "collinear", "open-pinned", "open-fixed") { Check "steel" "condition $c present" (@($sj | Where-Object { $_.Condition -eq $c }).Count -gt 0) }
+foreach ($c in "framed", "corner", "continuous", "open-pinned", "open-fixed") { Check "steel" "condition $c present" (@($sj | Where-Object { $_.Condition -eq $c }).Count -gt 0) }
 $cpOff = @($sf | Where-Object { $_.CP -eq "8" -and (Num $_.OffZ_in) -ge 0 })
 Check "steel" "CP 8 members hang below their line (OffZ < 0)" ($cpOff.Count -eq 0) (($cpOff | ForEach-Object { $_.Frame }) -join " ")
 
@@ -123,7 +123,7 @@ Check "viewer" "clean group 'Flag: UNSUPPORTED_SPAN'" ($groups["Flag: UNSUPPORTE
 # end kept only for stability at an all-hinged joint, Stability = kept; fixed = open-fixed and column-base ends)
 $ends = @($sf | ForEach-Object { "$($_.EndI)|$(if ($_.StabilityI -eq "kept") { "M2M3" } else { $_.ReleaseI })"; "$($_.EndJ)|$(if ($_.StabilityJ -eq "kept") { "M2M3" } else { $_.ReleaseJ })" })
 $want = [ordered]@{ "End: open-pinned" = @($ends | Where-Object { $_ -like "open-pinned|*" }).Count; "End: open-fixed" = @($ends | Where-Object { $_ -like "open-fixed|*" -or $_ -like "column-base|*" }).Count
-    "End: hinged" = @($ends | Where-Object { $_ -eq "corner|M2M3" -or $_ -eq "framed|M2M3" }).Count; "End: collinear-hinged" = @($ends | Where-Object { $_ -eq "collinear|M2M3" }).Count }
+    "End: hinged" = @($ends | Where-Object { $_ -eq "corner|M2M3" -or $_ -eq "framed|M2M3" }).Count }
 foreach ($g in $want.Keys) { Check "viewer" "'$g' glyphs = steel_frames.csv ends" ($want[$g] -gt 0 -and $anchors[$g] -eq $want[$g]) "$($anchors[$g]) vs $($want[$g])" }
 Check "viewer" "a 'Steel: <section>' group per section" (@($oids.Values | Sort-Object -Unique | Where-Object { -not $groups.ContainsKey("Steel: $_") }).Count -eq 0)
 Check "viewer" "one TAP_STUB beam per support" ($groups["Support: TAP_STUB"] -eq $sp.Count) "$($groups['Support: TAP_STUB']) vs $($sp.Count)"
