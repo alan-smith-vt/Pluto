@@ -117,6 +117,14 @@ public static class SapStability
             glyphs.Add(new FeaturesSidecar.Anchor { Domain = "nodes", Id = (uint)worst, Label = head });
             shown++;
         }
+        // every element that moves (user 2026-11-25: highlight them all at once): a frame with either end over the limit
+        var moving = beams.Where(kv => bad.Contains((int)kv.Value.NodeA) || bad.Contains((int)kv.Value.NodeB)).Select(kv => (uint)kv.Key).OrderBy(x => x).ToList();
+        if (moving.Count > 0)
+        {
+            FeaturesSidecar.Group all = sc.AddGroup(string.Format(Inv, "Check: moves > {0:0.##} {1} under DEAD ({2} frames)", lim, lengthUnit, moving.Count),
+                "#ff3b3b", "beams", moving, new[] { "sap", "check", "unstable" }, "UNSTABLE_ALL");
+            all.Hidden = false;
+        }
         sc.AddLookGroup("Check: UNSTABLE", "#ff3b3b",
             new FeaturesSidecar.Look { Glyph = "warn", Tier = "exception", Label = string.Format(Inv, "Unstable under DEAD (> {0:0.##} {1})", lim, lengthUnit), Section = "Checks" },
             glyphs, new[] { "sap", "check" });

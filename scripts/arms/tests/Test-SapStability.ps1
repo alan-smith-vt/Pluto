@@ -40,7 +40,7 @@ $r = Join-Path $dir "r1.s2k"; [IO.File]::WriteAllLines($r, (Results @{ 1 = -0.1;
 $res = [SapToPluto]::Export($m, $r, (Join-Path $dir "a"), "t/a")
 Check "1 stable: summary says so, report written" ($res.Stability -like "stability (DEAD): stable, no joint over 12 in*" -and (Test-Path (Join-Path $dir "a.stability.txt")))
 $items = @((Get-Content (Join-Path $dir "a.features.json") -Raw | ConvertFrom-Json).groups.items)
-Check "1 stable: no unstable groups" (@($items | Where-Object { $_.name -like "*nstable*" -or $_.name -eq "Check: UNSTABLE" }).Count -eq 0)
+Check "1 stable: no unstable groups" (@($items | Where-Object { $_.name -like "*nstable*" -or $_.name -like "Check: *" }).Count -eq 0)
 
 # 2 the 4-5-6 piece flies off (E+9), joint 3 drops 20 in on its own: two pieces, the largest first
 $r = Join-Path $dir "r2.s2k"; [IO.File]::WriteAllLines($r, (Results @{ 1 = -0.1; 2 = -0.3; 3 = -20; 4 = -3e9; 5 = -3.2e9; 6 = -3e9; 7 = 0 }))
@@ -49,6 +49,8 @@ Check "2 summary: 4 joints over 12 in, 2 pieces, largest 3.2e+9" ($res.Stability
 $items = @((Get-Content (Join-Path $dir "b.features.json") -Raw | ConvertFrom-Json).groups.items)
 $u1 = $items | Where-Object { $_.name -like "Unstable 1:*" }
 Check "2 piece 1 = the two SYSA frames, painted, largest movement in its name" ($null -ne $u1 -and $u1.name -eq "Unstable 1: 3.2e+9 in (2 frames)" -and $u1.hidden -eq $false -and @($u1.members[0].ids).Count -eq 2)
+$all = $items | Where-Object { $_.name -like "Check: moves > 12 in under DEAD*" }
+Check "2 one group of every frame with an end over 12 in (the SYSA piece + frame 2-3 under the dropping joint 3), painted" ($null -ne $all -and $all.name -eq "Check: moves > 12 in under DEAD (3 frames)" -and $all.hidden -eq $false -and ((@($all.members[0].ids) | Sort-Object) -join ",") -eq "2,3,4")
 $g = $items | Where-Object { $_.name -eq "Check: UNSTABLE" }
 Check "2 one warn glyph per piece, at the largest movement (joint 5, then joint 3)" ($g.look.glyph -eq "warn" -and @($g.anchors).Count -eq 2 -and @($g.anchors)[0].id -eq 5 -and @($g.anchors)[1].id -eq 3)
 $txt = [IO.File]::ReadAllText((Join-Path $dir "b.stability.txt"))
