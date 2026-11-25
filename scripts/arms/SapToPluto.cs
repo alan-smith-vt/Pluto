@@ -102,7 +102,7 @@ using System.Text;
 
 public class SapExportResult
 {
-    public string BinPath, SidecarPath, SidecarMerge, Looks;
+    public string BinPath, SidecarPath, SidecarMerge, Looks, Stability;
     public int Nodes, Elements, LoadCases, ForceRows, ForceRowsUsed, DispRows, DispRowsUsed, Groups;
     public int Frames, FrameSections, FramesUnknownShape, FrameForceRows, FrameForceRowsUsed;
     public int FramesRotated, FramesAdvancedAxes, FramesOffsetOtherCsys, FramesReleased, Links;
@@ -129,6 +129,7 @@ public class SapExportResult
             sb.AppendLine(string.Format("  {0} frames with a local axes angle, {1} with end releases; {2} links", FramesRotated, FramesReleased, Links));
         sb.AppendLine(string.Format("  {0} groups -> {1}", Groups, SidecarPath));
         if (Looks != null) sb.AppendLine("  " + Looks);
+        if (Stability != null) sb.AppendLine("  " + Stability);
         if (!string.IsNullOrEmpty(SidecarMerge)) sb.AppendLine("  " + SidecarMerge);
         sb.AppendLine("  bin -> " + BinPath);
         foreach (string w in Warnings) sb.AppendLine("  WARN " + w);
@@ -646,6 +647,7 @@ public class SapToPluto
             w.AppendBeamForces(envRecs, "envelope");
         }
 
+        var deadDisp = new Dictionary<int, double[]>();   // DEAD case, global U1..U3 per joint (SapStability)
         if (hasDisp)
         {
             Dictionary<int, double[]> frames = JointLocalFrames(model);
@@ -657,6 +659,7 @@ public class SapToPluto
             }
             var disps = new List<Disp>();
             var seenNodes = new HashSet<int>();
+            string deadName = lcNames.Values.FirstOrDefault(x => string.Equals(x, "DEAD", StringComparison.OrdinalIgnoreCase));
             foreach (var r in dispRows)
             {
                 string j;
@@ -677,6 +680,7 @@ public class SapToPluto
                     v = Rotate(m, v);
                 }
                 for (int c = 0; c < 6; c++) d.DR[c] = (float)v[c];
+                if (deadName != null && string.Equals(CaseOf(r), deadName, StringComparison.OrdinalIgnoreCase)) deadDisp[nid] = new[] { v[0], v[1], v[2] };
                 if (cylindrical)
                 {
                     double dx = node.xyz.X - cx, dy = node.xyz.Y - cy;
@@ -786,7 +790,8 @@ public class SapToPluto
         var linkJoints = new Dictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
         var linkOrder = new List<string>();
         var linkProp = new Dictionary<string, string>();
-        var linkJointI = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);   // link label -> its I joint (a group of links = those joints)
+        var linkJointI = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
+        var linkPairs = new List<uint[]>();   // two-joint links, for the stability pieces   // link label -> its I joint (a group of links = those joints)
         foreach (var r in model.GetTable("LINK PROPERTY ASSIGNMENTS"))
         {
             string l, p;
@@ -799,7 +804,7 @@ public class SapToPluto
             if (!linkProp.TryGetValue(l, out p)) p = "?";
             Add(linkJoints, linkOrder, p, (uint)Int(ji));
             linkJointI[l] = (uint)Int(ji);
-            if (r.TryGetValue("JointJ", out jj) && jj != ji) linkJoints[p].Add((uint)Int(jj));
+            if (r.TryGetValue("JointJ", out jj) && jj != ji) { linkJoints[p].Add((uint)Int(jj)); linkPairs.Add(new[] { (uint)Int(ji), (uint)Int(jj) }); }
             res.Links++;
         }
         foreach (string p in linkOrder)
@@ -837,6 +842,10 @@ public class SapToPluto
                 else grp.Members.Add(new FeaturesSidecar.Member { Domain = "nodes", NodeIds = ids });
             }
         }
+
+        // stability from the DEAD case (SapStability.cs): joints over 12 in, grouped into pieces, with hints
+        if (deadDisp.Count > 0)
+            res.Stability = SapStability.Check(deadDisp, nodes, beams, linkPairs, grpFrames, grpJoints, sc, outBase, lengthUnit);
 
         if (!string.IsNullOrEmpty(looksCsv))
         {

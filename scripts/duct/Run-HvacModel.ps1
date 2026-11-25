@@ -6,7 +6,8 @@
 # Steps (each in its own powershell.exe; log <Out>\logs\<n>-<step>.log, everything also in <Out>\run.log):
 #   1 model  Export-DuctsViewer -Config -Run -Revit -Out <Out>\model\revit   (overlay, clean model, CSVs, match.txt)
 #   2 sap    Run-SapDucts -Frames / -SteelFrames / -Supports from step 1 -SavePath <Out>\sap\hvac.sdb
-#   3 view   Run-Sap -Open <Out>\sap\hvac.sdb -NoSaveSdb -Export <Out>\sap\hvac -NoResults -Looks sap-looks.csv
+#   3 view   Run-Sap -Open <Out>\sap\hvac.sdb -NoSaveSdb -RunOnCopy <Out>\sap\hvac-run.sdb -Export <Out>\sap\hvac -Looks sap-looks.csv
+#            (DEAD + MODAL run on the copy; the viewer file carries the results and the stability check)
 # Every setting comes from -Config (rooms, systems, cuts, drops, steel, WorkDir, AddinDir). -Out default: a new
 # <WorkDir>\model\<yyyyMMdd-HHmmss>. SAP: each SAP step starts and closes its own SAP (it never attaches to a SAP
 # you have open). A failed step stops the run (exit 1) with the command that resumes it
@@ -98,8 +99,12 @@ if ($i0 -le 1 -and $i1 -ge 1) {
 }
 if ($i0 -le 2 -and $i1 -ge 2) {
     if (-not (Test-Path $sdb)) { Say "[FAILED] step 3 view: no $sdb (run step sap first)"; exit 1 }
-    Step 3 "view" (Join-Path $scripts "sap\Run-Sap.ps1") (@("-Open", $sdb, "-NoSaveSdb", "-Export", (Join-Path $Out "sap\hvac"), "-NoResults",
-        "-Looks", (Join-Path $PSScriptRoot "sap-looks.csv")))
+    # the analysis runs on a copy (hvac-run.sdb; hvac.sdb stays as built, unanalysed) so the viewer file carries the
+    # DEAD displacements and the stability check (SapStability: joints over 12 in, <Out>\sap\hvac.stability.txt)
+    Step 3 "view" (Join-Path $scripts "sap\Run-Sap.ps1") (@("-Open", $sdb, "-NoSaveSdb", "-RunOnCopy", (Join-Path $Out "sap\hvac-run.sdb"),
+        "-Export", (Join-Path $Out "sap\hvac"), "-Looks", (Join-Path $PSScriptRoot "sap-looks.csv")))
+    $st = Join-Path $Out "sap\hvac.stability.txt"
+    if (Test-Path $st) { Say ("   stability: " + (Get-Content $st -TotalCount 1)) }
 }
 
 $el = (Get-Date) - $t00
@@ -107,4 +112,5 @@ Say ("[done] {0}. Outputs in {1}" -f $(if ($el.TotalSeconds -lt 60) { "{0:0.0} s
 if (Test-Path "$base.match.txt") { Say "  1. Read  $base.match.txt  (fit, supports, unsupported spans, flags)" }
 if (Test-Path "${base}_clean.bin") { Say "  2. Viewer: Choose files -> ${base}_clean.bin + ${base}_clean.features.json  (clean model: ducts, steel, supports)" }
 if (Test-Path (Join-Path $Out "sap\hvac.bin")) { Say ("  3. Viewer: Choose files -> {0} + {1}  (the SAP model as built)" -f (Join-Path $Out "sap\hvac.bin"), (Join-Path $Out "sap\hvac.features.json")) }
-if (Test-Path $sdb) { Say "  4. SAP:    $sdb  (no loads yet; material PLACEHOLDER)" }
+if (Test-Path $sdb) { Say "  4. SAP:    $sdb  (as built, not analysed; read " + (Join-Path $Out "sap\hvac.legend.txt") + ")" }
+if (Test-Path (Join-Path $Out "sap\hvac.stability.txt")) { Say ("  5. Stability (DEAD, joints over 12 in): " + (Join-Path $Out "sap\hvac.stability.txt")) }
