@@ -33,10 +33,11 @@ public sealed class FrameStdRefusal : Exception
     }
 }
 
-// What a STAAD model holds that SAP has no place for (2026-11-25), carried in two tables of Pluto's own in the model's
-// document: its commands after the analysis (LOAD LIST, PRINT, PARAMETER, CHECK CODE ..., as written, in order; a first
-// "PERFORM ANALYSIS PRINT ..." is the analysis' PRINT option) and its load numbers. StdToFrame writes them, the frame
-// workbook's STAAD sheets show and edit them, FrameStd writes them back; the .s2k for SAP leaves them out (StripForSap).
+// What a STAAD model holds that SAP has no place for, carried in tables of Pluto's own in the model's document
+// (IsOwn; the .s2k for SAP leaves them out, StripForSap): its load and envelope numbers (Loads, here), and its design
+// and output requests (StaadDesign, FrameDesign.cs). Commands is the older form of the second, a .std's commands after
+// the analysis as written: an older workbook or .frame.json may still hold it, and StaadDesign.Adopt reads it into the
+// design.
 public static class StaadCarry
 {
     public const string Commands = "PLUTO STAAD COMMANDS", Loads = "PLUTO STAAD LOADS";
@@ -125,8 +126,8 @@ public static class FrameStd
         return new Writer(m, source, notes, null).Run();
     }
 
-    // with the model's design workbook (StaadDesign): its checks, parameters and prints after the analysis, in place of the
-    // model's carried commands and Pluto's prints
+    // with another design than the model's own (StaadDesign.Of): its checks, parameters by list and prints after the
+    // analysis; the frames' own values stay the model's
     public static string ToText(FrameModel m, string source, List<string> notes, StaadDesign design)
     {
         return new Writer(m, source, notes, design).Run();
@@ -385,7 +386,7 @@ public static class FrameStd
         readonly HashSet<string> Enforced = new HashSet<string>(StringComparer.Ordinal);   // joints with a ground displacement
         HashSet<int> Used;                                               // joints a member, plate or truss uses
 
-        readonly StaadDesign Design; List<string> DesignLines;
+        StaadDesign Design; List<string> DesignLines;
         public Writer(FrameModel m, string source, List<string> notes, StaadDesign design) { M = m; Source = source ?? ""; Notes = notes ?? new List<string>(); Design = design; }
 
         void Refuse(string s) { if (!Refused.Contains(s)) Refused.Add(s); }
@@ -424,10 +425,24 @@ public static class FrameStd
             M = FrameMesh.SplitAtJoints(M, split, Unsplit, held);
             if (split.Count > 0)
                 Note("frames SAP's automatic mesh joins to joints along their length, split there as SAP's analysis meshes them (" + split.Count.ToString(Inv) + "): " +
-                     Few(split.Select(kv => "frame " + kv.Key + " into " + string.Join(" ", kv.Value.ToArray())).ToList()));
+                     Few(split.Select(kv => "frame " + kv.Key + " into " + string.Join(" ", kv.Value.ToArray())).ToList()) +
+                     (split.Keys.Any(k => { var f = M.Frames.FirstOrDefault(x => x.Label == k); return f != null && f.Rec(StaadDesign.TMembers) != null; })
+                         ? ". Each piece takes its frame's STAAD design values; a blank LY, LZ, UNB or UNT is then the piece's own length in STAAD. -In <workbook> -Xlsx -Out <new> gives the pieces rows of their own" : ""));
             if (held.Count > 0)
                 Note("joints held to ground that SAP's automatic mesh joins frames to, so the frames are held there too, in SAP as here (" + held.Count.ToString(Inv) + "): " + Few(held) +
                      ". A seeded support point under steel meant to carry it is still held: free it (Joints sheet) or set the frame's auto mesh off in SAP");
+            // the model's STAAD design (an older model's carried commands read into it first, on a copy)
+            if (Design == null)
+            {
+                if (StaadCarry.CommandsOf(M).Count > 0)
+                {
+                    M = FrameS2k.Read(FrameS2k.ToDoc(M));
+                    var adopted = new List<string>();
+                    StaadDesign.Adopt(M, adopted);
+                    foreach (string n in adopted) Note(n);
+                }
+                Design = StaadDesign.Of(M);
+            }
             D = FrameS2k.ToDoc(M);
             Ids = new SapLabels(D);
             AnySelfWeight = M.Patterns.Any(p => p.SelfWeight != 0);
@@ -445,13 +460,14 @@ public static class FrameStd
             var cases = Cases(refs);
             var combos = Combos(cases);
             Envs = Envelopes(cases, combos);
-            if (Design != null && !Design.Empty)
+            if (!Design.Empty || StaadDesign.HasMembers(M))
             {
                 Groups(new List<string>(), x => { });                        // STAAD's group names, for the design's member lists
                 var loadNos = new HashSet<int>(cases.Select(p => p.Number).Concat(combos.Select(c => c.Number)));
                 var envNos = new HashSet<int>(Envs.Select(e => e.Number));
-                DesignLines = Design.ToCommands(StaadLen + " " + StaadForce, DesignMembers, (text, who) => DesignLoads(text, who, loadNos, envNos), Refuse);
-                foreach (string n in Design.Notes) Note("design workbook: " + n);
+                DesignLines = Design.ToCommands(StaadLen + " " + StaadForce, M, DesignMembers, l => { FrameInfo fi; return FrameOf.TryGetValue(l, out fi) ? fi.Id : 0; }, DesignJoint,
+                                                Condense, (text, who) => DesignLoads(text, who, loadNos, envNos), Refuse);
+                foreach (string n in Design.Notes) Note("STAAD design: " + n);
             }
             if (renumbered.Count > 0) Note("loads the STAAD loads sheet does not number, numbered by Pluto: " + string.Join(", ", renumbered.ToArray()));
             if (Refused.Count > 0) throw new FrameStdRefusal(Grouped());
@@ -1681,18 +1697,9 @@ public static class FrameStd
                 line(string.Join(" ", c.Items.Select(kv => kv.Key.ToString(Inv) + " " + N(kv.Value)).ToArray()));
             }
 
-            // the model's own STAAD commands after the analysis (StaadCarry, the workbook's STAAD commands sheet), else Pluto's prints
-            var carried = StaadCarry.CommandsOf(M);
+            // the analysis, with the design's PRINT option (StaadDesign); after it the design's run, else Pluto's prints
             string analysis = cases.Any(p => p.PDelta) ? "PDELTA 30 ANALYSIS SMALLDELTA" : "PERFORM ANALYSIS";
-            if (DesignLines != null)
-            {
-                // the design workbook's (StaadDesign): its analysis PRINT option, then its run
-                if (Design.AnalysisPrint.Trim().Length > 0) analysis += " PRINT " + Design.AnalysisPrint.Trim();
-                if (carried.Count > 0) Note("the model's own STAAD commands (" + carried.Count.ToString(Inv) + ") not written: the design workbook's are");
-                carried = new List<string>(DesignLines);
-            }
-            var option = carried.Count > 0 && DesignLines == null ? Regex.Match(carried[0], @"^\s*(?:PERFORM\s+ANALYSIS|PDELTA\b.*?\bANALYSIS(?:\s+SMALLDELTA)?)\s+(PRINT\b.*)$", RegexOptions.IgnoreCase) : Match.Empty;
-            if (option.Success) { analysis += " " + option.Groups[1].Value.Trim(); carried.RemoveAt(0); }
+            if (Design.AnalysisPrint.Trim().Length > 0) analysis += " PRINT " + Design.AnalysisPrint.Trim();
             line(analysis);
             if (cases.Any(p => p.PDelta)) Note("P-Delta: STAAD's PDELTA 30 ANALYSIS SMALLDELTA (its own iteration, not SAP's)");
             // DEFINE ENVELOPE after the analysis, before the prints and design commands. STAAD.Pro 2025's analysis refuses
@@ -1704,15 +1711,11 @@ public static class FrameStd
                 foreach (var e in Envs) line(Condense(e.Loads) + " ENVELOPE " + e.Number.ToString(Inv) + (e.Type.Length > 0 ? " TYPE " + e.Type : ""));
                 o.Add("END DEFINE ENVELOPE");
             }
-            if (DesignLines != null)
+            if (DesignLines != null && DesignLines.Count > 0)
             {
-                foreach (string c in carried) line(c);
-                Note("the design workbook written after the analysis: " + Design.Sets.Count.ToString(Inv) + " parameter set(s), " + Design.Params.Count.ToString(Inv) + " parameter row(s), " + Design.Run.Count.ToString(Inv) + " step(s)");
-            }
-            else if (carried.Count > 0 || option.Success)
-            {
-                foreach (string c in carried) line(c);
-                Note("the model's STAAD commands after the analysis (" + carried.Count.ToString(Inv) + ", the workbook's STAAD commands sheet" + (option.Success ? "; the analysis' " + option.Groups[1].Value.Trim() : "") + ") written as given: STAAD checks them");
+                foreach (string c in DesignLines) line(c);
+                Note("the model's STAAD design written after the analysis: " + Design.Sets.Count.ToString(Inv) + " parameter set(s), " + M.Frames.Count(f => f.Rec(StaadDesign.TMembers) != null).ToString(Inv) +
+                     " frame(s) with values of their own, " + Design.Params.Count.ToString(Inv) + " row(s) by list, " + Design.Run.Count.ToString(Inv) + " step(s)");
             }
             else
             {
@@ -1769,7 +1772,7 @@ public static class FrameStd
         // an object STAAD already has in 4 groups is left out of the next
         readonly Dictionary<string, string> GroupName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);   // "label|MEMBER" -> STAAD's name
 
-        // a design workbook's members: ALL, or MEMB with its groups (by the model's name, a leading _ STAAD's) and its member
+        // a design's members: ALL, or MEMB with its groups (by the model's name, a leading _ STAAD's) and its member
         // labels and number ranges (a TO b [BY c]) as STAAD's group names and numbers; null after refusing what the model
         // does not have
         string DesignMembers(string text, string who)
@@ -1802,7 +1805,16 @@ public static class FrameStd
             return "MEMB " + string.Join(" ", groups.Concat(ids.Count > 0 ? new[] { Condense(ids) } : new string[0]).ToArray());
         }
 
-        // a design workbook's load list: ALL, ENV <envelopes>, or load numbers and ranges, as written; every number named
+        // a DJ1 / DJ2 joint by its label: its STAAD number; null after refusing one the .std does not write
+        string DesignJoint(string label, string who)
+        {
+            int id;
+            if (JointId.TryGetValue(label ?? "", out id) && Used.Contains(id)) return id.ToString(Inv);
+            Refuse(who + ": no joint \"" + label + "\" in the model (a joint's label, as on the Joints sheet)");
+            return null;
+        }
+
+        // a design's load list: ALL, ENV <envelopes>, or load numbers and ranges, as written; every number named
         // alone is a written load (or envelope), a range holds one at least
         string DesignLoads(string text, string who, HashSet<int> loads, HashSet<int> envs)
         {

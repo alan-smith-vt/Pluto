@@ -7,8 +7,9 @@ using System.Linq;
 // model, keeping from the master (the workbook or .frame.json the file was written from) what that program has no place
 // for (2026-11-24; Build-Frame -In <file> -Merge <master>; vault/format/frame-to-staad.md). The file's model is the
 // newer: its program's edits win, and the master only fills in.
-//   from an .s2k   the master's STAAD data (StaadCarry): its commands after the analysis, as written; its load and
-//                  envelope numbers and envelope types for the loads still there, by name
+//   from an .s2k   the master's STAAD data: its design (StaadDesign: sets, parameters by list and run as they are; the
+//                  frames' own values for the frames still there, by label); its load and envelope numbers and
+//                  envelope types for the loads still there, by name (StaadCarry)
 //   from a .std    the master's SAP-only data: the tables STAAD has no place for (FrameStd.StaadHolds false, not
 //                  structural: design, preferences, mass source, functions, output stations, grids ...), their rows
 //                  kept for the joints, frames, sections, materials, patterns and groups still there and whole where no
@@ -38,15 +39,36 @@ public static class FrameMerge
 
     static void Staad(S2kDoc doc, S2kDoc from, List<string> notes)
     {
-        var cmds = from.Table(StaadCarry.Commands);
+        string[] whole = { StaadDesign.TDesign, StaadDesign.TParams, StaadDesign.TRun };
+        var members = from.Table(StaadDesign.TMembers);
         var loads = from.Table(StaadCarry.Loads);
-        if (cmds == null && loads == null) { notes.Add("merge: the master has no STAAD data (no STAAD commands, no STAAD load numbers): nothing to carry"); return; }
-        foreach (string name in new[] { StaadCarry.Commands, StaadCarry.Loads }) { var t = doc.Table(name); if (t != null) doc.Tables.Remove(t); }
-        if (cmds != null)
+        if (whole.All(n => from.Table(n) == null) && members == null && loads == null) { notes.Add("merge: the master has no STAAD data (no STAAD design, no STAAD load numbers): nothing to carry"); return; }
+        foreach (string name in whole.Concat(new[] { StaadDesign.TMembers, StaadCarry.Loads })) { var t = doc.Table(name); if (t != null) doc.Tables.Remove(t); }
+        // the design's sets, rows by list and run, as they are
+        int rows = 0;
+        foreach (string name in whole)
         {
-            var t = doc.AddTable(StaadCarry.Commands, null);
-            foreach (var r in cmds.Rows) t.AddRow(r.Clone());
-            notes.Add("merge: the master's " + cmds.Rows.Count().ToString(Inv) + " STAAD commands carried as written (member, joint and group names in them are not checked against SAP's edits)");
+            var src = from.Table(name);
+            if (src == null) continue;
+            var t = doc.AddTable(name, null);
+            foreach (var r in src.Rows) { t.AddRow(r.Clone()); rows++; }
+        }
+        if (rows > 0) notes.Add("merge: the master's STAAD design carried (its sets, parameters by list and run, " + rows.ToString(Inv) + " rows; member and group names in them are not checked against SAP's edits)");
+        // the frames' own design values, for the frames still there
+        if (members != null)
+        {
+            var frames = Labels(doc, "CONNECTIVITY - FRAME", "Frame");
+            var t = doc.AddTable(StaadDesign.TMembers, null);
+            var gone = new List<string>();
+            int kept = 0;
+            foreach (var r in members.Rows)
+            {
+                string f = r.Get("Frame") ?? "";
+                if (frames.Contains(f)) { t.AddRow(r.Clone()); kept++; } else gone.Add(f);
+            }
+            if (kept == 0) doc.Tables.Remove(t);
+            notes.Add("merge: the master's STAAD design values carried for " + kept.ToString(Inv) + " frame(s), by label" +
+                      (gone.Count > 0 ? "; not for " + string.Join(", ", gone.Take(12).ToArray()) + (gone.Count > 12 ? " ..." : "") + " (no longer in the model, or renamed)" : ""));
         }
         if (loads != null)
         {

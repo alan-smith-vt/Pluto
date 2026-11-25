@@ -16,8 +16,9 @@ created: 2026-11-18
   STAAD's edits too, or a model made in STAAD. Later units are converted to the first, and envelopes become SAP
   Envelope combinations. The commands after the analysis (load lists, prints, design parameters) and STAAD's load
   numbers ride on the workbook's two STAAD sheets: `-Std` writes them again, `-S2k` leaves them out.
-- **STAAD's design** is in its own workbook, `<model>.design.xlsx`: parameter sets, parameters by group or member, and
-  the run ([[vault/arms/staad-design-workbook|staad-design-workbook]]). The frame workbook keeps structure and loads.
+- **STAAD's design** is in the frame workbook itself: each member's parameters on its own Frames row, and the
+  parameter sets, rows by list and run on three STAAD sheets ([[vault/arms/staad-design|staad-design]]). The separate
+  `<model>.design.xlsx` of 2026-11-24 is gone.
 - **SAP <-> workbook <-> STAAD.** The workbook is the master. `-In <SAP export | .std> -Merge <workbook>` reads either
   program's file back and keeps what that program has no place for
   ([[vault/arms/pipe-and-frame-workflow|pipe-and-frame-workflow]]).
@@ -63,6 +64,9 @@ Purging it means rewriting the branch's history.
 - the PS 5.1 compile of `StaadToPluto`, and its probe run: `Run-StaadFrame.ps1 -Anl scripts\lib\probes\anl-prints-probe.anl
   -Out <outside the repo>`, then `node viewer/tests/readback_staad.js <out> --probe`. Then a real model with a
   `CHECK CODE` per case;
+- the PS 5.1 compile of the STAAD design in the workbook (`FrameDesign.cs`, the Frames block and STAAD sheets in
+  `FrameWorkbook.cs`). Then `-In staad-round4-probe.std -Xlsx -Std` again: `DFF 240` should be on four Frames rows,
+  and `round4.std` the same as before;
 - the PS 5.1 compile of `FrameMesh` (the auto mesh split). The user's workbook: `-In <it>.xlsx -Xlsx -Out <new>`
   splits its frames (insertion points kept). Then `-Std` from the new workbook should have no auto mesh refusals;
 - optional: whether `RA` gives SAP's leg arrangement (STAAD's `ST` is its mirror image), if drawings or STAAD's angle

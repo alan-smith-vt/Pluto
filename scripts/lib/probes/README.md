@@ -133,10 +133,9 @@ pull. `<dir>` is a folder outside the repo.
 1. Copy `staad-round4-probe.std` to `<dir>` (STAAD writes its output beside the file).
 2. **STAAD -> workbook:** `... scripts\frame\Build-Frame.ps1 -In <dir>\staad-round4-probe.std -Xlsx -Out <dir>\round4`.
    - It should read with no `[refuse]` line and say "read exactly".
-   - `round4.xlsx` has the STAAD loads sheet filled, and `round4.design.xlsx` (the design workbook) has the codes,
-     parameters and run.
-3. **Workbook -> STAAD:** `... -In <dir>\round4.xlsx -Std`, which writes `<dir>\round4.std` (it reads
-   `round4.design.xlsx` beside it).
+   - `round4.xlsx` has the STAAD loads sheet filled, the design's set, ALL row and run on its three STAAD sheets, and
+     `DFF 240` on the Frames rows of members 5, 6, 7 and 11.
+3. **Workbook -> STAAD:** `... -In <dir>\round4.xlsx -Std`, which writes `<dir>\round4.std`, the design with it.
 4. **STAAD.Pro:** run `staad-round4-probe.std` and `round4.std`. Note any error or warning that one has and the other
    has not.
 5. **Workbook -> SAP:** `... -In <dir>\round4.xlsx -S2k` writes `<dir>\round4.s2k`.
@@ -144,7 +143,7 @@ pull. `<dir>` is a folder outside the repo.
    - Then File > Export > SAP2000 .s2k, as `<dir>\round4.sap-export.s2k`. No analysis is needed.
 6. **SAP -> STAAD, with the merge:**
    `... -In <dir>\round4.sap-export.s2k -Merge <dir>\round4.xlsx -Std -Out <dir>\round4_fromsap`. The `[merge]` lines
-   should name 26 STAAD commands and 13 load numbers carried.
+   should name the STAAD design carried (13 rows), the design values of 4 frames, and 13 load numbers.
 7. **STAAD's own save:** open `round4.std` in STAAD.Pro's editor, change nothing, save. Copy it as
    `<dir>\round4_saved.std`, then `... -In <dir>\round4_saved.std -Merge <dir>\round4.xlsx -Xlsx -Out <dir>\round4_saved`.
 

@@ -540,22 +540,24 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >
 > An envelope changes no result. It changes which cases a `LOAD LIST ENV` names, and so what is printed and checked.
 >
-> **Carried: what SAP has no place for** (`StaadCarry`, in `FrameStd.cs`). Two tables of Pluto's own ride in the model's
-> document, the workbook shows them on two sheets, and `-Std` writes them again. The `.s2k` for SAP leaves them out,
-> with a notice:
-> - **STAAD commands:** every command after the analysis, as written and in order (`LOAD LIST`, `LOAD LIST ENV`,
->   `PRINT …`, `PARAMETER`, `CODE`, design parameters, `CHECK CODE`, `SELECT` …). A `PRINT` before the analysis is
->   carried too. The analysis' PRINT option is the first row. `-Std` writes them after the analysis, else its own
->   prints. A file this writer made carries none: its prints are its own.
+> **Carried: what SAP has no place for.** Tables of Pluto's own ride in the model's document, the workbook shows
+> them, and `-Std` writes them again. The `.s2k` for SAP leaves them out, with a notice:
+> - **The STAAD design** (`StaadDesign`, `FrameDesign.cs`; [[vault/arms/staad-design|staad-design]]): the commands
+>   after the analysis (`LOAD LIST`, `LOAD LIST ENV`, `PRINT …`, `PARAMETER`, `CODE`, design parameters, `CHECK CODE`,
+>   `SELECT` …), read into a structure:
+>   - each frame's parameter values, on the frame (its Frames row);
+>   - the parameter sets, the rows by list and the run (the STAAD sheets);
+>   - the analysis' PRINT option.
 >
->   From 2026-11-24 a workbook does not hold them: `-Xlsx` turns them into the STAAD design workbook
->   ([[vault/arms/staad-design-workbook|staad-design-workbook]]). The model carries them only between a `.std` read and
->   `-Std` in one run.
+>   A `PRINT` before the analysis is taken too. `-Std` writes the design after the analysis, else its own prints. A
+>   file this writer made with only its own prints carries none. Until 2026-11-25 the commands were carried as written;
+>   a model or workbook still holding them so is read into the design.
 > - **STAAD loads:** each case's and combination's STAAD number, when they are not the writer's own (cases from 1, then
 >   the combinations), and each envelope's number and TYPE. `-Std` numbers its loads by them, so a `LOAD LIST` among the
 >   commands still names the right loads; a load not listed gets the next free number, with a notice.
 >
-> The read-back check compares the commands and envelopes too.
+> The read-back check compares the envelopes and the design too, the design as STAAD reads it: each parameter's value
+> for ALL and for each member, and the run's steps in order.
 >
 > **Still refused, met on the probe's own `.std`** (`scripts/lib/probes/anl-prints-probe.std`):
 > - a truss member with a `TABLE` section (the writer's links take `PRIS AX` only);
@@ -566,7 +568,7 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 > [!info]- Merging: SAP's or STAAD's file back into the master (`-Merge`, 2026-11-24)
 > The frame workbook is the master. SAP and STAAD each hold only part of it, so a file one of them saved, read on its
 > own, loses the other's part:
-> - **SAP's export** has no STAAD commands, STAAD load numbers or envelope types: SAP has no place for them.
+> - **SAP's export** has no STAAD design, STAAD load numbers or envelope types: SAP has no place for them.
 > - **A `.std`** has none of SAP's design data, preferences, mass source, functions or modal cases.
 >
 > `Build-Frame -In <file> -Merge <master.xlsx | .frame.json>` reads the file, and its model wins: the edits made in SAP
@@ -576,7 +578,7 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >
 > | `-In` | Carried from the master |
 > |---|---|
-> | SAP's `.s2k` | the STAAD commands, as written; the STAAD load and envelope numbers and envelope types of the loads still there, by name |
+> | SAP's `.s2k` | the STAAD design: its sets, rows by list and run as they are, and the frames' own values for the frames still there, by label; the STAAD load and envelope numbers and envelope types of the loads still there, by name |
 > | a `.std` | the tables STAAD has no place for (`FrameStd.StaadHolds` false): design procedures and overwrites, preferences, mass source, functions, grids, output stations … Their rows come for the joints, frames, sections, materials, patterns and groups still there, and whole where no object owns them. Also the load cases STAAD has no place for (other than linear or nonlinear static) and the combinations of another type or of such a case, with all their rows |
 >
 > **Never carried:**
@@ -588,8 +590,9 @@ written with a notice: plates (element formulation, large on coarse meshes) and 
 >
 > **Limits:**
 > - **Out of STAAD:** an insertion point comes back as joint offsets, and auto mesh as STAAD's (none).
-> - **Not checked:** the STAAD commands carried after edits in SAP are not checked against SAP's renamed or deleted
->   members.
+> - **Not checked:** the design's rows by list and run, carried after edits in SAP, are not checked against SAP's
+>   renamed or deleted members (`-Std` then refuses a name the model no longer has). A frame renamed in SAP loses its
+>   own design values: they are carried by label.
 >
 > Checked in the session on the round 4 probe, on a SAP rack with a modal case, its envelope and steel design overwrites,
 > and on the earlier STAAD files:

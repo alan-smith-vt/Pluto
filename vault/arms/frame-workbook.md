@@ -61,7 +61,8 @@ The whole picture, CAESAR and STAAD included, with the commands for each job:
 > | Combinations | Combination, Type, then one row per item (a case or a combination, SF; SAP's case type is worked out) |
 > | Groups | SAP's groups, one row per member; the `PL_KIND_` / `PL_LINE_` groups are Frames' Kind and Line |
 > | Settings | The SAP version stamped on the `.s2k`'s PROGRAM CONTROL line (editable: SAP imports nothing from a file stamped for another version; Help > About in SAP shows yours), the units, where the model came from |
-> | (STAAD commands) | From 2026-11-24 in the STAAD design workbook, `<model>.design.xlsx` ([[vault/arms/staad-design-workbook\|staad-design-workbook]]): design parameters by group or member, checks, prints. An older workbook's STAAD commands sheet is still read, and its next `-Xlsx` moves it there |
+> | Frames, the STAAD block | STAAD only: each frame's design parameters on its own row (FYLD … BEAM, Other), a column group at the right, after the read-only Groups column ([[vault/arms/staad-design\|staad-design]]) |
+> | STAAD sets, STAAD parameters, STAAD run | STAAD only: the design's parameter sets (code, method, units), its rows by list (a set's values for ALL, links, later sets), and what STAAD does after the analysis (checks, prints, commands). An older workbook's "STAAD commands" sheet is read into them, with a warning |
 > | STAAD loads | STAAD only: Kind (Case, Combination, Envelope), Name, Number, Type. `-Std` writes each case or combination as `LOAD <Number>` and each Envelope combination as `ENVELOPE <Number> [TYPE <Type>]`, so the commands' load lists name them; a load not listed gets the next free number. Filled by `-In <x>.std` |
 > | (STAAD loads, in SAP) | SAP's export has none: `-In <export>.s2k -Merge <this workbook>` takes them back from the workbook ([[vault/format/frame-to-staad\|frame-to-staad]], "Merging") |
 > | Carried | Read-only: each table no object owns, with its row count, and each table objects keep that no sheet shows (offsets along the length, nonlinear case parameters, auto mesh, design data …): they ride along unchanged and follow renames and deletions |
@@ -195,9 +196,12 @@ The whole picture, CAESAR and STAAD included, with the commands for each job:
 >   matters, so a workbook is written split: a frame SAP joins to joints on its span (its row's `AutoMesh=Yes
 >   AtJoints=Yes`, or no row, SAP's default) becomes the pieces SAP's analysis meshes it into (`FrameMesh`). The
 >   pieces are `<label>`, `<label>_2` …, keeping its rows (insertion point and offsets too), end releases, loads and
->   groups. `[split]` lines name them, and a warning names any split joint still held to ground. SAP then gets the
->   same analysis with the mesh written out, and `-Std` has nothing to split
->   ([[vault/format/frame-to-staad|frame-to-staad]]). A workbook made before: `-In <name>.xlsx -Xlsx -Out <new>`;
+>   groups and STAAD design values. `[split]` lines name them, and a warning names any split joint still held to
+>   ground. SAP then gets the same analysis with the mesh written out, and each Frames row is one STAAD member, which
+>   the design values on the rows need ([[vault/arms/staad-design|staad-design]]). `-Std` splits what is left: a
+>   `.s2k` written straight to `-Std`, or a joint added on a frame's span since
+>   ([[vault/format/frame-to-staad|frame-to-staad]]). For a workbook that got such a joint:
+>   `-In <name>.xlsx -Xlsx -Out <new>`;
 > - the nonlinear cases' solver controls beyond geometric nonlinearity.
 >
 > A table SAP exports with data that is not listed above shows on Carried by name, with its row count.

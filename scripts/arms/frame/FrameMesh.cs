@@ -10,7 +10,8 @@ using System.Linq;
 // pieces SAP's analysis meshes it into: when a workbook is written (Build-Frame -Xlsx, so the model says what SAP
 // analyses), and before FrameStd writes a model that still has such a frame (STAAD joins a member at its ends only):
 //   - the first piece keeps the frame's label, the others take <label>_2, <label>_3 ...; each keeps every row of the
-//     frame's (section, local axes, insertion point, property modifiers, auto mesh, design) and its groups. The joint is
+//     frame's (section, local axes, insertion point, property modifiers, auto mesh, SAP's design, its STAAD design
+//     values: StaadDesign.TMembers) and its groups. The joint is
 //     on the frame's line, so a piece with the frame's insertion point lies as the frame's part does;
 //   - I-end releases and partial fixity stay with the first piece, J-end ones with the last; end lengths likewise (a
 //     joint inside an end zone is refused);
@@ -23,15 +24,9 @@ public static class FrameMesh
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 
     // the model with those frames split (a copy; the model itself when none is). split: each split frame's label and its
-    // pieces; refused: the frames SAP joins along their length that are not split, each with its reason
-    public static FrameModel SplitAtJoints(FrameModel m, Dictionary<string, List<string>> split, Dictionary<string, string> refused)
-    {
-        var held = new List<string>();
-        return SplitAtJoints(m, split, refused, held);
-    }
-
-    // held: "frame F at joint J" where the joint the frame is split at is held to ground (restrained): SAP holds the frame
-    // there too, which a seeded support point under steel that should carry it would not want
+    // pieces; refused: the frames SAP joins along their length that are not split, each with its reason; held: "frame F
+    // at joint J" where the joint the frame is split at is held to ground (restrained): SAP holds the frame there too,
+    // which a seeded support point under steel that should carry it would not want
     public static FrameModel SplitAtJoints(FrameModel m, Dictionary<string, List<string>> split, Dictionary<string, string> refused, List<string> held)
     {
         var plan = Plan(m);

@@ -331,10 +331,83 @@ public static class StdToFrame
         // each envelope's loads as written: STAAD lists a load under every envelope that names it
         foreach (var e in s.Envelopes)
             f.Add("ENVELOPE " + I(e.Number) + " TYPE " + e.Type + ": loads " + FrameStd.Condense(e.Loads.Distinct()));
-        // the commands after the analysis, in order (carried: -Std writes them again)
-        if (s.AnalysisPrint != null) f.Add("the analysis' " + Regex.Replace(s.AnalysisPrint.ToUpperInvariant(), @"\s+", " "));
-        for (int k = 0; k < s.Output.Count; k++) f.Add("command " + I(k + 1) + " after the analysis: " + IdsSorted(Regex.Replace(s.Output[k].ToUpperInvariant(), @"\s+", " ")));
+        DesignFacts(s, f);
         return f;
+    }
+
+    // the commands after the analysis as STAAD reads them (StaadDesign.FromCommands): each set's code and method; each
+    // parameter's value for ALL and for each member, a later line winning (so "KY 1.2 MEMB _COLUMNS" and "KY 1.2 MEMB 1 TO
+    // 4" are the same, and a value given to ALL clears the lists before it); the run's steps in order, each with its load
+    // list, units and members
+    static void DesignFacts(StaadInput s, FactSet f)
+    {
+        var cmds = new List<string>();
+        if (s.AnalysisPrint != null) cmds.Add("PERFORM ANALYSIS " + s.AnalysisPrint);
+        cmds.AddRange(s.Output);
+        if (cmds.Count == 0) return;
+        var d = StaadDesign.FromCommands(cmds, s.Units.Count > 0 ? string.Join(" ", s.Units[0]) : "");
+        if (d.AnalysisPrint.Length > 0) f.Add("the analysis' PRINT " + Regex.Replace(d.AnalysisPrint.ToUpperInvariant(), @"\s+", " "));
+        // a member list as its ids, in order (null: ALL); a group by its members
+        Func<string, List<long>> ids = text =>
+        {
+            var t = (text ?? "").Split(new[] { ' ', '\t', ',' }, StringSplitOptions.RemoveEmptyEntries);
+            if (t.Length == 0 || (t.Length == 1 && Is(t[0], "ALL"))) return null;
+            var o = new SortedSet<long>();
+            for (int k = 0; k < t.Length; k++)
+            {
+                long a, b, by = 1;
+                if (k + 2 < t.Length && Is(t[k + 1], "TO") && long.TryParse(t[k], NumberStyles.None, Inv, out a) && long.TryParse(t[k + 2], NumberStyles.None, Inv, out b) && b - a < 1000000)
+                {
+                    k += 2;
+                    if (k + 2 < t.Length && Is(t[k + 1], "BY") && long.TryParse(t[k + 2], NumberStyles.None, Inv, out by) && by > 0) k += 2; else by = 1;
+                    for (long n = a; n <= b; n += by) o.Add(n);
+                    continue;
+                }
+                string g = s.Groups.Keys.FirstOrDefault(x => Is(x, t[k]));
+                if (g != null) { foreach (int id in s.Groups[g]) o.Add(id); continue; }
+                if (long.TryParse(t[k], NumberStyles.None, Inv, out a)) o.Add(a); else o.Add(-1 - Math.Abs((long)t[k].ToUpperInvariant().GetHashCode()));     // a name nothing defines
+            }
+            return o.ToList();
+        };
+        Action<string, string> value = (key, v) => { double x; if (Num(v, out x)) f.Add(key, x); else f.Add(key + " = " + Regex.Replace((v ?? "").ToUpperInvariant(), @"\s+", " ")); };
+        foreach (var set in d.Sets)
+        {
+            string who = "design set " + set.Name;
+            f.Add(who + ": CODE " + Regex.Replace(set.Code.ToUpperInvariant(), @"\s+", " ") + ", METHOD " + set.Method.ToUpperInvariant() + ", UNIT " + StaadDesign.UnitKey(set.Units, ""));
+            var all = new Dictionary<string, string>(StringComparer.Ordinal);
+            var per = new SortedDictionary<long, Dictionary<string, string>>();
+            foreach (var p in d.Params.Where(x => x.Set == set.Name))
+            {
+                var list = ids(p.Members);
+                var items = StaadDesign.Columns.Where(c => p.Values.ContainsKey(c) && p.Values[c].Trim().Length > 0).Select(c => new KeyValuePair<string, string>(c, p.Values[c].Trim())).Concat(StaadDesign.Others(p.Other));
+                foreach (var it in items)
+                {
+                    if (list == null) { all[it.Key] = it.Value; foreach (var m in per.Values) m.Remove(it.Key); continue; }
+                    foreach (long id in list)
+                    {
+                        Dictionary<string, string> m;
+                        if (!per.TryGetValue(id, out m)) per[id] = m = new Dictionary<string, string>(StringComparer.Ordinal);
+                        m[it.Key] = it.Value;
+                    }
+                }
+            }
+            foreach (var kv in all.OrderBy(x => x.Key, StringComparer.Ordinal)) value(who + ": " + kv.Key + " ALL", kv.Value);
+            foreach (var m in per) foreach (var kv in m.Value.OrderBy(x => x.Key, StringComparer.Ordinal)) value(who + ": " + kv.Key + " member " + I((int)m.Key), kv.Value);
+        }
+        string loads = "";
+        for (int k = 0; k < d.Run.Count; k++)
+        {
+            var st = d.Run[k];
+            if (st.LoadList.Trim().Length > 0) loads = Regex.Replace(st.LoadList.ToUpperInvariant(), @"\s+", " ").Trim();
+            string head = "design step " + I(k + 1) + ": LOAD LIST " + (loads.Length > 0 ? loads : "(none)") + "; ";
+            if (st.Action == "CHECK CODE" || st.Action == "SELECT")
+            {
+                var list = ids(st.Members);
+                f.Add(head + st.Action + " under PARAMETER " + st.Set + ", " + (list == null ? "ALL" : "members " + string.Join(" ", list.Select(x => x.ToString(Inv)).ToArray())));
+            }
+            else
+                f.Add(head + "UNIT " + StaadDesign.UnitKey(st.Units.Trim().Length > 0 ? st.Units : d.Units, "") + "; " + IdsSorted(Regex.Replace(st.Text.ToUpperInvariant(), @"\s+", " ")));
+        }
     }
 
     // a load block's items, each with the factor it is applied with; joint loads summed per joint and direction
@@ -558,17 +631,14 @@ public static class StdToFrame
             Head();
             Units();
             foreach (var u in In.Unread) Refuse("not read (FrameStd does not write it): " + u);
-            // the commands after the analysis, carried as written (StaadCarry: the workbook's STAAD commands sheet, -Std writes
-            // them again; SAP takes none); a Pluto file's own prints are -Std's, not carried
+            // the commands after the analysis are the model's STAAD design (StaadDesign: the Frames rows' design values and
+            // the workbook's STAAD sheets; -Std writes it again; SAP takes none); a Pluto file's own prints are -Std's
             Carried = new List<string>();
             if (In.AnalysisPrint != null) Carried.Add("PERFORM ANALYSIS " + In.AnalysisPrint);
             Carried.AddRange(In.Output);
             var own = new[] { "PRINT JOINT DISPLACEMENTS LIST ALL", "PRINT MEMBER FORCES ALL", "PRINT SUPPORT REACTIONS", "PRINT ELEMENT JOINT STRESSES LIST ALL" };
             if (Pluto && Carried.All(c => own.Any(x => Is(Regex.Replace(c, @"\s+", " "), x)))) Carried.Clear();
-            foreach (string c in Carried) if (c.IndexOf('"') >= 0) Refuse("a STAAD command with a double quote (the workbook carries commands in quotes): " + c);
-            if (Carried.Count > 0)
-                Note("STAAD's commands after the analysis carried as written (" + Carried.Count.ToString(Inv) + ": the workbook's STAAD commands sheet; -Std writes them after the analysis; SAP takes none): " +
-                     string.Join("; ", Carried.Take(8).ToArray()) + (Carried.Count > 8 ? " ..." : ""));
+            foreach (string c in Carried) if (c.IndexOf('"') >= 0) Refuse("a STAAD command with a double quote (the model carries commands in quotes): " + c);
             JointsIn();
             MembersIn();
             ConstantsIn();
@@ -583,7 +653,86 @@ public static class StdToFrame
             GroupsIn();
             LoadsIn();
             if (Refused.Count > 0) throw new StdToFrameRefusal(Grouped());
-            return Emit();
+            string text = Emit();
+            if (Carried.Count == 0) return text;
+            // the design into the model: its first set's parameters onto the frames they name, the rest by list, in the
+            // model's labels
+            var model = FrameS2k.Read(S2kDoc.ParseText(text));
+            var d = StaadDesign.FromCommands(Carried, FrameStd.StaadUnits(model));
+            d.Distribute(model, DesignMembers, DesignLabels, v => { int id; string l; return int.TryParse(v, NumberStyles.None, Inv, out id) && JointLabel.TryGetValue(id, out l) ? l : v; });
+            d.Store(model);
+            foreach (string n in d.Notes) Note(n);
+            int withOwn = model.Frames.Count(x => x.Rec(StaadDesign.TMembers) != null);
+            Note("STAAD's commands after the analysis (" + Carried.Count.ToString(Inv) + ") read as the model's STAAD design: " + d.Sets.Count.ToString(Inv) + " parameter set(s), " + withOwn.ToString(Inv) +
+                 " frame(s) with values of their own (the Frames sheet), " + d.Params.Count.ToString(Inv) + " row(s) by list, " + d.Run.Count.ToString(Inv) + " step(s); -Std writes it after the analysis, SAP takes none");
+            return FrameS2k.ToDoc(model).ToText();
+        }
+
+        // a STAAD member list (numbers, ranges, _GROUP names) as the model's frames and links
+        StaadMembers DesignMembers(string text)
+        {
+            var o = new StaadMembers();
+            var t = (text ?? "").Split(new[] { ' ', '\t', ',' }, StringSplitOptions.RemoveEmptyEntries);
+            if (t.Length == 0 || (t.Length == 1 && Is(t[0], "ALL"))) { o.All = true; return o; }
+            var missing = new List<string>();
+            Func<int, bool> one = id =>
+            {
+                Mem m; string l;
+                if (FrameOf.TryGetValue(id, out m)) { if (!o.Frames.Contains(m.Label)) o.Frames.Add(m.Label); return true; }
+                if (TrussLabel.TryGetValue(id, out l)) { if (!o.Others.Contains(l)) o.Others.Add(l); return true; }
+                return false;
+            };
+            for (int k = 0; k < t.Length; k++)
+            {
+                int a, b, by = 1;
+                if (k + 2 < t.Length && Is(t[k + 1], "TO") && int.TryParse(t[k], NumberStyles.None, Inv, out a) && int.TryParse(t[k + 2], NumberStyles.None, Inv, out b))
+                {
+                    k += 2;
+                    if (k + 2 < t.Length && Is(t[k + 1], "BY") && int.TryParse(t[k + 2], NumberStyles.None, Inv, out by) && by > 0) k += 2; else by = 1;
+                    int found = 0;
+                    for (int n = a; n <= b && n - a < 1000000; n += by) if (one(n)) found++;
+                    if (found == 0) missing.Add(I(a) + " TO " + I(b));
+                    continue;
+                }
+                string g = In.Groups.Keys.FirstOrDefault(x => Is(x, t[k]));
+                if (g != null)
+                {
+                    int found = 0;
+                    foreach (int id in In.Groups[g]) if (one(id)) found++;
+                    if (found == 0) missing.Add(t[k] + " (a group with no member)");
+                    continue;
+                }
+                if (!int.TryParse(t[k], NumberStyles.None, Inv, out a) || !one(a)) missing.Add(t[k]);
+            }
+            if (missing.Count > 0) o.Error = string.Join(", ", missing.ToArray()) + ": no such group or member in the .std";
+            return o;
+        }
+
+        // a STAAD member list in the model's labels, for the design's rows by list and its steps: a group by the model's
+        // name, a number by its member's label, a range kept where its members' labels are their numbers
+        string DesignLabels(string text)
+        {
+            var t = (text ?? "").Split(new[] { ' ', '\t', ',' }, StringSplitOptions.RemoveEmptyEntries);
+            var o = new List<string>();
+            Func<int, string> label = id => { Mem m; string l; return FrameOf.TryGetValue(id, out m) ? m.Label : TrussLabel.TryGetValue(id, out l) ? l : null; };
+            for (int k = 0; k < t.Length; k++)
+            {
+                int a, b, by = 1;
+                if (k + 2 < t.Length && Is(t[k + 1], "TO") && int.TryParse(t[k], NumberStyles.None, Inv, out a) && int.TryParse(t[k + 2], NumberStyles.None, Inv, out b) && b - a < 1000000)
+                {
+                    int at = k;
+                    k += 2;
+                    if (k + 2 < t.Length && Is(t[k + 1], "BY") && int.TryParse(t[k + 2], NumberStyles.None, Inv, out by) && by > 0) k += 2; else by = 1;
+                    var labels = new List<string>(); bool same = true;
+                    for (int n = a; n <= b; n += by) { string l = label(n); if (l == null) continue; labels.Add(l); if (l != I(n)) same = false; }
+                    if (same) o.AddRange(t.Skip(at).Take(k - at + 1)); else o.AddRange(labels);
+                    continue;
+                }
+                string g = In.Groups.Keys.FirstOrDefault(x => Is(x, t[k]));
+                if (g != null) { string gl = GroupLabel.ContainsKey(g) ? GroupLabel[g] : g.TrimStart('_'); o.Add(gl.Length > 0 ? gl : g); continue; }
+                o.Add(int.TryParse(t[k], NumberStyles.None, Inv, out a) ? label(a) ?? t[k] : t[k]);
+            }
+            return string.Join(" ", o.ToArray());
         }
 
         // ---------------- the head: STAAD SPACE, and the comments FrameStd writes
@@ -1818,8 +1967,7 @@ public static class StdToFrame
                     combos.Add("ComboName=" + Q(e.Name) + (k == 0 ? "   ComboType=Envelope   AutoDesign=No   " + item + "   SteelDesign=None   ConcDesign=None   AlumDesign=None   ColdDesign=None" : "   " + item));
                 }
             table("COMBINATION DEFINITIONS", combos);
-            // Pluto's own tables (StaadCarry): what SAP has no place for
-            table(StaadCarry.Commands, Carried.Select((c, i) => "Line=" + I(i + 1) + "   Command=\"" + c + "\""));
+            // Pluto's own table of STAAD's load numbers (StaadCarry): what SAP has no place for. The design follows in Run
             table(StaadCarry.Loads, (KeepNumbers ? Cases.Select(c => "Kind=Case   Name=" + Q(c.Name) + "   Number=" + I(c.Number))
                                         .Concat(Combos.Select(c => "Kind=Combination   Name=" + Q(c.Name) + "   Number=" + I(c.Number))) : new string[0])
                                         .Concat(Envs.Select(e => "Kind=Envelope   Name=" + Q(e.Name) + "   Number=" + I(e.Number) + (e.Type.Length > 0 ? "   Type=" + e.Type : ""))));

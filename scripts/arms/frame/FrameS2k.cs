@@ -132,6 +132,7 @@ public static class FrameS2k
         if (t.StartsWith("FRAME SECTION PROPERTIES") && key("SectionName")) { kind = "section"; main = t.StartsWith("FRAME SECTION PROPERTIES 01"); return true; }
         if (t == "CONNECTIVITY - FRAME") { kind = "frame"; main = true; return key("Frame"); }
         if (t.StartsWith("FRAME ") && key("Frame")) { kind = "frame"; return true; }
+        if (t == StaadDesign.TMembers && key("Frame")) { kind = "frame"; return true; }       // a frame's STAAD design values (Pluto's own table)
         if (t.StartsWith("LINK PROPERTY DEFINITIONS") && key("Link")) { kind = "linkprop"; main = t.StartsWith("LINK PROPERTY DEFINITIONS 01"); return true; }
         if (t == "CONNECTIVITY - LINK") { kind = "link"; main = true; return key("Link"); }
         if (t.StartsWith("LINK ") && key("Link")) { kind = "link"; return true; }
@@ -215,7 +216,7 @@ public static class FrameS2k
             if (errors.Count > 0) throw new InvalidOperationException("FrameS2k: " + string.Join("; ", errors.Distinct().Take(12).ToArray()));
         }
         foreach (string t in added.Distinct(StringComparer.OrdinalIgnoreCase))
-            if (!FrameS2kSchema.Confirmed(t)) notes.Add("s2k-unconfirmed: new rows in " + t + ", a table SAP has not confirmed yet (the SAP probe settles it): check them after the import");
+            if (!FrameS2kSchema.Confirmed(t) && !StaadCarry.IsOwn(t)) notes.Add("s2k-unconfirmed: new rows in " + t + ", a table SAP has not confirmed yet (the SAP probe settles it): check them after the import");
         // SAP 24.2 read a General section's S33Top and S22Left back as 0 while it kept S33Bot and S22Right (probe round
         // 2, 2026-11-05); S33 / S22 (round 1) set both faces
         foreach (var sc in m.Sections)

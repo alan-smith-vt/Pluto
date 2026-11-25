@@ -19,8 +19,10 @@
 #                         in STAAD, read into a frame model (StdToFrame; vault/format/frame-to-staad.md). STAAD's
 #                         commands are the model; the comments -Std writes give back SAP's labels and names. A later
 #                         UNIT's numbers are converted to the first UNIT's. The commands after the analysis (LOAD LIST,
-#                         PRINT, design parameters, CHECK CODE) and STAAD's load numbers ride in the workbook's STAAD
-#                         sheets: -Std writes them again, the .s2k leaves them out. Exact or refused: a command the
+#                         PRINT, design parameters, CHECK CODE) are the model's STAAD design (StaadDesign;
+#                         vault/arms/staad-design.md): a member's parameters on its Frames row, the sets, the rows by
+#                         list and the run on the workbook's STAAD sheets, with STAAD's load numbers. -Std writes
+#                         them again, the .s2k leaves them out. Exact or refused: a command the
 #                         frame model cannot hold refuses it, each on a [refuse] line. The read
 #                         checks that the model written back with -Std is the file's, object by object, to the digits
 #                         the file gives (STAAD.Pro's own save keeps 6), and says so. A table shape picked in STAAD
@@ -39,16 +41,18 @@
 #         -Xlsx     <base>.xlsx, the frame workbook, and its launchers ("<base> - preview.cmd", "<base> - s2k.cmd",
 #                   "<base> - open in SAP.cmd", "<base> - std.cmd"). A frame SAP's automatic mesh joins to joints on its
 #                   span is split there first (FrameMesh), as SAP's analysis meshes it: the pieces keep its section,
-#                   insertion point, offsets, releases at its ends, loads and groups; [split] lines name them, and every
-#                   output of the run takes them. -In <name>.xlsx -Xlsx does it for a workbook already made.
+#                   insertion point, offsets, releases at its ends, loads, groups and STAAD design values; [split]
+#                   lines name them, and every output of the run takes them. So each Frames row is one STAAD member.
+#                   -In <name>.xlsx -Xlsx -Out <new> does it for a workbook that got a joint on a frame's span since.
 #                   An existing <base>.xlsx this runner wrote and nobody has saved since (the stamp says so) is
 #                   replaced; one with edits asks first ("Overwrite the workbook?", Keep by default), the old one kept
 #                   as <base>.xlsx.bak. With no one to ask (-NonInteractive), the run stops: -Force replaces it (with
 #                   the .bak), -Out writes elsewhere.
 #         -Std      <base>.std for STAAD.Pro (FrameStd; vault/format/frame-to-staad.md): Y up, a BETA per member, STAAD's
 #                   table for W shapes, exact properties for the rest, patterns as reference loads and cases as primary
-#                   loads; after the analysis the model's STAAD commands (the workbook's STAAD commands sheet), else
-#                   Pluto's prints, and STAAD's load numbers where the STAAD loads sheet gives them.
+#                   loads; after the analysis the model's STAAD design (the Frames rows' design values and the
+#                   workbook's STAAD sets / parameters / run sheets), else Pluto's prints, and STAAD's load numbers
+#                   where the STAAD loads sheet gives them.
 #                   Exact or refused: what STAAD cannot hold exactly (a nonlinear link, a partly rigid end zone,
 #                   an angle's product of inertia ...) refuses the file, every item named on a [refuse] line; what
 #                   leaving out cannot change (modal cases, envelopes) is a [notice]. An existing <base>.std is replaced
@@ -65,19 +69,16 @@
 #                   the model's. Not with -Watch.
 #   -Merge <master> with -In <SAP's .s2k> or -In <a .std>: the file's model, with what its program has no place for
 #                   taken from the master (the frame workbook or .frame.json the file was written from; FrameMerge):
-#                   from an .s2k the master's STAAD commands and STAAD load / envelope numbers (by name); from a .std
+#                   from an .s2k the master's STAAD design (its frames' values by label) and STAAD load / envelope
+#                   numbers (by name); from a .std
 #                   the master's SAP-only tables (design, preferences, mass, functions, grids ...) for the objects still
 #                   there, and its load cases and combinations STAAD has no place for (modal, response spectrum ...).
 #                   Each item carried or not on a [merge] line. To update the master itself: -Out <master> -Xlsx.
-#   -Design <file>  the model's STAAD design workbook (StaadDesignWorkbook; vault/arms/staad-design-workbook.md): its
-#                   parameter sets, parameters by group or member, and run (checks, prints, commands), written by -Std
-#                   after the analysis. Default: <model>.design.xlsx beside the model workbook (or the -Merge master).
-#                   -In <x>.std -Xlsx writes it from the .std's commands after the analysis (beside the workbook, or
-#                   where -Design names), an older one kept as .bak; the model workbook then holds structure and loads.
-#   -NewDesign      a starter design workbook for a model with none (one from SAP): beside the model workbook (or where
-#                   -Design names); set 1 (AISC UNIFIED 2016, LRFD, the model's units), a Parameters row for ALL and one
-#                   per group, Pluto's prints and CHECK CODE ALL. Never over an existing one without -Force (then .bak).
-#                     ... -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.xlsx" -NewDesign
+#   -NewDesign      with -Xlsx or -Std, for a model with no STAAD design (one from SAP): a starter. Set 1 (AISC UNIFIED
+#                   2016, LRFD, the model's units), Pluto's prints and CHECK CODE ALL, on the workbook's STAAD sets
+#                   and STAAD run sheets (-Xlsx) or in this .std only (-Std). Each frame's parameters are then typed
+#                   on its Frames row. A model that has a design keeps it.
+#                     ... -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.s2k" -Xlsx -NewDesign
 #   -Watch          with an .xlsx: every save rebuilds the outputs (-Preview when none is given); Ctrl+C stops
 #   -NewWorkbook    -Out <name>.xlsx: an empty workbook (-Units "Kip, in, F" by default, -SapVersion 22.0.0) and its
 #                   launchers; an existing workbook as for -Xlsx
@@ -132,7 +133,6 @@ param(
     [string]$ProbeCheck,
     [string]$ProbeFile,
     [string]$Merge,
-    [string]$Design,
     [switch]$NewDesign
 )
 $ErrorActionPreference = "Stop"
@@ -252,7 +252,7 @@ if ($In) {
     if ($Watch -and -not ($S2k -or $Std -or $Json -or $Preview)) { $Preview = $true }
     if ($Open -and $Watch) { Fail "Build-Frame: -Open is not for -Watch (it would start SAP on every save)" }
     if ($Open) { $S2k = $true }
-    if ($Design) { $designPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Design) }
+    if ($NewDesign -and -not ($Xlsx -or $Std)) { Fail "Build-Frame: -NewDesign goes with -Xlsx (the starter in the workbook's STAAD sheets) or -Std (in that .std only)" }
     if ($Merge) {
         if ($kind -ne "s2k" -and $kind -ne "std") { Fail "Build-Frame: -Merge takes -In <SAP's .s2k> or -In <a .std>: the file whose model wins, the master filling in what its program has no place for" }
         if (-not (Test-Path -LiteralPath $Merge -PathType Leaf)) { Fail "Build-Frame: -Merge: master not found: $Merge" }
@@ -499,49 +499,30 @@ function Build-Once {
         # the file's model wins; the master (the workbook it was written from) fills in what that program has no place for
         $script:step = "merging the master " + [IO.Path]::GetFileName($mergePath)
         $master = $(if ($mergePath.ToLowerInvariant().EndsWith(".xlsx")) { ([FrameWorkbook]::Read($mergePath)).Model } else { [FrameModelJson]::Read((ReadSharedText $mergePath)) })
+        [void][StaadDesign]::Adopt($master, $null)
         $mn = New-Object 'System.Collections.Generic.List[string]'
         $model = [FrameMerge]::Merge($model, $master, $kind, $mn)
         foreach ($n in $mn) { Say "merge" ($n -replace '^merge: ', '') }
         Say "merge" ("{0} with {1}: the file's model, the master's {2} added" -f [IO.Path]::GetFileName($inPath), [IO.Path]::GetFileName($mergePath), $(if ($kind -eq "s2k") { "STAAD data" } else { "SAP-only data" }))
     }
-    # STAAD's design and output requests live in the design workbook (<model>.design.xlsx), not in the model: a model
-    # carrying them (a .std read, an older workbook) gives them to it on -Xlsx; -Std reads it (-Design, else the one
-    # beside the model workbook or the -Merge master)
-    $staadDesign = $null; $designOut = $null
-    $carriedCmds = [StaadCarry]::CommandsOf($model)
-    if ($NewDesign -and $carriedCmds.Count -gt 0) { Say "notice" "-NewDesign: the model carries STAAD's own commands (a .std): the design workbook is made from them, not a starter" }
-    if ($Xlsx -and $xlsxGo -ne "keep" -and $carriedCmds.Count -gt 0) {
-        $script:step = "writing the STAAD design workbook"
-        $staadDesign = [StaadDesign]::FromCommands($carriedCmds, [FrameStd]::StaadUnits($model))
-        foreach ($n in $staadDesign.Notes) { Say "notice" ("design: " + $n) }
-        $designOut = $(if ($Design) { $designPath } else { $outBase + ".design.xlsx" })
-        if (Test-Path -LiteralPath $designOut -PathType Leaf) { [IO.File]::Copy($designOut, $designOut + ".bak", $true); Say "write" ("{0}.bak: the design workbook as it was" -f $designOut) }
-        [StaadDesignWorkbook]::Write($staadDesign, $designOut, [IO.Path]::GetFileName($outBase + ".xlsx"))
-        Say "write" ("{0}: the STAAD design workbook ({1} parameter set(s), {2} parameter row(s), {3} step(s)); -Std writes it after the analysis" -f $designOut, $staadDesign.Sets.Count, $staadDesign.Params.Count, $staadDesign.Run.Count)
-        [void][StaadCarry]::Set($model, (New-Object 'System.Collections.Generic.List[string]'), [StaadCarry]::LoadsOf($model))
-    } elseif ($NewDesign) {
-        # a starter design workbook for a model with none (one from SAP): set 1, a Parameters row per group, Pluto's prints
-        # and CHECK CODE ALL; never over one holding edits without -Force
-        $designOut = $(if ($Design) { $designPath } elseif ($kind -eq "xlsx") { [IO.Path]::Combine([IO.Path]::GetDirectoryName($inPath), [IO.Path]::GetFileNameWithoutExtension($inPath) + ".design.xlsx") } else { $outBase + ".design.xlsx" })
-        if (Test-Path -LiteralPath $designOut -PathType Leaf) {
-            if (-not $Force) { throw (New-Object InvalidOperationException(("-NewDesign: {0} exists and holds its own edits; -Force replaces it (kept as .bak), -Design writes elsewhere" -f $designOut))) }
-            [IO.File]::Copy($designOut, $designOut + ".bak", $true); Say "write" ("{0}.bak: the design workbook as it was" -f $designOut)
+    # STAAD's design (StaadDesign) rides in the model: a frame's parameters on the frame, the sets, rows by list and run
+    # in tables of Pluto's own. An older model's STAAD commands, carried as written, are read into it
+    $an = New-Object 'System.Collections.Generic.List[string]'
+    if ([StaadDesign]::Adopt($model, $an)) { foreach ($n in $an) { Say "notice" ("design: " + $n) } }
+    # a design workbook of the day before this layout (<model>.design.xlsx) is no longer read: say so, once per run
+    $oldDesign = $(if ($kind -eq "xlsx") { [IO.Path]::Combine([IO.Path]::GetDirectoryName($inPath), [IO.Path]::GetFileNameWithoutExtension($inPath) + ".design.xlsx") } else { $null })
+    if ($Std -and $oldDesign -and (Test-Path -LiteralPath $oldDesign -PathType Leaf)) {
+        Say "warn" ("{0} is no longer read: the STAAD design is in the workbook itself (the Frames rows' STAAD block, and the STAAD sets / parameters / run sheets). Make the workbook again from its .std (-In <x>.std -Xlsx), or type the design there" -f $oldDesign)
+        $warnings += "an older .design.xlsx beside the workbook is not read"
+    }
+    if ($NewDesign) {
+        # a starter for a model with none (one from SAP): set 1, Pluto's prints and CHECK CODE ALL
+        if (-not ([StaadDesign]::Of($model)).Empty -or [StaadDesign]::HasMembers($model)) { Say "notice" "-NewDesign: the model has a STAAD design already, which is kept" }
+        else {
+            $starter = [StaadDesign]::Template($model, [FrameStd]::StaadUnits($model))
+            [void]$starter.Store($model)
+            Say "design" ("a starter STAAD design: set 1 (AISC UNIFIED 2016, LRFD, {0}), Pluto's prints and CHECK CODE ALL{1}" -f $starter.Units, $(if ($Xlsx) { "; type each frame's parameters on its Frames row" } else { " (this run only: -Xlsx keeps it in a workbook)" }))
         }
-        $staadDesign = [StaadDesign]::Template($model, [FrameStd]::StaadUnits($model))
-        [StaadDesignWorkbook]::Write($staadDesign, $designOut, $(if ($kind -eq "xlsx") { [IO.Path]::GetFileName($inPath) } else { [IO.Path]::GetFileName($outBase + ".xlsx") }))
-        Say "write" ("{0}: a starter STAAD design workbook: set 1 (AISC UNIFIED 2016, LRFD, {1}), a Parameters row for ALL and {2} group(s), Pluto's prints and CHECK CODE ALL" -f $designOut, $staadDesign.Units, ($staadDesign.Params.Count - 1))
-    } elseif ($Std) {
-        $designIn = $null
-        if ($Design) { $designIn = $designPath }
-        elseif ($kind -eq "xlsx") { $designIn = [IO.Path]::Combine([IO.Path]::GetDirectoryName($inPath), [IO.Path]::GetFileNameWithoutExtension($inPath) + ".design.xlsx") }
-        elseif ($Merge) { $designIn = [IO.Path]::Combine([IO.Path]::GetDirectoryName($mergePath), [IO.Path]::GetFileNameWithoutExtension($mergePath) + ".design.xlsx") }
-        if ($designIn -and (Test-Path -LiteralPath $designIn -PathType Leaf)) {
-            $de = New-Object 'System.Collections.Generic.List[string]'; $dw = New-Object 'System.Collections.Generic.List[string]'
-            $staadDesign = [StaadDesignWorkbook]::Read($designIn, $de, $dw)
-            foreach ($w in $dw) { Say "warn" ("design: " + $w) }
-            if ($null -eq $staadDesign) { foreach ($e in $de) { Say "refuse" ("design: " + $e) }; throw (New-Object InvalidOperationException(("{0}: the design workbook has the {1} error(s) above; nothing is written" -f $designIn, $de.Count))) }
-            Say "read" ("{0}: the STAAD design workbook ({1} parameter set(s), {2} parameter row(s), {3} step(s))" -f $designIn, $staadDesign.Sets.Count, $staadDesign.Params.Count, $staadDesign.Run.Count)
-        } elseif ($Design) { throw (New-Object InvalidOperationException(("-Design: {0} not found" -f $designIn))) }
     }
     if ($Xlsx) {
         # a workbook says what SAP analyses: a frame SAP's automatic mesh joins to joints on its span is split there
@@ -577,7 +558,7 @@ function Build-Once {
     foreach ($n in $notes) { Say "notice" $n }
     # STAAD's own commands and load numbers (the workbook's STAAD sheets) are for -Std: SAP gets none of them
     $staadRows = [StaadCarry]::StripForSap($doc)
-    if ($staadRows -gt 0 -and ($S2k -or $Open)) { Say "notice" ("the model's STAAD load and envelope numbers ({0} rows, the STAAD loads sheet) are for -Std only: the .s2k leaves them out" -f $staadRows) }
+    if ($staadRows -gt 0 -and ($S2k -or $Open)) { Say "notice" ("the model's STAAD data ({0} rows: its design, and its load and envelope numbers) is for -Std only: the .s2k leaves it out" -f $staadRows) }
 
     if ($S2k) {
         $bytes = $doc.ToBytes()
@@ -589,7 +570,7 @@ function Build-Once {
     $stdNotes = New-Object 'System.Collections.Generic.List[string]'
     if ($Std) {
         $script:step = "writing the STAAD .std"
-        try { $text = [FrameStd]::ToText($model, [IO.Path]::GetFileName($inPath), $stdNotes, $staadDesign) }
+        try { $text = [FrameStd]::ToText($model, [IO.Path]::GetFileName($inPath), $stdNotes) }
         catch {
             $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }
             if ($e -isnot [FrameStdRefusal]) { throw }
@@ -661,7 +642,7 @@ function Build-Once {
     }
     $res = "RESULT {""input"":" + (Q $inPath) + ",""kind"":" + (Q $kind) + ",""model"":" + (Q $hash)
     $res += ",""identical"":" + $(if ($identical -eq $null) { "null" } elseif ($identical) { "true" } else { "false" })
-    $res += ",""s2k"":" + $(if ($S2k) { Q $s2kFile } else { "null" }) + ",""std"":" + $(if ($Std) { Q $stdFile } else { "null" }) + ",""xlsx"":" + $(if ($Xlsx -and $xlsxGo -ne "keep") { Q ($outBase + ".xlsx") } else { "null" }) + ",""json"":" + $(if ($Json) { Q $jsonFile } else { "null" }) + ",""design"":" + $(if ($designOut) { Q $designOut } else { "null" })
+    $res += ",""s2k"":" + $(if ($S2k) { Q $s2kFile } else { "null" }) + ",""std"":" + $(if ($Std) { Q $stdFile } else { "null" }) + ",""xlsx"":" + $(if ($Xlsx -and $xlsxGo -ne "keep") { Q ($outBase + ".xlsx") } else { "null" }) + ",""json"":" + $(if ($Json) { Q $jsonFile } else { "null" })
     $res += ",""bin"":" + $(if ($Preview) { Q $binFile } else { "null" }) + ",""sidecar"":" + $(if ($Preview) { Q $scFile } else { "null" })
     $res += ",""notices"":" + ($notes.Count + $stdNotes.Count) + ",""counts"":" + (Q $counts) + "}"
     Write-Output $res
