@@ -395,6 +395,9 @@ public class SteelModel
         return Math.Max(0, dist - re);
     }
 
+    // diagnostics (Explain-SteelJoint.ps1): the contact gap (in) from end k (0 = P0, 1 = P1) of member m to member j's solid
+    public double EndGap(int m, int k, int j) { return ContactGap(2 * m + k, j); }
+
     static void SetEnd(KeyValuePair<Frame, bool> fe, string cond, string release)
     {
         if (fe.Value) { fe.Key.EndI = cond; fe.Key.ReleaseI = release; }

@@ -1,5 +1,7 @@
 # Why a steel joint came out as it did (read-only diagnostic, 2026-11-25). Windows PowerShell 5.1:
-#   powershell -ExecutionPolicy Bypass -File scripts\duct\Explain-SteelJoint.ps1 -Config <duct-config.psd1> -Oid <oid>,<oid>[,...]
+#   powershell -ExecutionPolicy Bypass -File scripts\duct\Explain-SteelJoint.ps1 -Config <duct-config.psd1> -Oid <oid>,<oid>[,...] [-Detail]
+# Default: ONE line per member end at a collinear joint (the nearest crossing member, why the snap did not take it).
+# -Detail: the long listing below.
 # Takes the member oids at one joint (the viewer's steel label ends with the oid), reads the steel CSV of the config
 # (DuctSteel, whole building), builds the steel model with the config's snap settings from the members within 20 ft
 # of the named ones, and prints for each end of each named member: the condition it got, the other member ends at
@@ -7,7 +9,8 @@
 # that member or beyond its end. Writes nothing.
 param(
     [Parameter(Mandatory = $true)][string]$Config,
-    [Parameter(Mandatory = $true)][string[]]$Oid
+    [Parameter(Mandatory = $true)][string[]]$Oid,
+    [switch]$Detail   # every end and every member within 24 in (long)
 )
 $ErrorActionPreference = "Stop"
 . (Join-Path (Split-Path $PSScriptRoot) "arms\Import-Arms.ps1")
@@ -41,7 +44,47 @@ $ends = @(); foreach ($m in $named) { $ends += , (ToIn $m.P0); $ends += , (ToIn 
 $local = New-Object 'System.Collections.Generic.List[SteelMember]'
 foreach ($m in $all) { $a = ToIn $m.P0; $b = ToIn $m.P1; foreach ($p in $ends) { if ((SegInfo $a $b $p).D -le 240) { $local.Add($m); break } } }
 $sm = [SteelModel]::Build($local, $s)
-Write-Output ("steel snap: {0}, SnapIn {1} in, EndJoinIn {2} in, collinear within {3} deg; {4} members within 20 ft built" -f $s.SnapMode, $s.SnapIn, $s.EndJoinIn, $s.CollinearDeg, $local.Count)
+$contact = $s.SnapMode -eq "contact"
+$cosC = [math]::Cos($s.CollinearDeg * [math]::PI / 180)
+if ($Detail) { Write-Output ("steel snap: {0}, SnapIn {1} in, ContactIn {2} in, EndJoinIn {3} in, collinear within {4} deg; {5} members within 20 ft built" -f $s.SnapMode, $s.SnapIn, $s.ContactIn, $s.EndJoinIn, $s.CollinearDeg, $local.Count) }
+
+# short report (default): one line per end at a collinear joint, the nearest member crossing it (not in line) within
+# 24 in and why the snap did not take it, mirroring SteelModel.Run step 1
+if (-not $Detail) {
+    $lines = 0
+    foreach ($m in $named) {
+        $mi = $sm.Members.IndexOf($m); $ax = Axis $m
+        $fr = @($sm.Frames | Where-Object { $_.Source -eq $mi })
+        foreach ($k in 0, 1) {
+            $f = if ($k -eq 0) { $fr[0] } else { $fr[-1] }
+            $endC = if ($k -eq 0) { $f.EndI } else { $f.EndJ }
+            if ($endC -ne "collinear") { continue }
+            $jid = if ($k -eq 0) { $f.I } else { $f.J }
+            $mate = @($sm.Frames | Where-Object { ($_.I -eq $jid -or $_.J -eq $jid) -and $_.Source -ne $mi } | ForEach-Object { $sm.Members[$_.Source].MemberOid } | Sort-Object -Unique) -join " "
+            $p = if ($k -eq 0) { ToIn $m.P0 } else { ToIn $m.P1 }
+            $best = $null
+            for ($j = 0; $j -lt $sm.Members.Count; $j++) {
+                $o = $sm.Members[$j]; if ($j -eq $mi) { continue }
+                $oa = Axis $o; if ([math]::Abs($ax[0] * $oa[0] + $ax[1] * $oa[1] + $ax[2] * $oa[2]) -ge $cosC) { continue }
+                $g = SegInfo (ToIn $o.P0) (ToIn $o.P1) $p
+                if ($g.D -gt 24) { continue }
+                if ($null -eq $best -or $g.D -lt $best.G.D) { $best = @{ J = $j; O = $o; G = $g } }
+            }
+            $who = "{0} end {1}" -f $m.MemberOid, $(if ($k -eq 0) { "I" } else { "J" })
+            if ($null -eq $best) { Write-Output ("{0}: collinear with {1}; NO crossing member within 24 in" -f $who, $mate); $lines++; continue }
+            $g = $best.G; $gap = $sm.EndGap($mi, $k, $best.J)
+            $beyond = $g.T -lt 0 -or $g.T -gt 1
+            $why = if ($contact -and $gap -gt $s.ContactIn) { "gap {0:0.#} > ContactIn {1}" -f $gap, $s.ContactIn }
+                   elseif (-not $contact -and $g.D -gt $s.SnapIn) { "line {0:0.#} > SnapIn {1}" -f $g.D, $s.SnapIn }
+                   elseif ($beyond -and $g.D -gt $s.EndJoinIn) { "past its end {0:0.#}, end pt {1:0.#} > EndJoinIn {2}" -f ([math]::Max(-$g.T, $g.T - 1) * $g.L), $g.D, $s.EndJoinIn }
+                   else { "would connect" }
+            Write-Output ("{0}: collinear with {1}; crossing {2} {3}: line {4:0.#} in, gap {5:0.#} in, {6} -> {7}" -f $who, $mate, $best.O.MemberOid, $best.O.SectionName, $g.D, $gap, $(if ($beyond) { "past its end" } else { "beside" }), $why)
+            $lines++
+        }
+    }
+    if ($lines -eq 0) { Write-Output "no collinear end on these members (run with -Detail for everything)" }
+    exit 0
+}
 
 foreach ($m in $named) {
     $mi = $sm.Members.IndexOf($m); $ax = Axis $m
