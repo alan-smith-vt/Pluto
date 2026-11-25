@@ -42,6 +42,8 @@ public class DuctSettings
     public bool RoomRegions = true;
     // steel outside the rooms with ducts is left out of the model [DuctRoomCull]
     public bool RoomCull = true;
+    // steel with no path (through other steel) to a duct support is left out of the model [DuctSteelTouchDuctOnly]
+    public bool SteelTouchDuctOnly = true;
     // the kept rooms are trimmed to the drawn ducts' plan box + this pad (ft; negative = no box) [DuctRoomBoxPadFt]
     public double RoomBoxPadFt = 5;
     public double RoomGapFt = 4;

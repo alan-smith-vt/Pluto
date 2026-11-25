@@ -433,6 +433,49 @@ public class SteelModel
         return jt;
     }
 
+    // the final cull (user, 2026-11-25: steel that touches no duct, even indirectly, goes): keep the frames connected,
+    // through steel joints, to one of the seed joints (the duct supports' steel joints); everything else is removed.
+    // Joints and frames are renumbered (S1.., SF1..); the map old joint id -> kept joint lets callers rename what they
+    // hold. Conditions and releases stay as built: a joint's frames are all in one component, so none loses a member.
+    // Empty seeds = nothing removed (no supports: the cull would wipe the steel).
+    public int CullFrames, CullJoints, CullMembers;
+    public Dictionary<int, Joint> KeepConnected(IEnumerable<int> seedJointIds)
+    {
+        var map = new Dictionary<int, Joint>();
+        var seeds = new HashSet<int>(seedJointIds);
+        if (seeds.Count == 0) { foreach (Joint j in Joints) map[j.Id] = j; return map; }
+        var adj = new Dictionary<int, List<int>>();
+        foreach (Frame f in Frames)
+        {
+            List<int> l;
+            if (!adj.TryGetValue(f.I, out l)) { l = new List<int>(); adj[f.I] = l; } l.Add(f.J);
+            if (!adj.TryGetValue(f.J, out l)) { l = new List<int>(); adj[f.J] = l; } l.Add(f.I);
+        }
+        var reach = new HashSet<int>(seeds); var q = new Queue<int>(seeds);
+        while (q.Count > 0)
+        {
+            int a = q.Dequeue(); List<int> l;
+            if (adj.TryGetValue(a, out l)) foreach (int b in l) if (reach.Add(b)) q.Enqueue(b);
+        }
+        int membersBefore = Frames.Select(f => f.Source).Distinct().Count();
+        var keptFrames = Frames.Where(f => reach.Contains(f.I)).ToList();
+        CullFrames = Frames.Count - keptFrames.Count;
+        var keptJoints = Joints.Where(j => reach.Contains(j.Id)).ToList();
+        CullJoints = Joints.Count - keptJoints.Count;
+        Joints.Clear();
+        foreach (Joint j in keptJoints) { map[j.Id] = j; j.Id = Joints.Count + 1; Joints.Add(j); }
+        Frames.Clear();
+        foreach (Frame f in keptFrames) { f.I = map[f.I].Id; f.J = map[f.J].Id; f.Id = Frames.Count + 1; Frames.Add(f); }
+        CullMembers = membersBefore - Frames.Select(f => f.Source).Distinct().Count();
+        return map;
+    }
+
+    public string CullSummary()
+    {
+        return string.Format(Inv, "steel touching no duct: {0} members ({1} frames, {2} joints) not connected to a duct support, even through other steel, left out; {3} members kept",
+            CullMembers, CullFrames, CullJoints, Frames.Select(f => f.Source).Distinct().Count());
+    }
+
     // top of steel above a point of frame f at t (inches): the routed line + the cardinal-point offset (OffY along the
     // flange direction, OffZ along the web, as in steel_frames.csv) + web x D/2. The top flange's centre, outer face.
     public double[] TopAt(Frame f, double t)

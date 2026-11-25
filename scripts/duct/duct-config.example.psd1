@@ -46,6 +46,9 @@
     # flag NO_SLAB). It only removes restraints: nothing is fixed that was not. $false = every such end fixed.
     DuctSteelFixedNeedsSlab = $true
     DuctSteelSlabNearIn = 12
+    # Steel that touches no duct, even through other steel (the duct supports are the contact), is left out of the
+    # model: viewer and SAP. $false = keep it.
+    DuctSteelTouchDuctOnly = $true
     # Walls drawn in the clean model (drawing only, never in SAP): the CSV of scripts\voyager\Export-Walls.ps1
     # (one box per wall, meters, the steel CSV's frame). Groups by shape (Walls: wall / slab / skew wall / skew slab /
     # small) and by level (Walls level: <band>: the bands between the big slabs; hide a level with its eye). Only walls

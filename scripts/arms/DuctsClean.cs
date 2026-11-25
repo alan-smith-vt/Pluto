@@ -47,16 +47,7 @@ public partial class DuctsToPluto
         List<SteelMember> steelIn = Cfg.Steel;
         if (Cfg.Walls.Count > 0 && Cfg.RoomRegions)
         {
-            var ductSegs = new List<double[]>();
-            // the ducts that count are the ones the viewer draws: with primary systems configured, the systems and their
-            // fragments ("other: <name>", Navisworks-only pieces and unnamed ones are hidden by default, DuctSystems.ApplySystemView)
-            var dsys = new DuctSystems(Cfg);
-            foreach (CEdge ce in clean)
-            {
-                string sys = ce.Src.Count > 0 || ce.SysName != "" ? DuctGeom.SystemOf(ce) : (ce.Source == "navisworks-only" ? "navisworks-only" : "?");
-                if (dsys.SystemRole(sys) == "other") continue;
-                double[] a = P[ce.A], b = P[ce.B]; ductSegs.Add(new[] { a[0], a[1], a[2], b[0], b[1], b[2] });
-            }
+            var ductSegs = DrawnDuctSegs(clean, P);
             var voters = new List<RoomVoter>();
             if (rows != null)
                 foreach (DuctRow r in rows)
@@ -97,6 +88,7 @@ public partial class DuctsToPluto
             var frames = new List<SteelModel.Frame>();
             sr = SupportPlacer.Place(clean, P, SteelRecords(sm, frames), Cfg, rows, hangerScope);
             ApplySteelSplits(sm, frames, sr);
+            if (Cfg.SteelTouchDuctOnly) CullUntouchedSteel(sm, sr);   // the final cull: steel with no path to a duct support
             SupportPlacer.WriteSupportsCsv(outBase + ".supports.csv", sr, P);
         }
 
@@ -127,6 +119,7 @@ public partial class DuctsToPluto
             + (cutNote != "" ? "\n" + cutNote : "")
             + (thkNote != "" ? "\n" + thkNote : "")
             + (sm != null ? "\n" + sm.Summary() + " (<out>.steel_joints.csv, <out>.steel_frames.csv)\n" + sm.GapSummary() : "")
+            + (sm != null && Cfg.SteelTouchDuctOnly ? "\n" + sm.CullSummary() : "")
             + "\n" + bridgeNote
             + "\n" + orientNote
             + (pen != null ? "\n" + pen.Note : "")
@@ -218,9 +211,13 @@ public partial class DuctsToPluto
         SupportViewWriter.AddSpanGroup(sc, sr, clean, P, beamOf, gSpan);
         SupportViewWriter.AddFloatingGroup(sc, sr, clean, P, beamOf);   // stability rule 1
         SupportViewWriter.AddHangerGroups(sc, sr, clean, beamOf, rows, pv);   // the hanger checks
+        WallViewWriter.SetDuctLevels(wv, DrawnDuctSegs(clean, P));
         WallViewWriter.AddGroups(sc, wv);
         RoomRegions.AddGroups(sc, wv);
         DuctPenetrations.AddGroups(sc, pen, n => { int id; return map.TryGetValue(n, out id) ? id : 0; });
+        // viewer default (user, 2026-11-25, for downstream users): every icon group (glyphs: member ends, supports,
+        // checks, penetrations) starts unticked; ticking one in the Groups tab shows it
+        foreach (FeaturesSidecar.Group g in sc.Groups) if (g.Look != null) g.Hidden = true;
         File.WriteAllText(outBase + ".features.json", sc.ToJson(), new UTF8Encoding(false));
         return wv != null ? wv.Note + roomNote : "";
     }
@@ -255,6 +252,32 @@ public partial class DuctsToPluto
         }
         File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));
     }
+    // the ducts that count are the ones the viewer draws: with primary systems configured, the systems and their
+    // fragments ("other: <name>", Navisworks-only pieces and unnamed ones are hidden by default, DuctSystems.ApplySystemView);
+    // segments { xa, ya, za, xb, yb, zb } in ft
+    static List<double[]> DrawnDuctSegs(List<CEdge> clean, Dictionary<int, double[]> P)
+    {
+        var ductSegs = new List<double[]>();
+        var dsys = new DuctSystems(Cfg);
+        foreach (CEdge ce in clean)
+        {
+            string sys = ce.Src.Count > 0 || ce.SysName != "" ? DuctGeom.SystemOf(ce) : (ce.Source == "navisworks-only" ? "navisworks-only" : "?");
+            if (dsys.SystemRole(sys) == "other") continue;
+            double[] a = P[ce.A], b = P[ce.B]; ductSegs.Add(new[] { a[0], a[1], a[2], b[0], b[1], b[2] });
+        }
+        return ductSegs;
+    }
+
+    // steel that touches no duct, even through other steel (user, 2026-11-25): seeds = the supports' steel joints;
+    // the supports' joint names follow the renumbering. No supports = nothing removed (SteelModel.KeepConnected)
+    static void CullUntouchedSteel(SteelModel sm, SupportRun run)
+    {
+        var idOf = sm.Joints.ToDictionary(j => j.Name, j => j.Id);
+        var seeds = run.SteelJoint.Select(p => idOf[p.Name]).ToList();
+        Dictionary<int, SteelModel.Joint> map = sm.KeepConnected(seeds);
+        for (int i = 0; i < run.SteelJoint.Count; i++) run.SteelJoint[i].Name = map[seeds[i]].Name;
+    }
+
     // steel frames as plain records for SupportPlacer (inches; top of steel at both ends); frames keeps the order
     static List<DuctSupports.Steel> SteelRecords(SteelModel sm, List<SteelModel.Frame> frames)
     {

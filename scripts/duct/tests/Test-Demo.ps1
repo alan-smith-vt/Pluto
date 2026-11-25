@@ -74,10 +74,15 @@ Check "clean" "the drop list drops a member" ($match -match 'NEW manual drop \(D
 
 # ---- steel
 $sf = Rows "$o\revit.steel_frames.csv"; $sj = Rows "$o\revit.steel_joints.csv"
-Check "steel" "steel frames >= input members" ($sf.Count -ge $steelIn.Count -and $steelIn.Count -gt 0) "$($sf.Count) frames from $($steelIn.Count) members"
 $oids = @{}; foreach ($x in $steelIn) { $oids[$x.MemberOid] = $x.SectionName }
 $lost = @($steelIn | Where-Object { $o2 = $_.MemberOid; -not ($sf | Where-Object { $_.MemberOid -eq $o2 }) })
-Check "steel" "every input member is in the model" ($lost.Count -eq 0) (($lost | ForEach-Object { $_.MemberOid }) -join " ")
+# the final cull (DuctSteelTouchDuctOnly) leaves out the members with no path to a duct support: exactly the ones missing
+$culled = if ($match -match 'steel touching no duct: (\d+) members') { [int]$Matches[1] } else { 0 }
+Check "steel" "steel frames >= input members kept" ($sf.Count -ge ($steelIn.Count - $culled) -and $steelIn.Count -gt 0) "$($sf.Count) frames from $($steelIn.Count) members, $culled culled"
+Check "steel" "every input member is in the model or counted by the touch-duct cull" ($lost.Count -eq $culled) ("missing " + (($lost | ForEach-Object { $_.MemberOid }) -join " ") + "; culled $culled")
+$jn = @{}; foreach ($x in $sj) { $jn[$x.Joint] = 1 }
+$supJ = @(Rows "$o\revit.supports.csv" | Where-Object { -not $jn.ContainsKey($_.SteelJoint) })
+Check "steel" "every support's steel joint is in steel_joints.csv" ($supJ.Count -eq 0) (($supJ | ForEach-Object { $_.SupportId }) -join " ")
 $badSec = @($sf | Where-Object { $oids[$_.MemberOid] -ne $_.Section })
 Check "steel" "every frame keeps its member's section" ($badSec.Count -eq 0) (($badSec | ForEach-Object { $_.Frame }) -join " ")
 $jn = @{}; foreach ($x in $sj) { $jn[$x.Joint] = $x }

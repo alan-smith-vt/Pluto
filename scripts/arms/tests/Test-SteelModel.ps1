@@ -252,5 +252,19 @@ Check "15g column base on a slab: FIXED column-base" ($c.JI.Restraint -eq "FIXED
 $sm = ModelSlabs $base $ceiling; $c = Ends $sm "COL"; $br = Ends $sm "BR"
 Check "15g column base with no slab: not fixed, the brace still hinged, the column top (at the slab) fixed" ($c.JI.Restraint -eq "" -and $c.JI.Condition -eq "open-free" -and ($c.JI.Flags -contains "NO_SLAB") -and $c.I -eq "open-free" -and $br.RI -eq "M2M3" -and $c.J -eq "open-fixed")
 
+# 16 steel touching no duct (KeepConnected): beam on a column (one piece) + a lone beam far off; seed on the first beam
+$sm = Model @((M "B" 0 0 120 240 0 120), (M "COL" 240 0 0 240 0 120), (M "FAR" 0 1000 120 240 1000 120))
+$sp = $sm.SplitAt(@($sm.Frames | Where-Object { $sm.Members[$_.Source].MemberOid -eq "B" })[0], 0.5, "SUPPORT")
+$colRestraint = (Ends $sm "COL").JI.Restraint
+$spId = $sp.Id; $map = $sm.KeepConnected([int[]]@($spId))
+$oids = @($sm.Frames | ForEach-Object { $sm.Members[$_.Source].MemberOid } | Sort-Object -Unique)
+Check "16a the lone beam goes, the beam and the column through the corner stay" (($oids -join ",") -eq "B,COL" -and $sm.CullMembers -eq 1 -and $sm.CullFrames -eq 1 -and $sm.CullJoints -eq 2)
+Check "16a joints and frames renumbered 1..n, frame ends point at kept joints" ((@($sm.Joints | ForEach-Object { $_.Id }) -join ",") -eq ((1..$sm.Joints.Count) -join ",") -and @($sm.Frames | Where-Object { $_.I -gt $sm.Joints.Count -or $_.J -gt $sm.Joints.Count }).Count -eq 0 -and $sm.Frames[-1].Id -eq $sm.Frames.Count)
+Check "16a the seed maps to its renumbered joint; conditions kept" ($null -ne $map[$spId] -and ($sm.Joints -contains $map[$spId]) -and ($map[$spId].Flags -contains "SUPPORT") -and (Ends $sm "COL").JI.Restraint -eq $colRestraint)
+Check "16a summary line" ($sm.CullSummary() -like "steel touching no duct: 1 members (1 frames, 2 joints)*2 members kept")
+$sm = Model @((M "B" 0 0 120 240 0 120), (M "FAR" 0 1000 120 240 1000 120)); $n = $sm.Frames.Count
+$null = $sm.KeepConnected([int[]]@())
+Check "16b no supports: nothing removed" ($sm.Frames.Count -eq $n -and $sm.CullMembers -eq 0)
+
 Write-Output ("{0} passed, {1} failed" -f $script:pass, $script:fail)
 exit $(if ($script:fail) { 1 } else { 0 })

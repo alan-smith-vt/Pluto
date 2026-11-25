@@ -115,6 +115,13 @@ $shapeG = @($sc.Groups | Where-Object { $_.Name -notlike "Walls level:*" }); $le
 Check "24 shape groups painted, level groups not" (@($shapeG | Where-Object { $_.Hidden -ne $false -or -not $_.Color }).Count -eq 0 -and @($levelG | Where-Object { $_.Hidden -ne $true }).Count -eq 0)
 Check "25 every shell in one shape group and one level group" ((($shapeG | ForEach-Object { $_.Members[0].Ids.Count } | Measure-Object -Sum).Sum -eq 48) -and (($levelG | ForEach-Object { $_.Members[0].Ids.Count } | Measure-Object -Sum).Sum -eq 48) -and
     @($sc.Groups | Where-Object { $_.Members[0].Domain -ne "shells" }).Count -eq 0)
+Check "25b no duct levels known: every level shown (eye on)" (@($levelG | Where-Object { $_.Invisible }).Count -eq 0)
+# viewer default: the bands above and below the ducts' band start with their eye off
+$seg = New-Object 'System.Collections.Generic.List[double[]]'; $seg.Add([double[]]@(0, 0, 20, 10, 0, 20))
+[WallViewWriter]::SetDuctLevels($v, $seg)
+$sc = New-Object FeaturesSidecar; [WallViewWriter]::AddGroups($sc, $v)
+$eyeOff = @($sc.Groups | Where-Object { $_.Invisible } | ForEach-Object { $_.Name }) -join "|"
+Check "25c ducts at 20 ft: below and above bands eye off, the ducts' band shown" ($eyeOff -eq "Walls level: below 13.4 ft|Walls level: above 32.2 ft")
 
 # settings: DuctWalls, DuctWallMarginFt, -Walls none, missing file
 $notes = New-Object 'System.Collections.Generic.List[string]'
