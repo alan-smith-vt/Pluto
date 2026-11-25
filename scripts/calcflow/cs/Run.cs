@@ -561,6 +561,9 @@ namespace CalcFlow
                 }
                 cr.Valid = bad.Count == 0;
                 cr.Why = string.Join("; ", bad.ToArray());
+                // #NAME? is not a bad input: the program that calculated the copy does not know a function of the template
+                if (!cr.Valid && cr.Values.Any(x => (x ?? "").Trim() == "#NAME?"))
+                    cr.Why += " (#NAME?: the program that calculated this copy lacks a function the template uses. LibreOffice does not have every Excel 365 function: such a template needs Excel)";
                 list.Add(cr);
             }
             return list;

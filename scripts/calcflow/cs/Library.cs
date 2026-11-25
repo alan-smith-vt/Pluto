@@ -756,6 +756,22 @@ namespace CalcFlow
             }
         }
 
+        // a column whose cells hold text as it is typed (-Fz, a table that starts with a minus sign): the Text format
+        // keeps Excel from reading such an entry as a formula
+        public static void Text(XOutSheet s, int col)
+        {
+            if (col < 0) return;
+            for (int r = 2; r < s.Rows.Count; r++)
+            {
+                object[] row = s.Rows[r];
+                if (col >= row.Length) continue;
+                XCell x = row[col] as XCell;
+                XStyle st = x != null && x.Style != null ? x.Style.Copy() : new XStyle();
+                st.NumFmt = "@";
+                row[col] = new XCell(x != null ? x.Value : row[col], st);
+            }
+        }
+
         // the column letter of a column name in a sheet written by Sheet ("" when absent)
         public static string Col(string[] columns, string name)
         {

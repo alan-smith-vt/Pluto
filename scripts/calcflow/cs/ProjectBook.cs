@@ -255,9 +255,12 @@ namespace CalcFlow
                         string why;
                         if (V(t, "Input cells").Length > 0)
                         {
-                            List<Dictionary<string, string>> given = GivenInputs(Book(books, templatesDir, V(h, "File")), hid, sheet, V(t, "Input cells"), out why);
+                            // "also ..." adds the cells to what harvest found (less the ones a given cell or block covers)
+                            string cellsText = V(t, "Input cells");
+                            bool also = Also(ref cellsText);
+                            List<Dictionary<string, string>> given = GivenInputs(Book(books, templatesDir, V(h, "File")), hid, sheet, cellsText, out why);
                             if (given == null) notes.Add("template " + name + ": its 'Input cells' are not used (" + why + "); the inputs found in the template are kept");
-                            else mine = given;
+                            else mine = also ? mine.Where(x => !given.Any(g => Covers(g, x))).ToList().Concat(given) : given;
                         }
                         var cols = new List<Dictionary<string, string>>();
                         var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Connection" };
@@ -286,12 +289,17 @@ namespace CalcFlow
                             if (results == null) notes.Add("template " + name + ": its 'Result cells' are not used (" + why + "); the results found in the template are kept");
                         }
                         bool chosen = results != null;
-                        foreach (var o in results ?? harvest.Outputs.Where(x => V(x, "Template") == hid && (oneCalc || V(x, "Sheet") == sheet || !inputSheets.Contains(V(x, "Sheet")))).ToList())
+                        List<Dictionary<string, string>> found1 = results ?? harvest.Outputs.Where(x => V(x, "Template") == hid && (oneCalc || V(x, "Sheet") == sheet || !inputSheets.Contains(V(x, "Sheet")))).ToList();
+                        // the one result that reads as the governing DCR starts with Use = Y. When several read that way
+                        // it is not the tool's to choose: none is marked, and check asks for one
+                        Func<Dictionary<string, string>, string> resultName = o => V(o, "Output").Length > 0 ? V(o, "Output") : V(o, "Cell");
+                        var governing = found1.Where(o => V(o, "Kind") == "dcr" && Regex.IsMatch(resultName(o), @"\b(govern\w*|overall|max(imum)?)\b", RegexOptions.IgnoreCase)).ToList();
+                        foreach (var o in found1)
                         {
                             Dictionary<string, string> same = before.FirstOrDefault(x => Same(V(x, "Sheet"), V(o, "Sheet")) && Same(V(x, "Cell"), V(o, "Cell")));
                             if (same != null) { if (chosen && V(same, "Use").Length == 0) same["Use"] = "Y"; continue; }
-                            string result = V(o, "Output").Length > 0 ? V(o, "Output") : V(o, "Cell");
-                            bool governs = chosen || (V(o, "Kind") == "dcr" && Regex.IsMatch(result, "govern|overall|max", RegexOptions.IgnoreCase));
+                            string result = resultName(o);
+                            bool governs = chosen || (governing.Count == 1 && ReferenceEquals(governing[0], o));
                             outputs.Add(Row("Template", name, "Use", governs ? "Y" : "", "Check", governs ? (chosen ? result : "DCR") : "", "Kind", V(o, "Kind"), "Expect", V(o, "Expect"), "Per row", "",
                                 "Result", result, "Sheet", V(o, "Sheet"), "Cell", V(o, "Cell"), "Label cell", V(o, "GuardCell"), "Label", V(o, "GuardText")));
                         }
@@ -364,11 +372,12 @@ namespace CalcFlow
 
             // ---- Templates
             XOutSheet tt = WorkbookTables.Sheet(TemplatesTab, "tblConfigTemplates", TemplateCols, templates,
-                "One row per calc template (a tab of a template workbook), each with a schedule tab of the same name. Loads: Envelope (the largest and smallest of each force with what acts with it) or All cases. Basis: LRFD or ASD when the template takes only one. Sign map: a row of Sign Maps (IDENTITY = the member end's forces as they are). Load table at: the first cell of the template's table of load rows (blank = none); its columns in order (Beam, Node, LC, LC title, Fx to Mz, Section, Connection, Mark, or - for a column to leave alone); how many rows it holds; the units it takes. Input cells / Result cells: only when the columns found for the template are not the ones you want: list its input cells and result cells yourself (B4, B6:B9, Sheet2!C3; 'table B5:C12' for a block typed as one table; 'Anchors = table B5:C12' to name the column), then run Refresh config.",
+                "One row per calc template (a tab of a template workbook), each with a schedule tab of the same name. Loads: Envelope (the largest and smallest of each force with what acts with it) or All cases. Basis: LRFD or ASD when the template takes only one. Sign map: a row of Sign Maps (IDENTITY = the member end's forces as they are). Load table at: the first cell of the template's table of load rows (blank = none); its columns in order (Beam, Node, LC, LC title, Fx to Mz, Section, Connection, Mark, or - for a column to leave alone); how many rows it holds; the units it takes. Input cells / Result cells: only when the columns found for the template are not the ones you want: list its input cells and result cells yourself (B4, B6:B9, Sheet2!C3; 'table B5:C12' for a block typed as one table; 'Anchors = table B5:C12' to name the column; start with the word also to add the cells to the ones found instead of replacing them), then run Refresh config.",
                 c => c == "Template" ? ColumnKind.Key : (c == "File" || c == "Sheet" || c == "Sha256") ? ColumnKind.Reference : ColumnKind.Input);
             tt.Width(Array.IndexOf(TemplateCols, "Load table columns"), 48);
             tt.Width(Array.IndexOf(TemplateCols, "Input cells"), 40); tt.Width(Array.IndexOf(TemplateCols, "Result cells"), 30);
             WorkbookTables.Numbers(tt, Array.IndexOf(TemplateCols, "Max rows"), "0");
+            WorkbookTables.Text(tt, Array.IndexOf(TemplateCols, "Input cells")); WorkbookTables.Text(tt, Array.IndexOf(TemplateCols, "Result cells"));
             int tn = 2 + Math.Max(templates.Count, 1);
             Validate(tt, "E3:E" + tn, "\"Envelope,All cases\"", true);
             Validate(tt, "F3:F" + tn, "\"LRFD,ASD\"", true);
@@ -388,9 +397,11 @@ namespace CalcFlow
             Validate(os, "D3:D" + (on + 200), "\"" + string.Join(",", LibrarySchema.OutputKinds) + "\"", true);
             Validate(os, "F3:F" + (on + 200), "\"Y,N\"", true);
             sheets.Add(os);
-            sheets.Add(WorkbookTables.Sheet(SignMaps, "tblSignMaps", LibrarySchema.FrameColumns, oldMaps.Select(Strip).ToList(),
-                "Only when a template's axes differ from the member end's. A member end's forces are in its own axes: x along the member away from the joint, y the member's local y, z = x cross y, STAAD's sign. A row says which of them each template force is, e.g. Fx = +Fz. Action on_connection reverses all six. Confirmed = Y once checked by hand.",
-                c => c == "Frame" ? ColumnKind.Key : ColumnKind.Input));
+            XOutSheet sm = WorkbookTables.Sheet(SignMaps, "tblSignMaps", LibrarySchema.FrameColumns, oldMaps.Select(Strip).ToList(),
+                "Only when a template's axes differ from the member end's. A member end's forces are in its own axes: x along the member away from the joint, y the member's local y, z = x cross y, STAAD's sign. A row says which of them each template force is, e.g. Fx = +Fz. Action on_connection reverses all six. Confirmed = Y once checked by hand. The Fx to Mz cells are formatted as text, so -Fz stays as typed.",
+                c => c == "Frame" ? ColumnKind.Key : ColumnKind.Input);
+            for (int k = 1; k <= 6; k++) WorkbookTables.Text(sm, k);
+            sheets.Add(sm);
             var cases = new List<Dictionary<string, string>>();
             if (pkg != null)
             {
@@ -512,6 +523,27 @@ namespace CalcFlow
             return list;
         }
 
+        // "also B4, table B37:D44" (or a leading +): the cells are added to the ones found, not put in their place
+        static bool Also(ref string text)
+        {
+            Match m = Regex.Match(text ?? "", @"^\s*(also\b\s*:?|\+)\s*", RegexOptions.IgnoreCase);
+            if (!m.Success) return false;
+            text = text.Substring(m.Length);
+            return true;
+        }
+
+        // a given input (a cell, or a block typed as a table) takes the place of this found one: the same cell, or a
+        // cell inside the block
+        static bool Covers(Dictionary<string, string> given, Dictionary<string, string> found)
+        {
+            if (!Same(V(given, "Sheet"), V(found, "Sheet"))) return false;
+            int c, r, c0, r0, c1, r1;
+            if (!Xlsx.ParseRef(V(found, "Cell"), out c, out r)) return Same(V(given, "Cell"), V(found, "Cell"));
+            string[] ends = V(given, "Cell").Split(':');
+            if (!Xlsx.ParseRef(ends[0], out c0, out r0) || !Xlsx.ParseRef(ends[ends.Length - 1], out c1, out r1)) return false;
+            return r >= r0 && r <= r1 && c >= c0 && c <= c1;
+        }
+
         // the results an engineer gave for a template; null with a reason
         static List<Dictionary<string, string>> GivenOutputs(TemplateBook b, string id, string sheet, string text, out string why)
         {
@@ -595,6 +627,7 @@ namespace CalcFlow
             var label = new XStyle(); label.Bold = true; label.Color = Palette.GreyText;
             var grey = Palette.Data(ColumnKind.Reference);
             var input = Palette.Data(ColumnKind.Input);
+            var text = Palette.Data(ColumnKind.Input); text.NumFmt = "@";      // a table is kept as typed (it may start with a minus sign)
             s.Add(new XCell("One row per connection mark that uses " + file + ", sheet " + sheet + ". Every input of the template is a column: fill the ones typed here, leave a cell blank to keep the template's own value (" + Blank + " empties the cell). Source says where a column's value comes from; a force needs its Unit. A table column holds a block of the template in one cell: its rows separated by ; and the values of a row by , (1.5, 1.5; 1.5, 10.5)." +
                 (table ? " This template takes a table of load rows (Templates tab): a mark is ONE copy of it, and its table lists the beam ends that call the mark." : ""), Palette.Note()));
             var src = new List<object> { new XCell("Source", label) };
@@ -617,7 +650,8 @@ namespace CalcFlow
                 {
                     var cells = new object[cols.Count + 1];
                     cells[0] = new XCell(V(r, "Connection"), Palette.Data(ColumnKind.Key));
-                    for (int i = 0; i < cols.Count; i++) cells[i + 1] = new XCell(CellValue(V(r, V(cols[i], "Column"))), input);
+                    for (int i = 0; i < cols.Count; i++)
+                        cells[i + 1] = V(cols[i], "Kind") == "table" ? new XCell(V(r, V(cols[i], "Column")), text) : new XCell(CellValue(V(r, V(cols[i], "Column"))), input);
                     s.Add(cells);
                     rows++;
                 }
@@ -625,7 +659,7 @@ namespace CalcFlow
             {
                 var first = new object[cols.Count + 1];
                 first[0] = new XCell("", Palette.Data(ColumnKind.Key));
-                for (int i = 1; i < first.Length; i++) first[i] = new XCell("", input);
+                for (int i = 1; i < first.Length; i++) first[i] = new XCell("", V(cols[i - 1], "Kind") == "table" ? text : input);
                 s.Add(first);
                 rows = 1;
             }
@@ -746,10 +780,12 @@ namespace CalcFlow
                 if (name.Length == 0) continue;
                 if (V(t, "Input cells").Length > 0)
                 {
-                    List<string[]> given = ParseCells(V(t, "Input cells"), V(t, "Sheet"), out why);
+                    string cellsText = V(t, "Input cells");
+                    bool also = Also(ref cellsText);
+                    List<string[]> given = ParseCells(cellsText, V(t, "Sheet"), out why);
                     var held = new HashSet<string>(cellRows.Where(c => Same(V(c, "Template"), name)).Select(c => V(c, "Sheet") + "!" + V(c, "Cell")), StringComparer.OrdinalIgnoreCase);
                     if (given == null) notes.Add("template " + name + ": 'Input cells': " + why);
-                    else if (given.Count != held.Count || given.Any(g => !held.Contains(g[0] + "!" + g[1]))) notes.Add("template " + name + ": its 'Input cells' are not the columns of its tab yet");
+                    else if ((!also && given.Count != held.Count) || given.Any(g => !held.Contains(g[0] + "!" + g[1]))) notes.Add("template " + name + ": its 'Input cells' are not the columns of its tab yet");
                 }
                 if (V(t, "Result cells").Length > 0)
                 {
@@ -897,7 +933,7 @@ namespace CalcFlow
                             for (int bc = bc0; bc <= bc1; bc++)
                             {
                                 var bi = Row("Template", name, "Sheet", V(cell, "Sheet"), "Cell", Xlsx.Ref(br, bc), "Unit", unit, "Binding", "param:" + ParamName(V(t, "Sheet"), V(cell, "Sheet"), Xlsx.Ref(br, bc)), "PerCase", "N", "Required", "N");
-                                if (br == br0 && bc == bc0) { bi["GuardCell"] = V(cell, "Label cell"); bi["GuardText"] = V(cell, "Label"); }
+                                bi["GuardCell"] = V(cell, "Label cell"); bi["GuardText"] = V(cell, "Label");      // the block's one label guards each of its cells
                                 rows["tblInputs"].Add(bi);
                             }
                         blocks.Add(new KeyValuePair<int, string[]>(c, new[] { V(cell, "Sheet"), V(cell, "Cell"), unit, col }));

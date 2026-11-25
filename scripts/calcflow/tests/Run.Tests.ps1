@@ -179,6 +179,15 @@ Test 'two checks: one record when the same case governs both, one each when diff
     }
 }
 
+Test 'a result that is #NAME? says the calculating program lacks a function of the template' {
+    $noFn = New-Engine { param($b, $t, $d) if ($t.Template -eq 'WG-I') { $d['I Fillet Weld Group!F58'] = [CalcFlow.CellError]::new('#NAME?') } }
+    $wn = Join-Path $dir 'work-name'
+    $s = (New-Runner $wn 'R01').Run($noFn, $jobs)
+    $st = [CalcFlow.CalcStateStore]::Load((Join-Path $wn 'data/calc-state.csv'))
+    Assert-Equal $st.Get('J2-M2A', 1).Result 'INVALID'
+    Assert-Match $st.Get('J2-M2A', 1).Message 'Governing DCR is #NAME\? \(#NAME\?: the program that calculated this copy lacks a function the template uses'
+}
+
 Test 'invalid cases: a solver check off its Expect, a DCR that is an error value; the step keeps its first invalid case' {
     $bad = New-Engine { param($b, $t, $d)
         if ($t.Template -eq 'BP') { $d['Rigid!Converged'] = $false }

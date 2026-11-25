@@ -36,6 +36,33 @@ Test 'new with an .anl and templates: Model Config per beam with frames-into gue
     Assert-True (Test-Path -LiteralPath (Join-Path $proj 'Model_Data.xlsx')) 'Model_Data.xlsx'
 }
 
+Test 'results: one governing DCR is chosen per template, a row title does not name the helper cells along its row, a result at the end of a row is guarded by the row title' {
+    $b = [CalcFlow.Xlsx]::Read($wbPath)
+    $outs = @($b.TableRows('tblConfigOutputs'))
+    foreach ($t in $weld, 'Circ. Fillet Weld Group', 'I Fillet Weld Group', $plate) {
+        $y = @($outs | Where-Object { $_['Template'] -eq $t -and $_['Use'] -eq 'Y' })
+        Assert-Equal "$($y.Count) $($y[0]['Result'])" '1 Governing DCR' $t
+    }
+    # the circular tab's sweep table shares rows 42 to 44 with the results: its cells are not results
+    $circ = @($outs | Where-Object { $_['Template'] -eq 'Circ. Fillet Weld Group' } | ForEach-Object { $_['Cell'] })
+    Assert-Equal (@($circ | Where-Object { $_ -match '^(O|P|S|T|U|V|W|X|Y|Z|AA|AB|AC)4[2-4]$' }).Count) 0 ($circ -join ' ')
+    Assert-True ($circ -contains 'F44') 'the governing DCR itself'
+    # "DCR bearing fp / fpmax" holds the letters max, not the word
+    Assert-Equal @($outs | Where-Object { $_['Template'] -eq $plate -and $_['Result'] -like '*fpmax*' -and $_['Use'] -eq 'Y' }).Count 0
+    $h99 = @($outs | Where-Object { $_['Template'] -eq $plate -and $_['Cell'] -eq 'H99' })[0]
+    Assert-True ("$($h99['Label cell'])|$($h99['Label'])" -like 'A99|Plate bending (k-in/in) * DG1') "the row title guards H99: $($h99['Label cell'])|$($h99['Label'])"
+}
+
+Test 'cells that hold text as typed are formatted as text: the sign map entries, the given cells, a table column' {
+    $h = [CalcFlow.Harvest]::Run([string[]]@(Get-ChildItem -LiteralPath $templates -Filter '*.xlsx' | ForEach-Object { $_.FullName }), $templates)
+    $sheets = [CalcFlow.ProjectBook]::Sheets($null, $h)
+    $sm = @($sheets | Where-Object { $_.Name -eq 'Sign Maps' })[0]
+    Assert-Equal (@(1..6 | ForEach-Object { $sm.Rows[2][$_].Style.NumFmt }) -join '') '@@@@@@' '-Fz typed in Excel must stay text'
+    $tt = @($sheets | Where-Object { $_.Name -eq 'Templates' })[0]
+    $ic = [Array]::IndexOf([string[]]@($tt.Rows[1] | ForEach-Object { $_.Value }), 'Input cells')
+    Assert-Equal "$($tt.Rows[2][$ic].Style.NumFmt)$($tt.Rows[2][$ic + 1].Style.NumFmt)" '@@'
+}
+
 # ---- what the engineer fills in
 $b = [CalcFlow.Xlsx]::Read($wbPath)
 $cells = New-Object System.Collections.Generic.List[object]

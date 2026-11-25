@@ -247,12 +247,16 @@ namespace CalcFlow
             string row = sameRow == null ? "" : sameRow.Value.Trim();
             string kind;
             if (StatusFormula.IsMatch(c.Formula)) kind = "status";
-            else if (DcrWords.IsMatch(name ?? "") || DcrWords.IsMatch(tt) || DcrWords.IsMatch(row) || DcrWords.IsMatch(c.Formula)) kind = "dcr";
+            // the row's title speaks for the first value after the row's labels, not for every formula further along
+            // the row (a sweep or figure table off the print area shares rows with the results)
+            else if (DcrWords.IsMatch(name ?? "") || (sameRow != null && DcrWords.IsMatch(tt)) || DcrWords.IsMatch(row) || DcrWords.IsMatch(c.Formula)) kind = "dcr";
             else if (name != null && HealthWords.IsMatch(name)) kind = "health";
             else return null;
             var d = Row(LibrarySchema.OutputColumns);
             d["Template"] = id; d["Sheet"] = s.Name; d["Cell"] = name ?? c.Ref;
+            // the guard: the label beside or above the cell, else the row's title (a result at the end of a row of values)
             if (nearest != null) { d["GuardCell"] = nearest.Ref; d["GuardText"] = near; }
+            else if (title != null) { d["GuardCell"] = title.Ref; d["GuardText"] = tt; }
             string label = tt.Length > 0 ? tt : (near.Length > 0 && near.Length <= 40 ? near : (name ?? c.Ref));
             d["Output"] = kind == "status" ? label + " (status)" : label;
             d["Kind"] = kind;

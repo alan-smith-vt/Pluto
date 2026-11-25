@@ -275,6 +275,30 @@ Test 'a table typed in one cell fills its block per mark and empties the rest; (
     Assert-True (@($o | Where-Object { $_ -like "*row 7, column 'Anchors': a row of its table holds 3 value(s) (3, 3, 3); the template's block A5:B10 is 2 wide*" }).Count -eq 1) ($o -join "`n")
 }
 
+Test "'also' adds the given cells to the ones found; the block's label guards each of its cells" {
+    $p6 = Join-Path $dir 'proj6'
+    [void](Invoke-CfCli new -Out $p6 -Anl $fixture -Templates $t5)
+    $w6 = Join-Path $p6 'CalcFlow.xlsx'
+    $b = [CalcFlow.Xlsx]::Read($w6)
+    Save-InPlace $w6 @(, @('Templates', ((Get-Col $b 'Templates' 'Input cells' 2) + '3'), 'also Anchors = table A5:B10'))
+    $o = Invoke-CfCli refresh -Workbook $w6 -NoWait -NoOpen
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    $b = [CalcFlow.Xlsx]::Read($w6)
+    $s = $b.Sheet($ap)
+    Assert-Equal (@(1..6 | ForEach-Object { $s.Text(4, $_) } | Where-Object { $_ }) -join '|') 'Plate width (in)|Plate depth (in)|Fx (kip)|Anchors' 'the three found, then the block'
+    $an = Get-Col $b $ap 'Anchors' 5
+    $outs = $b.Sheet('Outputs'); $orow = 3; while ($outs.Text($orow - 1, 0)) { $orow++ }
+    Save-InPlace $w6 @(@('Connection Lib', 'A3', 'AP-1'), @('Connection Lib', 'B3', $ap), @($ap, 'A6', 'AP-1'), @($ap, ($an + '6'), '-2, 2; 2, 10'), @('Model Config', 'F4', 'AP-1'),
+        @('Outputs', "A$orow", $ap), @('Outputs', "B$orow", 'Y'), @('Outputs', "C$orow", 'DCR'), @('Outputs', "D$orow", 'dcr'), @('Outputs', "G$orow", 'Anchor DCR'), @('Outputs', "H$orow", 'Calc'), @('Outputs', "I$orow", 'E3'))
+    $c = Invoke-CfCli check -Workbook $w6
+    Assert-Equal $LASTEXITCODE 0 ($c -join "`n")
+    Assert-True (@($c | Where-Object { $_ -like '*NO_GUARD: input*' }).Count -eq 0) ($c -join "`n")
+    $in = @([CalcFlow.Csv]::ReadTable((Join-Path $p6 'calcflow/generated/library/text/inputs.csv')) | Where-Object { $_['Cell'] -in 'A5', 'B10' })
+    Assert-Equal (@($in | ForEach-Object { "$($_['GuardCell'])=$($_['GuardText'])" } | Sort-Object -Unique) -join ';') 'A4=x (in)'
+    $tb = [CalcFlow.TemplateBook]::Open($w6)
+    Assert-Equal ($tb.Sheet($ap).Get(5, (Get-ColIndex $b $ap 'Anchors' 5)).Value) '-2, 2; 2, 10' 'a table that starts with a minus sign is kept as text'
+}
+
 Test 'the cells an engineer gives: a list of cells, ranges and named tables on any sheet' {
     $why = ''
     $p = [CalcFlow.ProjectBook]::ParseCells("B4, B6:B7; 'Bolt group'!C3, Anchors = table Sheet2!`$B`$5:`$C`$12", 'Calc', [ref]$why)
