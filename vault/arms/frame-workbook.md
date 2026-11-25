@@ -339,7 +339,8 @@ The whole picture, CAESAR and STAAD included, with the commands for each job:
 >   SAP export it came from) writes `<name>_edit.*`. Outputs inside the repo are refused.
 > - `-Probe <folder>` and `-ProbeCheck <export> [-ProbeFile <probe>]`: see the SAP probe below. `-StdProbe <folder>`: the STAAD probe
 >   ([[vault/format/frame-to-staad|frame-to-staad]]).
-> - **The console report has two forms** of the same messages:
+> - **The console report has two forms** of the same messages (`scripts/lib/Console.ps1`, shared with
+>   `Build-Pipe.ps1`):
 >   - **tidy,** for a person at a console: a short head, file names for paths (their folder said once), each message
 >     wrapped under its tag (`read`, `wrote`, `warn`, `refuse` …), the notices gathered in a block per phase, colour
 >     by severity, and a one-line summary at the end;

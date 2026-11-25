@@ -69,7 +69,16 @@ powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.ci
 - **`-Set "span=25;dT=250"`** overrides a `.toml`'s `[parameters]` values, as numbers or expressions.
 - **`-ModelId`**: default `pipe/<name>`.
 - **Output:**
-  - Progress lines start with `[step]`.
+  - **Two forms of the same report** (`scripts/lib/Console.ps1`, shared with `Build-Frame.ps1`):
+    - **tidy,** for a person at a console: a short head, file names for paths (their folder said once), each message
+      wrapped under its tag (`build`, `read`, `wrote`, `checks`, `review`, `warn` ...), the notices in one block, a
+      check's errors in red and warnings in yellow, the preview as one line, and a one-line summary at the end;
+    - **plain,** for a program reading the output (redirected or piped): the `[step   ] text` lines and `RESULT {json}`
+      described below.
+
+    `PLUTO_CONSOLE=plain` or `=tidy` forces one; `NO_COLOR` turns the colour off. The tidy form shows the tags below
+    without brackets.
+  - In the plain form, progress lines start with `[step]`.
   - `-Cii` adds `[notice ]` lines (a restraint code no CAESAR-written file has shown yet, and the writer's own changes to the file: `order-bend`, `coords-placing`), `[checks ]` lines (CAESAR's errors and warnings, [[vault/arms/caesar-checks|caesar-checks]]) and a `[review ]` line (whether it is the model you previewed).
   - The last line is `RESULT {json}`: paths, counts and warnings.
   - An input that does not build or import, or a file that cannot be written, prints `[error  ] <message>` and `RESULT {"error": …}`, and exits 1.

@@ -53,8 +53,14 @@
 # Beside the outputs, <base>.build.json records what was written from what (file and model fingerprints): it is how
 # the runner knows its own .cii and the model you previewed.
 #
-# Every line of progress starts with "[step]"; the last line is "RESULT {json}" ({"error": "..."} with exit code 1
-# when the input does not build or a file cannot be written; with -Watch, one RESULT line per build).
+# The console report (scripts\lib\Console.ps1) has two forms of the same messages:
+#   tidy    for a person at a console: a short head, file names for paths (their folder said once), each message wrapped
+#           under its tag, the notices gathered in a block, the checks' errors and warnings in colour where the console
+#           takes it (NO_COLOR turns it off), and a one-line summary at the end
+#   plain   for a program reading the output (redirected or piped): one line per message, "[step   ] text", and a last
+#           line "RESULT {json}" ({"error": "..."} with exit code 1 when the input does not build or a file cannot be
+#           written; with -Watch, one RESULT line per build)
+# PLUTO_CONSOLE=plain or =tidy forces one.
 #   powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\line.toml" -Out "<project dir>\line" -Preview
 #   powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.cii" -Xlsx            (then edit job.xlsx in Excel)
 #   powershell.exe ... -File scripts\caesar\Build-Pipe.ps1 -In "<project dir>\job.xlsx" -Out "<project dir>\job_v2" -Preview -Watch
@@ -78,13 +84,14 @@ param(
     [string]$ModelId
 )
 $ErrorActionPreference = "Stop"
-function Say([string]$step, [string]$text) { Write-Output ("[{0}] {1}" -f $step.PadRight(7), $text) }
-function Q([string]$s) { if ([string]::IsNullOrEmpty($s)) { return "null" } return (ConvertTo-Json -InputObject $s -Compress) }
-function Lines([string]$step, [string]$text) { foreach ($line in ($text -split "`r?`n")) { if ($line.Trim()) { Say $step $line } } }
+# the console report (scripts\lib\Console.ps1): Say, Lines, Head, Result, Summary, Fail, Q; this runner's own steps
+. (Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) "lib") "Console.ps1")
+$script:NoteTitle = "in the .cii, to check in CAESAR after the import"
+$script:Tags["checks"] = @("checks", "", "checks"); $script:Tags["review"] = @("review", "", "checks")
+$script:Tags["preview"] = @("preview", "", "out"); $script:Tags["open"] = @("open", "", "out")
 function Full([string]$p) { return (Resolve-Path -LiteralPath $p).ProviderPath }
 function Sha([byte[]]$b) { $h = [Security.Cryptography.SHA256]::Create(); try { return (($h.ComputeHash($b) | ForEach-Object { $_.ToString("x2") }) -join "") } finally { $h.Dispose() } }
 function FileSha([string]$p) { $fs = New-Object IO.FileStream($p, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)); try { $h = [Security.Cryptography.SHA256]::Create(); return (($h.ComputeHash($fs) | ForEach-Object { $_.ToString("x2") }) -join "") } finally { $fs.Dispose() } }
-function Fail([string]$msg) { Say "error" $msg; Write-Output ("RESULT {""error"":" + (Q $msg) + "}"); exit 1 }
 
 # an existing workbook may be replaced when this runner wrote it and nobody has saved it since (the stamp's xlsx part
 # holds its fingerprint); otherwise writing it again would lose the edits made in it, so ask first, the old one kept as
@@ -180,8 +187,20 @@ if ($Cii) { $outs += $ciiFile }
 if ($Xlsx) { $outs += $xlsxFile }
 if ($Json) { $outs += $jsonFile }
 if ($Preview) { $outs += ($outBase + ".bin + .features.json (model id " + $ModelId + ")") }
-Say "check" ("{0} ({1}) -> {2}" -f $(if ($inPath) { $inPath } else { "the template" }), $kind, $(if ($outs.Count) { $outs -join ", " } else { "no files (a report only)" }))
-if ($Set) { Say "check" ("-Set {0}" -f $Set) }
+Set-ReportDirs $outBase $inPath
+if ($script:Tidy) {
+    $kinds = @{ xlsx = "a pipe workbook"; toml = "a .toml config"; cii = "a CAESAR .cii"; json = "a .pipe.json model"; new = "the template" }
+    $names = @($outs | ForEach-Object { ((Short $_) -replace ' \(model id .*\)$', '') -replace ' \(over itself.*\)$', ' (over itself)' })
+    $title = "Build-Pipe  {0}  ->  {1}" -f $(if ($inPath) { "{0} ({1})" -f [IO.Path]::GetFileName($inPath), $kinds[$kind] } else { "the template" }), $(if ($names.Count) { $names -join ", " } else { "a report only" })
+    $more = @(Folder-Lines $outBase $inPath)
+    if ($Set) { $more += ("set   " + $Set) }
+    if ($Compare) { $more += ("with  " + $Compare) }
+    Head $title $more
+}
+else {
+    Say "check" ("{0} ({1}) -> {2}" -f $(if ($inPath) { $inPath } else { "the template" }), $kind, $(if ($outs.Count) { $outs -join ", " } else { "no files (a report only)" }))
+    if ($Set) { Say "check" ("-Set {0}" -f $Set) }
+}
 
 # ---- load: the C# batch ----
 $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -196,7 +215,7 @@ if ($NewWorkbook) {
     try {
         $go = Confirm-Workbook $xlsxFile $stampFile
         if ($go -eq "force") { Say "warn" ("-Force: replacing {0}, which {1}" -f $xlsxFile, $script:workbookWhy); $go = "backup" }
-        if ($go -eq "keep") { Say "keep" ("{0}: kept as it is; nothing written" -f $xlsxFile); Write-Output ("RESULT {""kind"":""new"",""xlsx"":null,""kept"":" + (Q $xlsxFile) + "}"); exit 0 }
+        if ($go -eq "keep") { Say "keep" ("{0}: kept as it is; nothing written" -f $xlsxFile); Result ("{""kind"":""new"",""xlsx"":null,""kept"":" + (Q $xlsxFile) + "}") "nothing written"; exit 0 }
         if ($go -eq "backup") { [IO.File]::Copy($xlsxFile, $xlsxFile + ".bak", $true); Say "write" ("{0}.bak: the workbook as it was" -f $xlsxFile) }
         $model = [PipeWorkbook]::Template()
         $seedText = $null
@@ -205,8 +224,8 @@ if ($NewWorkbook) {
         [PipeWorkbook]::Write($model, $xlsxFile, "the Pluto template" + $(if ($Seed) { " + seed " + [IO.Path]::GetFileName($Seed) } else { "" }), $run)
         Set-StampXlsx $xlsxFile $stampFile "pluto-pipe-build" ([DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"))
         Say "write" ("{0}: a {1}-element template to edit in Excel; then Build-Pipe.ps1 -In ""{0}"" -Preview" -f $xlsxFile, $model.Elements.Count)
-        foreach ($l in $run.WriteLaunchers()) { Say "write" ("{0}: double-click it, or use the Start sheet's link" -f $l) }
-        Write-Output ("RESULT {""kind"":""new"",""xlsx"":" + (Q $xlsxFile) + ",""seed"":" + (Q $seedText) + "}")
+        Say-Launchers ($run.WriteLaunchers())
+        Result ("{""kind"":""new"",""xlsx"":" + (Q $xlsxFile) + ",""seed"":" + (Q $seedText) + "}") "the template workbook written"
         exit 0
     } catch {
         $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }
@@ -230,8 +249,8 @@ if ($Refresh) {
         try { [IO.File]::Replace($tmp, $xlsxFile, $bak) }
         catch { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue; throw ("cannot replace {0} ({1}). Close it in Excel and run again." -f $xlsxFile, $_.Exception.Message) }
         Say "write" ("{0}: refreshed to this version's layout ({1} elements); the previous file is {2}" -f $xlsxFile, $wb.Model.Elements.Count, $bak)
-        foreach ($l in $run.WriteLaunchers()) { Say "write" ("{0}: double-click it, or use the Start sheet's link" -f $l) }
-        Write-Output ("RESULT {""kind"":""refresh"",""xlsx"":" + (Q $xlsxFile) + ",""backup"":" + (Q $bak) + ",""elements"":" + $wb.Model.Elements.Count + "}")
+        Say-Launchers ($run.WriteLaunchers())
+        Result ("{""kind"":""refresh"",""xlsx"":" + (Q $xlsxFile) + ",""backup"":" + (Q $bak) + ",""elements"":" + $wb.Model.Elements.Count + "}") "the workbook refreshed"
         exit 0
     } catch {
         $e = $_.Exception; while ($e.InnerException) { $e = $e.InnerException }
@@ -280,6 +299,8 @@ function Check-Target($model, $base) {
 # ---- one build: read the input, write the chosen outputs; throws on an input that does not build ----
 function Build-Once {
     $script:sw.Reset(); $script:sw.Start()
+    Reset-Report
+    $all = [Diagnostics.Stopwatch]::StartNew()
     # the workbook question first, before any file is written
     $xlsxGo = $(if ($Xlsx) { Confirm-Workbook $xlsxFile $stampFile } else { $null })
     if ($xlsxGo -eq "force") { Say "warn" ("-Force: replacing {0}, which {1}" -f $xlsxFile, $script:workbookWhy); $xlsxGo = "backup" }
@@ -328,7 +349,7 @@ function Build-Once {
         $gW = $null
         try { $gW = [CaesarGeometry]::Build($cmW) } catch { }
         $checks = [PipeReview]::Check($model, $gW, $cmW)
-        foreach ($c in $checks) { if ($c.Level -eq "error" -or $c.Level -eq "warning") { Say "checks" ($c.Level + ": " + $c.Text) } }
+        foreach ($c in $checks) { if ($c.Level -eq "error" -or $c.Level -eq "warning") { Say "checks" ($c.Level + ": " + $c.Text) $(if ($c.Level -eq "error") { "31" } else { "33" }) } }
         $r.checks = [PipeReview]::Summary($checks)
         Say "checks" $r.checks
         $st = Read-Stamp
@@ -338,7 +359,7 @@ function Build-Once {
             if ($st.preview.model -eq $modelHash) { $r.review = "the model is the one previewed at " + $when }
             else { $r.review = "the model CHANGED since the preview of " + $when + ": preview it again before CAESAR imports it" }
         } else { $r.review = "no preview of this model was made (-Preview shows it in the viewer first)" }
-        if (-not $Preview) { Say "review" $r.review }
+        if (-not $Preview) { Say "review" $r.review $(if ($r.review -like "*CHANGED*") { "33" } else { "" }) }
         Write-Stamp ("{""sha256"":" + (Q (Sha $bytes)) + ",""model"":" + (Q $modelHash) + ",""input"":" + (Q $inPath) + ",""inputSha256"":" + (Q $inSha) + ",""written"":" + (Q $now) + "}") $null
     }
     if ($Xlsx -and $xlsxGo -eq "keep") { Say "keep" ("{0}: kept as it is; nothing written over it" -f $xlsxFile) }
@@ -348,7 +369,7 @@ function Build-Once {
         [PipeWorkbook]::Write($model, $xlsxFile, [IO.Path]::GetFileName($inPath), $run)
         Set-StampXlsx $xlsxFile $stampFile "pluto-pipe-build" $now
         Say "write" ("{0}: the model as a workbook to edit (open it on its Start sheet)" -f $xlsxFile)
-        foreach ($l in $run.WriteLaunchers()) { Say "write" ("{0}: double-click it, or use the Start sheet's link" -f $l) }
+        Say-Launchers ($run.WriteLaunchers())
     }
     if ($Json) {
         [IO.File]::WriteAllText($jsonFile, [PipeModelJson]::Write($model), (New-Object Text.UTF8Encoding($false)))
@@ -377,8 +398,15 @@ function Build-Once {
         $p = [CaesarToPluto]::Export($cm, ($outBase + ".cii"), $null, $tmp, $ModelId, (New-Object CaesarOptions), $pv)
         Move-Item -LiteralPath ($tmp + ".bin") -Destination ($outBase + ".bin") -Force
         Move-Item -LiteralPath ($tmp + ".features.json") -Destination $sidecar -Force
-        Lines "preview" ($p.Summary() -replace [regex]::Escape($tmp), $outBase)
-        Say "preview" ("done ({0:0.0}s)" -f $script:sw.Elapsed.TotalSeconds)
+        if ($script:Tidy) {
+            # the exporter's headline only: its line-by-line account is in the plain form, and in the viewer's own panels
+            $headline = (@(($p.Summary() -split "`r?`n") | Where-Object { $_.Trim() })[0]) -replace '^\s*CaesarToPluto:\s*', ''
+            Say "write" ("{0}.bin + .features.json: the viewer preview ({1:0.0}s): {2}" -f $outBase, $script:sw.Elapsed.TotalSeconds, $headline)
+        }
+        else {
+            Lines "preview" ($p.Summary() -replace [regex]::Escape($tmp), $outBase)
+            Say "preview" ("done ({0:0.0}s)" -f $script:sw.Elapsed.TotalSeconds)
+        }
         foreach ($w in $p.Warnings) { Say "warn" $w }
         Say "open" ("{0}.bin TOGETHER with {0}.features.json in the viewer (drop both, or index.html?bin=<url>&features=<url>); Auto-reload follows every rebuild" -f $outBase)
         $r.preview = $p.ToJson().Replace((ConvertTo-Json -InputObject $tmp -Compress).Trim('"'), (ConvertTo-Json -InputObject $outBase -Compress).Trim('"'))
@@ -394,7 +422,14 @@ function Build-Once {
     $res += ",""notices"":[" + (($r.notices | ForEach-Object { Q $_ }) -join ",") + "]"
     $res += ",""checks"":" + (Q $r.checks)
     $res += ",""seed"":" + (Q $r.seed) + ",""build"":" + $r.build + ",""compare"":" + $r.compare + ",""preview"":" + $r.preview + "}"
-    return $res
+    # the summary: the files written (the preview is two), then the tally
+    $nOut = 0
+    if ($Cii) { $nOut += 1; if ($csv) { $nOut += 1 } }
+    if ($Xlsx -and $xlsxGo -ne "keep") { $nOut += 1 }
+    if ($Json) { $nOut += 1 }
+    if ($Preview) { $nOut += 2 }
+    $first = $(if ($nOut -eq 0) { $(if ($Xlsx) { "nothing written" } else { "a report only: no file asked for" }) } else { "{0} file{1} written" -f $nOut, $(if ($nOut -eq 1) { "" } else { "s" }) })
+    Result ($res.Substring(7)) $first (", {0:0.0} s" -f $all.Elapsed.TotalSeconds)
 }
 
 function Innermost($err) { $e = $err.Exception; while ($e.InnerException) { $e = $e.InnerException }; return $e.Message }
@@ -422,7 +457,7 @@ while ($true) {
                 $msg = Innermost $_
                 Say "error" $msg
                 Say "watch" "the last good outputs stay; fix the input and save again"
-                Write-Output ("RESULT {""error"":" + (Q $msg) + "}")
+                if (-not $script:Tidy) { Write-Output ("RESULT {""error"":" + (Q $msg) + "}") }
             }
         }
     }
