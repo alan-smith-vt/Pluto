@@ -36,7 +36,7 @@ namespace CalcFlow
         public const string AnlSetting = "Anl file";
 
         public const string CheckLauncher = "Check.cmd", RunLauncher = "Run calcs.cmd", RefreshLauncher = "Refresh config.cmd";
-        public const string TemplatesSetting = "Templates folder", LimitSetting = "DCR limit";
+        public const string TemplatesSetting = "Templates folder", LimitSetting = "DCR limit", FillSetting = "Input fill";
 
         // the workbook and its launchers in dir; script: the full path of CalcFlow.ps1. pkg (the model read from the
         // .anl) fills Model Config and Load Cases, harvest (the templates learned) the schedule tabs; either may be
@@ -49,6 +49,7 @@ namespace CalcFlow
             List<XOutSheet> tabs = ProjectBook.Sheets(pkg, harvest);
             var settings = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
             settings[TemplatesSetting] = templatesDir ?? "";
+            settings[FillSetting] = string.Join(", ", Harvest.InputFills.ToArray());
             var sheets = new List<XOutSheet> { StartSheet(settings, ProjectBook.UnitChecks(tabs)) };
             sheets.AddRange(tabs);
             XlsxWriter.Write(wb, sheets, null);
@@ -122,7 +123,7 @@ namespace CalcFlow
                 new object[] { go(PostProcessLauncher, "Post-process .ANL"), "Reads the .anl and writes " + ModelData.FileName + " beside this workbook (members, joints, supports, load cases, all end forces, enveloped end forces), then opens it." + blocked },
                 new object[] { "Connection Lib: name your connections", "Give each connection a name of your own (a mark) and choose its template. On the tab of that template, add a row with the same name and fill in its values: every input of the template is a column of that row. Two marks may share a template (the same detail with other dimensions)." },
                 new object[] { "Templates and Outputs: once per template", "On a template's tab, the Source row says where each column comes from (typed on the row, a force of the beam end, the beam number ...) and the Unit row its unit. On Outputs, mark the results to read back with Use = Y. Template Sheets lists every sheet of every template workbook and the tab that holds its inputs. On any tab, select a cell for a note on what it is and what it takes." },
-                new object[] { "Model Config: a connection at each beam end", "One row per beam. Choose a mark in Connection I and Connection J where a calc is needed, and correct Frames into (the member that end connects to)." },
+                new object[] { "Model Config: a connection at each beam end", "One row per beam. Choose a mark in Connection I and Connection J where a calc is needed, and correct Frames into (the member that end connects to). Then run Refresh config (below) when a template has no tab yet (a library of more than 20 templates gets a tab for the ones in use), or takes values per beam end: its tab of beam ends is listed from this tab." },
                 new object[] { "Load Cases: which cases count", "Use = Y on the load cases the calcs take." },
                 new object[] { go(CheckLauncher, "Check"), "Reads this workbook and the model and lists what is missing or does not fit, tab by tab. Nothing is calculated." },
                 new object[] { go(RunLauncher, "Run calcs"), "Checks, then fills a copy of each template per connection, calculates it, reads the results back and writes the connection summary (reports folder)." }
@@ -148,8 +149,9 @@ namespace CalcFlow
             setting(AnlSetting, saved(AnlSetting, ""), "The STAAD .anl to read. Leave blank to be asked for it each time. A name without a folder is looked for beside this workbook.");
             setting(TemplatesSetting, saved(TemplatesSetting, ""), "The folder that holds the calc template workbooks.");
             setting(LimitSetting, saved(LimitSetting, "1.0"), "A DCR above this is flagged in the summary.");
+            setting(FillSetting, saved(FillSetting, ""), "Leave blank when the cells to fill in are yellow in your templates. Else the fill colour that marks them, six hex digits (several: with commas), as CalcFlow.ps1 map lists them on its Fills tab. Then run Refresh config.");
             var t = new XOutTable();
-            t.Name = "tblStart"; t.Top = top; t.Left = 0; t.Right = 2; t.Bottom = top + 3; t.Style = Palette.TableStyle;
+            t.Name = "tblStart"; t.Top = top; t.Left = 0; t.Right = 2; t.Bottom = top + 4; t.Style = Palette.TableStyle;
             s.Tables.Add(t);
 
             // ---- the force units, checked as they are typed

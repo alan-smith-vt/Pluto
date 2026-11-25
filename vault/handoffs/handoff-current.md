@@ -137,10 +137,11 @@ CAESAR's restraints, re-seeding that keeps SAP-side additions, and writing a see
 - **Since the first real workbook (2026-11-25):** heading rows and key columns frozen on every tab; a note beside
   every cell saying what it takes; a workbook's calcs found from which sheet reads which, so a tab holds every input
   of its calc, and a Template Sheets tab says what became of each sheet.
-- **Open, and first in line:** harvest's guessed inputs do not fit templates laid out as tables (many columns that
-  mean nothing). `CalcFlow.ps1 map` previews the other way, inputs read from the cells coloured as inputs
-  (`cs/TemplateMap.cs`). Once the user confirms the reading on their templates, the template tabs are to be built
-  from that list, confirmed once per template. Until then a real workbook should not be refreshed.
+- **Inputs from the coloured cells (2026-11-25):** a template with yellow cells gets its tab from them, whatever its
+  layout (`cs/TemplateMap.cs`): cells typed per mark, tables to type, tables of rows the tool writes with values
+  typed per beam end, results along the rows. The user confirmed the reading on 133 template tabs with `map`; the
+  tabs built from it have run only on made-up templates. A large library gets tabs for the templates in use.
+  **To learn from the user's run:** `new` on their library, a few marks, Refresh config, and what the tabs look like.
 - **Next:** the same pass on the production machine with Excel; the first real project through the workbook; section
   dimensions looked up from the shape.
 

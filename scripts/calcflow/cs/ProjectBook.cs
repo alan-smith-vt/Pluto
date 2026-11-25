@@ -140,6 +140,10 @@ namespace CalcFlow
 
         public const string Typed = "Typed here", Own = "Template's own value";
         public static int MinInputs = 5;     // inputs a sheet needs to get a schedule tab of its own
+        // A library of up to this many calc sheets gets a tab for each when the workbook is made. A larger one gets a
+        // template's tab when a mark on Connection Lib uses the template (a workbook of 130 tabs helps no one).
+        public static int TabsUpFront = 20;
+        const string Waiting = "A calc of its own, with no tab yet";
         // what a schedule column can be fed by -> the library binding it becomes
         public static readonly string[][] Sources =
         {
@@ -192,10 +196,12 @@ namespace CalcFlow
             List<Dictionary<string, string>> rows = OldTab(Xlsx.Read(workbook), SheetsTab);
             if (rows.Count == 0) return "";
             int own = rows.Count(r => V(r, "Says").StartsWith("A calc tab of its own", StringComparison.Ordinal)),
+                wait = rows.Count(r => V(r, "Says").StartsWith(Waiting, StringComparison.Ordinal)),
                 part = rows.Count(r => V(r, "Says").StartsWith("Part of that calc", StringComparison.Ordinal)),
                 none = rows.Count(r => V(r, "Says").StartsWith("Its inputs are on no tab", StringComparison.Ordinal));
-            return I(rows.Count) + " sheets in the template workbooks: " + I(own) + " with a calc tab, " + I(part) + " more whose inputs are on those tabs, " + I(none) +
-                " with inputs on no tab, " + I(rows.Count - own - part - none) + " with no input found (tab " + SheetsTab + " lists each)";
+            return I(rows.Count) + " sheets in the template workbooks: " + I(own) + " with a calc tab, " +
+                (wait > 0 ? I(wait) + " whose tab is made when a mark on Connection Lib uses the template (then Refresh config), " : "") + I(part) + " more whose inputs are on those tabs, " + I(none) +
+                " with inputs on no tab, " + I(rows.Count - own - wait - part - none) + " with no input found (tab " + SheetsTab + " lists each)";
         }
 
         // One calc of a template workbook: the sheet its tab is named for, and the other sheets whose inputs it takes.
@@ -265,6 +271,10 @@ namespace CalcFlow
             foreach (var t in oldTemplates) if (V(t, "Template").Length > 0) names.Add(V(t, "Template"));
             var found = new HashSet<string>(StringComparer.OrdinalIgnoreCase);        // the old templates found again
             var books = new Dictionary<string, TemplateBook>(StringComparer.OrdinalIgnoreCase);
+            // which templates get a tab: all of a small library; of a large one those a mark uses, or whose tab has rows
+            bool every = harvest == null || harvest.Inputs.Select(x => V(x, "Template") + "\n" + V(x, "Sheet")).Distinct().Count() + harvest.Tables.Count <= TabsUpFront;
+            var inUse = new HashSet<string>(oldLib.Select(x => V(x, "Template")).Where(x => x.Length > 0), StringComparer.OrdinalIgnoreCase);
+            var waiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             if (harvest != null)
                 foreach (var h in harvest.Templates)
@@ -345,6 +355,11 @@ namespace CalcFlow
                         }
                         templates.Add(t);
                         made.Add(new[] { sheet, name });
+                        if (!every && !inUse.Contains(name) && !(old != null && old.Sheet(name) != null && ScheduleCarry.Read(old.Sheet(name)).Rows.Count > 0))
+                        {
+                            waiting.Add(name);
+                            continue;
+                        }
                         bool oneCalc = table != null;
 
                         // the inputs: the cells the engineer gave on the Templates tab, else what harvest found on the
@@ -423,7 +438,9 @@ namespace CalcFlow
                         var own = made.Where(m => Same(m[0], sh)).Select(m => m[1]).ToList();
                         var carried = made.Where(m => parts.ContainsKey(m[0]) && parts[m[0]].Any(o => Same(o, sh))).Select(m => m[1]).ToList();
                         string says;
-                        if (own.Count > 0 && carried.Count > 0)
+                        if (own.Count > 0 && own.All(x => waiting.Contains(x)))
+                            says = Waiting + ": it is made when a mark on Connection Lib uses template " + own[0] + ". Add the mark there, then run Refresh config.";
+                        else if (own.Count > 0 && carried.Count > 0)
                             says = "Part of that calc: its inputs are columns of tab " + string.Join(", ", carried.ToArray()) + ", headed '" + sh + ": ...'. It also keeps the tab of its own that the workbook had: to drop that tab, delete its row on Templates.";
                         else if (own.Count > 0)
                         {
@@ -509,8 +526,8 @@ namespace CalcFlow
             foreach (var t in templates)
             {
                 List<string> typed = TypedFields(V(t, "Load table columns"));
-                if (typed.Count == 0) { t["Beam ends tab"] = ""; continue; }
                 string tname = V(t, "Template");
+                if (typed.Count == 0 || !schedules.Any(x => Same(x.Name, tname))) { t["Beam ends tab"] = ""; continue; }
                 XSheet was = old == null || V(t, "Beam ends tab").Length == 0 ? null : old.Sheet(V(t, "Beam ends tab"));
                 string tab = was != null ? was.Name : TabName((tname.Length > 26 ? tname.Substring(0, 26).Trim() : tname) + " ends", names);
                 names.Add(tab);
@@ -546,7 +563,7 @@ namespace CalcFlow
 
             // ---- Templates
             XOutSheet tt = WorkbookTables.Sheet(TemplatesTab, "tblConfigTemplates", TemplateCols, templates,
-                "One row per calc template (a tab of a template workbook), each with a schedule tab of the same name. Loads: Envelope (the largest and smallest of each force with what acts with it) or All cases. Basis: LRFD or ASD when the template takes only one. Sign map: a row of Sign Maps (IDENTITY = the member end's forces as they are). Forces: Member end forces (of the beam end the mark sits at), or Support reaction (the reaction at that beam end's joint, in the same axes: for an anchorage where more than the column lands on the base; the joint must be a support, with its reactions printed for the cases in use). Load table at: the first cell of the template's table of load rows (blank = none); its columns in order (Beam, Node, LC, LC title, Fx to Mz, Section, Connection, Mark, or - for a column to leave alone); how many rows it holds; the units it takes. Input cells / Result cells: only when the columns found for the template are not the ones you want: list its input cells and result cells yourself (B4, B6:B9, Sheet2!C3; 'table B5:C12' for a block typed as one table; 'Anchors = table B5:C12' to name the column; start with the word also to add the cells to the ones found instead of replacing them), then run Refresh config.",
+                "One row per calc template (a tab of a template workbook), each with a schedule tab of the same name (in a library of more than 20, the tab is made when a mark on Connection Lib uses the template: add the mark, then run Refresh config). Loads: Envelope (the largest and smallest of each force with what acts with it) or All cases. Basis: LRFD or ASD when the template takes only one. Sign map: a row of Sign Maps (IDENTITY = the member end's forces as they are). Forces: Member end forces (of the beam end the mark sits at), or Support reaction (the reaction at that beam end's joint, in the same axes: for an anchorage where more than the column lands on the base; the joint must be a support, with its reactions printed for the cases in use). Load table at: the first cell of the template's table of load rows (blank = none); its columns in order (Beam, Node, LC, LC title, Fx to Mz, Section, Connection, Mark, or - for a column to leave alone); how many rows it holds; the units it takes. Input cells / Result cells: only when the columns found for the template are not the ones you want: list its input cells and result cells yourself (B4, B6:B9, Sheet2!C3; 'table B5:C12' for a block typed as one table; 'Anchors = table B5:C12' to name the column; start with the word also to add the cells to the ones found instead of replacing them), then run Refresh config.",
                 c => c == "Template" ? ColumnKind.Key : (c == "File" || c == "Sheet" || c == "Sha256") ? ColumnKind.Reference : ColumnKind.Input);
             tt.Width(Array.IndexOf(TemplateCols, "Load table columns"), 48);
             tt.Width(Array.IndexOf(TemplateCols, "Input cells"), 40); tt.Width(Array.IndexOf(TemplateCols, "Result cells"), 30);
@@ -1103,7 +1120,7 @@ namespace CalcFlow
                 if (name.Length == 0) continue;
                 var mine = markTemplate.Where(kv => Same(kv.Value, name)).Select(kv => kv.Key).ToList();
                 XSheet s = wb.Sheet(name);
-                if (s == null) { if (mine.Count > 0) res.Error(TemplatesTab, "template " + name + " has no schedule tab of that name"); continue; }
+                if (s == null) { if (mine.Count > 0) res.Error(ConnectionLib, "connection " + string.Join(", ", mine.Take(5).ToArray()) + (mine.Count > 5 ? " ..." : "") + " uses template " + name + ", which has no tab yet: run Refresh config to make it, then give the connection its row there"); continue; }
                 if (mine.Count == 0)
                 {
                     // a template no connection uses is left alone; a row on its tab still has to name a known mark

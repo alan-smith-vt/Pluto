@@ -5,7 +5,7 @@
 .DESCRIPTION
   The front door (2026-11-24) is a workbook: its Start tab links to launchers that run the verbs for you.
     new             the engineer's workbook and its launchers, once: -Out <project folder> [-Anl <file>]
-                    [-Templates <folder>]
+                    [-Templates <folder>] [-InputFill <colour>: the fill of the cells to fill in when it is not yellow]
                     -> CalcFlow.xlsx: Start (the steps as link cells, the settings), Model Config (one row per beam of
                     the .anl, a connection mark at each end), Connection Lib (the marks), Templates, a schedule tab per
                     template found in -Templates (one row per mark, one column per input), Outputs, Sign Maps, Load
@@ -244,6 +244,25 @@ function Get-CfCurrentPackage([string]$ProjectDir) {
 }
 
 # the templates folder of a workbook: -Templates, else its "Templates folder" setting ('' when neither is given)
+# the fills that mark the cells to fill in, when it is not yellow: checked here, then used by every harvest of the run
+function Set-CfInputFills([string[]]$Fills) {
+    try { $set = [CalcFlow.TemplateLook]::Colours([string[]]@($Fills | Where-Object { $_ })) }
+    catch { Stop-CfArgs ("Input fill: " + $_.Exception.InnerException.Message) }
+    [CalcFlow.Harvest]::InputFills = New-Object 'System.Collections.Generic.List[string]' (, [string[]]@($set))
+}
+
+# how each template's inputs were found: from its coloured cells, or guessed from its formulas when it has none
+function Show-CfColoured($H) {
+    $n = $H.Coloured.Count
+    $guessed = @($H.Templates | Where-Object { -not $H.Coloured.Contains($_['Template']) } | ForEach-Object { $_['File'] })
+    Write-Host ("inputs   {0} template workbook(s) read from their coloured cells, {1} with none: guessed from their formulas" -f $n, $guessed.Count)
+    if ($n -gt 0 -and $guessed.Count -gt 0) {
+        $more = ''
+        if ($guessed.Count -gt 8) { $more = ' ...' }
+        Write-Host ("[note ] no cell with the input fill in: {0}{1}. Its inputs are guessed; if it uses another colour, give it as Input fill on the Start tab." -f (($guessed | Select-Object -First 8) -join ', '), $more) -ForegroundColor Yellow
+    }
+}
+
 function Get-CfTemplatesDir([string]$Wb) {
     if ($Templates) { return (Get-CfFull $Templates[0]) }
     $set = [CalcFlow.EngineerWorkbook]::Settings($Wb)
@@ -317,10 +336,12 @@ switch ($Verb) {
             $tdir = Get-CfFull $Templates[0]
             $tfiles = Get-CfTemplateFiles $Templates
             if ($tfiles.Count -eq 0) { Stop-CfArgs "No template workbooks found in $tdir." }
+            Set-CfInputFills $InputFill
             $h = [CalcFlow.Harvest]::Run([string[]]$tfiles, $tdir)
             foreach ($k in $h.Skipped) { Write-Host ("[skip ] {0}: {1}" -f $k[0], $k[1]) -ForegroundColor Yellow }
             foreach ($p in $h.Problems) { Write-Host "[error] $p" -ForegroundColor Red }
             Write-Host ("learned  {0} template workbook(s): {1} inputs, {2} results" -f $h.Templates.Count, $h.Inputs.Count, $h.Outputs.Count)
+            Show-CfColoured $h
         }
         $files = [CalcFlow.EngineerWorkbook]::WriteNew($folder, (Join-Path $PSScriptRoot 'CalcFlow.ps1'), $pkg, $h, $tdir)
         if ($h) { $line = [CalcFlow.ProjectBook]::SheetsLine($wb); if ($line) { Write-Host "sheets   $line" } }
@@ -377,10 +398,17 @@ switch ($Verb) {
             if (-not (Test-Path -LiteralPath $tdir -PathType Container)) { Stop-CfArgs "The templates folder is not there: $tdir (Start tab, `"Templates folder`")." }
             $tfiles = Get-CfTemplateFiles @($tdir)
             if ($tfiles.Count -gt 0) {
+                $fills = $InputFill
+                if (-not $fills) {
+                    $set = [CalcFlow.EngineerWorkbook]::Settings($wb)
+                    if ($set.ContainsKey([CalcFlow.EngineerWorkbook]::FillSetting)) { $fills = @($set[[CalcFlow.EngineerWorkbook]::FillSetting]) }
+                }
+                Set-CfInputFills $fills
                 $h = [CalcFlow.Harvest]::Run([string[]]$tfiles, $tdir)
                 foreach ($k in $h.Skipped) { Write-Host ("[skip ] {0}: {1}" -f $k[0], $k[1]) -ForegroundColor Yellow }
                 foreach ($p in $h.Problems) { Write-Host "[error] $p" -ForegroundColor Red }
                 Write-Host ("learned  {0} template workbook(s): {1} inputs, {2} results" -f $h.Templates.Count, $h.Inputs.Count, $h.Outputs.Count)
+                Show-CfColoured $h
             }
         }
         else { Write-Host 'No templates folder is given (Start tab): the template tabs stay as they are.' -ForegroundColor Yellow }

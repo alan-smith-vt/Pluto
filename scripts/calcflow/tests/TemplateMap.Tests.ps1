@@ -294,3 +294,62 @@ Test 'calcs: the ratios of every row come back, each beam end with its own' {
     Assert-Equal "$($s.Get(8, 0).Value) $($s.Get(8, 1).Value) $($s.Get(11, 0).Value) $($s.Get(11, 1).Value)" 'Yes 2 No 5'
     Assert-True ($s.Get(14, 1) -eq $null -or $s.Get(14, 1).IsEmpty) 'the seventh row is empty'
 }
+
+# ---- a library of more than twenty calc sheets: a template's tab is made when a mark uses it
+$big = Join-Path $dir 'big-library'
+New-Item -ItemType Directory -Force -Path $big | Out-Null
+foreach ($i in 1..22) {
+    $s = New-Object CalcFlow.XOutSheet 'Calc'
+    Put $s 'A2' 'Width (in)'; Put $s 'B2' $i $yellow
+    Put $s 'A3' 'Fx (kip)'; Put $s 'B3' 1 $yellow
+    Put $s 'A5' 'Governing DCR'; Put $s 'B5' (New-Object CalcFlow.XFormula 'ABS(B3)/(B2*10)', '0')
+    [CalcFlow.XlsxWriter]::Write((Join-Path $big ('T{0:00}.xlsx' -f $i)), [CalcFlow.XOutSheet[]]@($s), $null)
+}
+$projBig = Join-Path $dir 'proj-big'
+$oBig = Invoke-CfCli new -Out $projBig -Anl $fixtureAnl -Templates $big
+$bigExit = $LASTEXITCODE
+$wbBig = Join-Path $projBig 'CalcFlow.xlsx'
+
+Test 'a large library: every template is listed, and a tab is made only for the ones a mark uses' {
+    Assert-Equal $bigExit 0 ($oBig -join "`n")
+    $b = [CalcFlow.Xlsx]::Read($wbBig)
+    Assert-Equal @($b.TableRows('tblConfigTemplates')).Count 22
+    Assert-Equal (@($b.Sheets | ForEach-Object { $_.Name }) -join '|') 'Start|Model Config|Connection Lib|Templates|Template Sheets|Template Cells|Outputs|Sign Maps|Load Cases'
+    Assert-Match @($b.TableRows('tblTemplateSheets'))[4]['Says'] '^A calc of its own, with no tab yet: it is made when a mark on Connection Lib uses template T05\.'
+    Assert-True (@($oBig | Where-Object { $_ -like 'sheets *22 sheets in the template workbooks: 0 with a calc tab, 22 whose tab is made when a mark on Connection Lib uses the template*' }).Count -eq 1) ($oBig -join "`n")
+    Assert-True (@($oBig | Where-Object { $_ -like 'inputs *22 template workbook(s) read from their coloured cells, 0 with none*' }).Count -eq 1) ($oBig -join "`n")
+    # a mark on a template with no tab yet: check says what to do, and Refresh config makes the tab
+    Set-Cells $wbBig @(@('Connection Lib', 'A3', 'M-5'), @('Connection Lib', 'B3', 'T05'), @('Model Config', 'F4', 'M-5'))
+    $o = Invoke-CfCli check -Workbook $wbBig
+    Assert-Equal $LASTEXITCODE 1 ($o -join "`n")
+    Assert-Match ($o -join "`n") '\[fix  \] Connection Lib: connection M-5 uses template T05, which has no tab yet: run Refresh config to make it'
+    $o = Invoke-CfCli refresh -Workbook $wbBig -NoWait -NoOpen
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    $b = [CalcFlow.Xlsx]::Read($wbBig)
+    Assert-Equal (@($b.Sheets | ForEach-Object { $_.Name }) -join '|') 'Start|Model Config|Connection Lib|Templates|Template Sheets|T05|Template Cells|Outputs|Sign Maps|Load Cases'
+    Assert-Equal (& $headsOf $b 'T05') 'Width (in)<Typed here | Fx (kip)<Fx' 'a lone yellow cell headed Fx takes the force'
+    Assert-Equal (@($b.TableRows('tblConfigOutputs') | ForEach-Object { "$($_['Template']):$($_['Result']):$($_['Use'])" }) -join ' ') 'T05:Governing DCR:Y'
+    # the mark gets its row, and the calc is ready: one template of the twenty-two in play
+    Set-Cells $wbBig @(@('T05', 'A6', 'M-5'), @('T05', ((Get-Col $b 'T05' 'Width (in)' 5) + '6'), 8))
+    $o = Invoke-CfCli check -Workbook $wbBig
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    Assert-True (@($o | Where-Object { $_ -like 'check *1 of 1 connection calcs are ready: 0 error(s)*' }).Count -eq 1) ($o -join "`n")
+}
+
+Test 'a library whose input colour is not yellow: given once, kept on the Start tab, used again by a refresh' {
+    $blueLib = Join-Path $dir 'blue-library'
+    New-Item -ItemType Directory -Force -Path $blueLib | Out-Null
+    Copy-Item -LiteralPath $platePath -Destination $blueLib
+    $pb = Join-Path $dir 'proj-blue'
+    $o = Invoke-CfCli new -Out $pb -Anl $fixtureAnl -Templates $blueLib -InputFill ddebf7
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    $w = Join-Path $pb 'CalcFlow.xlsx'
+    Assert-Equal ([CalcFlow.EngineerWorkbook]::Settings($w))['Input fill'] 'DDEBF7'
+    Assert-Equal (& $headsOf ([CalcFlow.Xlsx]::Read($w)) 'Plate') 'Factor<Typed here' 'the one blue cell, and none of the yellow ones'
+    $o = Invoke-CfCli refresh -Workbook $w -NoWait -NoOpen
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    Assert-Equal (& $headsOf ([CalcFlow.Xlsx]::Read($w)) 'Plate') 'Factor<Typed here'
+    $o = Invoke-CfCli new -Out (Join-Path $dir 'proj-bad') -Anl $fixtureAnl -Templates $blueLib -InputFill blue
+    Assert-Equal $LASTEXITCODE 2 ($o -join "`n")
+    Assert-Match ($o -join "`n") "Input fill: 'blue' is not a fill colour: give it as six hex digits"
+}
