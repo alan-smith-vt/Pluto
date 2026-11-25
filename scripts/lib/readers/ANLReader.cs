@@ -987,11 +987,33 @@ public class AnlForceParser : AnlBlockParser
 	// true: the caller reads the print's units itself (AnlFrameReader), so the warning below is not printed
 	public bool UnitsReadByCaller;
 	// lines that hold 4 or more numbers yet are not a force row (7, 8 or 9 numbers): counted, never read (2026-11-24).
-	// A caller that must not lose a row reports them (AnlFrameReader); the rows read are as before.
+	// A caller that must not lose a row reports them (AnlFrameReader). Since 2026-11-25 a row of 7 or 8 numbers before
+	// the section's first member row is one of them too: it belongs to no member (it was read as member 0, or as the
+	// last member of the section before).
 	public int SuspectRows;
 	public List<string> SuspectSamples = new List<string>();
 
 	public AnlForceParser(string path) : base(path) { }
+
+	// STAAD's echo of an input line: its line number with a period, then the text ("  146. PRINT MEMBER FORCES LIST 1 TO
+	// 20 31 TO 40", or a continued list "  147. 51 TO 60 71 TO 80"). It is never a force row, though it can hold 7, 8
+	// or 9 numbers; a force row starts with a whole number (member, load or joint) and no period.
+	static bool IsEchoLine(byte[] buf, int len)
+	{
+		int i = 0;
+		while (i < len && (buf[i] == (byte)' ' || buf[i] == (byte)'\t')) i++;
+		int digits = i;
+		while (i < len && buf[i] >= (byte)'0' && buf[i] <= (byte)'9') i++;
+		if (i == digits || i >= len || buf[i] != (byte)'.') return false;
+		i++;
+		return i >= len || buf[i] == (byte)' ' || buf[i] == (byte)'\t' || buf[i] == (byte)'\r' || buf[i] == (byte)'\n';
+	}
+
+	void Suspect(int len)
+	{
+		SuspectRows++;
+		if (SuspectSamples.Count < 3) SuspectSamples.Add(Encoding.UTF8.GetString(_lineBuf1, 0, len).Trim());
+	}
 
 	public void ParseSection(AnlSection section, Dictionary<int, Member> mems, CoordFrame targetState)
 	{
@@ -1016,6 +1038,7 @@ public class AnlForceParser : AnlBlockParser
 			_fs.Seek(section.StartOffset, SeekOrigin.Begin);
 			_reader = new ByteTrackingLineReader(_fs);
 			long endOffset = section.EndOffset;
+			bool seenMember = false;     // a print's table starts with a member row
 
 			while (true)
 			{
@@ -1023,6 +1046,7 @@ public class AnlForceParser : AnlBlockParser
 				CheckProgress();
 				int len = SkipToNextDataLine(endOffset, _lineBuf1, acceptJ: false);
 				if (len <= 0) break;
+				if (IsEchoLine(_lineBuf1, len)) continue;
 
 				//Console.WriteLine("1");
 				int n = ExtractFloats(_lineBuf1, 0, len, _floatBuf);
@@ -1033,6 +1057,12 @@ public class AnlForceParser : AnlBlockParser
 					_currentMemberId = (int)_floatBuf[0];
 					_currentLC = (int)_floatBuf[1];
 					offset = 2;
+					seenMember = true;
+				}
+				else if ((n == 8 || n == 7) && !seenMember)
+				{
+					Suspect(len);
+					continue;
 				}
 				else if (n == 8)
 				{
@@ -1045,11 +1075,7 @@ public class AnlForceParser : AnlBlockParser
 				}
 				else
 				{
-					if (n >= 4)
-					{
-						SuspectRows++;
-						if (SuspectSamples.Count < 3) SuspectSamples.Add(Encoding.UTF8.GetString(_lineBuf1, 0, len).Trim());
-					}
+					if (n >= 4) Suspect(len);
 					continue;
 				}
 
