@@ -170,10 +170,30 @@ Test "the check of Excel's table rules finds what Excel repairs: a heading that 
     Assert-Match ([CalcFlow.XlsxCheck]::Tables($p) -join '; ') 'merged cells A2:B2 inside the table'
 }
 
+Test "a note beside a cell: on the drop-down the cell has, else alone; within Excel's lengths; the check finds one that is not" {
+    $s = New-Object CalcFlow.XOutSheet 'N'
+    $s.Add('note row'); $s.Add('Mark', 'Size', 'Grade', 'Side'); $s.Add('A', 1, 'x', 'L')
+    $v = New-Object CalcFlow.XValidation; $v.Sqref = 'C3:D50'; $v.List = '"x,y"'; $s.Validations.Add($v)
+    [CalcFlow.Hints]::Column($s, 1, 1, 2, 'Size', ('The size of the thing. ' * 20))
+    [CalcFlow.Hints]::Column($s, 3, 1, 2, ('A title that is far too long for a note' * 2), 'Which side.')
+    # the drop-down over two columns became one a column, and the note went to the right one
+    Assert-Equal (@($s.Validations | ForEach-Object { "$($_.Sqref)[$($_.List)]" }) -join ' ') 'C3:C50["x,y"] D3:D50["x,y"] B2[] B3:B2000[] D2[]'
+    Assert-Equal "$($s.Validations[0].Prompt)|$($s.Validations[1].Prompt)" '|Which side.'
+    $p = Join-Path $dir 'notes.xlsx'
+    [CalcFlow.XlsxWriter]::Write($p, [CalcFlow.XOutSheet[]]@($s), $null)
+    Assert-Equal ([CalcFlow.XlsxCheck]::Validations($p) -join '; ') '' 'the writer cuts a title at 32 characters and a text at 255'
+    $bad = Join-Path $dir 'patched-notes.xlsx'
+    Copy-Item -LiteralPath $p -Destination $bad
+    Edit-XlsxPart $bad 'xl/worksheets/sheet1.xml' { param($x) $x.Replace('prompt="Which side."', 'prompt="' + ('w' * 300) + '"').Replace('sqref="B3:B2000"', 'sqref="B3:C2000"') }
+    $found = [CalcFlow.XlsxCheck]::Validations($bad) -join '; '
+    Assert-Match $found 'validation D3:D50 has a prompt of 300 characters \(255 at most\)'
+    Assert-Match $found 'the validations C3:C50 and B3:C2000 share a cell'
+}
+
 Test 'excel-check lists what Excel repairs in a workbook, and with the repaired copy what Excel changed' {
     $o = Invoke-CfCli excel-check -Workbook (Join-Path $dir 'rules-good.xlsx')
     Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
-    Assert-Match ($o -join "`n") 'nothing in them breaks a rule of Excel'
+    Assert-Match ($o -join "`n") 'nothing in them, or in the drop-downs and cell notes, breaks a rule of Excel'
     $bad = Join-Path $dir 'patched-rules-long.xlsx'
     # Excel's repair, played: the name cut to 255 characters in the table and in its cell
     $fixed = Join-Path $dir 'patched-rules-long-repaired.xlsx'

@@ -317,6 +317,7 @@ switch ($Verb) {
             Write-Host ("learned  {0} template workbook(s): {1} inputs, {2} results" -f $h.Templates.Count, $h.Inputs.Count, $h.Outputs.Count)
         }
         $files = [CalcFlow.EngineerWorkbook]::WriteNew($folder, (Join-Path $PSScriptRoot 'CalcFlow.ps1'), $pkg, $h, $tdir)
+        if ($h) { $line = [CalcFlow.ProjectBook]::SheetsLine($wb); if ($line) { Write-Host "sheets   $line" } }
         foreach ($f in $files) { Write-Host "written  $f" -ForegroundColor Green }
         if ($pkg) {
             $md = [CalcFlow.ModelData]::Write($pkg, $folder)
@@ -383,6 +384,8 @@ switch ($Verb) {
         $res = [CalcFlow.EngineerWorkbook]::Refresh($wb, (Join-Path $PSScriptRoot 'CalcFlow.ps1'), $pkg, $h, $tdir)
         foreach ($n in $res.Notes) { Write-Host "[note ] $n" -ForegroundColor Yellow }
         Write-Host ("kept     {0} (the workbook as it was)" -f $res.Backup)
+        $line = [CalcFlow.ProjectBook]::SheetsLine($res.Workbook)
+        if ($line) { Write-Host "sheets   $line" }
         Write-Host ("written  {0}: everything you had filled in is carried over ({1} note(s) above)" -f $res.Workbook, $res.Notes.Count) -ForegroundColor Green
         if (-not $NoOpen -and (Test-CfWindows) -and [Environment]::UserInteractive) { Invoke-Item -LiteralPath $res.Workbook }
         exit 0
@@ -392,10 +395,10 @@ switch ($Verb) {
         $wb = Get-CfFull $Workbook
         if (-not (Test-Path -LiteralPath $wb)) { Stop-CfArgs "No such workbook: $wb" }
         Write-Host ("workbook {0}" -f $wb)
-        $found = @([CalcFlow.XlsxCheck]::Tables($wb))
+        $found = @([CalcFlow.XlsxCheck]::Tables($wb)) + @([CalcFlow.XlsxCheck]::Validations($wb))
         foreach ($line in $found) { Write-Host ("[fix  ] {0}" -f $line) -ForegroundColor Red }
-        if ($found.Count -eq 0) { Write-Host 'tables   nothing in them breaks a rule of Excel that this check knows' -ForegroundColor Green }
-        else { Write-Host ("tables   {0} thing(s) Excel repairs on opening" -f $found.Count) -ForegroundColor Red }
+        if ($found.Count -eq 0) { Write-Host 'tables   nothing in them, or in the drop-downs and cell notes, breaks a rule of Excel that this check knows' -ForegroundColor Green }
+        else { Write-Host ("tables   {0} thing(s) Excel repairs or removes on opening" -f $found.Count) -ForegroundColor Red }
         if ($Repaired) {
             $rp = Get-CfFull $Repaired
             if (-not (Test-Path -LiteralPath $rp)) { Stop-CfArgs "No such workbook: $rp" }

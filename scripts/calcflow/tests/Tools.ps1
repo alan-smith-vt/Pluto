@@ -49,11 +49,14 @@ function Invoke-CfOoxmlCheck([string[]]$Files) {
     return , $o
 }
 
-# what Excel would repair in the tables of the files (empty when clean): Excel's own rules for a table, which neither
-# the schema validator nor LibreOffice checks (cs\XlsxCheck.cs)
-function Invoke-CfExcelTableRules([string[]]$Files) {
+# what Excel would repair in the tables of the files, and remove of their drop-downs and cell notes (empty when
+# clean): Excel's own rules, which neither the schema validator nor LibreOffice checks in full (cs\XlsxCheck.cs)
+function Invoke-CfExcelRules([string[]]$Files) {
     $o = New-Object System.Collections.Generic.List[string]
-    foreach ($f in $Files) { foreach ($line in [CalcFlow.XlsxCheck]::Tables($f)) { $o.Add($line) } }
+    foreach ($f in $Files) {
+        foreach ($line in [CalcFlow.XlsxCheck]::Tables($f)) { $o.Add($line) }
+        foreach ($line in [CalcFlow.XlsxCheck]::Validations($f)) { $o.Add($line) }
+    }
     return , $o.ToArray()
 }
 

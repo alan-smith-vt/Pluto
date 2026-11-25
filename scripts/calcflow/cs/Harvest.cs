@@ -27,6 +27,20 @@ namespace CalcFlow
         public readonly List<Dictionary<string, string>> Layout = new List<Dictionary<string, string>>();
         public readonly List<string> Problems = new List<string>();
         public readonly List<string[]> Skipped = new List<string[]>();     // file, why (an .xls / .xlsb harvest cannot read)
+        // every sheet of every template workbook, in the workbook's order: template, sheet, the sheets its formulas
+        // read however far (joined by "|"). Sheets that read one another are parts of one calc.
+        public readonly List<string[]> Sheets = new List<string[]>();
+
+        public List<string> SheetsOf(string template)
+        {
+            return Sheets.Where(x => x[0] == template).Select(x => x[1]).ToList();
+        }
+
+        public List<string> SheetsRead(string template, string sheet)
+        {
+            string[] row = Sheets.FirstOrDefault(x => x[0] == template && string.Equals(x[1], sheet, StringComparison.OrdinalIgnoreCase));
+            return row == null || row[2].Length == 0 ? new List<string>() : row[2].Split('|').ToList();
+        }
     }
 
     public static class Harvest
@@ -178,6 +192,7 @@ namespace CalcFlow
                     res.Layout.Add(d);
                 }
             }
+            foreach (TSheet s in b.Sheets) res.Sheets.Add(new[] { id, s.Name, string.Join("|", b.SheetsRead(s.Name).ToArray()) });
             var tr = Row(LibrarySchema.TemplateColumns);
             tr["Template"] = id; tr["File"] = file; tr["Sha256"] = b.Sha256;
             tr["Shape"] = b.Tables.Count > 0 ? "case_table" : "single_case";

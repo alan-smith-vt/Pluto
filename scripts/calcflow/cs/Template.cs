@@ -104,6 +104,7 @@ namespace CalcFlow
         public readonly List<XTable> Tables = new List<XTable>();
         public readonly List<string> Notes = new List<string>();     // what could not be read exactly (huge ranges, external refs)
         HashSet<long>[] _refs;          // per sheet index: cells some formula reads
+        HashSet<int>[] _sheetReads;     // per sheet index: the other sheets its formulas read (directly, a name or a table too)
         Dictionary<string, int> _sheetIndex;
 
         const int MaxRangeCells = 4000;  // a range larger than this is not expanded cell by cell (it is noted)
@@ -445,20 +446,45 @@ namespace CalcFlow
             return _refs[_sheetIndex[s.Name]];
         }
 
+        // The sheets a sheet's formulas read, however far (sheet A reads B, B reads C: A reads B and C), itself left out.
+        // It tells which sheets are parts of one calc: a calc's inputs are on every sheet its own sheet reads.
+        public List<string> SheetsRead(string sheet)
+        {
+            BuildRefs();
+            var found = new List<string>();
+            int start;
+            if (!_sheetIndex.TryGetValue(sheet ?? "", out start)) return found;
+            var seen = new HashSet<int> { start };
+            var todo = new Queue<int>();
+            todo.Enqueue(start);
+            while (todo.Count > 0)
+                foreach (int next in _sheetReads[todo.Dequeue()].OrderBy(x => x))
+                    if (seen.Add(next)) { found.Add(Sheets[next].Name); todo.Enqueue(next); }
+            return found;
+        }
+
+        int _reader = -1;       // the sheet whose formula is being followed (BuildRefs)
+
         void BuildRefs()
         {
             if (_refs != null) return;
             _sheetIndex = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
             _refs = new HashSet<long>[Sheets.Count];
-            for (int i = 0; i < Sheets.Count; i++) { _sheetIndex[Sheets[i].Name] = i; _refs[i] = new HashSet<long>(); }
+            _sheetReads = new HashSet<int>[Sheets.Count];
+            for (int i = 0; i < Sheets.Count; i++) { _sheetIndex[Sheets[i].Name] = i; _refs[i] = new HashSet<long>(); _sheetReads[i] = new HashSet<int>(); }
             var noted = new HashSet<string>(StringComparer.Ordinal);
             foreach (TSheet s in Sheets)
+            {
+                _reader = _sheetIndex[s.Name];
                 foreach (TCell c in s.Cells.Values)
                 {
                     if (c.Formula == null || c.Formula.Length == 0) continue;
                     foreach (FormulaRef r in FormulaRefs.Extract(c.Formula))
                         Mark(r, s.Name, noted, 0);
                 }
+            }
+            // a drop-down that lists another sheet's cells reads them, but is no part of what the sheet calculates
+            _reader = -1;
             foreach (TSheet s in Sheets)
                 foreach (TValidation v in s.Validations)
                     foreach (FormulaRef r in FormulaRefs.Extract(v.Formula1))
@@ -500,6 +526,7 @@ namespace CalcFlow
                 if (noted.Add("sheet:" + sheet)) Notes.Add("a formula reads sheet '" + sheet + "', which is not in the workbook (an external link?)");
                 return;
             }
+            if (_reader >= 0 && _reader != si) _sheetReads[_reader].Add(si);
             long cells = (long)(r2 - r1 + 1) * (c2 - c1 + 1);
             if (cells > MaxRangeCells)
             {

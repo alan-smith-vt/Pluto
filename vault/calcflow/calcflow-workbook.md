@@ -30,7 +30,8 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 new -Out 
 > `new -Out <folder> -Anl <file> -Templates <folder>` reads the model and learns the templates (harvest), then writes the workbook once:
 > - **Model Config:** one row per beam of the model: Beam ID, Node I, Node J, Section, Shape, **Connection I, Connection J** (drop-downs of the marks), Frames into I / J (the member that end connects to, guessed first), Comment.
 > - **Connection Lib:** one row per **mark**: Connection (a name of the engineer's own), Template, Description. A mark is one template plus one row of values; several marks may share a template.
-> - **Templates:** one row per calc tab of a template workbook: File, Sheet, SHA-256, Loads (Envelope / All cases), Basis, Sign map, **Forces** (below); the load table of a template that has one (below); **Input cells** and **Result cells** (below). A sheet with fewer than five inputs gets no tab of its own.
+> - **Templates:** one row per calc tab of a template workbook: File, Sheet, SHA-256, Loads (Envelope / All cases), Basis, Sign map, **Forces** (below); the load table of a template that has one (below); **Input cells** and **Result cells** (below). Which sheets become a tab: "Template sheets as calcs", below.
+> - **Template Sheets:** every sheet of every template workbook, with the inputs and results found on it, the tab that holds its inputs, and what to do when it was not picked up. Written by the tool at every refresh; nothing on it is read back.
 > - **A schedule tab per template,** named like it. From the top:
 >   1. **Source:** where each column's value comes from, a drop-down: Typed here; Template's own value; Fx to Mz (the beam end's force); Load case; Load case title; Beam number; Node; Beam section; Framed-into member; Framed-into section. A column whose label is one of the six force names starts as that force, unless its unit says otherwise (`Fy (ksi)` is a yield strength).
 >   2. **Unit:** from the label where it has one; a force column must have one.
@@ -41,6 +42,21 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 new -Out 
 > - **Outputs:** harvest's results per template, with Use (Y on the ones read back), Check (the summary column), Kind, Expect. One result starts as Y only when exactly one reads as the governing DCR; otherwise the engineer chooses, and check asks for one.
 > - **Cells kept as text:** the Fx to Mz cells of Sign Maps, Input cells and Result cells, and table columns are formatted as text, so `-Fz` or a table that starts with a minus sign is not read as a formula.
 > - **Sign Maps** and **Load Cases** (Use, Basis).
+
+> [!info]- Template sheets as calcs (which sheets get a tab)
+> A mark is one tab and one row, so a tab must reach every input of its calc, on whichever sheet of the workbook it sits. Harvest records which sheet's formulas read which, however far (through names and tables too).
+> - **One calc:** sheets that read one another (a base plate's main sheet, its anchorage sheet and its helper sheets). One tab, named for the sheet with the most inputs. That sheet's inputs come first under their own labels; the other sheets' follow as `Sheet: label`.
+> - **A part of several calcs:** a sheet that is only read (shared values under six weld shapes). Its inputs are columns of every tab that reads it, and it gets no tab itself.
+> - **Calcs of their own:** sheets that read nothing of one another (one weld shape a sheet). A tab each.
+> - **A workbook with a load table** is one calc per table, with the inputs of every sheet (as before).
+> - **Too small to be a calc:** a set of sheets with fewer than five inputs and no result found gets no tab, unless it is all the workbook has. The Template Sheets tab says so on its row, and how to give it one (a row on Templates with its File and Sheet).
+> - **Until 2026-11-25** each sheet with five inputs or more was a tab of its own and the inputs of smaller sheets were on no tab: a base plate mark could not reach its anchorage sheet's inputs. A workbook made then keeps its tabs at a refresh, and its calc tabs gain the missing columns.
+> - **Results:** a tab lists the results of its calc's sheets, and of the workbook's sheets that take no input. When several read as the governing DCR, the one on the tab's own sheet is chosen.
+
+> [!info]- Notes beside the cells, and what stays in view
+> - **Notes (2026-11-25):** selecting a cell shows a note beside it: what the cell is and what is expected in it. Every column of every tab has one, on its heading too, and so have the Start tab's settings and the Source and Unit rows of a schedule tab. A schedule column's note names its template cell and the template's own value. They are the input messages of data validations, as in the pipe-review workbooks: a column with a drop-down carries its note on the drop-down (`cs/Hints.cs`).
+> - **Frozen (2026-11-25):** every tab keeps its heading rows in view, and the leading columns that say what the row is: the template on Templates, the mark on a schedule tab, the beam on Model Config, the case and its title on Load Cases, the member and its end in Model_Data.xlsx. At most four columns, and no wider together than leaves room to scroll.
+> - **Excel's limits** for a note (a title of 32 characters, a text of 255, no cell under two validations) are kept by the writer and checked over every workbook the tests write (`XlsxCheck.Validations`).
 
 > [!info]- Headings, and Excel's rules for a table
 > Every tab's rows are an Excel table, and a schedule tab's headings are the template's own labels. Excel has rules for a table's headings that LibreOffice and the Open XML schema check do not apply. A workbook that breaks one opens in Excel with "Repaired Records: Table from /xl/tables/tableN.xml part (Table)".

@@ -12,7 +12,7 @@ $o = Invoke-CfCli new -Out $proj -Anl $fixture -Templates $tdir
 $newExit = $LASTEXITCODE
 $wbPath = Join-Path $proj 'CalcFlow.xlsx'
 $weld = 'Rect. Fillet Weld Group'
-$plate = 'Base_Plate_Anchorage Calc'
+$plate = 'Base_Plate_Anchorage'      # the workbook's one calc: its Calc sheet, with the inputs of the sheets Calc works with
 
 # cells written into the workbook itself, as Excel saves it
 function Save-InPlace([string]$Path, [object[]]$Cells) {

@@ -409,6 +409,7 @@ namespace CalcFlow
             s.FreezeRows = 2;
             s.Landscape = true; s.FitToWidth = true; s.PrintTitleFirstRow = 2; s.PrintTitleLastRow = 2;
             for (int i = 0; i < cols.Length; i++) s.Width(i, Math.Max(10, cols[i].Length + 3));
+            s.FreezeCols = WorkbookTables.KeyColumns(s, keyCols);
             return s;
         }
 

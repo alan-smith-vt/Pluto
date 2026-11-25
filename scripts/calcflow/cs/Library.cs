@@ -736,7 +736,24 @@ namespace CalcFlow
                 foreach (var r in rows.Take(500)) { string v; if (r.TryGetValue(cols[i], out v) && v != null && v.Length + 2 > w) w = v.Length + 2; }
                 s.Width(i, Math.Min(48, Math.Max(10, w)));
             }
+            s.FreezeCols = KeyColumns(s, kinds.TakeWhile(k => k == ColumnKind.Key).Count());
             return s;
+        }
+
+        // The columns kept in view beside the heading rows: the leading columns that say what the row is (at most
+        // four, and no wider together than a narrow window shows with room left to scroll the rest).
+        public static int KeyColumns(XOutSheet s, int leadingKeys)
+        {
+            int n = 0;
+            double width = 0;
+            while (n < Math.Min(leadingKeys, 4))
+            {
+                double w;
+                width += s.ColWidths.TryGetValue(n, out w) ? w : 10;
+                if (n > 0 && width > 90) break;
+                n++;
+            }
+            return n;
         }
 
         // a column of a sheet written by Sheet held as numbers (text that reads as one), in the given number format;

@@ -53,8 +53,8 @@ if ($written.Count -gt 0) {
         if ($null -eq $e) { Write-Host '        (no dotnet SDK here: skipped)' -ForegroundColor DarkGray; return }
         Assert-True ($e.Count -eq 0) ($e -join '; ')
     }
-    Test "each keeps Excel's rules for tables: text headings that are the column names, none alike, 255 characters at most" {
-        $e = Invoke-CfExcelTableRules $written
+    Test "each keeps Excel's rules: table headings that are text, the column names, none alike, 255 characters at most; cell notes within Excel's lengths, no cell under two" {
+        $e = Invoke-CfExcelRules $written
         Assert-True ($e.Count -eq 0) (($e | Select-Object -First 12) -join '; ')
     }
     Test 'each opens in LibreOffice without a load error' {

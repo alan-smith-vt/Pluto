@@ -134,6 +134,9 @@ CAESAR's restraints, re-seeding that keeps SAP-side additions, and writing a see
   label over 255 characters was the one way found to break them), and a check of those rules runs over every
   workbook the tests write. The cause on the user's file is not confirmed: `CalcFlow.ps1 excel-check -Workbook <it>`
   on their machine says what its tables break.
+- **Since the first real workbook (2026-11-25):** heading rows and key columns frozen on every tab; a note beside
+  every cell saying what it takes; a workbook's calcs found from which sheet reads which, so a tab holds every input
+  of its calc, and a Template Sheets tab says what became of each sheet.
 - **Next:** the same pass on the production machine with Excel; the first real project through the workbook; section
   dimensions looked up from the shape.
 

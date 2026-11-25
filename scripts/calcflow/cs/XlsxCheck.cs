@@ -7,6 +7,9 @@
 //   - no two columns of a table are alike (Xlsx.HeadingKey);
 //   - a table has a data row, as many columns as its range is wide, and no merged cells or other table inside it;
 //   - a table's name is a name Excel takes, once in the workbook.
+// And for a data validation (a drop-down, or the note shown beside a selected cell), which Excel removes when it
+// breaks one ("Removed Feature: Data validation"): a title of 32 characters at most, a text of 255, a formula of 255,
+// and no cell under two validations.
 // C# 5 (Windows PowerShell 5.1 Add-Type, warnings are errors).
 
 using System;
@@ -146,6 +149,65 @@ namespace CalcFlow
                 }
             }
             return o;
+        }
+
+        // what Excel would remove of the data validations of this workbook: one line each
+        public static List<string> Validations(string path)
+        {
+            var bad = new List<string>();
+            string file = Path.GetFileName(path);
+            using (ZipArchive zip = ZipFile.OpenRead(path))
+                foreach (ZipArchiveEntry e in zip.Entries.Where(x => Regex.IsMatch(x.FullName.Replace('\\', '/'), @"^xl/worksheets/[^/]+\.xml$", RegexOptions.IgnoreCase)).OrderBy(x => x.FullName, StringComparer.Ordinal).ToList())
+                {
+                    string where = file + " " + e.FullName + ": ";
+                    var rects = new List<int[]>();
+                    var refs = new List<string>();
+                    using (XmlReader xr = Xlsx.Xml(e))
+                    {
+                        string sqref = null;
+                        bool formula = false;
+                        var text = new StringBuilder();
+                        while (xr.Read())
+                        {
+                            if (xr.NodeType == XmlNodeType.Element && xr.LocalName == "dataValidation")
+                            {
+                                sqref = xr.GetAttribute("sqref") ?? "";
+                                foreach (string[] lim in new[] { new[] { "promptTitle", "32" }, new[] { "errorTitle", "32" }, new[] { "prompt", "255" }, new[] { "error", "255" } })
+                                {
+                                    string v = xr.GetAttribute(lim[0]) ?? "";
+                                    if (v.Length > int.Parse(lim[1], CultureInfo.InvariantCulture))
+                                        bad.Add(where + "validation " + sqref + " has a " + lim[0] + " of " + v.Length.ToString(CultureInfo.InvariantCulture) + " characters (" + lim[1] + " at most)");
+                                    if (v.Any(ch => ch < ' ')) bad.Add(where + "validation " + sqref + " has a line break or a tab in its " + lim[0]);
+                                }
+                                foreach (string one in sqref.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries))
+                                {
+                                    string[] p = one.Split(':');
+                                    int c1, r1, c2, r2;
+                                    if (!Xlsx.ParseRef(p[0], out c1, out r1)) { bad.Add(where + "validation with a range that is not one: " + one); continue; }
+                                    if (p.Length < 2 || !Xlsx.ParseRef(p[1], out c2, out r2)) { c2 = c1; r2 = r1; }
+                                    rects.Add(new[] { r1, c1, r2, c2 });
+                                    refs.Add(one);
+                                }
+                            }
+                            else if (xr.NodeType == XmlNodeType.Element && (xr.LocalName == "formula1" || xr.LocalName == "formula2")) { formula = !xr.IsEmptyElement; text.Length = 0; }
+                            else if (xr.NodeType == XmlNodeType.EndElement && (xr.LocalName == "formula1" || xr.LocalName == "formula2"))
+                            {
+                                if (text.Length > 255) bad.Add(where + "validation " + sqref + " has a formula of " + text.Length.ToString(CultureInfo.InvariantCulture) + " characters (255 at most)");
+                                formula = false;
+                            }
+                            else if (formula && (xr.NodeType == XmlNodeType.Text || xr.NodeType == XmlNodeType.CDATA || xr.NodeType == XmlNodeType.SignificantWhitespace || xr.NodeType == XmlNodeType.Whitespace)) text.Append(xr.Value);
+                        }
+                    }
+                    int said = 0;
+                    for (int i = 0; i < rects.Count && said < 5; i++)
+                        for (int j = 0; j < i && said < 5; j++)
+                            if (rects[i][0] <= rects[j][2] && rects[i][2] >= rects[j][0] && rects[i][1] <= rects[j][3] && rects[i][3] >= rects[j][1])
+                            {
+                                bad.Add(where + "the validations " + refs[j] + " and " + refs[i] + " share a cell");
+                                said++;
+                            }
+                }
+            return bad;
         }
 
         static string Short(string s) { return s.Length <= 60 ? s : s.Substring(0, 57) + "..."; }

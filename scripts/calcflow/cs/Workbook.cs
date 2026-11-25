@@ -121,7 +121,7 @@ namespace CalcFlow
                 new object[] { "Run the analysis in STAAD.Pro", "With your usual output commands at the end of the input (member forces, support reactions ...). CalcFlow reads the .anl it writes." },
                 new object[] { go(PostProcessLauncher, "Post-process .ANL"), "Reads the .anl and writes " + ModelData.FileName + " beside this workbook (members, joints, supports, load cases, all end forces, enveloped end forces), then opens it." + blocked },
                 new object[] { "Connection Lib: name your connections", "Give each connection a name of your own (a mark) and choose its template. On the tab of that template, add a row with the same name and fill in its values: every input of the template is a column of that row. Two marks may share a template (the same detail with other dimensions)." },
-                new object[] { "Templates and Outputs: once per template", "On a template's tab, the Source row says where each column comes from (typed on the row, a force of the beam end, the beam number ...) and the Unit row its unit. On Outputs, mark the results to read back with Use = Y." },
+                new object[] { "Templates and Outputs: once per template", "On a template's tab, the Source row says where each column comes from (typed on the row, a force of the beam end, the beam number ...) and the Unit row its unit. On Outputs, mark the results to read back with Use = Y. Template Sheets lists every sheet of every template workbook and the tab that holds its inputs. On any tab, select a cell for a note on what it is and what it takes." },
                 new object[] { "Model Config: a connection at each beam end", "One row per beam. Choose a mark in Connection I and Connection J where a calc is needed, and correct Frames into (the member that end connects to)." },
                 new object[] { "Load Cases: which cases count", "Use = Y on the load cases the calcs take." },
                 new object[] { go(CheckLauncher, "Check"), "Reads this workbook and the model and lists what is missing or does not fit, tab by tab. Nothing is calculated." },
@@ -140,7 +140,11 @@ namespace CalcFlow
             s.Add();
             int top = s.Rows.Count;
             s.Add(new XCell("Setting", Palette.Header(ColumnKind.Key)), new XCell("Value", Palette.Header(ColumnKind.Input)), new XCell("Notes", Palette.Header(ColumnKind.Reference)));
-            Action<string, string, string> setting = (k, v, n) => s.Add(new XCell(k, Palette.Data(ColumnKind.Key)), new XCell(v, Palette.Data(ColumnKind.Input)), new XCell(n, Palette.Data(ColumnKind.Reference)));
+            Action<string, string, string> setting = (k, v, n) =>
+            {
+                s.Add(new XCell(k, Palette.Data(ColumnKind.Key)), new XCell(v, Palette.Data(ColumnKind.Input)), new XCell(n, Palette.Data(ColumnKind.Reference)));
+                Hints.Range(s, Xlsx.Ref(s.Rows.Count - 1, 1), k, n);
+            };
             setting(AnlSetting, saved(AnlSetting, ""), "The STAAD .anl to read. Leave blank to be asked for it each time. A name without a folder is looked for beside this workbook.");
             setting(TemplatesSetting, saved(TemplatesSetting, ""), "The folder that holds the calc template workbooks.");
             setting(LimitSetting, saved(LimitSetting, "1.0"), "A DCR above this is flagged in the summary.");

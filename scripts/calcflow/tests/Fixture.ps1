@@ -93,17 +93,31 @@ function New-Engine([scriptblock]$Twist) {
     return New-Object CalcFlow.ScriptedEngine -ArgumentList @(, $f)
 }
 
-# a minimal .xlsx from parts (no Excel, no writer): the sheet XML is given whole
+# a minimal .xlsx from parts (no Excel, no writer): one sheet "Calc" whose sheet XML is given whole
 function New-MiniXlsx([string]$Path, [string]$SheetXml, [string]$Names) {
+    New-MiniBook $Path ([ordered]@{ 'Calc' = $SheetXml }) $Names
+}
+
+# the same with several sheets: an ordered table of sheet name -> sheet XML (cell style 1 is an unlocked cell)
+function New-MiniBook([string]$Path, [System.Collections.Specialized.OrderedDictionary]$Sheets, [string]$Names) {
     Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
-    $parts = [ordered]@{
-        '[Content_Types].xml' = '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'
-        '_rels/.rels' = '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'
-        'xl/workbook.xml' = '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Calc" sheetId="1" r:id="rId1"/></sheets><definedNames>' + $Names + '</definedNames></workbook>'
-        'xl/_rels/workbook.xml.rels' = '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>'
-        'xl/styles.xml' = '<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" applyProtection="1"><protection locked="0"/></xf></cellXfs></styleSheet>'
-        'xl/worksheets/sheet1.xml' = '<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' + $SheetXml + '</worksheet>'
+    $ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+    $rel = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+    $types = ''; $list = ''; $rels = ''; $n = 0
+    $parts = [ordered]@{}
+    foreach ($name in $Sheets.Keys) {
+        $n++
+        $types += "<Override PartName=`"/xl/worksheets/sheet$n.xml`" ContentType=`"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml`"/>"
+        $list += "<sheet name=`"$([Security.SecurityElement]::Escape($name))`" sheetId=`"$n`" r:id=`"rId$n`"/>"
+        $rels += "<Relationship Id=`"rId$n`" Type=`"$rel/worksheet`" Target=`"worksheets/sheet$n.xml`"/>"
     }
+    $parts['[Content_Types].xml'] = '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' + $types + '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'
+    $parts['_rels/.rels'] = '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="' + $rel + '/officeDocument" Target="xl/workbook.xml"/></Relationships>'
+    $parts['xl/workbook.xml'] = '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="' + $ns + '" xmlns:r="' + $rel + '"><sheets>' + $list + '</sheets><definedNames>' + $Names + '</definedNames></workbook>'
+    $parts['xl/_rels/workbook.xml.rels'] = '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + $rels + '<Relationship Id="rId' + ($n + 1) + '" Type="' + $rel + '/styles" Target="styles.xml"/></Relationships>'
+    $parts['xl/styles.xml'] = '<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="' + $ns + '"><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" applyProtection="1"><protection locked="0"/></xf></cellXfs></styleSheet>'
+    $n = 0
+    foreach ($name in $Sheets.Keys) { $n++; $parts["xl/worksheets/sheet$n.xml"] = '<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="' + $ns + '">' + $Sheets[$name] + '</worksheet>' }
     $fs = [IO.File]::Create($Path)
     try {
         $zip = New-Object System.IO.Compression.ZipArchive($fs, [System.IO.Compression.ZipArchiveMode]::Create)

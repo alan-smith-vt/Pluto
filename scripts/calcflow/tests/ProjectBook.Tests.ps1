@@ -11,14 +11,14 @@ $o = Invoke-CfCli new -Out $proj -Anl $fixture -Templates $templates
 $newExit = $LASTEXITCODE
 $wbPath = Join-Path $proj 'CalcFlow.xlsx'
 $weld = 'Rect. Fillet Weld Group'
-$plate = 'Base_Plate_Anchorage Calc'
+$plate = 'Base_Plate_Anchorage'      # the workbook's one calc: its Calc sheet, with the inputs of the sheets Calc works with
 
 Test 'new with an .anl and templates: Model Config per beam with frames-into guesses, a schedule tab per calc tab, launchers' {
     Assert-Equal $newExit 0 ($o -join "`n")
     $b = [CalcFlow.Xlsx]::Read($wbPath)
     $tabs = @($b.Sheets | ForEach-Object { $_.Name })
     foreach ($t in 'Start', 'Model Config', 'Connection Lib', 'Templates', $weld, 'I Fillet Weld Group', $plate, 'Template Cells', 'Outputs', 'Sign Maps', 'Load Cases') { Assert-True ($tabs -contains $t) "no tab $t" }
-    Assert-True ($tabs -notcontains 'Base_Plate_Anchorage Rigid') 'a sheet with one constant gets no schedule tab'
+    Assert-True (@($tabs | Where-Object { $_ -like 'Base_Plate_Anchorage ?*' }).Count -eq 0) 'the sheets of the base plate workbook read one another: one calc, one tab'
     $mc = @($b.TableRows('tblModelConfig'))
     Assert-Equal $mc.Count 7
     Assert-Equal "$($mc[1]['Beam ID']) $($mc[1]['Node I']) $($mc[1]['Node J']) $($mc[1]['Section']) $($mc[1]['Shape']) $($mc[1]['Frames into I']) $($mc[1]['Frames into J'])" '2 2 3 W24X55 W 1 3'
@@ -51,6 +51,66 @@ Test 'results: one governing DCR is chosen per template, a row title does not na
     Assert-Equal @($outs | Where-Object { $_['Template'] -eq $plate -and $_['Result'] -like '*fpmax*' -and $_['Use'] -eq 'Y' }).Count 0
     $h99 = @($outs | Where-Object { $_['Template'] -eq $plate -and $_['Cell'] -eq 'H99' })[0]
     Assert-True ("$($h99['Label cell'])|$($h99['Label'])" -like 'A99|Plate bending (k-in/in) * DG1') "the row title guards H99: $($h99['Label cell'])|$($h99['Label'])"
+}
+
+Test 'the base plate workbook is one calc: its tab holds the inputs of the Calc sheet and of the sheets Calc works with' {
+    $b = [CalcFlow.Xlsx]::Read($wbPath)
+    $s = $b.Sheet($plate)
+    $heads = @(); $n = 1; while ($s.Text(4, $n)) { $heads += $s.Text(4, $n); $n++ }
+    Assert-Equal (@($heads | Where-Object { $_ -like 'ACI: *' }).Count) 9 'the anchorage sheet has nine inputs of its own'
+    Assert-True ($heads -contains 'Work: Es (ksi)' -and $heads -contains 'Rigid: Iteration 1') ($heads -join '|')
+    Assert-Equal $heads[0] 'B (in)' "the Calc sheet's own inputs come first, under their own labels"
+    $rows = @{}; foreach ($r in @($b.TableRows('tblTemplateSheets') | Where-Object { $_['File'] -eq 'Base_Plate_Anchorage.xlsx' })) { $rows[$r['Sheet']] = $r }
+    Assert-Equal (@('Calc', 'ACI', 'Work', 'Rigid', 'Plate' | ForEach-Object { "$_=$($rows[$_]['On tab'])" }) -join ' ') "Calc=$plate ACI=$plate Work=$plate Rigid=$plate Plate="
+    # the weld shapes read nothing of one another: a tab each
+    Assert-Equal @($b.TableRows('tblTemplateSheets') | Where-Object { $_['File'] -eq 'Weld Group Design Tool.xlsx' -and $_['Says'] -eq 'A calc tab of its own.' }).Count 6
+}
+
+Test 'every tab keeps its heading rows and the columns that say what the row is in view' {
+    $h = [CalcFlow.Harvest]::Run([string[]]@(Get-ChildItem -LiteralPath $templates -Filter '*.xlsx' | ForEach-Object { $_.FullName }), $templates)
+    $pkgDir = Join-Path $dir 'freeze-pkg'
+    [void][FramePackageWriter]::Write([AnlFrameReader]::Read($fixture), $pkgDir)
+    $pkg = [CalcFlow.AnalysisPackage]::Load($pkgDir)
+    $f = @{}; foreach ($s in [CalcFlow.ProjectBook]::Sheets($pkg, $h)) { $f[$s.Name] = "$($s.FreezeRows)/$($s.FreezeCols)" }
+    Assert-Equal (@('Model Config', 'Connection Lib', 'Templates', 'Template Sheets', $plate, $weld, 'Template Cells', 'Outputs', 'Sign Maps', 'Load Cases' | ForEach-Object { "$_ $($f[$_])" }) -join ' | ') "Model Config 2/1 | Connection Lib 2/1 | Templates 2/1 | Template Sheets 2/2 | $plate 5/1 | $weld 5/1 | Template Cells 2/2 | Outputs 2/1 | Sign Maps 2/1 | Load Cases 2/2"
+    # the generated workbooks too: a member's number and end stay beside its forces
+    $md = @{}; foreach ($s in [CalcFlow.ModelData]::Sheets($pkg, (New-Object CalcFlow.ModelDataResult))) { $md[$s.Name] = "$($s.FreezeRows)/$($s.FreezeCols)" }
+    Assert-Equal "$($md['Members']) $($md['Joints']) $($md['All End Forces'])" '2/1 2/1 2/4'
+}
+
+Test 'a note beside every cell to fill says what it is and what is expected: on each tab, on its heading too' {
+    $h = [CalcFlow.Harvest]::Run([string[]]@(Get-ChildItem -LiteralPath $templates -Filter '*.xlsx' | ForEach-Object { $_.FullName }), $templates)
+    $tabs = @{}; foreach ($s in [CalcFlow.ProjectBook]::Sheets($null, $h)) { $tabs[$s.Name] = $s }
+    $note = { param($tab, $sqref) @($tabs[$tab].Validations | Where-Object { $_.Sqref -like $sqref })[0] }
+    # a column with a drop-down carries its note on the drop-down; one drop-down over both ends became one an end
+    $ci = & $note 'Model Config' 'F3:F*'
+    Assert-Equal "$($ci.PromptTitle)|$($ci.List)" "Connection I|'Connection Lib'!`$A`$3:`$A`$2000"
+    Assert-Match $ci.Prompt '^Pick the connection at end I: a mark from the Connection Lib tab'
+    Assert-Match (& $note 'Model Config' 'G3:G*').Prompt 'at end J'
+    Assert-Match (& $note 'Model Config' 'A2').Prompt "^The member's number in the STAAD model\. Written by the tool"
+    Assert-Match (& $note 'Templates' 'H3:H*').Prompt '^Member end forces: .* Support reaction: '
+    Assert-Match (& $note 'Templates' 'N3:N*').Prompt 'Start with the word also'
+    Assert-Match (& $note 'Outputs' 'D3:D*').Prompt '^dcr: a ratio'
+    Assert-Match (& $note 'Sign Maps' 'I3:I*').Prompt '^on_member: '
+    Assert-Equal (& $note 'Sign Maps' 'I3:I*').List '"on_member,on_connection"'
+    Assert-Match (& $note 'Load Cases' 'D3:D*').Prompt '^Y = the calcs take this load case'
+    Assert-Match (& $note 'Template Sheets' 'F3:F*').Prompt 'what to do when it needs an input that was not picked up'
+    # a schedule tab: the three rows above the headings, the mark, and each input with its template cell and value
+    Assert-Match (& $note $weld 'B2:*').Prompt "^Where this column's value comes from"
+    Assert-Match (& $note $weld 'B3:*').Prompt 'needs one, such as kip'
+    Assert-Match (& $note $weld 'A6:*').Prompt '^A mark from the Connection Lib tab whose Template is this tab'
+    $leg = @($tabs[$weld].Validations | Where-Object { $_.PromptTitle -eq 'wleg (in.)' })
+    Assert-Equal (@($leg | ForEach-Object { $_.Sqref }) -join ' ') 'D5 D6:D2000' 'its heading and its cells'
+    Assert-Equal $leg[1].Prompt "Template cell B6. The mark's value for this input, used when Source (row 2) is Typed here. Blank = the template's own value (0.25). (blank) = empty the cell."
+    $aci = @($tabs[$plate].Validations | Where-Object { $_.PromptTitle -eq 'ACI: +x' })[1]
+    Assert-Match $aci.Prompt "^Template cell 'ACI'!C310\. "
+    foreach ($s in $tabs.Values) {
+        foreach ($v in $s.Validations) { Assert-True ($v.Prompt.Length -le 255) "$($s.Name) $($v.Sqref): a note of $($v.Prompt.Length) characters" }
+    }
+    # the Start tab's settings, in the written workbook
+    $zip = [IO.Compression.ZipFile]::OpenRead($wbPath)
+    try { $r = New-Object IO.StreamReader($zip.GetEntry('xl/worksheets/sheet1.xml').Open()); $start = $r.ReadToEnd(); $r.Dispose() } finally { $zip.Dispose() }
+    Assert-Match $start 'promptTitle="Templates folder" prompt="The folder that holds the calc template workbooks\." sqref="B\d+"'
 }
 
 Test 'cells that hold text as typed are formatted as text: the sign map entries, the given cells, a table column' {
@@ -300,4 +360,73 @@ Test 'a value typed under a cut heading reaches its cell, and a refresh keeps it
     $s = [CalcFlow.Xlsx]::Read((Join-Path $w 'CalcFlow.xlsx')).Sheet($awk)
     Assert-Equal "$($s.Text(5, 0))|$($s.Text(5, 1))|$($s.Text(5, 3))|$($s.Text(4, 3))" 'AW-1|42|7|Area (in2) [B4]'
     Assert-Equal ([CalcFlow.XlsxCheck]::Tables((Join-Path $w 'CalcFlow.xlsx')) -join '; ') ''
+}
+
+# ---- a workbook's sheets as calcs: which sheet reads which says what is one calc, and no input is left on no tab
+# without the Template Sheets tab saying so
+$tdir4 = Join-Path $dir 'templates4'
+New-Item -ItemType Directory -Force -Path $tdir4 | Out-Null
+$sheetOf = {
+    param($labels, $extra)
+    $x = '<sheetData>'
+    for ($i = 0; $i -lt $labels.Count; $i++) { $r = $i + 2; $x += "<row r=`"$r`"><c r=`"A$r`" t=`"inlineStr`"><is><t>$($labels[$i])</t></is></c><c r=`"B$r`"><v>$($i + 1)</v></c></row>" }
+    $x + $extra + '</sheetData>'
+}
+$result = { param($row, $label, $formula) "<row r=`"$row`"><c r=`"A$row`" t=`"inlineStr`"><is><t>$label</t></is></c><c r=`"B$row`"><f>$formula</f></c></row>" }
+New-MiniBook (Join-Path $tdir4 'Split Calc.xlsx') ([ordered]@{
+    'Input'  = & $sheetOf @('Width (in)', 'Depth (in)', 'Thick (in)', 'Fy (ksi)', 'Bolts', 'Edge (in)') ''
+    'Calc'   = & $sheetOf @('Factor', 'Limit') (& $result 5 'Governing DCR' 'SUM(Input!B2:B7)*B2/B3/100+Shared!B2*0')
+    'Other'  = & $sheetOf @('a (in)', 'b (in)', 'c (in)', 't (in)', 'n') (& $result 8 'DCR' 'SUM(B2:B6)/100+Shared!B2*0')
+    'Shared' = & $sheetOf @('Es (ksi)') ''
+    'Small'  = & $sheetOf @('P (kip)', 'Cap (kip)') (& $result 5 'DCR' 'B2/B3')
+    'Tiny'   = & $sheetOf @('k') (& $result 4 'Area' 'B2*2')
+    'Info'   = '<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Read me</t></is></c></row></sheetData>'
+}) ''
+$proj4 = Join-Path $dir 'proj4'
+$o4 = Invoke-CfCli new -Out $proj4 -Anl $fixture -Templates $tdir4
+$new4 = $LASTEXITCODE
+$wb4 = Join-Path $proj4 'CalcFlow.xlsx'
+
+Test "a workbook's sheets become calcs by which sheet reads which: a tab per calc with the inputs of every sheet it reads, a shared sheet on each" {
+    Assert-Equal $new4 0 ($o4 -join "`n")
+    $b = [CalcFlow.Xlsx]::Read($wb4)
+    Assert-Equal (@($b.TableRows('tblConfigTemplates') | ForEach-Object { "$($_['Template'])=$($_['Sheet'])" }) -join ' | ') 'Split-Calc Calc=Calc | Split-Calc Other=Other | Split-Calc Small=Small'
+    $heads = { param($tab) $s = $b.Sheet($tab); $n = 1; $h = @(); while ($s.Text(4, $n)) { $h += $s.Text(4, $n); $n++ }; $h -join '|' }
+    # Calc reads Input and Shared: its tab has its own two inputs, then theirs under the sheet's name
+    Assert-Equal (& $heads 'Split-Calc Calc') 'Factor|Limit|Input: Width (in)|Input: Depth (in)|Input: Thick (in)|Input: Fy (ksi)|Input: Bolts|Input: Edge (in)|Shared: Es (ksi)'
+    Assert-Equal (& $heads 'Split-Calc Other') 'a (in)|b (in)|c (in)|t (in)|n|Shared: Es (ksi)' 'Other reads Shared too, and nothing of Calc'
+    Assert-Equal (& $heads 'Split-Calc Small') 'P (kip)|Cap (kip)' 'two inputs and a DCR: a small calc of its own'
+    $cell = @($b.TableRows('tblTemplateCells') | Where-Object { $_['Template'] -eq 'Split-Calc Calc' -and $_['Column'] -eq 'Input: Width (in)' })[0]
+    Assert-Equal "$($cell['Sheet'])!$($cell['Cell'])" 'Input!B2'
+    # the Template Sheets tab: every sheet, and where its inputs went
+    $rows = @{}; foreach ($r in $b.TableRows('tblTemplateSheets')) { $rows[$r['Sheet']] = $r }
+    Assert-Equal (@('Input', 'Calc', 'Other', 'Shared', 'Small', 'Tiny', 'Info' | ForEach-Object { "$_=$($rows[$_]['Inputs']):$($rows[$_]['On tab'])" }) -join ' | ') 'Input=6:Split-Calc Calc | Calc=2:Split-Calc Calc | Other=5:Split-Calc Other | Shared=1:Split-Calc Calc, Split-Calc Other | Small=2:Split-Calc Small | Tiny=1: | Info=0:'
+    Assert-Match $rows['Calc']['Says'] 'A calc tab of its own, which also holds the inputs of the sheets it works with: Input, Shared\.'
+    Assert-Match $rows['Shared']['Says'] "Part of that calc: its inputs are columns of the tab, headed 'Shared: \.\.\.'"
+    Assert-Match $rows['Tiny']['Says'] 'Its inputs are on no tab: .* add a row on Templates with this File and Sheet'
+    Assert-Match $rows['Info']['Says'] '^No input found\.'
+    Assert-True (@($o4 | Where-Object { $_ -like 'sheets *7 sheets in the template workbooks: 3 with a calc tab, 2 more whose inputs are on those tabs, 1 with inputs on no tab*Template Sheets*' }).Count -eq 1) ($o4 -join "`n")
+}
+
+Test 'a value typed for an input of another sheet of the calc reaches that sheet' {
+    $filled4 = Join-Path $proj4 'CalcFlow-filled.xlsx'
+    $b = [CalcFlow.Xlsx]::Read($wb4)
+    $tab = 'Split-Calc Calc'
+    $orow = @(2..40 | Where-Object { $b.Sheet('Outputs').Text($_, 0) -eq $tab })[0] + 1
+    Save-Cells $wb4 $filled4 @(
+        @('Connection Lib', 'A3', 'SC-1'), @('Connection Lib', 'B3', $tab),
+        @($tab, 'A6', 'SC-1'), @($tab, ((Get-Col $b $tab 'Input: Width (in)' 5) + '6'), 12), @($tab, ((Get-Col $b $tab 'Shared: Es (ksi)' 5) + '6'), 30000), @($tab, ((Get-Col $b $tab 'Limit' 5) + '6'), 4),
+        @('Model Config', 'F4', 'SC-1')
+    )
+    Assert-Equal $b.Sheet('Outputs').Text($orow - 1, 1) 'Y' 'the one governing DCR of the calc is chosen'
+    $o = Invoke-CfCli check -Workbook $filled4
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    $plan = [CalcFlow.Csv]::ReadTable((Join-Path $proj4 'calcflow/plan/plan.csv'))
+    Assert-Equal (@($plan | Where-Object { $_['Calc'] -eq 'J2-M2A' } | Sort-Object { "$($_['Sheet'])$($_['Cell'])" } | ForEach-Object { "$($_['Sheet'])!$($_['Cell'])=$($_['Value'])" }) -join ' ') 'Calc!B3=4 Input!B2=12 Shared!B2=30000'
+    if (-not [CalcFlow.LibreOffice]::Find()) { Write-Host '        (no LibreOffice here: the calc itself is skipped)' -ForegroundColor DarkGray; return }
+    $o = Invoke-CfCli calcs -Workbook $filled4 -Engine libreoffice
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    # Input!B2 = 12 in place of 1: (12 + 2 + 3 + 4 + 5 + 6) * 1 / 4 / 100
+    $chk = @([CalcFlow.Csv]::ReadTable((Join-Path $proj4 'calcflow/data/results/J2-M2A__s1.checks.csv')))[0]
+    Assert-Near ([double]$chk['Max DCR']) 0.08 1e-9
 }

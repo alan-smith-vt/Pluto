@@ -129,7 +129,7 @@ namespace CalcFlow
     {
         static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
         public const string ModelConfig = "Model Config", ConnectionLib = "Connection Lib", TemplatesTab = "Templates", CellsTab = "Template Cells",
-            OutputsTab = "Outputs", SignMaps = "Sign Maps", LoadCases = "Load Cases";
+            OutputsTab = "Outputs", SignMaps = "Sign Maps", LoadCases = "Load Cases", SheetsTab = "Template Sheets";
         public const int SourceRow = 1, UnitRow = 2, ValueRow = 3, HeaderRow = 4, FirstMarkRow = 5;     // of a schedule tab, 0-based
 
         public const string Typed = "Typed here", Own = "Template's own value";
@@ -164,7 +164,57 @@ namespace CalcFlow
         static readonly string[] CellCols = { "Template", "Column", "Sheet", "Cell", "Label cell", "Label", "Unit", "Kind", "List", "Template value" };
         static readonly string[] OutputCols = { "Template", "Use", "Check", "Kind", "Expect", "Per row", "Result", "Sheet", "Cell", "Label cell", "Label" };
         static readonly string[] CaseCols = { "LC", "Title", "Kind", "Use", "Basis" };
-        static readonly string[] Reserved = { "Start", ModelConfig, ConnectionLib, TemplatesTab, CellsTab, OutputsTab, SignMaps, LoadCases };
+        static readonly string[] SheetCols = { "File", "Sheet", "Inputs", "Results", "On tab", "Says" };
+        static readonly string[] Reserved = { "Start", ModelConfig, ConnectionLib, TemplatesTab, SheetsTab, CellsTab, OutputsTab, SignMaps, LoadCases };
+
+        // what the Template Sheets tab of a written workbook counts, in one line ("" when it lists nothing)
+        public static string SheetsLine(string workbook)
+        {
+            List<Dictionary<string, string>> rows = OldTab(Xlsx.Read(workbook), SheetsTab);
+            if (rows.Count == 0) return "";
+            int own = rows.Count(r => V(r, "Says").StartsWith("A calc tab of its own", StringComparison.Ordinal)),
+                part = rows.Count(r => V(r, "Says").StartsWith("Part of that calc", StringComparison.Ordinal)),
+                none = rows.Count(r => V(r, "Says").StartsWith("Its inputs are on no tab", StringComparison.Ordinal));
+            return I(rows.Count) + " sheets in the template workbooks: " + I(own) + " with a calc tab, " + I(part) + " more whose inputs are on those tabs, " + I(none) +
+                " with inputs on no tab, " + I(rows.Count - own - part - none) + " with no input found (tab " + SheetsTab + " lists each)";
+        }
+
+        // One calc of a template workbook: the sheet its tab is named for, and the other sheets whose inputs it takes.
+        sealed class CalcSheets
+        {
+            public string Main = "";
+            public List<string> Own = new List<string>();        // the sheets that read one another (Main among them)
+            public List<string> Others = new List<string>();     // the rest of Own, and the sheets they read
+        }
+
+        // The input sheets of a template workbook, as calcs (HarvestResult.Sheets says which sheet reads which, however
+        // far). Sheets that read one another are one calc: a base plate's main sheet and its anchorage sheet. A sheet
+        // that is only read is a part of every calc that reads it (a sheet of shared values under six weld shapes)
+        // and no calc itself. So a calc is a set of sheets that no other input sheet reads, with all it reads.
+        static List<CalcSheets> Calcs(HarvestResult harvest, string template, List<string> inputSheets, Func<string, int> count)
+        {
+            var reads = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+            foreach (string s in inputSheets)
+                reads[s] = new HashSet<string>(harvest.SheetsRead(template, s).Where(r => inputSheets.Any(o => Same(o, r))), StringComparer.OrdinalIgnoreCase);
+            var sets = new List<List<string>>();
+            foreach (string s in inputSheets)
+            {
+                List<string> set = sets.FirstOrDefault(g => g.Any(o => reads[s].Contains(o) && reads[o].Contains(s)));
+                if (set == null) { set = new List<string>(); sets.Add(set); }
+                set.Add(s);
+            }
+            var calcs = new List<CalcSheets>();
+            foreach (var set in sets)
+            {
+                if (sets.Any(o => o != set && o.Any(x => set.Any(y => reads[x].Contains(y))))) continue;      // a part of the calcs that read it
+                var k = new CalcSheets();
+                k.Own = set;
+                k.Main = set.OrderByDescending(count).First();
+                k.Others = set.Where(x => !Same(x, k.Main)).Concat(inputSheets.Where(x => !set.Contains(x) && set.Any(y => reads[y].Contains(x)))).ToList();
+                calcs.Add(k);
+            }
+            return calcs;
+        }
 
         // ================================================================= writing the tabs
 
@@ -185,6 +235,7 @@ namespace CalcFlow
             var cells = new List<Dictionary<string, string>>();
             var outputs = new List<Dictionary<string, string>>();
             var schedules = new List<XOutSheet>();
+            var sheetRows = new List<Dictionary<string, string>>();
             List<Dictionary<string, string>> oldTemplates = OldTab(old, TemplatesTab), oldCells = OldTab(old, CellsTab), oldLib = OldTab(old, ConnectionLib),
                 oldModel = OldTab(old, ModelConfig), oldOuts = OldTab(old, OutputsTab), oldMaps = OldTab(old, SignMaps), oldCases = OldTab(old, LoadCases);
             foreach (var t in oldTemplates) if (V(t, "Template").Length > 0) names.Add(V(t, "Template"));
@@ -204,26 +255,46 @@ namespace CalcFlow
                         LoadTable lt = LoadTable.Find(harvest, hid, sh);
                         if (lt != null) tables.Add(lt);
                     }
-                    // the calc tabs: a workbook with a load table is one calc per table, and its schedule carries the
-                    // inputs of every sheet (the table's sheet first); else each sheet with a handful of inputs is a
-                    // calc tab, and one with a constant or two is not, unless it is all the workbook has
+                    // The calc tabs. A workbook with a load table is one calc per table. Else the workbook's calcs are
+                    // found from which sheet reads which (Calcs): one tab per calc, named for its sheet with the most
+                    // inputs, carrying the inputs of its other sheets too, so that a mark's one row reaches every
+                    // input of its calc. A calc with only a constant or two and no result found gets no tab, unless
+                    // it is all the workbook has.
                     var plans = new List<KeyValuePair<string, LoadTable>>();       // sheet, its load table (null: none)
-                    if (tables.Count > 0) foreach (LoadTable lt in tables) plans.Add(new KeyValuePair<string, LoadTable>(lt.Sheet, lt));
+                    var parts = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);      // a tab's sheet -> the calc's other input sheets
+                    var count = all.ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+                    List<string> order = harvest.SheetsOf(hid);
+                    Func<string, int> pos = x => { int k = order.FindIndex(o => Same(o, x)); return k < 0 ? int.MaxValue : k; };
+                    if (tables.Count > 0)
+                        foreach (LoadTable lt in tables)
+                        {
+                            plans.Add(new KeyValuePair<string, LoadTable>(lt.Sheet, lt));
+                            parts[lt.Sheet] = count.Keys.Where(x => !Same(x, lt.Sheet)).OrderBy(pos).ToList();
+                        }
                     else
                     {
-                        var bySheet = all.Where(g => g.Count() >= MinInputs).ToList();
-                        if (bySheet.Count == 0 && all.Count > 0) bySheet.Add(all.OrderByDescending(g => g.Count()).First());
-                        foreach (var g in bySheet) plans.Add(new KeyValuePair<string, LoadTable>(g.Key, null));
+                        List<CalcSheets> calcs = Calcs(harvest, hid, count.Keys.OrderBy(pos).ToList(), x => count[x]);
+                        Func<CalcSheets, int> total = k => count[k.Main] + k.Others.Sum(x => count[x]);
+                        Func<CalcSheets, bool> result = k => harvest.Outputs.Any(o => V(o, "Template") == hid && k.Own.Any(x => Same(x, V(o, "Sheet"))));
+                        var big = calcs.Where(k => total(k) >= MinInputs || result(k)).ToList();
+                        if (big.Count == 0 && calcs.Count > 0) big.Add(calcs.OrderByDescending(total).First());
+                        foreach (CalcSheets k in big.OrderBy(k => pos(k.Main)))
+                        {
+                            plans.Add(new KeyValuePair<string, LoadTable>(k.Main, null));
+                            parts[k.Main] = k.Others.OrderBy(pos).ToList();
+                        }
                     }
                     // a sheet the saved workbook holds as a template stays one, whatever is found on it now
                     foreach (var was in oldTemplates.Where(x => Same(V(x, "File"), V(h, "File")) && V(x, "Template").Length > 0))
                         if (!plans.Any(p => Same(p.Key, V(was, "Sheet"))) && harvest.Layout.Any(x => V(x, "Template") == hid && Same(V(x, "Sheet"), V(was, "Sheet"))))
                             plans.Add(new KeyValuePair<string, LoadTable>(harvest.Layout.First(x => V(x, "Template") == hid && Same(V(x, "Sheet"), V(was, "Sheet")))["Sheet"], null));
-                    var inputSheets = new HashSet<string>(plans.Select(x => x.Key), StringComparer.OrdinalIgnoreCase);
+                    var inputSheets = new HashSet<string>(plans.Select(x => x.Key).Concat(parts.Values.SelectMany(x => x)), StringComparer.OrdinalIgnoreCase);
+                    var made = new List<string[]>();        // sheet, the name of its tab
                     foreach (var pl in plans)
                     {
                         string sheet = pl.Key;
                         LoadTable table = pl.Value;
+                        List<string> others = parts.ContainsKey(sheet) ? parts[sheet] : new List<string>();
                         Dictionary<string, string> kept = oldTemplates.FirstOrDefault(x => Same(V(x, "File"), V(h, "File")) && Same(V(x, "Sheet"), sheet) && V(x, "Template").Length > 0 && !found.Contains(V(x, "Template")));
                         // the workbook's name, with the sheet's when it has several calc tabs and both fit
                         string wanted = plans.Count == 1 ? hid : (hid.Length + sheet.Length + 1 <= 31 ? hid + " " + sheet : sheet);
@@ -249,11 +320,13 @@ namespace CalcFlow
                                 notes.Add("template " + name + ": " + V(h, "File") + " has changed since the workbook was set up; its cells were read again");
                         }
                         templates.Add(t);
+                        made.Add(new[] { sheet, name });
                         bool oneCalc = table != null;
 
-                        // the inputs: the cells the engineer gave on the Templates tab, else what harvest found
-                        IEnumerable<Dictionary<string, string>> mine = !oneCalc ? ins.Where(x => V(x, "Sheet") == sheet)
-                            : ins.Where(x => V(x, "Sheet") == sheet).Concat(ins.Where(x => V(x, "Sheet") != sheet));
+                        // the inputs: the cells the engineer gave on the Templates tab, else what harvest found on the
+                        // tab's own sheet, then on the calc's other sheets
+                        IEnumerable<Dictionary<string, string>> mine = ins.Where(x => V(x, "Sheet") == sheet)
+                            .Concat(others.SelectMany(o => ins.Where(x => Same(V(x, "Sheet"), o))));
                         string why;
                         if (V(t, "Input cells").Length > 0)
                         {
@@ -296,11 +369,12 @@ namespace CalcFlow
                             if (results == null) notes.Add("template " + name + ": its 'Result cells' are not used (" + why + "); the results found in the template are kept");
                         }
                         bool chosen = results != null;
-                        List<Dictionary<string, string>> found1 = results ?? harvest.Outputs.Where(x => V(x, "Template") == hid && (oneCalc || V(x, "Sheet") == sheet || !inputSheets.Contains(V(x, "Sheet")))).ToList();
+                        List<Dictionary<string, string>> found1 = results ?? harvest.Outputs.Where(x => V(x, "Template") == hid && (oneCalc || V(x, "Sheet") == sheet || others.Any(o => Same(o, V(x, "Sheet"))) || !inputSheets.Contains(V(x, "Sheet")))).ToList();
                         // the one result that reads as the governing DCR starts with Use = Y. When several read that way
                         // it is not the tool's to choose: none is marked, and check asks for one
                         Func<Dictionary<string, string>, string> resultName = o => V(o, "Output").Length > 0 ? V(o, "Output") : V(o, "Cell");
                         var governing = found1.Where(o => V(o, "Kind") == "dcr" && Regex.IsMatch(resultName(o), @"\b(govern\w*|overall|max(imum)?)\b", RegexOptions.IgnoreCase)).ToList();
+                        if (governing.Count > 1 && governing.Count(o => V(o, "Sheet") == sheet) == 1) governing = governing.Where(o => V(o, "Sheet") == sheet).ToList();      // the tab's own sheet speaks first
                         foreach (var o in found1)
                         {
                             Dictionary<string, string> same = before.FirstOrDefault(x => Same(V(x, "Sheet"), V(o, "Sheet")) && Same(V(x, "Cell"), V(o, "Cell")));
@@ -310,6 +384,26 @@ namespace CalcFlow
                             outputs.Add(Row("Template", name, "Use", governs ? "Y" : "", "Check", governs ? (chosen ? result : "DCR") : "", "Kind", V(o, "Kind"), "Expect", V(o, "Expect"), "Per row", "",
                                 "Result", result, "Sheet", V(o, "Sheet"), "Cell", V(o, "Cell"), "Label cell", V(o, "GuardCell"), "Label", V(o, "GuardText")));
                         }
+                    }
+
+                    // every sheet of the workbook, and what became of it: the Template Sheets tab
+                    foreach (string sh in (order.Count > 0 ? order : harvest.Layout.Where(x => V(x, "Template") == hid).Select(x => V(x, "Sheet")).Distinct().ToList()))
+                    {
+                        int nIn = harvest.Inputs.Count(x => V(x, "Template") == hid && Same(V(x, "Sheet"), sh)), nOut = harvest.Outputs.Count(x => V(x, "Template") == hid && Same(V(x, "Sheet"), sh));
+                        var own = made.Where(m => Same(m[0], sh)).Select(m => m[1]).ToList();
+                        var carried = made.Where(m => parts.ContainsKey(m[0]) && parts[m[0]].Any(o => Same(o, sh))).Select(m => m[1]).ToList();
+                        string says;
+                        if (own.Count > 0 && carried.Count > 0)
+                            says = "Part of that calc: its inputs are columns of tab " + string.Join(", ", carried.ToArray()) + ", headed '" + sh + ": ...'. It also keeps the tab of its own that the workbook had: to drop that tab, delete its row on Templates.";
+                        else if (own.Count > 0)
+                        {
+                            List<string> with = parts.ContainsKey(sh) ? parts[sh] : new List<string>();
+                            says = "A calc tab of its own" + (with.Count > 0 ? ", which also holds the inputs of the sheets it works with: " + string.Join(", ", with.ToArray()) : "") + ".";
+                        }
+                        else if (carried.Count > 0) says = "Part of that calc: its inputs are columns of the tab, headed '" + sh + ": ...'.";
+                        else if (nIn > 0) says = "Its inputs are on no tab: no calc tab reads this sheet, and with so few inputs and no result found it does not look like a calc. For a tab of its own, add a row on Templates with this File and Sheet and a Template name, then run Refresh config.";
+                        else says = "No input found" + (nOut > 0 ? " (its results are on Outputs)" : "") + ". If it takes one, give the cells in Input cells on Templates, as '" + sh + "'!B5, then run Refresh config.";
+                        sheetRows.Add(Row("File", V(h, "File"), "Sheet", sh, "Inputs", I(nIn), "Results", I(nOut), "On tab", string.Join(", ", own.Concat(carried).Distinct(StringComparer.OrdinalIgnoreCase).ToArray()), "Says", says));
                     }
                 }
 
@@ -366,7 +460,7 @@ namespace CalcFlow
             foreach (string c in new[] { "Beam ID", "Node I", "Node J", "Frames into I", "Frames into J" }) WorkbookTables.Numbers(mc, Array.IndexOf(ModelCols, c), "0");
             int last = 2 + Math.Max(beams.Count, 1) + 2000;
             Validate(mc, "F3:G" + last, "'" + ConnectionLib + "'!$A$3:$A$2000", true);
-            mc.FreezeCols = 1;
+            Hints.Table(mc, "tblModelConfig", ModelCols);
             sheets.Add(mc);
 
             // ---- Connection Lib
@@ -375,6 +469,7 @@ namespace CalcFlow
                 c => c == "Connection" ? ColumnKind.Key : ColumnKind.Input);
             Validate(cl, "B3:B2000", "'" + TemplatesTab + "'!$A$3:$A$500", true);
             cl.Width(0, 22); cl.Width(1, 34); cl.Width(2, 60);
+            Hints.Table(cl, "tblConnectionLib", LibCols);
             sheets.Add(cl);
 
             // ---- Templates
@@ -391,14 +486,27 @@ namespace CalcFlow
             string fc = Xlsx.ColName(Array.IndexOf(TemplateCols, "Forces"));
             Validate(tt, fc + "3:" + fc + tn, "\"" + EndForces + "," + SupportReaction + "\"", true);
             tt.Width(Array.IndexOf(TemplateCols, "Forces"), 20);
+            Hints.Table(tt, "tblConfigTemplates", TemplateCols);
             sheets.Add(tt);
+
+            // ---- Template Sheets: every sheet of every template workbook, and the tab that holds its inputs
+            if (harvest == null) sheetRows.AddRange(OldTab(old, SheetsTab).Select(Strip));
+            XOutSheet ts = WorkbookTables.Sheet(SheetsTab, "tblTemplateSheets", SheetCols, sheetRows,
+                "Every sheet of every template workbook, and what the tool made of it. Written again by every Refresh config; nothing here is read back. A sheet that needs an input and has nothing in 'On tab' was not picked up: its row says what to do.",
+                c => (c == "File" || c == "Sheet") ? ColumnKind.Key : ColumnKind.Reference);
+            foreach (string c in new[] { "Inputs", "Results" }) WorkbookTables.Numbers(ts, Array.IndexOf(SheetCols, c), "0");
+            ts.Width(Array.IndexOf(SheetCols, "Says"), 90);
+            Hints.Table(ts, "tblTemplateSheets", SheetCols);
+            sheets.Add(ts);
 
             sheets.AddRange(schedules);
 
             // ---- Template Cells, Outputs, Sign Maps, Load Cases
-            sheets.Add(WorkbookTables.Sheet(CellsTab, "tblTemplateCells", CellCols, cells,
+            XOutSheet tc = WorkbookTables.Sheet(CellsTab, "tblTemplateCells", CellCols, cells,
                 "Where each schedule column goes in its template, as harvest found it or as the Templates tab gives it. For reference: the tool reads this tab, so leave it as it is.",
-                c => (c == "Template" || c == "Column") ? ColumnKind.Key : ColumnKind.Reference));
+                c => (c == "Template" || c == "Column") ? ColumnKind.Key : ColumnKind.Reference);
+            Hints.Table(tc, "tblTemplateCells", CellCols);
+            sheets.Add(tc);
             XOutSheet os = WorkbookTables.Sheet(OutputsTab, "tblConfigOutputs", OutputCols, outputs,
                 "What is read back from each template. Use = Y on the results you want. Check: the summary column it goes in (several results may share one: the largest counts). Kind: dcr (a ratio, judged against the DCR limit), status (OK / NG), health (a flag that must equal Expect), value (reported as it is). Per row = Y for a result beside a load table (one per row; give its first cell). A result harvest did not find can be added as a row below.",
                 c => c == "Template" ? ColumnKind.Key : (c == "Use" || c == "Check" || c == "Kind" || c == "Expect" || c == "Per row") ? ColumnKind.Input : ColumnKind.Reference);
@@ -406,11 +514,19 @@ namespace CalcFlow
             Validate(os, "B3:B" + (on + 200), "\"Y,N\"", true);
             Validate(os, "D3:D" + (on + 200), "\"" + string.Join(",", LibrarySchema.OutputKinds) + "\"", true);
             Validate(os, "F3:F" + (on + 200), "\"Y,N\"", true);
+            Hints.Table(os, "tblConfigOutputs", OutputCols);
             sheets.Add(os);
             XOutSheet sm = WorkbookTables.Sheet(SignMaps, "tblSignMaps", LibrarySchema.FrameColumns, oldMaps.Select(Strip).ToList(),
                 "Only when a template's axes differ from the member end's. A member end's forces are in its own axes: x along the member away from the joint, y the member's local y, z = x cross y, STAAD's sign. A row says which of them each template force is, e.g. Fx = +Fz. Action on_connection reverses all six. Confirmed = Y once checked by hand. The Fx to Mz cells are formatted as text, so -Fz stays as typed.",
                 c => c == "Frame" ? ColumnKind.Key : ColumnKind.Input);
             for (int k = 1; k <= 6; k++) WorkbookTables.Text(sm, k);
+            // drop-downs that take any value: what is typed already stays as it is
+            foreach (string[] pick in new[] { new[] { "Mirror", "Y,N" }, new[] { "Action", "on_member,on_connection" }, new[] { "Confirmed", "Y,N" } })
+            {
+                string col = Xlsx.ColName(Array.IndexOf(LibrarySchema.FrameColumns, pick[0]));
+                Validate(sm, col + "3:" + col + "2000", "\"" + pick[1] + "\"", false);
+            }
+            Hints.Table(sm, "tblSignMaps", LibrarySchema.FrameColumns);
             sheets.Add(sm);
             var cases = new List<Dictionary<string, string>>();
             if (pkg != null)
@@ -436,6 +552,8 @@ namespace CalcFlow
             WorkbookTables.Numbers(lc, 0, "0");
             Validate(lc, "D3:D" + cn, "\"Y,N\"", true);
             Validate(lc, "E3:E" + cn, "\"LRFD,ASD\"", true);
+            lc.FreezeCols = 2;      // the case and its title
+            Hints.Table(lc, "tblConfigCases", CaseCols);
             sheets.Add(lc);
             return sheets;
         }
@@ -692,6 +810,24 @@ namespace CalcFlow
             }
             s.Width(0, 18);
             s.FreezeRows = HeaderRow + 1; s.FreezeCols = 1;
+
+            // the notes shown beside a selected cell: what it is, and what is expected in it
+            Hints.Range(s, "B" + (SourceRow + 1) + ":" + lastCol + (SourceRow + 1), "Source",
+                "Where this column's value comes from. " + Typed + ": the mark's row below. " + Own + ": the template is left as it is. Fx to Mz, Beam number ...: filled in by the tool from the model for each calc.");
+            Hints.Range(s, "B" + (UnitRow + 1) + ":" + lastCol + (UnitRow + 1), "Unit",
+                "The unit of this column's values, as the template expects them. A column that takes a force or a moment of the model needs one, such as kip, kN, kip-in, kip-ft or kN-m.");
+            Hints.Range(s, "B" + (ValueRow + 1) + ":" + lastCol + (ValueRow + 1), "Template value", "The value the template holds now, for reference. Written by the tool: a change here is not read.");
+            Hints.Column(s, 0, HeaderRow, FirstMarkRow, "Connection", "A mark from the Connection Lib tab whose Template is this tab: one row a mark. The same mark may sit at many beam ends on Model Config.");
+            for (int i = 0; i < cols.Count; i++)
+            {
+                var c = cols[i];
+                string cell = V(c, "Cell"), own = V(c, "Template value");
+                string where = cell.Length == 0 ? "" : "Template cell " + (V(c, "Sheet").Length == 0 || Same(V(c, "Sheet"), sheet) ? "" : "'" + V(c, "Sheet") + "'!") + cell + ". ";
+                string hint = cell.Length == 0 ? "No longer an input of the template. Move its values to the column they belong in, then delete this column."
+                    : V(c, "Kind") == "table" ? where + "A block of cells, typed here as one table: rows separated by ; and values by , such as 2, 2; 2, 10. Rows you do not give are emptied. Blank = the template's own block."
+                    : where + "The mark's value for this input, used when Source (row 2) is " + Typed + ". Blank = the template's own value" + (own.Length > 0 && own.Length <= 40 ? " (" + own + ")" : "") + ". " + Blank + " = empty the cell.";
+                Hints.Column(s, i + 1, HeaderRow, FirstMarkRow, V(c, "Column"), hint);
+            }
             return s;
         }
 

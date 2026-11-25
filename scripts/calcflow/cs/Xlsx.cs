@@ -533,6 +533,9 @@ namespace CalcFlow
             return CutHeading(OneLine(s), Math.Max(8, MaxTableHeading - suffix.Length)) + suffix;
         }
 
+        // text on one line within a length (a note's title and text)
+        public static string OneLine(string s, int max) { return CutHeading(OneLine(s), max); }
+
         static string OneLine(string s)
         {
             if (s == null) return "";
@@ -1299,10 +1302,17 @@ namespace CalcFlow
                 sb.Append("<dataValidations count=\"").Append(s.Validations.Count).Append("\">");
                 foreach (XValidation v in s.Validations)
                 {
-                    sb.Append("<dataValidation type=\"list\" allowBlank=\"1\" showInputMessage=\"1\" showErrorMessage=\"").Append(v.Strict ? "1" : "0").Append("\"");
-                    if (v.PromptTitle != null) sb.Append(" promptTitle=\"").Append(Esc(v.PromptTitle)).Append("\"");
-                    if (v.Prompt != null) sb.Append(" prompt=\"").Append(Esc(v.Prompt)).Append("\"");
-                    sb.Append(" sqref=\"").Append(v.Sqref).Append("\"><formula1>").Append(Esc(v.List.TrimStart('='))).Append("</formula1></dataValidation>");
+                    // a list, or (no List) only the note shown beside the selected cell. Excel's limits: a title of
+                    // 32 characters and a text of 255, on one line
+                    bool list = !string.IsNullOrEmpty(v.List);
+                    sb.Append("<dataValidation");
+                    if (list) sb.Append(" type=\"list\"");
+                    sb.Append(" allowBlank=\"1\" showInputMessage=\"1\" showErrorMessage=\"").Append(list && v.Strict ? "1" : "0").Append("\"");
+                    if (!string.IsNullOrEmpty(v.PromptTitle)) sb.Append(" promptTitle=\"").Append(Esc(Xlsx.OneLine(v.PromptTitle, 32))).Append("\"");
+                    if (!string.IsNullOrEmpty(v.Prompt)) sb.Append(" prompt=\"").Append(Esc(Xlsx.OneLine(v.Prompt, 255))).Append("\"");
+                    sb.Append(" sqref=\"").Append(v.Sqref).Append("\"");
+                    if (list) sb.Append("><formula1>").Append(Esc(v.List.TrimStart('='))).Append("</formula1></dataValidation>");
+                    else sb.Append("/>");
                 }
                 sb.Append("</dataValidations>");
             }
