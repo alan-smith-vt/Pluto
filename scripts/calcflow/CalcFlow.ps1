@@ -31,7 +31,7 @@
                     -Out <folder> [-InputFill <colour>,<colour>: the fill of the cells to fill in when it is not
                     yellow, six hex digits each as the Fills tab lists them] -> Template_Map.xlsx (tab Inputs found: one row per input cell, or per column of a
                     list or table, with its heading and who would fill it; tab Fills: every fill colour found, and
-                    whether it is taken as inputs). Reads only; nothing else uses it yet.
+                    whether it is taken as inputs). Reads only: the same reading builds a template's tab in new and refresh.
     excel-check     for a workbook Excel opened with "Repaired Records: Table from /xl/tables/...": lists what in its
                     tables breaks a rule Excel has for them (a heading over 255 characters, two headings alike, a
                     heading that is not text ...): -Workbook <any .xlsx> [-Repaired <the copy saved from Excel after
