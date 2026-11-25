@@ -239,7 +239,13 @@ namespace CalcFlow
                     t.Template = id; t.Sheet = s.Name; t.At = Xlsx.Ref(block.Top, block.Left); t.MaxRows = block.Rows;
                     foreach (MapColumn c in block.Columns)
                     {
-                        string f = c.FilledBy == "Beam number" ? "Beam" : c.FilledBy == "Load case" ? "LC" : c.FilledBy == TemplateMap.PerEnd ? LoadTable.Typed(c.Heading.Length > 0 ? c.Heading : c.Cells) : c.FilledBy;
+                        // what the heading reads as, in the words of a load table; anything else is typed per beam end
+                        string named1 = c.Heading.Length > 0 ? c.Heading : c.Cells;
+                        string f = ProjectBook.TableField(c.FilledBy, named1);
+                        if (f == null || f == "-" || f.Length == 0) f = LoadTable.Typed(named1);
+                        var lc = new LoadColumn();
+                        lc.Offset = t.Fields.Count; lc.Field = f; lc.Heading = c.Heading; lc.Unit = c.Unit; lc.Example = c.Example; lc.LabelCell = c.LabelCell;
+                        t.Columns.Add(lc);
                         t.Fields.Add(f);
                         for (int k = 1; k < c.Width; k++) t.Fields.Add("-");
                         Unit u;

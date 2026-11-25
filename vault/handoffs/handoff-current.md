@@ -141,7 +141,10 @@ CAESAR's restraints, re-seeding that keeps SAP-side additions, and writing a see
   layout (`cs/TemplateMap.cs`): cells typed per mark, tables to type, tables of rows the tool writes with values
   typed per beam end, results along the rows. The user confirmed the reading on 133 template tabs with `map`; the
   tabs built from it have run only on made-up templates. A large library gets tabs for the templates in use.
-  **To learn from the user's run:** `new` on their library, a few marks, Refresh config, and what the tabs look like.
+  The user's first run: no Excel repair, and a tab with only its Connection column. A template that is only a table
+  of load rows gave such a tab; its tab now shows the table's columns with what fills each, and says first what it is.
+  **To learn from the user's run:** the first words of that tab after a pull and Refresh config (a table of load
+  rows, or no input found), and whether one copy per mark with a row per beam end is how they use that template.
 - **Next:** the same pass on the production machine with Excel; the first real project through the workbook; section
   dimensions looked up from the shape.
 

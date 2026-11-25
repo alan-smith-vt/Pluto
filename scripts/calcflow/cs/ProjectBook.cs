@@ -31,10 +31,19 @@ namespace CalcFlow
     }
 
     // A template's table of load rows, as found: a header row of beam / node / case / force names over rows to fill.
+    // a column of a load table as the template shows it: where it sits (0 = the table's first column), its heading,
+    // and the field harvest takes it for
+    public sealed class LoadColumn
+    {
+        public int Offset;
+        public string Field = "", Heading = "", Unit = "", Example = "", LabelCell = "";
+    }
+
     public sealed class LoadTable
     {
         public string Template = "", Sheet = "", At = "", ForceUnit = "", MomentUnit = "";
         public readonly List<string> Fields = new List<string>();
+        public readonly List<LoadColumn> Columns = new List<LoadColumn>();      // the columns that have a heading, for the template's tab
         public int MaxRows;
 
         // a column of a load table that is typed per beam end, as "Load table columns" writes it: [Stiffened?]
@@ -112,6 +121,14 @@ namespace CalcFlow
                     string f = heads.ContainsKey(c) ? FieldOf(heads[c], out u) : "";
                     u = ""; if (heads.ContainsKey(c)) FieldOf(heads[c], out u);
                     t.Fields.Add(f.Length == 0 ? "-" : f);
+                    if (heads.ContainsKey(c))
+                    {
+                        var lc = new LoadColumn();
+                        string below;
+                        lc.Offset = c - first; lc.Field = f.Length == 0 ? "-" : f; lc.Heading = Regex.Replace(heads[c], @"\s+", " ").Trim(); lc.Unit = u; lc.LabelCell = Xlsx.Ref(row, c);
+                        lc.Example = at.TryGetValue(((long)(row + 1) << 20) | (uint)c, out below) ? below : "";
+                        t.Columns.Add(lc);
+                    }
                     Unit parsed;
                     if (f.Length == 2 && u.Length > 0 && Units.TryParse(u, out parsed))
                     {
@@ -139,6 +156,32 @@ namespace CalcFlow
         public const int SourceRow = 1, UnitRow = 2, ValueRow = 3, HeaderRow = 4, FirstMarkRow = 5;     // of a schedule tab, 0-based
 
         public const string Typed = "Typed here", Own = "Template's own value";
+        // a column of a table the tool writes (a template's load table), on the template's tab: its Kind on Template
+        // Cells, and what its Source can be -> the field "Load table columns" calls it
+        public const string LoadKind = "load column", PerEnd = "Typed per beam end";
+        public static readonly string[][] TableSources =
+        {
+            new[] { PerEnd, "" }, new[] { Own, "-" },
+            new[] { "Beam number", "Beam" }, new[] { "Node", "Node" }, new[] { "Load case", "LC" }, new[] { "Load case title", "LC title" },
+            new[] { "Fx", "Fx" }, new[] { "Fy", "Fy" }, new[] { "Fz", "Fz" }, new[] { "Mx", "Mx" }, new[] { "My", "My" }, new[] { "Mz", "Mz" },
+            new[] { "Beam section", "Section" }, new[] { "Connection id", "Connection" }, new[] { "Connection mark", "Mark" }
+        };
+
+        // a load table field as a Source choice (Beam -> Beam number, [Stiffened?] -> Typed per beam end, - -> the template's own)
+        public static string TableSource(string field)
+        {
+            if (LoadTable.IsTyped(field)) return PerEnd;
+            string[] k = TableSources.FirstOrDefault(x => x[1].Length > 0 && Same(x[1], field));
+            return k == null ? Own : k[0];
+        }
+
+        // the field a Source choice stands for in a table column headed heading (null: not a choice)
+        public static string TableField(string source, string heading)
+        {
+            if (Same(source, PerEnd)) return LoadTable.Typed(heading);
+            string[] k = TableSources.FirstOrDefault(x => Same(x[0], source));
+            return k == null ? null : k[1];
+        }
         public static int MinInputs = 5;     // inputs a sheet needs to get a schedule tab of its own
         // A library of up to this many calc sheets gets a tab for each when the workbook is made. A larger one gets a
         // template's tab when a mark on Connection Lib uses the template (a workbook of 130 tabs helps no one).
@@ -397,7 +440,52 @@ namespace CalcFlow
                                 "Unit", V(i, "Unit"), "Kind", V(i, "Kind"), "List", V(i, "List"), "Template value", V(i, "Example"));
                             cols.Add(c); cells.Add(c);
                         }
-                        schedules.Add(Schedule(name, V(h, "File"), sheet, cols, schedules.Count + 1, V(t, "Load table at").Length > 0, kept == null || old == null ? null : ScheduleCarry.Read(old.Sheet(name)), notes));
+                        // The columns of a table the tool writes (the template's load table) come after the ones typed:
+                        // each with its heading in the template and, in the Source row, what fills it. The tab is where
+                        // that is said from here on; "Load table columns" and the two units on Templates repeat it.
+                        ScheduleCarry carry = kept == null || old == null ? null : ScheduleCarry.Read(old.Sheet(name));
+                        int tc0, tr0;
+                        if (table != null && table.Columns.Count > 0 && Same(V(t, "Load table at"), table.At) && Xlsx.ParseRef(table.At, out tc0, out tr0))
+                        {
+                            bool had = oldCells.Any(x => Same(V(x, "Template"), name) && V(x, "Kind") == LoadKind);     // the saved tab showed the table
+                            string[] was = V(t, "Load table columns").Split(',').Select(x => x.Trim()).ToArray();     // as the Templates row had it
+                            var fields = new List<string>();
+                            string fu = "", mu = "";
+                            foreach (LoadColumn tcol in table.Columns.OrderBy(x => x.Offset))
+                            {
+                                string at1 = Xlsx.Ref(tr0, tc0 + tcol.Offset), head = Regex.Replace(tcol.Heading, @"\s+", " ").Trim();
+                                string col = Xlsx.TableHeading(head.Length == 0 ? "Table column " + at1 : head);
+                                string plain = col;
+                                for (int n = 1; !used.Add(col); n++)
+                                    col = Xlsx.TableHeading(plain, " [" + at1 + "]" + (n == 1 ? "" : " (" + I(n) + ")"));
+                                // what fills it: the tab's own Source row; in a workbook saved before the tab showed the
+                                // table, the Templates row as it was; else what the heading reads as
+                                string field = !had && kept != null && tcol.Offset < was.Length && was[tcol.Offset].Length > 0 ? was[tcol.Offset] : tcol.Field;
+                                string source = TableSource(field);
+                                if (had && carry != null && carry.Source.ContainsKey(col) && carry.Source[col].Trim().Length > 0) source = carry.Source[col].Trim();
+                                string f1 = TableField(source, col) ?? "-";
+                                bool force = Regex.IsMatch(f1, "^F[xyz]$"), moment = Regex.IsMatch(f1, "^M[xyz]$");
+                                string unit = force ? V(t, "Force unit") : moment ? V(t, "Moment unit") : tcol.Unit;
+                                if (unit.Length == 0) unit = tcol.Unit;
+                                if (had && carry != null && carry.Unit.ContainsKey(col) && carry.Unit[col].Trim().Length > 0) unit = carry.Unit[col].Trim();
+                                while (fields.Count < tcol.Offset) fields.Add("-");
+                                fields.Add(f1);
+                                if (force && fu.Length == 0) fu = unit;
+                                if (moment && mu.Length == 0) mu = unit;
+                                var crow = Row("Template", name, "Column", col, "Sheet", sheet, "Cell", at1, "Label cell", tcol.LabelCell, "Label", tcol.Heading,
+                                    "Unit", unit, "Kind", LoadKind, "List", "", "Template value", tcol.Example);
+                                cells.Add(crow);
+                                var shown = new Dictionary<string, string>(crow, StringComparer.OrdinalIgnoreCase);
+                                shown["Source"] = source;
+                                cols.Add(shown);
+                            }
+                            t["Load table columns"] = string.Join(", ", fields.ToArray());
+                            if (fu.Length > 0) t["Force unit"] = fu;
+                            if (mu.Length > 0) t["Moment unit"] = mu;
+                        }
+                        if (cols.Count == 0)
+                            notes.Add("tab " + name + ": no input was found on sheet " + sheet + " of " + V(h, "File") + " (no cell with the input fill that holds a typed value), so the tab has no column. If its inputs have another colour, give it as Input fill on the Start tab; else list them in Input cells on the Templates tab; then run Refresh config");
+                        schedules.Add(Schedule(name, V(h, "File"), sheet, cols, schedules.Count + 1, V(t, "Load table at").Length > 0, carry, notes));
 
                         // the results: the rows the saved workbook holds, then the cells the engineer gave, else what
                         // harvest found: of this sheet, and of the workbook's sheets that take no input (solver flags);
@@ -435,17 +523,20 @@ namespace CalcFlow
                     foreach (string sh in (order.Count > 0 ? order : harvest.Layout.Where(x => V(x, "Template") == hid).Select(x => V(x, "Sheet")).Distinct().ToList()))
                     {
                         int nIn = harvest.Inputs.Count(x => V(x, "Template") == hid && Same(V(x, "Sheet"), sh)), nOut = harvest.Outputs.Count(x => V(x, "Template") == hid && Same(V(x, "Sheet"), sh));
+                        LoadTable its = tables.FirstOrDefault(x => Same(x.Sheet, sh));
+                        if (its != null) nIn += its.Columns.Count;      // the columns of its table are inputs too: the tool's
                         var own = made.Where(m => Same(m[0], sh)).Select(m => m[1]).ToList();
                         var carried = made.Where(m => parts.ContainsKey(m[0]) && parts[m[0]].Any(o => Same(o, sh))).Select(m => m[1]).ToList();
                         string says;
                         if (own.Count > 0 && own.All(x => waiting.Contains(x)))
-                            says = Waiting + ": it is made when a mark on Connection Lib uses template " + own[0] + ". Add the mark there, then run Refresh config.";
+                            says = Waiting + ": it is made when a mark on Connection Lib uses template " + own[0] + ". Add the mark there, then run Refresh config." + (its == null ? "" : " It is a table of load rows the tool writes.");
                         else if (own.Count > 0 && carried.Count > 0)
                             says = "Part of that calc: its inputs are columns of tab " + string.Join(", ", carried.ToArray()) + ", headed '" + sh + ": ...'. It also keeps the tab of its own that the workbook had: to drop that tab, delete its row on Templates.";
                         else if (own.Count > 0)
                         {
                             List<string> with = parts.ContainsKey(sh) ? parts[sh] : new List<string>();
-                            says = "A calc tab of its own" + (with.Count > 0 ? ", which also holds the inputs of the sheets it works with: " + string.Join(", ", with.ToArray()) : "") + ".";
+                            says = "A calc tab of its own" + (with.Count > 0 ? ", which also holds the inputs of the sheets it works with: " + string.Join(", ", with.ToArray()) : "") + "." +
+                                (its == null ? "" : " It is a table of load rows (from " + its.At + ", " + I(its.MaxRows) + " rows): the tool writes a row for each beam end, and the tab shows the table's columns with what fills each.");
                         }
                         else if (carried.Count > 0) says = "Part of that calc: its inputs are columns of the tab, headed '" + sh + ": ...'.";
                         else if (nIn > 0) says = "Its inputs are on no tab: no calc tab reads this sheet, and with so few inputs and no result found it does not look like a calc. For a tab of its own, add a row on Templates with this File and Sheet and a Template name, then run Refresh config.";
@@ -563,7 +654,7 @@ namespace CalcFlow
 
             // ---- Templates
             XOutSheet tt = WorkbookTables.Sheet(TemplatesTab, "tblConfigTemplates", TemplateCols, templates,
-                "One row per calc template (a tab of a template workbook), each with a schedule tab of the same name (in a library of more than 20, the tab is made when a mark on Connection Lib uses the template: add the mark, then run Refresh config). Loads: Envelope (the largest and smallest of each force with what acts with it) or All cases. Basis: LRFD or ASD when the template takes only one. Sign map: a row of Sign Maps (IDENTITY = the member end's forces as they are). Forces: Member end forces (of the beam end the mark sits at), or Support reaction (the reaction at that beam end's joint, in the same axes: for an anchorage where more than the column lands on the base; the joint must be a support, with its reactions printed for the cases in use). Load table at: the first cell of the template's table of load rows (blank = none); its columns in order (Beam, Node, LC, LC title, Fx to Mz, Section, Connection, Mark, or - for a column to leave alone); how many rows it holds; the units it takes. Input cells / Result cells: only when the columns found for the template are not the ones you want: list its input cells and result cells yourself (B4, B6:B9, Sheet2!C3; 'table B5:C12' for a block typed as one table; 'Anchors = table B5:C12' to name the column; start with the word also to add the cells to the ones found instead of replacing them), then run Refresh config.",
+                "One row per calc template (a tab of a template workbook), each with a schedule tab of the same name (in a library of more than 20, the tab is made when a mark on Connection Lib uses the template: add the mark, then run Refresh config). Loads: Envelope (the largest and smallest of each force with what acts with it) or All cases. Basis: LRFD or ASD when the template takes only one. Sign map: a row of Sign Maps (IDENTITY = the member end's forces as they are). Forces: Member end forces (of the beam end the mark sits at), or Support reaction (the reaction at that beam end's joint, in the same axes: for an anchorage where more than the column lands on the base; the joint must be a support, with its reactions printed for the cases in use). Load table at: the first cell of the template's table of load rows (blank = none); its columns in order (Beam, Node, LC, LC title, Fx to Mz, Section, Connection, Mark, or - for a column to leave alone); how many rows it holds; the units it takes. Where the template's tab shows the table's columns (teal headings), what fills a column and its unit are changed on that tab, in its Source and Unit rows: 'Load table columns' and the two units here are then written by the tool. Input cells / Result cells: only when the columns found for the template are not the ones you want: list its input cells and result cells yourself (B4, B6:B9, Sheet2!C3; 'table B5:C12' for a block typed as one table; 'Anchors = table B5:C12' to name the column; start with the word also to add the cells to the ones found instead of replacing them), then run Refresh config.",
                 c => c == "Template" ? ColumnKind.Key : (c == "File" || c == "Sheet" || c == "Sha256") ? ColumnKind.Reference : ColumnKind.Input);
             tt.Width(Array.IndexOf(TemplateCols, "Load table columns"), 48);
             tt.Width(Array.IndexOf(TemplateCols, "Input cells"), 40); tt.Width(Array.IndexOf(TemplateCols, "Result cells"), 30);
@@ -848,8 +939,16 @@ namespace CalcFlow
             var grey = Palette.Data(ColumnKind.Reference);
             var input = Palette.Data(ColumnKind.Input);
             var text = Palette.Data(ColumnKind.Input); text.NumFmt = "@";      // a table is kept as typed (it may start with a minus sign)
-            s.Add(new XCell("One row per connection mark that uses " + file + ", sheet " + sheet + ". Every input of the template is a column: fill the ones typed here, leave a cell blank to keep the template's own value (" + Blank + " empties the cell). Source says where a column's value comes from; a force needs its Unit. A table column holds a block of the template in one cell: its rows separated by ; and the values of a row by , (1.5, 1.5; 1.5, 10.5)." +
-                (table ? " This template takes a table of load rows (Templates tab): a mark is ONE copy of it, and its table lists the beam ends that call the mark." : ""), Palette.Note()));
+            // what the tab holds is said first: the note is one long line, and only its start is in view
+            int nLoad = cols.Count(c => V(c, "Kind") == LoadKind), nTyped = cols.Count - nLoad;
+            string lead = table
+                ? "This template is a table of load rows: a mark is ONE copy of it, and the tool writes a row for each beam end that calls the mark" +
+                    (nLoad > 0 ? ". The columns with a teal heading are the table's own: Source says what the tool writes in each (change it there), and nothing is typed under them. " : " (its columns are on the Templates tab). ") +
+                    (nTyped > 0 ? "The other columns are typed once per mark. " : "Nothing else is typed for a mark: give each mark its row. ")
+                : nTyped == 0
+                    ? "NO INPUT WAS FOUND on this sheet of the template: no cell with the input fill that holds a typed value. If its inputs have another colour, give it as Input fill on the Start tab; else list its cells in Input cells on the Templates tab (B4, B6:B9). Then run Refresh config. "
+                    : "";
+            s.Add(new XCell(lead + "One row per connection mark that uses " + file + ", sheet " + sheet + ". Every input of the template is a column: fill the ones typed here, leave a cell blank to keep the template's own value (" + Blank + " empties the cell). Source says where a column's value comes from; a force needs its Unit. A table column holds a block of the template in one cell: its rows separated by ; and the values of a row by , (1.5, 1.5; 1.5, 10.5).", Palette.Note()));
             var src = new List<object> { new XCell("Source", label) };
             var unit = new List<object> { new XCell("Unit", label) };
             var val = new List<object> { new XCell("Template value", label) };
@@ -857,13 +956,17 @@ namespace CalcFlow
             foreach (var c in cols)
             {
                 string h = V(c, "Column");
+                bool load = V(c, "Kind") == LoadKind;
                 string so = carry != null && carry.Source.ContainsKey(h) ? carry.Source[h] : "", un = carry != null && carry.Unit.ContainsKey(h) ? carry.Unit[h] : "";
+                // a column of the template's load table: the caller has settled what fills it
+                if (load && c.ContainsKey("Source")) { so = V(c, "Source"); un = V(c, "Unit"); }
                 string first;
-                if (_sources == null || !_sources.TryGetValue(name + "\n" + h, out first) || !Sources.Any(x => Same(x[0], first))) first = GuessSource(V(c, "Label"), V(c, "Cell"), V(c, "Unit"));
+                if (load) first = Own;
+                else if (_sources == null || !_sources.TryGetValue(name + "\n" + h, out first) || !Sources.Any(x => Same(x[0], first))) first = GuessSource(V(c, "Label"), V(c, "Cell"), V(c, "Unit"));
                 src.Add(new XCell(so.Length > 0 ? so : first, input));
                 unit.Add(new XCell(un.Length > 0 ? un : V(c, "Unit"), input));
                 val.Add(new XCell(V(c, "Template value"), grey));
-                head.Add(new XCell(h, Palette.Header(ColumnKind.Input)));
+                head.Add(new XCell(h, Palette.Header(load ? ColumnKind.Reference : ColumnKind.Input)));
             }
             s.Add(src.ToArray()); s.Add(unit.ToArray()); s.Add(val.ToArray()); s.Add(head.ToArray());
             int rows = 0;
@@ -873,7 +976,8 @@ namespace CalcFlow
                     var cells = new object[cols.Count + 1];
                     cells[0] = new XCell(V(r, "Connection"), Palette.Data(ColumnKind.Key));
                     for (int i = 0; i < cols.Count; i++)
-                        cells[i + 1] = V(cols[i], "Kind") == "table" ? new XCell(V(r, V(cols[i], "Column")), text) : new XCell(CellValue(V(r, V(cols[i], "Column"))), input);
+                        cells[i + 1] = V(cols[i], "Kind") == LoadKind ? new XCell("", grey)
+                            : V(cols[i], "Kind") == "table" ? new XCell(V(r, V(cols[i], "Column")), text) : new XCell(CellValue(V(r, V(cols[i], "Column"))), input);
                     s.Add(cells);
                     rows++;
                 }
@@ -881,7 +985,7 @@ namespace CalcFlow
             {
                 var first = new object[cols.Count + 1];
                 first[0] = new XCell("", Palette.Data(ColumnKind.Key));
-                for (int i = 1; i < first.Length; i++) first[i] = new XCell("", V(cols[i - 1], "Kind") == "table" ? text : input);
+                for (int i = 1; i < first.Length; i++) first[i] = new XCell("", V(cols[i - 1], "Kind") == LoadKind ? grey : V(cols[i - 1], "Kind") == "table" ? text : input);
                 s.Add(first);
                 rows = 1;
             }
@@ -890,21 +994,32 @@ namespace CalcFlow
             t.Name = "tblSchedule" + index.ToString(Inv); t.Top = HeaderRow; t.Left = 0; t.Right = cols.Count; t.Bottom = HeaderRow + rows; t.Style = Palette.TableStyle;
             s.Tables.Add(t);
             string lastCol = Xlsx.ColName(Math.Max(cols.Count, 1));
-            Validate(s, "B" + (SourceRow + 1) + ":" + lastCol + (SourceRow + 1), "\"" + string.Join(",", Sources.Select(x => x[0]).ToArray()) + "\"", true);
+            // the Source choices, and their note: one drop-down for each run of columns of a kind (the ones typed or
+            // fed for the mark; the columns of the template's table)
+            for (int a = 0; a < Math.Max(cols.Count, 1); )
+            {
+                bool load = a < cols.Count && V(cols[a], "Kind") == LoadKind;
+                int b = a;
+                while (b + 1 < cols.Count && (V(cols[b + 1], "Kind") == LoadKind) == load) b++;
+                string run = Xlsx.ColName(a + 1) + (SourceRow + 1) + ":" + Xlsx.ColName(b + 1) + (SourceRow + 1);
+                Validate(s, run, "\"" + string.Join(",", (load ? TableSources : Sources).Select(x => x[0]).ToArray()) + "\"", true);
+                Hints.Range(s, run, "Source", load
+                    ? "What the tool writes in this column of the template's table, on each beam end's row. " + PerEnd + ": you type it on the tab of beam ends (Refresh config makes it). " + Own + ": the column is left alone."
+                    : "Where this column's value comes from. " + Typed + ": the mark's row below. " + Own + ": the template is left as it is. Fx to Mz, Beam number ...: filled in by the tool from the model for each calc.");
+                a = b + 1;
+            }
             Validate(s, "A" + (FirstMarkRow + 1) + ":A2000", "'" + ConnectionLib + "'!$A$3:$A$2000", false);
             for (int i = 0; i < cols.Count; i++)
             {
                 string list = V(cols[i], "List");
                 if (list.Length > 0 && list.Length < 250 && list.IndexOf('"') < 0)
                     Validate(s, Xlsx.ColName(i + 1) + (FirstMarkRow + 1) + ":" + Xlsx.ColName(i + 1) + "2000", "\"" + list + "\"", false);
-                s.Width(i + 1, Math.Min(30, Math.Max(12, V(cols[i], "Column").Length + 3)));
+                s.Width(i + 1, Math.Min(30, Math.Max(V(cols[i], "Kind") == LoadKind ? 20 : 12, V(cols[i], "Column").Length + 3)));      // wide enough for "Typed per beam end"
             }
             s.Width(0, 18);
             s.FreezeRows = HeaderRow + 1; s.FreezeCols = 1;
 
             // the notes shown beside a selected cell: what it is, and what is expected in it
-            Hints.Range(s, "B" + (SourceRow + 1) + ":" + lastCol + (SourceRow + 1), "Source",
-                "Where this column's value comes from. " + Typed + ": the mark's row below. " + Own + ": the template is left as it is. Fx to Mz, Beam number ...: filled in by the tool from the model for each calc.");
             Hints.Range(s, "B" + (UnitRow + 1) + ":" + lastCol + (UnitRow + 1), "Unit",
                 "The unit of this column's values, as the template expects them. A column that takes a force or a moment of the model needs one, such as kip, kN, kip-in, kip-ft or kN-m.");
             Hints.Range(s, "B" + (ValueRow + 1) + ":" + lastCol + (ValueRow + 1), "Template value", "The value the template holds now, for reference. Written by the tool: a change here is not read.");
@@ -915,6 +1030,7 @@ namespace CalcFlow
                 string cell = V(c, "Cell"), own = V(c, "Template value");
                 string where = cell.Length == 0 ? "" : "Template cell " + (V(c, "Sheet").Length == 0 || Same(V(c, "Sheet"), sheet) ? "" : "'" + V(c, "Sheet") + "'!") + cell + ". ";
                 string hint = cell.Length == 0 ? "No longer an input of the template. Move its values to the column they belong in, then delete this column."
+                    : V(c, "Kind") == LoadKind ? where.Replace("Template cell", "A column of the template's table, from cell") + "The tool fills it on each beam end's row, as Source (row 2) says. Nothing is typed here."
                     : V(c, "Kind") == "table" ? where + "A block of cells, typed here as one table: rows separated by ; and values by , such as 2, 2; 2, 10. Rows you do not give are emptied. Blank = the template's own block."
                     : where + "The mark's value for this input, used when Source (row 2) is " + Typed + ". Blank = the template's own value" + (own.Length > 0 && own.Length <= 40 ? " (" + own + ")" : "") + ". " + Blank + " = empty the cell.";
                 Hints.Column(s, i + 1, HeaderRow, FirstMarkRow, V(c, "Column"), hint);
@@ -949,15 +1065,20 @@ namespace CalcFlow
                 for (int k = 2; lib != null && k < lib.Rows.Count && !u.Used; k++) u.Used = Same(Shown(lib.Rows[k], 1), name) && Shown(lib.Rows[k], 0).Length > 0;
                 string q = "'" + name.Replace("'", "''") + "'!", t = "'" + TemplatesTab + "'!", row = (r + 1).ToString(Inv);
                 string forces = "{\"Fx\",\"Fy\",\"Fz\",\"Mx\",\"My\",\"Mz\"}";
+                // a tab that shows its load table's columns holds their units too: the Templates row only repeats them
+                XOutSheet ct = sheets.FirstOrDefault(s => s.Name == CellsTab);
+                int kind = Array.IndexOf(CellCols, "Kind");
+                bool onTab = ct != null && ct.Rows.Skip(2).Any(x => Same(Shown(x, 0), name) && Shown(x, kind) == LoadKind);
                 u.Formula = "SUMPRODUCT(ISNUMBER(MATCH(" + q + "$B$" + (SourceRow + 1) + ":$XFD$" + (SourceRow + 1) + "," + forces + ",0))*(" + q + "$B$" + (UnitRow + 1) + ":$XFD$" + (UnitRow + 1) + "=\"\"))" +
+                    (onTab ? "" :
                     "+IF(" + t + "$" + Xlsx.ColName(at) + "$" + row + "=\"\",0," +
                     "IF(AND(" + t + "$" + Xlsx.ColName(fu) + "$" + row + "=\"\",SUMPRODUCT(--ISNUMBER(SEARCH({\"Fx\",\"Fy\",\"Fz\"}," + t + "$" + Xlsx.ColName(fields) + "$" + row + ")))>0),1,0)+" +
-                    "IF(AND(" + t + "$" + Xlsx.ColName(mu) + "$" + row + "=\"\",SUMPRODUCT(--ISNUMBER(SEARCH({\"Mx\",\"My\",\"Mz\"}," + t + "$" + Xlsx.ColName(fields) + "$" + row + ")))>0),1,0))";
+                    "IF(AND(" + t + "$" + Xlsx.ColName(mu) + "$" + row + "=\"\",SUMPRODUCT(--ISNUMBER(SEARCH({\"Mx\",\"My\",\"Mz\"}," + t + "$" + Xlsx.ColName(fields) + "$" + row + ")))>0),1,0))");
                 // the same count, from what is being written (what the cell shows before Excel calculates it)
                 object[] src = sch.Rows[SourceRow], un = sch.Rows[UnitRow];
                 for (int c = 1; c < src.Length; c++)
                     if (Regex.IsMatch(Shown(src, c), "^[FM][xyz]$") && Shown(un, c).Length == 0) u.Missing++;
-                if (Shown(tt.Rows[r], at).Length > 0)
+                if (!onTab && Shown(tt.Rows[r], at).Length > 0)
                 {
                     if (Shown(tt.Rows[r], fu).Length == 0 && Regex.IsMatch(Shown(tt.Rows[r], fields), "F[xyz]", RegexOptions.IgnoreCase)) u.Missing++;
                     if (Shown(tt.Rows[r], mu).Length == 0 && Regex.IsMatch(Shown(tt.Rows[r], fields), "M[xyz]", RegexOptions.IgnoreCase)) u.Missing++;
@@ -1141,7 +1262,12 @@ namespace CalcFlow
                 if (!Same(forces, EndForces) && !Same(forces, SupportReaction)) res.Error(TemplatesTab, "template " + name + ": Forces is '" + EndForces + "' or '" + SupportReaction + "' (got '" + forces + "')");
                 string loads = V(t, "Loads").Length == 0 ? "Envelope" : V(t, "Loads");
                 if (!Same(loads, "Envelope") && !Same(loads, "All cases") && !Same(loads, LargestRow)) res.Error(TemplatesTab, "template " + name + ": Loads is Envelope, All cases or " + LargestRow + " (got '" + loads + "')");
-                if (TypedFields(V(t, "Load table columns")).Count > 0) typedOf[name] = new KeyValuePair<string, List<string>>(V(t, "Beam ends tab"), TypedFields(V(t, "Load table columns")));
+                // the columns of its load table: as the tab's Source row has them, where the tab shows the table; else
+                // as "Load table columns" on Templates lists them
+                string[] tabFields, tabUnits, tabCols;
+                TabTable(s, t, name, cellOf, res, out tabFields, out tabUnits, out tabCols);
+                List<string> perEnd = TypedFields(tabFields != null ? string.Join(", ", tabFields) : V(t, "Load table columns"));
+                if (perEnd.Count > 0) typedOf[name] = new KeyValuePair<string, List<string>>(V(t, "Beam ends tab"), perEnd);
                 var trow = Row("Template", name, "File", V(t, "File"), "Sha256", V(t, "Sha256"), "Shape", "single_case", "Basis", V(t, "Basis"));
                 rows["tblTemplates"].Add(trow);
                 res.Templates++;
@@ -1149,7 +1275,7 @@ namespace CalcFlow
                 {
                     trow["Shape"] = "case_table";
                     foreach (string mk in mine) tableMarks.Add(mk);
-                    LoadTableInputs(t, name, templatesDir, rows["tblInputs"], trow, res);
+                    LoadTableInputs(t, name, templatesDir, rows["tblInputs"], trow, res, tabFields, tabUnits, tabCols);
                 }
 
                 // the columns
@@ -1161,6 +1287,7 @@ namespace CalcFlow
                     string col = s.Text(HeaderRow, c).Trim(), source = s.Text(SourceRow, c).Trim(), unit = s.Text(UnitRow, c).Trim();
                     Dictionary<string, string> cell;
                     if (!cellOf.TryGetValue(name + "\n" + col, out cell)) { res.Error(name, "column '" + col + "' is not one of the template's inputs (was its heading changed? see " + CellsTab + ")"); continue; }
+                    if (V(cell, "Kind") == LoadKind) continue;        // a column of the template's load table: read above
                     if (source.Length == 0) source = Typed;
                     if (Same(source, Own)) continue;
                     string[] known = Sources.FirstOrDefault(x => Same(x[0], source));
@@ -1274,6 +1401,12 @@ namespace CalcFlow
                 typedRows[kv.Key] = byEnd;
                 if (kv.Value.Key.Length == 0 || wb.Sheet(kv.Value.Key) == null)
                 { res.Error(TemplatesTab, "template " + kv.Key + " has columns typed per beam end (" + string.Join(", ", kv.Value.Value.ToArray()) + ") and no tab of beam ends yet: run Refresh config, then fill the tab in"); continue; }
+                XSheet es = wb.Sheet(kv.Value.Key);
+                var heads = new HashSet<string>(Xlsx.Headings);
+                for (int c = 0; es.Text(1, c).Trim().Length > 0; c++) heads.Add(es.Text(1, c).Trim());
+                var lacking = kv.Value.Value.Where(f => !heads.Contains(f)).ToList();
+                if (lacking.Count > 0)
+                    res.Error(kv.Value.Key, "template " + kv.Key + " now has " + string.Join(", ", lacking.Select(f => "'" + f + "'").ToArray()) + " typed per beam end, and this tab has no column for it yet: run Refresh config, then fill it in");
                 foreach (var r in Tab(wb, kv.Value.Key, res))
                     if (V(r, "Beam").Length > 0) byEnd[V(r, "Beam") + "|" + (V(r, "End").Trim().ToUpperInvariant() == "J" ? "B" : "A")] = r;
             }
@@ -1364,7 +1497,40 @@ namespace CalcFlow
         }
 
         // the load table of a Templates row -> one per-row input for each of its columns
-        static void LoadTableInputs(Dictionary<string, string> t, string name, string templatesDir, List<Dictionary<string, string>> inputs, Dictionary<string, string> trow, ExpandResult res)
+        // The columns of a template's load table as its tab has them: for each place in the table, the field its Source
+        // stands for ("-" where the tab has no column), its Unit, and its heading on the tab. All null when the tab
+        // does not show the table (a workbook from before it did, or a table given by hand on Templates).
+        static void TabTable(XSheet s, Dictionary<string, string> t, string name, Dictionary<string, Dictionary<string, string>> cellOf, ExpandResult res, out string[] fields, out string[] units, out string[] heads)
+        {
+            fields = null; units = null; heads = null;
+            int c0, r0;
+            if (s == null || !Xlsx.ParseRef(V(t, "Load table at"), out c0, out r0)) return;
+            var found = new List<string[]>();       // offset, field, unit, heading
+            for (int c = 1; s.Text(HeaderRow, c).Trim().Length > 0; c++)
+            {
+                string col = s.Text(HeaderRow, c).Trim();
+                Dictionary<string, string> cell;
+                int cc, cr;
+                if (!cellOf.TryGetValue(name + "\n" + col, out cell) || V(cell, "Kind") != LoadKind || !Xlsx.ParseRef(V(cell, "Cell"), out cc, out cr) || cc < c0) continue;
+                string source = s.Text(SourceRow, c).Trim();
+                string f = source.Length == 0 ? "-" : TableField(source, col);
+                if (f == null)
+                {
+                    res.Error(name, "column '" + col + "' is a column of the template's table: its Source is one of " + string.Join(", ", TableSources.Select(x => x[0]).ToArray()) + " (got '" + source + "')");
+                    f = "-";
+                }
+                found.Add(new[] { I(cc - c0), f, s.Text(UnitRow, c).Trim(), col });
+            }
+            if (found.Count == 0) return;
+            int n = found.Max(x => int.Parse(x[0], Inv)) + 1;
+            fields = Enumerable.Repeat("-", n).ToArray(); units = Enumerable.Repeat("", n).ToArray(); heads = Enumerable.Repeat("", n).ToArray();
+            foreach (var x in found) { int k = int.Parse(x[0], Inv); fields[k] = x[1]; units[k] = x[2]; heads[k] = x[3]; }
+        }
+
+        // tabFields, tabUnits, tabCols: the table's columns as the template's tab has them (TabTable); null: as the
+        // Templates row lists them
+        static void LoadTableInputs(Dictionary<string, string> t, string name, string templatesDir, List<Dictionary<string, string>> inputs, Dictionary<string, string> trow, ExpandResult res,
+            string[] tabFields, string[] tabUnits, string[] tabCols)
         {
             string at = V(t, "Load table at"), sheet = V(t, "Sheet");
             int col, row;
@@ -1374,7 +1540,8 @@ namespace CalcFlow
             if (!int.TryParse(V(t, "Max rows"), NumberStyles.Integer, Inv, out max) || max <= 0)
                 res.Error(TemplatesTab, "template " + name + ": give 'Max rows', the number of load rows its table holds");
             else trow["MaxCases"] = I(max);
-            string[] fields = V(t, "Load table columns").Split(',').Select(x => x.Trim()).ToArray();
+            bool onTab = tabFields != null;
+            string[] fields = onTab ? tabFields : V(t, "Load table columns").Split(',').Select(x => x.Trim()).ToArray();
             if (fields.Length == 0 || fields.All(f => f.Length == 0)) { res.Error(TemplatesTab, "template " + name + ": give 'Load table columns', the table's columns in order (Beam, Node, LC, Fx ...)"); return; }
             TemplateBook book = null;
             if (!string.IsNullOrEmpty(templatesDir))
@@ -1392,8 +1559,14 @@ namespace CalcFlow
                 if (known == null) { res.Error(TemplatesTab, "template " + name + ": load table column '" + f + "' is not one of " + string.Join(", ", TableFields.Select(x => x[0]).ToArray()) + ", or a name of your own in square brackets for a column typed per beam end, like [Stiffened?]"); continue; }
                 bool force = known[1].StartsWith("load:F", StringComparison.Ordinal), moment = known[1].StartsWith("load:M", StringComparison.Ordinal);
                 string unit = force ? V(t, "Force unit") : moment ? V(t, "Moment unit") : "";
-                if ((force || moment) && unit.Length == 0) { res.Error(TemplatesTab, "template " + name + ": its load table takes " + known[0] + ": give the '" + (force ? "Force unit" : "Moment unit") + "' (kip, kN ...; kip-in, kip-ft, kN-m ...)"); continue; }
-                if (unit.Length > 0) { Unit u; if (!Units.TryParse(unit, out u)) { res.Error(TemplatesTab, "template " + name + ": '" + unit + "' is not a unit CalcFlow knows"); continue; } }
+                if (onTab && (force || moment)) unit = tabUnits[k];
+                if ((force || moment) && unit.Length == 0)
+                {
+                    if (onTab) res.Error(name, "column '" + tabCols[k] + "' takes " + known[0] + ": give its unit in the Unit row (kip, lbf, kN; kip-in, kip-ft, kN-m ...)");
+                    else res.Error(TemplatesTab, "template " + name + ": its load table takes " + known[0] + ": give the '" + (force ? "Force unit" : "Moment unit") + "' (kip, kN ...; kip-in, kip-ft, kN-m ...)");
+                    continue;
+                }
+                if (unit.Length > 0) { Unit u; if (!Units.TryParse(unit, out u)) { res.Error(onTab ? name : TemplatesTab, (onTab ? "column '" + tabCols[k] + "'" : "template " + name) + ": '" + unit + "' is not a unit CalcFlow knows"); continue; } }
                 var input = Row("Template", name, "Sheet", sheet, "Cell", Xlsx.Ref(row, col + k), "Unit", unit, "Binding", known[1], "PerCase", "Y", "Required", "Y");
                 // the heading above the column guards it, when the template is at hand
                 // (the nearest text within four rows: under a heading merged over two rows the cell right above is empty)
@@ -1407,7 +1580,7 @@ namespace CalcFlow
                 inputs.Add(input);
                 any = true;
             }
-            if (!any) res.Error(TemplatesTab, "template " + name + ": its load table has no column the tool fills");
+            if (!any) res.Error(onTab ? name : TemplatesTab, onTab ? "no column of the template's table is filled by the tool: choose what fills them in the Source row (Beam number, Fx ...)" : "template " + name + ": its load table has no column the tool fills");
         }
 
         // ---- small helpers

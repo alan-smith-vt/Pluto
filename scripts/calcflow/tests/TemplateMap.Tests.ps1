@@ -202,7 +202,7 @@ $wb = Join-Path $proj 'CalcFlow.xlsx'
 function Set-Cells([string]$Path, [object[]]$Cells) { $tmp = $Path + '.tmp'; Save-Cells $Path $tmp $Cells; Move-Item -LiteralPath $tmp -Destination $Path -Force }
 $headsOf = { param($book, $tab) $s = $book.Sheet($tab); $h = @(); $n = 1; while ($s.Text(4, $n)) { $h += "$($s.Text(4, $n))<$($s.Text(1, $n))" ; $n++ }; $h -join ' | ' }
 
-Test 'new on templates with yellow cells: a tab holds the cells typed once and nothing else; a table of rows is the template''s load table; its ratios are results, one a row' {
+Test 'new on templates with yellow cells: a tab holds the cells typed once, then the columns of the table the tool writes with what fills each; its ratios are results, one a row' {
     Assert-Equal $newExit 0 ($oNew -join "`n")
     $b = [CalcFlow.Xlsx]::Read($wb)
     $t = @{}; foreach ($r in $b.TableRows('tblConfigTemplates')) { $t[$r['Template']] = $r }
@@ -212,9 +212,17 @@ Test 'new on templates with yellow cells: a tab holds the cells typed once and n
     Assert-Equal $t['Brace-Batch']['Load table columns'] '[Shape], [Grade], [Slotted?], [Span (in)], Beam, Fx'
     Assert-Equal "$($t['Plate']['Sheet'])|$($t['Plate']['Load table columns'])|$($t['Plate']['Beam ends tab'])" 'Loads|LC, Fx, Fy, Mz|' 'the plate is filled in on its Pattern sheet and takes its loads on another'
     # typed once per mark: the two merged cells of the clip, and every cell of the pattern sheet under its own heading
-    Assert-Equal (& $headsOf $b 'Clip-Batch') 'Girder<Typed here | Post<Typed here'
-    Assert-Equal (& $headsOf $b 'Brace-Batch') '' 'every input of the brace table is the tool''s or typed per beam end'
-    Assert-Equal (& $headsOf $b 'Plate') 'Bolt pattern<Typed here | Mark<Typed here | Joint<Node | Face<Typed here | left (in)<Typed here | right (in)<Typed here | t<Typed here | d<Typed here | Fy<Typed here'
+    Assert-Equal (& $headsOf $b 'Clip-Batch') 'Girder<Typed here | Post<Typed here | Stiffened?<Typed per beam end | Beam #<Beam number | Node #<Node | FX (kip)<Fx | FY (kip)<Fy | FZ (kip)<Fz | MX (kip-in)<Mx | MY (kip-in)<My | MZ (kip-in)<Mz'
+    # a template whose only yellow cells are its table still shows what it takes: the table's headings, each with what fills it
+    Assert-Equal (& $headsOf $b 'Brace-Batch') 'Shape<Typed per beam end | Grade<Typed per beam end | Slotted?<Typed per beam end | Span (in)<Typed per beam end | Member #<Beam number | Axial (kip)<Fx'
+    Assert-Match $b.Sheet('Brace-Batch').Text(0, 0) '^This template is a table of load rows: a mark is ONE copy of it'
+    Assert-Equal (& $headsOf $b 'Plate') 'Bolt pattern<Typed here | Mark<Typed here | Joint<Node | Face<Typed here | left (in)<Typed here | right (in)<Typed here | t<Typed here | d<Typed here | Fy<Typed here | LC<Load case | Fx (kip)<Fx | Fy (kip)<Fy | Mz (kip-ft)<Mz'
+    # a column of the table has its unit and the template's own first value above its heading, like any other
+    $bs = $b.Sheet('Brace-Batch')
+    Assert-Equal "$($bs.Text(2, 6))|$($bs.Text(3, 6))|$($bs.Text(3, 1))" 'kip|8|HSS4X4X1/4'
+    $lc = @($b.TableRows('tblTemplateCells') | Where-Object { $_['Kind'] -eq 'load column' -and $_['Template'] -eq 'Brace-Batch' } | ForEach-Object { "$($_['Column'])@$($_['Cell'])" })
+    Assert-Equal ($lc -join ' ') 'Shape@A6 Grade@B6 Slotted?@C6 Span (in)@D6 Member #@E6 Axial (kip)@F6'
+    Assert-Equal @($b.TableRows('tblTemplateSheets') | Where-Object { $_['Sheet'] -eq 'Braces' })[0]['Inputs'] '6' 'the columns of its table count as its inputs'
     $block = @($b.TableRows('tblTemplateCells') | Where-Object { $_['Column'] -eq 'Bolt pattern' })[0]
     Assert-Equal "$($block['Sheet'])!$($block['Cell'])|$($block['Kind'])|$($block['Template value'])" 'Pattern!D4:E9|table|0, 0; 3, 0; 0, 4; 3, 4; 0, 8; 3, 8' 'the grid is one cell to type a table in'
     $outs = @($b.TableRows('tblConfigOutputs') | ForEach-Object { "$($_['Template']):$($_['Result'])@$($_['Sheet'])!$($_['Cell']) use=$($_['Use']) check=$($_['Check']) row=$($_['Per row'])" })
@@ -274,6 +282,66 @@ Test 'check: each row of a table the tool writes carries its beam end''s own val
     Assert-Equal "$(& $cell 'PL-1' 1 'A3') $(& $cell 'PL-1' 1 'B3')" '3 32.224'
 }
 
+Test 'what fills a column of the template''s table is said on its tab: check reads the Source and Unit rows there, and Refresh config repeats them on Templates' {
+    $p2 = Join-Path $dir 'proj-source'
+    Copy-Item -LiteralPath $proj -Destination $p2 -Recurse
+    $w2 = Join-Path $p2 'CalcFlow.xlsx'
+    $b = [CalcFlow.Xlsx]::Read($w2)
+    $fz = Get-Col $b 'Clip-Batch' 'FZ (kip)' 5; $st = Get-Col $b 'Clip-Batch' 'Stiffened?' 5; $nd = Get-Col $b 'Clip-Batch' 'Node #' 5; $fx = Get-Col $b 'Clip-Batch' 'FX (kip)' 5
+    # a column left to the template, and the one typed per beam end no longer typed
+    Set-Cells $w2 @(@('Clip-Batch', "${fz}2", "Template's own value"), @('Clip-Batch', "${st}2", "Template's own value"))
+    $o = Invoke-CfCli check -Workbook $w2
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    $cases = @([CalcFlow.Csv]::ReadTable((Join-Path $p2 'calcflow/plan/cases.csv')) | Where-Object { $_['Calc'] -eq 'CL-1' -and $_['Row'] -eq '1' })
+    Assert-Equal (@($cases | ForEach-Object { $_['Cell'] } | Sort-Object) -join ' ') 'B9 C9 D9 E9 G9 H9 I9' 'neither A9 (was typed per beam end) nor F9 (Fz) is written'
+    # a Source that is not a choice, and a force with no unit: said on the tab, by the column's heading
+    Set-Cells $w2 @(@('Clip-Batch', "${nd}2", 'Nonsense'), @('Clip-Batch', "${fx}3", ''))
+    $o = Invoke-CfCli check -Workbook $w2
+    Assert-Equal $LASTEXITCODE 1 ($o -join "`n")
+    Assert-Match ($o -join "`n") "\[fix  \] Clip-Batch: column 'Node #' is a column of the template's table: its Source is one of Typed per beam end, Template's own value, Beam number"
+    Assert-Match ($o -join "`n") "\[fix  \] Clip-Batch: column 'FX \(kip\)' takes Fx: give its unit in the Unit row"
+    # a refresh keeps the tab's rows and writes them again on Templates; the tab of beam ends is gone with its last column
+    Set-Cells $w2 @(@('Clip-Batch', "${nd}2", 'Node'), @('Clip-Batch', "${fx}3", 'kN'))
+    $o = Invoke-CfCli refresh -Workbook $w2 -NoWait -NoOpen
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    $b = [CalcFlow.Xlsx]::Read($w2)
+    $c = @($b.TableRows('tblConfigTemplates') | Where-Object { $_['Template'] -eq 'Clip-Batch' })[0]
+    Assert-Equal "$($c['Load table columns'])|$($c['Force unit'])|$($c['Moment unit'])|$($c['Beam ends tab'])" '-, Beam, Node, Fx, Fy, -, Mx, My, Mz|kN|kip-in|'
+    Assert-Equal (& $headsOf $b 'Clip-Batch') "Girder<Typed here | Post<Typed here | Stiffened?<Template's own value | Beam #<Beam number | Node #<Node | FX (kip)<Fx | FY (kip)<Fy | FZ (kip)<Template's own value | MX (kip-in)<Mx | MY (kip-in)<My | MZ (kip-in)<Mz"
+    Assert-True ($b.Sheet('Clip-Batch ends') -eq $null) 'no column is typed per beam end any more'
+    Assert-Equal ([CalcFlow.XlsxCheck]::Tables($w2) + [CalcFlow.XlsxCheck]::Validations($w2)).Count 0
+    # a column turned to typed per beam end: check asks for the refresh that gives it its column on the tab of beam ends
+    Set-Cells $w2 @(, @('Brace-Batch', ((Get-Col $b 'Brace-Batch' 'Member #' 5) + '2'), 'Typed per beam end'))
+    $o = Invoke-CfCli check -Workbook $w2
+    Assert-Equal $LASTEXITCODE 1 ($o -join "`n")
+    Assert-Match ($o -join "`n") "\[fix  \] Brace-Batch ends: template Brace-Batch now has 'Member #' typed per beam end, and this tab has no column for it yet: run Refresh config"
+}
+
+Test 'a workbook saved before a tab showed its table: Refresh config puts the columns on the tab as the Templates row had them' {
+    $p3 = Join-Path $dir 'proj-before'
+    Copy-Item -LiteralPath $proj -Destination $p3 -Recurse
+    $w3 = Join-Path $p3 'CalcFlow.xlsx'
+    $b = [CalcFlow.Xlsx]::Read($w3)
+    # as such a workbook is: no table column known on Template Cells, and 'Load table columns' edited by hand
+    $kind = Get-Col $b 'Template Cells' 'Kind' 2
+    $cs = $b.Sheet('Template Cells'); $edits = @()
+    for ($r = 2; $r -lt 80; $r++) { if ($cs.Text($r, 0) -eq 'Clip-Batch' -and $cs.Text($r, 7) -eq 'load column') { $edits += , @('Template Cells', "$kind$($r + 1)", '') } }
+    Assert-Equal $edits.Count 9
+    $ts = $b.Sheet('Templates'); $tr = @(2..12 | Where-Object { $ts.Text($_, 0) -eq 'Clip-Batch' })[0] + 1
+    $edits += , @('Templates', ((Get-Col $b 'Templates' 'Load table columns' 2) + $tr), '[Stiffened?], Beam, Node, Fx, Fy, -, Mx, My, Mz')
+    $edits += , @('Templates', ((Get-Col $b 'Templates' 'Moment unit' 2) + $tr), 'kip-ft')
+    Set-Cells $w3 $edits
+    $o = Invoke-CfCli refresh -Workbook $w3 -NoWait -NoOpen
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    $b = [CalcFlow.Xlsx]::Read($w3)
+    Assert-Equal (& $headsOf $b 'Clip-Batch') "Girder<Typed here | Post<Typed here | Stiffened?<Typed per beam end | Beam #<Beam number | Node #<Node | FX (kip)<Fx | FY (kip)<Fy | FZ (kip)<Template's own value | MX (kip-in)<Mx | MY (kip-in)<My | MZ (kip-in)<Mz"
+    $cb = $b.Sheet('Clip-Batch'); $mx = @(1..20 | Where-Object { $cb.Text(4, $_) -eq 'MX (kip-in)' })[0]
+    Assert-Equal $cb.Text(2, $mx) 'kip-ft' 'the unit the Templates row had'
+    Assert-Equal (@($b.TableRows('tblEnds2') | ForEach-Object { $_['Stiffened?'] }) -join ' ') 'Yes No' 'what was typed per beam end is kept'
+    $o = Invoke-CfCli check -Workbook $w3
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+}
+
 Test 'calcs: the ratios of every row come back, each beam end with its own' {
     if (-not [CalcFlow.LibreOffice]::Find()) { Write-Host '        (no LibreOffice here: skipped)' -ForegroundColor DarkGray; return }
     $o = Invoke-CfCli calcs -Workbook $wb -Engine libreoffice
@@ -305,6 +373,8 @@ foreach ($i in 1..22) {
     Put $s 'A5' 'Governing DCR'; Put $s 'B5' (New-Object CalcFlow.XFormula 'ABS(B3)/(B2*10)', '0')
     [CalcFlow.XlsxWriter]::Write((Join-Path $big ('T{0:00}.xlsx' -f $i)), [CalcFlow.XOutSheet[]]@($s), $null)
 }
+# and one more that is nothing but a table of rows the tool writes (the brace table again, under another name)
+Copy-Item -LiteralPath $bracePath -Destination (Join-Path $big 'Z Braces.xlsx')
 $projBig = Join-Path $dir 'proj-big'
 $oBig = Invoke-CfCli new -Out $projBig -Anl $fixtureAnl -Templates $big
 $bigExit = $LASTEXITCODE
@@ -313,11 +383,11 @@ $wbBig = Join-Path $projBig 'CalcFlow.xlsx'
 Test 'a large library: every template is listed, and a tab is made only for the ones a mark uses' {
     Assert-Equal $bigExit 0 ($oBig -join "`n")
     $b = [CalcFlow.Xlsx]::Read($wbBig)
-    Assert-Equal @($b.TableRows('tblConfigTemplates')).Count 22
+    Assert-Equal @($b.TableRows('tblConfigTemplates')).Count 23
     Assert-Equal (@($b.Sheets | ForEach-Object { $_.Name }) -join '|') 'Start|Model Config|Connection Lib|Templates|Template Sheets|Template Cells|Outputs|Sign Maps|Load Cases'
     Assert-Match @($b.TableRows('tblTemplateSheets'))[4]['Says'] '^A calc of its own, with no tab yet: it is made when a mark on Connection Lib uses template T05\.'
-    Assert-True (@($oBig | Where-Object { $_ -like 'sheets *22 sheets in the template workbooks: 0 with a calc tab, 22 whose tab is made when a mark on Connection Lib uses the template*' }).Count -eq 1) ($oBig -join "`n")
-    Assert-True (@($oBig | Where-Object { $_ -like 'inputs *22 template workbook(s) read from their coloured cells, 0 with none*' }).Count -eq 1) ($oBig -join "`n")
+    Assert-True (@($oBig | Where-Object { $_ -like 'sheets *23 sheets in the template workbooks: 0 with a calc tab, 23 whose tab is made when a mark on Connection Lib uses the template*' }).Count -eq 1) ($oBig -join "`n")
+    Assert-True (@($oBig | Where-Object { $_ -like 'inputs *23 template workbook(s) read from their coloured cells, 0 with none*' }).Count -eq 1) ($oBig -join "`n")
     # a mark on a template with no tab yet: check says what to do, and Refresh config makes the tab
     Set-Cells $wbBig @(@('Connection Lib', 'A3', 'M-5'), @('Connection Lib', 'B3', 'T05'), @('Model Config', 'F4', 'M-5'))
     $o = Invoke-CfCli check -Workbook $wbBig
@@ -334,6 +404,48 @@ Test 'a large library: every template is listed, and a tab is made only for the 
     $o = Invoke-CfCli check -Workbook $wbBig
     Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
     Assert-True (@($o | Where-Object { $_ -like 'check *1 of 1 connection calcs are ready: 0 error(s)*' }).Count -eq 1) ($o -join "`n")
+    # a template that is nothing but a table of rows the tool writes: the tab made for it shows the table's headings
+    # and what fills each, and says in its first words what it is (it was a tab with the one column Connection)
+    Set-Cells $wbBig @(@('Connection Lib', 'A4', 'ZB-1'), @('Connection Lib', 'B4', 'Z-Braces'))
+    $o = Invoke-CfCli refresh -Workbook $wbBig -NoWait -NoOpen
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    $b = [CalcFlow.Xlsx]::Read($wbBig)
+    Assert-Equal (@($b.Sheets | ForEach-Object { $_.Name }) -join '|') 'Start|Model Config|Connection Lib|Templates|Template Sheets|T05|Z-Braces|Z-Braces ends|Template Cells|Outputs|Sign Maps|Load Cases'
+    Assert-Equal (& $headsOf $b 'Z-Braces') 'Shape<Typed per beam end | Grade<Typed per beam end | Slotted?<Typed per beam end | Span (in)<Typed per beam end | Member #<Beam number | Axial (kip)<Fx'
+    Assert-Match $b.Sheet('Z-Braces').Text(0, 0) '^This template is a table of load rows: a mark is ONE copy of it, and the tool writes a row for each beam end that calls the mark'
+    Assert-Match @($b.TableRows('tblTemplateSheets') | Where-Object { $_['File'] -eq 'Z Braces.xlsx' })[0]['Says'] 'It is a table of load rows \(from A6, 3 rows\)'
+}
+
+Test 'a sheet on which no input is found any more keeps its tab, and the tab says so in its first words; so does the refresh' {
+    $el = Join-Path $dir 'pair-library'
+    New-Item -ItemType Directory -Force -Path $el | Out-Null
+    $pair = { param($fill)
+        $sheets = @()
+        foreach ($n in 'First', 'Second') {
+            $s = New-Object CalcFlow.XOutSheet $n
+            $st = $yellow; if ($n -eq 'Second' -and -not $fill) { $st = $null }
+            Put $s 'A2' 'Width (in)'; Put $s 'B2' 4 $st
+            Put $s 'A3' 'Fx (kip)'; Put $s 'B3' 1 $st
+            Put $s 'A5' 'Governing DCR'; Put $s 'B5' (New-Object CalcFlow.XFormula 'ABS(B3)/(B2*10)', '0')
+            $sheets += $s
+        }
+        [CalcFlow.XlsxWriter]::Write((Join-Path $el 'Pair.xlsx'), [CalcFlow.XOutSheet[]]$sheets, $null)
+    }
+    & $pair $true
+    $pp = Join-Path $dir 'proj-pair'
+    $o = Invoke-CfCli new -Out $pp -Anl $fixtureAnl -Templates $el
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    $w = Join-Path $pp 'CalcFlow.xlsx'
+    Assert-Equal (& $headsOf ([CalcFlow.Xlsx]::Read($w)) 'Pair Second') 'Width (in)<Typed here | Fx (kip)<Fx'
+    # the second sheet loses its fill in the template
+    & $pair $false
+    $o = Invoke-CfCli refresh -Workbook $w -NoWait -NoOpen
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    Assert-Match ($o -join "`n") '\[note \] tab Pair Second: no input was found on sheet Second of Pair\.xlsx \(no cell with the input fill that holds a typed value\), so the tab has no column'
+    $b = [CalcFlow.Xlsx]::Read($w)
+    Assert-Equal (& $headsOf $b 'Pair Second') ''
+    Assert-Match $b.Sheet('Pair Second').Text(0, 0) '^NO INPUT WAS FOUND on this sheet of the template'
+    Assert-Equal (& $headsOf $b 'Pair First') 'Width (in)<Typed here | Fx (kip)<Fx'
 }
 
 Test 'a library whose input colour is not yellow: given once, kept on the Start tab, used again by a refresh' {
