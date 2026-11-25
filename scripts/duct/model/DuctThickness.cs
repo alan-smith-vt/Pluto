@@ -16,6 +16,9 @@ using System.Linq;
 //          round        D dia or lo-hi dia:  18 dia   8-36 dia
 //          *            any size of that run
 //   Thk_in wall thickness, inches
+// Cells copied from a PDF / Word / Excel read as typed (NormalizeSize): en / em dashes and minus signs = '-', the
+// multiplication sign and X = 'x'; quotes, spaces and inch marks dropped. An Excel (Windows-1252) CSV is detected.
+// Any other odd character is refused by its code (U+xxxx).
 // A transition takes its larger end, as its SAP section does. Several rows matching one frame: an exact size beats a
 // range, a range beats *; among equals the first row in the file wins (counted as an overlap in the note).
 public class DuctThickness
@@ -40,6 +43,8 @@ public class DuctThickness
     {
         Path = path;
         string[] lines = File.ReadAllLines(path);
+        // Excel's plain "CSV" save is Windows-1252, not UTF-8: an en dash there reads as U+FFFD
+        if (lines.Any(l => l.IndexOf('�') >= 0)) lines = File.ReadAllLines(path, System.Text.Encoding.GetEncoding(1252));
         if (lines.Length == 0) throw new Exception("thickness table empty: " + path);
         string[] head = lines[0].Split(',').Select(s => s.Trim()).ToArray();
         if (head.Length < 3 || !head[0].Equals("Run", StringComparison.OrdinalIgnoreCase) || !head[1].Equals("Size", StringComparison.OrdinalIgnoreCase)
@@ -67,7 +72,14 @@ public class DuctThickness
         if (run == "") { why = "Run empty"; return null; }
         if (!double.TryParse(thk, NumberStyles.Float, Inv, out t) || t <= 0) { why = "Thk_in '" + thk + "' is not a positive number"; return null; }
         var r = new Row { Line = line, Run = run, SizeText = size, Thk = t };
-        string s = size.Trim().ToLowerInvariant();
+        string s = NormalizeSize(size);
+        string odd = new string(s.Where(ch => ch > 126 || (ch < 32)).Distinct().ToArray());
+        if (odd != "")
+        {
+            why = "size '" + size + "' has characters that are not plain text: " +
+                  string.Join(" ", odd.Select(ch => "U+" + ((int)ch).ToString("X4")).ToArray()) + " (retype the cell)";
+            return null;
+        }
         if (s == "*") { r.Any = true; r.Rank = 2; return r; }
         if (s.EndsWith("dia"))
         {
@@ -81,6 +93,22 @@ public class DuctThickness
         { why = "size '" + size + "' (rect: WxH with values or ranges lo-hi, round: D dia, or *)"; return null; }
         r.Rank = r.A[0] == r.A[1] && r.B[0] == r.B[1] ? 0 : 1;
         return r;
+    }
+
+    // a size cell as typed or copied (from a PDF, Word, Excel): quotes dropped, spaces removed, dashes (en / em / minus /
+    // hyphen look-alikes) -> '-', the multiplication sign and X -> 'x', lower case
+    public static string NormalizeSize(string size)
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (char ch in (size ?? "").Trim().Trim('"', '\'', '“', '”', '‘', '’'))
+        {
+            if (char.IsWhiteSpace(ch) || ch == ' ' || ch == '​' || ch == '﻿') continue;
+            if (ch == '‐' || ch == '‑' || ch == '‒' || ch == '–' || ch == '—' || ch == '―' || ch == '−' || ch == '﹣' || ch == '－') { sb.Append('-'); continue; }
+            if (ch == '×' || ch == '✕' || ch == '⨯' || ch == 'X') { sb.Append('x'); continue; }
+            if (ch == '″' || ch == '"') continue;   // inch marks: 24"x12"
+            sb.Append(char.ToLowerInvariant(ch));
+        }
+        return sb.ToString();
     }
 
     // "24" -> [24,24], "13-24" -> [13,24], "*" -> [0, inf]

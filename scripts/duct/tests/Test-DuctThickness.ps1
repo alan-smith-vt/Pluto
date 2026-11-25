@@ -59,6 +59,17 @@ Check "22 rigid untouched" (Near $e3.Thk 0.5)
 Check "23 transition: larger end" (Near $e4.Thk 0.0625)
 Check "24 counts and note" ($t.Config -eq 2 -and $t.Placeholder -eq 1 -and $t.Note() -match "SYSA 30x30 \(1\)" -and $t.Note() -match "1 frames PLACEHOLDER")
 
+# 25 cells copied from a PDF / Word / Excel (user 2026-11-25: an en dash in '13-24x0-24' was refused)
+function TableUtf8([string[]]$lines) { [IO.File]::WriteAllLines($tmp, (@("Run,Size,Thk_in") + $lines), (New-Object Text.UTF8Encoding($false))); New-Object DuctThickness $tmp }
+$t = TableUtf8 @("SYSA,13$([char]0x2013)24x0$([char]0x2014)24,0.05", "SYSB,13-24$([char]0x00D7)0-24,0.06", "SYSC,`"13 - 24 X 0 - 24`",0.07", "SYSD,8$([char]0x2212)36 dia,0.08", "SYSE,24`"x12`",0.09")
+Check "25 en / em dash, minus, multiplication sign, X, quotes, spaces, inch marks all read" ((Near $t.Lookup("SYSA", $false, 20, 10, [double]::NaN) 0.05) -and (Near $t.Lookup("SYSB", $false, 20, 10, [double]::NaN) 0.06) -and
+    (Near $t.Lookup("SYSC", $false, 20, 10, [double]::NaN) 0.07) -and (Near $t.Lookup("SYSD", $true, [double]::NaN, [double]::NaN, 18) 0.08) -and (Near $t.Lookup("SYSE", $false, 24, 12, [double]::NaN) 0.09))
+[IO.File]::WriteAllLines($tmp, @("Run,Size,Thk_in", "SYSA,13$([char]0x2013)24x0-24,0.05"), [Text.Encoding]::GetEncoding(1252))
+$t = New-Object DuctThickness $tmp
+Check "25 an Excel (Windows-1252) CSV with an en dash reads" (Near $t.Lookup("SYSA", $false, 20, 10, [double]::NaN) 0.05)
+$msg = ""; try { $null = TableUtf8 @("SYSA,13$([char]0x2026)24x0-24,0.05") } catch { $msg = $_.Exception.InnerException.Message }
+Check "25 any other odd character is named by its code" ($msg -like "*not plain text: U+2026*")
+
 Remove-Item $tmp -ErrorAction SilentlyContinue
 Write-Output ("{0} passed, {1} failed" -f $script:pass, $script:fail)
 exit $(if ($script:fail) { 1 } else { 0 })
