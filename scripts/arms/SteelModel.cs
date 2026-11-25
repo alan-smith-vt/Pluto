@@ -127,6 +127,7 @@ public class SteelModel
         {
             int mi = e >> 1; double[] p = endPos(e);
             int best = -1; double bestD = double.MaxValue, bestT = 0;
+            int beyond = -1; double beyondD = double.MaxValue, beyondT = 0;
             bool gapSkipped = false;
             for (int j = 0; j < n; j++)
             {
@@ -136,9 +137,19 @@ public class SteelModel
                 if (dd > (contact ? S.ContactIn : S.SnapIn)) continue;
                 // beyond j's end (not beside it): only ends that actually meet; d is then the distance to that end point
                 double tr = RawT(A[j], B[j], p);
-                if ((tr < 0 || tr > 1) && d > S.EndJoinIn) { gapSkipped = true; continue; }
+                if (tr < 0 || tr > 1)
+                {
+                    if (d > S.EndJoinIn) { gapSkipped = true; continue; }
+                    if (dd < beyondD) { beyondD = dd; beyond = j; beyondT = t; }
+                    continue;
+                }
                 if (dd < bestD) { bestD = dd; best = j; bestT = t; }
             }
+            // a landing beside a member wins over an end-to-end join beyond another member's end (user, 2026-11-25:
+            // the hinge supersedes the collinear splice). Two beams framing into a column web from both sides have
+            // their ends closer to each other than to the column's line when that line is offset (cardinal point);
+            // joined end to end they became a continuous splice through the column, the column left unconnected.
+            if (best < 0 && beyond >= 0) { best = beyond; bestD = beyondD; bestT = beyondT; }
             if (best < 0) { if (gapSkipped) EndGapSkipped++; continue; }
             Snapped++;
             double L = Dist(A[best], B[best]);

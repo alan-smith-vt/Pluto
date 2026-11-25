@@ -266,5 +266,17 @@ $sm = Model @((M "B" 0 0 120 240 0 120), (M "FAR" 0 1000 120 240 1000 120)); $n 
 $null = $sm.KeepConnected([int[]]@())
 Check "16b no supports: nothing removed" ($sm.Frames.Count -eq $n -and $sm.CullMembers -eq 0)
 
+# 17 hinge over collinear splice: two beams framing into a column web from both sides, their ends 1.2 in apart, the
+# column's line 3 in off the web (cardinal point). Each end lands beside the column (framed, hinged), not on the
+# other beam's end (a continuous splice through the column, the column left unconnected)
+$sm = Model @((M "COL" 0 3 0 0 3 240), (M "B1" (-240) 0 120 (-0.6) 0 120), (M "B2" 0.6 0 120 240 0 120))
+$b1 = Ends $sm "B1"; $b2 = Ends $sm "B2"; $c = Ends $sm "COL"
+Check "17 both beams framed into the column, hinged" ($b1.J -eq "framed" -and $b1.RJ -eq "M2M3" -and $b2.I -eq "framed" -and $b2.RI -eq "M2M3")
+Check "17 no collinear joint; one joint on the column, the column split and continuous" (@($sm.Joints | Where-Object { $_.Condition -eq "collinear" }).Count -eq 0 -and $b1.JJ.Id -eq $b2.JI.Id -and $c.N -eq 2 -and
+    @($sm.Frames | Where-Object { $sm.Members[$_.Source].MemberOid -eq "COL" -and ($_.ReleaseI -ne "" -or $_.ReleaseJ -ne "") }).Count -eq 0)
+# two beams end to end with nothing beside them stay a collinear splice
+$sm = Model @((M "A" 0 0 120 120 0 120), (M "B" 121 0 120 240 0 120))
+Check "17 a plain end-to-end splice is still collinear" ((Ends $sm "A").J -eq "collinear")
+
 Write-Output ("{0} passed, {1} failed" -f $script:pass, $script:fail)
 exit $(if ($script:fail) { 1 } else { 0 })
