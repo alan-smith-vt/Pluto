@@ -60,7 +60,6 @@ public static class WallViewWriter
         public Dictionary<string, int> ShapeWalls = new Dictionary<string, int>(StringComparer.Ordinal);
         public string Note = "";
         public double[] ModelLo, ModelHi;                                  // the model's box (ft) before the walls; null = no model nodes
-        public HashSet<int> DuctLevels = new HashSet<int>();               // bands a drawn duct lies in (empty = unknown: every band shown)
         public List<KeyValuePair<string, List<uint>>> RoomGroups = new List<KeyValuePair<string, List<uint>>>();   // RoomRegions.cs
     }
 
@@ -267,21 +266,7 @@ public static class WallViewWriter
                 // unticked (a ticked group paints, and a later group paints over the shape colours); the eye still hides it
                 FeaturesSidecar.Group g = sc.AddGroup("Walls level: " + v.Levels[i], "#8b919c", "shells", v.ByLevel[i], new[] { "wall", "level" }, null);
                 g.Hidden = true;
-                // viewer default (user, 2026-11-25): the bands above and below the ducts start with their eye off
-                if (v.DuctLevels.Count > 0 && !v.DuctLevels.Contains(i)) g.Invisible = true;
-            }
-    }
-
-    // the bands the drawn ducts lie in: each duct segment's ends and midpoint (ft, the walls' frame)
-    public static void SetDuctLevels(View v, IEnumerable<double[]> ductSegsFt)
-    {
-        if (v == null || v.FloorsFt.Count == 0) return;
-        foreach (double[] d in ductSegsFt)
-            foreach (double z in new[] { d[2], d[5], (d[2] + d[5]) / 2 })
-            {
-                int k = 0;
-                foreach (double f in v.FloorsFt) if (f <= z) k++;
-                v.DuctLevels.Add(k);
+                if (i == v.Levels.Count - 1 && i > 0) g.Invisible = true;   // "above <z> ft": eye off by default (user, 2026-11-25)
             }
     }
 }

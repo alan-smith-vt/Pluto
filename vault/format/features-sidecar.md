@@ -146,6 +146,7 @@ Encoding rule: **colour = identity of one chosen dimension, shape = meaning, wor
   - `dir` (optional): a world vector the sprite turns to (glyphs face +x).
   - `label` (optional): the tooltip text after the glyph label.
   - With no `anchors`, there is one glyph per member (centroid / node). Ids not in the model are counted in the legend tooltip, not drawn.
+- **`look.startOff: true`** (2026-11-25): the legend lists the row but its glyphs start off (as the Checks do); a click shows them. A choice the user made in the legend (stored per group name) wins.
 - **`hidden: true`** hides a look group's glyphs. A look group without the flag starts **shown**: it paints nothing, so there is no precedence to opt into.
 - Tag background groups `context`. Without a `color` they paint the neutral grey `#8b919c` instead of a palette hue.
 - **Viewer:**

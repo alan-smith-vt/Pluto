@@ -328,6 +328,7 @@ var FEAGlyphs = (function () {
     function isOff(g, row) {
         var k = row.name || row.label;
         if (Object.prototype.hasOwnProperty.call(shown, k)) return !shown[k];
+        if (g && g.look && g.look.startOff === true) return true;   // the exporter's default (look.startOff); a stored choice wins
         return row.tier === 'exception' && !row.section;   // the Checks section; open-end supports (Member ends) shown
     }
     function saveShown() { try { localStorage.setItem(STORE_KEY, JSON.stringify(shown)); } catch (e) { } }

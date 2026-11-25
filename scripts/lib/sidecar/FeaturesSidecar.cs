@@ -84,6 +84,7 @@ public class FeaturesSidecar
         public string Label;             // legend text (null = group name)
         public string Section;           // legend heading
         public double? InsetPx;          // screen inset for t = 0 / 1
+        public bool StartOff;            // legend row listed, glyphs off until clicked (a stored user choice wins)
     }
 
     public class Anchor
@@ -285,6 +286,7 @@ public class FeaturesSidecar
         if (l.Label != null) parts.Add("\"label\": " + Q(l.Label));
         if (l.Section != null) parts.Add("\"section\": " + Q(l.Section));
         if (l.InsetPx.HasValue) parts.Add("\"insetPx\": " + N(l.InsetPx.Value));
+        if (l.StartOff) parts.Add("\"startOff\": true");
         return "{" + string.Join(", ", parts) + "}";
     }
 

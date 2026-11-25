@@ -211,13 +211,13 @@ public partial class DuctsToPluto
         SupportViewWriter.AddSpanGroup(sc, sr, clean, P, beamOf, gSpan);
         SupportViewWriter.AddFloatingGroup(sc, sr, clean, P, beamOf);   // stability rule 1
         SupportViewWriter.AddHangerGroups(sc, sr, clean, beamOf, rows, pv);   // the hanger checks
-        WallViewWriter.SetDuctLevels(wv, DrawnDuctSegs(clean, P));
         WallViewWriter.AddGroups(sc, wv);
         RoomRegions.AddGroups(sc, wv);
         DuctPenetrations.AddGroups(sc, pen, n => { int id; return map.TryGetValue(n, out id) ? id : 0; });
         // viewer default (user, 2026-11-25, for downstream users): every icon group (glyphs: member ends, supports,
-        // checks, penetrations) starts unticked; ticking one in the Groups tab shows it
-        foreach (FeaturesSidecar.Group g in sc.Groups) if (g.Look != null) g.Hidden = true;
+        // checks, penetrations) starts with its glyphs off; the legend still lists it and a click shows it
+        // (look.startOff; NOT hidden: true, which takes the row out of the legend altogether)
+        foreach (FeaturesSidecar.Group g in sc.Groups) if (g.Look != null) g.Look.StartOff = true;
         File.WriteAllText(outBase + ".features.json", sc.ToJson(), new UTF8Encoding(false));
         return wv != null ? wv.Note + roomNote : "";
     }
