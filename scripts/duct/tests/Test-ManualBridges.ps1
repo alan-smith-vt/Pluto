@@ -56,6 +56,21 @@ $c = New-Object 'System.Collections.Generic.List[CEdge]'; $c.Add((Edge 1 2 "100"
 $note = Run $c $P @((Br "rigid" "100" "999"))
 Check "6 a side not in the clean model: not placed, named" ($c.Count -eq 2 -and $note -like "*1 not placed*" -and $note -like "*B (999) not in the clean model*")
 
+# 8 a bridged fragment joins its main (user 2026-11-25): main SYSA 1-2, fragment "SYSA fragments" 3-4 bridged to it,
+#   a second fragment 5-6 not bridged, and an "other: EXH" piece bridged to the fragment: only the bridged fragment moves
+function SysEdge($a, $b, $id, $sys) { $e = Edge $a $b $id; $e.Src[0].SysName = $sys; return $e }
+$P = Pts @(@(1, 0, 0, 0), @(2, 10, 0, 0), @(3, 12, 0, 0), @(4, 20, 0, 0), @(5, 50, 0, 0), @(6, 60, 0, 0), @(7, 22, 0, 0), @(8, 30, 0, 0))
+$c = New-Object 'System.Collections.Generic.List[CEdge]'
+$c.Add((SysEdge 1 2 "100" "SYSA")); $c.Add((SysEdge 3 4 "200" "SYSA fragments")); $c.Add((SysEdge 5 6 "300" "SYSA fragments")); $c.Add((SysEdge 7 8 "400" "other: EXH"))
+$null = Run $c $P @((Br "rigid" "200" "100"), (Br "rigid" "400" "200"))
+$ds = New-Object DuctSettings; $ds.PrimarySystems.Add("SYSA")
+$note = [ManualBridges]::MergeFragments($c, (New-Object DuctSystems $ds))
+$sys = @{}; foreach ($e in $c) { if (-not $e.Rigid) { $sys[$e.Src[0].Id] = [DuctGeom]::SystemOf($e) } }
+$links = @($c | Where-Object { $_.Rigid } | ForEach-Object { [DuctGeom]::SystemOf($_) })
+Check "8 the bridged fragment and its link take the main's name; the other fragment and the other system stay" ($sys["200"] -eq "SYSA" -and $sys["300"] -eq "SYSA fragments" -and $sys["400"] -eq "other: EXH" -and $links[0] -eq "SYSA" -and
+    ($c | Where-Object { -not $_.Rigid -and $_.Src[0].Id -eq "200" }).Flags.Contains("FRAGMENT_JOINED"))
+Check "8 note" ($note -eq "manual bridges: fragments joined to their main (FRAGMENT_JOINED): SYSA fragments -> SYSA 2 el")
+
 # 7 settings: bridges.json read into DuctSettings.Bridges; a wrong file refused
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("pluto-bridges-" + [Guid]::NewGuid().ToString("N").Substring(0, 8) + ".json")
 '{ "kind": "pluto-duct-bridges", "version": 1, "bridges": [ { "mode": "extend", "a": { "parts": ["100", "101"], "label": "clean | a" }, "b": { "parts": ["N:abc"], "label": "clean | b" } }, { "mode": "rigid", "a": { "parts": ["1"] }, "b": { "parts": ["2"] } } ] }' | Set-Content $tmp -Encoding UTF8
