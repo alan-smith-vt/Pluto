@@ -49,6 +49,9 @@ namespace CalcFlow
         // a column of a load table that is typed per beam end, as "Load table columns" writes it: [Stiffened?]
         public static string Typed(string heading) { return "[" + Regex.Replace(heading ?? "", @"[\[\],]+", " ").Trim() + "]"; }
         public static bool IsTyped(string field) { return field != null && field.Length > 2 && field[0] == '[' && field[field.Length - 1] == ']'; }
+        // a column typed once per mark, the same on every row of the mark's table: {Grade}
+        public static string MarkTyped(string heading) { return "{" + Regex.Replace(heading ?? "", @"[\[\]{},]+", " ").Trim() + "}"; }
+        public static bool IsMarkTyped(string field) { return field != null && field.Length > 2 && field[0] == '{' && field[field.Length - 1] == '}'; }
 
         // the field a heading names ("" when none): Fx (kip) -> Fx, MEMBER -> Beam, Joint -> Node, Load Case -> LC
         public static string FieldOf(string heading, out string unit)
@@ -161,7 +164,7 @@ namespace CalcFlow
         public const string LoadKind = "load column", PerEnd = "Typed per beam end";
         public static readonly string[][] TableSources =
         {
-            new[] { PerEnd, "" }, new[] { Own, "-" },
+            new[] { PerEnd, "" }, new[] { Typed, "" }, new[] { Own, "-" },
             new[] { "Beam number", "Beam" }, new[] { "Node", "Node" }, new[] { "Load case", "LC" }, new[] { "Load case title", "LC title" },
             new[] { "Fx", "Fx" }, new[] { "Fy", "Fy" }, new[] { "Fz", "Fz" }, new[] { "Mx", "Mx" }, new[] { "My", "My" }, new[] { "Mz", "Mz" },
             new[] { "Beam section", "Section" }, new[] { "Connection id", "Connection" }, new[] { "Connection mark", "Mark" }
@@ -171,6 +174,7 @@ namespace CalcFlow
         public static string TableSource(string field)
         {
             if (LoadTable.IsTyped(field)) return PerEnd;
+            if (LoadTable.IsMarkTyped(field)) return Typed;
             string[] k = TableSources.FirstOrDefault(x => x[1].Length > 0 && Same(x[1], field));
             return k == null ? Own : k[0];
         }
@@ -179,6 +183,7 @@ namespace CalcFlow
         public static string TableField(string source, string heading)
         {
             if (Same(source, PerEnd)) return LoadTable.Typed(heading);
+            if (Same(source, Typed)) return LoadTable.MarkTyped(heading);
             string[] k = TableSources.FirstOrDefault(x => Same(x[0], source));
             return k == null ? null : k[1];
         }
@@ -213,7 +218,7 @@ namespace CalcFlow
         static readonly string[] EndCols = { "Beam", "End", "Node", "Connection" };
 
         // the register column that carries a value typed per beam end to the planner: "<template>: <heading>"
-        public static string EndColumn(string template, string field) { return Xlsx.TableHeading(template + ": " + (field ?? "").Trim('[', ']', ' ')); }
+        public static string EndColumn(string template, string field) { return Xlsx.TableHeading(template + ": " + (field ?? "").Trim('[', ']', '{', '}', ' ')); }
 
         // the columns of a template's load table that are typed per beam end ("[Stiffened?]"), by their names
         public static List<string> TypedFields(string loadTableColumns)
@@ -943,8 +948,8 @@ namespace CalcFlow
             int nLoad = cols.Count(c => V(c, "Kind") == LoadKind), nTyped = cols.Count - nLoad;
             string lead = table
                 ? "This template is a table of load rows: a mark is ONE copy of it, and the tool writes a row for each beam end that calls the mark" +
-                    (nLoad > 0 ? ". The columns with a teal heading are the table's own: Source says what the tool writes in each (change it there), and nothing is typed under them. " : " (its columns are on the Templates tab). ") +
-                    (nTyped > 0 ? "The other columns are typed once per mark. " : "Nothing else is typed for a mark: give each mark its row. ")
+                    (nLoad > 0 ? ". The columns with a teal heading are the table's own: Source says what the tool writes in each (change it there). Nothing is typed under one, unless its Source is " + Typed + ": then the mark's value goes on every row of its table. " : " (its columns are on the Templates tab). ") +
+                    (nTyped > 0 ? "The other columns are typed once per mark. " : "Give each mark its row. ")
                 : nTyped == 0
                     ? "NO INPUT WAS FOUND on this sheet of the template: no cell with the input fill that holds a typed value. If its inputs have another colour, give it as Input fill on the Start tab; else list its cells in Input cells on the Templates tab (B4, B6:B9). Then run Refresh config. "
                     : "";
@@ -953,6 +958,7 @@ namespace CalcFlow
             var unit = new List<object> { new XCell("Unit", label) };
             var val = new List<object> { new XCell("Template value", label) };
             var head = new List<object> { new XCell("Connection", Palette.Header(ColumnKind.Key)) };
+            var mine = new List<bool>();        // a column whose cells the mark's row fills (not a table column the tool writes)
             foreach (var c in cols)
             {
                 string h = V(c, "Column");
@@ -964,6 +970,7 @@ namespace CalcFlow
                 if (load) first = Own;
                 else if (_sources == null || !_sources.TryGetValue(name + "\n" + h, out first) || !Sources.Any(x => Same(x[0], first))) first = GuessSource(V(c, "Label"), V(c, "Cell"), V(c, "Unit"));
                 src.Add(new XCell(so.Length > 0 ? so : first, input));
+                mine.Add(!load || Same(so.Length > 0 ? so : first, Typed));
                 unit.Add(new XCell(un.Length > 0 ? un : V(c, "Unit"), input));
                 val.Add(new XCell(V(c, "Template value"), grey));
                 head.Add(new XCell(h, Palette.Header(load ? ColumnKind.Reference : ColumnKind.Input)));
@@ -976,7 +983,7 @@ namespace CalcFlow
                     var cells = new object[cols.Count + 1];
                     cells[0] = new XCell(V(r, "Connection"), Palette.Data(ColumnKind.Key));
                     for (int i = 0; i < cols.Count; i++)
-                        cells[i + 1] = V(cols[i], "Kind") == LoadKind ? new XCell("", grey)
+                        cells[i + 1] = V(cols[i], "Kind") == LoadKind ? new XCell(CellValue(V(r, V(cols[i], "Column"))), mine[i] ? input : grey)
                             : V(cols[i], "Kind") == "table" ? new XCell(V(r, V(cols[i], "Column")), text) : new XCell(CellValue(V(r, V(cols[i], "Column"))), input);
                     s.Add(cells);
                     rows++;
@@ -985,7 +992,7 @@ namespace CalcFlow
             {
                 var first = new object[cols.Count + 1];
                 first[0] = new XCell("", Palette.Data(ColumnKind.Key));
-                for (int i = 1; i < first.Length; i++) first[i] = new XCell("", V(cols[i - 1], "Kind") == LoadKind ? grey : V(cols[i - 1], "Kind") == "table" ? text : input);
+                for (int i = 1; i < first.Length; i++) first[i] = new XCell("", !mine[i - 1] ? grey : V(cols[i - 1], "Kind") == "table" ? text : input);
                 s.Add(first);
                 rows = 1;
             }
@@ -1004,7 +1011,7 @@ namespace CalcFlow
                 string run = Xlsx.ColName(a + 1) + (SourceRow + 1) + ":" + Xlsx.ColName(b + 1) + (SourceRow + 1);
                 Validate(s, run, "\"" + string.Join(",", (load ? TableSources : Sources).Select(x => x[0]).ToArray()) + "\"", true);
                 Hints.Range(s, run, "Source", load
-                    ? "What the tool writes in this column of the template's table, on each beam end's row. " + PerEnd + ": you type it on the tab of beam ends (Refresh config makes it). " + Own + ": the column is left alone."
+                    ? "What goes in this column of the template's table, on each beam end's row. " + Typed + ": the mark's value, from its row below. " + PerEnd + ": on the tab of beam ends (Refresh config makes it). " + Own + ": left alone."
                     : "Where this column's value comes from. " + Typed + ": the mark's row below. " + Own + ": the template is left as it is. Fx to Mz, Beam number ...: filled in by the tool from the model for each calc.");
                 a = b + 1;
             }
@@ -1030,7 +1037,7 @@ namespace CalcFlow
                 string cell = V(c, "Cell"), own = V(c, "Template value");
                 string where = cell.Length == 0 ? "" : "Template cell " + (V(c, "Sheet").Length == 0 || Same(V(c, "Sheet"), sheet) ? "" : "'" + V(c, "Sheet") + "'!") + cell + ". ";
                 string hint = cell.Length == 0 ? "No longer an input of the template. Move its values to the column they belong in, then delete this column."
-                    : V(c, "Kind") == LoadKind ? where.Replace("Template cell", "A column of the template's table, from cell") + "The tool fills it on each beam end's row, as Source (row 2) says. Nothing is typed here."
+                    : V(c, "Kind") == LoadKind ? where.Replace("Template cell", "A column of the template's table, from cell") + "Filled on each beam end's row as Source (row 2) says. Type here only when Source is " + Typed + ": the mark's value, written on every row of its table."
                     : V(c, "Kind") == "table" ? where + "A block of cells, typed here as one table: rows separated by ; and values by , such as 2, 2; 2, 10. Rows you do not give are emptied. Blank = the template's own block."
                     : where + "The mark's value for this input, used when Source (row 2) is " + Typed + ". Blank = the template's own value" + (own.Length > 0 && own.Length <= 40 ? " (" + own + ")" : "") + ". " + Blank + " = empty the cell.";
                 Hints.Column(s, i + 1, HeaderRow, FirstMarkRow, V(c, "Column"), hint);
@@ -1211,6 +1218,8 @@ namespace CalcFlow
             var tableMarks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);     // marks whose template takes a load table: one calc each
             // a template whose load table has columns typed per beam end: its tab of beam ends, and those columns
             var typedOf = new Dictionary<string, KeyValuePair<string, List<string>>>(StringComparer.OrdinalIgnoreCase);
+            // what a mark's row holds for the columns of its template's table that are typed once per mark: mark -> register column -> value
+            var markValues = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
             var rows = new Dictionary<string, List<Dictionary<string, string>>>(StringComparer.OrdinalIgnoreCase);
             foreach (TableDef t in LibrarySchema.Tables) rows[t.Name] = new List<Dictionary<string, string>>();
 
@@ -1265,7 +1274,11 @@ namespace CalcFlow
                 // the columns of its load table: as the tab's Source row has them, where the tab shows the table; else
                 // as "Load table columns" on Templates lists them
                 string[] tabFields, tabUnits, tabCols;
-                TabTable(s, t, name, cellOf, res, out tabFields, out tabUnits, out tabCols);
+                int[] tabAt;
+                TabTable(s, t, name, cellOf, res, out tabFields, out tabUnits, out tabCols, out tabAt);
+                var perMark = new List<KeyValuePair<int, string>>();      // a table column typed once per mark: its column on the tab, its heading
+                for (int k = 0; tabFields != null && k < tabFields.Length; k++)
+                    if (LoadTable.IsMarkTyped(tabFields[k])) perMark.Add(new KeyValuePair<int, string>(tabAt[k], tabCols[k]));
                 List<string> perEnd = TypedFields(tabFields != null ? string.Join(", ", tabFields) : V(t, "Load table columns"));
                 if (perEnd.Count > 0) typedOf[name] = new KeyValuePair<string, List<string>>(V(t, "Beam ends tab"), perEnd);
                 var trow = Row("Template", name, "File", V(t, "File"), "Sha256", V(t, "Sha256"), "Shape", "single_case", "Basis", V(t, "Basis"));
@@ -1347,6 +1360,13 @@ namespace CalcFlow
                         if (v.Length > 0) rows["tblParams"].Add(Row("Type", mark, "Step", "", "Param", tc.Value[0], "Default", v, "Unit", tc.Value[1], "Notes", tc.Value[2]));
                     }
                     foreach (var bk in blocks) TableParams(s.Text(r, bk.Key), bk.Value, V(t, "Sheet"), mark, name, r + 1, rows["tblParams"], res);
+                    foreach (var pm in perMark)
+                    {
+                        string v = s.Text(r, pm.Key).Trim();
+                        if (v.Length == 0) res.Warn(name, "connection " + mark + ": '" + pm.Value + "' is blank, so its cells in the template's table are left empty");
+                        if (!markValues.ContainsKey(mark)) markValues[mark] = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                        markValues[mark][EndColumn(name, LoadTable.MarkTyped(pm.Value))] = v.Length == 0 ? Blank : v;
+                    }
                     rows["tblTypes"].Add(Row("Type", mark, "Description", V(lib.First(x => Same(V(x, "Connection"), mark)), "Description"), "Slots", support ? "support" : ""));
                     rows["tblSteps"].Add(Row("Type", mark, "Step", "1", "Template", name, "Demand", Same(loads, "All cases") ? "per_combo" : Same(loads, LargestRow) ? "abs_envelope" : "concurrent_envelope", "Slot", Same(forces, SupportReaction) ? LibrarySchema.ReactionSlot : "this", "Frame", frame));
                 }
@@ -1432,6 +1452,9 @@ namespace CalcFlow
                         conn[EndColumn(tplOf, f)] = v.Length == 0 ? Blank : v;
                     }
                 }
+                // a table column typed once per mark: every beam end that calls the mark carries the mark's value
+                Dictionary<string, string> ofMark;
+                if (has && markValues.TryGetValue(mk[0], out ofMark)) foreach (var mv in ofMark) conn[mv.Key] = mv.Value;
                 conns.Add(conn);
             }
             var missing = pkg.Members.Keys.Where(k => !inConfig.Contains(k)).OrderBy(k => k).ToList();
@@ -1498,11 +1521,11 @@ namespace CalcFlow
 
         // the load table of a Templates row -> one per-row input for each of its columns
         // The columns of a template's load table as its tab has them: for each place in the table, the field its Source
-        // stands for ("-" where the tab has no column), its Unit, and its heading on the tab. All null when the tab
+        // stands for ("-" where the tab has no column), its Unit, its heading on the tab and its column there. All null when the tab
         // does not show the table (a workbook from before it did, or a table given by hand on Templates).
-        static void TabTable(XSheet s, Dictionary<string, string> t, string name, Dictionary<string, Dictionary<string, string>> cellOf, ExpandResult res, out string[] fields, out string[] units, out string[] heads)
+        static void TabTable(XSheet s, Dictionary<string, string> t, string name, Dictionary<string, Dictionary<string, string>> cellOf, ExpandResult res, out string[] fields, out string[] units, out string[] heads, out int[] at)
         {
-            fields = null; units = null; heads = null;
+            fields = null; units = null; heads = null; at = null;
             int c0, r0;
             if (s == null || !Xlsx.ParseRef(V(t, "Load table at"), out c0, out r0)) return;
             var found = new List<string[]>();       // offset, field, unit, heading
@@ -1519,12 +1542,12 @@ namespace CalcFlow
                     res.Error(name, "column '" + col + "' is a column of the template's table: its Source is one of " + string.Join(", ", TableSources.Select(x => x[0]).ToArray()) + " (got '" + source + "')");
                     f = "-";
                 }
-                found.Add(new[] { I(cc - c0), f, s.Text(UnitRow, c).Trim(), col });
+                found.Add(new[] { I(cc - c0), f, s.Text(UnitRow, c).Trim(), col, I(c) });
             }
             if (found.Count == 0) return;
             int n = found.Max(x => int.Parse(x[0], Inv)) + 1;
-            fields = Enumerable.Repeat("-", n).ToArray(); units = Enumerable.Repeat("", n).ToArray(); heads = Enumerable.Repeat("", n).ToArray();
-            foreach (var x in found) { int k = int.Parse(x[0], Inv); fields[k] = x[1]; units[k] = x[2]; heads[k] = x[3]; }
+            fields = Enumerable.Repeat("-", n).ToArray(); units = Enumerable.Repeat("", n).ToArray(); heads = Enumerable.Repeat("", n).ToArray(); at = new int[n];
+            foreach (var x in found) { int k = int.Parse(x[0], Inv); fields[k] = x[1]; units[k] = x[2]; heads[k] = x[3]; at[k] = int.Parse(x[4], Inv); }
         }
 
         // tabFields, tabUnits, tabCols: the table's columns as the template's tab has them (TabTable); null: as the
@@ -1555,7 +1578,8 @@ namespace CalcFlow
             {
                 string f = fields[k];
                 if (f.Length == 0 || f == "-") continue;
-                string[] known = LoadTable.IsTyped(f) ? new[] { f, "reg:" + EndColumn(name, f) } : TableFields.FirstOrDefault(x => Same(x[0], f));
+                if (!onTab && LoadTable.IsMarkTyped(f)) { res.Error(TemplatesTab, "template " + name + ": load table column " + f + " is typed once per mark, which needs the table's columns on the template's tab: run Refresh config"); continue; }
+                string[] known = LoadTable.IsTyped(f) || LoadTable.IsMarkTyped(f) ? new[] { f, "reg:" + EndColumn(name, f) } : TableFields.FirstOrDefault(x => Same(x[0], f));
                 if (known == null) { res.Error(TemplatesTab, "template " + name + ": load table column '" + f + "' is not one of " + string.Join(", ", TableFields.Select(x => x[0]).ToArray()) + ", or a name of your own in square brackets for a column typed per beam end, like [Stiffened?]"); continue; }
                 bool force = known[1].StartsWith("load:F", StringComparison.Ordinal), moment = known[1].StartsWith("load:M", StringComparison.Ordinal);
                 string unit = force ? V(t, "Force unit") : moment ? V(t, "Moment unit") : "";

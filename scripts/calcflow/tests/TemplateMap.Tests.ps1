@@ -298,7 +298,7 @@ Test 'what fills a column of the template''s table is said on its tab: check rea
     Set-Cells $w2 @(@('Clip-Batch', "${nd}2", 'Nonsense'), @('Clip-Batch', "${fx}3", ''))
     $o = Invoke-CfCli check -Workbook $w2
     Assert-Equal $LASTEXITCODE 1 ($o -join "`n")
-    Assert-Match ($o -join "`n") "\[fix  \] Clip-Batch: column 'Node #' is a column of the template's table: its Source is one of Typed per beam end, Template's own value, Beam number"
+    Assert-Match ($o -join "`n") "\[fix  \] Clip-Batch: column 'Node #' is a column of the template's table: its Source is one of Typed per beam end, Typed here, Template's own value, Beam number"
     Assert-Match ($o -join "`n") "\[fix  \] Clip-Batch: column 'FX \(kip\)' takes Fx: give its unit in the Unit row"
     # a refresh keeps the tab's rows and writes them again on Templates; the tab of beam ends is gone with its last column
     Set-Cells $w2 @(@('Clip-Batch', "${nd}2", 'Node'), @('Clip-Batch', "${fx}3", 'kN'))
@@ -315,6 +315,36 @@ Test 'what fills a column of the template''s table is said on its tab: check rea
     $o = Invoke-CfCli check -Workbook $w2
     Assert-Equal $LASTEXITCODE 1 ($o -join "`n")
     Assert-Match ($o -join "`n") "\[fix  \] Brace-Batch ends: template Brace-Batch now has 'Member #' typed per beam end, and this tab has no column for it yet: run Refresh config"
+}
+
+Test 'a column of the template''s table can be typed once per mark: with Source = Typed here, the mark''s value goes on every row of its table' {
+    $p4 = Join-Path $dir 'proj-mark'
+    Copy-Item -LiteralPath $proj -Destination $p4 -Recurse
+    $w4 = Join-Path $p4 'CalcFlow.xlsx'
+    $b = [CalcFlow.Xlsx]::Read($w4)
+    $g = Get-Col $b 'Brace-Batch' 'Grade' 5
+    # the grade was typed per beam end (A500 at beam 4); now it is the mark's
+    Set-Cells $w4 @(@('Brace-Batch', "${g}2", 'Typed here'), @('Brace-Batch', "${g}6", 'A36'))
+    $o = Invoke-CfCli check -Workbook $w4
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    $br = { @([CalcFlow.Csv]::ReadTable((Join-Path $p4 'calcflow/plan/cases.csv')) | Where-Object { $_['Calc'] -eq 'BR-1' } | Sort-Object { $_['Cell'] } | ForEach-Object { "$($_['Cell'])=$($_['Value'])" }) -join ' ' }
+    Assert-Equal (& $br) 'A6=HSS4X4X1/4 B6=A36 C6=No D6=60 E6=4 F6=47.488'
+    # a refresh keeps the mark's value, says the column as {Grade} on Templates, and takes it off the tab of beam ends
+    $o = Invoke-CfCli refresh -Workbook $w4 -NoWait -NoOpen
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    $b = [CalcFlow.Xlsx]::Read($w4)
+    Assert-Equal @($b.TableRows('tblConfigTemplates') | Where-Object { $_['Template'] -eq 'Brace-Batch' })[0]['Load table columns'] '[Shape], {Grade}, [Slotted?], [Span (in)], Beam, Fx'
+    $bt = $b.Sheet('Brace-Batch'); $gi = @(1..20 | Where-Object { $bt.Text(4, $_) -eq 'Grade' })[0]
+    Assert-Equal "$($bt.Text(1, $gi))|$($bt.Text(5, $gi))|$($bt.Text(5, 0))" 'Typed here|A36|BR-1'
+    Assert-Equal (@(@($b.TableRows('tblEnds1'))[0].Keys | Where-Object { $_ -ne '__row' }) -join ',') 'Beam,End,Node,Connection,Shape,Slotted?,Span (in)'
+    $o = Invoke-CfCli check -Workbook $w4
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    Assert-Equal (& $br) 'A6=HSS4X4X1/4 B6=A36 C6=No D6=60 E6=4 F6=47.488'
+    Assert-Equal ([CalcFlow.XlsxCheck]::Tables($w4) + [CalcFlow.XlsxCheck]::Validations($w4)).Count 0
+    # left blank for a mark: said, and the cells are left empty
+    Set-Cells $w4 @(, @('Brace-Batch', "${g}6", ''))
+    $o = Invoke-CfCli check -Workbook $w4
+    Assert-Match ($o -join "`n") "Brace-Batch: connection BR-1: 'Grade' is blank, so its cells in the template's table are left empty"
 }
 
 Test 'a workbook saved before a tab showed its table: Refresh config puts the columns on the tab as the Templates row had them' {

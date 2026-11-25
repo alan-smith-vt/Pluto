@@ -120,7 +120,7 @@ namespace CalcFlow
                 "Sign map", "Which member-end force each force of the template is: the name of a row of the Sign Maps tab. IDENTITY = the member end's forces as they are.",
                 "Forces", "Member end forces: of the beam end the mark sits at. Support reaction: the reaction at that beam end's joint, for an anchorage where more than the column lands on the base.",
                 "Load table at", "Only for a template that takes a table of load rows: the table's first cell, such as A2. Blank = the template takes one load case at a time.",
-                "Load table columns", "The load table's columns in order: Beam, Node, LC, Fx to Mz, Section, - to leave one alone, [name] for one typed per beam end. Where the template's tab shows the table's columns, change the Source row there: this cell is then written by the tool.",
+                "Load table columns", "The load table's columns in order: Beam, Node, LC, Fx to Mz, Section, - to leave one alone, [name] typed per beam end, {name} typed per mark. Where the template's tab shows the table's columns, change its Source row: this cell is then written by the tool.",
                 "Max rows", "How many rows the load table holds. More rows than this are calculated in several fills of the template.",
                 "Force unit", "The unit of the forces in the load table, such as kip or kN. Where the template's tab shows the table's columns, it is the Unit row there that counts.",
                 "Moment unit", "The unit of the moments in the load table, such as kip-in or kN-m. Where the template's tab shows the table's columns, it is the Unit row there that counts.",
