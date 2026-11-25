@@ -83,6 +83,7 @@ public sealed class AnlFrameMember
     public string Property = "";        // the MEMBER PROPERTY spec after the member list, e.g. "TABLE ST W14X90"
     public string Section = "";         // W14X90; "PRIS" for prismatic numbers; "" when no property was read
     public string Family = "";          // W S M HP WT C MC L 2L HSS PIPE PRIS ("" unknown)
+    public double PropertyInches = 1;   // inches per length unit where its MEMBER PROPERTY stands (PRIS numbers are as written)
     public double Beta;                 // degrees
     public bool BetaKnown = true;       // false: BETA ANGLE / RANGLE / REFERENCE / REFJT (the axes ignore it)
     public string BetaSpec = "";        // the BETA value as written when it is not a number
@@ -158,6 +159,14 @@ public sealed class AnlFrameLoadCase
     }
 }
 
+// DEFINE ENVELOPE's envelope (TR.40): the cases and combinations it holds (a load listed in two is in the last only)
+public sealed class AnlFrameEnvelope
+{
+    public int Number;
+    public string Type = "";        // STRENGTH, SERVICEABILITY ... as StaadInput.EnvelopeType gives it
+    public readonly List<int> Loads = new List<int>();
+}
+
 public sealed class AnlFrameEndForce
 {
     public int Member;
@@ -208,7 +217,8 @@ public sealed class AnlFrameModel
     public readonly SortedDictionary<int, AnlFrameLoadCase> LoadCases = new SortedDictionary<int, AnlFrameLoadCase>();
     public readonly SortedDictionary<int, AnlFrameJoint> Joints = new SortedDictionary<int, AnlFrameJoint>();
     public readonly List<AnlFrameEndForce> EndForces = new List<AnlFrameEndForce>();
-    public readonly List<AnlFramePrint> Prints = new List<AnlFramePrint>();   // every output command, in file order
+    public readonly List<AnlFramePrint> Prints = new List<AnlFramePrint>();
+    public readonly SortedDictionary<int, AnlFrameEnvelope> Envelopes = new SortedDictionary<int, AnlFrameEnvelope>();   // DEFINE ENVELOPE   // every output command, in file order
     // PRINT SUPPORT REACTIONS and PRINT JOINT DISPLACEMENTS, as printed (a later print of a joint and case replaces
     // the earlier one), with the units of their table headers ("kip", "kip-in"; "in": rotations are radians)
     public readonly List<AnlFrameJointRow> Reactions = new List<AnlFrameJointRow>();
@@ -399,6 +409,7 @@ public static class AnlFrameReader
                         m.Warn("CHANGE", "the file has a CHANGE command (more than one analysis): each member end and case keeps its last print");
                     break;
                 case "LOAD LIST": r.LoadList(s); break;
+                case "DEFINE": r.Define(s); break;
                 case "PRINT MEMBER FORCES": r.Forces(s, r.Print(s, true)); anyForces = true; break;
                 case "PRINT JOINT DISPLACEMENTS": r.Displacements(s, r.Print(s, true)); break;
                 case "CHECK CODE": r.CodeCheck(s, r.Print(s, false)); break;
@@ -683,6 +694,7 @@ public static class AnlFrameReader
         bool _haveForceUnits;
         List<int> _list;            // the LOAD LIST in force (null: every case)
         string _listText = "ALL";
+        ForceUnit _reactionF; LengthUnit _reactionL;     // the first reaction print's units, which the model keeps
 
         public Reading(AnlFrameModel m, string path) { _m = m; _path = path; }
 
@@ -897,7 +909,7 @@ public static class AnlFrameReader
                 {
                     AnlFrameMember mem = Member(id, c);
                     if (mem == null) continue;
-                    mem.Property = spec; mem.Section = section; mem.Family = family;
+                    mem.Property = spec; mem.Section = section; mem.Family = family; mem.PropertyInches = Inch(1, s);
                 }
             }
         }
@@ -1214,11 +1226,50 @@ public static class AnlFrameReader
         }
 
         // LOAD LIST 101 TO 104 201 | LOAD LIST ALL: the cases every later output command covers
+        // DEFINE ENVELOPE: "<load list> ENVELOPE i [TYPE t]" lines; another DEFINE is not read here
+        public void Define(AnlSection s)
+        {
+            List<string> cmds = Commands(s);
+            if (cmds.Count == 0 || !Regex.IsMatch(cmds[0], @"^\s*DEFINE\s+ENV", RegexOptions.IgnoreCase)) return;
+            foreach (string c in cmds.Skip(1))
+            {
+                string[] t = Tokens(c);
+                int i = 0; bool all; int n;
+                List<int> ids = List(t, ref i, out all, c);
+                if (all || ids.Count == 0 || i + 1 >= t.Length || !t[i].StartsWith("ENV", StringComparison.OrdinalIgnoreCase) || !int.TryParse(t[i + 1], NumberStyles.None, Inv, out n))
+                { _m.Warn("ENVELOPE_LINE", "DEFINE ENVELOPE line not read: " + c); continue; }
+                AnlFrameEnvelope e;
+                if (!_m.Envelopes.TryGetValue(n, out e)) _m.Envelopes[n] = e = new AnlFrameEnvelope { Number = n };
+                if (i + 3 < t.Length && t[i + 2].StartsWith("TYP", StringComparison.OrdinalIgnoreCase)) e.Type = StaadInput.EnvelopeType(t[i + 3]);
+                // a load stays in every envelope that lists it: STAAD.Pro 2025's LOAD LIST ENV lists it under each (round 4,
+                // 2026-11-25; TR.40 says the last only). Its design takes the last envelope's TYPE, which STAAD warns of
+                e.Loads.AddRange(ids.Distinct().Where(x => !e.Loads.Contains(x)));
+            }
+        }
+
         public void LoadList(AnlSection s)
         {
             List<string> cmds = Commands(s);
             if (cmds.Count == 0) return;
             string[] t = Tokens(cmds[0]);
+            // LOAD LIST ENV <envelopes>: their loads (DEFINE ENVELOPE)
+            if (t.Length > 2 && t[2].StartsWith("ENV", StringComparison.OrdinalIgnoreCase))
+            {
+                int j = 3; bool allEnv;
+                List<int> envs = List(t, ref j, out allEnv, cmds[0]);
+                var loads = new List<int>();
+                var missing = new List<int>();
+                foreach (int e in allEnv ? _m.Envelopes.Keys.ToList() : envs)
+                {
+                    AnlFrameEnvelope env;
+                    if (_m.Envelopes.TryGetValue(e, out env)) loads.AddRange(env.Loads); else missing.Add(e);
+                }
+                if (missing.Count > 0) _m.Warn("LOAD_LIST_ENVELOPE", "LOAD LIST ENV names envelopes no DEFINE ENVELOPE gives: " + Ids(missing));
+                if (j < t.Length) _m.Warn("LOAD_LIST", "a LOAD LIST was not read to its end (at '" + t[j] + "'): " + cmds[0]);
+                _list = loads.Distinct().ToList();
+                _listText = string.Join(" ", t.Skip(2).ToArray());
+                return;
+            }
             int i = 2; bool all;
             List<int> ids = List(t, ref i, out all, cmds[0]);
             if (all || (ids.Count == 0 && i >= t.Length)) { _list = null; _listText = "ALL"; return; }
@@ -1323,16 +1374,24 @@ public static class AnlFrameReader
                 return;
             }
             string f = AnlFrameModel.UnitText(fu), m = f + "-" + AnlFrameModel.UnitText(lu);
-            if (_m.Reactions.Count > 0 && (f != _m.ReactionForceText || m != _m.ReactionMomentText))
-            {
-                _m.Error("REACTION_UNITS", "support reactions are printed twice in different units (" + _m.ReactionMomentText + ", then " + m + "): print them once");
-                return;
-            }
-            _m.ReactionForceText = f; _m.ReactionMomentText = m;
+            // a print in other units than the first (round 4 prints the first case in kN-m, then all in kip-in): converted to
+            // the first's units; a case an earlier print gave keeps those rows, not overwritten by a converted copy
+            bool other = _m.Reactions.Count > 0 && (f != _m.ReactionForceText || m != _m.ReactionMomentText);
+            if (!other) { _m.ReactionForceText = f; _m.ReactionMomentText = m; _reactionF = fu; _reactionL = lu; }
             List<AnlFrameJointRow> rows = JointRows(text, print, "REACTION_ROW_UNREAD");
             var noSupport = rows.Where(x => !_m.Supports.ContainsKey(x.Node)).Select(x => x.Node).Distinct().ToList();
             if (noSupport.Count > 0) _m.Warn("REACTION_JOINT", "support reactions at joints with no SUPPORTS line: " + Ids(noSupport));
             CheckJointTable(rows, print, _m.Supports.Count, "REACTION_ROWS", "supports");
+            if (other)
+            {
+                double kF = UnitConvert.Force(1, fu, _reactionF), kM = kF * UnitConvert.Length(1, lu, _reactionL);
+                var held = new HashSet<long>(_m.Reactions.Select(x => ((long)x.Node << 32) | (uint)x.LC));
+                int kept = rows.RemoveAll(x => held.Contains(((long)x.Node << 32) | (uint)x.LC));
+                foreach (var r in rows) for (int i = 0; i < 6; i++) r.V[i] *= i < 3 ? kF : kM;
+                _m.Warn("REACTION_UNITS", print.Command + " (LOAD LIST " + print.LoadList + ") is in " + m + ", the first reaction print in " + _m.ReactionMomentText + ": "
+                    + (rows.Count > 0 ? rows.Count + " row(s) converted to " + _m.ReactionMomentText : "no new row")
+                    + (kept > 0 ? "; " + kept + " row(s) an earlier print gave are kept from it" : ""));
+            }
             Merge(_m.Reactions, rows);
         }
 

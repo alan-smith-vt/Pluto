@@ -938,7 +938,7 @@ public class SapToPluto
         return true;
     }
 
-    static RawViewerWriter.SectionDef FrameSection(string name, Dictionary<string, string> p, out bool known)
+    internal static RawViewerWriter.SectionDef FrameSection(string name, Dictionary<string, string> p, out bool known)
     {
         known = true;
         string shape = "";

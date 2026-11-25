@@ -83,9 +83,13 @@ public static class FrameWorkbook
     public const string SJoints = "Joints", SFrames = "Frames", SSections = "Sections", SMaterials = "Materials", SReleases = "Releases", SModifiers = "Modifiers",
                         SLinks = "Links", SLinkProps = "Link props", SSprings = "Springs", SPatterns = "Load patterns", SJointLoads = "Joint loads",
                         SGround = "Ground displacements", SPoint = "Point loads", SDist = "Distributed loads", STemp = "Temperature", SCases = "Load cases",
-                        SCombos = "Combinations", SGroups = "Groups";
+                        SCombos = "Combinations", SGroups = "Groups", SStaad = "STAAD commands", SStaadLoads = "STAAD loads",
+                        SStaadSets = "STAAD sets", SStaadParams = "STAAD parameters", SStaadRun = "STAAD run";
     static readonly string[] Inputs = { "Settings", SJoints, SFrames, SSections, SMaterials, SReleases, SModifiers, SLinks, SLinkProps, SSprings, SPatterns,
-                                        SJointLoads, SGround, SPoint, SDist, STemp, SCases, SCombos, SGroups };
+                                        SJointLoads, SGround, SPoint, SDist, STemp, SCases, SCombos, SGroups, SStaadLoads, SStaadSets, SStaadParams, SStaadRun };
+    // the Frames sheet's STAAD design block: a column per parameter (StaadDesign.Columns), then Other
+    const string FramesOther = "Other", FramesGroups = "Groups";
+    const string StaadUnitsKey = "STAAD units", StaadPrintKey = "STAAD analysis print";
 
     static readonly string[][] Groups =
     {
@@ -95,6 +99,7 @@ public static class FrameWorkbook
         new[] { "bc", "B45309", "Supports and links: restraints, springs, link properties" },
         new[] { "load", "9A3412", "Loads, cases and combinations" },
         new[] { "text", "546E7A", "Names, kinds and lines" },
+        new[] { "staad", "4A148C", "STAAD design: -Std writes it after the analysis; SAP takes none of it" },
         new[] { "ro", "9E9E9E", "Read-only: rebuilt on every export, never read" },
     };
 
@@ -214,12 +219,13 @@ public static class FrameWorkbook
     static string[][] ListCols()
     {
         return new[] { Shapes, FrameMember.CardinalNames.Skip(1).Select((n, k) => FrameMember.CardinalText(k + 1)).ToArray(), new[] { "yes", "no" }, DofNames, LinkTypes,
-                       PatternTypes, CaseTypes, ComboTypes, LoadTypes, Dirs, DistTypes, CoordSyss, TempTypes, RestraintPresets, ObjectTypes, CaseLoadTypes, MaterialTypes, WbPlot.Views, GeoNonLins, Kinds };
+                       PatternTypes, CaseTypes, ComboTypes, LoadTypes, Dirs, DistTypes, CoordSyss, TempTypes, RestraintPresets, ObjectTypes, CaseLoadTypes, MaterialTypes, WbPlot.Views, GeoNonLins, Kinds,
+                       StaadDesign.Codes, StaadDesign.Methods, StaadDesign.Actions };
     }
     static readonly string[] ListNames = { "Shapes", "Insertion points", "Yes / no", "DOFs", "Link types", "Pattern types", "Case types", "Combination types", "Load types",
                                            "Directions", "Rel / Abs", "Coordinate systems", "Temperature types", "Restraints", "Object types", "Case load types", "Material types", "Views",
-                                           "Geometric nonlinearity", "Kinds" };
-    const int ViewList = 17, GeoList = 18, KindList = 19;   // the Views list's column (its azimuths and elevations follow the last list)
+                                           "Geometric nonlinearity", "Kinds", "STAAD codes", "STAAD methods", "STAAD actions" };
+    const int ViewList = 17, GeoList = 18, KindList = 19, CodeList = 20, MethodList = 21, ActionList = 22;   // the Views list's column (its azimuths and elevations follow the last list)
     static readonly string[] GeoNonLins = { "None", "P-Delta", "P-Delta plus Large Displacements" };
     static readonly string[] Kinds = { "PIPE", "DUCT", "STEEL" };
     // the hidden Lists columns of the joint, frame and link labels the workbook was written with (k = 0, 1, 2), after
@@ -246,6 +252,9 @@ public static class FrameWorkbook
 
     public static XlsxBook Book(FrameModel m, string sourceName, FrameWorkbookRun run)
     {
+        // an older model's STAAD commands, carried as written, become its STAAD design (on a copy)
+        if (StaadCarry.CommandsOf(m).Count > 0) { m = FrameS2k.Read(FrameS2k.ToDoc(m)); StaadDesign.Adopt(m, null); }
+        var design = StaadDesign.Of(m);
         string units = m.Units;
         string json = FrameModelJson.Write(m);
         string hash = WbBase.Sha(json);
@@ -332,7 +341,22 @@ public static class FrameWorkbook
         // ---- Frames
         var fs = b.Add(SFrames);
         var fh = new[] { "Id", "Frame", "Joint I", "Joint J", H("Length", "L", units), "Section", "Kind", "Line", "Release", H("Angle", "deg", ""), "Insertion", "Modifiers",
-                         H("Offset I", "L", units), H("Offset J", "L", units), H("End length I", "L", units), H("End length J", "L", units), "Rigid zone" };
+                         H("Offset I", "L", units), H("Offset J", "L", units), H("End length I", "L", units), H("End length J", "L", units), "Rigid zone", FramesGroups }
+                 .Concat(StaadDesign.Columns).Concat(new[] { FramesOther }).ToArray();
+        const int cGroups = 17, cDesign = 18;
+        int cOther = cDesign + StaadDesign.Columns.Length;
+        // each frame's groups, for filtering (as written: -Refresh or -Xlsx brings them up to date)
+        var groupsOf = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var g in m.Groups)
+        {
+            if (g.Label.StartsWith("PL_KIND_", StringComparison.OrdinalIgnoreCase) || g.Label.StartsWith("PL_LINE_", StringComparison.OrdinalIgnoreCase)) continue;
+            foreach (var mm in g.Members.Where(x => x[0].Equals("Frame", StringComparison.OrdinalIgnoreCase)))
+            {
+                List<string> gl;
+                if (!groupsOf.TryGetValue(mm[1], out gl)) groupsOf[mm[1]] = gl = new List<string>();
+                if (!gl.Contains(g.Label)) gl.Add(g.Label);
+            }
+        }
         fs.FreezeCols = 2;
         var pos = new Dictionary<string, double[]>(StringComparer.Ordinal);
         foreach (var j in m.Joints) pos[j.Label] = j.Xyz;
@@ -351,6 +375,17 @@ public static class FrameWorkbook
             var el = f.EndLengths;
             if (f.EndOffsetType.Length > 0 && !f.EndOffsetType.Equals("User", StringComparison.OrdinalIgnoreCase)) fs.Set(r0, 14, f.EndOffsetType);
             else for (int k = 0; k < 3; k++) if (el[k] != 0) fs.Set(r0, 14 + k, el[k]);
+            List<string> gof;
+            if (groupsOf.TryGetValue(f.Label, out gof)) fs.Set(r0, cGroups, string.Join(" ", gof.ToArray()), XlsxBook.ReadOnly);
+            // its STAAD design values (StaadDesign.TMembers): a number, a joint label (DJ1, DJ2), or text (Other)
+            for (int k = 0; k < StaadDesign.Columns.Length; k++)
+            {
+                string dv = StaadDesign.Member(f, StaadDesign.Columns[k]);
+                if (dv.Length == 0) continue;
+                if (StaadDesign.Columns[k].StartsWith("DJ", StringComparison.Ordinal)) Label(fs, r0, cDesign + k, dv, 0); else Num(fs, r0, cDesign + k, dv);
+            }
+            string dother = StaadDesign.Member(f, StaadDesign.Other);
+            if (dother.Length > 0) fs.Set(r0, cOther, dother);
             r0++;
         }
         for (int r = 1; r < m.Frames.Count + 201; r++)
@@ -385,7 +420,19 @@ public static class FrameWorkbook
             C("End length I", "geom", "text", "End length offset at I (a rigid end zone, e.g. half the column's depth). Blank = 0. SAP's own (another type) shows its type: leave it, or give lengths."),
             C("End length J", "geom", "num", "End length offset at J."),
             C("Rigid zone", "geom", "num", "Rigid-zone factor of the end lengths, 0 to 1 (0 = flexible, 1 = fully rigid)."),
-        }, m.Frames.Count, lim);
+        }.Concat(StaadDesign.Columns.Select(n => n.StartsWith("DJ", StringComparison.Ordinal)
+            ? L(n, "staad", "list?", jointIds, "STAAD design: " + StaadHint(n) + " A joint's label, as on Joints. Blank: STAAD's own.")
+            : C(n, "staad", "num", "STAAD design: " + StaadHint(n) + " This frame's value, in the units of the first set on STAAD sets. Blank: that set's value for ALL (STAAD parameters), else STAAD's default.")))
+         .Concat(new[] { C(FramesOther, "staad", "text", "STAAD design: any other parameter of this frame, as STAAD writes it without the members: \"STP 1; TORSION 1\". Several, separated by ;") }).ToArray(),
+        m.Frames.Count, lim);
+        fs.Note(0, cGroups, "The SAP groups the frame is in, as written, to filter by (read-only: the Groups sheet is where they are edited; -Refresh brings this column up to date).");
+        fs.Group(cDesign, cOther, !design.Empty || StaadDesign.HasMembers(m));
+        fs.Width(cGroups, 18); for (int k = cDesign; k < cOther; k++) fs.Width(k, 8); fs.Width(cOther, 22);
+        foreach (int k in new[] { Array.IndexOf(StaadDesign.Columns, "DJ1"), Array.IndexOf(StaadDesign.Columns, "DJ2") })
+        {
+            string dc = XlsxBook.Column(cDesign + k);
+            fs.Conditional(dc + "2:" + dc + lim, noJoint(dc + "2") + ">0", t.Red);
+        }
         fs.Conditional("C2:D" + lim, noJoint("C2") + ">0", t.Red);
         fs.Conditional("C2:D" + lim, oldJoint("C2") + ">0", t.Amber);
         fs.Conditional("C2:D" + lim, "AND($C2<>\"\",$C2=$D2)", t.Red);
@@ -706,11 +753,89 @@ public static class FrameWorkbook
         gs.Conditional("C2:C" + lim, ofType("joint", noJoint("C2")) + "+" + ofType("frame", unknown("C2", frameIds, oldF)) + "+" + ofType("link", unknown("C2", linkIds, oldL)) + ">0", t.Red);
         gs.Conditional("C2:C" + lim, ofType("joint", oldJoint("C2")) + "+" + ofType("frame", renamed("C2", frameIds, oldF)) + "+" + ofType("link", renamed("C2", linkIds, oldL)) + ">0", t.Amber);
 
+        // ---- STAAD loads (StaadCarry): STAAD's load and envelope numbers, part of the loads. The commands after the analysis
+        // (design, prints) are the design workbook's (StaadDesignWorkbook), not this one's; an older workbook's STAAD
+        // commands sheet is still read (ReadStaad), and -Xlsx moves it to the design workbook
+        var sl = b.Add(SStaadLoads);
+        var nums = StaadCarry.LoadsOf(m);
+        for (int i = 0; i < nums.Count; i++) { sl.Set(i + 1, 0, nums[i][0]); sl.Set(i + 1, 1, nums[i][1]); Num(sl, i + 1, 2, nums[i][2]); if (nums[i][3].Length > 0) sl.Set(i + 1, 3, nums[i][3]); }
+        t.Form.Table(sl, t, new[] { "Kind", "Name", "Number", "Type" }, new[] {
+            C("Kind", "key", "text", "Case, Combination or Envelope."),
+            C("Name", "key", "text", "The load case's or the combination's name, as on the Load cases or Combinations sheet (an Envelope: a combination of type Envelope)."),
+            C("Number", "load", "nonneg", "Its STAAD number: -Std writes LOAD <number> (a case or combination), ENVELOPE <number> (an envelope), so the STAAD commands' LOAD LIST / LOAD LIST ENV names it. One not listed gets the next free number."),
+            C("Type", "load", "text", "An envelope's STAAD TYPE: STRENGTH, SERVICEABILITY, CONNECTION, COLUMN, STRESS (blank: none). Steel design takes STRENGTH and SERVICEABILITY."),
+        }, nums.Count, 2000);
+        sl.Width(0, 14); sl.Width(1, 44); sl.Width(2, 10); sl.Width(3, 18);
+
+        // ---- STAAD sets, parameters, run (StaadDesign): what STAAD does after the analysis. A frame's own values are on
+        // its Frames row
+        var zs = b.Add(SStaadSets);
+        for (int i = 0; i < design.Sets.Count; i++)
+        {
+            var ds = design.Sets[i];
+            Label(zs, i + 1, 0, ds.Name, 0); zs.Set(i + 1, 1, ds.Code); zs.Set(i + 1, 2, ds.Method); zs.Set(i + 1, 3, ds.Units);
+        }
+        t.Form.Table(zs, t, new[] { "Set", "Code", "Method", "Units" }, new[] {
+            C("Set", "key", "text", "STAAD's PARAMETER number (1, 2 ...). The first set here is the one the Frames sheet's design columns belong to."),
+            L("Code", "staad", "list?", ListRange(CodeList), "The design code, as STAAD writes it after CODE: AISC UNIFIED 2016, AISC UNIFIED 2010 ... (any code STAAD has; the list is a start)."),
+            L("Method", "staad", "list?", ListRange(MethodList), "LRFD or ASD (STAAD's METHOD). Blank: the code's own."),
+            C("Units", "staad", "text", "The UNIT the set's values are in, as STAAD writes it: INCHES KIP, FEET KIP, METER KN ... Blank: STAAD units on Settings, else the model's."),
+        }, design.Sets.Count, 200);
+        zs.Width(0, 8); zs.Width(1, 26); zs.Width(2, 10); zs.Width(3, 16);
+        zs.Conditional("A2:A200", "AND(A2<>\"\",COUNTIF($A$2:$A$200,A2)>1)", t.Red);
+        string setNames = XlsxBook.SheetRef(SStaadSets) + "!$A$2:$A$200";
+
+        var zp = b.Add(SStaadParams);
+        var zph = new[] { "Set", "Members" }.Concat(StaadDesign.Columns).Concat(new[] { FramesOther }).ToArray();
+        for (int i = 0; i < design.Params.Count; i++)
+        {
+            var dp = design.Params[i];
+            Label(zp, i + 1, 0, dp.Set, 0); zp.Set(i + 1, 1, dp.Members);
+            for (int k = 0; k < StaadDesign.Columns.Length; k++)
+            {
+                string dv;
+                if (!dp.Values.TryGetValue(StaadDesign.Columns[k], out dv) || dv.Trim().Length == 0) continue;
+                if (StaadDesign.Columns[k].StartsWith("DJ", StringComparison.Ordinal)) Label(zp, i + 1, 2 + k, dv.Trim(), 0); else Num(zp, i + 1, 2 + k, dv.Trim());
+            }
+            if (dp.Other.Trim().Length > 0) zp.Set(i + 1, 2 + StaadDesign.Columns.Length, dp.Other.Trim());
+        }
+        t.Form.Table(zp, t, zph, new[] {
+            L("Set", "key", "list!", setNames, "The parameter set, as on STAAD sets."),
+            C("Members", "key", "text", "ALL (the set's values for every member: a frame's blank cell on Frames takes them), or links by label. For a set other than the first: any members, as on STAAD run (a group, frame and link labels, ranges 1 TO 4). A frame's values of the first set go on its Frames row, not here."),
+        }.Concat(StaadDesign.Columns.Select(n => n.StartsWith("DJ", StringComparison.Ordinal)
+            ? C(n, "staad", "text", "STAAD design: " + StaadHint(n) + " A joint's label, as on Joints.")
+            : C(n, "staad", "num", "STAAD design: " + StaadHint(n) + " In the set's units. Blank: not written.")))
+         .Concat(new[] { C(FramesOther, "staad", "text", "Any other parameter, as STAAD writes it without the members: \"STP 1; TORSION 1\". Several, separated by ;") }).ToArray(),
+        design.Params.Count, 500);
+        zp.FreezeCols = 2; zp.Width(0, 8); zp.Width(1, 30); for (int k = 2; k < zph.Length - 1; k++) zp.Width(k, 8); zp.Width(zph.Length - 1, 24);
+
+        var zr = b.Add(SStaadRun);
+        for (int i = 0; i < design.Run.Count; i++)
+        {
+            var dr = design.Run[i];
+            if (dr.LoadList.Length > 0) Label(zr, i + 1, 0, dr.LoadList, 0);
+            zr.Set(i + 1, 1, dr.Action);
+            if (dr.Set.Length > 0) Label(zr, i + 1, 2, dr.Set, 0);
+            if (dr.Members.Length > 0) Label(zr, i + 1, 3, dr.Members, 0);
+            if (dr.Units.Length > 0) zr.Set(i + 1, 4, dr.Units);
+            if (dr.Text.Length > 0) zr.Set(i + 1, 5, dr.Text);
+        }
+        t.Form.Table(zr, t, new[] { "Load list", "Action", "Set", "Members", "Units", "Text" }, new[] {
+            C("Load list", "load", "text", "The loads the step runs under, STAAD's LOAD LIST: ALL, load numbers and ranges (101 TO 110; the STAAD loads sheet numbers them), or ENV and envelope numbers (ENV 1 2). Blank: the row above's."),
+            L("Action", "key", "list!", ListRange(ActionList), "CHECK CODE or SELECT (under a set), PRINT (a print command), or COMMAND (any other STAAD command, as written)."),
+            L("Set", "staad", "list?", setNames, "For CHECK CODE and SELECT: the parameter set, as on STAAD sets. Its PARAMETER block is written before its first use."),
+            C("Members", "staad", "text", "For CHECK CODE and SELECT: ALL, a group (as on Groups), frame and link labels, ranges of number labels (1 TO 4), or a mix. Blank: ALL."),
+            C("Units", "staad", "text", "The UNIT a PRINT or COMMAND runs under, as STAAD writes it (INCHES KIP). Blank: STAAD units on Settings, else the model's."),
+            C("Text", "text", "text", "For PRINT: the command (PRINT MEMBER FORCES ALL). For COMMAND: the STAAD command as written."),
+        }, design.Run.Count, 500);
+        zr.Width(0, 18); zr.Width(1, 14); zr.Width(2, 8); zr.Width(3, 30); zr.Width(4, 14); zr.Width(5, 60);
+        zr.Conditional("C2:C500", "AND(C2<>\"\",COUNTIF(" + setNames + ",C2)=0)", t.Red);
+
         // ---- Carried (read-only)
         var ca = b.Add("Carried");
         ca.Set(0, 0, "Table", t.Head["ro"]); ca.Set(0, 1, "Rows carried", t.Head["ro"]); ca.Width(0, 50); ca.Width(1, 14);
         r0 = 1;
-        foreach (var tb in m.Source.Tables)
+        foreach (var tb in m.Source.Tables.Where(x => !StaadCarry.IsOwn(x.Name)))
         {
             int n = 0;
             foreach (var row in tb.Rows) { string kind; bool main; if (!FrameS2k.OwnerOf(tb.Name, row, out kind, out main)) n++; }
@@ -724,7 +849,7 @@ public static class FrameWorkbook
             FrameMember.Release, FrameMember.Partial, FrameMember.Insertion, FrameMember.Modifiers, FrameSection.General, FrameMaterial.General, FrameMaterial.Mechanical,
             FrameMaterial.Steel, FrameLinkProp.General, FrameLink.Conn, FrameLink.PropAssign, FrameLink.LocalAxes, FrameGroup.Defs, FrameGroup.Assign, FramePattern.Defs,
             FrameLoad.JointForce, FrameLoad.GroundDisp, FrameLoad.Point, FrameLoad.Distributed, FrameLoad.Temperature, FrameCase.Defs, FrameCase.StaticLoads, FrameCombo.Defs,
-            FrameMember.EndOffsets,
+            FrameMember.EndOffsets, StaadDesign.TMembers,
         };
         var kept = new SortedDictionary<string, int>(StringComparer.Ordinal);
         foreach (var o in m.All())
@@ -772,6 +897,8 @@ public static class FrameWorkbook
         SetRowRo(st, 3, "Source", sourceName ?? "", "Where the model came from.");
         SetRowRo(st, 4, "Fingerprint", hash, "SHA-256 of the model this workbook was written from (the hidden base).");
         SetRowRo(st, 5, "Format", Format + " " + Version.ToString(Inv), "This workbook's layout.");
+        SetRow(st, t, 6, StaadUnitsKey, design.Units, "STAAD only: the UNIT the STAAD run's prints and commands are in, as STAAD writes it (INCHES KIP, METER KN ...). Blank: the model's.");
+        SetRow(st, t, 7, StaadPrintKey, design.AnalysisPrint, "STAAD only: PERFORM ANALYSIS's PRINT option (STATICS CHECK, ALL ...). Blank: none.");
 
         // ---- Start
         Func<string, string, string> rowsOf = (sheet, c) => "COUNTA(" + col(sheet, c) + ")";
@@ -779,7 +906,7 @@ public static class FrameWorkbook
         {
             new WbSheetInfo("Settings", "SAP version stamp, units, where the model came from", null),
             new WbSheetInfo(SJoints, "Joints: X Y Z, restraints, local axes", rowsOf(SJoints, "B")),
-            new WbSheetInfo(SFrames, "Frames: two joints, section, kind, line, release preset, angle, insertion, modifiers", rowsOf(SFrames, "B")),
+            new WbSheetInfo(SFrames, "Frames: two joints, section, kind, line, release preset, angle, insertion, modifiers; each frame's STAAD design values (the block at the right)", rowsOf(SFrames, "B")),
             new WbSheetInfo(FrameView.View, "A live drawing: steel and pipe, pinned ends, supports, links, joint labels", null),
             new WbSheetInfo(SSections, "Sections: shape, material, dimensions", rowsOf(SSections, "B")),
             new WbSheetInfo(SMaterials, "Materials: E, Poisson, unit weight, alpha, Fy, Fu", rowsOf(SMaterials, "B")),
@@ -797,6 +924,10 @@ public static class FrameWorkbook
             new WbSheetInfo(SCases, "Load cases: type, initial case, then one row per load", rowsOf(SCases, "B")),
             new WbSheetInfo(SCombos, "Combinations: type, then one row per item", rowsOf(SCombos, "B")),
             new WbSheetInfo(SGroups, "SAP groups, one row per member", rowsOf(SGroups, "A")),
+            new WbSheetInfo(SStaadLoads, "STAAD only: the load and envelope numbers -Std writes", rowsOf(SStaadLoads, "A")),
+            new WbSheetInfo(SStaadSets, "STAAD only: the design's parameter sets, each with its code and method (the first set's values by frame are on Frames)", rowsOf(SStaadSets, "A")),
+            new WbSheetInfo(SStaadParams, "STAAD only: parameters by list: a set's values for ALL, for links, and every row of a later set", rowsOf(SStaadParams, "A")),
+            new WbSheetInfo(SStaadRun, "STAAD only: what STAAD does after the analysis, in order: checks, prints, commands", rowsOf(SStaadRun, "B")),
             new WbSheetInfo("Carried", "Tables the workbook does not show: they ride along unchanged (read-only)", null),
         };
         string fr = col(SFrames, "C"), frJ = col(SFrames, "D");
@@ -811,6 +942,8 @@ public static class FrameWorkbook
                         col(SLinks, "E") + "<>\"\")*(COUNTIF(" + lpNames + "," + col(SLinks, "E") + ")=0))", false),
             new WbCheck("Loads naming a pattern no sheet has", string.Join("+", new[] { SJointLoads, SGround, SPoint, SDist, STemp }.Select(sn => "SUMPRODUCT((" + col(sn, "C") + "<>\"\")*(COUNTIF(" + patNames + "," + col(sn, "C") + ")=0))").ToArray()), false),
             new WbCheck("Loads on a frame no sheet has", string.Join("+", new[] { SPoint, SDist, STemp }.Select(sn => "SUMPRODUCT(" + noFrame(col(sn, "B")) + ")").ToArray()), false),
+            new WbCheck("STAAD run or STAAD parameters rows naming a set STAAD sets has not", "SUMPRODUCT((" + XlsxBook.SheetRef(SStaadRun) + "!$C$2:$C$500<>\"\")*(COUNTIF(" + setNames + "," + XlsxBook.SheetRef(SStaadRun) +
+                        "!$C$2:$C$500)=0))+SUMPRODUCT((" + XlsxBook.SheetRef(SStaadParams) + "!$A$2:$A$500<>\"\")*(COUNTIF(" + setNames + "," + XlsxBook.SheetRef(SStaadParams) + "!$A$2:$A$500)=0))", false),
             new WbCheck("Group rows naming a joint, frame or link no sheet has", GroupCount(col(SGroups, "B"), col(SGroups, "C"), (at, ids, old) => unknown(at, ids, old), jointIds, oldJ, frameIds, oldF, linkIds, oldL), false),
             new WbCheck("References to an old label (renamed: the build follows it; deleted: it drops the row)", light ? "0" :
                         "SUMPRODUCT(" + oldJoint(fr) + ")+SUMPRODUCT(" + oldJoint(frJ) + ")+SUMPRODUCT(" + oldJoint(col(SLinks, "C")) + ")+SUMPRODUCT(" + oldJoint(col(SLinks, "D")) + ")+" +
@@ -842,6 +975,7 @@ public static class FrameWorkbook
                 "Loads: Dir Gravity (down, positive), X Y Z (global), 1 2 3 (the frame's local axes), X Proj ... (projected). Rel distances are fractions of the length.",
                 "Cases: a nonlinear case (NonStatic) is what gaps, hooks and friction need; OPE continues from SUS (Initial = SUS); EXP = OPE - SUS as a Linear Add combination.",
                 "Carried: everything the sheets do not show (design data, areas, analysis options ...) is kept from the source and written back unchanged.",
+                "STAAD design (-Std only): a set on STAAD sets (its code), each frame's values on its Frames row (the block at the right; blank = the set's ALL row on STAAD parameters, else STAAD's default), and the checks and prints on STAAD run.",
             },
         };
         // a name a sheet gives twice is red (the build refuses it), on every sheet of named things (Joints, Frames and
@@ -869,7 +1003,7 @@ public static class FrameWorkbook
         { SLinks, "B45309" }, { SLinkProps, "B45309" }, { SSprings, "B45309" },
         { SPatterns, "9A3412" }, { SJointLoads, "9A3412" }, { SGround, "9A3412" }, { SPoint, "9A3412" }, { SDist, "9A3412" }, { STemp, "9A3412" },
         { SCases, "9A3412" }, { SCombos, "9A3412" },
-        { SGroups, "37474F" }, { "Carried", "7F7F7F" },
+        { SGroups, "37474F" }, { SStaadLoads, "4A148C" }, { SStaadSets, "4A148C" }, { SStaadParams, "4A148C" }, { SStaadRun, "4A148C" }, { "Carried", "7F7F7F" },
     };
 
     const string FramesHint = "The frames it loads: a label, a range in Frames' order (C1:C9), group:NAME, line:NAME, kind:NAME, section:NAME or all; several, separated by commas.";
@@ -938,7 +1072,7 @@ public static class FrameWorkbook
     public static byte[] RefreshBytes(string path, FrameWorkbookResult read, string sourceName, FrameWorkbookRun run, List<string> notes)
     {
         var b = Book(read.Base, sourceName, run);
-        return WbRefresh.Bytes(b, path, Inputs.Where(n => n != "Settings").ToList(), "Settings", new HashSet<string> { "SAP version" }, s => s, notes);
+        return WbRefresh.Bytes(b, path, Inputs.Where(n => n != "Settings").ToList(), "Settings", new HashSet<string> { "SAP version", StaadUnitsKey, StaadPrintKey }, s => s, notes);
     }
 
     // ======================================================================== read
@@ -1022,6 +1156,11 @@ public static class FrameWorkbook
         ReadFrameLoads(sheet(STemp), x, FrameLoad.Temperature, order, kindOf, lineOf);
         ReadCases(sheet(SCases), x);
         ReadCombos(sheet(SCombos), x);
+        ReadStaad(sheet(SStaad), sheet(SStaadLoads), x);
+        // an older workbook's STAAD commands (its sheet, or its base's) become the design; this layout's sheets are read
+        var adopted = new List<string>();
+        if (StaadDesign.Adopt(m, adopted)) x.Warnings.Add("this workbook holds STAAD's commands in the older form: " + string.Join("; ", adopted.ToArray()) + ". -In <this>.xlsx -Xlsx -Out <new> writes the workbook with them on its Frames rows and STAAD sheets");
+        ReadStaadDesign(sheet(SStaadSets), sheet(SStaadParams), sheet(SStaadRun), sheet("Settings"), x);
 
         CapitalsOnly(x);
         Refit(m, res.Base);
@@ -1402,6 +1541,29 @@ public static class FrameWorkbook
             else if (!f.PropertyModifiers.SequenceEqual(p0.Val)) f.PropertyModifiers = p0.Val;
             ReadOffsets(c, r, x, f);
             ReadEndLengths(c, r, x, f);
+            // its STAAD design values (a workbook without the block keeps the base's)
+            foreach (string dn in StaadDesign.Columns)
+            {
+                if (!c.At.ContainsKey(dn)) continue;
+                if (dn.StartsWith("DJ", StringComparison.Ordinal))
+                {
+                    string dj = x.Ref("joint", Text(c, r, dn, x));
+                    if (dj.Length > 0 && !x.Labels("joint").Contains(dj)) { x.Err(At(c, r, dn) + ": no joint " + dj + " on Joints" + Hint(dj, x.Labels("joint"))); continue; }
+                    if (StaadDesign.Member(f, dn) != dj) StaadDesign.SetMember(f, dn, dj);
+                    continue;
+                }
+                double dv = Num(c, r, dn, x, null);
+                string dt = double.IsNaN(dv) ? "" : FrameModel.Fmt(dv);
+                double was;
+                string old = StaadDesign.Member(f, dn);
+                if (dt.Length > 0 && double.TryParse(old, NumberStyles.Float, Inv, out was) && was == dv) continue;       // the same number: kept as written
+                if (old != dt) StaadDesign.SetMember(f, dn, dt);
+            }
+            if (c.At.ContainsKey(FramesOther))
+            {
+                string ot = Text(c, r, FramesOther, x);
+                if (StaadDesign.Member(f, StaadDesign.Other) != ot.Replace("\"", "'")) StaadDesign.SetMember(f, StaadDesign.Other, ot);
+            }
         }
         return order;
     }
@@ -1615,6 +1777,147 @@ public static class FrameWorkbook
             if (sr != null && cs.Length > 0 && sr.Get("CoordSys") != cs) sr.Set("CoordSys", cs);
         }
         foreach (var j in x.M.Joints) if (!had.Contains(j) && j.Rec(FrameJoint.Springs) != null) j.Spring = null;
+    }
+
+    // the STAAD sheets into Pluto's own tables (StaadCarry); a workbook without them keeps its base's
+    static void ReadStaad(CaesarSheet cs, CaesarSheet ls, Ctx x)
+    {
+        if (cs == null && ls == null) return;
+        var cmds = cs == null ? StaadCarry.CommandsOf(x.M) : new List<string>();
+        if (cs != null)
+        {
+            var c = WbRead.ColsOf(cs, x, null);
+            foreach (int r in Rows(c))
+            {
+                string t = Text(c, r, "Command", x);
+                if (t.Length == 0) continue;
+                if (t.IndexOf('"') >= 0) { x.Err(At(c, r, "Command") + ": a STAAD command with a double quote (write ' instead)"); continue; }
+                cmds.Add(t);
+            }
+        }
+        var nums = ls == null ? StaadCarry.LoadsOf(x.M) : new List<string[]>();
+        if (ls != null)
+        {
+            var c = WbRead.ColsOf(ls, x, null);
+            foreach (int r in Rows(c))
+            {
+                string k = Text(c, r, "Kind", x), n = Text(c, r, "Name", x);
+                double v = Num(c, r, "Number", x, null);
+                string kind = new[] { "Case", "Combination", "Envelope" }.FirstOrDefault(w => string.Equals(k, w, StringComparison.OrdinalIgnoreCase));
+                if (kind == null) { x.Err(At(c, r, "Kind") + ": Case, Combination or Envelope"); continue; }
+                if (n.Length == 0) { x.Err(At(c, r, "Name") + ": the load's name"); continue; }
+                if (n.IndexOf('"') >= 0) { x.Err(At(c, r, "Name") + ": a name with a double quote"); continue; }
+                if (double.IsNaN(v)) continue;
+                if (v < 1 || v != Math.Floor(v) || v > 99999) { x.Err(At(c, r, "Number") + ": a whole number from 1 to 99999"); continue; }
+                string ty = kind == "Envelope" ? StaadInput.EnvelopeType(Text(c, r, "Type", x)) : "";
+                if (ty.IndexOf(' ') >= 0) { x.Err(At(c, r, "Type") + ": one word (STRENGTH, SERVICEABILITY ...)"); continue; }
+                nums.Add(new[] { kind, n, ((int)v).ToString(Inv), ty });
+            }
+        }
+        StaadCarry.Set(x.M, cmds, nums);
+    }
+
+    // what each STAAD design column is (the hints)
+    static string StaadHint(string n)
+    {
+        switch (n)
+        {
+            case "FYLD": return "yield strength.";
+            case "FU": return "ultimate tensile strength.";
+            case "KY": return "effective length factor K for buckling about the local y axis.";
+            case "KZ": return "effective length factor K for buckling about the local z axis.";
+            case "LY": return "length for buckling about the local y axis (STAAD's default: the member's own length).";
+            case "LZ": return "length for buckling about the local z axis (STAAD's default: the member's own length).";
+            case "UNB": return "unsupported length of the bottom flange, for bending (STAAD's default: the member's own length).";
+            case "UNT": return "unsupported length of the top flange, for bending (STAAD's default: the member's own length).";
+            case "CB": return "the bending coefficient Cb (0: STAAD works it out).";
+            case "DFF": return "the allowable span over deflection (240 for L/240); with it STAAD checks deflection under a SERVICEABILITY envelope.";
+            case "DJ1": return "the joint where the deflection length starts.";
+            case "DJ2": return "the joint where the deflection length ends.";
+            case "NSF": return "net section factor for tension.";
+            case "RATIO": return "the allowable ratio of demand to capacity.";
+            case "MAIN": return "slenderness check option.";
+            case "TRACK": return "how much of the check STAAD prints (0, 1, 2).";
+            case "BEAM": return "where along the member STAAD checks (1: at 13 points).";
+        }
+        return n + ".";
+    }
+
+    // the STAAD design sheets into the model (StaadDesign); a workbook without them keeps its base's. A frame's own
+    // values are read with its Frames row
+    static void ReadStaadDesign(CaesarSheet ss, CaesarSheet ps, CaesarSheet rs, CaesarSheet st, Ctx x)
+    {
+        if (ss == null && ps == null && rs == null) return;
+        var was = StaadDesign.Of(x.M);
+        var d = new StaadDesign { Units = was.Units, AnalysisPrint = was.AnalysisPrint };
+        if (st != null)
+            for (int r = 1; r < st.Rows.Count; r++)
+            {
+                string k = st.Text(r, 0).Trim(), v = st.Text(r, 1).Trim();
+                if (k == StaadUnitsKey) d.Units = v.ToUpperInvariant();
+                else if (k == StaadPrintKey) d.AnalysisPrint = v;
+            }
+        if (ss == null) d.Sets.AddRange(was.Sets);
+        else
+        {
+            var c = WbRead.ColsOf(ss, x, null);
+            foreach (int r in Rows(c))
+            {
+                string name = Text(c, r, "Set", x);
+                if (name.Length == 0) { x.Err(At(c, r, "Set") + ": a set with no name (STAAD's PARAMETER number)"); continue; }
+                if (d.Sets.Any(q => q.Name == name)) { x.Err(At(c, r, "Set") + ": set " + name + " is on two rows"); continue; }
+                d.Sets.Add(new StaadDesign.Set { Name = name, Code = Text(c, r, "Code", x), Method = Text(c, r, "Method", x), Units = Text(c, r, "Units", x).ToUpperInvariant() });
+            }
+        }
+        if (ps == null) d.Params.AddRange(was.Params);
+        else
+        {
+            var c = WbRead.ColsOf(ps, x, null);
+            foreach (int r in Rows(c))
+            {
+                var p = new StaadDesign.Param { Set = Text(c, r, "Set", x), Members = Text(c, r, "Members", x), Other = c.At.ContainsKey(FramesOther) ? Text(c, r, FramesOther, x) : "" };
+                if (p.Members.Length == 0) p.Members = "ALL";
+                if (!d.Sets.Any(q => q.Name == p.Set)) { x.Err(At(c, r, "Set") + ": no set " + (p.Set.Length > 0 ? p.Set : "(blank)") + " on " + SStaadSets); continue; }
+                foreach (string dn in StaadDesign.Columns)
+                {
+                    if (!c.At.ContainsKey(dn)) continue;
+                    string v = Text(c, r, dn, x);
+                    double dv;
+                    if (v.Length == 0) continue;
+                    if (dn.StartsWith("DJ", StringComparison.Ordinal)) { p.Values[dn] = x.Ref("joint", v); continue; }
+                    if (!double.TryParse(v, NumberStyles.Float, Inv, out dv)) { x.Err(At(c, r, dn) + ": " + dn + " takes a number (\"" + v + "\")"); continue; }
+                    p.Values[dn] = v;
+                }
+                // the first set's values for a frame are on its Frames row: one place for each value
+                if (d.Sets.Count > 0 && p.Set == d.Sets[0].Name)
+                {
+                    var who = StaadDesign.ByLabel(x.M, p.Members);
+                    if (!who.All && who.Error == null && who.Frames.Count > 0)
+                    {
+                        x.Err(At(c, r, "Members") + ": " + p.Members + " names " + who.Frames.Count + " frame(s) (" + string.Join(" ", who.Frames.Take(6).ToArray()) + (who.Frames.Count > 6 ? " ..." : "") +
+                              "): set " + p.Set + "'s values for a frame go on its Frames row (the STAAD block); this sheet takes ALL, links, and the other sets");
+                        continue;
+                    }
+                }
+                if (!p.Blank) d.Params.Add(p);
+            }
+        }
+        if (rs == null) d.Run.AddRange(was.Run);
+        else
+        {
+            var c = WbRead.ColsOf(rs, x, null);
+            foreach (int r in Rows(c))
+            {
+                var s = new StaadDesign.Step { LoadList = Text(c, r, "Load list", x), Action = Text(c, r, "Action", x).ToUpperInvariant(), Set = Text(c, r, "Set", x), Members = Text(c, r, "Members", x),
+                                               Units = Text(c, r, "Units", x).ToUpperInvariant(), Text = Text(c, r, "Text", x) };
+                if (!StaadDesign.Actions.Contains(s.Action)) { x.Err(At(c, r, "Action") + ": CHECK CODE, SELECT, PRINT or COMMAND (\"" + s.Action + "\")"); continue; }
+                bool check = s.Action == "CHECK CODE" || s.Action == "SELECT";
+                if (check && !d.Sets.Any(q => q.Name == s.Set)) { x.Err(At(c, r, "Set") + ": no set " + (s.Set.Length > 0 ? s.Set : "(blank)") + " on " + SStaadSets); continue; }
+                if (!check && s.Text.Length == 0) { x.Err(At(c, r, "Text") + ": a " + s.Action + " with no text"); continue; }
+                d.Run.Add(s);
+            }
+        }
+        d.Store(x.M);
     }
 
     static void ReadPatterns(CaesarSheet s, Ctx x)

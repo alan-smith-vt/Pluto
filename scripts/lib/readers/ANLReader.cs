@@ -104,6 +104,8 @@ public class AnlIndexer
 	// indexed as it always was, without them. Never "STAAD SPACE": every .anl page header starts with it.
 	public static readonly string[] StdMarkers = new string[]
 	{
+		"DEFINE ENVELOPE",
+		"END DEFINE ENVELOPE",
 		"MEMBER TRUSS",
 		"ELEMENT PLANE STRESS",
 		"END GROUP DEFINITION",
@@ -387,30 +389,30 @@ public static class AnlUnitStamper
 	}
 	
 	// TODO verify abbreviations for metric units
-	private static bool TryLength(string tok, out LengthUnit l)
+	internal static bool TryLength(string tok, out LengthUnit l)
 	{
 		l = LengthUnit.Inch;
 		switch (tok)
 		{
 			case "INCH": case "INCHES": case "IN": l = LengthUnit.Inch; return true;
 			case "FEET": case "FOOT": case "FT": l = LengthUnit.Foot; return true;
-			case "METER": case "METRE": case "M": l = LengthUnit.Meter; return true;
+			case "METER": case "METRE": case "METERS": case "METRES": case "M": l = LengthUnit.Meter; return true;
 			case "MMS": case "MM": l = LengthUnit.Millimeter; return true;
-			case "CM": l = LengthUnit.Centimeter; return true;
+			case "CM": case "CMS": l = LengthUnit.Centimeter; return true;
 			default: return false;
 		}
 	}
 	
-	private static bool TryForce(string tok, out ForceUnit f)
+	internal static bool TryForce(string tok, out ForceUnit f)
 	{
 		f = ForceUnit.Kip;
 		switch (tok)
 		{
-			case "POUND": case "LB": case "LBS": f = ForceUnit.Pound; return true;
+			case "POUND": case "POUNDS": case "LB": case "LBS": f = ForceUnit.Pound; return true;
 			case "KIP": case "KIPS": f = ForceUnit.Kip; return true;
-			case "KN": f = ForceUnit.KiloNewton; return true;
-			case "NEWTON": case "N": f = ForceUnit.Newton; return true;
-			case "MTON": f = ForceUnit.MetricTon; return true;
+			case "KN": case "KNS": f = ForceUnit.KiloNewton; return true;
+			case "NEWTON": case "NEWTONS": case "N": f = ForceUnit.Newton; return true;
+			case "MTON": case "MTONS": f = ForceUnit.MetricTon; return true;
 			default: return false;
 		}
 	}
@@ -1932,6 +1934,7 @@ public sealed class StaadMaterial
 	public readonly Dictionary<string, double> Values = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
 	public string Type;
 	public readonly Dictionary<string, double> Strength = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+	public bool Converted;                            // under a later UNIT: its numbers converted to the first's (their digits no longer the file's)
 }
 
 // A load: a reference load (LOAD R1 ...), a primary load (LOAD 1 ...) or a combination (LOAD COMBINATION [SRSS | ABS] n);
@@ -1948,6 +1951,15 @@ public sealed class StaadLoad
 	public readonly List<StaadBlock> Blocks = new List<StaadBlock>();
 }
 
+// DEFINE ENVELOPE's line "<load list> ENVELOPE i [TYPE t]" (TR.40): the loads, the envelope's number and its type
+public sealed class StaadEnvelope
+{
+	public int Number;
+	public string Type = "";                          // STRENGTH, SERVICEABILITY, CONNECTION, COLUMN, STRESS ... ("" none)
+	public readonly List<int> Loads = new List<int>();
+	public string Text;
+}
+
 public sealed class StaadBlock
 {
 	public string Name;                               // SELFWEIGHT, JOINT LOAD ...
@@ -1958,8 +1970,12 @@ public sealed class StaadBlock
 // The input commands of a .std as data: what the .anl reader already reads -- the index (with the .std's own markers,
 // AnlIndexer.StdMarkers), units, joints, member and plate incidences, groups and plate thicknesses -- with its own parsers,
 // and text parsers for the commands an .anl never needed (materials, member properties, constants, offsets, releases,
-// trusses, supports, loads, the analysis). Syntax only, numbers as written: what a command means is the caller's
-// (StdToFrame, the frame model). A command it does not take is listed in Unread as written, never dropped.
+// trusses, supports, loads, the analysis). Syntax only: what a command means is the caller's (StdToFrame, the frame
+// model). Numbers are as written in the first UNIT's units; one under a later UNIT is converted to them by what it is
+// (a length, a force, a stress, a weight per volume ...; Converted names the sections). The output and design commands
+// (every PRINT, and what follows the analysis but its load combinations) are kept in Output, as written, with the UNIT
+// in force at the analysis first when it is not the first UNIT. A command it does not take is listed in Unread as
+// written, never dropped.
 public sealed class StaadInput
 {
 	public string Path;
@@ -1987,12 +2003,35 @@ public sealed class StaadInput
 	public readonly List<StaadSpec> Releases = new List<StaadSpec>();
 	public readonly List<StaadSpec> Supports = new List<StaadSpec>();
 	public readonly List<StaadLoad> Loads = new List<StaadLoad>();
+	public readonly List<StaadEnvelope> Envelopes = new List<StaadEnvelope>();   // DEFINE ENVELOPE, before or after the analysis
 	public string Analysis;                                             // PERFORM ANALYSIS, PDELTA 30 ANALYSIS SMALLDELTA ...
 	public bool Finished;                                               // FINISH
 	public readonly List<string> Unread = new List<string>();           // "<command>" or "<section>: <command>"
+	// output and design commands: every PRINT, and what follows the analysis (LOAD LIST, PARAMETER, CHECK CODE ...) but
+	// its load combinations and FINISH, as written. Not the model: listed, never read as it
+	public readonly List<string> Output = new List<string>();
+	public string AnalysisPrint;                                        // PERFORM ANALYSIS's PRINT option, as written
+	// units: every number is read in the first UNIT's (BaseLength, BaseForce); a command under a later UNIT is converted
+	// to them (Converted: "<command> (<its UNIT>)", the first of each section)
+	public LengthUnit BaseLength = LengthUnit.Inch;
+	public ForceUnit BaseForce = ForceUnit.Kip;
+	public readonly List<string> Converted = new List<string>();
+	double kL = 1, kF = 1;                                              // the section's length and force, in the base's
+	string unitText = "";
 
 	static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
 	static bool Is(string a, string b) { return string.Equals(a, b, StringComparison.OrdinalIgnoreCase); }
+	// the group kinds of START GROUP DEFINITION (AnlGroupParser's)
+	static readonly string[] KindWords = { "JOINT", "MEMBER", "ELEMENT", "GEOMETRY", "FLOOR", "SOLID" };
+	// the model's own commands: after the analysis one is a change for a second analysis, never output
+	static readonly HashSet<string> Model = new HashSet<string> { "JOINT COORDINATES", "MEMBER INCIDENCES", "ELEMENT INCIDENCES SHELL", "ELEMENT PLANE STRESS",
+		"MEMBER TRUSS", "START GROUP DEFINITION", "END GROUP DEFINITION", "DEFINE MATERIAL START", "END DEFINE MATERIAL", "MEMBER PROPERTY", "ELEMENT PROPERTY",
+		"ELEM THICKNESS", "CONSTANTS", "MEMBER OFFSET", "MEMBER RELEASE", "ELEMENT OFFSET", "ELEMENT RELEASE", "SUPPORTS", "DEFINE REFERENCE LOADS",
+		"END DEFINE REFERENCE LOADS", "LOAD", "SELFWEIGHT", "JOINT LOAD", "MEMBER LOAD", "ELEMENT LOAD", "TEMPERATURE LOAD", "REFERENCE LOAD",
+		"SUPPORT DISPLACEMENT LOAD", "PERFORM ANALYSIS", "PDELTA" };
+	// the commands whose numbers have units
+	static readonly HashSet<string> Numeric = new HashSet<string> { "JOINT COORDINATES", "MEMBER PROPERTY", "ELEMENT PROPERTY", "CONSTANTS", "MEMBER OFFSET",
+		"MEMBER RELEASE", "SUPPORTS", "DEFINE MATERIAL START", "JOINT LOAD", "MEMBER LOAD", "SUPPORT DISPLACEMENT LOAD" };
 
 	public static StaadInput Read(string path)
 	{
@@ -2004,11 +2043,28 @@ public sealed class StaadInput
 		// groups and thicknesses first: an id list may name a group, and plates take their thickness
 		foreach (var sec in s.Sections) if (sec.Name == "START GROUP DEFINITION") grp.ParseGroups(sec);
 		s.Groups = grp.Groups; s.GroupKinds = grp.GroupKinds; s.GroupOrder = grp.GroupOrder;
-		foreach (var sec in s.Sections) if (sec.Name == "ELEMENT PROPERTY") grp.ParseThickness(sec);
+		var firstUnitSec = s.Sections.FirstOrDefault(x => x.Name == "UNIT");
+		foreach (var sec in s.Sections)
+		{
+			if (sec.Name != "ELEMENT PROPERTY") continue;
+			var before = new Dictionary<int, double>(grp.ThicknessExact);
+			grp.ParseThickness(sec);
+			double k = firstUnitSec == null ? 1 : UnitConvert.Length(1, sec.Length, firstUnitSec.Length);
+			if (k != 1)
+				foreach (var kv in grp.ThicknessExact.ToList())
+				{
+					double old;
+					if (!before.TryGetValue(kv.Key, out old) || old != kv.Value) grp.ThicknessExact[kv.Key] = Round(kv.Value * k, kv.Value.ToString("R", Inv));
+				}
+		}
 		s.Thickness = grp.ThicknessExact;
 		Dictionary<int, Node> nodes = null;
 		StaadLoad load = null;
-		bool reference = false;
+		bool reference = false, after = false;
+		var firstUnit = s.Sections.FirstOrDefault(x => x.Name == "UNIT");
+		if (firstUnit != null) { s.BaseLength = firstUnit.Length; s.BaseForce = firstUnit.Force; }
+		bool unitsChange = s.Sections.Where(x => x.Name == "UNIT").Select(x => x.Length.ToString() + x.Force.ToString()).Distinct().Count() > 1;
+		var convertedSections = new HashSet<string>();
 		foreach (var sec in s.Sections)
 		{
 			var cmds = grp.Commands(sec, false);
@@ -2016,9 +2072,37 @@ public sealed class StaadInput
 			var head = cmds[0];
 			var rest = cmds.Skip(1).ToList();
 			string name = sec.Name;
+			s.kL = UnitConvert.Length(1, sec.Length, s.BaseLength); s.kF = UnitConvert.Force(1, sec.Force, s.BaseForce);
+			bool converts = s.kL != 1 || s.kF != 1;
+			if (converts && !after && Numeric.Contains(name) && convertedSections.Add(name + "|" + s.unitText)) s.Converted.Add(name + " (UNIT " + s.unitText + ")");
+			// after the analysis: its load combinations; output and design commands listed; a model command refused
+			if (name == "DEFINE ENVELOPE") { s.EnvelopesIn(rest); continue; }
+			if (name == "END DEFINE ENVELOPE") { s.None(name, rest); continue; }
+			if (after && name != "FINISH")
+			{
+				if (name == "LOAD" && head.Tokens.Length > 1 && (Is(head.Tokens[1], "COMBINATION") || Is(head.Tokens[1], "COMB"))) { s.LoadIn(head, rest, false, true); continue; }
+				if (name == "UNIT" || name.StartsWith("PRINT") || (name == "LOAD" && head.Tokens.Length > 1 && Is(head.Tokens[1], "LIST")) || !Model.Contains(name))
+				{
+					foreach (var c in cmds) s.Output.Add(c.Text);
+					continue;
+				}
+				foreach (var c in cmds) s.Unread.Add(c.Text + " (after the analysis: a model change for a second one)");
+				continue;
+			}
 			switch (name)
 			{
-				case "UNIT": s.Units.Add(head.Tokens.Skip(1).ToArray()); s.None(name, rest); break;
+				case "UNIT":
+				{
+					string[] words = head.Tokens.Skip(1).ToArray();
+					s.Units.Add(words);
+					s.unitText = string.Join(" ", words);
+					LengthUnit lu; ForceUnit fu;
+					foreach (string w in words)
+						if (unitsChange && !AnlUnitStamper.TryLength(w.ToUpperInvariant(), out lu) && !AnlUnitStamper.TryForce(w.ToUpperInvariant(), out fu))
+							s.Unread.Add(head.Text + " (" + w + ": a unit Pluto does not convert, and the units change along the file)");
+					s.None(name, rest);
+					break;
+				}
 				case "JOINT COORDINATES": nodes = s.JointsIn(sec, rest); break;
 				case "MEMBER INCIDENCES": s.Incidences(sec, rest, nodes, true); break;
 				case "ELEMENT INCIDENCES SHELL": s.Incidences(sec, rest, nodes, false); break;
@@ -2026,7 +2110,7 @@ public sealed class StaadInput
 				case "MEMBER TRUSS": s.IdLines(name, rest, s.Truss); break;
 				case "START GROUP DEFINITION":
 					foreach (var c in rest)
-						if (!(c.Tokens.Length == 1 && (Is(c.Text, "JOINT") || Is(c.Text, "MEMBER") || Is(c.Text, "ELEMENT"))) && !(c.Tokens[0].StartsWith("_") && s.AllIds(c.Tokens, 1)))
+						if (!(c.Tokens.Length == 1 && KindWords.Any(k => Is(c.Text, k))) && !(c.Tokens[0].StartsWith("_") && s.AllIds(c.Tokens, 1)))
 							s.Unread.Add(name + ": " + c.Text);
 					break;
 				case "DEFINE MATERIAL START": s.MaterialsIn(rest); break;
@@ -2048,18 +2132,29 @@ public sealed class StaadInput
 				case "END GROUP DEFINITION": case "END DEFINE MATERIAL": s.None(name, rest); break;
 				case "DEFINE REFERENCE LOADS": reference = true; load = null; s.None(name, rest); break;
 				case "END DEFINE REFERENCE LOADS": reference = false; load = null; s.None(name, rest); break;
-				case "LOAD": load = s.LoadIn(head, rest, reference); break;
+				case "LOAD":
+					if (head.Tokens.Length > 1 && Is(head.Tokens[1], "LIST")) { load = null; foreach (var c in cmds) s.Output.Add(c.Text); break; }
+					load = s.LoadIn(head, rest, reference, false);
+					break;
 				case "SELFWEIGHT": case "JOINT LOAD": case "MEMBER LOAD": case "TEMPERATURE LOAD": case "REFERENCE LOAD": case "SUPPORT DISPLACEMENT LOAD":
 					s.BlockIn(name, head, rest, load);
 					break;
 				case "PERFORM ANALYSIS": case "PDELTA":
-					if (s.Analysis != null) s.Unread.Add(head.Text + " (a second analysis)");
-					else s.Analysis = head.Text;
-					s.Prints(name, rest);
+				{
+					// PERFORM ANALYSIS [PRINT ...]: the analysis; its PRINT option is output
+					int pr = Array.FindIndex(head.Tokens, x => Is(x, "PRINT"));
+					s.Analysis = pr < 0 ? head.Text : string.Join(" ", head.Tokens.Take(pr).ToArray());
+					if (pr >= 0) s.AnalysisPrint = string.Join(" ", head.Tokens.Skip(pr).ToArray());
+					// what follows reads in the units in force here: the first UNIT's when the model is written again
+					string baseText = s.Units.Count > 0 ? string.Join(" ", s.Units[0]) : "";
+					if (s.unitText.Length > 0 && !Is(s.unitText, baseText)) s.Output.Add("UNIT " + s.unitText);
+					foreach (var c in rest) s.Output.Add(c.Text);
+					after = true;
 					break;
+				}
 				case "FINISH": s.Finished = true; break;
 				default:
-					if (name.StartsWith("PRINT")) { s.Prints(name, rest); break; }
+					if (name.StartsWith("PRINT")) { foreach (var c in cmds) s.Output.Add(c.Text); break; }
 					foreach (var c in cmds) s.Unread.Add(c.Text);
 					break;
 			}
@@ -2092,9 +2187,97 @@ public sealed class StaadInput
 		foreach (var c in rest) Unread.Add(section + ": " + c.Text);
 	}
 
-	void Prints(string section, List<StaadCommand> rest)
+	// ---- units: a number under a later UNIT in the first UNIT's units: the shortest text, at least as many digits as it
+	// is written with, that is the converted value to 12 significant digits (FEET 10.5 is INCHES 126; KSF 4176000 is
+	// KSI 29000; INCHES 8 is FEET 0.666666666667)
+
+	static string Fmt(double v, string asWritten)
 	{
-		foreach (var c in rest) if (!c.Tokens[0].Equals("PRINT", StringComparison.OrdinalIgnoreCase)) Unread.Add(section + ": " + c.Text);
+		string m = asWritten.TrimStart('+', '-');
+		int e = m.IndexOfAny(new[] { 'E', 'e' });
+		if (e >= 0) m = m.Substring(0, e);
+		int digits = Math.Max(1, m.Replace(".", "").TrimStart('0').Length);
+		for (int n = digits; n <= 15; n++)
+		{
+			string t = v.ToString("G" + n.ToString(Inv), Inv);
+			double back = double.Parse(t, NumberStyles.Float, Inv);
+			if (Math.Abs(back - v) <= 5e-13 * Math.Abs(v)) return t;
+		}
+		return v.ToString("R", Inv);
+	}
+
+	static double Round(double v, string asWritten) { return double.Parse(Fmt(v, asWritten), NumberStyles.Float, Inv); }
+
+	void Scale(string[] t, int i, double k)
+	{
+		double v;
+		if (k != 1 && i < t.Length && Number(t[i], out v)) t[i] = Fmt(v * k, t[i]);
+	}
+
+	// E, G: a stress; DENSITY: a weight per volume; POISSON, ALPHA, DAMP, BETA: no units
+	double MaterialFactor(string key)
+	{
+		if (Is(key, "E") || Is(key, "G")) return kF / (kL * kL);
+		if (Is(key, "DENSITY")) return kF / (kL * kL * kL);
+		return 1;
+	}
+
+	// a command's numbers by what they are: the section's length and force (kL, kF) in the base's
+	void ToBase(string section, string[] t)
+	{
+		if (kL == 1 && kF == 1) return;
+		double L = kL, F = kF;
+		switch (section)
+		{
+			case "MEMBER PROPERTY":
+			{
+				bool taper = false;
+				for (int i = 0; i < t.Length; i++)
+				{
+					string u = t[i].ToUpperInvariant();
+					if (u == "TAPERED") { taper = true; continue; }
+					if (taper) { Scale(t, i, L); continue; }
+					int pw = u == "AX" || u == "AY" || u == "AZ" ? 2 : u == "IX" || u == "IY" || u == "IZ" ? 4 : u == "YD" || u == "ZD" || u == "YB" || u == "ZB" || u == "SP" ? 1 : 0;
+					if (pw > 0) Scale(t, ++i, Math.Pow(L, pw));
+				}
+				break;
+			}
+			case "ELEMENT PROPERTY": case "MEMBER OFFSET":
+				for (int i = 0; i < t.Length; i++) Scale(t, i, L);
+				break;
+			case "CONSTANTS":
+				if (t.Length == 2) Scale(t, 1, MaterialFactor(t[0]));
+				break;
+			case "MEMBER RELEASE": case "SUPPORTS":
+				for (int i = 0; i < t.Length; i++)
+				{
+					string u = t[i].ToUpperInvariant();
+					if (u == "KFX" || u == "KFY" || u == "KFZ") Scale(t, ++i, F / L);
+					else if (u == "KMX" || u == "KMY" || u == "KMZ") Scale(t, ++i, F * L);
+					else if ((u == "INCLINED" && i + 1 < t.Length && !Is(t[i + 1], "REF") && !Is(t[i + 1], "REFJT")) || u == "REF") { for (int q = 1; q <= 3; q++) Scale(t, i + q, L); i += 3; }
+				}
+				break;
+			case "JOINT LOAD":
+				for (int i = 0; i + 1 < t.Length; i++)
+				{
+					string u = t[i].ToUpperInvariant();
+					if (u == "FX" || u == "FY" || u == "FZ") Scale(t, ++i, F);
+					else if (u == "MX" || u == "MY" || u == "MZ") Scale(t, ++i, F * L);
+				}
+				break;
+			case "SUPPORT DISPLACEMENT LOAD":
+				for (int i = 0; i + 1 < t.Length; i++) if (Is(t[i], "FX") || Is(t[i], "FY") || Is(t[i], "FZ")) Scale(t, ++i, L);
+				break;
+			case "MEMBER LOAD":
+			{
+				// type, direction, then: UNI w d1 d2 d3 / UMOM m d.. / CON p d.. / CMOM m d.. / TRAP w1 w2 d1 d2 / LIN w1 w2 w3
+				string ty = t.Length > 0 ? t[0].ToUpperInvariant() : "";
+				int loads = ty == "TRAP" ? 2 : ty == "LIN" ? 3 : 1;
+				double load = ty == "UNI" || ty == "TRAP" || ty == "LIN" ? F / L : ty == "CMOM" ? F * L : F;   // UMOM: a moment per length
+				for (int i = 2, n = 0; i < t.Length; i++, n++) Scale(t, i, n < loads ? load : L);
+				break;
+			}
+		}
 	}
 
 	// an id list as STAAD writes one: numbers, "a TO b" (and "BY c"), group names; i stops at the first other token
@@ -2145,6 +2328,7 @@ public sealed class StaadInput
 			double[] p;
 			if (!anp.Exact.TryGetValue(id, out p)) { Unread.Add("JOINT COORDINATES: " + c.Text + " (across lines)"); continue; }
 			if (Joints.ContainsKey(id)) { Unread.Add("JOINT COORDINATES: " + c.Text + " (joint " + id.ToString(Inv) + " again)"); continue; }
+			if (kL != 1) p = new[] { Round(p[0] * kL, c.Tokens[1]), Round(p[1] * kL, c.Tokens[2]), Round(p[2] * kL, c.Tokens[3]) };
 			Joints[id] = p;
 			JointIds.Add(id);
 		}
@@ -2208,7 +2392,9 @@ public sealed class StaadInput
 			int i = 0;
 			var ids = IdList(c.Tokens, ref i);
 			if (ids.Count == 0 || i == c.Tokens.Length) { Unread.Add(section + ": " + c.Text); continue; }
-			into.Add(new StaadSpec { Ids = ids, Spec = c.Tokens.Skip(i).ToArray(), Text = c.Text, Comments = c.Comments });
+			var sp = new StaadSpec { Ids = ids, Spec = c.Tokens.Skip(i).ToArray(), Text = c.Text, Comments = c.Comments };
+			ToBase(section, sp.Spec);
+			into.Add(sp);
 		}
 	}
 
@@ -2221,6 +2407,7 @@ public sealed class StaadInput
 			int k = Array.FindIndex(t, x => Is(x, "MEMB") || Is(x, "MEMBER") || Is(x, "ALL"));
 			if (k < 1) { Unread.Add("CONSTANTS: " + c.Text); continue; }
 			var sp = new StaadSpec { Spec = t.Take(k).ToArray(), Text = c.Text, Comments = c.Comments };
+			ToBase("CONSTANTS", sp.Spec);
 			if (Is(t[k], "ALL")) { sp.All = true; if (k != t.Length - 1) { Unread.Add("CONSTANTS: " + c.Text); continue; } }
 			else
 			{
@@ -2232,6 +2419,35 @@ public sealed class StaadInput
 		}
 	}
 
+	// an envelope's TYPE by its first letters (TR.40: STRES, SERVI, COLU, CONN), the whole word; another as written
+	public static string EnvelopeType(string t)
+	{
+		string u = (t ?? "").ToUpperInvariant();
+		foreach (string w in new[] { "STRESS", "STRENGTH", "SERVICEABILITY", "COLUMN", "CONNECTION" })
+			if (u.Length >= 4 && w.StartsWith(u, StringComparison.Ordinal) && !(u == "STRE")) return w;
+		return u;
+	}
+
+	// "<load list> ENVELOPE i [TYPE t]" (ENV, TYP: STAAD reads the first letters)
+	void EnvelopesIn(List<StaadCommand> rest)
+	{
+		foreach (var c in rest)
+		{
+			var t = c.Tokens;
+			int i = 0;
+			var ids = IdList(t, ref i);
+			int n;
+			if (ids.Count == 0 || i + 1 >= t.Length || !t[i].StartsWith("ENV", StringComparison.OrdinalIgnoreCase) || !int.TryParse(t[i + 1], NumberStyles.None, Inv, out n))
+			{ Unread.Add("DEFINE ENVELOPE: " + c.Text); continue; }
+			var e = new StaadEnvelope { Number = n, Text = c.Text };
+			e.Loads.AddRange(ids);
+			i += 2;
+			if (i + 1 < t.Length && t[i].StartsWith("TYP", StringComparison.OrdinalIgnoreCase)) { e.Type = EnvelopeType(t[i + 1]); i += 2; }
+			if (i != t.Length) { Unread.Add("DEFINE ENVELOPE: " + c.Text); continue; }
+			Envelopes.Add(e);
+		}
+	}
+
 	void MaterialsIn(List<StaadCommand> rest)
 	{
 		StaadMaterial m = null;
@@ -2239,14 +2455,22 @@ public sealed class StaadInput
 		{
 			var t = c.Tokens;
 			double v;
-			if (Is(t[0], "ISOTROPIC") && t.Length == 2) { m = new StaadMaterial { Name = t[1] }; Materials.Add(m); continue; }
+			if (Is(t[0], "ISOTROPIC") && t.Length == 2) { m = new StaadMaterial { Name = t[1], Converted = kL != 1 || kF != 1 }; Materials.Add(m); continue; }
 			if (m == null) { Unread.Add("DEFINE MATERIAL: " + c.Text); continue; }
-			if (t.Length == 2 && Number(t[1], out v) && new[] { "E", "POISSON", "G", "DENSITY", "ALPHA", "DAMP" }.Any(x => Is(t[0], x)) && !m.Values.ContainsKey(t[0])) { m.Values[t[0]] = v; continue; }
+			if (t.Length == 2 && Number(t[1], out v) && new[] { "E", "POISSON", "G", "DENSITY", "ALPHA", "DAMP" }.Any(x => Is(t[0], x)) && !m.Values.ContainsKey(t[0]))
+			{
+				m.Values[t[0]] = Round(v * MaterialFactor(t[0]), t[1]);
+				continue;
+			}
 			if (t.Length == 2 && Is(t[0], "TYPE") && m.Type == null) { m.Type = t[1]; continue; }
 			if (Is(t[0], "STRENGTH") && t.Length % 2 == 1)
 			{
 				bool ok = true;
-				for (int k = 1; k + 1 < t.Length; k += 2) { if (!Number(t[k + 1], out v) || m.Strength.ContainsKey(t[k])) { ok = false; break; } m.Strength[t[k]] = v; }
+				for (int k = 1; k + 1 < t.Length; k += 2)
+				{
+					if (!Number(t[k + 1], out v) || m.Strength.ContainsKey(t[k])) { ok = false; break; }
+					m.Strength[t[k]] = Is(t[k], "RY") || Is(t[k], "RT") ? v : Round(v * kF / (kL * kL), t[k + 1]);   // a stress; RY RT ratios
+				}
 				if (ok) continue;
 			}
 			Unread.Add("DEFINE MATERIAL " + m.Name + ": " + c.Text);
@@ -2255,7 +2479,7 @@ public sealed class StaadInput
 
 	// LOAD R1 LOADTYPE Dead TITLE DEAD; LOAD 1 LOADTYPE ... TITLE ...; LOAD COMBINATION [SRSS | ABS] n name (its factor lines
 	// in the same section)
-	StaadLoad LoadIn(StaadCommand head, List<StaadCommand> rest, bool reference)
+	StaadLoad LoadIn(StaadCommand head, List<StaadCommand> rest, bool reference, bool afterAnalysis)
 	{
 		var t = head.Tokens;
 		var l = new StaadLoad { Text = head.Text };
@@ -2270,7 +2494,15 @@ public sealed class StaadInput
 			l.Id = t[k];
 			l.Title = string.Join(" ", t.Skip(k + 1).ToArray());
 			var b = new StaadBlock { Name = "COMBINATION" };
-			foreach (var c in rest) b.Lines.Add(new StaadSpec { Spec = c.Tokens, Text = c.Text, Comments = c.Comments });
+			// its factor lines ("1 1.2 2 1.6"); a command after them (PRINT ..., not a .std section of its own) is output after
+			// the analysis, else not read
+			foreach (var c in rest)
+			{
+				int first;
+				if (int.TryParse(c.Tokens[0], NumberStyles.None, Inv, out first)) b.Lines.Add(new StaadSpec { Spec = c.Tokens, Text = c.Text, Comments = c.Comments });
+				else if (afterAnalysis) Output.Add(c.Text);
+				else Unread.Add(head.Text + ": " + c.Text);
+			}
 			l.Blocks.Add(b);
 			Loads.Add(l);
 			return null;
@@ -2289,8 +2521,31 @@ public sealed class StaadInput
 			int at = head.Text.IndexOf(" TITLE ", StringComparison.OrdinalIgnoreCase);
 			l.Title = at < 0 ? "" : head.Text.Substring(at + 7).Trim();
 		}
-		if ((lt >= 0 && lt != 2) || (ti >= 0 && ti < 2) || (lt < 0 && ti < 0 && t.Length > 2) || (lt < 0 && ti > 2)) Unread.Add(head.Text);
-		foreach (var c in rest) Unread.Add(head.Text + ": " + c.Text);
+		// the older form, a title with no TITLE (LOAD 1 DEAD LOAD)
+		if (lt < 0 && ti < 0 && t.Length > 2)
+		{
+			int at = head.Text.IndexOf(t[1], head.Text.IndexOf(t[0], StringComparison.OrdinalIgnoreCase) + t[0].Length, StringComparison.OrdinalIgnoreCase);
+			l.Title = head.Text.Substring(at + t[1].Length).Trim();
+		}
+		if ((lt >= 0 && lt != 2) || (ti >= 0 && ti < 2) || (lt < 0 && ti > 2)) Unread.Add(head.Text);
+		// REPEAT LOAD and its factor lines ("1 1.0 2 1.0"): the loads of earlier primary loads, scaled
+		for (int r = 0; r < rest.Count; r++)
+		{
+			var c = rest[r];
+			if (c.Tokens.Length >= 2 && Is(c.Tokens[0], "REPEAT") && Is(c.Tokens[1], "LOAD"))
+			{
+				var b = new StaadBlock { Name = "REPEAT LOAD" };
+				if (c.Tokens.Length > 2) b.Lines.Add(new StaadSpec { Spec = c.Tokens.Skip(2).ToArray(), Text = c.Text, Comments = c.Comments });
+				while (r + 1 < rest.Count && rest[r + 1].Tokens.All(x => { double q; return Number(x, out q); }))
+				{
+					r++;
+					b.Lines.Add(new StaadSpec { Spec = rest[r].Tokens, Text = rest[r].Text, Comments = rest[r].Comments });
+				}
+				l.Blocks.Add(b);
+				continue;
+			}
+			Unread.Add(head.Text + ": " + c.Text);
+		}
 		Loads.Add(l);
 		return l;
 	}

@@ -8,12 +8,23 @@ created: 2026-11-18
 
 # Pluto handoff: current state
 
-**Where it stands (2026-11-23, evening).** Branch `pipestress` holds:
+**Where it stands (2026-11-24).** Branch `pipestress` holds:
 - **The pipe workflow.** An Excel workbook or a TOML becomes one pipe model, reviewed in the viewer with CAESAR's error
   checks, and written as a CAESAR II `.cii`. An imported job comes back byte for byte.
 - **The frame side.** A lossless SAP2000 `.s2k` model, edited in the frame workbook (3D View, live checks) and written
-  to SAP and to STAAD.Pro (`-Std`, exact or refused). A `.std` it wrote reads back into a frame model, STAAD's edits
-  too (`-In x.std`), through the STAAD lib's `.anl` reader, extended in place.
+  to SAP and to STAAD.Pro (`-Std`, exact or refused). A `.std` reads into a frame model (`-In x.std`): one it wrote,
+  STAAD's edits too, or a model made in STAAD. Later units are converted to the first, and envelopes become SAP
+  Envelope combinations. The commands after the analysis (load lists, prints, design parameters) and STAAD's load
+  numbers ride on the workbook's two STAAD sheets: `-Std` writes them again, `-S2k` leaves them out.
+- **STAAD's design** is in the frame workbook itself: each member's parameters on its own Frames row, and the
+  parameter sets, rows by list and run on three STAAD sheets ([[vault/arms/staad-design|staad-design]]). The separate
+  `<model>.design.xlsx` of 2026-11-24 is gone.
+- **SAP <-> workbook <-> STAAD.** The workbook is the master. `-In <SAP export | .std> -Merge <workbook>` reads either
+  program's file back and keeps what that program has no place for
+  ([[vault/arms/pipe-and-frame-workflow|pipe-and-frame-workflow]]).
+- **STAAD results in the viewer.** A frame model's `.anl` becomes a viewer model (`scripts/staad/Run-StaadFrame.ps1`,
+  [[vault/arms/staad-frame-to-viewer|staad-frame-to-viewer]]): forces, displacements, reactions and code ratios per
+  load case (one `LOAD LIST <case>` + `CHECK CODE` per case).
 - **The CAESAR → SAP check model.** `Build-Frame -In <CAESAR job>` seeds the frame model from the pipe, for member
   forces and support reactions:
   - frames, bends, rigids, expansion joints, hangers and nozzles;
@@ -43,15 +54,36 @@ created: 2026-11-18
 Purging it means rewriting the branch's history.
 
 **Waiting on the production machine:**
-- STAAD's database form, both ways:
-  - the PS 5.1 compile probe;
-  - a `-Std` of SAP's library-probe export (its angle frame taken out), opened in STAAD.Pro 2025 to check it parses
-    the database forms Pluto now writes;
-  - the names probe's `.std` (its angle taken out) through `-In … -S2k`, imported into SAP.
-- nothing for single angles: both ways confirmed end to end (STAAD's principal axes on SAP's to 0.0074°, SAP's on
-  STAAD's to 0.025° with Pluto's I23);
-  - whether `RA` gives SAP's leg arrangement (STAAD's `ST` is its mirror image), if drawings or STAAD's angle design
-    matter.
+- one thing left from STAAD round 4: at the next SAP import of a `.s2k` made from a `.std`, whether SAP takes
+  `DesTypeOpt="User Spec"` (its import log names a value it refuses). The rest of round 4 is settled: units, the
+  envelope's place after `PERFORM ANALYSIS`, the triangle, per-case checks into the viewer. Also found: a load in two
+  envelopes stays in both, as STAAD lists it (see
+  [[vault/format/frame-to-staad|frame-to-staad]]);
+- the user's STAAD model again with `-In <x>.std -Xlsx`: the remaining refusals, if any, to read next (see
+  [[vault/handoffs/handoff-2026-11-24b|handoff-2026-11-24b]]);
+- `StaadToPluto`'s probe run: `Run-StaadFrame.ps1 -Anl scripts\lib\probes\anl-prints-probe.anl
+  -Out <outside the repo>`, then `node viewer/tests/readback_staad.js <out> --probe`. Then a real model with a
+  `CHECK CODE` per case;
+- the STAAD design in the workbook, by hand: type values on Frames rows of a real model, and check the `.std`;
+- the tidy console report of `Build-Frame.ps1` and `Build-Pipe.ps1` (`scripts/lib/Console.ps1`) in Windows PowerShell
+  5.1's own console (checked under pwsh 7 only);
+- the user's workbook: `-In <it>.xlsx -Xlsx -Out <new>` splits its frames (insertion points kept). Then `-Std` from
+  the new workbook should have no auto mesh refusals;
+- optional: whether `RA` gives SAP's leg arrangement (STAAD's `ST` is its mirror image), if drawings or STAAD's angle
+  design matter.
+
+Done there since 2026-11-23: catalog sections both ways in STAAD 2025's database form (W, channels, tees, HSS, double
+and single angles); single angles confirmed end to end both ways; STAAD's short PRIS forms into SAP.
+
+Done there on 2026-11-25: the batch with the STAAD design in the workbook builds and runs (it is one compile, so
+`FrameDesign`, `FrameMesh` and `StaadToPluto` with it). The round 4 probe written straight to `-Std`, and through its
+workbook, gives the same `.std` there as in the session, command for command, with `DFF 240 MEMB 5 TO 7 11` from the
+four Frames rows.
+
+**For the user to look at:** a workbook is now written split where SAP's auto mesh joins frames to joints on their span
+(and `-Std` splits what is left). A warning names any split joint still held to ground, and the user's workbook had
+such frames at seeded support points. Whether those
+points are meant to carry the steel or to stay held is the model's question, in SAP as in STAAD.
 
 **Seen, not settled:** SAP's own rows carry `IncludeSCAn=Yes` (shear center in the analysis) on its channel only, and
 the angle probe showed SAP does not twist single angles. The `.std` notice says SAP twists tees and double angles too,
@@ -97,4 +129,4 @@ CAESAR's restraints, re-seeding that keeps SAP-side additions, and writing a see
 - **Next:** the same pass on the production machine with Excel; a support reaction as a calc's demand; the first real
   project through the workbook; section dimensions looked up from the shape.
 
-Last sessions: [[vault/handoffs/handoff-2026-11-25|handoff-2026-11-25]] (`CalcFlow`), [[vault/handoffs/handoff-2026-11-24|handoff-2026-11-24]] (`CalcFlow`), [[vault/handoffs/handoff-2026-11-23|handoff-2026-11-23]] (`pipestress`).
+Last sessions: [[vault/handoffs/handoff-2026-11-25|handoff-2026-11-25]] (`CalcFlow`), [[vault/handoffs/handoff-2026-11-24b|handoff-2026-11-24b]] (STAAD results in the viewer), [[vault/handoffs/handoff-2026-11-24|handoff-2026-11-24]] (`CalcFlow`), [[vault/handoffs/handoff-2026-11-23|handoff-2026-11-23]] (`pipestress`).

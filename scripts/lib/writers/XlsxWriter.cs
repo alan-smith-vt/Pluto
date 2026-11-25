@@ -317,7 +317,9 @@ public sealed class XlsxBookSheet
 
     public void Width(int col, double chars) { widths[col] = chars; }
     public void Height(int row, double points) { heights[row] = points; }
-    public void Group(int firstCol, int lastCol) { groups.Add(new[] { firstCol, lastCol }); }
+    public void Group(int firstCol, int lastCol) { groups.Add(new[] { firstCol, lastCol, 0 }); }
+    // open: the group shown (its columns not hidden), to be collapsed by hand
+    public void Group(int firstCol, int lastCol, bool open) { groups.Add(new[] { firstCol, lastCol, open ? 1 : 0 }); }
     public void Merge(string range) { merges.Add(range); }
     public void List(string sqref, string formula) { Validate(sqref, new XlsxValidation { Type = "list", Formula1 = formula }); }
     public void Validate(string sqref, XlsxValidation v) { validations.Add(new KeyValuePair<string, XlsxValidation>(sqref, v)); }
@@ -368,11 +370,12 @@ public sealed class XlsxBookSheet
             foreach (int c in colSet)
             {
                 bool inGroup = groups.Any(g => c >= g[0] && c <= g[1]);
-                bool before = groups.Any(g => c == g[0] - 1) && !inGroup;
+                bool shown = inGroup && groups.Where(g => c >= g[0] && c <= g[1]).All(g => g[2] == 1);
+                bool before = groups.Any(g => c == g[0] - 1 && g[2] == 0) && !inGroup;
                 double w;
                 bool hasW = widths.TryGetValue(c, out w);
                 sb.Append("<col min=\"" + (c + 1) + "\" max=\"" + (c + 1) + "\" width=\"" + (hasW ? w : 9.14).ToString("0.##", CultureInfo.InvariantCulture) + "\"" +
-                          (hasW ? " customWidth=\"1\"" : "") + (inGroup ? " hidden=\"1\" outlineLevel=\"1\"" : "") + (before ? " collapsed=\"1\"" : "") + "/>");
+                          (hasW ? " customWidth=\"1\"" : "") + (inGroup ? (shown ? "" : " hidden=\"1\"") + " outlineLevel=\"1\"" : "") + (before ? " collapsed=\"1\"" : "") + "/>");
             }
             sb.Append("</cols>");
         }

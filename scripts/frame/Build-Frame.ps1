@@ -15,10 +15,15 @@
 #                         (Pluto's defaults otherwise, with a warning). What the check model cannot hold yet refuses it,
 #                         each item on a [refuse] line. Bends take B31J's flexibility (1.3 / h), as CAESAR does for
 #                         B31.1-2020 and later; -AppendixD takes the older codes' 1.65 / h (CAESAR with B31J off)
-#           .std          a STAAD.Pro input file this runner wrote (-Std), edited in STAAD or not: read back into a frame
-#                         model (StdToFrame; vault/format/frame-to-staad.md). STAAD's commands are the model; the
-#                         comments -Std writes give back SAP's labels and names. Exact or refused: a command the frame
-#                         model cannot hold, or one -Std does not write, refuses it, each on a [refuse] line. The read
+#           .std          a STAAD.Pro input file: one this runner wrote (-Std), edited in STAAD or not, or a model made
+#                         in STAAD, read into a frame model (StdToFrame; vault/format/frame-to-staad.md). STAAD's
+#                         commands are the model; the comments -Std writes give back SAP's labels and names. A later
+#                         UNIT's numbers are converted to the first UNIT's. The commands after the analysis (LOAD LIST,
+#                         PRINT, design parameters, CHECK CODE) are the model's STAAD design (StaadDesign;
+#                         vault/arms/staad-design.md): a member's parameters on its Frames row, the sets, the rows by
+#                         list and the run on the workbook's STAAD sheets, with STAAD's load numbers. -Std writes
+#                         them again, the .s2k leaves them out. Exact or refused: a command the
+#                         frame model cannot hold refuses it, each on a [refuse] line. The read
 #                         checks that the model written back with -Std is the file's, object by object, to the digits
 #                         the file gives (STAAD.Pro's own save keeps 6), and says so. A table shape picked in STAAD
 #                         (no SAP row in the comment above it; TABLE ST, or STAAD 2025's TABLE 'HSS Rectangle' ST
@@ -34,14 +39,21 @@
 #                   SAP2000 <version>\Property Libraries\Sections): a file SAP's library has gets its full path here,
 #                   a file or shape it has not refuses the .s2k (SAP would make the section a General one of all ones).
 #         -Xlsx     <base>.xlsx, the frame workbook, and its launchers ("<base> - preview.cmd", "<base> - s2k.cmd",
-#                   "<base> - open in SAP.cmd", "<base> - std.cmd").
+#                   "<base> - open in SAP.cmd", "<base> - std.cmd"). A frame SAP's automatic mesh joins to joints on its
+#                   span is split there first (FrameMesh), as SAP's analysis meshes it: the pieces keep its section,
+#                   insertion point, offsets, releases at its ends, loads, groups and STAAD design values; [split]
+#                   lines name them, and every output of the run takes them. So each Frames row is one STAAD member.
+#                   -In <name>.xlsx -Xlsx -Out <new> does it for a workbook that got a joint on a frame's span since.
 #                   An existing <base>.xlsx this runner wrote and nobody has saved since (the stamp says so) is
 #                   replaced; one with edits asks first ("Overwrite the workbook?", Keep by default), the old one kept
 #                   as <base>.xlsx.bak. With no one to ask (-NonInteractive), the run stops: -Force replaces it (with
 #                   the .bak), -Out writes elsewhere.
 #         -Std      <base>.std for STAAD.Pro (FrameStd; vault/format/frame-to-staad.md): Y up, a BETA per member, STAAD's
 #                   table for W shapes, exact properties for the rest, patterns as reference loads and cases as primary
-#                   loads. Exact or refused: what STAAD cannot hold exactly (a nonlinear link, a partly rigid end zone,
+#                   loads; after the analysis the model's STAAD design (the Frames rows' design values and the
+#                   workbook's STAAD sets / parameters / run sheets), else Pluto's prints, and STAAD's load numbers
+#                   where the STAAD loads sheet gives them.
+#                   Exact or refused: what STAAD cannot hold exactly (a nonlinear link, a partly rigid end zone,
 #                   an angle's product of inertia ...) refuses the file, every item named on a [refuse] line; what
 #                   leaving out cannot change (modal cases, envelopes) is a [notice]. An existing <base>.std is replaced
 #                   only when this runner wrote it or nothing in it would change; else -Force (STAAD saves its own edits)
@@ -55,6 +67,18 @@
 #                   -Open <s2k> -Stamp -NewInstance -KeepOpen in a separate PowerShell (the SAP controller), stamped for
 #                   that SAP's version and saved beside it as .sdb; SAP's joint, frame and link counts are compared with
 #                   the model's. Not with -Watch.
+#   -Merge <master> with -In <SAP's .s2k> or -In <a .std>: the file's model, with what its program has no place for
+#                   taken from the master (the frame workbook or .frame.json the file was written from; FrameMerge):
+#                   from an .s2k the master's STAAD design (its frames' values by label) and STAAD load / envelope
+#                   numbers (by name); from a .std
+#                   the master's SAP-only tables (design, preferences, mass, functions, grids ...) for the objects still
+#                   there, and its load cases and combinations STAAD has no place for (modal, response spectrum ...).
+#                   Each item carried or not on a [merge] line. To update the master itself: -Out <master> -Xlsx.
+#   -NewDesign      with -Xlsx or -Std, for a model with no STAAD design (one from SAP): a starter. Set 1 (AISC UNIFIED
+#                   2016, LRFD, the model's units), Pluto's prints and CHECK CODE ALL, on the workbook's STAAD sets
+#                   and STAAD run sheets (-Xlsx) or in this .std only (-Std). Each frame's parameters are then typed
+#                   on its Frames row. A model that has a design keeps it.
+#                     ... -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.s2k" -Xlsx -NewDesign
 #   -Watch          with an .xlsx: every save rebuilds the outputs (-Preview when none is given); Ctrl+C stops
 #   -NewWorkbook    -Out <name>.xlsx: an empty workbook (-Units "Kip, in, F" by default, -SapVersion 22.0.0) and its
 #                   launchers; an existing workbook as for -Xlsx
@@ -76,7 +100,13 @@
 #   -ProbeCheck <export> compares SAP's export with the probe it came from (-ProbeFile, default probe-v22.s2k beside
 #                        the export) field by field and writes <export>.check.md: what SAP kept, changed, dropped or
 #                        added, and the tables it wrote that the probe did not.
-# Every line of progress starts with "[step]"; the last line is "RESULT {json}" ({"error": "..."} with exit code 1).
+# The console report (scripts\lib\Console.ps1) has two forms of the same messages:
+#   tidy    for a person at a console: a short head, file names for paths (their folder said once), each message wrapped
+#           under its tag, the notices gathered in a block per phase (one said twice shows once), colour by severity
+#           where the console takes it (NO_COLOR turns it off), and a one-line summary at the end
+#   plain   for a program reading the output (redirected or piped): one line per message, "[step   ] text", and a last
+#           line "RESULT {json}" ({"error": "..."} with exit code 1)
+# PLUTO_CONSOLE=plain or =tidy forces one.
 #   powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.s2k" -Xlsx
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.xlsx" -Preview -Watch
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.xlsx" -S2k -Preview
@@ -107,13 +137,15 @@ param(
     [string]$Probe,
     [string]$StdProbe,
     [string]$ProbeCheck,
-    [string]$ProbeFile
+    [string]$ProbeFile,
+    [string]$Merge,
+    [switch]$NewDesign
 )
 $ErrorActionPreference = "Stop"
-function Say([string]$step, [string]$text) { Write-Output ("[{0}] {1}" -f $step.PadRight(7), $text) }
-function Q([string]$s) { if ([string]::IsNullOrEmpty($s)) { return "null" } return (ConvertTo-Json -InputObject $s -Compress) }
+# the console report (scripts\lib\Console.ps1): Say, Lines, Head, Result, Summary, Fail, Q; this runner's notice phases
+. (Join-Path (Join-Path (Split-Path -Parent $PSScriptRoot) "lib") "Console.ps1")
+$script:NotePhases = @(@("std read", "reading the .std"), @("std", "writing the .std"), @("design", "the STAAD design"), @("check model", "seeding the check model"))
 function Full([string]$p) { return (Resolve-Path -LiteralPath $p).ProviderPath }
-function Fail([string]$msg) { Say "error" $msg; Write-Output ("RESULT {""error"":" + (Q $msg) + "}"); exit 1 }
 # every input is opened shared: Excel keeps an open workbook locked for writing, and a plain OpenRead / ReadAllBytes
 # asks for that lock too, so it fails while the workbook is open (the live preview's whole use)
 # a workbook's own kind: the format text its hidden _pluto sheet starts with, found in the package's XML parts
@@ -220,12 +252,19 @@ if ($In) {
     elseif ($ext -eq ".s2k" -or $ext -eq ".`$2k") { $kind = "s2k" }
     elseif ($ext -eq ".std") { $kind = "std" }
     elseif ($ext -eq ".xlsx") { $kind = $(if (XlsxHas $inPath "pluto-pipe-workbook") { "pipe" } else { "xlsx" }) }
-    else { Fail ("Build-Frame: {0}: give a SAP2000 .s2k (or .`$2k), a frame workbook .xlsx, a .frame.json model, a STAAD .std written with -Std, or a CAESAR model (.cii, .toml, .pipe.json, its workbook) to seed one" -f $inPath) }
+    else { Fail ("Build-Frame: {0}: give a SAP2000 .s2k (or .`$2k), a frame workbook .xlsx, a .frame.json model, a STAAD .std, or a CAESAR model (.cii, .toml, .pipe.json, its workbook) to seed one" -f $inPath) }
     if ($Refresh -and $kind -ne "xlsx") { Fail "Build-Frame: -Refresh takes -In <frame workbook>.xlsx" }
     if ($Watch -and $kind -ne "xlsx") { Fail "Build-Frame: -Watch follows a frame workbook: -In <name>.xlsx (a CAESAR model seeds once: -In <job> -Xlsx, then watch that workbook)" }
     if ($Watch -and -not ($S2k -or $Std -or $Json -or $Preview)) { $Preview = $true }
     if ($Open -and $Watch) { Fail "Build-Frame: -Open is not for -Watch (it would start SAP on every save)" }
     if ($Open) { $S2k = $true }
+    if ($NewDesign -and -not ($Xlsx -or $Std)) { Fail "Build-Frame: -NewDesign goes with -Xlsx (the starter in the workbook's STAAD sheets) or -Std (in that .std only)" }
+    if ($Merge) {
+        if ($kind -ne "s2k" -and $kind -ne "std") { Fail "Build-Frame: -Merge takes -In <SAP's .s2k> or -In <a .std>: the file whose model wins, the master filling in what its program has no place for" }
+        if (-not (Test-Path -LiteralPath $Merge -PathType Leaf)) { Fail "Build-Frame: -Merge: master not found: $Merge" }
+        $mergePath = Full $Merge
+        if (-not ($mergePath.ToLowerInvariant().EndsWith(".xlsx") -or $mergePath.ToLowerInvariant().EndsWith(".frame.json"))) { Fail "Build-Frame: -Merge takes the master: a frame workbook (.xlsx) or a .frame.json" }
+    }
 }
 $jobName = $null
 if ($inPath) { $jobName = ([IO.Path]::GetFileName($inPath) -replace '\.(frame|pipe)\.json$', '' -replace '\.[^.]+$', '') -replace ' ', '_' }
@@ -259,7 +298,16 @@ if ($S2k -or $Std -or $Json -or $Preview -or $Xlsx -or $NewWorkbook) {
     if ($outDir) { $null = [IO.Directory]::CreateDirectory($outDir) }
 }
 $outs = @(); if ($S2k) { $outs += $s2kFile }; if ($Std) { $outs += $stdFile }; if ($Xlsx) { $outs += ($outBase + ".xlsx") }; if ($Json) { $outs += $jsonFile }; if ($Preview) { $outs += $binFile; $outs += $scFile }
-if ($inPath -and -not $Refresh) { Say "check" ("{0} ({1}) -> {2}" -f $inPath, $kind, $(if ($outs.Count) { $outs -join ", " } else { "no files (a report only)" })) }
+if ($inPath) { Set-ReportDirs $outBase $inPath }
+if ($inPath -and -not $Refresh) {
+    if ($script:Tidy) {
+        $kinds = @{ s2k = "a SAP2000 .s2k"; xlsx = "a frame workbook"; json = "a .frame.json model"; std = "a STAAD .std"; pipe = "a CAESAR model" }
+        $names = @($outs | ForEach-Object { [IO.Path]::GetFileName($_) })
+        $title = "Build-Frame  {0} ({1})  ->  {2}" -f [IO.Path]::GetFileName($inPath), $kinds[$kind], $(if ($names.Count) { $names -join ", " } else { "a report only" })
+        Head $title (Folder-Lines $outBase $inPath)
+    }
+    else { Say "check" ("{0} ({1}) -> {2}" -f $inPath, $kind, $(if ($outs.Count) { $outs -join ", " } else { "no files (a report only)" })) }
+}
 
 # ---- load: the C# batch ----
 $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -276,7 +324,7 @@ try {
         [FrameProbe]::Write($v22, "22.0.0")
         [FrameProbe]::Write($v26, "26.3.0")
         Say "write" ("{0} and {1}: import the one for your SAP version, then export it again as {2}" -f $v22, $v26, [IO.Path]::Combine($dir, "probe.sap-export.s2k"))
-        Write-Output ("RESULT {""kind"":""probe"",""files"":[" + (Q $v22) + "," + (Q $v26) + "]}")
+        Result ("{""kind"":""probe"",""files"":[" + (Q $v22) + "," + (Q $v26) + "]}") "the two probe files written"
         exit 0
     }
     if ($StdProbe) {
@@ -285,7 +333,7 @@ try {
         foreach ($n in $pnotes) { Say "notice" ("std: " + $n) }
         Say "write" ("{0}: import it in SAP2000 (edit its Version to Help > About's if SAP asks), run all cases, export joint displacements and reactions" -f $files[0])
         Say "write" ("{0}: open it in STAAD.Pro and run it; its .anl holds the same results" -f $files[1])
-        Write-Output ("RESULT {""kind"":""stdprobe"",""files"":[" + (Q $files[0]) + "," + (Q $files[1]) + "]}")
+        Result ("{""kind"":""stdprobe"",""files"":[" + (Q $files[0]) + "," + (Q $files[1]) + "]}") "the STAAD probe's two files written"
         exit 0
     }
     if ($ProbeCheck) {
@@ -294,7 +342,7 @@ try {
         [IO.File]::WriteAllText($report, ([string]::Join("`n", $lines.ToArray()) + "`n"), (New-Object Text.UTF8Encoding($false)))
         Say "check" $lines[2]
         Say "write" ("{0}: the field-by-field report" -f $report)
-        Write-Output ("RESULT {""kind"":""probecheck"",""report"":" + (Q $report) + "}")
+        Result ("{""kind"":""probecheck"",""report"":" + (Q $report) + "}") "the report written"
         exit 0
     }
 } catch { Fail (Innermost $_) }
@@ -304,15 +352,15 @@ if ($NewWorkbook) {
     try {
         $go = Confirm-Workbook $xlsxFile $stampFile
         if ($go -eq "force") { Say "warn" ("-Force: replacing {0}, which {1}" -f $xlsxFile, $script:workbookWhy); $go = "backup" }
-        if ($go -eq "keep") { Say "keep" ("{0}: kept as it is; nothing written" -f $xlsxFile); Write-Output ("RESULT {""kind"":""new"",""xlsx"":null,""kept"":" + (Q $xlsxFile) + "}"); exit 0 }
+        if ($go -eq "keep") { Say "keep" ("{0}: kept as it is; nothing written" -f $xlsxFile); Result ("{""kind"":""new"",""xlsx"":null,""kept"":" + (Q $xlsxFile) + "}") "nothing written"; exit 0 }
         if ($go -eq "backup") { [IO.File]::Copy($xlsxFile, $xlsxFile + ".bak", $true); Say "write" ("{0}.bak: the workbook as it was" -f $xlsxFile) }
         $model = [FrameWorkbook]::Template($Units, $SapVersion)
         $run = [FrameWorkbookRun]::For($xlsxFile, $repoRoot, $null)
         [FrameWorkbook]::Write($model, $xlsxFile, "a new model", $run)
         Set-StampXlsx $xlsxFile $stampFile "pluto-frame-build" ([DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"))
         Say "write" ("{0}: an empty frame model ({1}) to edit in Excel; then Build-Frame.ps1 -In ""{0}"" -Preview" -f $xlsxFile, $model.Units)
-        foreach ($l in $run.WriteLaunchers()) { Say "write" ("{0}: double-click it, or use the Start sheet's link" -f $l) }
-        Write-Output ("RESULT {""kind"":""new"",""xlsx"":" + (Q $xlsxFile) + ",""units"":" + (Q $model.Units) + "}")
+        Say-Launchers ($run.WriteLaunchers())
+        Result ("{""kind"":""new"",""xlsx"":" + (Q $xlsxFile) + ",""units"":" + (Q $model.Units) + "}") "an empty workbook written"
         exit 0
     } catch { Fail (Innermost $_) }
 }
@@ -340,8 +388,8 @@ if ($Refresh) {
         try { [IO.File]::Replace($tmp, $inPath, $bak) }
         catch { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue; throw ("cannot replace {0} ({1}). Close it in Excel and run again." -f $inPath, $_.Exception.Message) }
         Say "write" ("{0}: refreshed to this version's layout; the previous file is {1}" -f $inPath, $bak)
-        foreach ($l in $run.WriteLaunchers()) { Say "write" ("{0}: double-click it, or use the Start sheet's link" -f $l) }
-        Write-Output ("RESULT {""kind"":""refresh"",""xlsx"":" + (Q $inPath) + ",""backup"":" + (Q $bak) + "}")
+        Say-Launchers ($run.WriteLaunchers())
+        Result ("{""kind"":""refresh"",""xlsx"":" + (Q $inPath) + ",""backup"":" + (Q $bak) + "}") "the workbook refreshed"
         exit 0
     } catch { Fail (Innermost $_) }
 }
@@ -392,6 +440,7 @@ function Check-Std([byte[]]$bytes) {
 function Build-Once {
     $script:step = "reading " + [IO.Path]::GetFileName($inPath)
     $script:sw.Reset(); $script:sw.Start()
+    Reset-Report
     $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
     # the workbook question first, before any file is written
     $xlsxGo = $(if ($Xlsx) { Confirm-Workbook ($outBase + ".xlsx") $stampFile } else { $null })
@@ -437,7 +486,6 @@ function Build-Once {
             foreach ($i in $e.Items) { Say "refuse" $i }
             throw (New-Object InvalidOperationException(("the frame model cannot hold the {0} item(s) above exactly; nothing is written" -f $e.Items.Count)))
         }
-        foreach ($n in $rn) { Say "notice" ("std read: " + $n) }
         # the check: the model written back as a .std is the file's model, object by object, to the file's digits
         $back = $null
         try { $back = [FrameStd]::ToText($model, [IO.Path]::GetFileName($inPath), (New-Object 'System.Collections.Generic.List[string]')) }
@@ -453,6 +501,7 @@ function Build-Once {
             foreach ($d in @($diff)) { if ($d) { Say "warn" ("written back: " + $d) } }
             Say "warn" ("{0}: written back with -Std, the model is NOT the file's (the first differences are listed above); check the outputs before use" -f $inPath)
         }
+        foreach ($n in $rn) { Say "notice" ("std read: " + $n) }
     } elseif ($kind -eq "xlsx") {
         $wb = [FrameWorkbook]::Read($inPath)
         $model = $wb.Model
@@ -462,10 +511,60 @@ function Build-Once {
         $model = [FrameModelJson]::Read((ReadSharedText $inPath))
         Say "read" ("{0}: the frame model" -f $inPath)
     }
+    if ($Merge) {
+        # the file's model wins; the master (the workbook it was written from) fills in what that program has no place for
+        $script:step = "merging the master " + [IO.Path]::GetFileName($mergePath)
+        $master = $(if ($mergePath.ToLowerInvariant().EndsWith(".xlsx")) { ([FrameWorkbook]::Read($mergePath)).Model } else { [FrameModelJson]::Read((ReadSharedText $mergePath)) })
+        [void][StaadDesign]::Adopt($master, $null)
+        $mn = New-Object 'System.Collections.Generic.List[string]'
+        $model = [FrameMerge]::Merge($model, $master, $kind, $mn)
+        foreach ($n in $mn) { Say "merge" ($n -replace '^merge: ', '') }
+        Say "merge" ("{0} with {1}: the file's model, the master's {2} added" -f [IO.Path]::GetFileName($inPath), [IO.Path]::GetFileName($mergePath), $(if ($kind -eq "s2k") { "STAAD data" } else { "SAP-only data" }))
+    }
+    # STAAD's design (StaadDesign) rides in the model: a frame's parameters on the frame, the sets, rows by list and run
+    # in tables of Pluto's own. An older model's STAAD commands, carried as written, are read into it
+    $an = New-Object 'System.Collections.Generic.List[string]'
+    if ([StaadDesign]::Adopt($model, $an)) { foreach ($n in $an) { Say "notice" ("design: " + $n) } }
+    # a design workbook of the day before this layout (<model>.design.xlsx) is no longer read: say so, once per run
+    $oldDesign = $(if ($kind -eq "xlsx") { [IO.Path]::Combine([IO.Path]::GetDirectoryName($inPath), [IO.Path]::GetFileNameWithoutExtension($inPath) + ".design.xlsx") } else { $null })
+    if ($Std -and $oldDesign -and (Test-Path -LiteralPath $oldDesign -PathType Leaf)) {
+        Say "warn" ("{0} is no longer read: the STAAD design is in the workbook itself (the Frames rows' STAAD block, and the STAAD sets / parameters / run sheets). Make the workbook again from its .std (-In <x>.std -Xlsx), or type the design there" -f $oldDesign)
+        $warnings += "an older .design.xlsx beside the workbook is not read"
+    }
+    if ($NewDesign) {
+        # a starter for a model with none (one from SAP): set 1, Pluto's prints and CHECK CODE ALL
+        if (-not ([StaadDesign]::Of($model)).Empty -or [StaadDesign]::HasMembers($model)) { Say "notice" "-NewDesign: the model has a STAAD design already, which is kept" }
+        else {
+            $starter = [StaadDesign]::Template($model, [FrameStd]::StaadUnits($model))
+            [void]$starter.Store($model)
+            Say "design" ("a starter STAAD design: set 1 (AISC UNIFIED 2016, LRFD, {0}), Pluto's prints and CHECK CODE ALL{1}" -f $starter.Units, $(if ($Xlsx) { "; type each frame's parameters on its Frames row" } else { " (this run only: -Xlsx keeps it in a workbook)" }))
+        }
+    }
+    if ($Xlsx) {
+        # a workbook says what SAP analyses: a frame SAP's automatic mesh joins to joints on its span is split there
+        # (FrameMesh), the pieces keeping its section, insertion point and the rest; every output of this run takes them
+        $script:step = "splitting frames at the joints SAP's automatic mesh joins them to"
+        $split = New-Object 'System.Collections.Generic.Dictionary[string,System.Collections.Generic.List[string]]'
+        $unsplit = New-Object 'System.Collections.Generic.Dictionary[string,string]'
+        $held = New-Object 'System.Collections.Generic.List[string]'
+        $model = [FrameMesh]::SplitAtJoints($model, $split, $unsplit, $held)
+        foreach ($k in $split.Keys) { Say "split" ("frame {0} into {1}, at the joint(s) SAP's automatic mesh joins it to (SAP analyses it so already)" -f $k, ($split[$k] -join " ")) }
+        foreach ($k in $unsplit.Keys) { Say "warn" ("frame {0}: SAP's automatic mesh joins it to joints along its length, and it is not split: {1}" -f $k, $unsplit[$k]); $warnings += ("frame " + $k + " not split") }
+        if ($held.Count -gt 0) { Say "warn" ("split at joints held to ground, so the frames are held there, in SAP as in the workbook: {0}. A seeded support point meant to sit on the steel is still held: free it on the Joints sheet" -f ($held -join "; ")) }
+    }
     $counts = "{0} joints, {1} frames, {2} sections, {3} materials, {4} link properties, {5} links, {6} groups, {7} load patterns, {8} loads, {9} cases, {10} combinations; units {11}" -f `
         $model.Joints.Count, $model.Frames.Count, $model.Sections.Count, $model.Materials.Count, $model.LinkProps.Count, $model.Links.Count, $model.Groups.Count, `
         $model.Patterns.Count, $model.Loads.Count, $model.Cases.Count, $model.Combos.Count, $model.Units
-    Say "model" $counts
+    if ($script:Tidy) {
+        # the counts that are not zero
+        $has = @()
+        foreach ($c in @(@($model.Joints.Count, "joint"), @($model.Frames.Count, "frame"), @($model.Sections.Count, "section"), @($model.Materials.Count, "material"), @($model.LinkProps.Count, "link property"),
+                         @($model.Links.Count, "link"), @($model.Groups.Count, "group"), @($model.Patterns.Count, "load pattern"), @($model.Loads.Count, "load"), @($model.Cases.Count, "case"), @($model.Combos.Count, "combination"))) {
+            if ($c[0] -gt 0) { $has += ("{0} {1}" -f $c[0], $(if ($c[0] -eq 1) { $c[1] } elseif ($c[1].EndsWith("y")) { $c[1].Substring(0, $c[1].Length - 1) + "ies" } else { $c[1] + "s" })) }
+        }
+        Say "model" (($has -join ", ") + "; units " + $model.Units)
+    }
+    else { Say "model" $counts }
     $notes = New-Object 'System.Collections.Generic.List[string]'
     if ($S2k) {
         # catalog sections: their library files, as SAP will look for them (a missing one becomes a section of all ones)
@@ -482,6 +581,9 @@ function Build-Once {
     $script:step = "writing the .s2k"
     $doc = [FrameS2k]::ToDoc($model, $notes)
     foreach ($n in $notes) { Say "notice" $n }
+    # STAAD's own commands and load numbers (the workbook's STAAD sheets) are for -Std: SAP gets none of them
+    $staadRows = [StaadCarry]::StripForSap($doc)
+    if ($staadRows -gt 0 -and ($S2k -or $Open)) { Say "notice" ("the model's STAAD data ({0} rows: its design, and its load and envelope numbers) is for -Std only: the .s2k leaves it out" -f $staadRows) }
 
     if ($S2k) {
         $bytes = $doc.ToBytes()
@@ -513,7 +615,7 @@ function Build-Once {
         $ps = [IO.Path]::Combine($env:SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
         Say "open" ("SAP2000: importing {0} in a SAP of its own ..." -f $s2kFile)
         $lines = @(& $ps -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $runSap -Open $s2kFile -Stamp -NewInstance -KeepOpen 2>&1 | ForEach-Object { "$_" })
-        foreach ($l in $lines) { if ($l -notlike "RESULT *") { Write-Output ("   sap: " + $l) } }
+        foreach ($l in $lines) { if ($l -notlike "RESULT *") { if ($script:Tidy) { Line "sap" $l "" "90" } else { Write-Output ("   sap: " + $l) } } }
         $last = $lines | Where-Object { $_ -like "RESULT *" } | Select-Object -Last 1
         if (-not $last) { throw "SAP2000: Run-Sap.ps1 gave no result (see its lines above)" }
         $sr = $last.Substring(7) | ConvertFrom-Json
@@ -531,7 +633,7 @@ function Build-Once {
         [FrameWorkbook]::Write($model, $xf, [IO.Path]::GetFileName($inPath), $run)
         Set-StampXlsx $xf $stampFile "pluto-frame-build" $now
         Say "write" ("{0}: the frame workbook" -f $xf)
-        foreach ($l in $run.WriteLaunchers()) { Say "write" ("{0}: double-click it, or use the Start sheet's link" -f $l) }
+        Say-Launchers ($run.WriteLaunchers())
     }
     if ($Json) {
         [IO.File]::WriteAllText($jsonFile, [FrameModelJson]::Write($model), (New-Object Text.UTF8Encoding($false)))
@@ -568,7 +670,9 @@ function Build-Once {
     $res += ",""s2k"":" + $(if ($S2k) { Q $s2kFile } else { "null" }) + ",""std"":" + $(if ($Std) { Q $stdFile } else { "null" }) + ",""xlsx"":" + $(if ($Xlsx -and $xlsxGo -ne "keep") { Q ($outBase + ".xlsx") } else { "null" }) + ",""json"":" + $(if ($Json) { Q $jsonFile } else { "null" })
     $res += ",""bin"":" + $(if ($Preview) { Q $binFile } else { "null" }) + ",""sidecar"":" + $(if ($Preview) { Q $scFile } else { "null" })
     $res += ",""notices"":" + ($notes.Count + $stdNotes.Count) + ",""counts"":" + (Q $counts) + "}"
-    Write-Output $res
+    $nOut = $outs.Count - $(if ($Xlsx -and $xlsxGo -eq "keep") { 1 } else { 0 })
+    $first = $(if ($outs.Count -eq 0) { "a report only: no file asked for" } elseif ($nOut -eq 0) { "nothing written" } else { "{0} file{1} written" -f $nOut, $(if ($nOut -eq 1) { "" } else { "s" }) })
+    Result ($res.Substring(7)) $first (", {0:0.0} s" -f $script:sw.Elapsed.TotalSeconds)
 }
 
 if (-not $Watch) {
@@ -594,7 +698,7 @@ while ($true) {
                 $msg = BuildError $_
                 Say "error" $msg
                 Say "watch" "the last good outputs stay; fix the input and save again"
-                Write-Output ("RESULT {""error"":" + (Q $msg) + "}")
+                if (-not $script:Tidy) { Write-Output ("RESULT {""error"":" + (Q $msg) + "}") }
             }
         }
     }

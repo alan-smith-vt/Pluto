@@ -1,4 +1,4 @@
-# Probes for the STAAD `.anl` reader
+# STAAD probes: the `.anl` reader, and STAAD round 4
 
 `anl-prints-probe.std` is a small made-up frame (32 members, 18 joints, 6 primary cases, 8 combinations) that ends
 with the usual output commands, in the usual order, and then checks the code again under other design parameters:
@@ -93,3 +93,78 @@ replaced by `<removed>`. Every block ran, all eight code checks included.
   now gives an output heading back to the command that printed it.
 - **JOINT COORDINATES** as printed are checked against the echo (18 of 18 agree).
 - STAAD writes a NUL character into the profile line of the `CODE LRFD` drawing; it is read as a space.
+
+## Used by
+
+- `viewer/tests/readback_staad.js --probe` checks `StaadToPluto`'s export of `anl-prints-probe.anl` (the viewer arm,
+  `scripts/staad/Run-StaadFrame.ps1`) against the numbers this file prints.
+- For code ratios per case the arm wants one `LOAD LIST <case>` + `CHECK CODE` per case
+  (vault/arms/staad-frame-to-viewer.md). The probe has none yet; the layout is the same, as the reader reads each
+  `CHECK CODE` alone, but a real run of it is still to do.
+
+## STAAD round 4: `staad-round4-probe.std` (2026-11-24)
+
+The round for the triangle SAP <-> frame workbook <-> STAAD (vault/format/frame-to-staad.md, "A model made in STAAD" and
+"Merging"). A small 3D frame with a plate. It settles three things STAAD has to judge:
+
+1. **Units.** Every kind of number stands under a different `UNIT` from the first (FEET KIP):
+   - materials in MMS KN;
+   - table sections in INCHES, a PRIS strut in CM KN;
+   - plate thickness, offsets and a spring release in INCHES;
+   - support springs in METER KN;
+   - member loads in INCHES and METER KN, joint loads in FEET, a support displacement in INCHES.
+
+   The analysis runs under METER KN, so the first print after it is in those units. Pluto's copy has every number in
+   FEET KIP, so **its results must be the original's, to the last printed digit**.
+2. **Load envelopes** (TR.40). Three envelopes, with case 103 listed in two. STAAD lists it under both and designs it
+   as the last's TYPE (round 4; TR.40 says the last only).
+   `LOAD LIST ENV 1` then prints the reactions of the loads it holds. Strength and deflection (`DFF`) checks run under
+   `LOAD LIST ENV 1 2`, and a check under the one-load envelope 3.
+3. **A code check per case:** `LOAD LIST 101` + `CHECK CODE ALL`, and the same for 102 and 103.
+
+Joint 8's springs are written `FIXED BUT MY KMX 2000 KMZ 2000`. The reader takes `FIXED BUT MX MY MZ KMX 2000 KMZ
+2000` (a released DOF then its spring) as the same support.
+
+### Running it (production machine)
+
+`...` stands for `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File`, run from the repo after a
+pull. `<dir>` is a folder outside the repo.
+
+1. Copy `staad-round4-probe.std` to `<dir>` (STAAD writes its output beside the file).
+2. **STAAD -> workbook:** `... scripts\frame\Build-Frame.ps1 -In <dir>\staad-round4-probe.std -Xlsx -Out <dir>\round4`.
+   - It should read with no `[refuse]` line and say "read exactly".
+   - `round4.xlsx` has the STAAD loads sheet filled, the design's set, ALL row and run on its three STAAD sheets, and
+     `DFF 240` on the Frames rows of members 5, 6, 7 and 11.
+3. **Workbook -> STAAD:** `... -In <dir>\round4.xlsx -Std`, which writes `<dir>\round4.std`, the design with it.
+4. **STAAD.Pro:** run `staad-round4-probe.std` and `round4.std`. Note any error or warning that one has and the other
+   has not.
+5. **Workbook -> SAP:** `... -In <dir>\round4.xlsx -S2k` writes `<dir>\round4.s2k`.
+   - In SAP2000, File > Import > SAP2000 .s2k; keep the import log.
+   - Then File > Export > SAP2000 .s2k, as `<dir>\round4.sap-export.s2k`. No analysis is needed.
+6. **SAP -> STAAD, with the merge:**
+   `... -In <dir>\round4.sap-export.s2k -Merge <dir>\round4.xlsx -Std -Out <dir>\round4_fromsap`. The `[merge]` lines
+   should name the STAAD design carried (13 rows), the design values of 4 frames, and 13 load numbers.
+7. **STAAD's own save:** open `round4.std` in STAAD.Pro's editor, change nothing, save. Copy it as
+   `<dir>\round4_saved.std`, then `... -In <dir>\round4_saved.std -Merge <dir>\round4.xlsx -Xlsx -Out <dir>\round4_saved`.
+
+### What to send back
+
+- **The two `.anl` files** (`staad-round4-probe.anl`, `round4.anl`). Replace the licensee line and any folder path with
+  `<removed>`, as for the probe above.
+- **The runner output** of steps 2, 3, 5, 6 and 7 (the `[refuse]`, `[notice]`, `[merge]`, `[read]`, `[warn]` lines).
+- **From SAP:** its import log, and `round4.sap-export.s2k`.
+- **From the other steps:** `round4_fromsap.std`, and `round4_saved.std` (STAAD's save).
+
+### What it settles
+
+| Question | Settled by | Result (2026-11-25) |
+|---|---|---|
+| Unit conversion of every kind of number | the two `.anl` agree on every displacement, reaction and member force, every case | **yes:** 2,687 numbers, none more than 1 in the last printed digit apart; every code ratio the same |
+| The `UNIT` in force at the analysis carried | the first reaction print is in kN and m in both | **yes** |
+| `DEFINE ENVELOPE` where `-Std` writes it: after `PERFORM ANALYSIS`, before the prints (the first run stopped at one after the combinations, and the editor drops one before the loads) | both `.std` run | **yes**, and STAAD's save keeps it there |
+| A load in two envelopes | the cases `LOAD LIST ENV 1`'s reaction print lists: 101 102 (TR.40's rule), or 101 to 103 | **101 to 103**, not TR.40's rule; the design takes 103 as the last envelope's TYPE. Pluto now keeps the lists as written |
+| Checks under envelopes and per case | the `.anl` reader takes `LOAD LIST ENV`; StaadToPluto puts 101's to 103's checks into their cases | **yes**, after two fixes: the reader reads STAAD's `Ratio: NaN` deflection box, and a check with no ratio (`ENV 3`) no longer takes case 103's place |
+| SAP takes the workbook's output | the import log names no Pluto table; the envelope combinations import | **yes** (its ten errors are SAP's own) |
+| The merge from SAP's own export | `round4_fromsap.std` is `round4.std` as STAAD reads it | **all but `LOAD 5`'s LOADTYPE**, which SAP set from its patterns; fixed with `DesTypeOpt="User Spec"`, to confirm at the next import |
+| STAAD's own save of carried commands, load numbers and envelopes | step 7 reads exactly | **yes** |
+
