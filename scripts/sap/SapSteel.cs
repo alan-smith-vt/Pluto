@@ -119,7 +119,7 @@ public partial class SapDucts
             string ji, jj;
             if (!joints.TryGetValue(r["JointI"], out ji) || !joints.TryGetValue(r["JointJ"], out jj)) { failed.Add(r["Frame"] + " (joint not in steel_joints)"); continue; }
             string sec = SteelSection(sections, r), name = "";
-            if (ji == jj || M.FrameObj.AddByPoint(ji, jj, ref name, sec, r["Frame"]) != 0) { failed.Add(r["Frame"]); continue; }
+            if (ji == jj || M.FrameObj.AddByPoint(ji, jj, ref name, sec, "STL_" + r["Frame"]) != 0) { failed.Add(r["Frame"]); continue; }
             steelFrames[r["Frame"]] = name;
             // web = local 2, so local 3 = local 1 x web
             double xi = Num(r, "XI_in"), yi = Num(r, "YI_in"), zi = Num(r, "ZI_in"), xj = Num(r, "XJ_in"), yj = Num(r, "YJ_in"), zj = Num(r, "ZJ_in");

@@ -15,11 +15,11 @@ function W([string]$name, [string[]]$lines) { $p = Join-Path $Out $name; [IO.Fil
 
 # ducts along X at z 150 (24x12 box, bottom at 144): N1 - N2 - N3 - N4
 $frames = W "test.frames.csv" @(
-    "Frame,JointI,JointJ,XI_in,YI_in,ZI_in,XJ_in,YJ_in,ZJ_in,Shape,W_in,H_in,Dia_in,Thk_in,WX,WY,WZ,Source,Flags,RevitElementId,Span",
-    "D1,N1,N2,0,0,150,60,0,150,rect,24,12,,0.06,0,1,0,revit,,1,",
-    "D2,N2,N3,60,0,150,420,0,150,rect,24,12,,0.06,0,1,0,revit,,2,US1",
-    "D3,N3,N4,420,0,150,480,0,150,rect,24,12,,0.06,0,1,0,revit,,3,",
-    "D9,N7,N8,700,0,150,760,0,150,rect,24,12,,0.06,0,1,0,revit,FLOATING,9,")
+    "Frame,JointI,JointJ,XI_in,YI_in,ZI_in,XJ_in,YJ_in,ZJ_in,Shape,W_in,H_in,Dia_in,Thk_in,WX,WY,WZ,Source,Flags,RevitElementId,Span,System",
+    "D1,N1,N2,0,0,150,60,0,150,rect,24,12,,0.06,0,1,0,revit,,1,,SYS-A",
+    "D2,N2,N3,60,0,150,420,0,150,rect,24,12,,0.06,0,1,0,revit,,2,US1,SYS-A",
+    "D3,N3,N4,420,0,150,480,0,150,rect,24,12,,0.06,0,1,0,revit,,3,,SYS-A",
+    "D9,N7,N8,700,0,150,760,0,150,rect,24,12,,0.06,0,1,0,revit,FLOATING,9,,SYS-A")
 # SF9 carries a joint offset (2 in at its I end): the steel model never moves a member, the joint may sit elsewhere
 # rack 1 at x 60: columns S1-S2, S3-S4, beam split at SS1 (the support joint); rack 2 at x 420: columns S5-S6,
 # S10-S8, beam S6-S8 whole (the support joint SS2 is new: auto-meshed); cantilever S6-S9 pinned at the wall
@@ -105,6 +105,9 @@ Expect "FLAG_OPEN_NEAR joints" (InGroup "FLAG_OPEN_NEAR" "Joint") 1
 Expect "FLAG_UNSUPPORTED_SPAN frames" (InGroup "FLAG_UNSUPPORTED_SPAN" "Frame") 1
 Expect "SPAN_US1 frames (frames.csv Span)" (InGroup "SPAN_US1" "Frame") 1
 Expect "FLAG_NO_SIZE frames" (InGroup "FLAG_NO_SIZE" "Frame") 1
+$lab = @(Import-Csv "$base.labels.csv")
+Expect "readable names: duct frames SYS_A_D<n>, steel STL_SF<n>, supports SUP_<id>" ((@($lab | Where-Object { $_.kind -eq "frame" -and $_.object -match "^SYS_A_D\d$" }).Count -eq 3) -and
+    (@($lab | Where-Object { $_.kind -eq "frame" -and $_.object -match "^STL_SF\d$" } | ForEach-Object { $_.object } | Sort-Object -Unique).Count -eq 9) -and (@($lab | Where-Object { $_.kind -eq "link" -and $_.object -match "^SUP_\d$" }).Count -eq 2)) $true
 Expect "FLAG_NO_THICKNESS: none (every test duct has 0.06 in)" (InGroup "FLAG_NO_THICKNESS" "Frame") 0
 $leg = Join-Path $Out "test_steel.legend.txt"
 Expect "legend beside the sdb" (Test-Path $leg) $true

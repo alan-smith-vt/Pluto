@@ -62,7 +62,7 @@ public partial class SapDucts
             string jj = Joint(joints, r["JointJ"], Num(r, "XJ_in"), Num(r, "YJ_in"), Num(r, "ZJ_in"));
             string sec = Section(sections, r);
             string name = "";
-            if (M.FrameObj.AddByPoint(ji, jj, ref name, sec, r["Frame"]) != 0)
+            if (M.FrameObj.AddByPoint(ji, jj, ref name, sec, ObjectName(r)) != 0)
             {
                 failed.Add(F("{0} ({1} -> {2}, {3:0.###} in, parts {4})", r["Frame"], r["JointI"], r["JointJ"], Math.Sqrt(dx * dx + dy * dy + dz * dz), r["RevitElementId"]));
                 continue;
@@ -231,6 +231,17 @@ public partial class SapDucts
             else Check(M.PropFrame.SetTube(name, mat, h, w, t, t, -1, "", ""), "SetTube " + name);
         }
         return name;
+    }
+
+    // readable object names (user 2026-11-25): the system in front of the frames.csv id, so a selected frame says what
+    // it is: SYSA_F12, SYSA_FRAG_F7 (fragments), OTHER_EXH_F79; rigid tap stubs LNK_F80. Joints keep their names.
+    static string ObjectName(Dictionary<string, string> r)
+    {
+        if (r["Shape"] == "rigid") return "LNK_" + r["Frame"];
+        string sys = Val(r, "System").Trim();
+        if (sys == "") return r["Frame"];
+        sys = sys.Replace(" fragments", "_FRAG").Replace("other: ", "OTHER_").Replace(":", "");
+        return Clean(sys) + "_" + r["Frame"];
     }
 
     static bool IsStainless(Dictionary<string, string> r) { return string.Equals(Val(r, "Material"), "stainless", StringComparison.OrdinalIgnoreCase); }

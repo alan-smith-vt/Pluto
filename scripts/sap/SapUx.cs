@@ -149,6 +149,12 @@ public partial class SapDucts
         s.AppendLine("  Display > Set Display Options > Extrude View        (the duct boxes and W shapes as solids)");
         s.AppendLine("  The API cannot save these two settings in the file.");
         s.AppendLine();
+        s.AppendLine("OBJECT NAMES");
+        s.AppendLine("  Duct frames <system>_F<n> (SYSA_F12; fragments SYSA_FRAG_F7; other systems OTHER_<name>_F<n>), rigid tap stubs");
+        s.AppendLine("  LNK_F<n>, steel STL_SF<n>, support links SUP_<id>. F<n> / SF<n> / <id> are the rows of the run's frames.csv,");
+        s.AppendLine("  steel_frames.csv and supports.csv. Joints: N<n> duct, S<n> steel, SS<n> a support joint on steel.");
+        s.AppendLine("  A duct frame's GUID field holds its Revit ElementId / Navisworks id.");
+        s.AppendLine();
         s.AppendLine("SUPPORTS");
         s.AppendLine("  Every duct support is a two-joint link from the duct joint to the steel joint: local 1 along the stub (duct ->");
         s.AppendLine("  steel), local 2 along the duct, local 3 across it.");
