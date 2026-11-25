@@ -10,6 +10,11 @@
 //   supports      <base>.supports.csv (duct supports): SupportId, Type, DuctJoint, DX..DZ, SteelJoint, SX..SZ,
 //                 SteelMember, Gap_in, System, Flags
 //   flags         Frame, Flag: extra FLAG_ groups on duct or steel frames (e.g. UNSUPPORTED_SPAN)
+// Supports (user 2026-11-25) are two-joint LINKS duct joint -> steel joint, local 1 along the stub (duct -> steel),
+// local 2 along the duct (supports.csv AxisX..Z), local 3 across it. Link property SUP_GUIDE: rigid in U1 and U3,
+// free in U2 (slides along the duct) and in every rotation. SUP_ANCHOR (rigid in all 6) is defined and assigned to
+// nothing: to make a guide an anchor in SAP, select the link and assign SUP_ANCHOR. Link groups SUPPORT_ALL,
+// SUPPORT_<type> and the support's FLAG_ groups.
 // Joint names are shared by all files: ducts N<n>, steel S<n>, support joints on steel SS<n>. A support joint not in
 // the steel files is made at SX..SZ and its SteelMember auto-meshed at intermediate joints so it is connected.
 using System;
@@ -26,6 +31,23 @@ public partial class SapDucts
 
     // point groups, filled here, assigned with the frame groups in Build
     readonly Dictionary<string, List<string>> pointGroups = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+    readonly Dictionary<string, List<string>> linkGroups = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+    public const string LinkGuide = "SUP_GUIDE", LinkAnchor = "SUP_ANCHOR";
+    bool supLinksMade;
+    void AddLinkTo(string g, string link) { List<string> l; if (!linkGroups.TryGetValue(g, out l)) { l = new List<string>(); linkGroups[g] = l; } l.Add(link); }
+    // the two support link properties (rigid = Fixed; an inactive DOF has no stiffness: free)
+    void SupportLinkProps()
+    {
+        if (supLinksMade) return; supLinksMade = true;
+        double[] ke = new double[6], ce = new double[6];
+        bool[] gd = { true, false, true, false, false, false }, gf = { true, false, true, false, false, false };
+        Check(M.PropLink.SetLinear(LinkGuide, ref gd, ref gf, ref ke, ref ce, 0, 0, false, false,
+            "Pluto duct guide: rigid along the stub (U1) and across the duct (U3); slides along the duct (U2), rotations free", ""), "PropLink.SetLinear " + LinkGuide);
+        bool[] ad = { true, true, true, true, true, true }, af = { true, true, true, true, true, true };
+        ke = new double[6]; ce = new double[6];
+        Check(M.PropLink.SetLinear(LinkAnchor, ref ad, ref af, ref ke, ref ce, 0, 0, false, false,
+            "Pluto duct anchor: rigid in all 6. Assign it to a guide link to make an anchor", ""), "PropLink.SetLinear " + LinkAnchor);
+    }
 
     string AddSteelAndSupports(Dictionary<string, string> joints, HashSet<string> sections, Action<string, string> addTo, Dictionary<string, string> frameName)
     {
@@ -141,7 +163,7 @@ public partial class SapDucts
     string AddSupports(List<Dictionary<string, string>> rows, Dictionary<string, string> joints, HashSet<string> sections, Action<string, string> addTo, Dictionary<string, string> steelFrames)
     {
         var byType = new SortedDictionary<string, int>(StringComparer.Ordinal); var bad = new List<string>();
-        var meshed = new HashSet<string>(StringComparer.Ordinal);
+        var meshed = new HashSet<string>(StringComparer.Ordinal); int noAxis = 0;
         foreach (Dictionary<string, string> r in rows)
         {
             string id = Val(r, "SupportId"), dj, sj;
@@ -158,16 +180,28 @@ public partial class SapDucts
                     Check(M.FrameObj.SetAutoMesh(member, true, true, false, 0, 0), "SetAutoMesh " + member);
                 else if (member == null) bad.Add(id + " (new steel joint, steel member " + Val(r, "SteelMember") + " not in the model: stub hangs free)");
             }
-            string sec = Section(sections, new Dictionary<string, string> { { "Shape", "rigid" } }), name = "";
-            if (M.FrameObj.AddByPoint(dj, sj, ref name, sec, "SUP_" + id) != 0) { bad.Add(id + " (SAP refused the stub)"); continue; }
+            SupportLinkProps();
+            string name = "";
+            string lprop = string.Equals(Val(r, "Type"), "anchor", StringComparison.OrdinalIgnoreCase) ? LinkAnchor : LinkGuide;
+            if (M.LinkObj.AddByPoint(dj, sj, ref name, false, lprop, "SUP_" + id) != 0) { bad.Add(id + " (SAP refused the link)"); continue; }
+            // local 1 = duct -> steel (a zero-length link: SAP's +Z), local 2 = along the duct: local 3 = 1 x duct axis
+            double[] p0 = { Num(r, "DX"), Num(r, "DY"), Num(r, "DZ") }, p1 = { Num(r, "SX"), Num(r, "SY"), Num(r, "SZ") };
+            double[] x1 = { p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2] };
+            if (Math.Sqrt(x1[0] * x1[0] + x1[1] * x1[1] + x1[2] * x1[2]) < 0.01) x1 = new double[] { 0, 0, 1 };
+            double[] ax = { Num(r, "AxisX"), Num(r, "AxisY"), Num(r, "AxisZ") };
+            double[] w3 = { x1[1] * ax[2] - x1[2] * ax[1], x1[2] * ax[0] - x1[0] * ax[2], x1[0] * ax[1] - x1[1] * ax[0] };
+            double ang;
+            if (SapDucts.LocalAngle(0, 0, 0, x1[0], x1[1], x1[2], w3[0], w3[1], w3[2], out ang)) { if (Math.Abs(ang) > 1e-6) Check(M.LinkObj.SetLocalAxes(name, ang), "LinkObj.SetLocalAxes " + name); }
+            else { noAxis++; AddLinkTo("FLAG_NO_ORIENTATION", name); }
             string type = Clean(Val(r, "Type") == "" ? "guide" : Val(r, "Type"));
-            addTo("SUPPORT_ALL", name); addTo("SUPPORT_" + type, name); addTo("TAP_STUBS", name);
-            foreach (string f in Val(r, "Flags").Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)) addTo("FLAG_" + Clean(f), name);
+            AddLinkTo("SUPPORT_ALL", name); AddLinkTo("SUPPORT_" + type, name);
+            foreach (string f in Val(r, "Flags").Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)) AddLinkTo("FLAG_" + Clean(f), name);
             int c; byType.TryGetValue(type, out c); byType[type] = c + 1;
         }
-        return F("NEW supports: {0} TAP_STUB links ({1}), {2} steel frames meshed at new support joints{3}",
+        return F("NEW supports: {0} links ({1}; guides {5}, anchors {6}; local 2 along the duct{4}; {6} is always defined: assign it to a guide to make an anchor), {2} steel frames meshed at new support joints{3}",
             byType.Values.Sum(), byType.Count == 0 ? "none" : string.Join(", ", byType.Select(kv => kv.Key + " " + kv.Value).ToArray()), meshed.Count,
-            bad.Count > 0 ? F("; {0} problems: {1}", bad.Count, string.Join("; ", bad.Take(10).ToArray())) : "");
+            bad.Count > 0 ? F("; {0} problems: {1}", bad.Count, string.Join("; ", bad.Take(10).ToArray())) : "",
+            noAxis > 0 ? F(", {0} without a duct axis (FLAG_NO_ORIENTATION)", noAxis) : "", LinkGuide, LinkAnchor);
     }
 
     // PINNED+T (steel interface v2, stability rule 4, 2026-10-30): U1-U3 plus the rotation about the member's own axis

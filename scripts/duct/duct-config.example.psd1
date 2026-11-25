@@ -82,6 +82,11 @@
     # (e.g. SYSA; its fragments match too). Size: WxH or ranges 13-24x0-60 (either orientation), D dia or 8-36 dia, * = any.
     # Exact size beats a range beats *. '' = Navisworks thickness.
     DuctThickness = ''                # e.g. 'C:\Temp\hvac\duct-thickness.csv'
+    # Duct material per system (run names as in the viewer; fragments and other: pieces match their run). SAP gets
+    # DUCT_CS (carbon, A1011) and DUCT_SS (stainless, 304L); the sections carry _CS / _SS. Systems not listed get
+    # DuctMaterialDefault and the flag MATERIAL_DEFAULT (when DuctMaterials is set).
+    DuctMaterials = @{}               # e.g. @{ SYSA = 'stainless'; SYSB = 'carbon' }
+    DuctMaterialDefault = 'carbon'
     # Duct-to-steel supports: steel under a horizontal duct with a gap (duct bottom -> steel top) up to DuctSupportGapIn
     # is a support (TAP_STUB link, <out>.supports.csv); duct stretches longer than DuctSpanFt between supports get
     # UNSUPPORTED_SPAN. match.txt prints a gap histogram of every crossing to choose the gap.

@@ -15,6 +15,9 @@ public class DuctSettings
     public double CutSnapIn = 6, KeepSnapIn = 48;   // keep points may be picked on a duct surface, far from the centreline
     // hand-picked drops [DuctDrop]: Revit part ids
     public readonly HashSet<string> ManualDrop = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+    // duct material per system [DuctMaterials: @{ <run> = 'carbon' | 'stainless' }], others [DuctMaterialDefault, carbon]
+    public readonly Dictionary<string, string> Materials = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    public string MaterialDefault = "carbon";
     // hand-picked bridges between duct fragments [DuctBridges: the viewer Bridge picker's bridges.json] (ManualBridges.cs)
     public readonly List<ManualBridge> Bridges = new List<ManualBridge>();
     // Revit categories left out of the Revit Pluto Mesh _norun file [RevitMeshNoRunExclude]

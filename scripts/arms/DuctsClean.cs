@@ -96,6 +96,7 @@ public partial class DuctsToPluto
             SupportPlacer.WriteSupportsCsv(outBase + ".supports.csv", sr, P);
         }
 
+        string matNote = DuctMaterials.Apply(clean, Cfg);   // carbon / stainless per system (frames.csv Material)
         string thkNote = "";
         if (Cfg.Thickness != null) { Cfg.Thickness.Apply(clean, true); thkNote = Cfg.Thickness.Note(); }   // final pass: bridges, splits, counts
 
@@ -122,6 +123,7 @@ public partial class DuctsToPluto
             dev.Count > 0 ? " (worst: " + string.Join(", ", dev.Take(5).Select(x => x.Value + " " + x.Key.ToString("0.#", Inv) + " in").ToArray()) + ")" : "", cm.GapsClosed)
             + (cutNote != "" ? "\n" + cutNote : "")
             + (thkNote != "" ? "\n" + thkNote : "")
+            + "\n" + matNote
             + (sm != null ? "\n" + sm.Summary() + " (<out>.steel_joints.csv, <out>.steel_frames.csv)\n" + sm.GapSummary() : "")
             + (sm != null && Cfg.SteelTouchDuctOnly ? "\n" + sm.CullSummary() : "")
             + "\n" + bridgeNote
@@ -234,7 +236,7 @@ public partial class DuctsToPluto
     static void WriteCleanFrames(string path, List<CEdge> clean, Dictionary<int, double[]> P)
     {
         var s = new StringBuilder();
-        s.AppendLine("Frame,JointI,JointJ,XI_in,YI_in,ZI_in,XJ_in,YJ_in,ZJ_in,Shape,W_in,H_in,Dia_in,W2_in,H2_in,Dia2_in,Thk_in,ThkSource,SizeSource,Source,RevitElementId,NavisId,Flags,System,WX,WY,WZ,SystemColor,SystemRole,Span");
+        s.AppendLine("Frame,JointI,JointJ,XI_in,YI_in,ZI_in,XJ_in,YJ_in,ZJ_in,Shape,W_in,H_in,Dia_in,W2_in,H2_in,Dia2_in,Thk_in,ThkSource,SizeSource,Source,RevitElementId,NavisId,Flags,System,WX,WY,WZ,SystemColor,SystemRole,Span,Material");
         int f = 0;
         foreach (CEdge ce in clean)
         {
@@ -252,7 +254,7 @@ public partial class DuctsToPluto
                 DuctGeom.SystemOf(ce),
                 wd != null ? wd[0].ToString("0.######", Inv) : "", wd != null ? wd[1].ToString("0.######", Inv) : "", wd != null ? wd[2].ToString("0.######", Inv) : "",
                 new DuctSystems(Cfg).SystemColor(ce.Src.Count > 0 || ce.SysName != "" ? DuctGeom.SystemOf(ce) : ""),
-                ce.Src.Count > 0 || ce.SysName != "" ? new DuctSystems(Cfg).SystemRole(DuctGeom.SystemOf(ce)) : ce.Source == "navisworks-only" ? (ce.Hanger ? "hanger" : "navisworks-only") : "", ce.Span }.Select(DuctGeom.CsvCell).ToArray()));
+                ce.Src.Count > 0 || ce.SysName != "" ? new DuctSystems(Cfg).SystemRole(DuctGeom.SystemOf(ce)) : ce.Source == "navisworks-only" ? (ce.Hanger ? "hanger" : "navisworks-only") : "", ce.Span, ce.Material }.Select(DuctGeom.CsvCell).ToArray()));
         }
         File.WriteAllText(path, s.ToString(), new UTF8Encoding(false));
     }

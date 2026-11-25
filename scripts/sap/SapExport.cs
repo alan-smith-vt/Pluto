@@ -238,6 +238,17 @@ public class SapExport
         }
         Table(L, "CONNECTIVITY - LINK", rows);
         Table(L, "LINK PROPERTY ASSIGNMENTS", lpRows);
+        // the links' local axes 1 and 2 in global (SAP's own transformation, not our angle): the duct supports put local 2
+        // along the duct. Pluto table (SAP's s2k has no such table; readers that do not know it skip it)
+        rows = new List<string>();
+        for (int k = 0; k < mesh.LinkNames.Count; k++)
+        {
+            double[] v = new double[9];
+            if (m.LinkObj.GetTransformationMatrix(mesh.LinkNames[k], ref v, true) != 0) continue;
+            rows.Add(Row("Link", Id(k + 1), "L1X", SapSession.R(v[0]), "L1Y", SapSession.R(v[3]), "L1Z", SapSession.R(v[6]),
+                "L2X", SapSession.R(v[1]), "L2Y", SapSession.R(v[4]), "L2Z", SapSession.R(v[7])));
+        }
+        Table(L, "PLUTO LINK LOCAL AXES", rows);
 
         // Restraints from the point objects (works without DatabaseTables).
         rows = new List<string>();
@@ -274,6 +285,7 @@ public class SapExport
                 if (types[k] == 1) { int i = mesh.PointOfObj(m, objs[k]); if (i > 0) rows.Add(Row("GroupName", g, "ObjectType", "Joint", "ObjectLabel", Id(i))); }
                 else if (types[k] == 5 && mesh.AreaObj.TryGetValue(objs[k], out ids)) foreach (int i in ids) rows.Add(Row("GroupName", g, "ObjectType", "Area", "ObjectLabel", Id(i)));
                 else if (types[k] == 2 && mesh.LineObj.TryGetValue(objs[k], out ids)) foreach (int i in ids) rows.Add(Row("GroupName", g, "ObjectType", "Frame", "ObjectLabel", Id(i)));
+                else if (types[k] == 7) { int li = mesh.LinkNames.IndexOf(objs[k]); if (li >= 0) rows.Add(Row("GroupName", g, "ObjectType", "Link", "ObjectLabel", Id(li + 1))); }
             }
         }
         Table(L, "GROUPS 2 - ASSIGNMENTS", rows);

@@ -46,6 +46,21 @@ function Get-DuctSettings {
         if (-not (Test-Path $f)) { throw "drop list not found: $f (DuctDrop in duct-config.psd1 or -Drop; -Drop none = off)" }
         $Notes.Add(("manual drop: {0} parts from {1}" -f [DuctsToPluto]::ReadManualDrop($ds, (Resolve-Path $f).Path), $f))
     }
+    # duct material per system (duct\model\DuctMaterials.cs): DuctMaterials = @{ SYSA = 'stainless'; SYSB = 'carbon' } (run
+    # names as in the viewer; fragments / other: match their run), DuctMaterialDefault (carbon) for the rest
+    if ($Data.DuctMaterials) {
+        if (-not ($Data.DuctMaterials -is [hashtable])) { throw "DuctMaterials must be a table: @{ SYSA = 'stainless'; SYSB = 'carbon' }" }
+        foreach ($k in $Data.DuctMaterials.Keys) {
+            $v = "$($Data.DuctMaterials[$k])".Trim().ToLowerInvariant()
+            if ($v -ne 'carbon' -and $v -ne 'stainless') { throw "DuctMaterials: '$k' = '$v' (carbon or stainless)" }
+            $ds.Materials["$k".Trim()] = $v
+        }
+    }
+    if ($Data.DuctMaterialDefault) {
+        $v = "$($Data.DuctMaterialDefault)".Trim().ToLowerInvariant()
+        if ($v -ne 'carbon' -and $v -ne 'stainless') { throw "DuctMaterialDefault '$v' (carbon or stainless)" }
+        $ds.MaterialDefault = $v
+    }
     # add-on (duct\model\ManualBridges.cs): hand-picked bridges from the viewer's Bridge picker (bridges.json); DuctBridges
     # names one file or a list, only those named; -Bridges none = off
     $bridgeFiles = @($(if ($Bridges) { $Bridges -split ',' } else { $Data.DuctBridges }) | ForEach-Object { "$_".Trim() } | Where-Object { $_ -and $_ -ne "none" })

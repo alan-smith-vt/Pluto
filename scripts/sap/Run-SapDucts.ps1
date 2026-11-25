@@ -1,7 +1,7 @@
 # HVAC duct SAP model from a Revit overlay run's frames.csv (Export-DuctsViewer -Revit). Windows PowerShell 5.1.
 #   .\Run-SapDucts.ps1 -Frames C:\Temp\hvac\ducts\<run>\revit_<room>.frames.csv -SavePath C:\Temp\hvac\sap\ducts_<room>.sdb
 # Builds a NEW blank model (geometry, sections with the parts' wall thickness, box width along local 3 from the
-# frames' width direction, PLACEHOLDER material DUCT_MAT_TBD, DUCT_ALL / SRC_ / SYS_ / FLAG_ groups; no loads) and saves
+# frames' width direction, materials DUCT_CS / DUCT_SS (frames.csv Material), DUCT_ALL / SRC_ / SYS_ / FLAG_ groups; no loads) and saves
 # it at -SavePath. If a model is open in SAP it is reopened afterwards so SAP is left where it was.
 # Only the primary systems (mains and pinned mains) go in by default; -Fragments, -Other (other systems) and
 # -NavisOnly (Navisworks rows with no Revit part) add those. Frames flagged FLOATING (a duct piece with no support) are

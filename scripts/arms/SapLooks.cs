@@ -105,6 +105,21 @@ public class SapLooks
                     }
                 }
             }
+            // a node group (SAP links: the duct supports' duct joints) with an end rule: one glyph per node, turned along a
+            // beam at that node (Dir=adjacent: the duct)
+            if (r.At != "members" && !g.Members.Any(mm => mm.Domain == "beams"))
+                foreach (FeaturesSidecar.Member mm in g.Members)
+                {
+                    if (mm.Domain != "nodes" || mm.NodeIds == null) continue;
+                    foreach (uint nid in mm.NodeIds)
+                    {
+                        double[] dir = null;
+                        List<int> at;
+                        if (r.Dir == "adjacent" && atNode.TryGetValue((int)nid, out at) && at.Count > 0)
+                            dir = Axis(nodes[(int)beams[at[0]].NodeA], nodes[(int)beams[at[0]].NodeB]);
+                        anchors.Add(new Anchor { Domain = "nodes", Id = nid, Dir = dir });
+                    }
+                }
             SetLook(g, r, r.At == "members" ? null : anchors);
             Applied++; AnchorCount += anchors.Count;
         }

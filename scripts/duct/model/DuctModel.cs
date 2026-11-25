@@ -82,6 +82,7 @@ public class CEdge
     public double Thk = double.NaN;   // wall thickness (in) from Navisworks; NaN = not stated (frames.csv: DuctGeom.ThkPlaceholder, ThkSource default)
     public string Span = "";        // unsupported span id US<n> (SupportPlacer.cs), frames.csv Span
     public bool Hanger;             // a Navisworks-only row of a hanger category (rod hangers): frames.csv SystemRole "hanger", never a SAP frame
+    public string Material = "";    // carbon | stainless (DuctMaterials.Apply; "" = rigid / not set), frames.csv Material
     public string SysName = "";     // system of a frame without Revit source parts (a gap bridge: its neighbour's); see DuctGeom.SystemOf
     public int Sys { get { return Src.Count > 0 ? Src[0].Sys : -1; } }
 }

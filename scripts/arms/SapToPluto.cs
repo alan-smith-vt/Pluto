@@ -786,6 +786,7 @@ public class SapToPluto
         var linkJoints = new Dictionary<string, List<uint>>(StringComparer.OrdinalIgnoreCase);
         var linkOrder = new List<string>();
         var linkProp = new Dictionary<string, string>();
+        var linkJointI = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);   // link label -> its I joint (a group of links = those joints)
         foreach (var r in model.GetTable("LINK PROPERTY ASSIGNMENTS"))
         {
             string l, p;
@@ -797,6 +798,7 @@ public class SapToPluto
             if (!r.TryGetValue("Link", out l) || !r.TryGetValue("JointI", out ji)) continue;
             if (!linkProp.TryGetValue(l, out p)) p = "?";
             Add(linkJoints, linkOrder, p, (uint)Int(ji));
+            linkJointI[l] = (uint)Int(ji);
             if (r.TryGetValue("JointJ", out jj) && jj != ji) linkJoints[p].Add((uint)Int(jj));
             res.Links++;
         }
@@ -815,6 +817,8 @@ public class SapToPluto
             if (string.Equals(ty, "Area", StringComparison.OrdinalIgnoreCase)) Add(grpAreas, grpOrder, g, (uint)Int(lab));
             else if (string.Equals(ty, "Joint", StringComparison.OrdinalIgnoreCase)) Add(grpJoints, grpOrder, g, (uint)Int(lab));
             else if (string.Equals(ty, "Frame", StringComparison.OrdinalIgnoreCase) && beams.ContainsKey(Int(lab))) Add(grpFrames, grpOrder, g, (uint)Int(lab));
+            // links have no viewer domain: a group of links is the links' I joints (duct supports: the duct end)
+            else if (string.Equals(ty, "Link", StringComparison.OrdinalIgnoreCase)) { uint jn; if (linkJointI.TryGetValue(lab, out jn)) Add(grpJoints, grpOrder, g, jn); }
         }
         foreach (string g in grpOrder)
         {

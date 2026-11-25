@@ -69,8 +69,8 @@ function Expect([string]$what, $got, $want) {
     $ok = "$got" -eq "$want"; if (-not $ok) { $script:fail++ }
     Write-Output ("{0} {1}: {2}{3}" -f $(if ($ok) { "ok  " } else { "FAIL" }), $what, $got, $(if ($ok) { "" } else { " (want $want)" }))
 }
-# 3 ducts + 8 steel objects (SF7 meshed in two at SS2) + 2 stubs
-Expect "frame elements (D9 FLOATING left out)" (Rows "CONNECTIVITY - FRAME").Count 15
+# 3 ducts + 8 steel objects (SF7 meshed in two at SS2); the 2 supports are links (2026-11-25), not frames
+Expect "frame elements (D9 FLOATING left out)" (Rows "CONNECTIVITY - FRAME").Count 13
 Expect "joints" (Rows "JOINT COORDINATES").Count 17
 Expect "no joint of the FLOATING frame (x 700 / 760)" @(Rows "JOINT COORDINATES" | Where-Object { $_ -match "XorR=(700|760)\s" }).Count 0
 # SF3 I, SF4 J, SF7 both (first / last element), SF8 I
@@ -88,8 +88,17 @@ $ipo = @(Rows "FRAME INSERTION POINT ASSIGNMENTS" | Where-Object { $_ -match "XI
 Write-Output ("     SF9 insertion point row: " + ($ipo -join " | "))
 Expect "SF9: centroid cardinal point, I end offset 2 in along global X" ($ipo.Count -eq 1 -and $ipo[0] -match "CardinalPt=10\s" -and $ipo[0] -match "CoordSys=GLOBAL\s" -and $ipo[0] -match "StiffTransform=Yes" -and $ipo[0] -match "YI=0\s+ZI=0\s+XJ=0") $true
 Expect "STEEL_JOINT_OFFSET frames" (InGroup "STEEL_JOINT_OFFSET" "Frame") 1
-Expect "SUPPORT_ALL frames" (InGroup "SUPPORT_ALL" "Frame") 2
-Expect "SUPPORT_GUIDE frames" (InGroup "SUPPORT_GUIDE" "Frame") 1
+Expect "supports are two-joint links" @(Rows "CONNECTIVITY - LINK").Count 2
+Expect "SUPPORT_ALL links" (InGroup "SUPPORT_ALL" "Link") 2
+Expect "SUPPORT_GUIDE links" (InGroup "SUPPORT_GUIDE" "Link") 1
+Expect "SUPPORT_ANCHOR links (type from supports.csv)" (InGroup "SUPPORT_ANCHOR" "Link") 1
+Expect "FLAG_LARGE_GAP on the support link" (InGroup "FLAG_LARGE_GAP" "Link") 1
+Expect "guide link: property SUP_GUIDE" @(Rows "LINK PROPERTY ASSIGNMENTS" | Where-Object { $_ -match "LinkProp=`"?SUP_GUIDE" -and $_ -match "Two Joint" }).Count 1
+Expect "anchor-typed link: property SUP_ANCHOR" @(Rows "LINK PROPERTY ASSIGNMENTS" | Where-Object { $_ -match "LinkProp=`"?SUP_ANCHOR" -and $_ -match "Two Joint" }).Count 1
+# SAP's own axes of the links: local 1 down the stub (duct -> steel, -Z), local 2 along the duct (+X)
+$ax = @(Rows "PLUTO LINK LOCAL AXES")
+Expect "link local axes exported" $ax.Count 2
+Expect "local 1 = duct -> steel (-Z), local 2 = along the duct (X)" @($ax | Where-Object { $_ -match "L1Z=-1\s" -and $_ -match "L2X=(1|-1)\s" }).Count 2
 Expect "STEEL_ALL frames" (InGroup "STEEL_ALL" "Frame") 10
 Expect "STEEL_OPEN_FIXED joints" (InGroup "STEEL_OPEN_FIXED" "Joint") 4
 Expect "FLAG_OPEN_NEAR joints" (InGroup "FLAG_OPEN_NEAR" "Joint") 1
@@ -107,7 +116,7 @@ Expect "STEEL_RELEASED anchors (released ends only)" @($g.anchors).Count 5
 Expect "STEEL_RELEASED anchors at t 0 / 1" @($g.anchors | Where-Object { $_.t -eq 0 -or $_.t -eq 1 }).Count 5
 $g = G "SUPPORT_GUIDE"
 Expect "SUPPORT_GUIDE glyph" $g.look.glyph "ring-arrows"
-Expect "SUPPORT_GUIDE anchor at the duct end, along the duct" ("{0} {1}" -f @($g.anchors)[0].t, [Math]::Abs(@($g.anchors)[0].dir[0])) "0 1"
+Expect "SUPPORT_GUIDE glyph on the duct joint, along the duct" ("{0} {1}" -f @($g.anchors)[0].domain, [Math]::Abs(@($g.anchors)[0].dir[0])) "nodes 1"
 $g = G "FLAG_UNSUPPORTED_SPAN"
 Expect "FLAG_UNSUPPORTED_SPAN warn exception mid" ("{0} {1} {2}" -f $g.look.glyph, $g.look.tier, @($g.anchors)[0].t) "warn exception 0.5"
 $g = G "STEEL_OPEN_FIXED"

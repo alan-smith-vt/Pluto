@@ -139,8 +139,8 @@ if (-not $NoSap) {
         Check "sap" "pinned / fixed restraints = steel_joints.csv" ([int]$m.Groups[2].Value -eq @($sj | Where-Object { $_.Restraint -eq "PINNED" }).Count -and
             [int]$m.Groups[3].Value -eq @($sj | Where-Object { $_.Restraint -eq "FIXED" }).Count)
     }
-    $m = [regex]::Match($logText, 'NEW supports: (\d+) TAP_STUB links')
-    Check "sap" "TAP_STUB links = supports.csv" ($m.Success -and [int]$m.Groups[1].Value -eq $sp.Count) $m.Value
+    $m = [regex]::Match($logText, 'NEW supports: (\d+) links')
+    Check "sap" "support links = supports.csv" ($m.Success -and [int]$m.Groups[1].Value -eq $sp.Count) $m.Value
     Check "sap" "every rect frame oriented" ($logText -match 'NEW orientation: \d+ rect frames oriented, 0 without')
 
     # SAP model -> viewer with glyph looks (scripts\duct\sap-looks.csv): anchors against the CSVs SAP was built from
@@ -160,7 +160,7 @@ if (-not $NoSap) {
     }
     foreach ($t in @($sp | Group-Object { $_.Type.ToUpperInvariant() })) {
         $a = Anchors ("SUPPORT_" + $t.Name)
-        Check "sap" "SUPPORT_$($t.Name) glyphs = supports.csv, each at the duct end with a direction" ($a.Count -eq $t.Count -and @($a | Where-Object { $_.t -ne 0 -or -not $_.dir }).Count -eq 0) "$($a.Count) vs $($t.Count)"
+        Check "sap" "SUPPORT_$($t.Name) glyphs = supports.csv, each on its duct joint with a direction" ($a.Count -eq $t.Count -and @($a | Where-Object { $_.domain -ne "nodes" -or -not $_.dir }).Count -eq 0) "$($a.Count) vs $($t.Count)"
     }
     # user decision laptop:797: only the real checks get warn; every other FLAG_ group is grey context
     $checks = "FLAG_UNSUPPORTED_SPAN", "FLAG_OPEN_NEAR", "FLAG_LARGE_SIDE_VERTICAL", "FLAG_ROTATION_CONFLICT", "FLAG_NO_SIZE", "FLAG_NO_ORIENTATION"

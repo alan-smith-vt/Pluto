@@ -13,12 +13,15 @@ using SAP2000v1;
 public partial class SapDucts
 {
     static readonly CultureInfo Inv = CultureInfo.InvariantCulture;
-    // Mat: PLACEHOLDER (2026-10-17, user: material is a major open TODO): galvanized-steel values under a name that
-    // says so; replace with the engineers' material before the model goes out
+    // duct materials (user 2026-11-25): one carbon and one stainless material, both always in the model (an engineer can
+    // reassign a section). frames.csv Material = carbon | stainless (DuctMaterials per system; absent column = carbon).
+    //   DUCT_CS carbon sheet (A1011):  E 29000 ksi, nu 0.3, alpha 6.5e-6 /F, 0.2836 lb/in3, Fy 33, Fu 52 ksi
+    //   DUCT_SS stainless (304L):      E 28000 ksi, nu 0.3, alpha 9.6e-6 /F, 0.29 lb/in3,   Fy 30, Fu 70 ksi
+    // Sections carry the material in their name: DUCT_24x12_t0.0625_CS / _SS.
     // wall thickness where none is stated: the same deliberately unrealistic value as DuctGeom.ThkPlaceholder (0.001 in),
     // so a section carrying it is unmistakable and must be fixed in SAP (user 2026-11-10)
     public const double ThkPlaceholder = 0.001;
-    public const string Mat = "DUCT_MAT_TBD", NoSize = "DUCT_NOSIZE", Stub = "TAP_STUB", StubMat = "RIGID_STUB";
+    public const string MatCS = "DUCT_CS", MatSS = "DUCT_SS", NoSize = "DUCT_NOSIZE", Stub = "TAP_STUB", StubMat = "RIGID_STUB";
 
     public SapSurvey S;
     cSapModel M { get { return S.Model; } }
@@ -37,11 +40,9 @@ public partial class SapDucts
         string filterNote = FilterRoles(rows, include) + floatNote;
         Check(M.InitializeNewModel(eUnits.kip_in_F), "InitializeNewModel");
         Check(M.File.NewBlank(), "NewBlank");
-        // galvanized sheet steel: E 29000 ksi, alpha 6.5e-6 /F, 0.2836 lb/in3
-        Check(M.PropMaterial.SetMaterial(Mat, eMatType.Steel, -1, "", ""), "SetMaterial");
-        Check(M.PropMaterial.SetMPIsotropic(Mat, 29000, 0.3, 6.5e-6, 0), "SetMPIsotropic");
-        Check(M.PropMaterial.SetWeightAndMass(Mat, 1, 2.836e-4, 0), "SetWeightAndMass");
-        Check(M.PropFrame.SetTube(NoSize, Mat, 12, 12, ThkPlaceholder, ThkPlaceholder, -1, "", ""), "SetTube " + NoSize);
+        DuctMaterial(MatCS, 29000, 6.5e-6, 2.836e-4, 33, 52);
+        DuctMaterial(MatSS, 28000, 9.6e-6, 2.9e-4, 30, 70);
+        Check(M.PropFrame.SetTube(NoSize, MatCS, 12, 12, ThkPlaceholder, ThkPlaceholder, -1, "", ""), "SetTube " + NoSize);
 
         var sections = new HashSet<string>(StringComparer.Ordinal);
         var joints = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -88,6 +89,7 @@ public partial class SapDucts
                 string hex; int col; if (!groupColor.ContainsKey(g) && r.TryGetValue("SystemColor", out hex) && OleColor(hex, out col)) groupColor[g] = col;
             }
             if (sec == NoSize) addTo("FLAG_NO_SIZE", name);
+            if (r["Shape"] != "rigid") addTo(IsStainless(r) ? "MAT_STAINLESS" : "MAT_CARBON", name);
             if (sec == Stub) addTo("TAP_STUBS", name);
             foreach (string f in (r["Flags"] ?? "").Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries)) addTo("FLAG_" + Clean(f), name);
             // one group per unsupported span (frames.csv Span = US<n>, longest first; 2026-10-30 board laptop:936)
@@ -108,16 +110,21 @@ public partial class SapDucts
             if (!groups.ContainsKey(kv.Key)) Check(M.GroupDef.SetGroup(kv.Key, -1, true, true, true, true, true, true, true, true, true, true, true), "SetGroup " + kv.Key);
             foreach (string p in kv.Value) Check(M.PointObj.SetGroupAssign(p, kv.Key, false, eItemType.Objects), "SetGroupAssign " + p + " " + kv.Key);
         }
+        foreach (KeyValuePair<string, List<string>> kv in linkGroups)
+        {
+            if (!groups.ContainsKey(kv.Key) && !pointGroups.ContainsKey(kv.Key)) Check(M.GroupDef.SetGroup(kv.Key, -1, true, true, true, true, true, true, true, true, true, true, true), "SetGroup " + kv.Key);
+            foreach (string l in kv.Value) Check(M.LinkObj.SetGroupAssign(l, kv.Key, false, eItemType.Objects), "SetGroupAssign " + l + " " + kv.Key);
+        }
         Check(M.File.Save(savePath), "Save " + savePath);
         var parts = new List<string>();
         foreach (KeyValuePair<string, List<string>> kv in groups) if (kv.Key.StartsWith("FLAG_")) parts.Add(kv.Key.Substring(5) + " " + kv.Value.Count);
         var spans = groups.Where(g => g.Key.StartsWith("SPAN_")).ToList();
         string spanNote = spans.Count == 0 ? "" : F("\nNEW unsupported spans: {0} spans ({1} frames), groups SPAN_<id>", spans.Count, spans.Sum(g => g.Value.Count));
         int defThk = rows.Count(r => r["Shape"] != "rigid" && (r.ContainsKey("ThkSource") ? r["ThkSource"] : "default") == "default");
-        return F("NEW kept: " + filterNote + "\nNEW SAP model {0}: {1} frames, {2} joints, {3} sections{4}; material {5} (PLACEHOLDER)\nNEW orientation: {6} rect frames oriented, {7} without a width direction (FLAG_NO_ORIENTATION); thickness PLACEHOLDER {11} in (none stated) on {8} frames\nNEW flag groups (frames): {9}{10}",
+        return F("NEW kept: " + filterNote + "\nNEW SAP model {0}: {1} frames, {2} joints, {3} sections{4}; materials {5}\nNEW orientation: {6} rect frames oriented, {7} without a width direction (FLAG_NO_ORIENTATION); thickness PLACEHOLDER {11} in (none stated) on {8} frames\nNEW flag groups (frames): {9}{10}",
             Path.GetFileName(savePath), groups["DUCT_ALL"].Count, joints.Count, sections.Count + 1,
             skipped > 0 ? F(", {0} zero-length rows skipped ({1})", skipped, string.Join(" ", zeroRows.Take(10).ToArray()) + (zeroRows.Count > 10 ? " ..." : "")) : "",
-            Mat, oriented, noDir, defThk, parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "none",
+            F("carbon {0} frames ({1}), stainless {2} ({3})", groups.ContainsKey("MAT_CARBON") ? groups["MAT_CARBON"].Count : 0, MatCS, groups.ContainsKey("MAT_STAINLESS") ? groups["MAT_STAINLESS"].Count : 0, MatSS), oriented, noDir, defThk, parts.Count > 0 ? string.Join(", ", parts.ToArray()) : "none",
             failed.Count > 0 ? F("\nNEW SAP refused {0} frames (not in the model): {1}", failed.Count, string.Join("; ", failed.Take(10).ToArray()) + (failed.Count > 10 ? " ..." : "")) : "", ThkPlaceholder)
             + spanNote + (steelNote != "" ? "\n" + steelNote : "");
     }
@@ -227,13 +234,25 @@ public partial class SapDucts
         if (double.IsNaN(t) || t <= 0) t = ThkPlaceholder;
         bool round = r["Shape"] == "round" && !double.IsNaN(d);
         if (!round && (double.IsNaN(w) || double.IsNaN(h))) return NoSize;
-        string name = round ? F("DUCT_{0:0.##}dia_t{1:0.####}", d, t) : F("DUCT_{0:0.##}x{1:0.##}_t{2:0.####}", w, h, t);
+        bool ss = IsStainless(r); string mat = ss ? MatSS : MatCS;
+        string name = (round ? F("DUCT_{0:0.##}dia_t{1:0.####}", d, t) : F("DUCT_{0:0.##}x{1:0.##}_t{2:0.####}", w, h, t)) + (ss ? "_SS" : "_CS");
         if (made.Add(name))
         {
-            if (round) Check(M.PropFrame.SetPipe(name, Mat, d, t, -1, "", ""), "SetPipe " + name);
-            else Check(M.PropFrame.SetTube(name, Mat, h, w, t, t, -1, "", ""), "SetTube " + name);
+            if (round) Check(M.PropFrame.SetPipe(name, mat, d, t, -1, "", ""), "SetPipe " + name);
+            else Check(M.PropFrame.SetTube(name, mat, h, w, t, t, -1, "", ""), "SetTube " + name);
         }
         return name;
+    }
+
+    static bool IsStainless(Dictionary<string, string> r) { return string.Equals(Val(r, "Material"), "stainless", StringComparison.OrdinalIgnoreCase); }
+
+    // a steel sheet material: E, alpha, unit weight (kip/in3), Fy / Fu (ksi; expected = minimum)
+    void DuctMaterial(string name, double e, double alpha, double w, double fy, double fu)
+    {
+        Check(M.PropMaterial.SetMaterial(name, eMatType.Steel, -1, "", ""), "SetMaterial " + name);
+        Check(M.PropMaterial.SetMPIsotropic(name, e, 0.3, alpha, 0), "SetMPIsotropic " + name);
+        Check(M.PropMaterial.SetWeightAndMass(name, 1, w, 0), "SetWeightAndMass " + name);
+        Check(M.PropMaterial.SetOSteel_1(name, fy, fu, fy, fu, 1, 1, 0.015, 0.11, 0.17, -0.1, 0), "SetOSteel_1 " + name);
     }
 
     static string Clean(string s) { return (s ?? "").Replace('-', '_').Replace(' ', '_').ToUpperInvariant(); }
