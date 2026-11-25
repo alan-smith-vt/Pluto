@@ -170,10 +170,12 @@ public partial class DuctsToPluto
             m.LocalY = DuctGeom.WidthDir(ce, P);
             beams[nb] = m;
             string sys = ce.Src.Count > 0 || ce.SysName != "" ? DuctGeom.SystemOf(ce) : (ce.Source == "navisworks-only" ? "navisworks-only" : "?");
-            labels[nb] = string.Format(Inv, "clean | system {0} | {1}{2} | {3:0.##} ft | parts {4}{5}",
+            // the material after the parts (the Cut / Bridge pickers read "| parts ..." up to the next '|')
+            labels[nb] = string.Format(Inv, "clean | system {0} | {1}{2} | {3:0.##} ft | parts {4}{6}{5}",
                 sys, ce.Rigid ? "rigid link" : CleanModel.DimText(ce.Dim), ce.DimB != null ? " -> " + CleanModel.DimText(ce.DimB) : "", DuctMath.Len(P[ce.A], P[ce.B]),
                 ce.Src.Count > 0 ? string.Join(" ", ce.Src.Select(x => x.Id).ToArray()) : (ce.NavisId != "" ? "Navisworks #" + ce.NavisId : "-"),
-                ce.Flags.Count > 0 ? " | FLAGS " + string.Join(" ", ce.Flags.OrderBy(x => x, StringComparer.Ordinal).ToArray()) : "");
+                ce.Flags.Count > 0 ? " | FLAGS " + string.Join(" ", ce.Flags.OrderBy(x => x, StringComparer.Ordinal).ToArray()) : "",
+                ce.Material != "" ? " | material " + ce.Material : "");
             List<uint> l; if (!bySys.TryGetValue(sys, out l)) { l = new List<uint>(); bySys[sys] = l; } l.Add((uint)nb);
             if (ce.Rigid) gRigid.Add((uint)nb);
             if (ce.DimB != null) gTrans.Add((uint)nb);
