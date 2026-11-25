@@ -69,7 +69,7 @@ which was taken from the channel; no probe has run a tee or a double angle in SA
 CAESAR's restraints, re-seeding that keeps SAP-side additions, and writing a seeded model back as a `.cii`. See
 "Possible later" in [[vault/decisions/2026-11-12-caesar-to-sap|2026-11-12-caesar-to-sap]].
 
-**Branch `CalcFlow`** (0 behind `pipestress`; 2026-11-24). Steel connection calcs set up and run from one STAAD
+**Branch `CalcFlow`** (0 behind `pipestress`; 2026-11-25). Steel connection calcs set up and run from one STAAD
 `.anl` ([[vault/calcflow/CalcFlow map|CalcFlow map]]):
 - **Built:** harvest and the calc library; the connection register and `plan`; `run` (Excel or LibreOffice, a record
   per check per revision) and `summary`; and the front door: `CalcFlow.xlsx` (Start links, Model Config per beam, Connection
@@ -90,7 +90,11 @@ CAESAR's restraints, re-seeding that keeps SAP-side additions, and writing a see
   waiting for Excel to close the workbook, and the Force units formulas in Excel;
   `scripts\calcflow\tests\Run-Tests.ps1` under Windows PowerShell 5.1 (the Excel stage's first run); a template built
   on an Excel data table (it needs the Excel engine).
-- **Next:** the first real project through the workbook; section dimensions looked up from the shape; a code check in
-  a layout the probe did not show (run the probe with that code as one more block).
+- **Run end to end on 2026-11-25** on a made-up frame (8 marks, 26 calcs, LibreOffice): the DCRs agree with the
+  templates' reference code to 5e-13. Found and fixed: harvest chose several governing results; sign-led text was
+  read as formulas. Found and open: the circular weld tab needs Excel 365; an anchorage calc takes the column's end
+  forces, not the support reaction; harvest lists helper cells off the print area as inputs.
+- **Next:** the same pass on the production machine with Excel; a support reaction as a calc's demand; the first real
+  project through the workbook; section dimensions looked up from the shape.
 
-Last sessions: [[vault/handoffs/handoff-2026-11-24|handoff-2026-11-24]] (`CalcFlow`), [[vault/handoffs/handoff-2026-11-23|handoff-2026-11-23]] (`pipestress`).
+Last sessions: [[vault/handoffs/handoff-2026-11-25|handoff-2026-11-25]] (`CalcFlow`), [[vault/handoffs/handoff-2026-11-24|handoff-2026-11-24]] (`CalcFlow`), [[vault/handoffs/handoff-2026-11-23|handoff-2026-11-23]] (`pipestress`).

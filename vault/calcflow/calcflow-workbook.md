@@ -38,7 +38,8 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 new -Out 
 >   4. the header: the template's own labels;
 >   5. **one row per mark.** Every input is a column of that row, however long the row gets. A blank cell keeps the template's value; `(blank)` empties the template's cell.
 > - **Template Cells:** where each column goes in its template (reference; the tool reads it).
-> - **Outputs:** harvest's results per template, with Use (Y on the ones read back; governing DCRs start as Y), Check (the summary column), Kind, Expect.
+> - **Outputs:** harvest's results per template, with Use (Y on the ones read back), Check (the summary column), Kind, Expect. One result starts as Y only when exactly one reads as the governing DCR; otherwise the engineer chooses, and check asks for one.
+> - **Cells kept as text:** the Fx to Mz cells of Sign Maps, Input cells and Result cells, and table columns are formatted as text, so `-Fz` or a table that starts with a minus sign is not read as a formula.
 > - **Sign Maps** and **Load Cases** (Use, Basis).
 
 > [!info]- A template that takes a table of load rows
@@ -52,7 +53,7 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 new -Out 
 
 > [!info]- Input cells, Result cells, and a block typed as one table
 > Harvest guesses a template's inputs: unlocked or validated cells and constants a formula reads. It leaves out a grid of numbers (anchor coordinates, a bolt pattern). Where the guess is not what is wanted, the cells are given by hand on the Templates tab, and `refresh` rebuilds the tab from them:
-> - **Input cells:** `B4, B6:B9, Sheet2!C3`. A range is its cells, each a column. A name before `=` names the column (`Edge = B7`); otherwise the label left of the cell, or above it, does.
+> - **Input cells:** `B4, B6:B9, Sheet2!C3`. A range is its cells, each a column. A name before `=` names the column (`Edge = B7`); otherwise the label left of the cell, or above it, does. The list replaces what harvest found; start it with the word `also` to add to it instead (`also Anchors = table B37:D44`).
 > - **A block as one table:** `Anchors = table A5:B10`. The block is one column, and a mark's cell holds the whole table: rows separated by `;` (or a line break in the cell), values by `,`, for example `2, 2; 2, 10; 10, 2; 10, 10`. The rows the mark does not give are emptied, so a mark with four anchors in a block of twelve leaves eight empty rows. A table too long or of another width is said by check.
 > - **Result cells:** `E1, E3` or `Uplift = E7`. Each becomes a row of Outputs with Use = Y. A cell harvest reads as a ratio is a dcr; another is a `value` (reported as it is): set its Kind on Outputs where it is a ratio.
 > - A cell that holds a formula is refused as an input. A template sheet harvest gave no tab can be added as a Templates row by hand (Template, File, Sheet, Input cells).
