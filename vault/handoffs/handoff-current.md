@@ -61,19 +61,22 @@ Purging it means rewriting the branch's history.
   [[vault/format/frame-to-staad|frame-to-staad]]);
 - the user's STAAD model again with `-In <x>.std -Xlsx`: the remaining refusals, if any, to read next (see
   [[vault/handoffs/handoff-2026-11-24b|handoff-2026-11-24b]]);
-- the PS 5.1 compile of `StaadToPluto`, and its probe run: `Run-StaadFrame.ps1 -Anl scripts\lib\probes\anl-prints-probe.anl
+- `StaadToPluto`'s probe run: `Run-StaadFrame.ps1 -Anl scripts\lib\probes\anl-prints-probe.anl
   -Out <outside the repo>`, then `node viewer/tests/readback_staad.js <out> --probe`. Then a real model with a
   `CHECK CODE` per case;
-- the PS 5.1 compile of the STAAD design in the workbook (`FrameDesign.cs`, the Frames block and STAAD sheets in
-  `FrameWorkbook.cs`). Then `-In staad-round4-probe.std -Xlsx -Std` again: `DFF 240` should be on four Frames rows,
-  and `round4.std` the same as before;
-- the PS 5.1 compile of `FrameMesh` (the auto mesh split). The user's workbook: `-In <it>.xlsx -Xlsx -Out <new>`
-  splits its frames (insertion points kept). Then `-Std` from the new workbook should have no auto mesh refusals;
+- the STAAD design in the workbook, by hand: type values on Frames rows of a real model, and check the `.std`;
+- the user's workbook: `-In <it>.xlsx -Xlsx -Out <new>` splits its frames (insertion points kept). Then `-Std` from
+  the new workbook should have no auto mesh refusals;
 - optional: whether `RA` gives SAP's leg arrangement (STAAD's `ST` is its mirror image), if drawings or STAAD's angle
   design matter.
 
 Done there since 2026-11-23: catalog sections both ways in STAAD 2025's database form (W, channels, tees, HSS, double
 and single angles); single angles confirmed end to end both ways; STAAD's short PRIS forms into SAP.
+
+Done there on 2026-11-25: the batch with the STAAD design in the workbook builds and runs (it is one compile, so
+`FrameDesign`, `FrameMesh` and `StaadToPluto` with it). The round 4 probe written straight to `-Std`, and through its
+workbook, gives the same `.std` there as in the session, command for command, with `DFF 240 MEMB 5 TO 7 11` from the
+four Frames rows.
 
 **For the user to look at:** a workbook is now written split where SAP's auto mesh joins frames to joints on their span
 (and `-Std` splits what is left). A warning names any split joint still held to ground, and the user's workbook had

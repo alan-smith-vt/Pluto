@@ -15,8 +15,9 @@ A model's STAAD design and output requests are in the frame workbook itself
 - **Three STAAD sheets** hold what is not per member: the parameter sets, the rows by list, and the run.
 
 SAP takes none of it: `-S2k` leaves it out. Code: `StaadDesign` (`scripts/arms/frame/FrameDesign.cs`), the sheets in
-`FrameWorkbook.cs`. Checked in the session on the round 4 probe and a SAP rack; the production machine's run is still
-to do, so this note stays `draft`.
+`FrameWorkbook.cs`. Checked in the session on the round 4 probe and a SAP rack, and on the production machine on the
+round 4 probe (2026-11-25, below). Values typed by hand on a real model's rows are still to try there, so this note
+stays `draft`.
 
 It replaces the separate design workbook (`<model>.design.xlsx`) of 2026-11-24, which is no longer read. `-Std` warns
 when one lies beside the workbook.
@@ -151,6 +152,14 @@ do the same: a set on STAAD sets, and a `CHECK CODE` row on STAAD run.
 >   values by label.
 > - **Through the runner under pwsh 7:** `-In probe.std -Xlsx -Std`, `-In round4.xlsx -Std`, `-S2k` (no Pluto table in
 >   it), `-In <SAP export> -Merge round4.xlsx -Std`.
+>
+> **On the production machine (2026-11-25).** The round 4 probe written straight to `-Std`, and through its workbook
+> (`-Xlsx`, then `-In round4.xlsx -Std`):
+> - the two `.std` are the same but for the header's source line;
+> - both are the probe as STAAD reads it, and each reads and writes back identical;
+> - the workbook's `.std` is the session's, command for command (the section comments differ: SAP's own library
+>   there);
+> - `DFF 240 MEMB 5 TO 7 11` comes from the four Frames rows, `FYLD 50 ALL` from the set's ALL row.
 
 > [!info]- Split frames, and limits
 > - **Each Frames row is one STAAD member.** A workbook is written split where SAP's automatic mesh joins a frame to
