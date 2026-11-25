@@ -247,12 +247,16 @@ var FEACutPicker = (function () {
         ks.forEach(function (k) { picked[k].parts.forEach(function (p) { parts[p] = 1; }); ft += lengthFt(picked[k].label); });
         q('.cp-count').textContent = ks.length + ' members, ' + Object.keys(parts).length + ' parts, ' + ft.toFixed(1) + ' ft';
     }
-    q('.cp-arm').addEventListener('click', function () {
-        armed = !armed;
+    function setArmed(on) {
+        armed = on;
         q('.cp-arm').classList.toggle('on', armed); q('.cp-arm').textContent = armed ? 'Armed' : 'Arm';
         if (armed && !Object.keys(picked).length) restore(saved());
+        if (armed) window.dispatchEvent(new CustomEvent('pluto-picker-armed', { detail: 'cutPicker' }));
         status(''); redraw();
-    });
+    }
+    // one picker armed at a time (the Bridge picker also uses Shift+click)
+    window.addEventListener('pluto-picker-armed', function (e) { if (e.detail !== 'cutPicker' && armed) setArmed(false); });
+    q('.cp-arm').addEventListener('click', function () { setArmed(!armed); });
     updatePanel();
     q('.cp-dl').addEventListener('click', download);
     q('.cp-undo').addEventListener('click', function () { if (undo.length) { restore(undo.pop()); save(); redraw(); } });

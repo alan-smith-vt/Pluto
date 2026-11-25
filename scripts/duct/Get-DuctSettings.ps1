@@ -5,7 +5,7 @@
 # -Mode Revit: everything; RevitMesh: RevitMeshNoRunExclude only; anything else: AddinDir only.
 # $notes (a List[string]) receives the console lines ("cut points: n from x", ...) in the order they used to print.
 function Get-DuctSettings {
-    param([hashtable]$Data, [string]$Mode, [string]$Systems, [string]$Cuts, [string]$Drop, [string]$Steel, [string]$Rooms, [string]$Walls,
+    param([hashtable]$Data, [string]$Mode, [string]$Systems, [string]$Cuts, [string]$Drop, [string]$Bridges, [string]$Steel, [string]$Rooms, [string]$Walls,
           [System.Collections.Generic.List[string]]$Notes)
     if (-not $Data) { $Data = @{} }
     $ds = New-Object DuctSettings
@@ -45,6 +45,25 @@ function Get-DuctSettings {
     foreach ($f in $dropFiles) {
         if (-not (Test-Path $f)) { throw "drop list not found: $f (DuctDrop in duct-config.psd1 or -Drop; -Drop none = off)" }
         $Notes.Add(("manual drop: {0} parts from {1}" -f [DuctsToPluto]::ReadManualDrop($ds, (Resolve-Path $f).Path), $f))
+    }
+    # add-on (duct\model\ManualBridges.cs): hand-picked bridges from the viewer's Bridge picker (bridges.json); DuctBridges
+    # names one file or a list, only those named; -Bridges none = off
+    $bridgeFiles = @($(if ($Bridges) { $Bridges -split ',' } else { $Data.DuctBridges }) | ForEach-Object { "$_".Trim() } | Where-Object { $_ -and $_ -ne "none" })
+    foreach ($f in $bridgeFiles) {
+        if (-not (Test-Path $f)) { throw "bridges file not found: $f (DuctBridges in duct-config.psd1 or -Bridges; -Bridges none = off)" }
+        $doc = Get-Content -Raw (Resolve-Path $f).Path | ConvertFrom-Json
+        if ($doc.kind -ne 'pluto-duct-bridges') { throw "$f is not a bridges.json from the viewer's Bridge picker (kind pluto-duct-bridges)" }
+        $nb = 0
+        foreach ($b in @($doc.bridges)) {
+            if (-not $b -or -not $b.a -or -not $b.b) { continue }
+            $mb = New-Object ManualBridge
+            $mb.Mode = $(if ($b.mode -eq 'extend') { 'extend' } else { 'rigid' })
+            foreach ($p in @($b.a.parts)) { if ("$p") { $mb.A.Add("$p") } }
+            foreach ($p in @($b.b.parts)) { if ("$p") { $mb.B.Add("$p") } }
+            $mb.LabelA = "$($b.a.label)"; $mb.LabelB = "$($b.b.label)"
+            if ($mb.A.Count -and $mb.B.Count) { $ds.Bridges.Add($mb); $nb++ }
+        }
+        $Notes.Add(("manual bridges: {0} from {1}" -f $nb, $f))
     }
     # utility rack steel in the clean model (SteelViewWriter.cs): DuctSteel (SteelToPluto CSV, meters, this frame); -Steel
     # overrides, -Steel none = off. DuctSteelSnapIn / DuctSteelNearIn: connection snap and OPEN_NEAR distances (in)

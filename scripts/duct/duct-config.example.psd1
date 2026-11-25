@@ -94,6 +94,9 @@
     # centreline together with their same-size run (risers included). $false = flag only.
     DuctRotateLargeVertical = $true
     DuctDrop = @()   # e.g. @('C:\Temp\hvac\cuts\drop.txt', 'C:\Temp\hvac\cuts\drop-yellow.txt')
+    # Hand-picked bridges between duct fragments: the viewer's Bridge picker tab downloads bridges.json (pairs of
+    # clean-model ducts, each a rigid link or 'extend A'). One file or a list; '' = none.
+    DuctBridges = ''                  # e.g. 'C:\Temp\hvac\bridges.json'
     Group = 'DUCT_ALL'                # SAP frame group holding every duct member
 
     # Output case names exactly as SAP lists them (copy from SAP, not from Excel).

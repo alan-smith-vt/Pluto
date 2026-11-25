@@ -39,6 +39,8 @@ public partial class DuctsToPluto
         string cutNote = CleanModel.ApplyCuts(clean, P, Cfg);
         string dropNote = CleanModel.ApplyManualDrop(clean, P, Cfg);   // add-on, the viewer's Cut picker
         if (dropNote != "") cutNote += (cutNote != "" ? "\n" : "") + dropNote;
+        string bridgeHand = ManualBridges.Apply(clean, P, Cfg.Bridges);   // add-on, the viewer's Bridge picker
+        if (bridgeHand != "") cutNote += (cutNote != "" ? "\n" : "") + bridgeHand;
         string orientNote = Orienter.Apply(clean, P, Cfg.RotateLargeVertical, out orientNewLine);   // before the supports (rotated depth)
         // a joint where a duct passes through a wall or slab (DuctPenetrations.cs): splits elements, so before the supports
         DuctPenetrations.Result pen = Cfg.Walls.Count > 0 && Cfg.Penetrations ? DuctPenetrations.Apply(clean, P, Cfg.Walls) : null;

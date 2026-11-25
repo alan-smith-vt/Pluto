@@ -14,7 +14,9 @@ var FEAModules = (function () {
 
     var REGISTRY = [
         { id: 'cutPicker', title: 'Cut picker', icon: '⊘', core: true, src: 'scripts/modules/cutPicker.js',
-          desc: 'Pick clean-model members to drop; downloads drop.txt (DuctDrop).' }
+          desc: 'Pick clean-model members to drop; downloads drop.txt (DuctDrop).' },
+        { id: 'bridgePicker', title: 'Bridge picker', icon: '⇌', core: true, src: 'scripts/modules/bridgePicker.js',
+          desc: 'Pick pairs of clean-model ducts to bridge (rigid link / extend); downloads bridges.json (DuctBridges).' }
     ];
 
     var KEY = 'pluto.modules.optional';
