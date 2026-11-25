@@ -324,6 +324,11 @@ def build_ducts():
     main_tap2 = ra.straight(8)[0]                      # round tap off this one
     ra.straight(36)
     ra.straight(8)[0].thk = None                       # missing thickness
+    # every main turns in plan somewhere (2026-11-25, user: no fully straight ducts in the real model): with guide
+    # supports a straight run slides along itself and twists; an L is held by the guides on its two legs.
+    # SYSA: south at its east end, across the Y 510 rack beam
+    ra.bend(-Y)
+    ra.straight(10)
     # shoe tap -> 24x12 branch to the south, off the rack (unsupported), then down: a vertical path
     rb = ra.tap(main_tap1, 0.5, -Y, Size(24, 12))
     rb.straight(6)
@@ -344,7 +349,11 @@ def build_ducts():
     # ---- SYSB: Revit (non-fabrication) 48x24 carbon steel ducts, insulated, 2 in above the beams, S-offset up to
     # the hung beams (bottom 1.5 in above them), a Revit-only damper
     B = Size(48, 24); yb = 525.5
-    rs = Runner("SYSB", (1002, yb, z_on_steel(TOP_OF_STEEL, 2.0, B)), X, B, "revit", CS, 0.0478, insul=1.5)
+    # SYSB starts with a leg from the north at X 1005 (mid-bay, across the Y 530 rack beam), then turns east (the L)
+    a_b = max(B.half(True), B.half(False)) + 3 * FT
+    rs = Runner("SYSB", (1005 - a_b, yb + a_b + 10, z_on_steel(TOP_OF_STEEL, 2.0, B)), -Y, B, "revit", CS, 0.0478, insul=1.5)
+    rs.straight(10)
+    rs.bend(X)
     first_b = rs.straight(30, piece=10)
     rs.inline("Damper", 1.0, navis=False)              # Revit only
     mt = rs.straight(10)[0]
@@ -377,7 +386,12 @@ def build_ducts():
         p.thk = None
     rc.straight(26, piece=5)
     rc.gap(10)                                          # 10 in gap between two open ends, lined up
-    rc.straight(20, piece=5)
+    # the round run on to mid-bay X 1115 (SYSB already raised onto the hung beams above), north across the Y 530 rack
+    # beam and back east: a Z in plan, held by the guides on its legs; transition and tail north of the rack
+    rc.straight(48, piece=6)
+    rc.bend(Y)
+    rc.straight(10)
+    rc.bend(X)
     rc.transition(Size(18, 36))
     tail = rc.straight(30, piece=5)
 
