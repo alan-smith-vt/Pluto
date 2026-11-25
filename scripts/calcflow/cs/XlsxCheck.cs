@@ -210,6 +210,64 @@ namespace CalcFlow
             return bad;
         }
 
+        // What Excel does not take in the formula of a conditional format (null: nothing found): more than 255
+        // characters, a leading "=", an array constant, or another sheet named outright (Excel 2007 refuses that and
+        // later versions keep such a rule elsewhere in the file; through INDIRECT it is plain to all of them).
+        public static string FormatFormula(string formula)
+        {
+            if (string.IsNullOrEmpty(formula)) return "has no formula";
+            if (formula[0] == '=') return "starts with = (the formula is written without it)";
+            if (formula.Length > 255) return "has a formula of " + formula.Length.ToString(CultureInfo.InvariantCulture) + " characters (255 at most)";
+            string bare = Regex.Replace(formula, "\"[^\"]*\"", "\"\"");       // what is outside the texts
+            if (bare.IndexOf('{') >= 0) return "has an array constant";
+            if (bare.IndexOf('!') >= 0) return "names another sheet outright";
+            if (bare.Count(ch => ch == '(') != bare.Count(ch => ch == ')')) return "has brackets that do not close";
+            return null;
+        }
+
+        // the conditional formats of a workbook's sheets, in the order of its sheet parts: part, range, formula ("" for
+        // a rule that has none, such as "the cell equals a text")
+        public static List<string[]> Formats(string path)
+        {
+            var list = new List<string[]>();
+            using (ZipArchive zip = ZipFile.OpenRead(path))
+                foreach (ZipArchiveEntry e in zip.Entries.Where(x => Regex.IsMatch(x.FullName.Replace('\\', '/'), @"^xl/worksheets/[^/]+\.xml$", RegexOptions.IgnoreCase)).OrderBy(x => x.FullName, StringComparer.Ordinal))
+                    using (XmlReader xr = Xlsx.Xml(e))
+                    {
+                        string sqref = "", type = "";
+                        bool formula = false, first = false;
+                        var text = new StringBuilder();
+                        while (xr.Read())
+                        {
+                            if (xr.NodeType == XmlNodeType.Element && xr.LocalName == "conditionalFormatting") sqref = xr.GetAttribute("sqref") ?? "";
+                            else if (xr.NodeType == XmlNodeType.Element && xr.LocalName == "cfRule") { type = xr.GetAttribute("type") ?? ""; first = true; if (xr.IsEmptyElement) list.Add(new[] { e.FullName, sqref, "", type }); }
+                            else if (xr.NodeType == XmlNodeType.Element && xr.LocalName == "formula" && sqref.Length > 0) { formula = !xr.IsEmptyElement; text.Length = 0; }
+                            else if (xr.NodeType == XmlNodeType.EndElement && xr.LocalName == "formula" && formula)
+                            {
+                                if (first) list.Add(new[] { e.FullName, sqref, type == "expression" ? text.ToString() : "", type });
+                                first = false; formula = false;
+                            }
+                            else if (xr.NodeType == XmlNodeType.EndElement && xr.LocalName == "conditionalFormatting") sqref = "";
+                            else if (formula && (xr.NodeType == XmlNodeType.Text || xr.NodeType == XmlNodeType.CDATA || xr.NodeType == XmlNodeType.SignificantWhitespace || xr.NodeType == XmlNodeType.Whitespace)) text.Append(xr.Value);
+                        }
+                    }
+            return list;
+        }
+
+        // what the conditional formats of a workbook hold that Excel does not take (empty: nothing found)
+        public static List<string> FormatRules(string path)
+        {
+            var bad = new List<string>();
+            string file = Path.GetFileName(path);
+            foreach (string[] f in Formats(path))
+            {
+                if (f[3] != "expression") continue;
+                string why = FormatFormula(f[2]);
+                if (why != null) bad.Add(file + " " + f[0] + ": the conditional format of " + f[1] + " " + why);
+            }
+            return bad;
+        }
+
         static string Short(string s) { return s.Length <= 60 ? s : s.Substring(0, 57) + "..."; }
 
         // the cells of the heading rows (0-based row numbers), as the sheet part holds them, and the sheet's merged ranges

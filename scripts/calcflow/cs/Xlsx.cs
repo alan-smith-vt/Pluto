@@ -804,6 +804,7 @@ namespace CalcFlow
         public string EqualsText = "";         // cell value equals this text (when Operator is null)
         public string Operator;                // or a number test: greaterThan | lessThan | greaterThanOrEqual | lessThanOrEqual
         public double Value;                   // ... against this number
+        public string Formula;                 // or a formula that is true for the cells to format: written for the first cell of Sqref, with no "="
         public XStyle Style;                   // only Fill, Color, Bold are used
     }
 
@@ -1288,6 +1289,15 @@ namespace CalcFlow
             foreach (XCondFormat cf in s.CondFormats)
             {
                 int dxf = styles.Dxf(cf.Style ?? new XStyle());
+                if (cf.Formula != null)
+                {
+                    // what Excel takes for such a formula: 255 characters, no array constant, and another sheet only
+                    // through INDIRECT (a sheet named outright is refused by Excel 2007 and kept elsewhere by later ones)
+                    string why = XlsxCheck.FormatFormula(cf.Formula);
+                    if (why != null) throw new Exception("XlsxWriter: the conditional format of " + s.Name + "!" + cf.Sqref + " " + why + ": " + cf.Formula);
+                    sb.Append("<conditionalFormatting sqref=\"").Append(cf.Sqref).Append("\"><cfRule type=\"expression\" dxfId=\"").Append(dxf).Append("\" priority=\"").Append(prio++).Append("\"><formula>").Append(Esc(cf.Formula)).Append("</formula></cfRule></conditionalFormatting>");
+                    continue;
+                }
                 if (cf.Operator != null)
                 {
                     if (cf.Operator != "greaterThan" && cf.Operator != "lessThan" && cf.Operator != "greaterThanOrEqual" && cf.Operator != "lessThanOrEqual")

@@ -604,6 +604,7 @@ namespace CalcFlow
             int last = 2 + Math.Max(beams.Count, 1) + 2000;
             Validate(mc, "F3:G" + last, "'" + ConnectionLib + "'!$A$3:$A$2000", true);
             Hints.Table(mc, "tblModelConfig", ModelCols);
+            Needs.ModelConfig(mc, Array.IndexOf(ModelCols, "Connection I"), Array.IndexOf(ModelCols, "Connection J"));
             sheets.Add(mc);
 
             // ---- Connection Lib
@@ -613,6 +614,7 @@ namespace CalcFlow
             Validate(cl, "B3:B2000", "'" + TemplatesTab + "'!$A$3:$A$500", true);
             cl.Width(0, 22); cl.Width(1, 34); cl.Width(2, 60);
             Hints.Table(cl, "tblConnectionLib", LibCols);
+            Needs.ConnectionLib(cl);
             sheets.Add(cl);
 
             // ---- a tab of beam ends for each template whose load table has columns typed per beam end: a row for every
@@ -653,8 +655,23 @@ namespace CalcFlow
                     Hints.Column(es, c, 1, 2, ecols[c], c < EndCols.Length
                         ? "The beam end this row is for, and its mark, as Model Config has them. Written by the tool: Refresh config lists the beam ends again."
                         : "The value of '" + ecols[c] + "' for this beam end: it goes on this beam end's rows of the template's table. Blank = the cell is left empty.");
+                Needs.Ends(es, EndCols.Length, ecols.Length - 1);
                 int at = schedules.FindIndex(x => Same(x.Name, tname));
                 schedules.Insert(at < 0 ? schedules.Count : at + 1, es);
+            }
+
+            // a column of a load table turned to "Typed per beam end" waits for the refresh that gives it its column on
+            // the tab of beam ends (cs/Needs.cs): said on its Source cell
+            foreach (var t in templates)
+            {
+                string tname = V(t, "Template");
+                XOutSheet sch = schedules.FirstOrDefault(x => Same(x.Name, tname));
+                if (sch == null) continue;
+                string ends = V(t, "Beam ends tab").Length > 0 ? V(t, "Beam ends tab") : TabName((tname.Length > 26 ? tname.Substring(0, 26).Trim() : tname) + " ends", names);
+                object[] head = sch.Rows[HeaderRow];
+                foreach (var c in cells.Where(x => Same(V(x, "Template"), tname) && V(x, "Kind") == LoadKind))
+                    for (int k = 1; k < head.Length; k++)
+                        if (Shown(head, k) == V(c, "Column")) { Needs.PerEnd(sch, k, V(c, "Column"), LoadTable.Typed(V(c, "Column")).Trim('[', ']', ' '), ends); break; }
             }
 
             // ---- Templates
@@ -672,6 +689,20 @@ namespace CalcFlow
             Validate(tt, fc + "3:" + fc + tn, "\"" + EndForces + "," + SupportReaction + "\"", true);
             tt.Width(Array.IndexOf(TemplateCols, "Forces"), 20);
             Hints.Table(tt, "tblConfigTemplates", TemplateCols);
+            // Where a template's own tab shows its load table, the table's columns and units on this tab are written by
+            // the tool: shown as such. Where the table is said only here, those cells are the engineer's, and needed.
+            int tcAt = Array.IndexOf(TemplateCols, "Load table at"), tcCols = Array.IndexOf(TemplateCols, "Load table columns"), tcFu = Array.IndexOf(TemplateCols, "Force unit"), tcMu = Array.IndexOf(TemplateCols, "Moment unit");
+            var echo = new XStyle(); echo.Fill = Palette.Muted[0]; echo.Color = Palette.Muted[1]; echo.Border = true;
+            var saidHere = new List<int>();
+            for (int i = 0; i < templates.Count; i++)
+            {
+                string tn1 = V(templates[i], "Template");
+                if (!schedules.Any(x => Same(x.Name, tn1))) continue;       // no tab yet: asked for when it is made
+                if (cells.Any(x => Same(V(x, "Template"), tn1) && V(x, "Kind") == LoadKind))
+                    foreach (int c in new[] { tcCols, tcFu, tcMu }) tt.Rows[2 + i][c] = new XCell(V(templates[i], TemplateCols[c]), echo);
+                else saidHere.Add(2 + i);
+            }
+            Needs.Templates(tt, tcAt, tcCols, Array.IndexOf(TemplateCols, "Max rows"), tcFu, tcMu, saidHere);
             sheets.Add(tt);
 
             // ---- Template Sheets: every sheet of every template workbook, and the tab that holds its inputs
@@ -700,6 +731,7 @@ namespace CalcFlow
             Validate(os, "D3:D" + (on + 200), "\"" + string.Join(",", LibrarySchema.OutputKinds) + "\"", true);
             Validate(os, "F3:F" + (on + 200), "\"Y,N\"", true);
             Hints.Table(os, "tblConfigOutputs", OutputCols);
+            Needs.Outputs(os, Array.IndexOf(OutputCols, "Use"), Array.IndexOf(OutputCols, "Kind"), Array.IndexOf(OutputCols, "Expect"));
             sheets.Add(os);
             XOutSheet sm = WorkbookTables.Sheet(SignMaps, "tblSignMaps", LibrarySchema.FrameColumns, oldMaps.Select(Strip).ToList(),
                 "Only when a template's axes differ from the member end's. A member end's forces are in its own axes: x along the member away from the joint, y the member's local y, z = x cross y, STAAD's sign. A row says which of them each template force is, e.g. Fx = +Fz. Action on_connection reverses all six. Confirmed = Y once checked by hand. The Fx to Mz cells are formatted as text, so -Fz stays as typed.",
@@ -739,6 +771,7 @@ namespace CalcFlow
             Validate(lc, "E3:E" + cn, "\"LRFD,ASD\"", true);
             lc.FreezeCols = 2;      // the case and its title
             Hints.Table(lc, "tblConfigCases", CaseCols);
+            Needs.LoadCases(lc, Array.IndexOf(CaseCols, "Use"));
             sheets.Add(lc);
             return sheets;
         }
@@ -1042,6 +1075,8 @@ namespace CalcFlow
                     : where + "The mark's value for this input, used when Source (row 2) is " + Typed + ". Blank = the template's own value" + (own.Length > 0 && own.Length <= 40 ? " (" + own + ")" : "") + ". " + Blank + " = empty the cell.";
                 Hints.Column(s, i + 1, HeaderRow, FirstMarkRow, V(c, "Column"), hint);
             }
+            // what a cell still needs, or that it is not read, as the Source row and the marks are chosen
+            Needs.Template(s, name, cols.Select(c => V(c, "Kind") == LoadKind).ToList());
             return s;
         }
 

@@ -148,11 +148,24 @@ namespace CalcFlow
             };
             setting(AnlSetting, saved(AnlSetting, ""), "The STAAD .anl to read. Leave blank to be asked for it each time. A name without a folder is looked for beside this workbook.");
             setting(TemplatesSetting, saved(TemplatesSetting, ""), "The folder that holds the calc template workbooks.");
+            Palette.When(s, "B" + s.Rows.Count, "B" + s.Rows.Count + "=\"\"", Palette.Need);      // no template tab can be made without it
             setting(LimitSetting, saved(LimitSetting, "1.0"), "A DCR above this is flagged in the summary.");
             setting(FillSetting, saved(FillSetting, ""), "Leave blank when the cells to fill in are yellow in your templates. Else the fill colour that marks them, six hex digits (several: with commas), as CalcFlow.ps1 map lists them on its Fills tab. Then run Refresh config.");
             var t = new XOutTable();
             t.Name = "tblStart"; t.Top = top; t.Left = 0; t.Right = 2; t.Bottom = top + 4; t.Style = Palette.TableStyle;
             s.Tables.Add(t);
+
+            // ---- what the colours of a cell say (cs/Needs.cs sets them from what is chosen on the tabs)
+            s.Add();
+            s.Add(new XCell("Colours", Palette.Title()));
+            s.Add(new XCell("", body), new XCell("A cell changes colour as you choose things on the tabs. Check says the same in words.", Palette.Note()));
+            foreach (string[] l in Needs.Legend)
+            {
+                var swatch = new XStyle(); swatch.Fill = l[0]; swatch.Color = l[1]; swatch.Bold = true; swatch.Border = true; swatch.HAlign = "center"; swatch.VAlign = "top";
+                s.Add(new XCell(l[2], swatch), new XCell(l[3], body));
+                s.Merges.Add("B" + s.Rows.Count + ":C" + s.Rows.Count);
+                s.RowHeights[s.Rows.Count - 1] = l[3].Length > 150 ? 34 : 18;
+            }
 
             // ---- the force units, checked as they are typed
             s.Add();

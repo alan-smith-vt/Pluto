@@ -478,6 +478,72 @@ Test 'a sheet on which no input is found any more keeps its tab, and the tab say
     Assert-Equal (& $headsOf $b 'Pair First') 'Width (in)<Typed here | Fx (kip)<Fx'
 }
 
+# ---- what a cell still needs, shown by its colour as things are chosen (cs\Needs.cs): every rule's formula is
+# calculated by LibreOffice for the first cell of its range, in the finished project and in copies with things missing
+Test 'the colours of what is still needed: no rule fires in a finished project, and each fires for the choice it watches' {
+    $nd = Join-Path $dir 'needs'
+    New-Item -ItemType Directory -Force -Path $nd | Out-Null
+    $v0 = Join-Path $nd 'done.xlsx'; $v1 = Join-Path $nd 'missing.xlsx'; $v2 = Join-Path $nd 'no-mark.xlsx'; $v3 = Join-Path $nd 'no-template.xlsx'; $v4 = Join-Path $nd 'no-tab.xlsx'
+    Copy-Item -LiteralPath $wb -Destination $v0
+    $b = [CalcFlow.Xlsx]::Read($wb)
+    Assert-Equal ([CalcFlow.XlsxCheck]::FormatRules($wb)).Count 0
+    $folder = @(0..40 | Where-Object { $b.Sheet('Start').Text($_, 0) -eq 'Templates folder' })[0] + 1
+    $own = "Template's own value"
+    # 1. things missing or misplaced, each at the first cell of a rule's range
+    Save-Cells $wb $v1 @(
+        @('Connection Lib', 'A6', 'CL-1'), @('Connection Lib', 'B6', 'Clip-Batch'), @('Model Config', 'F3', 'ZZ-9'),
+        @('Clip-Batch', 'B2', $own), @('Clip-Batch', 'D2', 'Typed here'), @('Clip-Batch', 'D6', ''), @('Clip-Batch', 'A6', 'BR-1'), @('Clip-Batch', 'A7', 'BR-1'),
+        @('Brace-Batch', 'B2', 'Fx'), @('Brace-Batch', 'B3', ''), @('Brace-Batch', 'F2', 'Typed per beam end'), @('Brace-Batch', 'A6', ''), @('Brace-Batch', 'B6', 'x'), @('Brace-Batch ends', 'E3', ''),
+        @('Outputs', 'B3', 'N'), @('Templates', ((Get-Col $b 'Templates' 'Max rows' 2) + '3'), ''),
+        @('Load Cases', 'D3', 'N'), @('Load Cases', 'D4', 'N'), @('Load Cases', 'D5', 'N'), @('Load Cases', 'D6', 'N'), @('Load Cases', 'D7', 'N'), @('Load Cases', 'D8', 'N'), @('Load Cases', 'D9', 'N'), @('Load Cases', 'D10', 'N'))
+    # 2. a template with no mark named, a template that is not one, a health result with nothing to equal, no templates folder
+    Save-Cells $wb $v2 @(@('Connection Lib', 'A3', ''), @('Connection Lib', 'B3', 'Nope'), @('Outputs', 'D3', 'health'), @('Outputs', 'E3', ''), @('Start', "B$folder", ''))
+    # 3. a mark with no template
+    Save-Cells $wb $v3 @(, @('Connection Lib', 'B3', ''))
+    # 4. in the large library: a mark whose template has no tab yet
+    Save-Cells $wbBig $v4 @(, @('Connection Lib', 'B3', 'T07'))
+    $got = Get-CfFormatValues @($v0, $v1, $v2, $v3, $v4) $nd
+    if ($null -eq $got) { Write-Host '        (no LibreOffice here: skipped)' -ForegroundColor DarkGray; return }
+    $odd = @($got | Where-Object { $_.Value -ne 'TRUE' -and $_.Value -ne 'FALSE' } | ForEach-Object { "$($_.File) $($_.Tab)!$($_.Range): '$($_.Value)' from $($_.Formula)" })
+    Assert-Equal ($odd -join "`n") '' 'every formula calculates to TRUE or FALSE'
+    Assert-True (@($got | Where-Object { $_.File -eq 'done.xlsx' }).Count -ge 30) 'the rules were found'
+    # a finished project: nothing is asked for; the only rules that hold are the ones that grey a cell not read
+    $on = { param($file) @($got | Where-Object { $_.File -eq $file -and $_.Value -eq 'TRUE' } | ForEach-Object { "$($_.Tab)!$($_.Range) $($_.Formula)" } | Sort-Object) }
+    $asks = { param($file) @(& $on $file | Where-Object { $_ -notlike '*<>"Typed here")' }) }
+    Assert-Equal ((& $asks 'done.xlsx') -join "`n") ''
+    Assert-Equal ((& $on 'done.xlsx') -join "`n") (@(
+        'Brace-Batch!B6:G2000 AND($A6<>"",B$2<>"Typed here")', 'Clip-Batch!D6:L2000 AND($A6<>"",D$2<>"Typed here")', 'Plate!K6:N2000 AND($A6<>"",K$2<>"Typed here")') -join "`n")
+    Assert-Equal ((& $on 'missing.xlsx') -join "`n") (@(
+        'Brace-Batch ends!E3:H2000 AND($A3<>"",E3="")',
+        'Brace-Batch!A6:A2000 AND($A6="",COUNTA($B6:$ZZ6)>0)',
+        'Brace-Batch!B3:G3 AND(B3="",OR(B2="Fx",B2="Fy",B2="Fz",B2="Mx",B2="My",B2="Mz"))',
+        'Brace-Batch!F2 AND(F2="Typed per beam end",ISERROR(MATCH(F5,INDIRECT("''Brace-Batch ends''!$2:$2"),0)))',
+        'Clip-Batch!A6:A2000 AND($A6<>"",COUNTIF($A$6:$A$2000,$A6)>1)',
+        'Clip-Batch!A6:A2000 AND($A6<>"",COUNTIFS(INDIRECT("''Connection Lib''!$A$3:$A$2000"),$A6,INDIRECT("''Connection Lib''!$B$3:$B$2000"),"Clip-Batch")=0)',
+        'Clip-Batch!B6:C2000 AND($A6<>"",B$2<>"",B$2<>"Typed here")',
+        'Clip-Batch!D6:L2000 AND($A6<>"",D$2="Typed here")',
+        'Clip-Batch!D6:L2000 AND($A6<>"",D6="",D$2="Typed here")',
+        'Connection Lib!A3:A2000 AND($A3<>"",$B3<>"",IFERROR(COUNTIF(INDIRECT("''"&$B3&"''!$A$6:$A$2000"),$A3),1)=0)',
+        'Connection Lib!A3:A2000 AND($A3<>"",COUNTIF($A$3:$A$2000,$A3)>1)',
+        'Load Cases!D3:D2000 AND($A3<>"",COUNTIF($D$3:$D$2000,"Y*")=0)',
+        'Model Config!F3:G2000 AND(F3<>"",COUNTIF(INDIRECT("''Connection Lib''!$A$3:$A$2000"),F3)=0)',
+        'Outputs!B3:B2000 AND($A3<>"",COUNTIFS($A$3:$A$2000,$A3,$B$3:$B$2000,"Y*")=0,COUNTIF(INDIRECT("''Connection Lib''!$B$3:$B$2000"),$A3)>0)',
+        'Plate!K6:N2000 AND($A6<>"",K$2<>"Typed here")',
+        'Templates!K3:K2000 AND($I3<>"",K3="")') -join "`n")
+    # (the row of CL-1 on its template's tab turns red with it: CL-1 is no longer a mark of that template)
+    $orphan = 'Clip-Batch!A6:A2000 AND($A6<>"",COUNTIFS(INDIRECT("''Connection Lib''!$A$3:$A$2000"),$A6,INDIRECT("''Connection Lib''!$B$3:$B$2000"),"Clip-Batch")=0)'
+    Assert-Equal ((& $asks 'no-mark.xlsx') -join "`n") (@(
+        $orphan,
+        'Connection Lib!A3:A2000 AND($A3="",$B3<>"")',
+        'Connection Lib!B3:B2000 AND($B3<>"",COUNTIF(INDIRECT("''Templates''!$A$3:$A$2000"),$B3)=0)',
+        'Connection Lib!B3:B2000 AND($B3<>"",ISERROR(INDIRECT("''"&$B3&"''!A1")))',
+        'Outputs!E3:E2000 AND(LEFT($B3,1)="Y",$D3="health",E3="")',
+        "Start!B$folder B$folder=`"`"") -join "`n")
+    Assert-Equal ((& $asks 'no-template.xlsx') -join "`n") (@($orphan, 'Connection Lib!B3:B2000 AND($A3<>"",$B3="")') -join "`n")
+    # a template that is on the Templates tab and has no tab of its own yet: the one rule that waits for Refresh config
+    Assert-Equal (@(& $asks 'no-tab.xlsx' | Where-Object { $_ -like 'Connection Lib!*' }) -join "`n") 'Connection Lib!B3:B2000 AND($B3<>"",ISERROR(INDIRECT("''"&$B3&"''!A1")))'
+}
+
 Test 'a library whose input colour is not yellow: given once, kept on the Start tab, used again by a refresh' {
     $blueLib = Join-Path $dir 'blue-library'
     New-Item -ItemType Directory -Force -Path $blueLib | Out-Null

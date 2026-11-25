@@ -143,6 +143,8 @@ CAESAR's restraints, re-seeding that keeps SAP-side additions, and writing a see
   tabs built from it have run only on made-up templates. A large library gets tabs for the templates in use.
   The user's first run: no Excel repair, and a tab with only its Connection column. A template that is only a table
   of load rows gave such a tab; its tab now shows the table's columns with what fills each, and says first what it is.
+  Cells now take a colour from what is chosen elsewhere (`cs/Needs.cs`: still needed, not read, waits for Refresh
+  config, does not fit; legend on Start); the rules are calculated by LibreOffice in the tests, not yet seen in Excel.
   **To learn from the user's run:** the first words of that tab after a pull and Refresh config (a table of load
   rows, or no input found), and whether one copy per mark with a row per beam end is how they use that template.
 - **Next:** the same pass on the production machine with Excel; the first real project through the workbook; section

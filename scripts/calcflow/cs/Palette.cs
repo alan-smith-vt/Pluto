@@ -25,6 +25,10 @@ namespace CalcFlow
         // the looks of a status or a check: fill, text
         public static readonly string[] Good = { "FFC6EFCE", "FF006100" }, Bad = { "FFFFC7CE", "FF9C0006" }, Caution = { "FFFFEB9C", "FF7F6000" },
             Redo = { "FFFFE0B2", "FF7F3F00" }, DataIssue = { "FFE4DFEC", "FF5B2C6F" }, Muted = { "FFEDEDED", "FF7F7F7F" };
+        // the looks a cell takes from what is chosen elsewhere in the workbook (conditional formats): Need = still to be
+        // filled in (a stronger yellow than an input cell's own); Muted = not read as things are chosen; Redo = waits
+        // for Refresh config; Bad = does not fit
+        public static readonly string[] Need = { "FFFFD966", "FF7F6000" };
         public const string DarkRed = "FF9C0006";
         public const string TableStyle = "TableStyleMedium1";
 
@@ -73,6 +77,19 @@ namespace CalcFlow
         }
 
         public static void Highlight(XOutSheet sheet, string sqref, string text, string[] look) { Highlight(sheet, sqref, text, look[0], look[1]); }
+
+        // the cells of sqref for which the formula is true take this look. The formula is written for the first cell of
+        // sqref, without "=". Of two rules over one cell the one added first wins.
+        public static void When(XOutSheet sheet, string sqref, string formula, string[] look)
+        {
+            var cf = new XCondFormat();
+            cf.Sqref = sqref; cf.Formula = formula;
+            cf.Style = new XStyle(); cf.Style.Fill = look[0]; cf.Style.Color = look[1];
+            sheet.CondFormats.Add(cf);
+        }
+
+        // a text inside such a formula
+        public static string Q(string text) { return "\"" + (text ?? "").Replace("\"", "\"\"") + "\""; }
 
         public static readonly string[][] StatusColours =
         {

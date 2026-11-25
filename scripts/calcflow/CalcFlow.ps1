@@ -34,7 +34,7 @@
                     whether it is taken as inputs). Reads only: the same reading builds a template's tab in new and refresh.
     excel-check     for a workbook Excel opened with "Repaired Records: Table from /xl/tables/...": lists what in its
                     tables breaks a rule Excel has for them (a heading over 255 characters, two headings alike, a
-                    heading that is not text ...): -Workbook <any .xlsx> [-Repaired <the copy saved from Excel after
+                    heading that is not text ...) or in a conditional format's formula: -Workbook <any .xlsx> [-Repaired <the copy saved from Excel after
                     its repair>]. With -Repaired it also lists what Excel changed, heading by heading. Reads only.
   The verbs underneath, in the order a project uses them (only run calculates: with Excel where it is installed, else
   LibreOffice):
@@ -464,7 +464,7 @@ switch ($Verb) {
         $wb = Get-CfFull $Workbook
         if (-not (Test-Path -LiteralPath $wb)) { Stop-CfArgs "No such workbook: $wb" }
         Write-Host ("workbook {0}" -f $wb)
-        $found = @([CalcFlow.XlsxCheck]::Tables($wb)) + @([CalcFlow.XlsxCheck]::Validations($wb))
+        $found = @([CalcFlow.XlsxCheck]::Tables($wb)) + @([CalcFlow.XlsxCheck]::Validations($wb)) + @([CalcFlow.XlsxCheck]::FormatRules($wb))
         foreach ($line in $found) { Write-Host ("[fix  ] {0}" -f $line) -ForegroundColor Red }
         if ($found.Count -eq 0) { Write-Host 'tables   nothing in them, or in the drop-downs and cell notes, breaks a rule of Excel that this check knows' -ForegroundColor Green }
         else { Write-Host ("tables   {0} thing(s) Excel repairs or removes on opening" -f $found.Count) -ForegroundColor Red }

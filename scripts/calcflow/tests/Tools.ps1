@@ -56,8 +56,60 @@ function Invoke-CfExcelRules([string[]]$Files) {
     foreach ($f in $Files) {
         foreach ($line in [CalcFlow.XlsxCheck]::Tables($f)) { $o.Add($line) }
         foreach ($line in [CalcFlow.XlsxCheck]::Validations($f)) { $o.Add($line) }
+        foreach ($line in [CalcFlow.XlsxCheck]::FormatRules($f)) { $o.Add($line) }
     }
     return , $o.ToArray()
+}
+
+# What the conditional formats of workbooks say, as LibreOffice calculates them ($null: no LibreOffice here). The
+# formula of each rule is put in a cell far below its sheet's rows, where it gives what the rule says for the first
+# cell of its range. One object per rule: File (the name), Tab, Range, Formula, Value (TRUE, FALSE, or an error).
+function Get-CfFormatValues([string[]]$Files, [string]$OutDir) {
+    $so = [CalcFlow.LibreOffice]::Find()
+    if (-not $so) { return $null }
+    Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+    $probes = Join-Path $OutDir 'probes'; $done = Join-Path $OutDir 'probed'
+    New-Item -ItemType Directory -Force -Path $probes, $done | Out-Null
+    $rules = @(); $copies = @()
+    foreach ($f in $Files) {
+        $copy = Join-Path $probes ('patched-' + [IO.Path]::GetFileName($f))
+        Copy-Item -LiteralPath $f -Destination $copy -Force
+        $copies += $copy
+        $mine = @([CalcFlow.XlsxCheck]::Formats($f) | Where-Object { $_[3] -eq 'expression' })
+        $zip = [IO.Compression.ZipFile]::Open($copy, [IO.Compression.ZipArchiveMode]::Update)
+        try {
+            foreach ($part in @($mine | ForEach-Object { $_[0] } | Select-Object -Unique)) {
+                $e = $zip.GetEntry($part)
+                $r = New-Object IO.StreamReader($e.Open(), [Text.Encoding]::UTF8)
+                $text = $r.ReadToEnd(); $r.Dispose()
+                $rows = New-Object Text.StringBuilder
+                $k = 0
+                foreach ($m in @($mine | Where-Object { $_[0] -eq $part })) {
+                    $row = 3000 + $k
+                    [void]$rows.Append("<row r=`"$row`"><c r=`"A$row`"><f>").Append([Security.SecurityElement]::Escape($m[2])).Append('</f></c></row>')
+                    $rules += [pscustomobject]@{ File = [IO.Path]::GetFileName($f); Copy = [IO.Path]::GetFileName($copy); Sheet = [int]([regex]::Match($part, 'sheet(\d+)\.xml').Groups[1].Value) - 1; Row = $row - 1; Tab = ''; Range = $m[1]; Formula = $m[2]; Value = '' }
+                    $k++
+                }
+                if ($text -notmatch '</sheetData>') { throw "$part has no rows to add the formulas after" }
+                $text = $text.Replace('</sheetData>', $rows.ToString() + '</sheetData>')
+                $e.Delete()
+                $w = New-Object IO.StreamWriter($zip.CreateEntry($part).Open(), (New-Object Text.UTF8Encoding($false)))
+                $w.Write($text); $w.Dispose()
+            }
+        }
+        finally { $zip.Dispose() }
+    }
+    [void][CalcFlow.LibreOffice]::Convert($so, [string[]]$copies, $done, 'xlsx', $done, 300)
+    $books = @{}
+    foreach ($x in $rules) {
+        if (-not $books.ContainsKey($x.Copy)) { $books[$x.Copy] = [CalcFlow.Xlsx]::Read((Join-Path $done $x.Copy)) }
+        $s = $books[$x.Copy].Sheets[$x.Sheet]
+        $x.Tab = $s.Name
+        $v = "$($s.Text($x.Row, 0))".Trim().ToUpperInvariant()
+        if ($v -eq '1') { $v = 'TRUE' } elseif ($v -eq '0') { $v = 'FALSE' }
+        $x.Value = $v
+    }
+    return , $rules
 }
 
 # load errors of the files as LibreOffice opens them (empty when clean); $null when LibreOffice is not installed

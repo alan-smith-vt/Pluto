@@ -74,6 +74,22 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 new -Out 
 > - **Frozen (2026-11-25):** every tab keeps its heading rows in view, and the leading columns that say what the row is: the template on Templates, the mark on a schedule tab, the beam on Model Config, the case and its title on Load Cases, the member and its end in Model_Data.xlsx. At most four columns, and no wider together than leaves room to scroll.
 > - **Excel's limits** for a note (a title of 32 characters, a text of 255, no cell under two validations) are kept by the writer and checked over every workbook the tests write (`XlsxCheck.Validations`).
 
+> [!info]- Colours that follow the choices (2026-11-25)
+> A cell changes colour as things are chosen on the tabs (conditional formats, `cs/Needs.cs`): what `check` says in words, said while the tab is filled in. The Start tab has the legend.
+> - **Still needed** (a stronger yellow than an input cell's own):
+>   - Connection Lib: a mark with no template, a template with no mark, a mark with no row yet on its template's tab;
+>   - a template's tab: the Unit of a column whose Source is a force or a moment; a value under a table column whose Source is Typed here, in a mark's row; the Connection cell of a row that has values and no mark;
+>   - a tab of beam ends: a blank value in a beam end's row;
+>   - Templates: Max rows of a load table; for a table said only on this tab, its columns and the units of the forces it takes;
+>   - Outputs: the Use cells of a template a mark uses when none of its results has Use = Y; Expect of a health result in use;
+>   - Load Cases: the Use column while no case is in use; Start: the templates folder.
+> - **Not read** (grey): in a mark's row, a column whose Source is the model's or the template's own value; on Templates, the load table cells the tool writes where the template's tab shows the table.
+> - **Refresh config** (orange): a mark whose template has no tab yet; a table column turned to Typed per beam end that the tab of beam ends does not have yet.
+> - **Does not fit** (red): the same mark twice; a mark at a beam end that is not on Connection Lib; a mark on a template's tab that is not one of that template's; a template that is not on the Templates tab.
+> - **Not coloured:** a cell typed for a mark and left blank (blank keeps the template's own value, so nothing is missing); Frames into (whether it is needed depends on the template's columns, which a formula cannot follow); a mark used at no beam end.
+> - **How they are written:** each rule is a formula for the first cell of its range. Another tab is reached through `INDIRECT` (a sheet named outright in such a formula is refused by Excel 2007 and kept elsewhere in the file by later versions), no array constant, 255 characters at most; the writer refuses a formula that breaks these, and `XlsxCheck.FormatRules` (in `excel-check` and over every workbook the tests write) reads them back.
+> - **Checked:** LibreOffice calculates every rule's formula, in a finished project (none asks for anything) and in copies with things missing (each fires for the choice it watches), and shows the colours. Not seen in Excel.
+
 > [!info]- Headings, and Excel's rules for a table
 > Every tab's rows are an Excel table, and a schedule tab's headings are the template's own labels. Excel has rules for a table's headings that LibreOffice and the Open XML schema check do not apply. A workbook that breaks one opens in Excel with "Repaired Records: Table from /xl/tables/tableN.xml part (Table)".
 > - **The rules:** a heading is text, on one line, of 255 characters at most, the same in its cell and in the table part, and no two headings of a table are alike.
