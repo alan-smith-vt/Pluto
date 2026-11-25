@@ -296,6 +296,32 @@ Test "the probe's real .anl: every output command is read, and nothing but the m
     Assert-Equal (@($probe.Prints | ForEach-Object { $_.Rows }) -join ' ') '32 18 32 32 36 384 90 160 12 8 12 12 12 12 12'
 }
 
+Test "the probe's real .anl with a member list on PRINT MEMBER FORCES: the command's echoed line is not a force row" {
+    # STAAD echoes the input line after its line number, so a list puts 4 to 10 numbers on it, like a row of the table
+    $lists = [ordered]@{
+        'three'     = 'LIST 101 102 103'
+        'six'       = 'LIST 101 102 103 104 105 106'
+        'seven'     = 'LIST 101 102 103 104 105 106 111'
+        'eight'     = 'LIST 101 102 103 104 105 106 111 112'
+        'ranges'    = 'LIST 101 TO 106 111 TO 115 201 TO 204'
+        'continued' = "LIST 101 TO 106 111 TO 115 -`r`n   147. 201 202 203 204 211 212"
+    }
+    foreach ($k in $lists.Keys) {
+        $v = New-ProbeVariant "forces-list-$k" '146. PRINT MEMBER FORCES' ('146. PRINT MEMBER FORCES ' + $lists[$k])
+        Assert-Equal ((Get-Codes $v) -join ',') 'MEMBER_OFFSET' $k
+        Assert-Equal $v.EndForces.Count 384 $k
+    }
+}
+
+Test 'a row of numbers before the first member row of a force table is reported with its text, not given to member 0' {
+    $v = New-ProbeVariant 'forces-stray' '146. PRINT MEMBER FORCES' "146. PRINT MEMBER FORCES`r`n        7     1.00     2.00     3.00     4.00     5.00     6.00"
+    Assert-True ((Get-Codes $v) -notcontains 'FORCE_MEMBER_UNKNOWN') 'no member 0'
+    $e = @($v.ProblemsOf('Error') | Where-Object { $_.Code -eq 'FORCE_ROW_UNREAD' })
+    Assert-Equal $e.Count 1
+    Assert-Match $e[0].Message '^1 line\(s\) of PRINT MEMBER FORCES hold numbers but are not a force row .*"7     1\.00     2\.00'
+    Assert-Equal $v.EndForces.Count 384 'the table itself is read'
+}
+
 Test "the probe's code checks: eight CHECK CODE commands in three layouts, one row per member each" {
     Assert-Equal $probe.CodeChecks.Count 112
     $by = @($probe.CodeChecks | Group-Object Print | ForEach-Object { "$($_.Name)=$($_.Count):$($_.Group[0].Code)" })

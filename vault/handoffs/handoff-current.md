@@ -128,6 +128,8 @@ CAESAR's restraints, re-seeding that keeps SAP-side additions, and writing a see
   templates' reference code to 5e-13. Found and fixed: harvest chose several governing results; sign-led text was
   read as formulas. Found and open: the circular weld tab needs Excel 365; harvest lists helper cells off the print
   area as inputs.
+- **First real output (2026-11-25):** refused for a member list on `PRINT MEMBER FORCES` (the echoed command line was
+  read as a force row); fixed on `pipestress` and merged. The user's file was not seen: to be confirmed on their run.
 - **Next:** the same pass on the production machine with Excel; the first real project through the workbook; section
   dimensions looked up from the shape.
 
