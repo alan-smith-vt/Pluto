@@ -100,7 +100,13 @@
 #   -ProbeCheck <export> compares SAP's export with the probe it came from (-ProbeFile, default probe-v22.s2k beside
 #                        the export) field by field and writes <export>.check.md: what SAP kept, changed, dropped or
 #                        added, and the tables it wrote that the probe did not.
-# Every line of progress starts with "[step]"; the last line is "RESULT {json}" ({"error": "..."} with exit code 1).
+# The console report has two forms (the same messages):
+#   tidy    for a person at a console: a short head, file names for paths (their folder said once), each message wrapped
+#           under its tag, the notices gathered in a block per phase (one said twice shows once), colour by severity
+#           where the console takes it (NO_COLOR turns it off), and a one-line summary at the end
+#   plain   for a program reading the output (redirected or piped): one line per message, "[step   ] text", and a last
+#           line "RESULT {json}" ({"error": "..."} with exit code 1)
+# PLUTO_CONSOLE=plain or =tidy forces one.
 #   powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.s2k" -Xlsx
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.xlsx" -Preview -Watch
 #   powershell.exe ... -File scripts\frame\Build-Frame.ps1 -In "<project dir>\rack.xlsx" -S2k -Preview
@@ -136,10 +142,120 @@ param(
     [switch]$NewDesign
 )
 $ErrorActionPreference = "Stop"
-function Say([string]$step, [string]$text) { Write-Output ("[{0}] {1}" -f $step.PadRight(7), $text) }
+# ---- the console: plain lines for a program reading them, a tidy view for a person (see the head of this file) ----
+$script:Tidy = $false; $script:Ansi = $false; $script:Wide = 100
+if ($env:PLUTO_CONSOLE -eq "tidy") { $script:Tidy = $true }
+elseif ($env:PLUTO_CONSOLE -ne "plain") { try { $script:Tidy = -not [Console]::IsOutputRedirected } catch { } }
+if ($script:Tidy) {
+    try { $script:Ansi = ([bool]$Host.UI.SupportsVirtualTerminal) -and (-not $env:NO_COLOR) } catch { }
+    try { $cw = [Console]::WindowWidth; if ($cw -ge 60) { $script:Wide = [Math]::Min($cw - 1, 118) } } catch { }
+}
+$script:Notes = New-Object 'System.Collections.Generic.List[string]'       # notices waiting for their block
+$script:Shown = New-Object 'System.Collections.Generic.HashSet[string]'    # notices shown in this run
+$script:Tally = @{ }                                                         # messages by step, for the summary
+$script:LastTag = ""; $script:LastSection = ""; $script:Dirs = @()
+# a step's tag, colour (ANSI) and section; a blank line parts two sections
+$script:Tags = @{ notice = @("notes", "", "notes"); warn = @("warn", "33", "alert"); refuse = @("refuse", "31", "alert"); error = @("error", "31", "end");
+                  write = @("wrote", "32", "out"); keep = @("kept", "32", "out"); done = @("done", "32", "end"); head = @("", "", "head") }
+function Paint([string]$s, [string]$code) {
+    if ($script:Ansi -and $code -and $s.Trim().Length -gt 0) { return (([string][char]27) + "[" + $code + "m" + $s + ([string][char]27) + "[0m") }
+    return $s
+}
+# words wrapped at a width (a word longer than it stays whole)
+function Wrap([string]$text, [int]$width) {
+    $out = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($para in ($text -split "`r?`n")) {
+        $line = ""
+        foreach ($w in ($para -split ' ')) {
+            if ($line.Length -eq 0) { $line = $w }
+            elseif (($line.Length + 1 + $w.Length) -le $width) { $line = $line + " " + $w }
+            else { $out.Add($line); $line = $w }
+        }
+        $out.Add($line)
+    }
+    return ,$out.ToArray()
+}
+# the run's own folders taken off a path: a file is said by its name, its folder once in the head
+function Short([string]$t) { foreach ($d in $script:Dirs) { if ($d) { $t = $t.Replace($d, "") } }; return $t }
+# one message under its tag: the tag once for a run of the same, the text wrapped at the text column
+function Line([string]$step, [string]$text, [string]$bullet, [string]$textColor) {
+    $name = $step; $color = ""; $section = "work"
+    $info = $script:Tags[$step]
+    if ($info) { $name = $info[0]; $color = $info[1]; $section = $info[2] }
+    if ($script:LastSection -and $section -ne $script:LastSection) { Write-Output "" }
+    $script:LastSection = $section
+    $pad = 9
+    $lines = Wrap $text ($script:Wide - $pad - $bullet.Length)
+    for ($i = 0; $i -lt $lines.Count; $i++) {
+        $head = ""
+        if ($i -eq 0 -and $name -ne $script:LastTag) { $head = $name }
+        if ($i -eq 0) { Write-Output ((Paint ($head.PadRight($pad)) $color) + (Paint $bullet $textColor) + (Paint ($lines[$i]) $textColor)) }
+        else { Write-Output ((" " * ($pad + $bullet.Length)) + (Paint ($lines[$i]) $textColor)) }
+    }
+    $script:LastTag = $name
+}
+# the waiting notices as a block per phase ("std read: ..." and the like name it), each a wrapped bullet
+function Flush-Notes {
+    if ($script:Notes.Count -eq 0) { return }
+    $titles = @{ "std read" = "reading the .std"; "std" = "writing the .std"; "design" = "the STAAD design"; "check model" = "seeding the check model"; "" = "the model" }
+    $order = New-Object 'System.Collections.Generic.List[string]'; $by = @{ }
+    foreach ($n in $script:Notes) {
+        $phase = ""; $text = $n
+        foreach ($k in @("std read", "std", "design", "check model")) { if ($n.StartsWith($k + ": ")) { $phase = $k; $text = $n.Substring($k.Length + 2) } }
+        if (-not $script:Shown.Add($text)) { continue }
+        if (-not $by.ContainsKey($phase)) { $by[$phase] = New-Object 'System.Collections.Generic.List[string]'; $order.Add($phase) }
+        $by[$phase].Add($text)
+    }
+    $script:Notes.Clear()
+    foreach ($phase in $order) {
+        $script:LastTag = ""
+        Line "notice" ("{0} ({1})" -f $titles[$phase], $by[$phase].Count) "" ""
+        foreach ($text in $by[$phase]) { Line "notice" (Short $text) "- " "90" }
+        $script:Tally["notes"] = $by[$phase].Count + [int]$script:Tally["notes"]
+    }
+}
+function Say([string]$step, [string]$text) {
+    if (-not $script:Tidy) { Write-Output ("[{0}] {1}" -f $step.PadRight(7), $text); return }
+    if ($step -eq "notice") { $script:Notes.Add($text); return }
+    $script:Tally[$step] = 1 + [int]$script:Tally[$step]
+    Flush-Notes
+    $text = Short $text
+    if ($step -eq "write" -or $step -eq "keep") {
+        # "<file>: what it is" as two columns
+        $at = $text.IndexOf(": ")
+        if ($at -gt 0 -and $at -lt 40) { $text = $text.Substring(0, $at).PadRight(20) + "  " + $text.Substring($at + 2) }
+    }
+    Line $step $text "" ""
+}
+# the head of a tidy report: what is built from what, and the folders
+function Head([string]$title, [string[]]$lines) {
+    Write-Output (Paint $title "1")
+    foreach ($l in $lines) { if ($l) { Write-Output ("  " + $l) } }
+    $script:LastSection = "head"; $script:LastTag = ""
+}
+# the end of a run: RESULT {json} for a program, a one-line summary for a person
+function Result([string]$json, [string]$summary) {
+    if (-not $script:Tidy) { Write-Output ("RESULT " + $json); return }
+    Flush-Notes
+    Line "done" $summary "" ""
+}
+# "2 files written, 3 notes, no warnings"
+function Summary([string]$first) {
+    $parts = @()
+    if ($first) { $parts += $first }
+    $w = [int]$script:Tally["warn"]; $n = [int]$script:Tally["notes"]
+    if ($n -gt 0) { $parts += ("{0} note{1}" -f $n, $(if ($n -eq 1) { "" } else { "s" })) }
+    $parts += $(if ($w -eq 0) { "no warnings" } else { "{0} warning{1} (above)" -f $w, $(if ($w -eq 1) { "" } else { "s" }) })
+    return ($parts -join ", ")
+}
+# a workbook's launchers, on one line
+function Say-Launchers($paths) {
+    $names = @($paths | ForEach-Object { ([IO.Path]::GetFileNameWithoutExtension($_)) -replace '^.* - ', '' })
+    Say "write" ("{0} launchers beside it ({1}): double-click one, or use the Start sheet's links" -f $names.Count, ($names -join ", "))
+}
 function Q([string]$s) { if ([string]::IsNullOrEmpty($s)) { return "null" } return (ConvertTo-Json -InputObject $s -Compress) }
 function Full([string]$p) { return (Resolve-Path -LiteralPath $p).ProviderPath }
-function Fail([string]$msg) { Say "error" $msg; Write-Output ("RESULT {""error"":" + (Q $msg) + "}"); exit 1 }
+function Fail([string]$msg) { Say "error" $msg; if ($script:Tidy) { Flush-Notes } else { Write-Output ("RESULT {""error"":" + (Q $msg) + "}") }; exit 1 }
 # every input is opened shared: Excel keeps an open workbook locked for writing, and a plain OpenRead / ReadAllBytes
 # asks for that lock too, so it fails while the workbook is open (the live preview's whole use)
 # a workbook's own kind: the format text its hidden _pluto sheet starts with, found in the package's XML parts
@@ -292,7 +408,22 @@ if ($S2k -or $Std -or $Json -or $Preview -or $Xlsx -or $NewWorkbook) {
     if ($outDir) { $null = [IO.Directory]::CreateDirectory($outDir) }
 }
 $outs = @(); if ($S2k) { $outs += $s2kFile }; if ($Std) { $outs += $stdFile }; if ($Xlsx) { $outs += ($outBase + ".xlsx") }; if ($Json) { $outs += $jsonFile }; if ($Preview) { $outs += $binFile; $outs += $scFile }
-if ($inPath -and -not $Refresh) { Say "check" ("{0} ({1}) -> {2}" -f $inPath, $kind, $(if ($outs.Count) { $outs -join ", " } else { "no files (a report only)" })) }
+if ($inPath) {
+    # the folders a tidy report leaves off its paths (the output's, then the input's)
+    $inDir = [IO.Path]::GetDirectoryName($inPath) + [IO.Path]::DirectorySeparatorChar
+    $outDir0 = $(if ($outBase) { [IO.Path]::GetDirectoryName($outBase) + [IO.Path]::DirectorySeparatorChar } else { $inDir })
+    $script:Dirs = @(@($outDir0, $inDir) | Select-Object -Unique | Sort-Object -Property Length -Descending)
+}
+if ($inPath -and -not $Refresh) {
+    if ($script:Tidy) {
+        $kinds = @{ s2k = "a SAP2000 .s2k"; xlsx = "a frame workbook"; json = "a .frame.json model"; std = "a STAAD .std"; pipe = "a CAESAR model" }
+        $names = @($outs | ForEach-Object { [IO.Path]::GetFileName($_) })
+        $title = "Build-Frame  {0} ({1})  ->  {2}" -f [IO.Path]::GetFileName($inPath), $kinds[$kind], $(if ($names.Count) { $names -join ", " } else { "a report only" })
+        if ($outDir0 -eq $inDir) { Head $title @(("in    " + $inDir.TrimEnd('\', '/'))) }
+        else { Head $title @(("from  " + $inDir.TrimEnd('\', '/')), ("to    " + $outDir0.TrimEnd('\', '/'))) }
+    }
+    else { Say "check" ("{0} ({1}) -> {2}" -f $inPath, $kind, $(if ($outs.Count) { $outs -join ", " } else { "no files (a report only)" })) }
+}
 
 # ---- load: the C# batch ----
 $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -309,7 +440,7 @@ try {
         [FrameProbe]::Write($v22, "22.0.0")
         [FrameProbe]::Write($v26, "26.3.0")
         Say "write" ("{0} and {1}: import the one for your SAP version, then export it again as {2}" -f $v22, $v26, [IO.Path]::Combine($dir, "probe.sap-export.s2k"))
-        Write-Output ("RESULT {""kind"":""probe"",""files"":[" + (Q $v22) + "," + (Q $v26) + "]}")
+        Result ("{""kind"":""probe"",""files"":[" + (Q $v22) + "," + (Q $v26) + "]}") "the two probe files written"
         exit 0
     }
     if ($StdProbe) {
@@ -318,7 +449,7 @@ try {
         foreach ($n in $pnotes) { Say "notice" ("std: " + $n) }
         Say "write" ("{0}: import it in SAP2000 (edit its Version to Help > About's if SAP asks), run all cases, export joint displacements and reactions" -f $files[0])
         Say "write" ("{0}: open it in STAAD.Pro and run it; its .anl holds the same results" -f $files[1])
-        Write-Output ("RESULT {""kind"":""stdprobe"",""files"":[" + (Q $files[0]) + "," + (Q $files[1]) + "]}")
+        Result ("{""kind"":""stdprobe"",""files"":[" + (Q $files[0]) + "," + (Q $files[1]) + "]}") (Summary "the STAAD probe's two files written")
         exit 0
     }
     if ($ProbeCheck) {
@@ -327,7 +458,7 @@ try {
         [IO.File]::WriteAllText($report, ([string]::Join("`n", $lines.ToArray()) + "`n"), (New-Object Text.UTF8Encoding($false)))
         Say "check" $lines[2]
         Say "write" ("{0}: the field-by-field report" -f $report)
-        Write-Output ("RESULT {""kind"":""probecheck"",""report"":" + (Q $report) + "}")
+        Result ("{""kind"":""probecheck"",""report"":" + (Q $report) + "}") "the report written"
         exit 0
     }
 } catch { Fail (Innermost $_) }
@@ -337,15 +468,15 @@ if ($NewWorkbook) {
     try {
         $go = Confirm-Workbook $xlsxFile $stampFile
         if ($go -eq "force") { Say "warn" ("-Force: replacing {0}, which {1}" -f $xlsxFile, $script:workbookWhy); $go = "backup" }
-        if ($go -eq "keep") { Say "keep" ("{0}: kept as it is; nothing written" -f $xlsxFile); Write-Output ("RESULT {""kind"":""new"",""xlsx"":null,""kept"":" + (Q $xlsxFile) + "}"); exit 0 }
+        if ($go -eq "keep") { Say "keep" ("{0}: kept as it is; nothing written" -f $xlsxFile); Result ("{""kind"":""new"",""xlsx"":null,""kept"":" + (Q $xlsxFile) + "}") "nothing written"; exit 0 }
         if ($go -eq "backup") { [IO.File]::Copy($xlsxFile, $xlsxFile + ".bak", $true); Say "write" ("{0}.bak: the workbook as it was" -f $xlsxFile) }
         $model = [FrameWorkbook]::Template($Units, $SapVersion)
         $run = [FrameWorkbookRun]::For($xlsxFile, $repoRoot, $null)
         [FrameWorkbook]::Write($model, $xlsxFile, "a new model", $run)
         Set-StampXlsx $xlsxFile $stampFile "pluto-frame-build" ([DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"))
         Say "write" ("{0}: an empty frame model ({1}) to edit in Excel; then Build-Frame.ps1 -In ""{0}"" -Preview" -f $xlsxFile, $model.Units)
-        foreach ($l in $run.WriteLaunchers()) { Say "write" ("{0}: double-click it, or use the Start sheet's link" -f $l) }
-        Write-Output ("RESULT {""kind"":""new"",""xlsx"":" + (Q $xlsxFile) + ",""units"":" + (Q $model.Units) + "}")
+        Say-Launchers ($run.WriteLaunchers())
+        Result ("{""kind"":""new"",""xlsx"":" + (Q $xlsxFile) + ",""units"":" + (Q $model.Units) + "}") (Summary "an empty workbook written")
         exit 0
     } catch { Fail (Innermost $_) }
 }
@@ -373,8 +504,8 @@ if ($Refresh) {
         try { [IO.File]::Replace($tmp, $inPath, $bak) }
         catch { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue; throw ("cannot replace {0} ({1}). Close it in Excel and run again." -f $inPath, $_.Exception.Message) }
         Say "write" ("{0}: refreshed to this version's layout; the previous file is {1}" -f $inPath, $bak)
-        foreach ($l in $run.WriteLaunchers()) { Say "write" ("{0}: double-click it, or use the Start sheet's link" -f $l) }
-        Write-Output ("RESULT {""kind"":""refresh"",""xlsx"":" + (Q $inPath) + ",""backup"":" + (Q $bak) + "}")
+        Say-Launchers ($run.WriteLaunchers())
+        Result ("{""kind"":""refresh"",""xlsx"":" + (Q $inPath) + ",""backup"":" + (Q $bak) + "}") (Summary "the workbook refreshed")
         exit 0
     } catch { Fail (Innermost $_) }
 }
@@ -425,6 +556,7 @@ function Check-Std([byte[]]$bytes) {
 function Build-Once {
     $script:step = "reading " + [IO.Path]::GetFileName($inPath)
     $script:sw.Reset(); $script:sw.Start()
+    $script:Tally = @{ }; $script:Shown.Clear()
     $now = [DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ")
     # the workbook question first, before any file is written
     $xlsxGo = $(if ($Xlsx) { Confirm-Workbook ($outBase + ".xlsx") $stampFile } else { $null })
@@ -470,7 +602,6 @@ function Build-Once {
             foreach ($i in $e.Items) { Say "refuse" $i }
             throw (New-Object InvalidOperationException(("the frame model cannot hold the {0} item(s) above exactly; nothing is written" -f $e.Items.Count)))
         }
-        foreach ($n in $rn) { Say "notice" ("std read: " + $n) }
         # the check: the model written back as a .std is the file's model, object by object, to the file's digits
         $back = $null
         try { $back = [FrameStd]::ToText($model, [IO.Path]::GetFileName($inPath), (New-Object 'System.Collections.Generic.List[string]')) }
@@ -486,6 +617,7 @@ function Build-Once {
             foreach ($d in @($diff)) { if ($d) { Say "warn" ("written back: " + $d) } }
             Say "warn" ("{0}: written back with -Std, the model is NOT the file's (the first differences are listed above); check the outputs before use" -f $inPath)
         }
+        foreach ($n in $rn) { Say "notice" ("std read: " + $n) }
     } elseif ($kind -eq "xlsx") {
         $wb = [FrameWorkbook]::Read($inPath)
         $model = $wb.Model
@@ -539,7 +671,16 @@ function Build-Once {
     $counts = "{0} joints, {1} frames, {2} sections, {3} materials, {4} link properties, {5} links, {6} groups, {7} load patterns, {8} loads, {9} cases, {10} combinations; units {11}" -f `
         $model.Joints.Count, $model.Frames.Count, $model.Sections.Count, $model.Materials.Count, $model.LinkProps.Count, $model.Links.Count, $model.Groups.Count, `
         $model.Patterns.Count, $model.Loads.Count, $model.Cases.Count, $model.Combos.Count, $model.Units
-    Say "model" $counts
+    if ($script:Tidy) {
+        # the counts that are not zero
+        $has = @()
+        foreach ($c in @(@($model.Joints.Count, "joint"), @($model.Frames.Count, "frame"), @($model.Sections.Count, "section"), @($model.Materials.Count, "material"), @($model.LinkProps.Count, "link property"),
+                         @($model.Links.Count, "link"), @($model.Groups.Count, "group"), @($model.Patterns.Count, "load pattern"), @($model.Loads.Count, "load"), @($model.Cases.Count, "case"), @($model.Combos.Count, "combination"))) {
+            if ($c[0] -gt 0) { $has += ("{0} {1}" -f $c[0], $(if ($c[0] -eq 1) { $c[1] } elseif ($c[1].EndsWith("y")) { $c[1].Substring(0, $c[1].Length - 1) + "ies" } else { $c[1] + "s" })) }
+        }
+        Say "model" (($has -join ", ") + "; units " + $model.Units)
+    }
+    else { Say "model" $counts }
     $notes = New-Object 'System.Collections.Generic.List[string]'
     if ($S2k) {
         # catalog sections: their library files, as SAP will look for them (a missing one becomes a section of all ones)
@@ -590,7 +731,7 @@ function Build-Once {
         $ps = [IO.Path]::Combine($env:SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
         Say "open" ("SAP2000: importing {0} in a SAP of its own ..." -f $s2kFile)
         $lines = @(& $ps -NoProfile -NonInteractive -ExecutionPolicy Bypass -File $runSap -Open $s2kFile -Stamp -NewInstance -KeepOpen 2>&1 | ForEach-Object { "$_" })
-        foreach ($l in $lines) { if ($l -notlike "RESULT *") { Write-Output ("   sap: " + $l) } }
+        foreach ($l in $lines) { if ($l -notlike "RESULT *") { if ($script:Tidy) { Line "sap" $l "" "90" } else { Write-Output ("   sap: " + $l) } } }
         $last = $lines | Where-Object { $_ -like "RESULT *" } | Select-Object -Last 1
         if (-not $last) { throw "SAP2000: Run-Sap.ps1 gave no result (see its lines above)" }
         $sr = $last.Substring(7) | ConvertFrom-Json
@@ -608,7 +749,7 @@ function Build-Once {
         [FrameWorkbook]::Write($model, $xf, [IO.Path]::GetFileName($inPath), $run)
         Set-StampXlsx $xf $stampFile "pluto-frame-build" $now
         Say "write" ("{0}: the frame workbook" -f $xf)
-        foreach ($l in $run.WriteLaunchers()) { Say "write" ("{0}: double-click it, or use the Start sheet's link" -f $l) }
+        Say-Launchers ($run.WriteLaunchers())
     }
     if ($Json) {
         [IO.File]::WriteAllText($jsonFile, [FrameModelJson]::Write($model), (New-Object Text.UTF8Encoding($false)))
@@ -645,7 +786,9 @@ function Build-Once {
     $res += ",""s2k"":" + $(if ($S2k) { Q $s2kFile } else { "null" }) + ",""std"":" + $(if ($Std) { Q $stdFile } else { "null" }) + ",""xlsx"":" + $(if ($Xlsx -and $xlsxGo -ne "keep") { Q ($outBase + ".xlsx") } else { "null" }) + ",""json"":" + $(if ($Json) { Q $jsonFile } else { "null" })
     $res += ",""bin"":" + $(if ($Preview) { Q $binFile } else { "null" }) + ",""sidecar"":" + $(if ($Preview) { Q $scFile } else { "null" })
     $res += ",""notices"":" + ($notes.Count + $stdNotes.Count) + ",""counts"":" + (Q $counts) + "}"
-    Write-Output $res
+    $nOut = $outs.Count - $(if ($Xlsx -and $xlsxGo -eq "keep") { 1 } else { 0 })
+    $first = $(if ($outs.Count -eq 0) { "a report only: no file asked for" } elseif ($nOut -eq 0) { "nothing written" } else { "{0} file{1} written" -f $nOut, $(if ($nOut -eq 1) { "" } else { "s" }) })
+    Result ($res.Substring(7)) ((Summary $first) + (", {0:0.0} s" -f $script:sw.Elapsed.TotalSeconds))
 }
 
 if (-not $Watch) {
@@ -671,7 +814,7 @@ while ($true) {
                 $msg = BuildError $_
                 Say "error" $msg
                 Say "watch" "the last good outputs stay; fix the input and save again"
-                Write-Output ("RESULT {""error"":" + (Q $msg) + "}")
+                if (-not $script:Tidy) { Write-Output ("RESULT {""error"":" + (Q $msg) + "}") }
             }
         }
     }

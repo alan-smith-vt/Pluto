@@ -45,7 +45,7 @@ model's results come to the viewer from its `.anl` through `Run-StaadFrame.ps1`,
 spreadsheets) is not part of this pipeline; see STAAD in the [[vault/arms/Arms map|Arms map]].
 
 > [!info]- The runners and what they take
-> All run under Windows PowerShell 5.1, need no Python, and end with one `RESULT {json}` line. Below, `...` stands
+> All run under Windows PowerShell 5.1, need no Python, and end with one `RESULT {json}` line (`Build-Frame.ps1` at a console: a one-line summary; see [[vault/arms/frame-workbook|frame-workbook]]). Below, `...` stands
 > for `powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File`. Outputs default to sit beside the
 > input; an output inside this repo is refused.
 >

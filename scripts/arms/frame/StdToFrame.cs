@@ -626,7 +626,33 @@ public static class StdToFrame
         }
         void Note(string s) { if (!Notes.Contains(s)) Notes.Add(s); }
 
+        // a note that holds for many objects, said once with all of them (30 loads: one line, not 30): the text, then
+        // the objects, where the first of them stood among the notes
+        readonly Dictionary<string, List<string>> Many = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        void NoteFor(string text, string item)
+        {
+            List<string> l;
+            if (!Many.TryGetValue(text, out l)) { Many[text] = l = new List<string>(); Notes.Add("\u0001" + text); }
+            if (!l.Contains(item)) l.Add(item);
+        }
+        void NotesOut()
+        {
+            for (int k = 0; k < Notes.Count; k++)
+            {
+                if (Notes[k].Length == 0 || Notes[k][0] != '\u0001') continue;
+                string text = Notes[k].Substring(1);
+                var l = Many[text];
+                Notes[k] = text + ": " + string.Join(", ", l.Take(24).ToArray()) + (l.Count > 24 ? " and " + (l.Count - 24).ToString(Inv) + " more" : "");
+            }
+            Many.Clear();
+        }
+
         public string Run()
+        {
+            try { return Build(); } finally { NotesOut(); }
+        }
+
+        string Build()
         {
             Head();
             Units();
@@ -811,8 +837,20 @@ public static class StdToFrame
             var sets = In.Units.Select(u => string.Join(" ", u).ToUpperInvariant()).Distinct().ToList();
             // later units: the input reader gives every number in the first UNIT's (StaadInput.Converted)
             if (sets.Count > 1 && In.Converted.Count > 0)
-                Note("UNIT changes along the file (" + string.Join("; ", sets.ToArray()) + "): the numbers under a later UNIT are converted to the first, " +
-                     sets[0] + " (" + string.Join(", ", In.Converted.ToArray()) + ")");
+            {
+                // "MEMBER LOAD (UNIT INCHES KIP)" entries, by their unit: "under INCHES KIP: MEMBER LOAD, MEMBER OFFSET"
+                var by = new List<KeyValuePair<string, List<string>>>();
+                foreach (string c in In.Converted)
+                {
+                    var mc = Regex.Match(c, @"^(.*) \(UNIT (.*)\)$");
+                    string what = mc.Success ? Regex.Replace(mc.Groups[1].Value, @" START$", "") : c, unit = mc.Success ? mc.Groups[2].Value.ToUpperInvariant() : "";
+                    int k = by.FindIndex(x => x.Key == unit);
+                    if (k < 0) { by.Add(new KeyValuePair<string, List<string>>(unit, new List<string>())); k = by.Count - 1; }
+                    if (!by[k].Value.Contains(what)) by[k].Value.Add(what);
+                }
+                Note("the file changes UNIT; the numbers under a later UNIT are converted to the first, " + sets[0] + ": " +
+                     string.Join("; ", by.Select(x => "under " + x.Key + ": " + string.Join(", ", x.Value.ToArray())).ToArray()));
+            }
             string l = null, f = null;
             foreach (string w in In.Units[0]) { string x; if (l == null && len.TryGetValue(w, out x)) l = x; else if (f == null && force.TryGetValue(w, out x)) f = x; }
             if (l == null || f == null) { Refuse("UNIT " + string.Join(" ", In.Units[0]) + ": no " + (l == null ? "length" : "force") + " unit SAP has"); l = l ?? "in"; f = f ?? "Kip"; }
@@ -930,7 +968,7 @@ public static class StdToFrame
                 List<int> l;
                 bool any = users.TryGetValue(m.Name, out l);
                 bool onlyTruss = any && l.All(trussIds.Contains);
-                if (!any || onlyTruss) { if (!onlyTruss) Note("material " + m.Name + ": no member or plate uses it (left out)"); continue; }
+                if (!any || onlyTruss) { if (!onlyTruss) NoteFor("materials no member or plate uses, left out", m.Name); continue; }
                 string who = "material " + m.Name;
                 double e, nu, g, v;
                 if (!m.Values.TryGetValue("E", out e) || e <= 0) { Refuse(who + ": no E"); continue; }
@@ -940,7 +978,7 @@ public static class StdToFrame
                 // apart (round 4, 2026-11-24), and a number in E notation reads with no trace of its digits
                 if (hasG && !Close(g, e / (2 * (1 + nu))) && Math.Abs(g - e / (2 * (1 + nu))) > 1e-5 * g) Refuse(who + ": G " + FrameStd.N(g) + " apart from E / (2 (1 + POISSON)) = " + FrameStd.N(e / (2 * (1 + nu))) + " (SAP's isotropic material takes G from E and Poisson's ratio)");
                 if (nu < 0 || nu >= 0.5) Refuse(who + ": Poisson's ratio " + FrameStd.N(nu));
-                if (m.Values.ContainsKey("DAMP")) Note(who + ": its DAMP is not carried (static cases only)");
+                if (m.Values.ContainsKey("DAMP")) NoteFor("a material's DAMP is not carried (static cases only)", m.Name);
                 bool steel = m.Type != null && Is(m.Type, "STEEL");
                 if (m.Type != null && !steel)
                     Note(who + ": TYPE " + m.Type + " read as SAP's material type Other (its analysis numbers kept" + (m.Strength.Count > 0 ? "; its STRENGTH " + string.Join(" ", m.Strength.Keys.ToArray()) + ", design data, not carried" : "") + ")");
@@ -1132,7 +1170,7 @@ public static class StdToFrame
                 if (row != null)
                 {
                     string kind = RowGet(row, "Shape"), inFile = RowGet(row, "SectInFile");
-                    Note(what + ": a catalog section from SAP's section library, " + inFile + " (" + kind + ") in " + file + " (no SAP row of it in the file)");
+                    NoteFor("table shapes with no SAP row in the file, read as catalog sections from SAP's section library (" + System.IO.Path.GetFileName(file) + ")", what + (inFile != null && what.IndexOf(inFile, StringComparison.OrdinalIgnoreCase) < 0 ? " as " + inFile : ""));
                     if (Is(kind, "Angle"))
                         Note(what + ": SAP works out an angle's I23 itself; Pluto's (its legs and root fillet, 0.18 % above SAP's on L3X2-1/2X3/16) sets the frame's orientation within about 0.02 deg");
                     if (Is(kind, "Channel") || Is(kind, "Tee") || Is(kind, "Double Angle"))
@@ -1444,7 +1482,7 @@ public static class StdToFrame
                 if (label.Length == 0) label = g;
                 string who = "group " + g;
                 // STAAD's GEOMETRY groups hold members and plates, its FLOOR groups members: SAP's groups take both
-                if (kind == "GEOMETRY" || kind == "FLOOR") { Note(who + ": a " + kind + " group, read as a group of its members" + (kind == "GEOMETRY" ? " and plates" : "") + " (-Std writes it as a MEMBER or ELEMENT group)"); }
+                if (kind == "GEOMETRY" || kind == "FLOOR") { NoteFor(kind + " groups read as groups of their members" + (kind == "GEOMETRY" ? " and plates" : "") + " (-Std writes them as MEMBER or ELEMENT groups)", g); }
                 else if (kind != "JOINT" && kind != "MEMBER" && kind != "ELEMENT") { Refuse(who + ": a " + (kind ?? "(no kind)") + " group (FrameStd writes JOINT, MEMBER and ELEMENT groups)"); continue; }
                 List<string[]> rows;
                 if (!members.TryGetValue(label, out rows)) members[label] = rows = new List<string[]>();
@@ -1572,7 +1610,7 @@ public static class StdToFrame
                                     foreach (var kv in rc.Loads) c.Loads.Add(new KeyValuePair<string, double>(kv.Key, kv.Value * f));
                                 }
                             }
-                            Note("LOAD " + l.Id + " (" + name + "): REPEAT LOAD as the repeated loads' patterns, each times its factor");
+                            NoteFor("REPEAT LOAD read as the repeated loads' patterns, each times its factor", "LOAD " + l.Id + " (" + name + ")");
                             continue;
                         }
                         if (b.Name == "SUPPORT DISPLACEMENT LOAD")
@@ -1585,7 +1623,7 @@ public static class StdToFrame
                         if (own == null) own = NewPattern(Unique(name, Pats.Select(x => x.Name)), c.Type);
                         Block(b, own, "LOAD " + l.Id);
                     }
-                    if (own != null) { SelfWeightZones(own); c.Loads.Insert(0, new KeyValuePair<string, double>(own.Name, 1)); Note("LOAD " + l.Id + " (" + name + "): its own loads as load pattern " + own.Name); }
+                    if (own != null) { SelfWeightZones(own); c.Loads.Insert(0, new KeyValuePair<string, double>(own.Name, 1)); NoteFor("loads given in a primary load itself, each read as a load pattern of its own", "LOAD " + l.Id + (own.Name == name ? " (" + name + ")" : " (" + name + ") as " + own.Name)); }
                     if (disp != null) c.Loads.Add(new KeyValuePair<string, double>(disp.Name, 1));
                     // a pattern named twice (REPEAT LOAD of loads sharing one): one entry, the factors summed
                     var merged = new List<KeyValuePair<string, double>>();

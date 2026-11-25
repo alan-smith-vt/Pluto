@@ -339,7 +339,15 @@ The whole picture, CAESAR and STAAD included, with the commands for each job:
 >   SAP export it came from) writes `<name>_edit.*`. Outputs inside the repo are refused.
 > - `-Probe <folder>` and `-ProbeCheck <export> [-ProbeFile <probe>]`: see the SAP probe below. `-StdProbe <folder>`: the STAAD probe
 >   ([[vault/format/frame-to-staad|frame-to-staad]]).
-> - The last line is `RESULT {json}`.
+> - **The console report has two forms** of the same messages:
+>   - **tidy,** for a person at a console: a short head, file names for paths (their folder said once), each message
+>     wrapped under its tag (`read`, `wrote`, `warn`, `refuse` …), the notices gathered in a block per phase, colour
+>     by severity, and a one-line summary at the end;
+>   - **plain,** for a program reading the output (redirected or piped): one `[step   ] text` line per message and a
+>     last line `RESULT {json}`.
+>
+>   `PLUTO_CONSOLE=plain` or `=tidy` forces one; `NO_COLOR` turns the colour off. The notes here name the plain tags
+>   (`[refuse]`, `[split]`, `[merge]`): the tidy form shows them without brackets.
 > - **Development only:** `PLUTO_DLL=<a prebuilt pluto.dll>` loads that assembly instead of compiling. This is how the
 >   runner is exercised under pwsh 7 on Linux. `-Preview` there needs mono's `System.Web.Extensions` loaded first (the
 >   sidecar merge uses .NET Framework's serializer); a failed preview leaves no temporary files.

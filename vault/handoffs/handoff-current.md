@@ -65,6 +65,7 @@ Purging it means rewriting the branch's history.
   -Out <outside the repo>`, then `node viewer/tests/readback_staad.js <out> --probe`. Then a real model with a
   `CHECK CODE` per case;
 - the STAAD design in the workbook, by hand: type values on Frames rows of a real model, and check the `.std`;
+- `Build-Frame.ps1`'s tidy console report in Windows PowerShell 5.1's own console (checked under pwsh 7 only);
 - the user's workbook: `-In <it>.xlsx -Xlsx -Out <new>` splits its frames (insertion points kept). Then `-Std` from
   the new workbook should have no auto mesh refusals;
 - optional: whether `RA` gives SAP's leg arrangement (STAAD's `ST` is its mirror image), if drawings or STAAD's angle
