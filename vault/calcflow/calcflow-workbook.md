@@ -30,7 +30,7 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 new -Out 
 > `new -Out <folder> -Anl <file> -Templates <folder>` reads the model and learns the templates (harvest), then writes the workbook once:
 > - **Model Config:** one row per beam of the model: Beam ID, Node I, Node J, Section, Shape, **Connection I, Connection J** (drop-downs of the marks), Frames into I / J (the member that end connects to, guessed first), Comment.
 > - **Connection Lib:** one row per **mark**: Connection (a name of the engineer's own), Template, Description. A mark is one template plus one row of values; several marks may share a template.
-> - **Templates:** one row per calc tab of a template workbook: File, Sheet, SHA-256, Loads (Envelope / All cases), Basis, Sign map; the load table of a template that has one (below); **Input cells** and **Result cells** (below). A sheet with fewer than five inputs gets no tab of its own.
+> - **Templates:** one row per calc tab of a template workbook: File, Sheet, SHA-256, Loads (Envelope / All cases), Basis, Sign map, **Forces** (below); the load table of a template that has one (below); **Input cells** and **Result cells** (below). A sheet with fewer than five inputs gets no tab of its own.
 > - **A schedule tab per template,** named like it. From the top:
 >   1. **Source:** where each column's value comes from, a drop-down: Typed here; Template's own value; Fx to Mz (the beam end's force); Load case; Load case title; Beam number; Node; Beam section; Framed-into member; Framed-into section. A column whose label is one of the six force names starts as that force, unless its unit says otherwise (`Fy (ksi)` is a yield strength).
 >   2. **Unit:** from the label where it has one; a force column must have one.
@@ -41,6 +41,16 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 new -Out 
 > - **Outputs:** harvest's results per template, with Use (Y on the ones read back), Check (the summary column), Kind, Expect. One result starts as Y only when exactly one reads as the governing DCR; otherwise the engineer chooses, and check asks for one.
 > - **Cells kept as text:** the Fx to Mz cells of Sign Maps, Input cells and Result cells, and table columns are formatted as text, so `-Fz` or a table that starts with a minus sign is not read as a formula.
 > - **Sign Maps** and **Load Cases** (Use, Basis).
+
+> [!info]- Forces: member end forces, or the support reaction
+> The Templates tab's **Forces** column says what a template is given, per template, from a list of two.
+> - **Member end forces** (the start value): the printed end forces of the beam end the mark sits at.
+> - **Support reaction:** the printed reaction at that beam end's joint. It is for an anchorage where more than the column lands on the base (a brace), since the column's own end forces leave the other members out.
+> - **Same axes, same sign map.** The reaction is given in the axes of the beam end the mark sits at (x along the member away from the joint, y the member's local y, z = x cross y) and taken as a force on the member, like an end force. Where a column stands alone on its support the two are the same numbers. On the probe's real `.anl` they agree to the printed digit; at its braced bases the moments agree and the forces differ by the brace.
+> - **Units:** reactions printed in other units than the member forces are converted.
+> - **Refused, with the reason:** the joint is not a support; a load case in use has no printed reaction (print the reactions under the same `LOAD LIST` as the member forces).
+> - **In the files:** the step's Slot is `reaction` in the generated library text, and each row of `plan\demands.csv` says `support reaction at joint N`.
+> - A blank cell, or a workbook made before the column existed, means Member end forces. `refresh` adds the column.
 
 > [!info]- A template that takes a table of load rows
 > Some templates take a table: one row per beam end and case, with the beam, the node and the case beside the forces. Such a template is **one calc per mark**: the mark's copy lists every beam end that calls the mark on Model Config, and no other.

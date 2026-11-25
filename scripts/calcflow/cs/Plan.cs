@@ -118,6 +118,7 @@ namespace CalcFlow
             public RegConnection Conn;
             public double[] F;       // template axes, kip / kip-in
             public string Note = "";
+            public string Source = "";      // said in the demand's note when the forces are not the member end's own
         }
 
         sealed class Value
@@ -265,10 +266,24 @@ namespace CalcFlow
                 foreach (RegConnection c in calc.Connections)
                 {
                     string err;
-                    PkgEnd e = SlotEnd(c, step.Slot, type, out err);
+                    // the forces of the member end, or the support reaction at its joint (in that end's axes)
+                    bool reaction = step.Slot == LibrarySchema.ReactionSlot;
+                    PkgEnd e = SlotEnd(c, reaction ? "this" : step.Slot, type, out err);
                     if (e == null) { P("Error", calc.Id, "SLOT", type.Id + " step " + step.Step + ": " + err); return; }
-                    SortedDictionary<int, double[]> f = _pkg.Forces(e.Member, e.End);
+                    PkgJoint at;
+                    if (reaction && (!_pkg.Joints.TryGetValue(e.Node, out at) || at.Support.Length == 0))
+                    {
+                        P("Error", calc.Id, "NOT_A_SUPPORT", tpl.Id + " takes the support reaction, but joint " + e.Node + " (member " + e.Member + " end " + e.End + ") is not a support");
+                        return;
+                    }
+                    SortedDictionary<int, double[]> f = reaction ? _pkg.Reactions(e.Node) : _pkg.Forces(e.Member, e.End);
                     var missing = cases.Where(lc => !f.ContainsKey(lc)).ToList();
+                    if (missing.Count > 0 && reaction)
+                    {
+                        P("Error", calc.Id, "REACTIONS_MISSING", "joint " + e.Node + " has no printed support reaction for case(s) " + string.Join(", ", missing.Take(10).Select(i => i.ToString(Inv)).ToArray()) +
+                            (missing.Count > 10 ? " ..." : "") + ": print the reactions under the same LOAD LIST as the member forces");
+                        return;
+                    }
                     if (missing.Count > 0)
                     {
                         P("Error", calc.Id, "FORCES_MISSING", "member " + e.Member + " end " + e.End + " has no printed forces for case(s) " + string.Join(", ", missing.Take(10).Select(i => i.ToString(Inv)).ToArray()));
@@ -276,9 +291,10 @@ namespace CalcFlow
                     }
                     foreach (int lc in cases)
                     {
-                        double[] t = frame.Apply(EndAxes(f[lc], e.End));
+                        double[] t = frame.Apply(reaction ? _pkg.ReactionAtEnd(e, lc) : EndAxes(f[lc], e.End));
                         var d = new DemandRow();
                         d.LC = lc; d.Conn = c;
+                        if (reaction) d.Source = "support reaction at joint " + e.Node.ToString(Inv);
                         d.F = new double[6];
                         for (int i = 0; i < 6; i++) d.F[i] = Units.Convert(t[i], i < 3 ? _pkg.ForceUnit : _pkg.MomentUnit, Units.Base(i < 3 ? Dimension.Force : Dimension.Moment));
                         rows.Add(d);
@@ -298,7 +314,8 @@ namespace CalcFlow
                     DemandRow d = sel[r];
                     var pd = new PlanDemand();
                     pd.Calc = calc.Id; pd.Step = step.Step; pd.Template = tpl.Id; pd.Mode = step.Demand; pd.Row = r + 1; pd.LC = d.LC;
-                    pd.Connection = d.Conn == null ? "" : d.Conn.Connection; pd.F = d.F; pd.Note = d.Note;
+                    pd.Connection = d.Conn == null ? "" : d.Conn.Connection; pd.F = d.F;
+                    pd.Note = d.Source.Length == 0 ? d.Note : d.Note.Length == 0 ? d.Source : d.Source + "; " + d.Note;
                     Res.Demands.Add(pd);
                     foreach (LibInput inp in tpl.Inputs.Where(i => i.PerCase))
                     {
@@ -384,6 +401,7 @@ namespace CalcFlow
             static DemandRow AbsEnvelope(List<DemandRow> rows)
             {
                 var env = new DemandRow();
+                env.Source = rows.Count > 0 ? rows[0].Source : "";
                 env.F = new double[6];
                 var notes = new List<string>();
                 for (int i = 0; i < 6; i++)

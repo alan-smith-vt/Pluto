@@ -63,6 +63,9 @@ namespace CalcFlow
 
         public static readonly string[] Shapes = { "single_case", "case_table", "multi_connection" };
         public static readonly string[] Demands = { "per_combo", "concurrent_envelope", "abs_envelope", "governing_set" };
+        // a step's Slot says whose forces it takes: "this" (the connection's own member end), a slot of the type (the
+        // member it frames into), or "reaction": the support reaction at the connection's joint, in its member end's axes
+        public const string ReactionSlot = "reaction";
         public static readonly string[] OutputKinds = { "dcr", "status", "health", "value" };
         public static readonly string[] Components = { "Fx", "Fy", "Fz", "Mx", "My", "Mz" };
 
@@ -512,7 +515,7 @@ namespace CalcFlow
                 if (t.Steps.Any(x => x.Step == s.Step)) { Problem("Error", "tblSteps", RowNo(i), s.Type + ": step " + s.Step + " is listed twice"); continue; }
                 if (!Templates.ContainsKey(s.Template)) Problem("Error", "tblSteps", RowNo(i), s.Type + " step " + s.Step + ": no such template '" + s.Template + "'");
                 if (d.Length > 0) { if (!LibrarySchema.Demands.Contains(d)) Problem("Error", "tblSteps", RowNo(i), s.Type + " step " + s.Step + ": Demand must be one of " + string.Join(", ", LibrarySchema.Demands)); else s.Demand = d; }
-                if (sl.Length > 0) { if (sl != "this" && !t.Slots.Contains(sl)) Problem("Error", "tblSteps", RowNo(i), s.Type + " step " + s.Step + ": the type has no slot '" + sl + "'"); else s.Slot = sl; }
+                if (sl.Length > 0) { if (sl != "this" && sl != LibrarySchema.ReactionSlot && !t.Slots.Contains(sl)) Problem("Error", "tblSteps", RowNo(i), s.Type + " step " + s.Step + ": the type has no slot '" + sl + "'"); else s.Slot = sl; }
                 if (fr.Length > 0) s.Frame = fr;
                 t.Steps.Add(s);
             }

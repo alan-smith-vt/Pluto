@@ -75,7 +75,7 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 library-e
 > | `tblOutputs` | Template, Sheet, Cell, GuardCell, GuardText, Output, Kind, Check, Expect, PerCase, Notes | Kind: `dcr` (summarised under Check) / `status` / `health` (must equal Expect, e.g. `TRUE`) / `value`. |
 > | `tblFrames` | Frame, Fx … Mz, Mirror, Action, Confirmed, Notes | Sign maps from the end axes (below) to the template's axes. IDENTITY is built in. |
 > | `tblTypes` | Type, Description, Slots, Notes | Slots: the member ends besides this one that bindings name (e.g. `support`). |
-> | `tblSteps` | Type, Step, Template, Demand, Slot, Frame, Notes | The calcs a type runs, in order. |
+> | `tblSteps` | Type, Step, Template, Demand, Slot, Frame, Notes | The calcs a type runs, in order. Slot: whose forces the step takes: `this` (the connection's member end), a slot of the type, or `reaction` (the support reaction at the connection's joint, in its member end's axes). |
 > | `tblParams` | Type, Step, Param, Default, Unit, Notes | A Step row wins over a blank-Step row. A register override wins over both. |
 > | `tblSections` | Section, Prop, Value, Unit, Notes | For `fn:prop(slot, prop)`. |
 >

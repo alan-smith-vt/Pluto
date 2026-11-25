@@ -111,7 +111,9 @@ CAESAR's restraints, re-seeding that keeps SAP-side additions, and writing a see
   - a template's input and result cells given by hand, and a block (anchor coordinates) typed as one table in a cell;
   - **Refresh config:** the workbook rebuilt around a changed model or templates folder, everything filled in carried
     over, the old file kept; post-process and check say when it is due;
-  - a live check of the force units on Start; statuses in the soft colours of the pipe-review workbooks.
+  - a live check of the force units on Start; statuses in the soft colours of the pipe-review workbooks;
+  - **Forces** per template (2026-11-25): the member end forces, or the support reaction at the beam end's joint in
+    the same axes, for an anchorage where a brace lands on the base.
 - **Decided 2026-11-24** ([[vault/decisions/2026-11-24-calcflow-workbook|2026-11-24-calcflow-workbook]]): link cells,
   two files, a connection name is a mark with every geometry input on one schedule row, parser work on `pipestress`.
 - **The frame `.anl` reader lives on `pipestress`** since 2026-11-24. It reads every usual output command: the model,
@@ -124,9 +126,9 @@ CAESAR's restraints, re-seeding that keeps SAP-side additions, and writing a see
   on an Excel data table (it needs the Excel engine).
 - **Run end to end on 2026-11-25** on a made-up frame (8 marks, 26 calcs, LibreOffice): the DCRs agree with the
   templates' reference code to 5e-13. Found and fixed: harvest chose several governing results; sign-led text was
-  read as formulas. Found and open: the circular weld tab needs Excel 365; an anchorage calc takes the column's end
-  forces, not the support reaction; harvest lists helper cells off the print area as inputs.
-- **Next:** the same pass on the production machine with Excel; a support reaction as a calc's demand; the first real
-  project through the workbook; section dimensions looked up from the shape.
+  read as formulas. Found and open: the circular weld tab needs Excel 365; harvest lists helper cells off the print
+  area as inputs.
+- **Next:** the same pass on the production machine with Excel; the first real project through the workbook; section
+  dimensions looked up from the shape.
 
 Last sessions: [[vault/handoffs/handoff-2026-11-25|handoff-2026-11-25]] (`CalcFlow`), [[vault/handoffs/handoff-2026-11-24b|handoff-2026-11-24b]] (STAAD results in the viewer), [[vault/handoffs/handoff-2026-11-24|handoff-2026-11-24]] (`CalcFlow`), [[vault/handoffs/handoff-2026-11-23|handoff-2026-11-23]] (`pipestress`).

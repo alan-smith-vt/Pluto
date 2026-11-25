@@ -25,6 +25,7 @@ namespace CalcFlow
         public int Node, Member;
         public string End = "", Role = "", Section = "", Family = "", Kind = "", Released = "";
         public double[] Dir = new double[3];
+        public double[] LocalY = new double[3];     // the member's local y, in global axes
         public int ThroughMember;
         public string Key { get { return AnalysisPackage.EndKey(Node, Member, End); } }
     }
@@ -54,6 +55,7 @@ namespace CalcFlow
         public readonly SortedDictionary<int, PkgCase> Cases = new SortedDictionary<int, PkgCase>();
         // "member|end" -> case -> Fx Fy Fz Mx My Mz (member local, STAAD's sign, ForceUnit / MomentUnit)
         readonly Dictionary<string, SortedDictionary<int, double[]>> _forces = new Dictionary<string, SortedDictionary<int, double[]>>(StringComparer.Ordinal);
+        readonly Dictionary<int, SortedDictionary<int, double[]>> _reactions = new Dictionary<int, SortedDictionary<int, double[]>>();
 
         public static string EndKey(int node, int member, string end)
         {
@@ -114,6 +116,7 @@ namespace CalcFlow
                 e.Node = Int(r, "Node"); e.Member = Int(r, "Member"); e.End = V(r, "End").ToUpperInvariant(); e.Role = V(r, "Role");
                 e.Section = V(r, "Section"); e.Family = V(r, "Family"); e.Kind = V(r, "Kind"); e.Released = V(r, "Released");
                 e.Dir = new[] { Num(r, "DirX"), Num(r, "DirY"), Num(r, "DirZ") };
+                e.LocalY = new[] { Num(r, "yX"), Num(r, "yY"), Num(r, "yZ") };
                 string tm = V(r, "ThroughMember");
                 int t;
                 if (tm.Length > 0 && int.TryParse(tm, NumberStyles.Integer, CultureInfo.InvariantCulture, out t)) e.ThroughMember = t;
@@ -146,16 +149,64 @@ namespace CalcFlow
                     d[int.Parse(r[3], NumberStyles.Integer, CultureInfo.InvariantCulture)] = v;
                 }
             }
+            // the support reactions, brought to the units of the end forces (they are often printed in others)
+            string rx = Path.Combine(p.Folder, "reactions.csv");
+            List<string[]> rr = File.Exists(rx) ? Csv.ReadAll(rx) : new List<string[]>();
+            if (rr.Count > 1 && p.ForceUnit != null)
+            {
+                Unit fu = UnitInHeader(rr[0], 2, "reactions.csv"), mu = UnitInHeader(rr[0], 5, "reactions.csv");
+                for (int i = 1; i < rr.Count; i++)
+                {
+                    string[] r = rr[i];
+                    if (r.Length < 8) continue;
+                    var v = new double[6];
+                    for (int k = 0; k < 6; k++)
+                        v[k] = Units.Convert(double.Parse(r[2 + k], NumberStyles.Float, CultureInfo.InvariantCulture), k < 3 ? fu : mu, k < 3 ? p.ForceUnit : p.MomentUnit);
+                    int node = int.Parse(r[0], NumberStyles.Integer, CultureInfo.InvariantCulture);
+                    SortedDictionary<int, double[]> d;
+                    if (!p._reactions.TryGetValue(node, out d)) { d = new SortedDictionary<int, double[]>(); p._reactions[node] = d; }
+                    d[int.Parse(r[1], NumberStyles.Integer, CultureInfo.InvariantCulture)] = v;
+                }
+            }
             return p;
         }
 
-        // "Fx (kip)" -> kip, "Mx (kip-ft)" -> kip-ft
-        static Unit UnitInHeader(string[] h, int i)
+        // the printed support reactions of a joint by load case: FX FY FZ MX MY MZ in the global axes, in the units of
+        // the end forces (empty when none was printed)
+        public SortedDictionary<int, double[]> Reactions(int node)
         {
-            if (i >= h.Length) throw new Exception("endforces.csv has no column " + (i + 1));
+            SortedDictionary<int, double[]> d;
+            return _reactions.TryGetValue(node, out d) ? d : new SortedDictionary<int, double[]>();
+        }
+
+        // A support reaction in the axes of a member end at that joint: x along the member away from the joint, y the
+        // member's local y, z = x cross y -- the axes a member end's own forces are given in, so one sign map serves
+        // both. The reaction is the force of the support on the structure: where the member is alone at the joint it
+        // is that member's end force. null when the case has no printed reaction.
+        public double[] ReactionAtEnd(PkgEnd e, int lc)
+        {
+            double[] g;
+            if (!Reactions(e.Node).TryGetValue(lc, out g)) return null;
+            double[] x = e.Dir, y = e.LocalY;
+            double[] z = { x[1] * y[2] - x[2] * y[1], x[2] * y[0] - x[0] * y[2], x[0] * y[1] - x[1] * y[0] };
+            var v = new double[6];
+            for (int k = 0; k < 2; k++)
+            {
+                int o = 3 * k;
+                v[o] = g[o] * x[0] + g[o + 1] * x[1] + g[o + 2] * x[2];
+                v[o + 1] = g[o] * y[0] + g[o + 1] * y[1] + g[o + 2] * y[2];
+                v[o + 2] = g[o] * z[0] + g[o + 1] * z[1] + g[o + 2] * z[2];
+            }
+            return v;
+        }
+
+        // "Fx (kip)" -> kip, "Mx (kip-ft)" -> kip-ft
+        static Unit UnitInHeader(string[] h, int i, string file = "endforces.csv")
+        {
+            if (i >= h.Length) throw new Exception(file + " has no column " + (i + 1));
             Match m = Regex.Match(h[i], @"\(([^)]+)\)");
             Unit u;
-            if (!m.Success || !Units.TryParse(m.Groups[1].Value, out u)) throw new Exception("endforces.csv: no readable unit in '" + h[i] + "'");
+            if (!m.Success || !Units.TryParse(m.Groups[1].Value, out u)) throw new Exception(file + ": no readable unit in '" + h[i] + "'");
             return u;
         }
 

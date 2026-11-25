@@ -146,12 +146,14 @@ namespace CalcFlow
         };
         static readonly string[] ModelCols = { "Beam ID", "Node I", "Node J", "Section", "Shape", "Connection I", "Connection J", "Frames into I", "Frames into J", "Comment" };
         static readonly string[] LibCols = { "Connection", "Template", "Description" };
-        static readonly string[] TemplateCols = { "Template", "File", "Sheet", "Sha256", "Loads", "Basis", "Sign map", "Load table at", "Load table columns", "Max rows", "Force unit", "Moment unit", "Input cells", "Result cells", "Notes" };
+        static readonly string[] TemplateCols = { "Template", "File", "Sheet", "Sha256", "Loads", "Basis", "Sign map", "Forces", "Load table at", "Load table columns", "Max rows", "Force unit", "Moment unit", "Input cells", "Result cells", "Notes" };
         // what a refresh keeps of a Templates row, of a Model Config row and of a Load Cases row is everything but these
-        static readonly string[] TemplateKept = { "Loads", "Basis", "Sign map", "Load table at", "Load table columns", "Max rows", "Force unit", "Moment unit", "Input cells", "Result cells", "Notes" };
+        static readonly string[] TemplateKept = { "Loads", "Basis", "Sign map", "Forces", "Load table at", "Load table columns", "Max rows", "Force unit", "Moment unit", "Input cells", "Result cells", "Notes" };
         static readonly string[] ModelFixed = { "Beam ID", "Node I", "Node J", "Section", "Shape" };
         static readonly string[] CaseFixed = { "LC", "Title", "Kind" };
         public const string Blank = "(blank)";      // typed in a schedule cell: empty the template's cell
+        // what a template's forces are: the member end's own, or the support reaction at the member end's joint
+        public const string EndForces = "Member end forces", SupportReaction = "Support reaction";
         // what a column of a load table can hold -> the library binding it becomes ("-": a column the tool leaves alone)
         public static readonly string[][] TableFields =
         {
@@ -233,7 +235,7 @@ namespace CalcFlow
                             found.Add(name);
                             if (old != null) notes.Add("new template: " + name + " (" + V(h, "File") + ", sheet " + sheet + "): its tab is added");
                         }
-                        var t = Row("Template", name, "File", V(h, "File"), "Sheet", sheet, "Sha256", V(h, "Sha256"), "Loads", table == null ? "Envelope" : "All cases", "Basis", "", "Sign map", "IDENTITY");
+                        var t = Row("Template", name, "File", V(h, "File"), "Sheet", sheet, "Sha256", V(h, "Sha256"), "Loads", table == null ? "Envelope" : "All cases", "Basis", "", "Sign map", "IDENTITY", "Forces", EndForces);
                         if (table != null)
                         {
                             t["Load table at"] = table.At; t["Load table columns"] = string.Join(", ", table.Fields.ToArray());
@@ -372,7 +374,7 @@ namespace CalcFlow
 
             // ---- Templates
             XOutSheet tt = WorkbookTables.Sheet(TemplatesTab, "tblConfigTemplates", TemplateCols, templates,
-                "One row per calc template (a tab of a template workbook), each with a schedule tab of the same name. Loads: Envelope (the largest and smallest of each force with what acts with it) or All cases. Basis: LRFD or ASD when the template takes only one. Sign map: a row of Sign Maps (IDENTITY = the member end's forces as they are). Load table at: the first cell of the template's table of load rows (blank = none); its columns in order (Beam, Node, LC, LC title, Fx to Mz, Section, Connection, Mark, or - for a column to leave alone); how many rows it holds; the units it takes. Input cells / Result cells: only when the columns found for the template are not the ones you want: list its input cells and result cells yourself (B4, B6:B9, Sheet2!C3; 'table B5:C12' for a block typed as one table; 'Anchors = table B5:C12' to name the column; start with the word also to add the cells to the ones found instead of replacing them), then run Refresh config.",
+                "One row per calc template (a tab of a template workbook), each with a schedule tab of the same name. Loads: Envelope (the largest and smallest of each force with what acts with it) or All cases. Basis: LRFD or ASD when the template takes only one. Sign map: a row of Sign Maps (IDENTITY = the member end's forces as they are). Forces: Member end forces (of the beam end the mark sits at), or Support reaction (the reaction at that beam end's joint, in the same axes: for an anchorage where more than the column lands on the base; the joint must be a support, with its reactions printed for the cases in use). Load table at: the first cell of the template's table of load rows (blank = none); its columns in order (Beam, Node, LC, LC title, Fx to Mz, Section, Connection, Mark, or - for a column to leave alone); how many rows it holds; the units it takes. Input cells / Result cells: only when the columns found for the template are not the ones you want: list its input cells and result cells yourself (B4, B6:B9, Sheet2!C3; 'table B5:C12' for a block typed as one table; 'Anchors = table B5:C12' to name the column; start with the word also to add the cells to the ones found instead of replacing them), then run Refresh config.",
                 c => c == "Template" ? ColumnKind.Key : (c == "File" || c == "Sheet" || c == "Sha256") ? ColumnKind.Reference : ColumnKind.Input);
             tt.Width(Array.IndexOf(TemplateCols, "Load table columns"), 48);
             tt.Width(Array.IndexOf(TemplateCols, "Input cells"), 40); tt.Width(Array.IndexOf(TemplateCols, "Result cells"), 30);
@@ -381,6 +383,9 @@ namespace CalcFlow
             int tn = 2 + Math.Max(templates.Count, 1);
             Validate(tt, "E3:E" + tn, "\"Envelope,All cases\"", true);
             Validate(tt, "F3:F" + tn, "\"LRFD,ASD\"", true);
+            string fc = Xlsx.ColName(Array.IndexOf(TemplateCols, "Forces"));
+            Validate(tt, fc + "3:" + fc + tn, "\"" + EndForces + "," + SupportReaction + "\"", true);
+            tt.Width(Array.IndexOf(TemplateCols, "Forces"), 20);
             sheets.Add(tt);
 
             sheets.AddRange(schedules);
@@ -895,6 +900,8 @@ namespace CalcFlow
                 }
                 string frame = V(t, "Sign map").Length == 0 ? "IDENTITY" : V(t, "Sign map");
                 if (!frames.Contains(frame)) res.Error(TemplatesTab, "template " + name + ": no sign map '" + frame + "' on the Sign Maps tab");
+                string forces = V(t, "Forces").Length == 0 ? EndForces : V(t, "Forces");
+                if (!Same(forces, EndForces) && !Same(forces, SupportReaction)) res.Error(TemplatesTab, "template " + name + ": Forces is '" + EndForces + "' or '" + SupportReaction + "' (got '" + forces + "')");
                 string loads = V(t, "Loads").Length == 0 ? "Envelope" : V(t, "Loads");
                 if (!Same(loads, "Envelope") && !Same(loads, "All cases")) res.Error(TemplatesTab, "template " + name + ": Loads is Envelope or All cases (got '" + loads + "')");
                 var trow = Row("Template", name, "File", V(t, "File"), "Sha256", V(t, "Sha256"), "Shape", "single_case", "Basis", V(t, "Basis"));
@@ -976,7 +983,7 @@ namespace CalcFlow
                     }
                     foreach (var bk in blocks) TableParams(s.Text(r, bk.Key), bk.Value, V(t, "Sheet"), mark, name, r + 1, rows["tblParams"], res);
                     rows["tblTypes"].Add(Row("Type", mark, "Description", V(lib.First(x => Same(V(x, "Connection"), mark)), "Description"), "Slots", support ? "support" : ""));
-                    rows["tblSteps"].Add(Row("Type", mark, "Step", "1", "Template", name, "Demand", Same(loads, "All cases") ? "per_combo" : "concurrent_envelope", "Slot", "this", "Frame", frame));
+                    rows["tblSteps"].Add(Row("Type", mark, "Step", "1", "Template", name, "Demand", Same(loads, "All cases") ? "per_combo" : "concurrent_envelope", "Slot", Same(forces, SupportReaction) ? LibrarySchema.ReactionSlot : "this", "Frame", frame));
                 }
                 foreach (string mark in mine.Where(x => !seen.Contains(x)))
                     res.Error(name, "connection " + mark + " has no row on this tab: add one (" + ConnectionLib + " says it uses this template)");
