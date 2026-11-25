@@ -98,8 +98,9 @@ function New-MiniXlsx([string]$Path, [string]$SheetXml, [string]$Names) {
     New-MiniBook $Path ([ordered]@{ 'Calc' = $SheetXml }) $Names
 }
 
-# the same with several sheets: an ordered table of sheet name -> sheet XML (cell style 1 is an unlocked cell)
-function New-MiniBook([string]$Path, [System.Collections.Specialized.OrderedDictionary]$Sheets, [string]$Names) {
+# the same with several sheets: an ordered table of sheet name -> sheet XML (cell style 1 is an unlocked cell).
+# More: other parts by their path, in place of the ones written here (xl/styles.xml) or more (xl/theme/theme1.xml)
+function New-MiniBook([string]$Path, [System.Collections.Specialized.OrderedDictionary]$Sheets, [string]$Names, [hashtable]$More) {
     Add-Type -AssemblyName System.IO.Compression, System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
     $ns = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
     $rel = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
@@ -116,6 +117,7 @@ function New-MiniBook([string]$Path, [System.Collections.Specialized.OrderedDict
     $parts['xl/workbook.xml'] = '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="' + $ns + '" xmlns:r="' + $rel + '"><sheets>' + $list + '</sheets><definedNames>' + $Names + '</definedNames></workbook>'
     $parts['xl/_rels/workbook.xml.rels'] = '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + $rels + '<Relationship Id="rId' + ($n + 1) + '" Type="' + $rel + '/styles" Target="styles.xml"/></Relationships>'
     $parts['xl/styles.xml'] = '<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="' + $ns + '"><cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="0" fontId="0" fillId="0" borderId="0" applyProtection="1"><protection locked="0"/></xf></cellXfs></styleSheet>'
+    if ($More) { foreach ($k in $More.Keys) { $parts[$k] = $More[$k] } }
     $n = 0
     foreach ($name in $Sheets.Keys) { $n++; $parts["xl/worksheets/sheet$n.xml"] = '<?xml version="1.0" encoding="UTF-8"?><worksheet xmlns="' + $ns + '">' + $Sheets[$name] + '</worksheet>' }
     $fs = [IO.File]::Create($Path)

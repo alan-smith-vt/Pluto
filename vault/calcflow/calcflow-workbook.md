@@ -43,6 +43,14 @@ powershell -ExecutionPolicy Bypass -File scripts\calcflow\CalcFlow.ps1 new -Out 
 > - **Cells kept as text:** the Fx to Mz cells of Sign Maps, Input cells and Result cells, and table columns are formatted as text, so `-Fz` or a table that starts with a minus sign is not read as a formula.
 > - **Sign Maps** and **Load Cases** (Use, Basis).
 
+> [!info]- Inputs from the cells coloured as inputs (a preview, 2026-11-25)
+> Harvest guesses a template's inputs from its formulas and labels. That fits a form with a label beside each value. It does not fit a template laid out as a table under merged headings: each cell of the table becomes a column of its own, a neighbouring value is taken for a label, and every constant a formula reads becomes an input.
+> - **The other way (`cs/TemplateMap.cs`):** an input is a cell with the input fill (the yellow family, unless the library's own colour is named) that holds no formula. No layout is assumed. Cells that touch form a block: a cell, a row of cells, a list or a table. A merged cell counts once. A column is named by the heading above it, read across merged heading rows, and a lone cell by the label to its left, with the unit beside it.
+> - **One question a block column:** who fills it. Typed per mark; typed per beam end; or from the model (beam number, node, load case, a force). A first answer is proposed from the heading. A table with a force, beam or node heading is rows the tool writes; any other table is typed for the mark.
+> - **`CalcFlow.ps1 map -Templates <folder> -Out <folder> [-InputFill <colour>]`** writes `Template_Map.xlsx`: every input found, a row per cell or per table column, and every fill colour found with whether it is taken. It reads only; the workbook's tabs still come from harvest.
+> - **Checked on:** three made-up templates of different layouts (the tests), and the generic templates with their own input colour named: the base plate sheet reads as its 51 inputs and its anchor table, with nothing else.
+> - **Next, once the reading is confirmed on real templates:** the list becomes the tab the engineer confirms once per template, and the template tabs are built from it. Typed per beam end needs a place to type (a row per beam end); a table the tool writes needs its row rule (every case, or the governing one per beam end).
+
 > [!info]- Template sheets as calcs (which sheets get a tab)
 > A mark is one tab and one row, so a tab must reach every input of its calc, on whichever sheet of the workbook it sits. Harvest records which sheet's formulas read which, however far (through names and tables too).
 > - **One calc:** sheets that read one another (a base plate's main sheet, its anchorage sheet and its helper sheets). One tab, named for the sheet with the most inputs. That sheet's inputs come first under their own labels; the other sheets' follow as `Sheet: label`.

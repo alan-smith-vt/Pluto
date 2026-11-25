@@ -1,0 +1,155 @@
+# TemplateMap.Tests.ps1 -- what a template asks for, read from the cells filled yellow (cs\TemplateMap.cs), on three
+# made-up templates of different layouts: a batch table under merged headings with two merged cells above it, a table
+# of one row a member, and a sheet with a grid of positions, a row of cells under grouped headings and labelled values
+# with their units beside them. Every name and number in them is invented for these tests.
+
+$dir = New-TestDir 'templatemap'
+$yellow = New-Object CalcFlow.XStyle; $yellow.Fill = 'FFFFFF99'
+$pale = New-Object CalcFlow.XStyle; $pale.Fill = 'FFFFF2CC'
+$blue = New-Object CalcFlow.XStyle; $blue.Fill = 'FFDDEBF7'
+function Put($Sheet, [string]$At, $Value, $Style) {
+    $col = 0; $row = 0
+    [void][CalcFlow.Xlsx]::ParseRef($At, [ref]$col, [ref]$row)
+    if ($Style) { $Sheet.Set($row, $col, (New-Object CalcFlow.XCell $Value, $Style)) } else { $Sheet.Set($row, $col, $Value) }
+}
+function Fill($Sheet, [string]$From, [string]$To, $Style) {
+    $c1 = 0; $r1 = 0; $c2 = 0; $r2 = 0
+    [void][CalcFlow.Xlsx]::ParseRef($From, [ref]$c1, [ref]$r1); [void][CalcFlow.Xlsx]::ParseRef($To, [ref]$c2, [ref]$r2)
+    for ($r = $r1; $r -le $r2; $r++) { for ($c = $c1; $c -le $c2; $c++) { $Sheet.Set($r, $c, (New-Object CalcFlow.XCell '', $Style)) } }
+}
+function Merge($Sheet, [string]$Range, $Value, $Style) { $Sheet.Merges.Add($Range); Put $Sheet ($Range -split ':')[0] $Value $Style }
+
+# ---- 1. a batch table: two merged cells to fill, a heading band of three rows, ten rows of yellow cells
+$clip = New-Object CalcFlow.XOutSheet 'Clip'
+Put $clip 'A1' 'Clip angle batch'
+Put $clip 'A3' 'Girder:'; Merge $clip 'B3:C3' 'W12X26' $yellow; Put $clip 'C3' '' $yellow
+Put $clip 'A4' 'Post:'; Merge $clip 'B4:C4' 'W8X31' $yellow; Put $clip 'C4' '' $yellow
+Merge $clip 'A6:A8' 'Stiffened?'
+Merge $clip 'B6:I6' 'End forces from the analysis'
+Merge $clip 'B7:B8' 'Beam #'; Merge $clip 'C7:C8' 'Node #'
+Put $clip 'D7' 'FX'; Put $clip 'D8' '(kip)'
+$k = 0; foreach ($h in "FY`n(kip)", 'FZ (kip)', 'MX (kip-in)', 'MY (kip-in)', 'MZ (kip-in)') { $c = [CalcFlow.Xlsx]::ColName(4 + $k); Merge $clip "${c}7:${c}8" $h; $k++ }
+Merge $clip 'J6:K6' 'Checks'; Merge $clip 'J7:J8' 'Shear ratio'; Merge $clip 'K7:K8' 'Bolt ratio'
+Fill $clip 'A9' 'I18' $yellow
+Put $clip 'A9' 'Yes' $yellow; Put $clip 'B9' 12 $yellow; Put $clip 'C9' 5 $yellow; Put $clip 'D9' -19.05 $yellow; Put $clip 'E9' 0.04 $yellow
+foreach ($r in 9..18) {
+    Put $clip "J$r" (New-Object CalcFlow.XFormula "IF(B$r=`"`",`"`",ABS(E$r)/Capacities!`$B`$2)", '')
+    Put $clip "K$r" (New-Object CalcFlow.XFormula "IF(B$r=`"`",`"`",ABS(D$r)/Capacities!`$B`$3)", '')
+}
+Put $clip 'I5' 'Largest:'; Put $clip 'J5' (New-Object CalcFlow.XFormula 'MAX(J9:J18)', '0')
+$caps = New-Object CalcFlow.XOutSheet 'Capacities'
+Put $caps 'A2' 'Shear capacity (kip)'; Put $caps 'B2' 34.5; Put $caps 'A3' 'Bolt capacity (kip)'; Put $caps 'B3' 20
+$clipPath = Join-Path $dir 'Clip Batch.xlsx'
+[CalcFlow.XlsxWriter]::Write($clipPath, [CalcFlow.XOutSheet[]]@($clip, $caps), $null)
+
+# ---- 2. one row a member, with a governing force
+$brace = New-Object CalcFlow.XOutSheet 'Braces'
+Put $brace 'F3' 'Worst:'; Put $brace 'G3' (New-Object CalcFlow.XFormula 'MAX(G6:G8)', '0')
+$k = 0; foreach ($h in 'Shape', 'Grade', 'Slotted?', 'Span (in)', 'Member #', 'Axial (kip)', 'Ratio') { $c = [CalcFlow.Xlsx]::ColName($k); Merge $brace "${c}4:${c}5" $h; $k++ }
+Fill $brace 'A6' 'F8' $pale
+Put $brace 'A6' 'HSS4X4X1/4' $pale; Put $brace 'B6' 'A500' $pale; Put $brace 'C6' 'No' $pale; Put $brace 'D6' 60 $pale; Put $brace 'E6' 6 $pale; Put $brace 'F6' 8 $pale
+foreach ($r in 6..8) { Put $brace "G$r" (New-Object CalcFlow.XFormula "IF(E$r=`"`",`"`",F$r/50)", '') }
+$bracePath = Join-Path $dir 'Brace Batch.xlsx'
+[CalcFlow.XlsxWriter]::Write($bracePath, [CalcFlow.XOutSheet[]]@($brace), $null)
+
+# ---- 3. another layout altogether: a grid of positions, a row of cells under grouped headings, values with their
+# own labels and units beside them, and the loads on another sheet
+$plate = New-Object CalcFlow.XOutSheet 'Pattern'
+Merge $plate 'C2:E2' 'Bolt pattern'
+Put $plate 'C3' 'Bolt'; Put $plate 'D3' 'u (in)'; Put $plate 'E3' 'v (in)'
+foreach ($i in 1..6) { $r = 3 + $i; Put $plate "C$r" "#$i"; Put $plate "D$r" (3 * (($i + 1) % 2)) $yellow; Put $plate "E$r" (4 * [Math]::Floor(($i - 1) / 2)) $yellow }
+Merge $plate 'G3:G4' 'Mark'; Merge $plate 'H3:H4' 'Joint'; Merge $plate 'I3:I4' 'Face'
+Merge $plate 'J3:K3' 'Clearances'; Put $plate 'J4' 'left (in)'; Put $plate 'K4' 'right (in)'
+Put $plate 'G5' 'P-1' $yellow; Put $plate 'H5' 12 $yellow; Put $plate 'I5' 'North' $yellow; Put $plate 'J5' 6 $yellow; Put $plate 'K5' 4.5 $yellow
+Put $plate 'G8' 't'; Put $plate 'H8' 0.75 $yellow; Put $plate 'I8' 'in'; Put $plate 'J8' 'Plate thickness'
+Put $plate 'G9' 'd'; Put $plate 'H9' 0.875 $yellow; Put $plate 'I9' 'in'; Put $plate 'J9' 'Bolt diameter'
+Put $plate 'G10' 'Fy'; Put $plate 'H10' 36 $yellow; Put $plate 'I10' 'ksi'; Put $plate 'J10' 'Yield strength'
+Put $plate 'G12' 'Twice t'; Put $plate 'H12' (New-Object CalcFlow.XCell (New-Object CalcFlow.XFormula 'H8*2', '1.5'), $yellow)
+Put $plate 'L3' 'Factor'; Put $plate 'M3' 1.25 $blue
+$loads = New-Object CalcFlow.XOutSheet 'Loads'
+Put $loads 'A1' 'Forces at the joint'
+Put $loads 'A2' 'LC'; Put $loads 'B2' 'Fx (kip)'; Put $loads 'C2' 'Fy (kip)'; Put $loads 'D2' 'Mz (kip-ft)'
+Fill $loads 'A3' 'D8' $yellow
+$platePath = Join-Path $dir 'Plate.xlsx'
+[CalcFlow.XlsxWriter]::Write($platePath, [CalcFlow.XOutSheet[]]@($plate, $loads), $null)
+
+$say = { param($m) @($m.Blocks | ForEach-Object { $b = $_; "$($b.Sheet)!$($b.Range) $($b.Shape)$(if ($b.LoadRows) { ' (tool)' })" }) -join ' | ' }
+$cols = { param($b) @($b.Columns | ForEach-Object { "$($_.Cells)=$($_.Heading)[$($_.Unit)]>$($_.FilledBy)" }) -join ' | ' }
+
+Test 'a batch table under merged headings: one table of rows the tool writes, each column named across the heading rows; a merged cell counts once' {
+    $m = [CalcFlow.TemplateMap]::Read($clipPath)
+    Assert-Equal (& $say $m) 'Clip!B3:C3 Cell | Clip!B4:C4 Cell | Clip!A9:I18 Table (tool)'
+    Assert-Equal "$($m.Blocks[0].Columns[0].Heading)|$($m.Blocks[0].Columns[0].Example)|$($m.Blocks[0].Columns[0].FilledBy)|$($m.Blocks[0].Columns[0].Notes)" 'Girder|W12X26|Typed per mark|merged cells B3:C3'
+    $t = $m.Blocks[2]
+    Assert-Equal $t.Rows 10
+    Assert-Equal (& $cols $t) 'A9:A18=Stiffened?[]>Typed per beam end | B9:B18=Beam #[]>Beam number | C9:C18=Node #[]>Node | D9:D18=FX (kip)[kip]>Fx | E9:E18=FY (kip)[kip]>Fy | F9:F18=FZ (kip)[kip]>Fz | G9:G18=MX (kip-in)[kip-in]>Mx | H9:H18=MY (kip-in)[kip-in]>My | I9:I18=MZ (kip-in)[kip-in]>Mz'
+    Assert-Equal "$($t.Columns[3].Group)|$($t.Columns[8].Group)|$($t.Columns[0].Group)" 'End forces from the analysis|End forces from the analysis|' 'the heading merged over the group; other text higher up is not a heading'
+    Assert-Equal $t.Columns[0].Example 'Yes'
+    # the capacities a formula reads are not yellow: no input, on either sheet
+    Assert-Equal @($m.Blocks | Where-Object { $_.Sheet -eq 'Capacities' }).Count 0
+}
+
+Test 'one row a member: the table is the tool''s, a pale yellow counts, an axial force is offered as Fx and said to be a guess' {
+    $m = [CalcFlow.TemplateMap]::Read($bracePath)
+    Assert-Equal (& $say $m) 'Braces!A6:F8 Table (tool)'
+    Assert-Equal (& $cols $m.Blocks[0]) 'A6:A8=Shape[]>Typed per beam end | B6:B8=Grade[]>Typed per beam end | C6:C8=Slotted?[]>Typed per beam end | D6:D8=Span (in)[in]>Typed per beam end | E6:E8=Member #[]>Beam number | F6:F8=Axial (kip)[kip]>Fx'
+    Assert-Equal "$($m.Blocks[0].Columns[5].Notes)|$($m.Blocks[0].Columns[5].Group)" 'Fx is a guess from the word axial|' 'the label of the summary cell above is not its heading'
+}
+
+Test 'a sheet of another layout: a grid typed for the mark, a row of cells under grouped headings, values with their own labels and units, loads on another sheet' {
+    $m = [CalcFlow.TemplateMap]::Read($platePath)
+    Assert-Equal (& $say $m) 'Pattern!D4:E9 Table | Pattern!G5:K5 Row of cells | Pattern!H8 Cell | Pattern!H9 Cell | Pattern!H10 Cell | Loads!A3:D8 Table (tool)'
+    Assert-Equal (& $cols $m.Blocks[0]) 'D4:D9=u (in)[in]>Typed per mark (a table) | E4:E9=v (in)[in]>Typed per mark (a table)'
+    Assert-Equal (& $cols $m.Blocks[1]) 'G5=Mark[]>Typed per mark | H5=Joint[]>Node | I5=Face[]>Typed per mark | J5=left (in)[in]>Typed per mark | K5=right (in)[in]>Typed per mark'
+    Assert-Equal $m.Blocks[1].Columns[3].Group 'Clearances'
+    Assert-Equal (@($m.Blocks[2..4] | ForEach-Object { $c = $_.Columns[0]; "$($c.Heading)=$($c.Example) $($c.Unit)" }) -join ' | ') 't=0.75 in | d=0.875 in | Fy=36 ksi'
+    Assert-Equal (& $cols $m.Blocks[5]) 'A3:A8=LC[]>Load case | B3:B8=Fx (kip)[kip]>Fx | C3:C8=Fy (kip)[kip]>Fy | D3:D8=Mz (kip-ft)[kip-ft]>Mz'
+    # a yellow cell that holds a formula is said, and is no input; a blue cell is listed as a fill not taken
+    Assert-Match ($m.Notes -join '; ') 'Pattern: 1 cell\(s\) with the input fill FFFF99 hold a formula and are not inputs'
+    $bluefill = @($m.Fills | Where-Object { $_.Fill -eq 'DDEBF7' })[0]
+    Assert-Equal "$($bluefill.Cells)|$($bluefill.Input)|$($bluefill.Example)" '1|False|M3'
+}
+
+Test 'the input colour is the yellow family, whether typed as a colour, picked from the theme or from the old palette' {
+    foreach ($c in 'FFFF00', 'FFFF99', 'FFFFCC', 'FFF2CC', 'FFE699', 'FFC000', 'E6DF9A') { Assert-True ([CalcFlow.TemplateLook]::IsInputColour($c)) $c }
+    foreach ($c in 'FFFFFF', 'F2F2F2', 'DDEBF7', 'E2EFDA', 'FCE4D6', 'C6EFCE', 'FFC7CE', 'D9D9D9', '000000', 'FBFBF2', 'EAF3FF') { Assert-True (-not [CalcFlow.TemplateLook]::IsInputColour($c)) $c }
+    Assert-Equal ([CalcFlow.TemplateLook]::Tint('FFC000', 0.8)) 'FFF2CC' 'a theme gold made 80% lighter, as Excel does it'
+    Assert-Equal ([CalcFlow.TemplateLook]::Tint('FFC000', -0.25)) 'BF9000'
+    # a workbook whose yellow comes from the theme with a tint, and from the palette by index
+    $styles = '<?xml version="1.0" encoding="UTF-8"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fills count="4"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill>' +
+        '<fill><patternFill patternType="solid"><fgColor theme="7" tint="0.79998168889431442"/><bgColor indexed="64"/></patternFill></fill><fill><patternFill patternType="solid"><fgColor indexed="43"/></patternFill></fill></fills>' +
+        '<cellXfs count="3"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/><xf numFmtId="0" fontId="0" fillId="2" borderId="0" applyFill="1"/><xf numFmtId="0" fontId="0" fillId="3" borderId="0" applyFill="1"/></cellXfs></styleSheet>'
+    $theme = '<?xml version="1.0" encoding="UTF-8"?><a:theme xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" name="T"><a:themeElements><a:clrScheme name="T"><a:dk1><a:sysClr val="windowText" lastClr="000000"/></a:dk1><a:lt1><a:sysClr val="window" lastClr="FFFFFF"/></a:lt1><a:dk2><a:srgbClr val="44546A"/></a:dk2><a:lt2><a:srgbClr val="E7E6E6"/></a:lt2><a:accent1><a:srgbClr val="4472C4"/></a:accent1><a:accent2><a:srgbClr val="ED7D31"/></a:accent2><a:accent3><a:srgbClr val="A5A5A5"/></a:accent3><a:accent4><a:srgbClr val="FFC000"/></a:accent4><a:accent5><a:srgbClr val="5B9BD5"/></a:accent5><a:accent6><a:srgbClr val="70AD47"/></a:accent6><a:hlink><a:srgbClr val="0563C1"/></a:hlink><a:folHlink><a:srgbClr val="954F72"/></a:folHlink></a:clrScheme></a:themeElements></a:theme>'
+    $p = Join-Path $dir 'Themed.xlsx'
+    New-MiniBook $p ([ordered]@{ 'Calc' = '<sheetData><row r="2"><c r="A2" t="inlineStr"><is><t>Width (in)</t></is></c><c r="B2" s="1"><v>4</v></c></row><row r="3"><c r="A3" t="inlineStr"><is><t>Depth (in)</t></is></c><c r="B3" s="2"/></row><row r="4"><c r="A4" t="inlineStr"><is><t>Plain</t></is></c><c r="B4"><v>1</v></c></row></sheetData>' }) '' @{ 'xl/styles.xml' = $styles; 'xl/theme/theme1.xml' = $theme }
+    $m = [CalcFlow.TemplateMap]::Read($p)
+    Assert-Equal (@($m.Fills | ForEach-Object { "$($_.Fill):$($_.Input)" }) -join ' ') 'FFF2CC:True FFFF99:True'
+    Assert-Equal (@($m.Blocks | ForEach-Object { "$($_.Range)=$($_.Columns[0].Heading)" }) -join ' | ') 'B2=Width (in) | B3=Depth (in)' 'an empty yellow cell is an input too; the plain one is not'
+}
+
+Test 'a library whose inputs are not yellow: the fill is named, and only its cells are inputs' {
+    $m = [CalcFlow.TemplateMap]::Read($platePath, [string[]]@('#ddebf7'))
+    Assert-Equal (& $say $m) 'Pattern!M3 Cell'
+    Assert-Equal "$($m.Blocks[0].Columns[0].Heading)=$($m.Blocks[0].Columns[0].Example)" 'Factor=1.25'
+    Assert-Throws { [CalcFlow.TemplateMap]::Read($platePath, [string[]]@('yellow')) } 'six hex digits'
+    $o = Invoke-CfCli map -Templates $platePath -Out (Join-Path $dir 'out-blue') -InputFill DDEBF7
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    Assert-True (@($o | Where-Object { $_ -like 'found *1 cell(s) or rows of cells, 0 list(s) or table(s)*' }).Count -eq 1) ($o -join "`n")
+}
+
+Test 'map writes the look at a templates folder: a row per input cell or table column, and every fill found' {
+    $out = Join-Path $dir 'out'
+    $tdir = Join-Path $dir 'folder'
+    New-Item -ItemType Directory -Force -Path $tdir | Out-Null
+    foreach ($f in $clipPath, $bracePath, $platePath) { Copy-Item -LiteralPath $f -Destination $tdir }
+    $o = Invoke-CfCli map -Templates $tdir -Out $out
+    Assert-Equal $LASTEXITCODE 0 ($o -join "`n")
+    Assert-True (@($o | Where-Object { $_ -like 'found *Clip Batch.xlsx: 2 cell(s) or rows of cells, 1 list(s) or table(s) (1 written by the tool); 0 cell(s) of other fills not taken' }).Count -eq 1) ($o -join "`n")
+    Assert-True (@($o | Where-Object { $_ -like '*Plate.xlsx: Pattern: 1 cell(s) with the input fill*hold a formula*' }).Count -eq 1) ($o -join "`n")
+    $wb = [CalcFlow.Xlsx]::Read((Join-Path $out 'Template_Map.xlsx'))
+    $rows = @($wb.TableRows('tblMapInputs'))
+    Assert-Equal $rows.Count (6 + (2 + 9) + (2 + 5 + 3 + 4)) 'brace 6, clip 2 + 9, plate 2 + 5 + 3 + 4'
+    $fx = @($rows | Where-Object { $_['Template'] -eq 'Clip Batch.xlsx' -and $_['Heading'] -eq 'FX (kip)' })[0]
+    Assert-Equal "$($fx['Block'])|$($fx['Shape'])|$($fx['Cells'])|$($fx['Under'])|$($fx['Unit'])|$($fx['Filled by'])" 'A9:I18|Table of 10 rows, written by the tool|D9:D18|End forces from the analysis|kip|Fx'
+    Assert-Equal @($wb.TableRows('tblMapFills') | Where-Object { $_['Taken as inputs'] -eq 'N' }).Count 1
+}

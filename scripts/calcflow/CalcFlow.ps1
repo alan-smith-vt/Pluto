@@ -27,6 +27,11 @@
                     that (-NoWait: it refuses instead), and opens the workbook again when done.
                     post-process and check say when a refresh is due.
     launchers       the launchers again (their path to this script is the one at write time): -Workbook <CalcFlow.xlsx>
+    map             a look at what each template asks for, read from the cells filled yellow: -Templates <folder>
+                    -Out <folder> [-InputFill <colour>,<colour>: the fill of the cells to fill in when it is not
+                    yellow, six hex digits each as the Fills tab lists them] -> Template_Map.xlsx (tab Inputs found: one row per input cell, or per column of a
+                    list or table, with its heading and who would fill it; tab Fills: every fill colour found, and
+                    whether it is taken as inputs). Reads only; nothing else uses it yet.
     excel-check     for a workbook Excel opened with "Repaired Records: Table from /xl/tables/...": lists what in its
                     tables breaks a rule Excel has for them (a heading over 255 characters, two headings alike, a
                     heading that is not text ...): -Workbook <any .xlsx> [-Repaired <the copy saved from Excel after
@@ -64,7 +69,7 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory, Position = 0)][ValidateSet('new', 'post-process', 'refresh', 'launchers', 'check', 'calcs', 'excel-check', 'harvest', 'library-new', 'library-export', 'register-new', 'plan', 'run', 'summary')][string]$Verb,
+    [Parameter(Mandatory, Position = 0)][ValidateSet('new', 'post-process', 'refresh', 'launchers', 'check', 'calcs', 'excel-check', 'map', 'harvest', 'library-new', 'library-export', 'register-new', 'plan', 'run', 'summary')][string]$Verb,
     [string[]]$Templates,
     [string]$Library,
     [string]$Harvest,
@@ -84,7 +89,8 @@ param(
     [string]$Anl,
     [switch]$NoOpen,
     [switch]$NoWait,
-    [string]$Repaired
+    [string]$Repaired,
+    [string[]]$InputFill
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'Import-CalcFlow.ps1')
@@ -388,6 +394,41 @@ switch ($Verb) {
         if ($line) { Write-Host "sheets   $line" }
         Write-Host ("written  {0}: everything you had filled in is carried over ({1} note(s) above)" -f $res.Workbook, $res.Notes.Count) -ForegroundColor Green
         if (-not $NoOpen -and (Test-CfWindows) -and [Environment]::UserInteractive) { Invoke-Item -LiteralPath $res.Workbook }
+        exit 0
+    }
+    'map' {
+        Need 'Templates' $Templates
+        Need 'Out' $Out
+        $folder = Get-CfFull $Out
+        Assert-CfOutsideRepo $folder
+        $tdir = Get-CfFull $Templates[0]
+        $tfiles = Get-CfTemplateFiles $Templates
+        if ($tfiles.Count -eq 0) { Stop-CfArgs "No template workbooks found in $tdir." }
+        $found = New-Object 'System.Collections.Generic.List[System.Collections.Generic.KeyValuePair[string,CalcFlow.TemplateMapResult]]'
+        $bad = 0
+        foreach ($f in $tfiles) {
+            $rel = $f
+            if ($f.StartsWith($tdir, [StringComparison]::OrdinalIgnoreCase)) { $rel = $f.Substring($tdir.Length).TrimStart('\', '/').Replace('\', '/') }
+            try { $m = [CalcFlow.TemplateMap]::Read($f, [string[]]$InputFill) }
+            catch {
+                $why = $_.Exception.Message
+                if ($_.Exception.InnerException) { $why = $_.Exception.InnerException.Message }
+                Write-Host ("[error] {0}: {1}" -f $rel, $why) -ForegroundColor Red
+                $bad++
+                continue
+            }
+            $found.Add((New-Object 'System.Collections.Generic.KeyValuePair[string,CalcFlow.TemplateMapResult]' $rel, $m))
+            $cells = @($m.Blocks | Where-Object { $_.Rows -eq 1 }).Count
+            $tables = @($m.Blocks | Where-Object { $_.Rows -gt 1 })
+            $other = @($m.Fills | Where-Object { -not $_.Input } | ForEach-Object { $_.Cells } | Measure-Object -Sum).Sum
+            Write-Host ("found    {0}: {1} cell(s) or rows of cells, {2} list(s) or table(s) ({3} written by the tool); {4} cell(s) of other fills not taken" -f $rel, $cells, $tables.Count, @($tables | Where-Object { $_.LoadRows }).Count, [int]$other)
+            foreach ($n in $m.Notes) { Write-Host ("[note ] {0}: {1}" -f $rel, $n) -ForegroundColor Yellow }
+        }
+        if (-not (Test-Path -LiteralPath $folder)) { New-Item -ItemType Directory -Force -Path $folder | Out-Null }
+        $path = Join-Path $folder 'Template_Map.xlsx'
+        [CalcFlow.XlsxWriter]::Write($path, [CalcFlow.XOutSheet[]]@([CalcFlow.TemplateMap]::Sheets($found)), $null)
+        Write-Host "written  $path" -ForegroundColor Green
+        if ($bad -gt 0) { exit 1 }
         exit 0
     }
     'excel-check' {
