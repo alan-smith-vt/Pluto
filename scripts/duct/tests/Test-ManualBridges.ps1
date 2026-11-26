@@ -56,6 +56,13 @@ $c = New-Object 'System.Collections.Generic.List[CEdge]'; $c.Add((Edge 1 2 "100"
 $note = Run $c $P @((Br "rigid" "100" "999"))
 Check "6 a side not in the clean model: not placed, named" ($c.Count -eq 2 -and $note -like "*1 not placed*" -and $note -like "*B (999) not in the clean model*")
 
+# 6b the stored side has since merged with a neighbour (user 2026-11-25, after the thickness table): A was stored as
+#    part 100 alone; the element is now parts 100 + 101. Still found, the bridge placed
+$P = Pts @(@(1, 0, 0, 0), @(2, 10, 0, 0), @(3, 12, 0, 0), @(4, 20, 0, 0))
+$c = New-Object 'System.Collections.Generic.List[CEdge]'; $m = Edge 1 2 "100"; $x = New-Object RvEl; $x.Id = "101"; $x.SysName = "SYSA"; $m.Src.Add($x); $c.Add($m); $c.Add((Edge 3 4 "200"))
+$note = Run $c $P @((Br "rigid" "100" "200"))
+Check "6b a side merged upstream (stored 100, element 100+101): found, linked" (@($c | Where-Object { $_.Rigid }).Count -eq 1 -and $note -like "*1 rigid links*0 not placed*")
+
 # 8 a bridged fragment joins its main (user 2026-11-25): main SYSA 1-2, fragment "SYSA fragments" 3-4 bridged to it,
 #   a second fragment 5-6 not bridged, and an "other: EXH" piece bridged to the fragment: only the bridged fragment moves
 function SysEdge($a, $b, $id, $sys) { $e = Edge $a $b $id; $e.Src[0].SysName = $sys; return $e }

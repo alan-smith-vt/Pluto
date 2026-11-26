@@ -9,7 +9,7 @@ using System.Linq;
 // and the DuctBridges lines in Get-DuctSettings.ps1 to remove it.
 //
 // Each bridge names two clean members by their source parts (Revit ElementId, N:<NavisId>), A and B. Each side is every
-// clean duct element made of exactly those parts (a member later split at a cut or a link is several elements). The
+// clean duct element holding any of those parts (a member later merged with a neighbour or split is still found). The
 // two nearest ends of the two sides (open ends first) are the bridge ends.
 //   rigid    a rigid link between the two ends (source "manual-bridge", the system of A)
 //   extend   duct A runs on along its own axis: its end moves to the point of its axis nearest B's centreline. When B's
@@ -33,9 +33,12 @@ public static class ManualBridges
     {
         return e.Src.Count > 0 ? e.Src.Select(x => x.Id).ToList() : e.NavisId != "" ? new List<string> { "N:" + e.NavisId } : new List<string>();
     }
-    static bool SameParts(List<string> a, List<string> b)
+    // a side is every duct element holding ANY of its stored parts (user 2026-11-25: 2 of 3 bridges were lost when the
+    // thickness table let neighbouring parts merge into one element; an exact part set breaks on any merge or split)
+    static bool SharesPart(List<string> a, List<string> b)
     {
-        return a.Count == b.Count && new HashSet<string>(a, StringComparer.OrdinalIgnoreCase).SetEquals(b);
+        var s = new HashSet<string>(b, StringComparer.OrdinalIgnoreCase);
+        return a.Any(s.Contains);
     }
 
     public static string Apply(List<CEdge> clean, Dictionary<int, double[]> P, List<ManualBridge> bridges)
@@ -48,8 +51,10 @@ public static class ManualBridges
         {
             ManualBridge br = bridges[bi];
             string tag = "  bridge " + (bi + 1) + " (" + br.Mode + ")";
-            var sa = clean.Where(e => !e.Rigid && !e.Hanger && SameParts(PartsOf(e), br.A)).ToList();
-            var sb = clean.Where(e => !e.Rigid && !e.Hanger && SameParts(PartsOf(e), br.B)).ToList();
+            var sa = clean.Where(e => !e.Rigid && !e.Hanger && SharesPart(PartsOf(e), br.A)).ToList();
+            var sb = clean.Where(e => !e.Rigid && !e.Hanger && SharesPart(PartsOf(e), br.B)).ToList();
+            if (sa.Count > 0 && sb.Count > 0 && sa.Intersect(sb).Any())
+            { joined++; lines.Add(tag + ": A and B are now one duct element (merged upstream), nothing to do"); continue; }
             if (sa.Count == 0 || sb.Count == 0)
             {
                 notFound++;

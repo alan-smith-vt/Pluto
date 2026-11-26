@@ -64,12 +64,13 @@ var FEABridgePicker = (function () {
     }
     function source(name) { return sources().find(function (s) { return s.name === name; }); }
     function partsKey(parts) { return parts.slice().sort().join(' '); }
-    // the members of every loaded clean file whose parts equal these (to draw a saved bridge after a reload)
+    // the members of every loaded clean file holding any of these parts (to draw a saved bridge after a reload; a member
+    // merged with a neighbour or split upstream is still found, as the converter finds it)
     function membersOf(parts) {
-        var k = partsKey(parts), out = [];
+        var want = {}, out = []; parts.forEach(function (x) { want[x] = 1; });
         sources().forEach(function (src) {
             var n = src.part.view.header.nElements;
-            for (var e = 0; e < n; e++) { var p = parseParts(src.label(e)); if (p && p.length && partsKey(p) === k) out.push({ src: src, elem: e }); }
+            for (var e = 0; e < n; e++) { var p = parseParts(src.label(e)); if (p && p.some(function (x) { return want[x]; })) out.push({ src: src, elem: e }); }
         });
         return out;
     }
