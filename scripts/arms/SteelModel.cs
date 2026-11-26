@@ -9,9 +9,9 @@ using System.Text;
 // every joint on them, end releases and open-end restraints. C# 5 / Add-Type compatible. Units: INCHES, the same
 // frame as the input (meters x 39.37; no other transform).
 //
-// Connectivity: a member end within SnapIn of another member's centreline connects to it. Near that member's end
-// (within SnapIn) it joins that end; otherwise the end lands on the centreline and that member is split there
-// (it stays continuous). Ends that connect nowhere and are not connected to are OPEN.
+// Connectivity: a member end within SnapIn of another member's centreline connects to it. Within EndSnapIn (0.5 in)
+// of that member's end it joins that end; otherwise the end lands on the centreline and that member is split there
+// (it stays continuous; user 2026-11-25: it frames in where the data says, never snapped along to the end). Ends that connect nowhere and are not connected to are OPEN.
 // MEMBERS ARE NEVER MOVED (user rule 2026-11-12: the positions from the plant model are reliable; snapping them
 // corrupts more than it fixes). The snap decides which ends connect, nothing else. A joint sits on the supporting
 // member's line (or at one of the meeting ends); a member end that is not at its joint keeps its own position and
@@ -55,7 +55,8 @@ public class SteelModel
         public double ContactIn = 2;
         public double MergeIn = 1;   // joints landing on one member within this distance along it are one joint
         public double EndJoinIn = 2; // centreline snap: an end beyond another member's end joins it only when the end points are this close
-        public double SplitIn = 0.1; // in-line ends this close are one member line split by the model: joined, continuous
+        public double SplitIn = 0.1;
+        public double EndSnapIn = 0.5; // an end landing on a member joins its end only this close to it; else it frames in where it lands // in-line ends this close are one member line split by the model: joined, continuous
         // slab boxes { x0, y0, z0, x1, y1, z1 } in inches; null or empty = no slab filter (every vertical open end fixed)
         public List<double[]> Slabs;
         public double SlabNearIn = 12;   // a fixed end keeps its restraint within this of a slab box
@@ -163,8 +164,11 @@ public class SteelModel
             if (best < 0) { if (gapSkipped) EndGapSkipped++; if (inLineLeft) InLineOpen++; continue; }
             Snapped++;
             double L = Dist(A[best], B[best]);
-            if (bestT * L <= S.SnapIn) Union(e, 2 * best);
-            else if ((1 - bestT) * L <= S.SnapIn) Union(e, 2 * best + 1);
+            // where the data says (user 2026-11-25): an end landing on another member joins that member's END only within
+            // EndSnapIn of it (0.5 in); anywhere else the member is split where the end lands (framed, hinged) and a free end
+            // beyond it stays open (pinned). SnapIn / ContactIn decide WHETHER the end connects, not where.
+            if (bestT * L <= S.EndSnapIn) Union(e, 2 * best);
+            else if ((1 - bestT) * L <= S.EndSnapIn) Union(e, 2 * best + 1);
             else onSide[e] = new KeyValuePair<int, double>(best, bestT);
         }
 

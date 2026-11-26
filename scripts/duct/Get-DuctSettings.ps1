@@ -90,6 +90,8 @@ function Get-DuctSettings {
     if ($Data.DuctSteelContactIn) { $ds.SteelSettings.ContactIn = [double]$Data.DuctSteelContactIn }
     # an end lying beyond another member's end joins it only when the two end points are within DuctSteelEndJoinIn (2 in)
     if ($Data.ContainsKey('DuctSteelEndJoinIn')) { $ds.SteelSettings.EndJoinIn = [double]$Data.DuctSteelEndJoinIn }
+    # an end landing on another member joins that member's END only within DuctSteelEndSnapIn (0.5 in) of it; else it frames in where it lands
+    if ($Data.ContainsKey('DuctSteelEndSnapIn')) { $ds.SteelSettings.EndSnapIn = [double]$Data.DuctSteelEndSnapIn }
     # slab filter: with walls given, a vertical steel end is fixed only when it is in or within DuctSteelSlabNearIn (12 in)
     # of a slab; DuctSteelFixedNeedsSlab = $false = every vertical open end fixed, as before
     if ($Data.ContainsKey('DuctSteelFixedNeedsSlab')) { $ds.SteelFixedNeedsSlab = [bool]$Data.DuctSteelFixedNeedsSlab }

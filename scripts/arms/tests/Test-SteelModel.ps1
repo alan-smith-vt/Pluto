@@ -288,16 +288,28 @@ $split = @((W8 (M "COLA" 0 0 0 0 0 124)), (W8 (M "COLB" 0 0 124 0 0 240)), (W8 (
 foreach ($mode in "contact", "centreline") {
     $sm = ModelMode $split $mode
     $b1 = Ends $sm "B1"; $b2 = Ends $sm "B2"; $ca = Ends $sm "COLA"; $cb = Ends $sm "COLB"
-    if ($mode -eq "contact") {
-        Check "18 contact: both beams framed into the column split, hinged" ($b1.J -eq "framed" -and $b1.RJ -eq "M2M3" -and $b2.I -eq "framed" -and $b2.RI -eq "M2M3")
-        Check "18 contact: one joint, at the split on the column line; the column pieces continuous" ($b1.JJ.Id -eq $b2.JI.Id -and $b1.JJ.Id -eq $ca.JJ.Id -and $ca.JJ.Id -eq $cb.JI.Id -and
-            [math]::Abs($ca.JJ.Z - 124) -lt 1e-6 -and [math]::Abs($ca.JJ.X) -lt 1e-6 -and $ca.J -eq "continuous" -and $ca.RJ -eq "" -and $cb.I -eq "continuous" -and $cb.RI -eq "")
-        $fb1 = @($sm.Frames | Where-Object { $sm.Members[$_.Source].MemberOid -eq "B1" })[-1]
-        Check "18 contact: the beam end not moved (joint offset to its real end)" ([math]::Abs($fb1.OffJ[2] + 4) -lt 1e-6 -and [math]::Abs($fb1.OffJ[0] + 0.6) -lt 1e-6)
-    }
-    Check "18 $mode`: no collinear joint, the beams never joined to each other alone" (@($sm.Joints | Where-Object { $_.Condition -eq "collinear" }).Count -eq 0 -and
-        -not ($b1.JJ.Id -eq $b2.JI.Id -and $b1.JJ.Id -ne $ca.JJ.Id))
+    # where the data says (2026-11-25): the beams land on the lower column piece 4 in under its split, so they frame in
+    # THERE (one joint at Z 120 on the column line, the piece split, continuous), not snapped up 4 in to the split
+    $jb = $b1.JJ
+    Check "18 $mode`: both beams framed into the column side, hinged, one joint at Z 120 on the column line" ($b1.J -eq "framed" -and $b1.RJ -eq "M2M3" -and $b2.I -eq "framed" -and $b2.RI -eq "M2M3" -and
+        $jb.Id -eq $b2.JI.Id -and [math]::Abs($jb.Z - 120) -lt 1e-6 -and [math]::Abs($jb.X) -lt 1e-6)
+    Check "18 $mode`: the column continuous through it (no release on either piece; its ends where SAP gets them: real ends kept by offsets)" (
+        @($sm.Frames | Where-Object { $sm.Members[$_.Source].MemberOid -like "COL*" -and ($_.ReleaseI -ne "" -or $_.ReleaseJ -ne "") }).Count -eq 0 -and
+        @($sm.Frames | Where-Object { $sm.Members[$_.Source].MemberOid -like "COL*" -and ($_.I -eq $jb.Id -or $_.J -eq $jb.Id) }).Count -eq 2)
+    $fb1 = @($sm.Frames | Where-Object { $sm.Members[$_.Source].MemberOid -eq "B1" })[-1]
+    Check "18 $mode`: the beam end not moved (joint offset 0.6 in to its real end)" ([math]::Abs($fb1.OffJ[0] + 0.6) -lt 1e-6 -and [math]::Abs($fb1.OffJ[2]) -lt 1e-6)
+    Check "18 $mode`: no collinear joint" (@($sm.Joints | Where-Object { $_.Condition -eq "collinear" }).Count -eq 0)
 }
+# 19 a beam framing into another 8 in back from its end (user 2026-11-25): frames in there (hinged), the other beam split
+#    there, its 8 in tail beyond an open end: pinned. Within EndSnapIn (0.5 in) of the end it still joins the end
+foreach ($mode in "contact", "centreline") {
+    $sm = ModelMode @((W8 (M "G" 0 0 120 120 0 120)), (W8 (M "F" 112 0.6 120 112 120 120))) $mode
+    $g = Ends $sm "G"; $f = Ends $sm "F"
+    Check "19 $mode`: frames in where it lands (X 112), hinged; G split there, its free end pinned" ($f.I -eq "framed" -and $f.RI -eq "M2M3" -and [math]::Abs($f.JI.X - 112) -lt 1e-6 -and
+        $g.N -eq 2 -and $g.J -eq "open-pinned" -and $g.JJ.Restraint -like "PINNED*")
+}
+$sm = ModelMode @((W8 (M "G" 0 0 120 120 0 120)), (W8 (M "F" 119.7 0.6 120 119.7 120 120))) "contact"
+Check "19 within 0.5 in of G's end: joins the end (a corner), G not split" ((Ends $sm "G").N -eq 1 -and (Ends $sm "G").JJ.Id -eq (Ends $sm "F").JI.Id)
 # a continuous beam passing a column split (the column pieces land on its side): the column stays continuous
 $sm = Model @((W8 (M "COLA" 0 4 0 0 4 120)), (W8 (M "COLB" 0 4 120 0 4 240)), (W8 (M "BM" (-120) 0 120 120 0 120)))
 $ca = Ends $sm "COLA"; $cb = Ends $sm "COLB"

@@ -41,6 +41,9 @@
     DuctSteelSnap = 'centreline'
     DuctSteelContactIn = 2
     DuctSteelEndJoinIn = 2
+    # An end landing on another member joins that member's END only within this distance (in) of it; anywhere else it
+    # frames in where it lands (the member split there, a free end beyond it open: pinned).
+    DuctSteelEndSnapIn = 0.5
     # Slab filter (needs DuctWalls): the open end of a vertical steel member is fixed only when it is in or within
     # DuctSteelSlabNearIn of a slab (floor or ceiling alike). Elsewhere the restraint is removed (end 'open-free',
     # flag NO_SLAB). It only removes restraints: nothing is fixed that was not. $false = every such end fixed.
