@@ -107,5 +107,6 @@ public static class DuctGeom
     public static string R4(double v) { return double.IsNaN(v) ? "" : v.ToString("0.####", Inv); }
     public static string R3(double v) { return double.IsNaN(v) ? "" : v.ToString("0.###", Inv); }
     // the system a clean frame belongs to: its first source part's, else its own (a gap bridge), else its source kind
-    public static string SystemOf(CEdge ce) { return ce.Src.Count > 0 ? ce.Src[0].SysName : ce.SysName != "" ? ce.SysName : ce.Source; }
+    // the final connectivity decides main vs fragments (CEdge.SysFinal, DuctConnectivity.Resolve)
+    public static string SystemOf(CEdge ce) { return ce.SysFinal != "" ? ce.SysFinal : ce.Src.Count > 0 ? ce.Src[0].SysName : ce.SysName != "" ? ce.SysName : ce.Source; }
 }

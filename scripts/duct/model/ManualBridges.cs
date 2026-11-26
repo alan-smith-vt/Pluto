@@ -117,48 +117,7 @@ public static class ManualBridges
             + (lines.Count > 0 ? "\n" + string.Join("\n", lines.ToArray()) : "");
     }
 
-    // after the bridges (user, 2026-11-25: a bridged fragment stayed in its fragments group): systems are named once, by
-    // the source parts' connectivity, before any bridge. Re-check on the clean model: a "<name> fragments" element now
-    // connected (through ducts and links) to a main of that name takes the main's name (several mains of the name in
-    // one piece: the one with most elements). Other systems and fragments joined only to fragments are left alone.
-    public static string MergeFragments(List<CEdge> clean, DuctSystems dsys)
-    {
-        var par = new Dictionary<int, int>();
-        Func<int, int> find = null;
-        find = x => { int p; if (!par.TryGetValue(x, out p)) { par[x] = x; return x; } if (p == x) return x; int r = find(p); par[x] = r; return r; };
-        foreach (CEdge ce in clean) { if (ce.Hanger) continue; int a = find(ce.A), b = find(ce.B); if (a != b) par[Math.Max(a, b)] = Math.Min(a, b); }
-        Func<CEdge, string> sysOf = ce => ce.Src.Count > 0 || ce.SysName != "" ? DuctGeom.SystemOf(ce) : "";
-        // per piece: main name -> element count, keyed by the main's base name
-        var mains = new Dictionary<int, Dictionary<string, Dictionary<string, int>>>();
-        foreach (CEdge ce in clean)
-        {
-            if (ce.Hanger) continue;
-            string n = sysOf(ce), bn;
-            if (n == "" || dsys.SystemRole(n) != "main" || !dsys.IsPrimaryName(n, out bn)) continue;
-            int r = find(ce.A);
-            Dictionary<string, Dictionary<string, int>> m; if (!mains.TryGetValue(r, out m)) { m = new Dictionary<string, Dictionary<string, int>>(StringComparer.Ordinal); mains[r] = m; }
-            Dictionary<string, int> c; if (!m.TryGetValue(bn, out c)) { c = new Dictionary<string, int>(StringComparer.Ordinal); m[bn] = c; }
-            int k; c.TryGetValue(n, out k); c[n] = k + 1;
-        }
-        var moved = new SortedDictionary<string, int>(StringComparer.Ordinal);
-        var done = new HashSet<RvEl>();
-        foreach (CEdge ce in clean)
-        {
-            if (ce.Hanger) continue;
-            string n = sysOf(ce);
-            if (!n.EndsWith(" fragments")) continue;
-            string bn = n.Substring(0, n.Length - 10);
-            Dictionary<string, Dictionary<string, int>> m; Dictionary<string, int> c;
-            if (!mains.TryGetValue(find(ce.A), out m) || !m.TryGetValue(bn, out c)) continue;
-            string to = c.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.Ordinal).First().Key;
-            if (ce.Src.Count > 0) foreach (RvEl e in ce.Src) { if (done.Add(e)) e.SysName = to; }
-            else ce.SysName = to;
-            ce.Flags.Add("FRAGMENT_JOINED");
-            string key = n + " -> " + to; int k; moved.TryGetValue(key, out k); moved[key] = k + 1;
-        }
-        if (moved.Count == 0) return "";
-        return "manual bridges: fragments joined to their main (FRAGMENT_JOINED): " + string.Join(", ", moved.Select(kv => kv.Key + " " + kv.Value + " el").ToArray());
-    }
+    // a bridged fragment joins its main: decided with every other connection by DuctConnectivity.Resolve
 
     static CEdge Link(int a, int b, string sys)
     {

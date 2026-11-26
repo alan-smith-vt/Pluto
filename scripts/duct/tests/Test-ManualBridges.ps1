@@ -64,12 +64,12 @@ $c = New-Object 'System.Collections.Generic.List[CEdge]'
 $c.Add((SysEdge 1 2 "100" "SYSA")); $c.Add((SysEdge 3 4 "200" "SYSA fragments")); $c.Add((SysEdge 5 6 "300" "SYSA fragments")); $c.Add((SysEdge 7 8 "400" "other: EXH"))
 $null = Run $c $P @((Br "rigid" "200" "100"), (Br "rigid" "400" "200"))
 $ds = New-Object DuctSettings; $ds.PrimarySystems.Add("SYSA")
-$note = [ManualBridges]::MergeFragments($c, (New-Object DuctSystems $ds))
+$P2 = $P; $note = [DuctConnectivity]::Resolve($c, $P2, (New-Object DuctSystems $ds))
 $sys = @{}; foreach ($e in $c) { if (-not $e.Rigid) { $sys[$e.Src[0].Id] = [DuctGeom]::SystemOf($e) } }
 $links = @($c | Where-Object { $_.Rigid } | ForEach-Object { [DuctGeom]::SystemOf($_) })
 Check "8 the bridged fragment and its link take the main's name; the other fragment and the other system stay" ($sys["200"] -eq "SYSA" -and $sys["300"] -eq "SYSA fragments" -and $sys["400"] -eq "other: EXH" -and $links[0] -eq "SYSA" -and
     ($c | Where-Object { -not $_.Rigid -and $_.Src[0].Id -eq "200" }).Flags.Contains("FRAGMENT_JOINED"))
-Check "8 note" ($note -eq "manual bridges: fragments joined to their main (FRAGMENT_JOINED): SYSA fragments -> SYSA 2 el")
+Check "8 note" ($note -like "*FRAGMENT_JOINED: SYSA 2)*")
 
 # 7 settings: bridges.json read into DuctSettings.Bridges; a wrong file refused
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("pluto-bridges-" + [Guid]::NewGuid().ToString("N").Substring(0, 8) + ".json")

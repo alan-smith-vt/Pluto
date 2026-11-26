@@ -43,8 +43,9 @@ public partial class DuctsToPluto
         if (dropNote != "") cutNote += (cutNote != "" ? "\n" : "") + dropNote;
         string bridgeHand = ManualBridges.Apply(clean, P, Cfg.Bridges);   // add-on, the viewer's Bridge picker
         if (bridgeHand != "") cutNote += (cutNote != "" ? "\n" : "") + bridgeHand;
-        string fragNote = bridgeHand != "" ? ManualBridges.MergeFragments(clean, new DuctSystems(Cfg)) : "";   // bridged fragments join their main
-        if (fragNote != "") cutNote += "\n" + fragNote;
+        // main or fragment from the FINAL connectivity, the model SAP gets (DuctConnectivity.Resolve): one definition
+        string fragNote = DuctConnectivity.Resolve(clean, P, new DuctSystems(Cfg));
+        cutNote += (cutNote != "" ? "\n" : "") + fragNote;
         string orientNote = Orienter.Apply(clean, P, Cfg.RotateLargeVertical, out orientNewLine);   // before the supports (rotated depth)
         // a joint where a duct passes through a wall or slab (DuctPenetrations.cs): splits elements, so before the supports
         DuctPenetrations.Result pen = Cfg.Walls.Count > 0 && Cfg.Penetrations ? DuctPenetrations.Apply(clean, P, Cfg.Walls) : null;
@@ -98,7 +99,6 @@ public partial class DuctsToPluto
             SupportPlacer.WriteSupportsCsv(outBase + ".supports.csv", sr, P);
         }
 
-        string connNote = DuctConnectivity.Apply(clean, P, new DuctSystems(Cfg));   // same name as a main, not connected to it
         string matNote = DuctMaterials.Apply(clean, Cfg);   // carbon / stainless per system (frames.csv Material)
         string thkNote = "";
         if (Cfg.Thickness != null) { Cfg.Thickness.Apply(clean, true); thkNote = Cfg.Thickness.Note(); }   // final pass: bridges, splits, counts
@@ -127,7 +127,7 @@ public partial class DuctsToPluto
             + (cutNote != "" ? "\n" + cutNote : "")
             + (thkNote != "" ? "\n" + thkNote : "")
             + "\n" + matNote
-            + "\n" + connNote
+
             + (sm != null ? "\n" + sm.Summary() + " (<out>.steel_joints.csv, <out>.steel_frames.csv)\n" + sm.GapSummary() : "")
             + (sm != null && Cfg.SteelTouchDuctOnly ? "\n" + sm.CullSummary() : "")
             + "\n" + bridgeNote
@@ -148,7 +148,7 @@ public partial class DuctsToPluto
         sections.Add(RawViewerWriter.SectionDef.Pipe("rigid link", (float)(1.5 * scale / 12), (float)(0.375 * scale / 12)));
         var secIx = new Dictionary<string, int>(StringComparer.Ordinal);
         var beams = new Dictionary<int, RawViewerWriter.BeamMember>(); var labels = new Dictionary<int, string>();
-        var bySys = new SortedDictionary<string, List<uint>>(StringComparer.Ordinal); var gRigid = new List<uint>(); var gTrans = new List<uint>(); var gConf = new List<uint>(); var gCut = new List<uint>(); var gSpan = new List<uint>(); var gNoThk = new List<uint>(); var gDisc = new List<uint>(); var gProx = new List<uint>(); var gOpenEnd = new List<uint>(); var beamOf = new Dictionary<CEdge, int>();
+        var bySys = new SortedDictionary<string, List<uint>>(StringComparer.Ordinal); var gRigid = new List<uint>(); var gTrans = new List<uint>(); var gConf = new List<uint>(); var gCut = new List<uint>(); var gSpan = new List<uint>(); var gNoThk = new List<uint>(); var gFrag = new List<uint>(); var gProx = new List<uint>(); var gOpenEnd = new List<uint>(); var beamOf = new Dictionary<CEdge, int>();
         int nb = 1; double ft = scale / 12;
         foreach (CEdge ce in clean)
         {
@@ -187,7 +187,7 @@ public partial class DuctsToPluto
             if (ce.Flags.Contains("OVERLAP_SIZE_CONFLICT")) gConf.Add((uint)nb);
             if (ce.Flags.Contains("CUT_END")) gCut.Add((uint)nb);
             if (!ce.Rigid && ce.Dim != null && double.IsNaN(ce.Thk)) gNoThk.Add((uint)nb);
-            if (ce.Flags.Contains(DuctConnectivity.Flag)) gDisc.Add((uint)nb);
+            if (sys.EndsWith(" fragments")) gFrag.Add((uint)nb);
             if (ce.Flags.Contains("JOINED_BY_PROXIMITY")) gProx.Add((uint)nb);
             if (ce.Flags.Contains("OPEN_END")) gOpenEnd.Add((uint)nb);   // the 0.001 in placeholder (SAP FLAG_NO_THICKNESS)
             if (ce.Flags.Contains("UNSUPPORTED_SPAN")) gSpan.Add((uint)nb);
@@ -221,7 +221,7 @@ public partial class DuctsToPluto
         if (gRigid.Count > 0) sc.AddGroup("Clean: rigid links", "#ff3b3b", "beams", gRigid, new[] { "duct", "clean", "link" }, "RIGID");
         if (gTrans.Count > 0) sc.AddGroup("Clean: transitions", "#ffd23f", "beams", gTrans, new[] { "duct", "clean", "transition" }, null);
         if (gConf.Count > 0) sc.AddGroup("Flag: OVERLAP_SIZE_CONFLICT", "#ff5fa2", "beams", gConf, new[] { "duct", "clean", "flag" }, "FLAG_OVERLAP_SIZE_CONFLICT");
-        if (gDisc.Count > 0) sc.AddGroup("Flag: DISCONNECTED_FROM_MAIN", "#ff3b3b", "beams", gDisc, new[] { "duct", "clean", "flag" }, "FLAG_DISCONNECTED_FROM_MAIN");
+        if (gFrag.Count > 0) sc.AddGroup("Clean: all fragments", "#a0a0a8", "beams", gFrag, new[] { "duct", "clean", "fragment" }, "FRAGMENTS_ALL");
         if (gProx.Count > 0) sc.AddGroup("Flag: JOINED_BY_PROXIMITY", "#3fe0e0", "beams", gProx, new[] { "duct", "clean", "flag" }, "FLAG_JOINED_BY_PROXIMITY");
         if (gOpenEnd.Count > 0) sc.AddGroup("Flag: OPEN_END", "#ff5fa2", "beams", gOpenEnd, new[] { "duct", "clean", "flag" }, "FLAG_OPEN_END");
         if (gNoThk.Count > 0) sc.AddGroup("Flag: NO_THICKNESS", "#ff9f40", "beams", gNoThk, new[] { "duct", "clean", "flag" }, "FLAG_NO_THICKNESS");
