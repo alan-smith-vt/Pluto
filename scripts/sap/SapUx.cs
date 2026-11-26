@@ -101,6 +101,7 @@ public partial class SapDucts
         { "LARGE_SIDE_VERTICAL", "box with its larger side vertical" },
         { "ROTATED", "box turned 90 deg about its centreline (larger side horizontal)" },
         { "OPEN_END", "duct end connected to nothing" },
+        { "JOINED_BY_PROXIMITY", "open duct end within 6 in of a duct of its own system, connected to it (rigid link to its centreline, or directly)" },
         { "DISCONNECTED_FROM_MAIN", "carries a main system's name (same colour) but shares no joint with the main: a separate piece" },
         { "SUPPORT", "steel joint added where a duct support lands on the member" },
         { "GUID_MISMATCH", "Revit and Navisworks give the same part different IfcGUIDs" },

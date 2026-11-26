@@ -27,6 +27,7 @@ steel touching no duct: 2 members (2 frames, 4 joints) not connected to a duct s
 gap bridges (NAVIS_BRIDGE, Navisworks-only parts lined up with open Revit ends): 2
   Navisworks #2749959b5e7381ce26934caccf5418e9 (SYSA fragments): bridges two Revit ends, 5 ft, size 20x12 -> 16x12 (stated 18x12) SIZE_FROM_NEIGHBOURS
   Navisworks #5692318585849351e86175dfc3ee2d02 (SYSA fragments): continues one Revit end, 3.5 ft, size 14x10 (stated 14x10)
+proximity joins: no open duct end within 6 in of a duct of its own system
 orientation: 7 frame(s) with the larger side vertical (LARGE_SIDE_VERTICAL), 5 run(s), 8 frame(s) rotated, conflicts 1 (ROTATION_CONFLICT)
   SYSC 18x36 run, 1 frame(s), 2 ft (1 with the larger side vertical): rotated 90 deg about the centreline
   SYSC 18x36 run, 1 frame(s), 12.5 ft (1 with the larger side vertical): rotated 90 deg about the centreline
