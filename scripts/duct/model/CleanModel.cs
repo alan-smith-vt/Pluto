@@ -386,7 +386,10 @@ public class CleanModel
 
     public static CEdge CopyEdge(CEdge s, int a, int b)
     {
-        var e = new CEdge { A = a, B = b, Rigid = s.Rigid, Dim = s.Dim, DimB = s.DimB, Y = s.Y, Source = s.Source, NavisId = s.NavisId, Thk = s.Thk, SysName = s.SysName };
+        // EVERY field (2026-11-25: SysFinal was not copied, so a duct split at its supports after DuctConnectivity.Resolve
+        // fell back to its early name and a bridged fragment showed as a fragment again; Material, Hanger, Span neither)
+        var e = new CEdge { A = a, B = b, Rigid = s.Rigid, Dim = s.Dim, DimB = s.DimB, Y = s.Y, Source = s.Source, NavisId = s.NavisId, Thk = s.Thk,
+                            SysName = s.SysName, SysFinal = s.SysFinal, Material = s.Material, Hanger = s.Hanger, Span = s.Span, Dead = s.Dead };
         e.Src.AddRange(s.Src); e.Flags.UnionWith(s.Flags);
         return e;
     }

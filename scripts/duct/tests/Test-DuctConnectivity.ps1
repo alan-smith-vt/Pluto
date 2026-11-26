@@ -35,5 +35,22 @@ $c.Add((Edge 1 2 "SYSA fragments")); $c.Add((Edge 2 3 "SYSA fragments")); $c.Add
 $null = [DuctConnectivity]::Resolve($c, $P, $sys)
 Check "largest piece = main: 3 fragments become SYSA, the lone SYSA element becomes a fragment" ((SysOf $c 1) -eq "SYSA" -and (SysOf $c 3) -eq "SYSA" -and (SysOf $c 10) -eq "SYSA fragments")
 
+# a duct split AFTER the resolve (supports, penetrations) keeps its resolved name (2026-11-25: CopyEdge dropped SysFinal,
+# so bridged fragments split at their supports showed as fragments again), and CopyEdge copies EVERY field of CEdge
+$e = $c | Where-Object { $_.A -eq 1 }
+$half = [CleanModel]::CopyEdge($e, 1, 99)
+Check "a half made after the resolve keeps its system" ([DuctGeom]::SystemOf($half) -eq "SYSA" -and $half.SysFinal -eq $e.SysFinal)
+$src = New-Object CEdge
+$skip = @("A", "B", "Src", "Flags")
+foreach ($f in [CEdge].GetFields()) {
+    if ($skip -contains $f.Name) { continue }
+    if ($f.FieldType -eq [double[]]) { $f.SetValue($src, [double[]]@(1, 2, 3)); continue }
+    $v = switch ($f.FieldType.Name) { "String" { "x-" + $f.Name } "Boolean" { $true } "Double" { 4.25 } "Int32" { 7 } default { $null } }
+    if ($null -ne $v) { $f.SetValue($src, $v) }
+}
+$cp = [CleanModel]::CopyEdge($src, 5, 6)
+$missed = @([CEdge].GetFields() | Where-Object { $skip -notcontains $_.Name -and "$($_.GetValue($cp))" -ne "$($_.GetValue($src))" } | ForEach-Object { $_.Name })
+Check ("CopyEdge copies every field of CEdge (missed: " + ($missed -join ", ") + ")") ($missed.Count -eq 0)
+
 Write-Host ("{0} passed, {1} failed" -f $pass, $fail)
 exit $(if ($fail) { 1 } else { 0 })
