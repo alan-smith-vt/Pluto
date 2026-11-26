@@ -35,6 +35,18 @@ $c.Add((Edge 1 2 "SYSA fragments")); $c.Add((Edge 2 3 "SYSA fragments")); $c.Add
 $null = [DuctConnectivity]::Resolve($c, $P, $sys)
 Check "largest piece = main: 3 fragments become SYSA, the lone SYSA element becomes a fragment" ((SysOf $c 1) -eq "SYSA" -and (SysOf $c 3) -eq "SYSA" -and (SysOf $c 10) -eq "SYSA fragments")
 
+# pinned mains (DuctMains "SYSA 2"; user 2026-11-25: fragments bridged into one stayed fragments). The pinned piece is
+# the BIGGEST here and still not the SYSA main; a SYSA fragment connected (bridged) to it takes "SYSA 2"
+$P = Pts @(@(1, 0, 0, 0), @(2, 10, 0, 0), @(10, 0, 50, 0), @(11, 10, 50, 0), @(12, 20, 50, 0), @(13, 30, 50, 0), @(14, 40, 50, 0), @(20, 0, 90, 0), @(21, 10, 90, 0))
+$c = New-Object 'System.Collections.Generic.List[CEdge]'
+$c.Add((Edge 1 2 "SYSA"))
+$c.Add((Edge 10 11 "SYSA 2")); $c.Add((Edge 11 12 "SYSA 2")); $c.Add((Edge 12 13 "SYSA 2")); $c.Add((Edge 13 14 "SYSA fragments"))   # bridged into the pin
+$c.Add((Edge 20 21 "SYSA fragments"))
+$note = [DuctConnectivity]::Resolve($c, $P, $sys)
+Check "pinned: the fragment bridged into SYSA 2 takes SYSA 2 (FRAGMENT_JOINED); the pin keeps its name" ((SysOf $c 13) -eq "SYSA 2" -and ($c | Where-Object { $_.A -eq 13 }).Flags.Contains("FRAGMENT_JOINED") -and (SysOf $c 10) -eq "SYSA 2")
+Check "pinned: the SYSA main is chosen among the pieces without a pin (the 1-element one), the lone fragment stays" ((SysOf $c 1) -eq "SYSA" -and -not ($c | Where-Object { $_.A -eq 1 }).Flags.Contains("SPLIT_FROM_MAIN") -and (SysOf $c 20) -eq "SYSA fragments")
+Check "pinned: the note counts the join under SYSA 2" ($note -like "*FRAGMENT_JOINED: SYSA 2 1)*")
+
 # a duct split AFTER the resolve (supports, penetrations) keeps its resolved name (2026-11-25: CopyEdge dropped SysFinal,
 # so bridged fragments split at their supports showed as fragments again), and CopyEdge copies EVERY field of CEdge
 $e = $c | Where-Object { $_.A -eq 1 }
