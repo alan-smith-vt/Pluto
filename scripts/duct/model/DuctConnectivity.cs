@@ -20,6 +20,13 @@ public static class DuctConnectivity
 
     public static string Resolve(List<CEdge> clean, Dictionary<int, double[]> P, DuctSystems dsys)
     {
+        return Resolve(clean, P, dsys, null);
+    }
+
+    // bridges: the manual bridges placed this run (ManualBridge.JointA / JointB): each is reported with where its two
+    // joints ended up (user 2026-11-25: bridged fragments stayed fragments and nothing said why)
+    public static string Resolve(List<CEdge> clean, Dictionary<int, double[]> P, DuctSystems dsys, List<ManualBridge> bridges)
+    {
         var par = new Dictionary<int, int>();
         Func<int, int> find = null;
         find = x => { int p; if (!par.TryGetValue(x, out p)) { par[x] = x; return x; } if (p == x) return x; int r = find(p); par[x] = r; return r; };
@@ -78,9 +85,34 @@ public static class DuctConnectivity
             }
         }
         if (byBase.Count == 0) return "fragments (final connectivity): no primary systems configured";
+        // per placed bridge: the piece its joints are in, and what that piece is
+        var mainOf = new Dictionary<int, string>();   // piece root -> main name, for the main pieces
+        foreach (KeyValuePair<string, Dictionary<int, List<CEdge>>> kv in byBase)
+        {
+            int mr = kv.Value.OrderByDescending(p => p.Value.Count(ce => !ce.Rigid)).ThenByDescending(p => p.Value.Count(ce => NameOf(ce) == kv.Key)).ThenBy(p => p.Key).First().Key;
+            mainOf[mr] = kv.Key;
+        }
+        var bridgeLines = new List<string>();
+        if (bridges != null)
+            for (int i = 0; i < bridges.Count; i++)
+            {
+                ManualBridge b = bridges[i];
+                if (b.JointA == 0) continue;
+                int ra = find(b.JointA), rb = find(b.JointB);
+                Func<int, string> what = r =>
+                {
+                    string m; if (mainOf.TryGetValue(r, out m)) return "the main " + m;
+                    var names = clean.Where(ce => !ce.Hanger && !ce.Rigid && find(ce.A) == r).GroupBy(ce => DuctGeom.SystemOf(ce)).OrderByDescending(g => g.Count())
+                                     .Select(g => g.Key + " " + g.Count()).ToList();
+                    return "a piece that is not a main (" + (names.Count > 0 ? string.Join(", ", names.ToArray()) : "links only") + ")";
+                };
+                bridgeLines.Add(string.Format(Inv, "  bridge {0}: joined N{1} and N{2}: {3}", i + 1, b.JointA, b.JointB,
+                    ra == rb ? "both in " + what(ra) : "NOT one piece: " + what(ra) + " / " + what(rb)));
+            }
         return string.Format(Inv, "fragments (final connectivity, the model SAP gets): {0} pieces are fragments; {1} elements named a fragment are connected to their main and joined it (FRAGMENT_JOINED{2}); {3} elements named the main are not connected to it and are fragments now (SPLIT_FROM_MAIN)",
             fragPieces, joined, joinCount.Count > 0 ? ": " + string.Join(", ", joinCount.Select(k => k.Key + " " + k.Value).ToArray()) : "", split)
-            + (splitLines.Count > 0 ? "\n" + string.Join("\n", splitLines.OrderBy(x => x, StringComparer.Ordinal).Take(40).ToArray()) + (splitLines.Count > 40 ? "\n  ..." : "") : "");
+            + (splitLines.Count > 0 ? "\n" + string.Join("\n", splitLines.OrderBy(x => x, StringComparer.Ordinal).Take(40).ToArray()) + (splitLines.Count > 40 ? "\n  ..." : "") : "")
+            + (bridgeLines.Count > 0 ? "\n" + string.Join("\n", bridgeLines.ToArray()) : "");
     }
 
     static string NameOf(CEdge ce) { return ce.Src.Count > 0 ? ce.Src[0].SysName : ce.SysName; }

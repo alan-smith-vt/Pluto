@@ -22,6 +22,7 @@ public class ManualBridge
     public string Mode = "rigid";
     public List<string> A = new List<string>(), B = new List<string>();
     public string LabelA = "", LabelB = "";
+    public int JointA, JointB;   // the joints the bridge joined (0 = not placed): DuctConnectivity reports where they ended up
 }
 
 public static class ManualBridges
@@ -95,6 +96,7 @@ public static class ManualBridges
                         else if ((1 - tb) * lb * 12 <= ExtendJoinIn) target = eb.B;
                         else { target = nextNode++; P[target] = r; Split(clean, eb, target); }
                         Retarget(ea, ja, target);
+                        br.JointA = jo; br.JointB = target;
                     }
                     else
                     {
@@ -105,6 +107,7 @@ public static class ManualBridges
                         else { rn = nextNode++; P[rn] = r; Split(clean, eb, rn); }
                         Retarget(ea, ja, qn);
                         clean.Add(Link(qn, rn, sys));
+                        br.JointA = jo; br.JointB = rn;
                     }
                     ea.Flags.Add("MANUAL_BRIDGE"); extended++;
                     lines.Add(string.Format(Inv, "{0}: A extended {1:0.##} ft along its axis to B{2}", tag, s,
@@ -114,6 +117,7 @@ public static class ManualBridges
                 fallback++;
             }
             clean.Add(Link(ja, jb, sys)); rigid++;
+            br.JointA = ja; br.JointB = jb;
             lines.Add(string.Format(Inv, "{0}: rigid link {1:0.##} ft between the nearest {2}ends{3}", tag, best,
                 bestOpen ? "open " : "", why != "" ? " (extend not possible: " + why + ")" : ""));
         }

@@ -44,7 +44,7 @@ public partial class DuctsToPluto
         string bridgeHand = ManualBridges.Apply(clean, P, Cfg.Bridges);   // add-on, the viewer's Bridge picker
         if (bridgeHand != "") cutNote += (cutNote != "" ? "\n" : "") + bridgeHand;
         // main or fragment from the FINAL connectivity, the model SAP gets (DuctConnectivity.Resolve): one definition
-        string fragNote = DuctConnectivity.Resolve(clean, P, new DuctSystems(Cfg));
+        string fragNote = DuctConnectivity.Resolve(clean, P, new DuctSystems(Cfg), Cfg.Bridges);
         cutNote += (cutNote != "" ? "\n" : "") + fragNote;
         string orientNote = Orienter.Apply(clean, P, Cfg.RotateLargeVertical, out orientNewLine);   // before the supports (rotated depth)
         // a joint where a duct passes through a wall or slab (DuctPenetrations.cs): splits elements, so before the supports

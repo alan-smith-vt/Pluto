@@ -77,6 +77,13 @@ $links = @($c | Where-Object { $_.Rigid } | ForEach-Object { [DuctGeom]::SystemO
 Check "8 the bridged fragment and its link take the main's name; the other fragment and the other system stay" ($sys["200"] -eq "SYSA" -and $sys["300"] -eq "SYSA fragments" -and $sys["400"] -eq "other: EXH" -and $links[0] -eq "SYSA" -and
     ($c | Where-Object { -not $_.Rigid -and $_.Src[0].Id -eq "200" }).Flags.Contains("FRAGMENT_JOINED"))
 Check "8 note" ($note -like "*FRAGMENT_JOINED: SYSA 2)*")
+# the report says where each bridge's joints ended up: into the main, or a piece that is not a main
+$c = New-Object 'System.Collections.Generic.List[CEdge]'
+$c.Add((SysEdge 1 2 "100" "SYSA")); $c.Add((SysEdge 3 4 "200" "SYSA fragments")); $c.Add((SysEdge 5 6 "300" "SYSA fragments")); $c.Add((SysEdge 7 8 "400" "SYSA fragments"))
+$bl = New-Object 'System.Collections.Generic.List[ManualBridge]'; $bl.Add((Br "rigid" "200" "100")); $bl.Add((Br "rigid" "300" "400"))
+$null = [ManualBridges]::Apply($c, $P, $bl)
+$note = [DuctConnectivity]::Resolve($c, $P, (New-Object DuctSystems $ds), $bl)
+Check "8 report: bridge 1 into the main, bridge 2 between two fragments (named)" ($note -match "bridge 1: joined N\d+ and N\d+: both in the main SYSA" -and $note -match "bridge 2: joined N\d+ and N\d+: both in a piece that is not a main \(SYSA fragments 2\)")
 
 # 7 settings: bridges.json read into DuctSettings.Bridges; a wrong file refused
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("pluto-bridges-" + [Guid]::NewGuid().ToString("N").Substring(0, 8) + ".json")
