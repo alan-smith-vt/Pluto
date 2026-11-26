@@ -119,6 +119,7 @@ public partial class DuctsToPluto
         if (sm != null) sm.WriteCsv(outBase);
         string wallNote = WriteCleanViewer(outBase + "_clean", modelId + "/clean", lengthUnit, clean, P, off, scale, sm, sr, rows, plan, pen);
         WriteCleanFrames(outBase + ".frames.csv", clean, P);
+        string traceNote = BridgeTrace.Run(clean, Cfg.Bridges);   // per bridge: where both sides ended up, and why
         if (pen != null) DuctPenetrations.WriteCsv(outBase + ".penetrations.csv", pen, P);
 
         return string.Format(Inv, "clean model (<out>_clean.bin, <out>.frames.csv): {0} elements ({1} rigid links) from {2} pieces; duct length {3:0.#} ft -> {4:0.#} ft, overlaps merged {5} ({6:0.#} ft), different-size overlaps {7} (OVERLAP_SIZE_CONFLICT), gaps closed {10}; connectors > 1 in from the clean line {8}{9}",
@@ -132,6 +133,7 @@ public partial class DuctsToPluto
             + (sm != null && Cfg.SteelTouchDuctOnly ? "\n" + sm.CullSummary() : "")
             + "\n" + bridgeNote
             + "\n" + proxNote
+            + (traceNote != "" ? "\n" + traceNote : "")
             + "\n" + orientNote
             + (pen != null ? "\n" + pen.Note : "")
             + (sr != null ? "\n" + sr.Note : "")

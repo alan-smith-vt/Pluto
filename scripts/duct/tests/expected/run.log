@@ -2,13 +2,14 @@ config: <ROOT>\duct-config.psd1
 rooms from duct-config.psd1: 3 codes
 cut points: 1 from <ROOT>\cuts\cuts.csv
 manual drop: 3 parts from <ROOT>\cuts\drop.txt
+manual bridges: 2 from <ROOT>\cuts\bridges.json
 steel: 75 members from <ROOT>\steel\steel.csv (rooms ROOM-01,ROOM-02,ROOM-03) (room=ROOM-01,ROOM-02,ROOM-03 rows=75 kept=75 members=75 unsized=0 zeroLength=0; orient: missing=0 badVector=0  dimConflicts=0  cp: offCentroid=36 unmapped=0)
 primary systems: SYSA, SYSB, SYSC
-NEW fit 0.00 ft median (103 pairs 1:1, rot 30.003 deg, scale check 1)
-NEW room: Navisworks 127 rows (90 fab), Revit 123 el (88 fab), Navisworks without Revit 6 (3 fab), Revit only 2 (1 fab), category differs 0, Revit only located in a Navisworks-only part 1 (Navisworks parts 1)
-NEW joints: connected 114 touching 0 near 2 side 0 outside 0 open 23
-NEW supports: 43 (guide 43), steel through a duct 0; unsupported spans > 10 ft: 14 spans (35 frames): US1 SYSC 43.4 ft, US2 SYSA 21.7 ft, US3 SYSA 21.5 ft, US4 SYSA 20 ft, US5 SYSB 20 ft, US6 SYSC 20 ft, US7 SYSA 18.3 ft, US8 SYSC 13.9 ft ...
-NEW floating: 7 pieces (10 frames) with no support, left out of SAP (FLOATING): SYSA fragments 13 ft (F20 F21 F23), other: EXH 12 ft (F88), SYSA fragments 8 ft (F8), SYSA fragments 7.5 ft (F22 F24), navisworks-only 7 ft (F25), navisworks-only 7 ft (F26), navisworks-only 7 ft (F27)
+NEW fit 0.00 ft median (104 pairs 1:1, rot 30.002 deg, scale check 1)
+NEW room: Navisworks 128 rows (90 fab), Revit 124 el (88 fab), Navisworks without Revit 6 (3 fab), Revit only 2 (1 fab), category differs 0, Revit only located in a Navisworks-only part 1 (Navisworks parts 1)
+NEW joints: connected 114 touching 0 near 2 side 0 outside 0 open 25
+NEW supports: 43 (guide 43), steel through a duct 0; unsupported spans > 10 ft: 15 spans (39 frames): US1 SYSC 43.4 ft, US2 SYSA 21.7 ft, US3 SYSA 21.5 ft, US4 SYSA 20 ft, US5 SYSB 20 ft, US6 SYSC 20 ft, US7 SYSA 18.3 ft, US8 SYSA 14.8 ft ...
+NEW floating: 6 pieces (9 frames) with no support, left out of SAP (FLOATING): SYSA fragments 13 ft (F22 F23 F25), other: EXH 12 ft (F90), SYSA fragments 7.5 ft (F24 F26), navisworks-only 7 ft (F27), navisworks-only 7 ft (F28), navisworks-only 7 ft (F29)
 NEW hangers: 3 Navisworks hangers, matched 0, no steel support 3 (HANGER_NO_STEEL_SUPPORT), off any duct 0 (HANGER_OFF_DUCT); supports without a hanger 14 (SUPPORT_NO_HANGER)
 NEW orientation: 7 frame(s) LARGE_SIDE_VERTICAL, 8 rotated in 5 run(s), 1 conflict(s)
 NEW bridges: 2 Navisworks-only parts joined to the Revit duct (NAVIS_BRIDGE): 1 between two ends, 1 at one end; resized from the neighbours 1 (SIZE_FROM_NEIGHBOURS)

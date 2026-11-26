@@ -328,7 +328,7 @@ def build_ducts():
     # supports a straight run slides along itself and twists; an L is held by the guides on its two legs.
     # SYSA: south at its east end, across the Y 510 rack beam
     ra.bend(-Y)
-    ra.straight(10)
+    south_leg = ra.straight(10)
     # shoe tap -> 24x12 branch to the south, off the rack (unsupported), then down: a vertical path
     rb = ra.tap(main_tap1, 0.5, -Y, Size(24, 12))
     rb.straight(6)
@@ -344,7 +344,11 @@ def build_ducts():
     rr.straight(6)
     # SYSA fragment: one floating piece in ROOM-03, not connected to the main
     rf = Runner("SYSA", (1158, 505.0, 110.0), X, Size(30, 18), "fab", S, 0.0625)
-    rf.straight(8)
+    frag = rf.straight(8)
+    # a hand-picked bridge (viewer Bridge picker, bridges.json): the fragment to the SYSA south leg. The whole pipeline
+    # (supports split ducts after the fragment rule) must end with the fragment named SYSA (user 2026-11-25)
+    global BRIDGE
+    BRIDGE = ([p.eid for p in frag], [south_leg[-1].eid])
 
     # ---- SYSB: Revit (non-fabrication) 48x24 carbon steel ducts, insulated, 2 in above the beams, S-offset up to
     # the hung beams (bottom 1.5 in above them), a Revit-only damper
@@ -354,7 +358,13 @@ def build_ducts():
     rs = Runner("SYSB", (1005 - a_b, yb + a_b + 10, z_on_steel(TOP_OF_STEEL, 2.0, B)), -Y, B, "revit", CS, 0.0478, insul=1.5)
     rs.straight(10)
     rs.bend(X)
-    first_b = rs.straight(30, piece=10)
+    # the user's case (2026-11-25): a continuous duct with ONE SEGMENT MISSING in the data. The first 10 ft piece, a 5 ft
+    # gap, then the main: the short piece before the gap (with the start leg) is a fragment, the rest the main. A
+    # bridge in EXTEND mode runs the main on across the gap to the fragment: the fragment must end in the main
+    b0 = rs.straight(10)
+    rs.gap(60)
+    rest = rs.straight(15, piece=7.5)
+    first_b = [b0[0], rest[0], rest[1]]
     rs.inline("Damper", 1.0, navis=False)              # Revit only
     mt = rs.straight(10)[0]
     rs.straight(56, piece=10)
@@ -376,6 +386,8 @@ def build_ducts():
     rbn.insul = 1.0
     # the drop list names every part of that branch's clean member (tap + straight)
     drop_ids = [tap_b.eid] + [p.eid for p in rbn.straight(6)]
+    global EXTEND
+    EXTEND = ([rest[0].eid], [b0[0].eid])
 
     # ---- SYSC: fabrication round 24 dia, blank material, missing thickness on some, 4 in above the beams; a 10 in
     # gap; a round-to-rect transition into an 18x36 duct (larger dimension vertical)
@@ -693,6 +705,23 @@ def write_steel(root, M):
 
 
 # ---------------------------------------------------------------- cuts, drop, config
+BRIDGE = None
+EXTEND = None
+
+
+def write_bridges(root):
+    import json
+    d = os.path.join(root, "cuts"); os.makedirs(d, exist_ok=True)
+    a, b = BRIDGE
+    doc = {"kind": "pluto-duct-bridges", "version": 1, "bridges": [
+        {"mode": "rigid", "a": {"parts": [str(x) for x in a], "label": "SYSA fragment (demo)"},
+         "b": {"parts": [str(x) for x in b], "label": "SYSA south leg (demo)"}},
+        {"mode": "extend", "a": {"parts": [str(x) for x in EXTEND[0]], "label": "SYSB main at the missing segment (demo)"},
+         "b": {"parts": [str(x) for x in EXTEND[1]], "label": "SYSB piece before the missing segment (demo)"}}]}
+    with open(os.path.join(d, "bridges.json"), "w", encoding="utf-8") as f:
+        json.dump(doc, f, indent=2)
+
+
 def write_cuts(root, drop_ids):
     d = os.path.join(root, "cuts"); os.makedirs(d, exist_ok=True)
     c = CUT_AT * 12
@@ -720,6 +749,7 @@ CONFIG = r"""# Demo duct-config.psd1 (synthetic data, make_demo_data.py). Copy t
     DuctCuts = '{root}\cuts\cuts.csv'
     RevitMeshNoRunExclude = @()
     DuctDrop = @('{root}\cuts\drop.txt')
+    DuctBridges = '{root}\cuts\bridges.json'
     # utility rack steel (SteelToPluto CSV: meters, plant frame)
     DuctSteel = '{root}\steel\steel.csv'
     Group = 'DUCT_ALL'
@@ -753,6 +783,7 @@ def main():
     write_revit_mesh(root)
     steel = write_steel(root, build_steel())
     write_cuts(root, drop_ids)
+    write_bridges(root)
     with open(os.path.join(root, "duct-config.psd1"), "w", encoding="utf-8") as f:
         f.write(CONFIG.format(root=root))
     shutil.copyfile(os.path.join(os.path.dirname(os.path.abspath(__file__)), "demo-README.md"), os.path.join(root, "README.md"))

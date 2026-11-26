@@ -1,33 +1,41 @@
-NEW fit 0.00 ft median (103 pairs 1:1, rot 30.003 deg, scale check 1)
-NEW room: Navisworks 127 rows (90 fab), Revit 123 el (88 fab), Navisworks without Revit 6 (3 fab), Revit only 2 (1 fab), category differs 0, Revit only located in a Navisworks-only part 1 (Navisworks parts 1)
-NEW joints: connected 114 touching 0 near 2 side 0 outside 0 open 23
-NEW supports: 43 (guide 43), steel through a duct 0; unsupported spans > 10 ft: 14 spans (35 frames): US1 SYSC 43.4 ft, US2 SYSA 21.7 ft, US3 SYSA 21.5 ft, US4 SYSA 20 ft, US5 SYSB 20 ft, US6 SYSC 20 ft, US7 SYSA 18.3 ft, US8 SYSC 13.9 ft ...
-NEW floating: 7 pieces (10 frames) with no support, left out of SAP (FLOATING): SYSA fragments 13 ft (F20 F21 F23), other: EXH 12 ft (F88), SYSA fragments 8 ft (F8), SYSA fragments 7.5 ft (F22 F24), navisworks-only 7 ft (F25), navisworks-only 7 ft (F26), navisworks-only 7 ft (F27)
+NEW fit 0.00 ft median (104 pairs 1:1, rot 30.002 deg, scale check 1)
+NEW room: Navisworks 128 rows (90 fab), Revit 124 el (88 fab), Navisworks without Revit 6 (3 fab), Revit only 2 (1 fab), category differs 0, Revit only located in a Navisworks-only part 1 (Navisworks parts 1)
+NEW joints: connected 114 touching 0 near 2 side 0 outside 0 open 25
+NEW supports: 43 (guide 43), steel through a duct 0; unsupported spans > 10 ft: 15 spans (39 frames): US1 SYSC 43.4 ft, US2 SYSA 21.7 ft, US3 SYSA 21.5 ft, US4 SYSA 20 ft, US5 SYSB 20 ft, US6 SYSC 20 ft, US7 SYSA 18.3 ft, US8 SYSA 14.8 ft ...
+NEW floating: 6 pieces (9 frames) with no support, left out of SAP (FLOATING): SYSA fragments 13 ft (F22 F23 F25), other: EXH 12 ft (F90), SYSA fragments 7.5 ft (F24 F26), navisworks-only 7 ft (F27), navisworks-only 7 ft (F28), navisworks-only 7 ft (F29)
 NEW hangers: 3 Navisworks hangers, matched 0, no steel support 3 (HANGER_NO_STEEL_SUPPORT), off any duct 0 (HANGER_OFF_DUCT); supports without a hanger 14 (SUPPORT_NO_HANGER)
 NEW orientation: 7 frame(s) LARGE_SIDE_VERTICAL, 8 rotated in 5 run(s), 1 conflict(s)
 NEW bridges: 2 Navisworks-only parts joined to the Revit duct (NAVIS_BRIDGE): 1 between two ends, 1 at one end; resized from the neighbours 1 (SIZE_FROM_NEIGHBOURS)
 room boxes: 3 written to <ROOT>\box\room-boxes.txt (Pluto Box) and <ROOT>\revit\mesh-boxes.txt (Revit Pluto Mesh) (add-ins read C:\Temp\hvac: not updated)
-flags (parts; <out>.flags.csv): FLOATING 6, GUID_MISMATCH 1, NEAR_GAP 2, OPEN_END 19, REVIT_ONLY 1, RUNNAME_DEVIATION 1, SIZE_DIFFERS 4, SPLIT 3, SYSTEM_CHANGE 1, SYSTEM_NAME_CONFLICT 1, UNSUPPORTED_SPAN 92 parts (14 spans), NAVIS_ONLY 5 (+ 0 covered by a Revit part, no frame)
-SAP frames (<out>.frames.csv): 156 (5 from Navisworks-only rows), Revit elements without a frame (1 connector) 0, frames without a size 3, rigid tap stubs 9
-mesh connector sizes: 244 of 253 Revit connectors matched a mesh connector within 4 in; matched Navisworks rows 122 (0 without triangles)
-runs (<out>.runs.csv): 15 runs, 17 segments + 2 transitions; parts: straight 102, bend 12, branch 7, transition 2
-RunName check: 5 RunNames over 123 run parts (0 without a name; Revit RunName on 123 parts, differs from Navisworks on 0); names in exactly one of our runs 2, split over several 3; our runs mixing names 1 of 15
-primary systems: SYSA 38 parts + 4 fragments (4 parts); SYSB 35 parts + 0 fragments (0 parts); SYSC 44 parts + 0 fragments (0 parts); other: 1 components (2 parts)
-systems: 8 connected components (4 single parts), 4 names [EXH:1 SYSA:5 SYSB:2 SYSC:1]; names over several components 2; components mixing names 1; joins by proximity only 0 parts; weak joins blocked across two names 0; parts connected across two names (SYSTEM_NAME_CONFLICT) 1
-clean model (<out>_clean.bin, <out>.frames.csv): 100 elements (8 rigid links) from 252 pieces; duct length 654.2 ft -> 652 ft, overlaps merged 0 (0 ft), different-size overlaps 0 (OVERLAP_SIZE_CONFLICT), gaps closed 1; connectors > 1 in from the clean line 4 (worst: 400063:2 78 in, 400034:2 60 in, 400062:2 6 in, 400063:1 6 in)
+flags (parts; <out>.flags.csv): FLOATING 5, GUID_MISMATCH 1, NEAR_GAP 2, OPEN_END 21, REVIT_ONLY 1, RUNNAME_DEVIATION 1, SIZE_DIFFERS 4, SPLIT 3, SYSTEM_CHANGE 1, SYSTEM_NAME_CONFLICT 1, UNSUPPORTED_SPAN 97 parts (15 spans), NAVIS_ONLY 5 (+ 0 covered by a Revit part, no frame)
+SAP frames (<out>.frames.csv): 157 (5 from Navisworks-only rows), Revit elements without a frame (1 connector) 0, frames without a size 3, rigid tap stubs 9
+mesh connector sizes: 246 of 255 Revit connectors matched a mesh connector within 4 in; matched Navisworks rows 123 (0 without triangles)
+runs (<out>.runs.csv): 16 runs, 18 segments + 2 transitions; parts: straight 103, bend 12, branch 7, transition 2
+RunName check: 5 RunNames over 124 run parts (0 without a name; Revit RunName on 124 parts, differs from Navisworks on 0); names in exactly one of our runs 2, split over several 3; our runs mixing names 1 of 16
+primary systems: SYSA 38 parts + 4 fragments (4 parts); SYSB 31 parts + 1 fragments (5 parts); SYSC 44 parts + 0 fragments (0 parts); other: 1 components (2 parts)
+systems: 9 connected components (4 single parts), 4 names [EXH:1 SYSA:5 SYSB:3 SYSC:1]; names over several components 2; components mixing names 1; joins by proximity only 0 parts; weak joins blocked across two names 0; parts connected across two names (SYSTEM_NAME_CONFLICT) 1
+clean model (<out>_clean.bin, <out>.frames.csv): 103 elements (9 rigid links) from 253 pieces; duct length 649.2 ft -> 652 ft, overlaps merged 0 (0 ft), different-size overlaps 0 (OVERLAP_SIZE_CONFLICT), gaps closed 1; connectors > 1 in from the clean line 4 (worst: 400064:2 78 in, 400034:2 60 in, 400063:2 6 in, 400064:1 6 in)
 NEW cuts: 1 of 1 placed, 1 elements (5 ft of duct) dropped beyond them, 1 kept elements end at a cut (CUT_END)
 NEW cut points: CUT1 on a duct, split (0.03 in)
 NEW cut sides: CUT1: dropped 5 ft SYSA (1 el) | kept 204.6 ft SYSA (18 el) (largest)
 NEW manual drop (DuctDrop): 3 listed, 1 members (6.5 ft) dropped, 0 kept because they end at a cut; 1 not in the clean model: 999999
-fragments (final connectivity, the model SAP gets): 3 pieces are fragments; 0 elements named a fragment are connected to their main and joined it (FRAGMENT_JOINED); 0 elements named the main are not connected to it and are fragments now (SPLIT_FROM_MAIN)
-materials: carbon 89 (DuctMaterials not set: every duct carbon, the default)
-steel model: 75 members -> 142 frames, 130 joints (column-base 4, continuous 4, corner 21, framed 27, interior 42, open-fixed 30, open-pinned 2); ends snapped 106 (27 onto a member's side); open 36 (1 OPEN_NEAR, other steel within 24 in); released ends (M2M3) 81; zero length dropped 0; stability: column bases 4, all-hinged joints with one member kept 14, lone members with torsion held 2; members not moved: 0 ends offset from their joint (largest 0 in); 0 ends left open, the other member's end over 2 in away; in line: 4 joints continuous (one member split by the model), 0 ends left open with only an in-line member near (no splice) (<out>.steel_joints.csv, <out>.steel_frames.csv)
+NEW manual bridges (DuctBridges): 2 listed, 1 rigid links, 1 extended, 0 not placed (a side not in the clean model), 0 already joined
+  bridge 1 (rigid): rigid link 6.68 ft between the nearest open ends
+  bridge 2 (extend): A extended 5 ft along its axis to B
+fragments (final connectivity, the model SAP gets): 2 pieces are fragments; 4 elements named a fragment are connected to their main and joined it (FRAGMENT_JOINED: SYSA 2, SYSB 2); 0 elements named the main are not connected to it and are fragments now (SPLIT_FROM_MAIN)
+  bridge 1: joined N45 and N34: both in the main SYSA
+  bridge 2: joined N56 and N53: both in the main SYSB
+materials: carbon 91 (DuctMaterials not set: every duct carbon, the default)
+steel model: 75 members -> 143 frames, 131 joints (column-base 4, continuous 4, corner 21, framed 27, interior 43, open-fixed 30, open-pinned 2); ends snapped 106 (27 onto a member's side); open 36 (1 OPEN_NEAR, other steel within 24 in); released ends (M2M3) 81; zero length dropped 0; stability: column bases 4, all-hinged joints with one member kept 14, lone members with torsion held 2; members not moved: 0 ends offset from their joint (largest 0 in); 0 ends left open, the other member's end over 2 in away; in line: 4 joints continuous (one member split by the model), 0 ends left open with only an in-line member near (no splice) (<out>.steel_joints.csv, <out>.steel_frames.csv)
 steel snap: centreline (within 6 in); open ends by gap to the nearest steel surface (in, 1 in bins to 24): 7-8:1
 steel touching no duct: 2 members (2 frames, 4 joints) not connected to a duct support, even through other steel, left out; 73 members kept
 gap bridges (NAVIS_BRIDGE, Navisworks-only parts lined up with open Revit ends): 2
   Navisworks #2749959b5e7381ce26934caccf5418e9 (SYSA fragments): bridges two Revit ends, 5 ft, size 20x12 -> 16x12 (stated 18x12) SIZE_FROM_NEIGHBOURS
   Navisworks #5692318585849351e86175dfc3ee2d02 (SYSA fragments): continues one Revit end, 3.5 ft, size 14x10 (stated 14x10)
 proximity joins: no open duct end within 6 in of a duct of its own system
+bridge trace (the output as written: viewer, frames.csv, SAP):
+  bridge 1 (rigid): A 1 el, early SYSA fragments, final SYSA | B 2 el, early SYSA, final SYSA -> OK: both sides end in the main SYSA
+  bridge 2 (extend): A 4 el, early SYSB, final SYSB | B 2 el, early SYSB fragments, final SYSB -> OK: both sides end in the main SYSB
 orientation: 7 frame(s) with the larger side vertical (LARGE_SIDE_VERTICAL), 5 run(s), 8 frame(s) rotated, conflicts 1 (ROTATION_CONFLICT)
   SYSC 18x36 run, 1 frame(s), 2 ft (1 with the larger side vertical): rotated 90 deg about the centreline
   SYSC 18x36 run, 1 frame(s), 12.5 ft (1 with the larger side vertical): rotated 90 deg about the centreline
@@ -36,21 +44,22 @@ orientation: 7 frame(s) with the larger side vertical (LARGE_SIDE_VERTICAL), 5 r
   SYSB 20x30 run, 3 frame(s), 20 ft (1 with the larger side vertical): ROTATION_CONFLICT, a horizontal frame of the run already has its larger side horizontal
   SYSA 16x28 run, 2 frame(s), 6.1 ft (1 with the larger side vertical): rotated 90 deg about the centreline
 supports (<out>.supports.csv): 43 (guide 43), gap <= 4.5 in, steel overlapping the duct bottom 4, steel through the duct 0 (no support), steel along the duct under it 0 (not modelled)
-unsupported spans > 10 ft (UNSUPPORTED_SPAN): 14 spans (35 frames); longest: US1 SYSC 43.4 ft, US2 SYSA 21.7 ft, US3 SYSA 21.5 ft, US4 SYSA 20 ft, US5 SYSB 20 ft
-  US1 SYSC 43.4 ft, 1 support(s) at its ends, 7 frame(s): F13 F14 F84 F86 F87 F89 F93
-  US2 SYSA 21.7 ft, 2 support(s) at its ends, 4 frame(s): F6 F7 F40 F46
-  US3 SYSA 21.5 ft, 2 support(s) at its ends, 3 frame(s): F38 F44 F100
-  US4 SYSA 20 ft, 2 support(s) at its ends, 3 frame(s): F4 F31 F39
-  US5 SYSB 20 ft, 2 support(s) at its ends, 1 frame(s): F56
-  US6 SYSC 20 ft, 2 support(s) at its ends, 1 frame(s): F78
-  US7 SYSA 18.3 ft, 2 support(s) at its ends, 3 frame(s): F28 F37 F47
-  US8 SYSC 13.9 ft, 2 support(s) at its ends, 2 frame(s): F76 F85
-  US9 SYSA fragments 13 ft, 0 support(s) at its ends, 3 frame(s): F20 F21 F23
-  US10 SYSA 12 ft, 1 support(s) at its ends, 3 frame(s): F2 F30 F99
-  US11 other: EXH 12 ft, 0 support(s) at its ends, 1 frame(s): F88
-  US12 SYSB 11.8 ft, 2 support(s) at its ends, 2 frame(s): F49 F52
-  US13 SYSB 11.7 ft, 1 support(s) at its ends, 1 frame(s): F63
-  US14 SYSB 10 ft, 2 support(s) at its ends, 1 frame(s): F53
+unsupported spans > 10 ft (UNSUPPORTED_SPAN): 15 spans (39 frames); longest: US1 SYSC 43.4 ft, US2 SYSA 21.7 ft, US3 SYSA 21.5 ft, US4 SYSA 20 ft, US5 SYSB 20 ft
+  US1 SYSC 43.4 ft, 1 support(s) at its ends, 7 frame(s): F15 F16 F86 F88 F89 F91 F95
+  US2 SYSA 21.7 ft, 2 support(s) at its ends, 4 frame(s): F6 F7 F42 F48
+  US3 SYSA 21.5 ft, 2 support(s) at its ends, 3 frame(s): F40 F46 F102
+  US4 SYSA 20 ft, 2 support(s) at its ends, 3 frame(s): F4 F33 F41
+  US5 SYSB 20 ft, 2 support(s) at its ends, 1 frame(s): F58
+  US6 SYSC 20 ft, 2 support(s) at its ends, 1 frame(s): F80
+  US7 SYSA 18.3 ft, 2 support(s) at its ends, 3 frame(s): F30 F39 F49
+  US8 SYSA 14.8 ft, 1 support(s) at its ends, 2 frame(s): F8 F47
+  US9 SYSC 13.9 ft, 2 support(s) at its ends, 2 frame(s): F78 F87
+  US10 SYSA fragments 13 ft, 0 support(s) at its ends, 3 frame(s): F22 F23 F25
+  US11 SYSB 12.5 ft, 3 support(s) at its ends, 3 frame(s): F11 F55 F98
+  US12 SYSA 12 ft, 1 support(s) at its ends, 3 frame(s): F2 F32 F101
+  US13 other: EXH 12 ft, 0 support(s) at its ends, 1 frame(s): F90
+  US14 SYSB 11.8 ft, 2 support(s) at its ends, 2 frame(s): F51 F54
+  US15 SYSB 11.7 ft, 1 support(s) at its ends, 1 frame(s): F65
 gap histogram (duct bottom -> steel top, in; 46 crossings in [-12, 48], bin 1 in; support <= 4.5):
   [    -1,      0)     4 ###############
   [     0,      1)    11 ########################################
@@ -60,27 +69,26 @@ gap histogram (duct bottom -> steel top, in; 46 crossings in [-12, 48], bin 1 in
   [     5,      6)     1 ####
   [     6,      7)     1 ####
   [     8,      9)     1 ####
-floating pieces (FLOATING, no support, left out of SAP): 7
-  SYSA fragments 13 ft (F20 F21 F23)
-  other: EXH 12 ft (F88)
-  SYSA fragments 8 ft (F8)
-  SYSA fragments 7.5 ft (F22 F24)
-  navisworks-only 7 ft (F25)
-  navisworks-only 7 ft (F26)
+floating pieces (FLOATING, no support, left out of SAP): 6
+  SYSA fragments 13 ft (F22 F23 F25)
+  other: EXH 12 ft (F90)
+  SYSA fragments 7.5 ft (F24 F26)
   navisworks-only 7 ft (F27)
+  navisworks-only 7 ft (F28)
+  navisworks-only 7 ft (F29)
 hangers (Navisworks, category *Hanger*): 3, matched to a support within 24 in: 0, no steel support 3, off any duct 0; supports without a hanger 14 (systems with hangers only)
-  #70833e8ad9c578dd0a39b5c8faa241a6 SYSA: on F29, no support within 24 in (HANGER_NO_STEEL_SUPPORT)
-  #591d3eb1acddefa490393d58cddda66c SYSA: on F36, no support within 24 in (HANGER_NO_STEEL_SUPPORT)
-  #a9155bbc259c6be515d01935b0fcebae SYSA: on F34, no support within 24 in (HANGER_NO_STEEL_SUPPORT)
-boxes turned to the Revit connector's width direction: 97 beams
+  #844bb0be52dda7408aefce4515c54d37 SYSA: on F31, no support within 24 in (HANGER_NO_STEEL_SUPPORT)
+  #9097b75e3d8042cc87acab545c290a37 SYSA: on F38, no support within 24 in (HANGER_NO_STEEL_SUPPORT)
+  #8cf1af4380cd2a94dd0cd31622607f88 SYSA: on F36, no support within 24 in (HANGER_NO_STEEL_SUPPORT)
+boxes turned to the Revit connector's width direction: 98 beams
 
 Navisworks run: <ROOT>\ducts\20261030-120000
 Revit run:      <ROOT>\revit\20261030-120000
 room(s):        ROOM-01,ROOM-02,ROOM-03
 room variants taken in (start with a listed code): ROOM-02A
-Revit elements 123 (no connectors 0); matched by IfcGUID parameter 120, by GUID computed from UniqueId 1; shared GUIDs 119
+Revit elements 124 (no connectors 0); matched by IfcGUID parameter 121, by GUID computed from UniqueId 1; shared GUIDs 120
 Curve connectors (point on a part's side) connected to nothing, dropped (whole model): 0
-frame (Revit internal -> Navisworks): x' = 0.866004 x - 0.500038 y + 812.501; y' = 0.500038 x + 0.866004 y + 431.235; z' = z + 92
+frame (Revit internal -> Navisworks): x' = 0.866004 x - 0.500037 y + 812.5; y' = 0.500037 x + 0.866004 y + 431.235; z' = z + 92
 scale check = spread of Navisworks centres / spread of Revit centres (1 = same units)
 Revit elements with a room GUID but centre outside the room box (+3 ft, dropped): 0
 
@@ -88,13 +96,13 @@ Navisworks rows in the room with no Revit element (NavisId, category, name, IfcG
   #efe09f07cefe2a1f727d83495822cb77  MEP Fabrication Ductwork  74x28 Straight  2kASDTyPhQz0ziAFnPzMtg
   #2749959b5e7381ce26934caccf5418e9  MEP Fabrication Ductwork  18x12 Straight  0DSZ9BKUlzzjQhh$H9FvRu
   #5692318585849351e86175dfc3ee2d02  MEP Fabrication Ductwork  14x10 Straight  3a2S7Kb2s8dAgAZDeA3ICs
-  #70833e8ad9c578dd0a39b5c8faa241a6  MEP Fabrication Hangers  Rod Hanger  2WU75Dp6R$s$KcAITKHupB
-  #591d3eb1acddefa490393d58cddda66c  MEP Fabrication Hangers  Rod Hanger  3ORl04sIa97rh8u1MLmb0u
-  #a9155bbc259c6be515d01935b0fcebae  MEP Fabrication Hangers  Rod Hanger  1yAfwsJpA7gcrlzHch3OSv
+  #844bb0be52dda7408aefce4515c54d37  MEP Fabrication Hangers  Rod Hanger  204sIa97rh8u1MLmb0uiPy
+  #9097b75e3d8042cc87acab545c290a37  MEP Fabrication Hangers  Rod Hanger  3sJpA7gcrlzHch3OSvAIlr
+  #8cf1af4380cd2a94dd0cd31622607f88  MEP Fabrication Hangers  Rod Hanger  3oXETNPESWCOW_TwSEAq9u
 
 Revit elements in the room box with no Navisworks row (ElementId, category, family type, size):
   400008  MEP Fabrication Ductwork  Straight Default  74"x28"
-  400042  Duct Accessories  Volume Damper Mitered Elbows / Taps  48"x24"
+  400043  Duct Accessories  Volume Damper Mitered Elbows / Taps  48"x24"
 
 Matched by IfcGUID, category differs (a Pluto Fab run holds only fabrication rows: use a Pluto Ducts run to see these):
 
@@ -103,18 +111,18 @@ Revit-only elements located inside a Navisworks-only part (same part, different 
   Revit 400008 Straight Default 74"x28" IfcGUID 0cBXkLjSgSOUpTP$j33ZyX  in  Navisworks #efe09f07cefe2a1f727d83495822cb77 MEP Fabrication Ductwork (74x28 Straight) 2kASDTyPhQz0ziAFnPzMtg
 
 RunName -> our runs (parts):
-  A-B1-EXH-DUCT-1: R11 (2)
-  A-B1-SYSA-DUCT-1: R3 (25), R5 (4), R7 (4), R8 (4), R12 (1), R13 (1), R14 (1), R15 (1)
-  A-B1-SYSB-DUCT-1: R2 (26), R4 (7), R10 (2)
-  A-B1-SYSB-DUCT-3: R5 (1)
-  A-B1-SYSC-DUCT-1: R1 (37), R6 (5), R9 (2)
+  A-B1-EXH-DUCT-1: R12 (2)
+  A-B1-SYSA-DUCT-1: R2 (25), R6 (4), R8 (4), R9 (4), R13 (1), R14 (1), R15 (1), R16 (1)
+  A-B1-SYSB-DUCT-1: R3 (22), R4 (7), R7 (5), R11 (2)
+  A-B1-SYSB-DUCT-3: R6 (1)
+  A-B1-SYSC-DUCT-1: R1 (37), R5 (5), R10 (2)
 our runs mixing RunNames (parts):
-  R5: A-B1-SYSA-DUCT-1 (4), A-B1-SYSB-DUCT-3 (1)
+  R6: A-B1-SYSA-DUCT-1 (4), A-B1-SYSB-DUCT-3 (1)
 
 system name -> components (parts):
-  EXH: C4 (2)
-  SYSA: C2 (37), C5 (1), C6 (1), C7 (1), C8 (1)
-  SYSB: C2 (1), C3 (35)
+  EXH: C5 (2)
+  SYSA: C2 (37), C6 (1), C7 (1), C8 (1), C9 (1)
+  SYSB: C2 (1), C3 (31), C4 (5)
   SYSC: C1 (44)
 components mixing names (parts):
   C2: SYSA (37), SYSB (1)

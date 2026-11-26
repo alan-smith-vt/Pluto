@@ -70,6 +70,12 @@ foreach ($s in @($cfg.DuctSystems | ForEach-Object { ($_ -split '=')[0] })) {
     Check "clean" "primary system $s has main frames" (@($fr | Where-Object { $_.System -eq $s -and $_.SystemRole -eq "main" }).Count -gt 0)
 }
 Check "clean" "the cut point is placed" ($match -match 'NEW cuts: (\d+) of \1 placed')
+# the demo's hand-picked bridge (SYSA fragment -> SYSA south leg): the fragment ends in the main in the OUTPUT, after the
+# supports split the ducts (2026-11-25: split ducts fell back to their early name), and the trace says OK
+Check "clean" "the bridge is placed and traced OK" ($match -match 'bridge 1 \(rigid\): A [^\n]*final SYSA[^\n]*-> OK: both sides end in the main SYSA') (([regex]::Match($match, 'bridge 1 \(rigid\)[^\n]*')).Value)
+Check "clean" "the extend bridge across a missing segment: the short piece ends in the main SYSB (traced OK)" ($match -match 'bridge 2 \(extend\): A [^\n]*-> OK: both sides end in the main SYSB') (([regex]::Match($match, 'bridge 2 \(extend\): A[^\n]*')).Value)
+$frRows = @(Import-Csv "$o\revit.frames.csv" | Where-Object { $_.Flags -match 'FRAGMENT_JOINED' })
+Check "clean" "frames.csv: every bridged fragment's frames carry their main's name, main role (SYSA and SYSB)" ($frRows.Count -gt 0 -and @($frRows | Where-Object { $_.System -notin @('SYSA', 'SYSB') -or $_.SystemRole -ne 'main' }).Count -eq 0 -and @($frRows | Where-Object { $_.System -eq 'SYSB' }).Count -gt 0) "$($frRows.Count) FRAGMENT_JOINED frames"
 Check "clean" "the drop list drops a member" ($match -match 'NEW manual drop \(DuctDrop\): \d+ listed, [1-9]\d* members')
 
 # ---- steel
